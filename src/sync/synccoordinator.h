@@ -4,6 +4,7 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "syncworker.h"
+#include "conflicthandlerregistry.h"
 #include <QObject>
 #include <QList>
 #include <QPointer>
@@ -97,6 +98,26 @@ public:
      * immediately. If not set, such conflicts are recorded but not resolved.
      */
     void setConflictManager(ConflictManager *manager) { m_conflictManager = manager; }
+
+    /**
+     * @brief Per-backend ConflictHandler registry (Audit 3, Phase B).
+     *
+     * The library consults this when it owns the sync session. External
+     * orchestrators (e.g. Wild Palms' SyncConduitBase) can query it to
+     * populate their own SyncContext's conflictHandler pointer before
+     * driving a sync.
+     *
+     * The registry is owned by the coordinator and lives for its
+     * lifetime. Register handlers before starting sync operations.
+     */
+    Kalburator::Sync::ConflictHandlerRegistry *conflictRegistry()
+    {
+        return &m_conflictRegistry;
+    }
+    const Kalburator::Sync::ConflictHandlerRegistry *conflictRegistry() const
+    {
+        return &m_conflictRegistry;
+    }
 
     /**
      * @brief Load sync mappings from the collection's .kalb configuration.
@@ -299,6 +320,7 @@ private:
     ISyncHost *m_controller;
     SyncStore *m_syncStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
+    Kalburator::Sync::ConflictHandlerRegistry m_conflictRegistry;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 

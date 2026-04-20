@@ -27,7 +27,7 @@
 #include <QJsonArray>
 #include <functional>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 /**
  * @brief Manages bidirectional ID mappings between two sync stores
@@ -157,6 +157,6 @@ private:
     IdMapping mappingFromJson(const QJsonObject &json) const;
 };
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
 
 #endif // QSYNCCORE_IDMAPPINGSTORE_H

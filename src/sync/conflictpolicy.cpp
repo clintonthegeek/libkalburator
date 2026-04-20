@@ -1,7 +1,7 @@
 #include "conflictpolicy.h"
 #include "conflictstore.h"
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 // ========== ConflictPolicy ==========
 
@@ -309,4 +309,4 @@ FallbackBehavior fallbackBehaviorFromString(const QString &str)
     return FallbackBehavior::Defer;
 }
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync

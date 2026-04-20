@@ -17,7 +17,7 @@
 #include <QObject>
 #include <QJsonObject>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 // Forward declaration
 class ConflictStore;
@@ -234,6 +234,6 @@ PromptStrategy promptStrategyFromString(const QString &str);
 QString fallbackBehaviorToString(FallbackBehavior behavior);
 FallbackBehavior fallbackBehaviorFromString(const QString &str);
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
 
 #endif // QSYNCCORE_CONFLICTPOLICY_H

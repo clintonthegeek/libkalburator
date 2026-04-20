@@ -27,7 +27,7 @@
 #include <QMap>
 #include <QJsonObject>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 /**
  * @brief Stores content hashes for detecting changes between syncs
@@ -130,6 +130,6 @@ private:
     QMap<RecordId, QString> m_hashes;
 };
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
 
 #endif // QSYNCCORE_BASELINESTORE_H

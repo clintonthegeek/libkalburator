@@ -24,7 +24,7 @@
 #include <QJsonObject>
 #include <QVariantMap>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 /**
  * @brief Type of conflict detected
@@ -155,6 +155,6 @@ ConflictType conflictTypeFromString(const QString &str);
 QString conflictDecisionToString(ConflictDecision decision);
 ConflictDecision conflictDecisionFromString(const QString &str);
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
 
 #endif // QSYNCCORE_CONFLICTRECORD_H

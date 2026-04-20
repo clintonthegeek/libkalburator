@@ -20,7 +20,7 @@
 #include <QList>
 #include <QMap>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 /**
  * @brief Manages persistent storage of sync conflicts
@@ -185,6 +185,6 @@ private:
     QMap<QString, ConflictRecord> m_conflicts;
 };
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
 
 #endif // QSYNCCORE_CONFLICTSTORE_H

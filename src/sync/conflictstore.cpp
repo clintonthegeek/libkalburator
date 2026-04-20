@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 ConflictStore::ConflictStore(QObject *parent)
     : QObject(parent)
@@ -287,4 +287,4 @@ int ConflictStore::fromJson(const QJsonArray &array)
     return m_conflicts.size();
 }
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync

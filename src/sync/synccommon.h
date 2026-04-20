@@ -18,7 +18,7 @@
 #include <QStringList>
 #include <QDateTime>
 
-namespace QSyncCore {
+namespace Kalburator::Sync {
 
 /**
  * @brief Unique identifier for a record in any sync store
@@ -130,6 +130,11 @@ struct DataLossWarning
     QString recommendation;
 };
 
-} // namespace QSyncCore
+} // namespace Kalburator::Sync
+
+// Compatibility alias — Wild Palms and any other consumer code that
+// still qualifies with `QSyncCore::` keeps compiling. Remove in a
+// future major release once all consumers have migrated.
+namespace QSyncCore = Kalburator::Sync;
 
 #endif // QSYNCCORE_SYNCCOMMON_H
