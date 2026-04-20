@@ -5,7 +5,7 @@
 #include "syncbackend.h"
 #include "remotebackend.h"
 #include "localbackend.h"
-// collection.h removed — using icalendarcollection.h only
+#include "icalendarcollection.h"
 #include "synccoordinator.h"
 #include "transcodingregistry.h"
 
