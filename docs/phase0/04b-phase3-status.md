@@ -1,9 +1,37 @@
-# Phase 3 status — Phase 3 complete
+# Phase 3 status — Phase 3 complete, Phase B partial
 
 **Date:** 2026-04-20.
 **Status:** Phase 3 done — libkalburator builds clean standalone,
 and PlanStan now consumes it in-tree via `add_subdirectory` with
 `KALBURATOR_PROVIDE_TYPES=OFF`. Old `libs/sync/` removed from PlanStan.
+
+**Phase B (partial, 2026-04-20):** WP's `qsynccore/` lifted upstream —
+6 pairs of files (`baselinestore`, `conflictpolicy`, `conflictrecord`,
+`conflictstore`, `idmappingstore`, `synccommon`) copied from
+`~/dev/WildPalms/src/sync/qsynccore/` into `src/sync/` (flat; layered
+split is Phase C). `ConnectionBehavior` enum + fields + string
+helpers stripped from `ConflictPolicy` (Palm-specific). Standalone
+build clean; PlanStan builds clean against it; ctest baseline held
+at 87 pass / 27 fail.
+
+**Phase B deferred:**
+
+- Rewrite `IdMappingStore` into SQLite-backed merged-schema
+  `IDMappingStore` (Audit 2 decision). Currently present as WP's
+  original JSON-backed implementation — dormant, no consumer.
+- Add `ConflictHandlerRegistry` + `coordinator->registry()` public
+  accessor (Audit 3). The `ConflictHandler` abstract + concrete
+  `AutomaticConflictHandler` are already in `conflictpolicy.{h,cpp}`;
+  just the registry wiring remains.
+- PlanStan call-site migration off `SyncStore::setIdMapping` (Phase B
+  item 7). Naturally folds into Phase C where `SyncStore` dissolves.
+- `AsyncFileWriter` QSaveFile change was **dropped** — existing
+  non-atomic writes are a deliberate performance tradeoff. See
+  `04a-followups.md` Audit-4 revision.
+
+Phase B remainder can land in a follow-up session or be merged into
+Phase C (the layering + namespacing pass) — the two sub-phases touch
+the same code regions and can be bundled without loss.
 
 ## Phase 3b resolution (2026-04-20 continuation)
 
