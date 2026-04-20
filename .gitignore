@@ -1,0 +1,9 @@
+build/
+build-*/
+compile_commands.json
+*.swp
+*.o
+*.so
+*.a
+.clangd/
+.cache/
