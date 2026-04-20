@@ -1,0 +1,164 @@
+#ifndef SUBSCRIPTIONBACKEND_H
+#define SUBSCRIPTIONBACKEND_H
+
+#include <QObject>
+#include <QString>
+#include <QStringList>
+#include <QVariantMap>
+#include <QHash>
+#include <QDate>
+#include <KCalendarCore/MemoryCalendar>
+#include <KCalendarCore/Incidence>
+#include "syncbackend.h"
+
+struct BackendCapabilities;
+
+/**
+ * @brief Base class for read-only subscription calendar backends.
+ *
+ * SubscriptionBackend provides infrastructure for calendars that are
+ * generated from external sources (holidays, webcal feeds, RSS, etc.)
+ * and cannot be edited by the user. These calendars are strictly read-only.
+ *
+ * Each subscription source (e.g., a holiday region or webcal URL) creates
+ * a separate calendar in the collection. For example:
+ * - "US Holidays" calendar from holiday region "us_en-us"
+ * - "UK Holidays" calendar from holiday region "gb_en-gb"
+ * - "Team Calendar" from webcal://example.com/team.ics
+ *
+ * Subclasses implement fetchEventsForSource() to generate events from
+ * their specific source type.
+ *
+ * ## Read-Only Enforcement
+ * All write operations (storeItems, updateItem, removeItem, etc.) are
+ * no-ops or return errors. The backend always reports calendars as
+ * read-only via discoveredWritable().
+ *
+ * ## Extensibility
+ * Adding new subscription types (webcal, RSS, public Google Calendar, etc.)
+ * requires only creating a new subclass that implements fetchEventsForSource().
+ */
+class SubscriptionBackend : public SyncBackend
+{
+    Q_OBJECT
+
+public:
+    explicit SubscriptionBackend(QObject *parent = nullptr);
+    ~SubscriptionBackend() override = default;
+
+    // ========== SyncBackend Interface ==========
+
+    static const QString BackendTypeName;
+    QString backendType() const override;
+
+    void loadCalendars(const QString &collectionId) override;
+    void loadItems(KCalendarCore::MemoryCalendar* cal, bool suppressSignals = false) override;
+    FetchOperation* fetchItems(const QString &calendarId) override;
+
+    // ========== Read-Only Enforcement ==========
+    // These operations do nothing or return errors since subscriptions are read-only
+
+    void storeCalendars(const QString &collectionId,
+                        const QList<KCalendarCore::MemoryCalendar*> &calendars) override;
+
+    void storeItems(KCalendarCore::MemoryCalendar* cal,
+                    const QList<KCalendarCore::Incidence::Ptr> &items) override;
+
+    void updateItem(KCalendarCore::MemoryCalendar* cal,
+                    const KCalendarCore::Incidence::Ptr &item,
+                    const QString &icalData) override;
+
+    void startSync(const QString &collectionId,
+                   KCalendarCore::MemoryCalendar* calendar,
+                   const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
+                   const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
+                   const QMap<QString, QString> &stagedDeletions) override;
+
+    void removeItem(const QString &calId, const QString &itemUid) override;
+
+    // Always returns false - subscription calendars are never writable
+    bool discoveredWritable(const QString &calendarId) const override;
+
+    // Never supports calendar creation
+    bool supportsCalendarCreation() const override { return false; }
+
+    // Backend capabilities
+    BackendCapabilities capabilities() const override;
+
+    // ========== Subscription Source Management ==========
+
+    /**
+     * @brief Add a subscription source.
+     *
+     * Each source creates a separate calendar in the collection.
+     *
+     * @param sourceId Unique identifier for this source (e.g., "us_en-us", "webcal_1")
+     * @param sourceType Type of source (e.g., "holiday", "webcal", "rss")
+     * @param config Source-specific configuration (e.g., region code, URL, refresh interval)
+     */
+    void addSource(const QString &sourceId, const QString &sourceType, const QVariantMap &config);
+
+    /**
+     * @brief Remove a subscription source.
+     *
+     * @param sourceId The source ID to remove
+     */
+    void removeSource(const QString &sourceId);
+
+    /**
+     * @brief Get list of all source IDs.
+     */
+    QStringList sources() const;
+
+    /**
+     * @brief Get the source type for a source ID.
+     */
+    QString sourceType(const QString &sourceId) const;
+
+    /**
+     * @brief Get the configuration for a source.
+     */
+    QVariantMap sourceConfig(const QString &sourceId) const;
+
+protected:
+    /**
+     * @brief Fetch events from a subscription source.
+     *
+     * Subclasses implement this to generate events from their specific
+     * source type (holidays, webcal, RSS, etc.).
+     *
+     * Events should:
+     * - Have unique UIDs within the source
+     * - Be marked read-only via setReadOnly(true)
+     * - Optionally have custom properties to identify the source
+     * - Optionally have categories for filtering (e.g., "Holiday")
+     *
+     * @param sourceId The source ID (corresponds to a calendar)
+     * @param startDate Start of date range to fetch (inclusive)
+     * @param endDate End of date range to fetch (inclusive)
+     * @return List of events in the date range
+     */
+    virtual QList<KCalendarCore::Incidence::Ptr> fetchEventsForSource(
+        const QString &sourceId,
+        const QDate &startDate,
+        const QDate &endDate) = 0;
+
+    /**
+     * @brief Get the display name for a source.
+     *
+     * Subclasses can override to provide user-friendly names.
+     * Default implementation returns the source ID.
+     */
+    virtual QString sourceDisplayName(const QString &sourceId) const;
+
+    struct SourceInfo {
+        QString sourceId;
+        QString sourceType;
+        QVariantMap config;
+    };
+
+    QHash<QString, SourceInfo> m_sources;  // sourceId -> source info
+    QString m_currentCollectionId;         // Collection ID for emitting signals
+};
+
+#endif // SUBSCRIPTIONBACKEND_H

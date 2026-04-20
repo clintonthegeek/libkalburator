@@ -1,0 +1,357 @@
+#ifndef SYNCTYPES_H
+#define SYNCTYPES_H
+
+#include <QString>
+#include <QDateTime>
+#include <QStringList>
+#include <QVariantMap>
+#include <QJsonObject>
+#include <QJsonArray>
+
+/**
+ * @file synctypes.h
+ * @brief Common sync types designed for future extraction to qsynccore shared library.
+ *
+ * These types are intentionally designed to match the patterns from QPilotSync
+ * and the SyncLibraryFeasability.md specification, enabling future code sharing.
+ */
+
+/**
+ * @brief Conflict resolution policies for sync operations.
+ *
+ * Uses backend-neutral "source/target" terminology to support any combination
+ * of backends (local-to-local, remote-to-remote, or mixed) and N-way sync.
+ */
+enum class ConflictResolution {
+    SourceWins,     ///< Source version overwrites target
+    TargetWins,     ///< Target version overwrites source
+    Duplicate,      ///< Keep both versions with new IDs
+    Skip,           ///< Leave conflict unresolved
+    AskUser,        ///< Prompt user for decision
+    LastWriteWins,  ///< Use most recently modified version
+    CustomMerge     ///< Use property-level merged result
+};
+
+/**
+ * @brief Sync topology preset for multi-backend collections.
+ *
+ * Determines how sync mappings are auto-generated from logical calendar bindings:
+ * - Star: Primary is hub, each sync binding maps to/from primary only.
+ * - Mirror: Every backend syncs with every other backend (all-to-all).
+ * - Chain: Backends sync sequentially in order (A<->B, B<->C, etc.).
+ */
+enum class SyncTopology {
+    Star,    ///< Hub-and-spoke: all sync through primary (default, recommended)
+    Mirror,  ///< Full mesh: every backend syncs with every other
+    Chain    ///< Sequential: each backend syncs with the next in order
+};
+
+/**
+ * @brief Type of conflict detected during sync.
+ */
+enum class ConflictType {
+    BothModified,   ///< Both sides modified the same item
+    ModifyDelete,   ///< One side modified, other deleted
+    BothCreated     ///< Both sides created item with same UID (rare)
+};
+
+/**
+ * @brief Information about a detected conflict.
+ *
+ * ConflictInfo carries all data needed to display and resolve a conflict.
+ * Uses backend-neutral "source/target" terminology - these map to the
+ * sourceBackend/targetBackend of the SyncMapping that detected the conflict.
+ *
+ * The iCal data fields are optional for signaling but required for UI display.
+ */
+struct ConflictInfo {
+    // Identity
+    QString conflictId;         ///< Unique ID (set by SyncStore when recorded)
+    QString mappingId;          ///< Sync mapping that detected this conflict
+
+    // Item identification (using neutral source/target terminology)
+    QString sourceId;           ///< Source incidence UID
+    QString targetId;           ///< Target incidence identifier
+    QString calendarId;         ///< Calendar where conflict occurred
+
+    // Backend identification (for UI display of actual backend names)
+    QString sourceBackendId;    ///< Source backend ID (e.g., "org-backend")
+    QString targetBackendId;    ///< Target backend ID (e.g., "local-backend")
+
+    // Human-readable backend names (resolved from config, for UI labels)
+    QString sourceBackendDisplayName;  ///< e.g., "CalDAV Server" or user's custom name
+    QString targetBackendDisplayName;  ///< e.g., "Local Storage" or user's custom name
+
+    // Conflict metadata
+    ConflictType type = ConflictType::BothModified;
+    QString sourceDescription;  ///< Summary for quick display (source version)
+    QString targetDescription;  ///< Summary for quick display (target version)
+    QDateTime sourceModified;   ///< Last modified time of source version
+    QDateTime targetModified;   ///< Last modified time of target version
+    QDateTime detectedAt;
+
+    // Full incidence data for diff display (optional, loaded on demand)
+    QString sourceIcalData;     ///< Full iCal of source version
+    QString targetIcalData;     ///< Full iCal of target version
+    QString baselineIcalData;   ///< Full iCal of baseline (for 3-way diff)
+
+    bool hasFullData() const {
+        return !sourceIcalData.isEmpty() || !targetIcalData.isEmpty();
+    }
+};
+
+/**
+ * @brief Statistics for a sync operation.
+ *
+ * Tracks counts of created, updated, deleted items etc.
+ * Designed to match QPilotSync's SyncStats for future sharing.
+ */
+struct SyncStats {
+    int created = 0;
+    int updated = 0;
+    int deleted = 0;
+    int unchanged = 0;
+    int conflicts = 0;
+    int errors = 0;
+
+    QString summary() const {
+        return QString("+%1 ~%2 -%3 =%4 !%5 E%6")
+            .arg(created).arg(updated).arg(deleted)
+            .arg(unchanged).arg(conflicts).arg(errors);
+    }
+
+    SyncStats& operator+=(const SyncStats &other) {
+        created += other.created;
+        updated += other.updated;
+        deleted += other.deleted;
+        unchanged += other.unchanged;
+        conflicts += other.conflicts;
+        errors += other.errors;
+        return *this;
+    }
+
+    bool hasChanges() const {
+        return created > 0 || updated > 0 || deleted > 0;
+    }
+
+    bool hasErrors() const {
+        return errors > 0;
+    }
+
+    int total() const {
+        return created + updated + deleted + unchanged;
+    }
+};
+
+/**
+ * @brief Result of a sync operation.
+ */
+struct SyncResult {
+    bool success = true;
+    QString errorMessage;
+    QDateTime startTime;
+    QDateTime endTime;
+    SyncStats sourceStats;  ///< Changes made to source side
+    SyncStats targetStats;  ///< Changes made to target side
+    QStringList warnings;
+    QList<ConflictInfo> unresolvedConflicts;
+
+    qint64 durationMs() const {
+        return startTime.msecsTo(endTime);
+    }
+
+    bool hasWarnings() const {
+        return !warnings.isEmpty();
+    }
+
+    bool hasUnresolvedConflicts() const {
+        return !unresolvedConflicts.isEmpty();
+    }
+};
+
+/**
+ * @brief Sync direction/mode for a sync mapping.
+ */
+enum class SyncMode {
+    Disabled,           ///< Sync is disabled for this mapping
+    OneWayUpload,       ///< Source -> Target only
+    OneWayDownload,     ///< Target -> Source only
+    TwoWay              ///< Bidirectional sync
+};
+
+/**
+ * @brief Defines a sync edge between two backend-calendar pairs.
+ *
+ * Part of the sync routing graph defined in .kalb configuration.
+ */
+struct SyncMapping {
+    QString id;                 ///< Unique mapping ID
+    QString sourceBackend;      ///< Backend ID (e.g. "local", "caldav")
+    QString sourceCalendar;     ///< Calendar ID on source backend
+    QString targetBackend;      ///< Backend ID
+    QString targetCalendar;     ///< Calendar ID on target backend
+    SyncMode mode = SyncMode::TwoWay;
+    ConflictResolution conflictPolicy = ConflictResolution::AskUser;
+    bool enabled = true;
+
+    bool isValid() const {
+        return !id.isEmpty() &&
+               !sourceBackend.isEmpty() &&
+               !sourceCalendar.isEmpty() &&
+               !targetBackend.isEmpty() &&
+               !targetCalendar.isEmpty();
+    }
+};
+
+/**
+ * @brief Context passed to sync operations.
+ *
+ * Contains references to mapping stores, baseline stores, and sync policies.
+ * Designed for future integration with qsynccore's SyncContext.
+ */
+struct SyncContext {
+    // Future: IDMappingStore *mappings = nullptr;
+    // Future: BaselineStore *baseline = nullptr;
+    ConflictResolution conflictPolicy = ConflictResolution::AskUser;
+    bool isFirstSync = false;
+    bool cancelled = false;
+
+    // Extensible via QVariantMap for app-specific data
+    QVariantMap extras;
+};
+
+// ============================================================================
+// String conversion helpers for JSON serialization
+// ============================================================================
+
+/**
+ * @brief Convert SyncMode to string for JSON serialization.
+ */
+inline QString syncModeToString(SyncMode mode) {
+    switch (mode) {
+        case SyncMode::Disabled:        return QStringLiteral("disabled");
+        case SyncMode::OneWayUpload:    return QStringLiteral("one-way-upload");
+        case SyncMode::OneWayDownload:  return QStringLiteral("one-way-download");
+        case SyncMode::TwoWay:          return QStringLiteral("two-way");
+    }
+    return QStringLiteral("two-way");
+}
+
+/**
+ * @brief Parse SyncMode from string.
+ */
+inline SyncMode syncModeFromString(const QString &str) {
+    if (str == QLatin1String("disabled"))         return SyncMode::Disabled;
+    if (str == QLatin1String("one-way-upload"))   return SyncMode::OneWayUpload;
+    if (str == QLatin1String("one-way-download")) return SyncMode::OneWayDownload;
+    if (str == QLatin1String("two-way"))          return SyncMode::TwoWay;
+    return SyncMode::TwoWay;  // Default
+}
+
+/**
+ * @brief Convert ConflictResolution to string for JSON serialization.
+ */
+inline QString conflictResolutionToString(ConflictResolution res) {
+    switch (res) {
+        case ConflictResolution::SourceWins:     return QStringLiteral("source-wins");
+        case ConflictResolution::TargetWins:     return QStringLiteral("target-wins");
+        case ConflictResolution::Duplicate:      return QStringLiteral("duplicate");
+        case ConflictResolution::Skip:           return QStringLiteral("skip");
+        case ConflictResolution::AskUser:        return QStringLiteral("ask-user");
+        case ConflictResolution::LastWriteWins:  return QStringLiteral("last-write-wins");
+    }
+    return QStringLiteral("ask-user");
+}
+
+/**
+ * @brief Parse ConflictResolution from string.
+ *
+ * Supports both new terminology (source-wins/target-wins) and legacy
+ * terminology (local-wins/remote-wins) for backward compatibility.
+ */
+inline ConflictResolution conflictResolutionFromString(const QString &str) {
+    // New terminology
+    if (str == QLatin1String("source-wins"))      return ConflictResolution::SourceWins;
+    if (str == QLatin1String("target-wins"))      return ConflictResolution::TargetWins;
+    // Legacy terminology (backward compatibility)
+    if (str == QLatin1String("local-wins"))       return ConflictResolution::SourceWins;
+    if (str == QLatin1String("remote-wins"))      return ConflictResolution::TargetWins;
+    // Other options
+    if (str == QLatin1String("duplicate"))        return ConflictResolution::Duplicate;
+    if (str == QLatin1String("skip"))             return ConflictResolution::Skip;
+    if (str == QLatin1String("ask-user"))         return ConflictResolution::AskUser;
+    if (str == QLatin1String("last-write-wins"))  return ConflictResolution::LastWriteWins;
+    return ConflictResolution::AskUser;  // Default
+}
+
+// ============================================================================
+// SyncMapping JSON serialization
+// ============================================================================
+
+/**
+ * @brief Serialize SyncMapping to JSON object.
+ */
+inline QJsonObject syncMappingToJson(const SyncMapping &mapping) {
+    QJsonObject obj;
+    obj[QStringLiteral("id")] = mapping.id;
+    obj[QStringLiteral("sourceBackend")] = mapping.sourceBackend;
+    obj[QStringLiteral("sourceCalendar")] = mapping.sourceCalendar;
+    obj[QStringLiteral("targetBackend")] = mapping.targetBackend;
+    obj[QStringLiteral("targetCalendar")] = mapping.targetCalendar;
+    obj[QStringLiteral("mode")] = syncModeToString(mapping.mode);
+    obj[QStringLiteral("conflictResolution")] = conflictResolutionToString(mapping.conflictPolicy);
+    obj[QStringLiteral("enabled")] = mapping.enabled;
+    return obj;
+}
+
+/**
+ * @brief Parse SyncMapping from JSON object.
+ */
+inline SyncMapping syncMappingFromJson(const QJsonObject &obj) {
+    SyncMapping mapping;
+    mapping.id = obj.value(QStringLiteral("id")).toString();
+    mapping.sourceBackend = obj.value(QStringLiteral("sourceBackend")).toString();
+    mapping.sourceCalendar = obj.value(QStringLiteral("sourceCalendar")).toString();
+    mapping.targetBackend = obj.value(QStringLiteral("targetBackend")).toString();
+    mapping.targetCalendar = obj.value(QStringLiteral("targetCalendar")).toString();
+    mapping.mode = syncModeFromString(obj.value(QStringLiteral("mode")).toString());
+    mapping.conflictPolicy = conflictResolutionFromString(
+        obj.value(QStringLiteral("conflictResolution")).toString());
+    mapping.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
+    return mapping;
+}
+
+/**
+ * @brief Serialize list of SyncMappings to JSON array.
+ */
+inline QJsonArray syncMappingsToJson(const QList<SyncMapping> &mappings) {
+    QJsonArray arr;
+    for (const auto &mapping : mappings) {
+        arr.append(syncMappingToJson(mapping));
+    }
+    return arr;
+}
+
+/**
+ * @brief Parse list of SyncMappings from JSON array.
+ */
+inline QList<SyncMapping> syncMappingsFromJson(const QJsonArray &arr) {
+    QList<SyncMapping> mappings;
+    for (const auto &val : arr) {
+        if (val.isObject()) {
+            mappings.append(syncMappingFromJson(val.toObject()));
+        }
+    }
+    return mappings;
+}
+
+// Declare metatypes for Qt signal/slot usage
+Q_DECLARE_METATYPE(ConflictResolution)
+Q_DECLARE_METATYPE(ConflictType)
+Q_DECLARE_METATYPE(ConflictInfo)
+Q_DECLARE_METATYPE(SyncStats)
+Q_DECLARE_METATYPE(SyncResult)
+Q_DECLARE_METATYPE(SyncMode)
+Q_DECLARE_METATYPE(SyncMapping)
+
+#endif // SYNCTYPES_H

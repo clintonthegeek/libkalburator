@@ -1,0 +1,154 @@
+#ifndef AKONADIBACKEND_H
+#define AKONADIBACKEND_H
+
+#ifdef HAVE_AKONADI
+
+#include "syncbackend.h"
+#include "syncoperation.h"
+
+#include <Akonadi/Session>
+#include <Akonadi/Monitor>
+#include <Akonadi/Collection>
+#include <Akonadi/Item>
+
+#include <QMap>
+#include <QSet>
+
+class KalbConfigManager;
+class TagSettings;
+
+/**
+ * @brief Akonadi client backend for PlanStan.
+ *
+ * Acts as an Akonadi client, letting PlanStan read/write calendars
+ * managed by Akonadi resources (CalDAV, Google, EWS, etc.).
+ *
+ * Calendar ID scheme: "akonadi-<collectionId>" (e.g., "akonadi-42").
+ * This is stable across sessions since Akonadi::Collection::Id persists.
+ *
+ * Uses Akonadi::Monitor to watch for external changes (e.g., from KOrganizer)
+ * and maps those to SyncBackend signals. Writes use a dedicated Session
+ * that the Monitor ignores to prevent feedback loops.
+ */
+class AkonadiBackend : public SyncBackend
+{
+    Q_OBJECT
+
+public:
+    explicit AkonadiBackend(QObject *parent = nullptr);
+    ~AkonadiBackend() override;
+
+    /**
+     * @brief Factory method for BackendRegistry.
+     *
+     * Config keys: (none required - Akonadi discovers resources automatically)
+     */
+    static SyncBackend* create(const QVariantMap &config, QObject *parent);
+
+    // === Core Backend Identity ===
+    static const QString BackendTypeName;
+    QString backendType() const override;
+
+    // === Calendar Discovery & Loading ===
+    void loadCalendars(const QString &collectionId) override;
+    void loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSignals = false) override;
+
+    // === Incidence CRUD Operations ===
+    void storeCalendars(const QString &collectionId,
+                        const QList<KCalendarCore::MemoryCalendar*> &calendars) override;
+    void storeItems(KCalendarCore::MemoryCalendar *cal,
+                    const QList<KCalendarCore::Incidence::Ptr> &items) override;
+    void updateItem(KCalendarCore::MemoryCalendar *cal,
+                    const KCalendarCore::Incidence::Ptr &item,
+                    const QString &icalData) override;
+    void startSync(const QString &collectionId,
+                   KCalendarCore::MemoryCalendar *calendar,
+                   const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
+                   const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
+                   const QMap<QString, QString> &stagedDeletions) override;
+    void removeItem(const QString &calId, const QString &itemUid) override;
+
+    // === Operation-Based Async API ===
+    FetchOperation*  fetchItems(const QString &calendarId) override;
+    PushOperation*   pushItems(const QString &calendarId,
+                               const QList<KCalendarCore::Incidence::Ptr> &items) override;
+    DeleteOperation* deleteItems(const QString &calendarId,
+                                 const QStringList &uids) override;
+
+    // === Discovery Metadata ===
+    CalendarType discoveredCalendarType(const QString &calendarId) const override;
+    QColor       discoveredColor(const QString &calendarId) const override;
+    QString      discoveredDisplayName(const QString &calendarId) const override;
+    bool         discoveredWritable(const QString &calendarId) const override;
+
+    // === Calendar Property Getters ===
+    QColor  calendarColor(const QString &calendarId) const override;
+    QString calendarDescription(const QString &calendarId) const override;
+
+    // === Calendar CRUD ===
+    bool supportsCalendarCreation() const override;
+    bool createCalendar(const QString &collectionId, const QString &calendarId,
+                        const QString &name,
+                        CalendarType type = CalendarType::Hybrid) override;
+    bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
+
+    // === Capabilities & Metadata ===
+    BackendCapabilities capabilities() const override;
+    QStringList bindingMetadataKeys() const override;
+    void populateBindingMetadata(const DiscoveredCalendar &discovered,
+                                 CalendarBackendBinding &binding) const override;
+    void prepareCreationMetadata(const QString &calendarId,
+                                 CalendarBackendBinding &binding) const override;
+
+    // === Tag Color Sync ===
+    void setConfigManager(KalbConfigManager *mgr);
+    void fetchTagColors(KalbConfigManager *configManager);
+    void pushTagColors(const TagSettings &tagSettings);
+
+Q_SIGNALS:
+    void tagColorsSynced(int importedCount);
+
+private slots:
+    // Monitor callbacks for external changes
+    void onItemAdded(const Akonadi::Item &item, const Akonadi::Collection &col);
+    void onItemChanged(const Akonadi::Item &item, const QSet<QByteArray> &parts);
+    void onItemRemoved(const Akonadi::Item &item);
+    void onCollectionAdded(const Akonadi::Collection &col, const Akonadi::Collection &parent);
+    void onCollectionChanged(const Akonadi::Collection &col, const QSet<QByteArray> &attrs);
+    void onCollectionRemoved(const Akonadi::Collection &col);
+
+private:
+    void setupMonitor();
+
+    /// Convert Akonadi Collection::Id to our calendar ID string
+    QString calendarIdForCollection(Akonadi::Collection::Id id) const;
+
+    /// Convert our calendar ID string to Akonadi Collection::Id
+    Akonadi::Collection::Id collectionIdForCalendar(const QString &calendarId) const;
+
+    /// Look up the cached Akonadi::Item for a given calendar + uid
+    Akonadi::Item findItemByUid(const QString &calendarId, const QString &uid) const;
+
+    /// Extract KCalendarCore::Incidence::Ptr from an Akonadi::Item
+    KCalendarCore::Incidence::Ptr extractIncidence(const Akonadi::Item &item) const;
+
+    /// Check if a collection contains calendar MIME types
+    bool isCalendarCollection(const Akonadi::Collection &col) const;
+
+    /// Determine CalendarType from collection content MIME types
+    CalendarType calendarTypeForCollection(const Akonadi::Collection &col) const;
+
+    Akonadi::Session  *m_session  = nullptr;  // For our writes (ignored by monitor)
+    Akonadi::Monitor  *m_monitor  = nullptr;  // Watches external changes
+    KalbConfigManager *m_configManager = nullptr;  // For tag color import
+
+    // Collection ID <-> calendar ID mapping
+    QMap<Akonadi::Collection::Id, QString> m_collectionToCalId;
+    QMap<QString, Akonadi::Collection>     m_collections;
+
+    // Item tracking: calendarId -> (uid -> Akonadi::Item)
+    QMap<QString, QMap<QString, Akonadi::Item>> m_itemsByCalendar;
+};
+
+#endif // HAVE_AKONADI
+#endif // AKONADIBACKEND_H
