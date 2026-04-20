@@ -67,6 +67,24 @@ Phase 3's scope is therefore: (a) copy source files to
 consumer include paths in PlanStan to the new library's public
 headers. All in one pass.
 
+## Phase 1.4 result
+
+Running `cmake -S libs/sync -B /tmp/sync-standalone` (the Phase 1.4
+standalone-configure test) **succeeds** — the `PROJECT_IS_TOP_LEVEL`
+gating is correct.
+
+Running the subsequent `cmake --build /tmp/sync-standalone` **fails**
+with missing-header errors for `calendartype.h`,
+`backendconfiguration.h`, `logicalcalendar.h`, `synctypes.h` — all of
+which currently live in `libs/core/`. Exactly as anticipated by the
+Phase 1.3 deferral: true standalone build unblocks in Phase 3 when
+those headers move to `libkalburator/src/types/` alongside the rest
+of the library.
+
+Phase 1.4 therefore reports:
+- ✅ configure step works standalone
+- ⚠ build step gated on Phase 3 type relocation (expected)
+
 ## Phase 2 consumer smoke-test scope confirmed
 
 The smoke test writes a minimal stub host implementing
