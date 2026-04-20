@@ -26,10 +26,24 @@ find_package(KF6Holidays REQUIRED)
 # assumes absence and excludes orgbackend.
 set(KALBURATOR_HAVE_ORG_IO OFF CACHE BOOL "Build with PlanStan org-io (for OrgBackend)")
 
+# When consumed in-tree by a host (e.g. PlanStan) that already supplies
+# the underlying type headers (BackendConfiguration, ICalendarCollection,
+# CalendarMetadataManager, ...), set KALBURATOR_PROVIDE_TYPES=OFF and have
+# the host link kalburator PUBLIC against its own type-providing targets.
+# Standalone builds (default) provide these types from src/types/.
+set(KALBURATOR_PROVIDE_TYPES ON CACHE BOOL
+    "Build libkalburator's own copies of underlying types (BackendConfiguration, ICalendarCollection, etc.). \
+Turn OFF when consumed in-tree by a host that provides these types itself.")
+
 file(GLOB KALBURATOR_SYNC_HEADERS CONFIGURE_DEPENDS src/sync/*.h)
 file(GLOB KALBURATOR_SYNC_SOURCES CONFIGURE_DEPENDS src/sync/*.cpp)
-file(GLOB KALBURATOR_TYPE_HEADERS CONFIGURE_DEPENDS src/types/*.h)
-file(GLOB KALBURATOR_TYPE_SOURCES CONFIGURE_DEPENDS src/types/*.cpp)
+if(KALBURATOR_PROVIDE_TYPES)
+    file(GLOB KALBURATOR_TYPE_HEADERS CONFIGURE_DEPENDS src/types/*.h)
+    file(GLOB KALBURATOR_TYPE_SOURCES CONFIGURE_DEPENDS src/types/*.cpp)
+else()
+    set(KALBURATOR_TYPE_HEADERS "")
+    set(KALBURATOR_TYPE_SOURCES "")
+endif()
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgbackend\\.h$")
@@ -55,8 +69,13 @@ add_library(Kalburator::Sync ALIAS kalburator)
 target_include_directories(kalburator
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/types>
 )
+if(KALBURATOR_PROVIDE_TYPES)
+    target_include_directories(kalburator
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/types>
+    )
+endif()
 
 target_link_libraries(kalburator
     PUBLIC
@@ -81,4 +100,5 @@ set_target_properties(kalburator PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 message(STATUS "libkalburator: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "
-        "akonadi=${KALBURATOR_HAVE_AKONADI})")
+        "akonadi=${KALBURATOR_HAVE_AKONADI} "
+        "provide-types=${KALBURATOR_PROVIDE_TYPES})")

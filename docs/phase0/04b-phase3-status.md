@@ -1,8 +1,49 @@
-# Phase 3 status — Phase 3a complete
+# Phase 3 status — Phase 3 complete
 
 **Date:** 2026-04-20.
-**Status:** Phase 3a done — libkalburator builds clean standalone.
-Phase 3b (PlanStan FetchContent cutover) not yet started.
+**Status:** Phase 3 done — libkalburator builds clean standalone,
+and PlanStan now consumes it in-tree via `add_subdirectory` with
+`KALBURATOR_PROVIDE_TYPES=OFF`. Old `libs/sync/` removed from PlanStan.
+
+## Phase 3b resolution (2026-04-20 continuation)
+
+The cutover used `add_subdirectory` rather than FetchContent, mirroring
+the existing Graffodil consumption pattern at
+`add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../Graffodil graffodil
+EXCLUDE_FROM_ALL)`.
+
+Key mechanical steps:
+
+1. Added `KALBURATOR_PROVIDE_TYPES` CMake flag to libkalburator.
+   Default `ON` for standalone (Wild Palms, bare checkout). When `OFF`,
+   `src/types/*` is not globbed into the build and `src/types` is not
+   added to the target's include path — the host must supply those
+   headers and symbols via PUBLIC linkage.
+2. In PlanStan's top-level `CMakeLists.txt`: set
+   `KALBURATOR_PROVIDE_TYPES=OFF`, then `add_subdirectory` libkalburator,
+   then `target_link_libraries(kalburator PUBLIC PlanStan::Core
+   PlanStan::Models PlanStan::Scheduling PlanStan::OrgIO)`.
+3. Added transitional aliases `PlanStan::Sync` and `planstan-sync` for
+   `kalburator` so existing consumer link lines needed no change.
+4. Fixed six stale `${CMAKE_SOURCE_DIR}/libs/sync/include` references in
+   `tests/{sync,backends,integration}/CMakeLists.txt` to point at
+   `${CMAKE_SOURCE_DIR}/../libkalburator/src/sync`.
+5. Deleted `libs/sync/` from PlanStan (~80 files).
+
+Result: PlanStan builds clean, **87 passed / 27 failed** in ctest —
+same 27-failure baseline as before the extraction started (one more
+passing, likely a pre-existing flake settling).
+
+## Follow-up — intention toward "option 2" layering
+
+The present setup uses "option 1" from the cutover design: libkalburator's
+`src/types/` is a toggleable duplicate. PlanStan and libkalburator can
+drift, and if they do, silent ODR hazards appear. The plan of record is
+to eventually move to "option 2": delete PlanStan's copies of the shared
+types and make libkalburator the single source of truth. That requires
+PlanStan to reorganize — libraries currently at or below `libs/models`
+that use `BackendConfiguration`/`LogicalCalendar`/etc. would all link
+libkalburator just to see those types. Deferred to a separate effort.
 
 ## Phase 3a resolution (2026-04-20 continuation)
 
