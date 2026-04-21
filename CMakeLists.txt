@@ -123,3 +123,19 @@ set_target_properties(kalburator PROPERTIES POSITION_INDEPENDENT_CODE ON)
 message(STATUS "libkalburator: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "
         "akonadi=${KALBURATOR_HAVE_AKONADI})")
+
+# -- Library tests ----------------------------------------------------------
+# Gated so that add_subdirectory consumers (PlanStan, WP) don't pick up
+# libkalburator's own test executables. Top-level standalone builds get
+# them on by default.
+if(PROJECT_IS_TOP_LEVEL)
+    option(KALBURATOR_BUILD_TESTS "Build libkalburator's own tests" ON)
+else()
+    option(KALBURATOR_BUILD_TESTS "Build libkalburator's own tests" OFF)
+endif()
+
+if(KALBURATOR_BUILD_TESTS)
+    enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_subdirectory(tests)
+endif()
