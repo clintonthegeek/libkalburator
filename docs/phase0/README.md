@@ -7,8 +7,44 @@ remote; static, single-developer branches.
 
 This document is the **first thing a new agent should read** when
 landing in either `~/dev/libkalburator/` or `~/dev/PlanStan/` with
-work that touches the extraction. It is a living index: update it
-when a phase lands, a decision flips, or a loose end gets tied off.
+work that touches the extraction.
+
+---
+
+## 🛑 READ THIS FIRST — keeping this document current is mandatory
+
+**This file is the single source of truth for extraction status.**
+Every future agent starts here. If it lies about progress, work gets
+redone, skipped, or built on false assumptions.
+
+**You MUST update this file in the same commit that changes phase state.**
+This is not optional and not deferrable to "later". Specifically:
+
+1. **When a phase lands** — flip its row in the Phase map (done /
+   queued / deferred), update the **Current status** section, bump the
+   **Last updated** date at the top, and update **Next:** to point at
+   whatever is now queued.
+2. **When a phase is paused, blocked, or reverted** — say so. A phase
+   row that reads "done" when the work is actually stuck is the most
+   destructive form of drift. Prefer "paused — see `04X-blocker.md`"
+   over silence.
+3. **When a decision flips** — if a design choice recorded here (e.g.
+   "Audit 2 → SQLite merged schema") changes, update the prose AND
+   update or supersede the referenced design doc.
+4. **When a loose end gets tied off** — move items out of
+   **Unfinished / future work** into the Phase map or delete them.
+   A "known debt" entry that was resolved three commits ago is noise.
+5. **When you discover this file is wrong** — fix it before doing
+   anything else. An agent reading stale status will make worse
+   decisions than one reading no status at all.
+
+**If you land a commit that changes phase state without updating this
+file, you have failed the task.** The PlanStan CLAUDE.md rule applies:
+"If you commit code that changes the state of a phased effort, the
+commit must also update whatever doc describes that effort's status."
+For libkalburator extraction work, that doc is this one.
+
+Do not create a parallel status doc elsewhere. Update this one.
 
 ---
 
@@ -290,13 +326,30 @@ PlanStan's `CLAUDE.md` says "use `/project:build` instead of running
 make directly" — that's a project slash command. The equivalent raw
 commands are above. Either works.
 
-### Before landing a phase
+### Before landing a phase (mandatory checklist)
 
-- Update the **Status** line at the top of
-  `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
-- Update the phase map in **this file** (`README.md`).
-- Ensure build + ctest baseline is held.
-- Commit message: follow the phase tag convention (`Phase C.X: …`).
+Every one of these is required. No exceptions. The commit that lands
+the code must also land the doc updates — not the next commit, not a
+follow-up PR, the **same commit**.
+
+- [ ] Update the **Status** line at the top of
+      `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
+- [ ] Update the phase map row in **this file** (`README.md`).
+- [ ] Update the **Current status** section in this file (what's done,
+      what's next, baseline health numbers).
+- [ ] Bump the **Last updated** date at the top of this file.
+- [ ] If the phase was spec'd in a `04X-phase-…-design.md` doc, append
+      a short "Outcome" section to that doc (what actually landed vs
+      what was planned, any deviations).
+- [ ] If the phase resolves an item in **Unfinished / future work**,
+      remove it or move it to the phase map.
+- [ ] Ensure build + ctest baseline is held.
+- [ ] Commit message: follow the phase tag convention (`Phase C.X: …`).
+
+If you find yourself wanting to skip one of these "just this once" —
+don't. The whole point of this file existing is that future agents
+can trust its contents. Every untracked phase landing makes it less
+trustworthy.
 
 ### Tooling survivors from the C.2 attempt
 
