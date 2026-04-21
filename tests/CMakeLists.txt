@@ -3,3 +3,4 @@
 # related test executables (QTEST_MAIN style).
 
 add_subdirectory(blob)
+add_subdirectory(journal)
