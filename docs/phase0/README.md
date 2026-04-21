@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase C.5).
+**Last updated:** 2026-04-21 (after Phase C.6 — `v0.5-phase-c` tagged).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -113,9 +113,18 @@ IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
   `testClearBackendData`, `testEmptyStrings`, `testSpecialCharacters`);
   `test_coexistence_with_syncstore` in `tst_idmappingstore.cpp`
   deleted (hazard it characterized no longer exists).
+- **Phase C.6** — `v0.5-phase-c` tag on libkalburator's `main`.
+  Marks the end of Phase C and the first named release of the
+  library. All Phase-C scope delivered: layered directory structure,
+  full `Kalburator::Sync::*` namespacing, SQLite `IDMappingStore`,
+  single-owner `sync_id_mappings`. Lightweight endpoint — no
+  CMake version bump or install-target yet (those are Phase 4+
+  concerns).
 
-**Next:** Phase C.6 — tag `v0.5-phase-c` once we're satisfied with
-the Phase-C endpoint. All C-series code work is complete.
+**Next:** Phase 4 (deferred) — Wild Palms adoption. WP currently
+carries its own `src/sync/` + `qsynccore/` and needs to migrate onto
+libkalburator. That work is gated on WP's own roadmap (two-mode UX
+design) and is out of scope here. Nothing is actively queued.
 
 **Baseline health:** libkalburator standalone build clean. PlanStan
 builds clean. ctest target-level run: **88 pass / 4 fail / 23
@@ -147,7 +156,7 @@ integration/graffodil builds. No regressions.
 | **Phase C.3** — directory layering | done 2026-04-21 | `05-repo-strategy.md` | 2 commits. |
 | **Phase C.4** — SQLite IDMappingStore | done 2026-04-21 | `04g-phase-c4-design.md` | Merged-schema SQLite per Audit 2 + `recurrenceId`. Shares `.planstan-sync.db` via ALTER TABLE ADD COLUMN. 12 tests. |
 | **Phase C.5** — SyncStore identity-mapping dissolve | done 2026-04-21 | `04c-phase-c-plan.md` §C.5 + `~/dev/PlanStan/docs/superpowers/specs/2026-04-21-c5-syncstore-identity-dissolve-design.md` | Dormant-code cleanup; zero production callers existed. IDMappingStore is sole owner of `sync_id_mappings`. |
-| **Phase C.6** — v0.5 tag | queued | `04c-phase-c-plan.md` §C.6 | After C.4 + C.5 land. |
+| **Phase C.6** — v0.5 tag | done 2026-04-21 | `04c-phase-c-plan.md` §C.6 | `v0.5-phase-c` annotated tag on `main` at the C.5 commit. First named release. |
 | Phase 4 — Wild Palms adoption | deferred | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. Own roadmap in WP. |
 | Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
 
@@ -278,8 +287,8 @@ same with a `TODO(phase-c-cleanup)` marker.
 
 ### Short-term (queued phases)
 
-- **C.6 — Tag `v0.5-phase-c`** once we're satisfied with the Phase-C
-  endpoint. All code work is complete.
+None. Phase C is complete as of `v0.5-phase-c`. The next active phase
+(Phase 4 — Wild Palms adoption) is gated on WP's own roadmap.
 
 ### Medium-term (Phase 4+)
 

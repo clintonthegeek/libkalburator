@@ -111,3 +111,22 @@ tests that had used identity APIs as test fixtures
 `testEmptyStrings`, `testSpecialCharacters`).
 
 **ctest delta:** unchanged. 88 pass / 4 fail / 23 not-run.
+
+## C.6 outcome (2026-04-21)
+
+**`v0.5-phase-c` annotated tag on `main`.** First named release of
+libkalburator. Tag points at the README-update commit that closes
+Phase C, which itself sits on top of the C.5 code commit.
+
+**Scope of v0.5:** layered `src/` directory structure (C.3), full
+`Kalburator::Sync::*` namespacing (C.2b) with a `QSyncCore`
+sub-namespace for the qsynccore files, SQLite `IDMappingStore`
+(C.4) as sole owner of `sync_id_mappings`, and a SyncStore stripped
+of its dormant identity-mapping surface (C.5).
+
+**Not delivered in v0.5:** `KalburatorConfig.cmake` install target,
+public-forge hosting, WP consumption. Those are Phase 4+.
+
+**Single-developer caveat applies.** No upstream remote; tag lives
+only on the local `main`. If libkalburator is later published, the
+tag can be pushed at that point without modification.
