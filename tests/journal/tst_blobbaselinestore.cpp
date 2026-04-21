@@ -13,6 +13,8 @@ private slots:
     void setBaselineAndReadBack();
     void baselineHashMissingReturnsEmpty();
     void setBaselineOverwritesExistingHash();
+    void commitBaselinesBulkInsert();
+    void commitBaselinesIsAtomic();
 
     // (More slots added in subsequent tasks.)
 
@@ -74,6 +76,57 @@ void TestBlobBaselineStore::setBaselineOverwritesExistingHash()
     QCOMPARE(store.baselineHash(QStringLiteral("m"),
                                 QStringLiteral("r")),
              QStringLiteral("v2"));
+}
+
+void TestBlobBaselineStore::commitBaselinesBulkInsert()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BlobBaselineStore store(dbPathIn(dir));
+    QVERIFY(store.isOpen());
+
+    QMap<QString, QString> batch;
+    batch[QStringLiteral("rec-1")] = QStringLiteral("h1");
+    batch[QStringLiteral("rec-2")] = QStringLiteral("h2");
+    batch[QStringLiteral("rec-3")] = QStringLiteral("h3");
+
+    QVERIFY(store.commitBaselines(QStringLiteral("m"), batch));
+
+    QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                QStringLiteral("rec-1")),
+             QStringLiteral("h1"));
+    QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                QStringLiteral("rec-2")),
+             QStringLiteral("h2"));
+    QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                QStringLiteral("rec-3")),
+             QStringLiteral("h3"));
+}
+
+void TestBlobBaselineStore::commitBaselinesIsAtomic()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BlobBaselineStore store(dbPathIn(dir));
+    QVERIFY(store.isOpen());
+
+    // Seed a row.
+    QVERIFY(store.setBaseline(QStringLiteral("m"),
+                              QStringLiteral("existing"),
+                              QStringLiteral("h-orig")));
+
+    // Commit replaces the existing row and adds new ones.
+    QMap<QString, QString> batch;
+    batch[QStringLiteral("existing")] = QStringLiteral("h-new");
+    batch[QStringLiteral("new-rec")]  = QStringLiteral("h-new2");
+    QVERIFY(store.commitBaselines(QStringLiteral("m"), batch));
+
+    QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                QStringLiteral("existing")),
+             QStringLiteral("h-new"));
+    QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                QStringLiteral("new-rec")),
+             QStringLiteral("h-new2"));
 }
 
 QTEST_MAIN(TestBlobBaselineStore)

@@ -146,11 +146,51 @@ QString BlobBaselineStore::baselineHash(const QString &mappingId,
     return q.value(0).toString();
 }
 
-bool BlobBaselineStore::commitBaselines(const QString &,
-                                        const QMap<QString, QString> &)
+bool BlobBaselineStore::commitBaselines(
+    const QString &mappingId,
+    const QMap<QString, QString> &recordIdToHash)
 {
-    setError(QStringLiteral("commitBaselines: not implemented yet"));
-    return false;
+    if (!m_isOpen) {
+        setError(QStringLiteral("commitBaselines: store not open"));
+        return false;
+    }
+    if (recordIdToHash.isEmpty()) {
+        return true;  // Nothing to do; not an error.
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    if (!db.transaction()) {
+        setError(QStringLiteral("commitBaselines: BEGIN failed: %1")
+                     .arg(db.lastError().text()));
+        return false;
+    }
+
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_baselines "
+        "(mapping_id, record_id, content_hash, updated_at) "
+        "VALUES (?, ?, ?, datetime('now'))"));
+
+    for (auto it = recordIdToHash.constBegin();
+         it != recordIdToHash.constEnd(); ++it) {
+        q.addBindValue(mappingId);
+        q.addBindValue(it.key());
+        q.addBindValue(it.value());
+        if (!q.exec()) {
+            setError(QStringLiteral("commitBaselines: insert failed: %1")
+                         .arg(q.lastError().text()));
+            db.rollback();
+            return false;
+        }
+    }
+
+    if (!db.commit()) {
+        setError(QStringLiteral("commitBaselines: COMMIT failed: %1")
+                     .arg(db.lastError().text()));
+        db.rollback();
+        return false;
+    }
+    return true;
 }
 
 QStringList BlobBaselineStore::baselineRecordIds(const QString &) const
