@@ -1,9 +1,16 @@
 #include "blobsyncengine.h"
 
 #include <QHash>
+#include <QSet>
+#include <QMap>
 
 #include "backendrecord.h"
 #include "iblobbackend.h"
+#include "blobbaselinestore.h"
+#include "conflicthandlerregistry.h"
+#include "conflictpolicy.h"
+#include "conflictrecord.h"
+#include "conflictstore.h"
 
 namespace Kalburator::Sync {
 
@@ -162,6 +169,31 @@ BlobSyncResult BlobSyncEngine::twoWayNaive(IBlobBackend *a,
 
     result.success = (result.sourceStats.errors == 0 && result.targetStats.errors == 0);
     Q_EMIT finished(result);
+    return result;
+}
+
+BlobSyncResult BlobSyncEngine::twoWayWithBaseline(
+    IBlobBackend *a,
+    IBlobBackend *b,
+    const QString &collectionId,
+    const QString &mappingId,
+    BlobBaselineStore *baseline,
+    QSyncCore::ConflictHandlerRegistry *handlers,
+    QSyncCore::ConflictStore *conflicts,
+    const QSyncCore::ConflictPolicy &policy)
+{
+    Q_UNUSED(collectionId); Q_UNUSED(mappingId);
+    Q_UNUSED(handlers); Q_UNUSED(conflicts); Q_UNUSED(policy);
+
+    BlobSyncResult result;
+    if (!a || !b || !baseline) {
+        result.success = false;
+        result.errorMessage = QStringLiteral(
+            "twoWayWithBaseline: null backend or baseline store");
+        return result;
+    }
+    result.errorMessage = QStringLiteral("twoWayWithBaseline: not implemented yet");
+    result.success = false;
     return result;
 }
 

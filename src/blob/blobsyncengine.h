@@ -7,6 +7,13 @@
 namespace Kalburator::Sync {
 
 class IBlobBackend;
+class BlobBaselineStore;
+
+namespace QSyncCore {
+    class ConflictHandlerRegistry;
+    class ConflictStore;
+    struct ConflictPolicy;
+}
 
 struct BlobSyncStats {
     int created   = 0;
@@ -14,6 +21,7 @@ struct BlobSyncStats {
     int deleted   = 0;
     int unchanged = 0;
     int errors    = 0;
+    int conflicts = 0;  // Unresolved conflicts (deferred to ConflictStore).
 };
 
 struct BlobSyncResult {
@@ -52,6 +60,21 @@ public:
     BlobSyncResult twoWayNaive(IBlobBackend *a,
                                IBlobBackend *b,
                                const QString &collectionId);
+
+    /// Three-way sync consulting a baseline store. Propagates deletions
+    /// correctly and dispatches conflicts to per-backend handlers looked
+    /// up via the registry. On successful completion, commits new
+    /// baselines reflecting the synced state. See Phase B4 design doc
+    /// `docs/phase0/04j-engine-conflict-wiring-design.md`.
+    BlobSyncResult twoWayWithBaseline(
+        IBlobBackend *a,
+        IBlobBackend *b,
+        const QString &collectionId,
+        const QString &mappingId,
+        BlobBaselineStore *baseline,
+        QSyncCore::ConflictHandlerRegistry *handlers,
+        QSyncCore::ConflictStore *conflicts,
+        const QSyncCore::ConflictPolicy &policy);
 
 Q_SIGNALS:
     void progressChanged(int current, int total, const QString &message);
