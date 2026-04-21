@@ -450,7 +450,7 @@ included** in Phase B2, with a note of who's expected to drive each.
 
 | Deferred piece | Driver / when |
 |---|---|
-| `BlobBaselineStore` (hash baseline per mapping) | Library-side phase, opened when either (a) WP Phase E's Palm ↔ LocalBlob integration test needs a baseline, or (b) the `SyncStore` → `CalendarBaselineStore` + `BlobBaselineStore` split (Audit 1 decision, still pending) lands. |
+| `BlobBaselineStore` (hash baseline per mapping) | **✅ Landed in Phase B3 (`v0.7-phase-b3-baseline`, 2026-04-21)** — see `04i-blob-baseline-store-design.md`. Consumed by Phase B4's `twoWayWithBaseline`. |
 | 3-way-merge blob sync | Same phase as `BlobBaselineStore` — they co-arrive. |
 | `ConflictStore` integration inside `BlobSyncEngine` | Same phase — the engine is the consumer of both baseline and conflict store. |
 | `AutomaticConflictHandler` wired into `BlobSyncEngine` | Same phase — sketch §"Conflict framework" describes. |

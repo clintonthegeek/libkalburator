@@ -111,6 +111,26 @@ internal slots covering:
 - `coexistsWithIDMappingStore` — shared `.planstan-sync.db`.
 - `dataPersistsAcrossReopen` — SQLite file durability + RAII cleanup.
 
-## Outcome
+## Outcome (2026-04-21)
 
-(Filled in during Task 13 after the implementation lands.)
+Landed as planned. Public surface matches §"Surface" verbatim. Schema
+matches §"Schema" verbatim with the `idx_blob_baselines_mapping`
+index added for baselineRecordIds speed.
+
+Ten tests in `tests/journal/tst_blobbaselinestore.cpp` covering
+`opensOnValidPath`, `setBaselineAndReadBack`,
+`baselineHashMissingReturnsEmpty`, `setBaselineOverwritesExistingHash`,
+`commitBaselinesBulkInsert`, `commitBaselinesIsAtomic`,
+`baselineRecordIdsFiltersByMapping`,
+`clearMappingRemovesOnlyThatMapping`, `coexistsWithIDMappingStore`,
+and `dataPersistsAcrossReopen`. All pass.
+
+PlanStan ctest held baseline (6 pre-existing failures: 5 integration_*
+SEGFAULTs documented as env-dependent, plus `sync_error_recovery`
+documented in `README.md` "Known debt"). No new failures introduced
+by this phase; `blob_baselines` table coexists cleanly with
+`sync_id_mappings` (IDMappingStore) and SyncStore's own tables in
+the shared `.planstan-sync.db`.
+
+Landed across 8 commits (design + scaffold + 7 TDD tasks). Not wired
+into `BlobSyncEngine` yet — that's Phase B4 / WP Phase E.2.

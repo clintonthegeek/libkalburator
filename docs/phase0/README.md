@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase B2 — blob layer landed).
+**Last updated:** 2026-04-21 (after Phase B3 — BlobBaselineStore landed).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -130,21 +130,32 @@ IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
   deliberately narrow — baseline store, conflict integration, and
   calendar-layer bridging all explicitly deferred. See
   `04h-blob-layer-design.md` §"Explicitly deferred" for the
-  catalogue. Tag: `v0.6-phase-b2-blob-layer` (pending Task 10).
+  catalogue. Tag: `v0.6-phase-b2-blob-layer`.
+- **Phase B3** — `BlobBaselineStore`. SQLite-backed hash-per-record
+  baseline store at `src/journal/blobbaselinestore.{h,cpp}`
+  (Kalburator::Sync top-level). Mirrors IDMappingStore's pattern:
+  shares `.planstan-sync.db`, idempotent `CREATE TABLE IF NOT EXISTS`
+  for new `blob_baselines` table + index, PRAGMA user_version = 3
+  only on fresh DBs, per-instance connection with RAII cleanup. Ten
+  internal tests in `tests/journal/tst_blobbaselinestore.cpp` covering
+  CRUD, bulk commit atomicity, per-mapping filtering, clearMapping,
+  coexistence with IDMappingStore on shared DB, and cross-reopen
+  persistence. Enables correct 3-way diff for the future
+  `twoWayWithBaseline` engine operation (Phase B4). Tag:
+  `v0.7-phase-b3-baseline`.
 
-**Next:** Wild Palms Phase E — refactor `PalmBackend` onto
-`IBlobBackend`, add `PalmCalendarBackend` adapter, delete WP's
-`src/sync/qsynccore/`. Gated on WP's own roadmap. Nothing actively
-queued in libkalburator itself.
+**Next:** Phase B4 — `BlobSyncEngine::twoWayWithBaseline` + `ConflictStore`
+integration + `BlobSyncEngine::registerConflictHandler`. Consumes B3's
+`BlobBaselineStore`. Will close the remaining B2-deferred items needed
+to unblock Wild Palms Phase E.3+ on the WP side.
 
-**Baseline health:** libkalburator standalone build clean. PlanStan
-builds clean. ctest target-level run: **88 pass / 4 fail / 23
-not-run** (unchanged from post-C.4 baseline; tst_syncstore now 29
-internal tests after 6 identity deletions, tst_idmappingstore now 11
-internal tests after coexistence deletion). Failing targets unchanged
-— `tst_blockstore`, `sync_workflow_conflicts`, `sync_error_recovery`,
-`tst_treeflatteningproxymodel`. Not-run targets are env-dependent
-integration/graffodil builds. No regressions.
+**Baseline health:** libkalburator standalone build clean — 4/4 ctest
+pass (3 blob tests + 1 journal test covering 10 internal slots).
+PlanStan builds clean against B3. PlanStan ctest (2026-04-21 run on
+WP-side machine): 81 pass / 6 actual fail / 18 not-run / 105 total.
+Real failures (5 integration_* SEGFAULTs + sync_error_recovery) are
+all pre-existing — documented in "Known debt" below; none touch
+journal/ code. No new failures introduced by Phase B3.
 
 ---
 
@@ -169,7 +180,9 @@ integration/graffodil builds. No regressions.
 | **Phase C.5** — SyncStore identity-mapping dissolve | done 2026-04-21 | `04c-phase-c-plan.md` §C.5 + `~/dev/PlanStan/docs/superpowers/specs/2026-04-21-c5-syncstore-identity-dissolve-design.md` | Dormant-code cleanup; zero production callers existed. IDMappingStore is sole owner of `sync_id_mappings`. |
 | **Phase C.6** — v0.5 tag | done 2026-04-21 | `04c-phase-c-plan.md` §C.6 | `v0.5-phase-c` annotated tag on `main` at the C.5 commit. First named release. |
 | **Phase B2** — blob layer | done 2026-04-21 | `04h-blob-layer-design.md` + `04h-blob-layer-plan.md` | Net-new lower-layer blob sync substrate: IBlobBackend, BackendRecord, CollectionInfo, BlobSyncEngine (mirror + twoWayNaive), LocalBlobBackend, MockBlobBackend. First library-side tests. Scope narrow by design; sequel phase wires calendar layer to compose the engine. |
-| Phase 4 — Wild Palms adoption | in progress | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. B2 is the first upstream piece. Next up on WP side: PalmBackend refactor onto IBlobBackend (WP Phase E). |
+| **Phase B3** — BlobBaselineStore | done 2026-04-21 | `04i-blob-baseline-store-design.md` | SQLite hash-per-record baseline store keyed by (mapping_id, record_id). Shares `.planstan-sync.db` with IDMappingStore + SyncStore. 10-slot test suite in `tests/journal/`. Tag: `v0.7-phase-b3-baseline`. Enables correct 3-way diff in Phase B4's twoWayWithBaseline. First WP-Phase-E-driven upstream deliverable. |
+| **Phase B4** — BlobSyncEngine ↔ ConflictStore | queued | (design doc pending, planned for WP Phase E.2) | `twoWayWithBaseline` + `registerConflictHandler` + ConflictStore integration inside the engine. Consumes B3's BlobBaselineStore. Unblocks WP Phase E.3+ on the WP side. |
+| Phase 4 — Wild Palms adoption | in progress | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. B2 + B3 are the first upstream pieces. Next up on WP side: full plugin ABI rewrite + PalmBackend refactor, designed in `~/dev/WildPalms/docs/superpowers/specs/2026-04-21-phase-e-plugin-abi-rewrite-design.md`. |
 | Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
 
 ---
