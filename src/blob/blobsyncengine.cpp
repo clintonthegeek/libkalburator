@@ -182,9 +182,6 @@ BlobSyncResult BlobSyncEngine::twoWayWithBaseline(
     QSyncCore::ConflictStore *conflicts,
     const QSyncCore::ConflictPolicy &policy)
 {
-    Q_UNUSED(collectionId); Q_UNUSED(mappingId);
-    Q_UNUSED(handlers); Q_UNUSED(conflicts); Q_UNUSED(policy);
-
     BlobSyncResult result;
     if (!a || !b || !baseline) {
         result.success = false;
@@ -192,8 +189,148 @@ BlobSyncResult BlobSyncEngine::twoWayWithBaseline(
             "twoWayWithBaseline: null backend or baseline store");
         return result;
     }
-    result.errorMessage = QStringLiteral("twoWayWithBaseline: not implemented yet");
-    result.success = false;
+
+    const QHash<QString, BackendRecord> byIdA = indexById(a->loadRecords(collectionId));
+    const QHash<QString, BackendRecord> byIdB = indexById(b->loadRecords(collectionId));
+
+    QHash<QString, QString> baselineHashes;
+    const QStringList baseIds = baseline->baselineRecordIds(mappingId);
+    for (const QString &id : baseIds) {
+        baselineHashes.insert(id, baseline->baselineHash(mappingId, id));
+    }
+
+    QSet<QString> allIds;
+    for (auto it = byIdA.constBegin(); it != byIdA.constEnd(); ++it) allIds.insert(it.key());
+    for (auto it = byIdB.constBegin(); it != byIdB.constEnd(); ++it) allIds.insert(it.key());
+    for (auto it = baselineHashes.constBegin(); it != baselineHashes.constEnd(); ++it) allIds.insert(it.key());
+
+    QMap<QString, QString> finalHashes;
+
+    for (const QString &id : allIds) {
+        const bool hasA = byIdA.contains(id);
+        const bool hasB = byIdB.contains(id);
+        const bool hasBase = baselineHashes.contains(id);
+
+        if (hasA && hasB && hasBase) {
+            const BackendRecord ra = byIdA.value(id);
+            const BackendRecord rb = byIdB.value(id);
+            const QString bHash = baselineHashes.value(id);
+            const bool aChanged = (ra.contentHash != bHash);
+            const bool bChanged = (rb.contentHash != bHash);
+
+            if (!aChanged && !bChanged) {
+                result.sourceStats.unchanged++;
+                result.targetStats.unchanged++;
+                finalHashes.insert(id, ra.contentHash);
+            } else if (aChanged && !bChanged) {
+                if (b->updateRecord(ra)) {
+                    result.targetStats.updated++;
+                    finalHashes.insert(id, ra.contentHash);
+                } else {
+                    result.targetStats.errors++;
+                    finalHashes.insert(id, bHash);
+                }
+            } else if (!aChanged && bChanged) {
+                if (a->updateRecord(rb)) {
+                    result.sourceStats.updated++;
+                    finalHashes.insert(id, rb.contentHash);
+                } else {
+                    result.sourceStats.errors++;
+                    finalHashes.insert(id, bHash);
+                }
+            } else {
+                // Both modified → conflict.
+                QSyncCore::ConflictRecord cr;
+                cr.conflictId = QStringLiteral("%1:%2").arg(mappingId, id);
+                cr.conduitId = mappingId;
+                cr.type = QSyncCore::ConflictType::BothModified;
+                cr.source.id = ra.id;
+                cr.source.description = ra.displayName;
+                cr.source.content = ra.data;
+                cr.source.contentHash = ra.contentHash;
+                cr.source.contentType = ra.type;
+                cr.source.lastModified = ra.lastModified;
+                cr.target.id = rb.id;
+                cr.target.description = rb.displayName;
+                cr.target.content = rb.data;
+                cr.target.contentHash = rb.contentHash;
+                cr.target.contentType = rb.type;
+                cr.target.lastModified = rb.lastModified;
+                cr.detectedAt = QDateTime::currentDateTimeUtc();
+
+                QSyncCore::ConflictHandler *h = handlers
+                    ? handlers->handlerFor(a->backendId())
+                    : nullptr;
+
+                QSyncCore::ConflictDecision decision = QSyncCore::ConflictDecision::Pending;
+                if (h) decision = h->handleConflict(cr, policy);
+
+                if (decision == QSyncCore::ConflictDecision::UseSource) {
+                    if (b->updateRecord(ra)) {
+                        result.targetStats.updated++;
+                        finalHashes.insert(id, ra.contentHash);
+                    } else {
+                        result.targetStats.errors++;
+                        finalHashes.insert(id, bHash);
+                    }
+                } else if (decision == QSyncCore::ConflictDecision::UseTarget) {
+                    if (a->updateRecord(rb)) {
+                        result.sourceStats.updated++;
+                        finalHashes.insert(id, rb.contentHash);
+                    } else {
+                        result.sourceStats.errors++;
+                        finalHashes.insert(id, bHash);
+                    }
+                } else {
+                    if (conflicts) conflicts->addConflict(cr);
+                    result.sourceStats.conflicts++;
+                    finalHashes.insert(id, bHash);
+                }
+            }
+        } else if (!hasA && hasB && hasBase) {
+            // Deleted on A since baseline → delete on B.
+            if (b->deleteRecord(id)) {
+                result.targetStats.deleted++;
+            } else {
+                result.targetStats.errors++;
+                finalHashes.insert(id, baselineHashes.value(id));
+            }
+        } else if (hasA && !hasB && hasBase) {
+            // Deleted on B since baseline → delete on A.
+            if (a->deleteRecord(id)) {
+                result.sourceStats.deleted++;
+            } else {
+                result.sourceStats.errors++;
+                finalHashes.insert(id, baselineHashes.value(id));
+            }
+        } else if (hasA && !hasB && !hasBase) {
+            // New on A → create on B.
+            const BackendRecord ra = byIdA.value(id);
+            if (!b->createRecord(collectionId, ra).isEmpty()) {
+                result.targetStats.created++;
+                finalHashes.insert(id, ra.contentHash);
+            } else {
+                result.targetStats.errors++;
+            }
+        } else if (!hasA && hasB && !hasBase) {
+            // New on B → create on A.
+            const BackendRecord rb = byIdB.value(id);
+            if (!a->createRecord(collectionId, rb).isEmpty()) {
+                result.sourceStats.created++;
+                finalHashes.insert(id, rb.contentHash);
+            } else {
+                result.sourceStats.errors++;
+            }
+        }
+        // Other edge cases (both missing, or impossible combos) fall through.
+    }
+
+    if (!finalHashes.isEmpty()) {
+        baseline->commitBaselines(mappingId, finalHashes);
+    }
+
+    result.success = (result.sourceStats.errors == 0 && result.targetStats.errors == 0);
+    Q_EMIT finished(result);
     return result;
 }
 

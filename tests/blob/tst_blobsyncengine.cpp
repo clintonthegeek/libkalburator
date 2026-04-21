@@ -1,15 +1,51 @@
 #include <QtTest/QtTest>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 
 #include "blobsyncengine.h"
 #include "iblobbackend.h"
 #include "mockblobbackend.h"
+#include "blobbaselinestore.h"
+#include "conflicthandlerregistry.h"
+#include "conflictpolicy.h"
+#include "conflictrecord.h"
+#include "conflictstore.h"
 
 using Kalburator::Sync::BackendRecord;
+using Kalburator::Sync::BlobBaselineStore;
 using Kalburator::Sync::BlobSyncEngine;
 using Kalburator::Sync::BlobSyncResult;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::MockBlobBackend;
+
+// Helper: MockBlobBackend subclass that returns a configurable backend ID,
+// so conflict-handler dispatch tests can route by distinct IDs.
+class IdentifiedMock : public MockBlobBackend {
+public:
+    explicit IdentifiedMock(const QString &id, QObject *p = nullptr)
+        : MockBlobBackend(p), m_id(id) {}
+    QString backendId() const override { return m_id; }
+private:
+    QString m_id;
+};
+
+// Helper: ConflictHandler that records invocations and returns a
+// configurable decision.
+class TestHandler : public Kalburator::Sync::QSyncCore::ConflictHandler
+{
+public:
+    int invocations = 0;
+    Kalburator::Sync::QSyncCore::ConflictDecision decision =
+        Kalburator::Sync::QSyncCore::ConflictDecision::UseSource;
+
+    Kalburator::Sync::QSyncCore::ConflictDecision handleConflict(
+        Kalburator::Sync::QSyncCore::ConflictRecord &,
+        const Kalburator::Sync::QSyncCore::ConflictPolicy &) override
+    {
+        invocations++;
+        return decision;
+    }
+};
 
 namespace {
 
@@ -56,6 +92,15 @@ private slots:
     void twoWayNaiveNewerSideWins();
     void twoWayNaiveDoesNotPropagateDeletions();
     void progressSignalFiresDuringMirror();
+    void twoWayWithBaseline_noChanges();
+    void twoWayWithBaseline_modifiedOnAOnly();
+    void twoWayWithBaseline_modifiedOnBOnly();
+    void twoWayWithBaseline_deletedOnA();
+    void twoWayWithBaseline_deletedOnB();
+    void twoWayWithBaseline_newOnA();
+    void twoWayWithBaseline_newOnB();
+    void twoWayWithBaseline_conflictInvokesHandler();
+    void twoWayWithBaseline_conflictSkipPersists();
 };
 
 void TestBlobSyncEngine::mirrorCopiesSourceToEmptyTarget()
@@ -208,6 +253,314 @@ void TestBlobSyncEngine::progressSignalFiresDuringMirror()
     QSignalSpy spy(&eng, &BlobSyncEngine::progressChanged);
     eng.mirror(&src, &tgt, QStringLiteral("memos"));
     QVERIFY(spy.size() >= 1);
+}
+
+// ---- twoWayWithBaseline tests ----
+
+namespace {
+
+QString dbIn(const QTemporaryDir &d)
+{
+    return d.filePath(QStringLiteral(".planstan-sync.db"));
+}
+
+BackendRecord hashedRecord(const QString &id, const QString &data,
+                           const QString &hash)
+{
+    BackendRecord r = makeRecord(id, data);
+    r.contentHash = hash;
+    return r;
+}
+
+} // namespace
+
+void TestBlobSyncEngine::twoWayWithBaseline_noChanges()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    BackendRecord rec = hashedRecord(QStringLiteral("r1"),
+                                     QStringLiteral("payload"),
+                                     QStringLiteral("h1"));
+    a.createRecord(QStringLiteral("col"), rec);
+    b.createRecord(QStringLiteral("col"), rec);
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h1")));
+
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(r.sourceStats.unchanged + r.targetStats.unchanged, 2);
+    QCOMPARE(r.sourceStats.conflicts + r.targetStats.conflicts, 0);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_modifiedOnAOnly()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2"),
+                                QStringLiteral("h-v2")));
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    auto bRecs = b.loadRecords(QStringLiteral("col"));
+    QCOMPARE(bRecs.size(), 1);
+    QCOMPARE(bRecs.first().contentHash, QStringLiteral("h-v2"));
+    QCOMPARE(r.targetStats.updated, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_modifiedOnBOnly()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2"),
+                                QStringLiteral("h-v2")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    auto aRecs = a.loadRecords(QStringLiteral("col"));
+    QCOMPARE(aRecs.size(), 1);
+    QCOMPARE(aRecs.first().contentHash, QStringLiteral("h-v2"));
+    QCOMPARE(r.sourceStats.updated, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_deletedOnA()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(b.loadRecords(QStringLiteral("col")).size(), 0);
+    QCOMPARE(r.targetStats.deleted, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_deletedOnB()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(a.loadRecords(QStringLiteral("col")).size(), 0);
+    QCOMPARE(r.sourceStats.deleted, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_newOnA()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+
+    BlobBaselineStore base(dbIn(dir));
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(b.loadRecords(QStringLiteral("col")).size(), 1);
+    QCOMPARE(r.targetStats.created, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_newOnB()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v1"),
+                                QStringLiteral("h-v1")));
+
+    BlobBaselineStore base(dbIn(dir));
+    ConflictHandlerRegistry reg;
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(a.loadRecords(QStringLiteral("col")).size(), 1);
+    QCOMPARE(r.sourceStats.created, 1);
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_conflictInvokesHandler()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2a"),
+                                QStringLiteral("h-v2a")));
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2b"),
+                                QStringLiteral("h-v2b")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    TestHandler handler;
+    handler.decision = ConflictDecision::UseSource;
+    reg.registerHandler(QStringLiteral("a"), &handler);
+
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(handler.invocations, 1);
+    auto bRecs = b.loadRecords(QStringLiteral("col"));
+    QCOMPARE(bRecs.size(), 1);
+    QCOMPARE(bRecs.first().contentHash, QStringLiteral("h-v2a"));
+}
+
+void TestBlobSyncEngine::twoWayWithBaseline_conflictSkipPersists()
+{
+    using namespace Kalburator::Sync::QSyncCore;
+    QTemporaryDir dir; QVERIFY(dir.isValid());
+    IdentifiedMock a(QStringLiteral("a")), b(QStringLiteral("b"));
+    seed(a, QStringLiteral("col")); seed(b, QStringLiteral("col"));
+
+    a.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2a"),
+                                QStringLiteral("h-v2a")));
+    b.createRecord(QStringLiteral("col"),
+                   hashedRecord(QStringLiteral("r1"), QStringLiteral("v2b"),
+                                QStringLiteral("h-v2b")));
+
+    BlobBaselineStore base(dbIn(dir));
+    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
+                             QStringLiteral("h-v1")));
+
+    ConflictHandlerRegistry reg;
+    TestHandler handler;
+    handler.decision = ConflictDecision::Skip;
+    reg.registerHandler(QStringLiteral("a"), &handler);
+
+    ConflictStore store;
+    ConflictPolicy policy;
+
+    BlobSyncEngine eng;
+    BlobSyncResult r = eng.twoWayWithBaseline(
+        &a, &b, QStringLiteral("col"), QStringLiteral("m"),
+        &base, &reg, &store, policy);
+
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(handler.invocations, 1);
+    QCOMPARE(r.sourceStats.conflicts, 1);
+    QCOMPARE(store.pendingConflicts().size(), 1);
+
+    QCOMPARE(a.loadRecords(QStringLiteral("col")).first().contentHash,
+             QStringLiteral("h-v2a"));
+    QCOMPARE(b.loadRecords(QStringLiteral("col")).first().contentHash,
+             QStringLiteral("h-v2b"));
 }
 
 QTEST_MAIN(TestBlobSyncEngine)
