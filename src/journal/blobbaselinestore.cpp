@@ -218,10 +218,25 @@ QStringList BlobBaselineStore::baselineRecordIds(
     return out;
 }
 
-bool BlobBaselineStore::clearMapping(const QString &)
+bool BlobBaselineStore::clearMapping(const QString &mappingId)
 {
-    setError(QStringLiteral("clearMapping: not implemented yet"));
-    return false;
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearMapping: store not open"));
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "DELETE FROM blob_baselines WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("clearMapping: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
 }
 
 } // namespace Kalburator::Sync

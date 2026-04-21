@@ -16,6 +16,7 @@ private slots:
     void commitBaselinesBulkInsert();
     void commitBaselinesIsAtomic();
     void baselineRecordIdsFiltersByMapping();
+    void clearMappingRemovesOnlyThatMapping();
 
     // (More slots added in subsequent tasks.)
 
@@ -154,6 +155,25 @@ void TestBlobBaselineStore::baselineRecordIdsFiltersByMapping()
 
     QCOMPARE(store.baselineRecordIds(QStringLiteral("m-nothing")),
              QStringList());
+}
+
+void TestBlobBaselineStore::clearMappingRemovesOnlyThatMapping()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BlobBaselineStore store(dbPathIn(dir));
+    QVERIFY(store.isOpen());
+
+    QVERIFY(store.setBaseline(QStringLiteral("m-a"),
+                              QStringLiteral("r1"), QStringLiteral("h")));
+    QVERIFY(store.setBaseline(QStringLiteral("m-b"),
+                              QStringLiteral("r2"), QStringLiteral("h")));
+
+    QVERIFY(store.clearMapping(QStringLiteral("m-a")));
+
+    QVERIFY(store.baselineRecordIds(QStringLiteral("m-a")).isEmpty());
+    QCOMPARE(store.baselineRecordIds(QStringLiteral("m-b")),
+             QStringList() << QStringLiteral("r2"));
 }
 
 QTEST_MAIN(TestBlobBaselineStore)
