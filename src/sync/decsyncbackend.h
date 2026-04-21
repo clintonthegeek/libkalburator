@@ -10,6 +10,8 @@
 #include "syncbackend.h"
 #include "syncoperation.h"
 
+namespace Kalburator::Sync {
+
 struct BackendCapabilities;
 class DecSyncDir;
 class DecSyncCollection;
@@ -160,5 +162,7 @@ private:
     DecSyncActiveController* ensureController(const QString &calendarId) const;
     SyncthingMonitor *m_syncthingMonitor = nullptr;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DECSYNCBACKEND_H

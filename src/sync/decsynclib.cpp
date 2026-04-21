@@ -10,6 +10,8 @@
 #include <QDebug>
 #include <QSaveFile>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // DecSyncEntry
 // ============================================================================
@@ -753,3 +755,6 @@ DecSyncCollection* DecSyncDir::openCollection(const QString &syncType,
                             + QStringLiteral("/") + collection;
     return new DecSyncCollection(collectionDir, appId);
 }
+
+
+} // namespace Kalburator::Sync

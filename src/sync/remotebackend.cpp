@@ -33,6 +33,9 @@
 #include <KIO/Job>
 #include <KIO/TransferJob>
 #include <KIO/DeleteJob>
+#include <KDAV/DavItemFetchJob>
+
+namespace Kalburator::Sync {
 
 static int getHttpStatusCode(KJob *job)
 {
@@ -809,8 +812,6 @@ void RemoteBackend::removeItem(const QString &calId, const QString &itemUid)
 }
 
 
-#include "remotebackend.h"
-#include <KDAV/DavItemFetchJob>
 // ... other includes if needed...
 
 KDAV::DavUrl RemoteBackend::configuredDavUrl(const QString &rawUrl)
@@ -2320,3 +2321,6 @@ bool RemoteBackend::setRawIcs(const QString &calendarId, const QString &uid,
 
     return success;
 }
+
+
+} // namespace Kalburator::Sync

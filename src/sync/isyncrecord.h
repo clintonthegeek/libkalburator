@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <QByteArray>
 
+namespace Kalburator::Sync {
+
 /**
  * @file isyncrecord.h
  * @brief Abstract interface for records that can be synchronized.
@@ -56,5 +58,7 @@ public:
      */
     virtual QByteArray serialize() const = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ISYNCRECORD_H

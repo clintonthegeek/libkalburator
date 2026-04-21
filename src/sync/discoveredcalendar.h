@@ -7,6 +7,8 @@
 #include <QColor>
 #include <QMetaType>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Information about a discovered calendar from any backend.
  *
@@ -61,6 +63,8 @@ struct DiscoveredCalendar {
     }
 };
 
-Q_DECLARE_METATYPE(DiscoveredCalendar)
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::DiscoveredCalendar)
 
 #endif // DISCOVEREDCALENDAR_H

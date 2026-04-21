@@ -9,6 +9,8 @@
 #include <QJsonObject>
 #include <QColor>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Per-calendar discovered capability information.
  *
@@ -111,5 +113,7 @@ struct BackendConfiguration
     QString password() const { return connectionParams.value(QStringLiteral("password")).toString(); }
     QString rootPath() const { return connectionParams.value(QStringLiteral("rootPath")).toString(); }
 };
+
+} // namespace Kalburator::Sync
 
 #endif // BACKENDCONFIGURATION_H

@@ -6,6 +6,8 @@
 #include <KCalendarCore/RecurrenceRule>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // RecurrenceCapabilities implementation
 // ============================================================================
@@ -380,3 +382,6 @@ void SyncBackend::unregisterOperation(SyncOperation *op)
     }
     // Debug log removed - too verbose for normal operation
 }
+
+
+} // namespace Kalburator::Sync

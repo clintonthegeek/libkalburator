@@ -7,6 +7,8 @@
 #include "decsynclib.h"
 #include "decsynccontrollerstore.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Garbage collector for DecSync entry files.
  *
@@ -131,5 +133,7 @@ private:
     QString                 m_ownAppId;
     QString                 m_collectionId;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DECSYNCGARBAGECOLLECTOR_H

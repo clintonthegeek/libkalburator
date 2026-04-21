@@ -6,6 +6,8 @@
 #include <QHash>
 #include <QList>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Central registry for managing incidence edit locks.
  *
@@ -170,5 +172,7 @@ private:
      */
     void cleanupInvalidLocks();
 };
+
+} // namespace Kalburator::Sync
 
 #endif // INCIDENCELOCK_REGISTRY_H

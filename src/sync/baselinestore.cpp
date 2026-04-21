@@ -1,6 +1,6 @@
 #include "baselinestore.h"
 
-namespace Kalburator::Sync {
+namespace Kalburator::Sync::QSyncCore {
 
 BaselineStore::BaselineStore(QObject *parent)
     : QObject(parent)
@@ -75,4 +75,4 @@ void BaselineStore::clear()
     emit baselineChanged();
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Sync::QSyncCore

@@ -9,6 +9,8 @@
 
 #include "datadomain.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Abstract interface for incidence registration into the global model.
  *
@@ -47,5 +49,7 @@ public:
     /** Clear all incidences */
     virtual void clear() = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // IINCIDENCEREGISTRY_H

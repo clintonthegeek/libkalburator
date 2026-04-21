@@ -11,6 +11,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+namespace Kalburator::Sync {
+
 static QString syncRecordKey(const SyncRecord &rec)
 {
     if (rec.recurrenceId.isValid())
@@ -718,3 +720,6 @@ CalendarPropertyRecord CalendarPropertyRecord::fromJson(const QString &json,
 
     return record;
 }
+
+
+} // namespace Kalburator::Sync

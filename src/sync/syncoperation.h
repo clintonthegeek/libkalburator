@@ -6,6 +6,8 @@
 #include <QList>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Base class for trackable async sync operations.
  *
@@ -267,5 +269,7 @@ private:
     QStringList m_succeededUids;
     QStringList m_failedUids;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCOPERATION_H

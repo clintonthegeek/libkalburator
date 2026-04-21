@@ -9,6 +9,8 @@
 #include <QFileInfo>
 #include <QDir>
 
+namespace Kalburator::Sync {
+
 // ---------------------------------------------------------------------------
 // Construction / destruction
 // ---------------------------------------------------------------------------
@@ -415,3 +417,6 @@ QList<DeletionRecord> DecSyncControllerStore::activeDeletions(const QString &col
     }
     return result;
 }
+
+
+} // namespace Kalburator::Sync

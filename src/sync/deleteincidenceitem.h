@@ -4,6 +4,8 @@
 #include "synctransactionitem.h"
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 class SyncBackend;
 class FetchOperation;
 
@@ -55,5 +57,7 @@ private:
     KCalendarCore::Incidence::Ptr m_deletedIncidence;
     FetchOperation *m_fetchOp = nullptr;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DELETEINCIDENCEITEM_H

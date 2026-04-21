@@ -7,6 +7,8 @@
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // AsyncFileWriterWorker Implementation
 // ============================================================================
@@ -272,3 +274,6 @@ int AsyncFileWriter::pendingCount() const
 {
     return m_worker ? m_worker->pendingCount() : 0;
 }
+
+
+} // namespace Kalburator::Sync

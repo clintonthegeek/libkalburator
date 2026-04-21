@@ -4,6 +4,8 @@
 #include "syncbackend.h"
 #include "orgfilemanager.h"
 
+namespace Kalburator::Sync {
+
 struct BackendCapabilities;
 
 class OrgBackend : public SyncBackend
@@ -77,5 +79,7 @@ private:
     // Collect sibling orders from m_planningData for saveOrgFile()
     QMap<QString, int> collectSiblingOrders() const;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ORGBACKEND_H

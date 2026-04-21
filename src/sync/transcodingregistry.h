@@ -11,6 +11,8 @@
 
 #include "propertytranscoder.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Central registry for property transcoders.
  *
@@ -125,5 +127,7 @@ private:
     /// All registered transcoders
     std::vector<std::unique_ptr<PropertyTranscoder>> m_transcoders;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // TRANSCODINGREGISTRY_H

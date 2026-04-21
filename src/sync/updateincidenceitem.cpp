@@ -7,6 +7,8 @@
 #include <QEventLoop>
 #include <QTimer>
 
+namespace Kalburator::Sync {
+
 UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr oldIncidence,
                                           KCalendarCore::Incidence::Ptr newIncidence,
@@ -241,3 +243,6 @@ QJsonObject UpdateIncidenceItem::toJson() const
 
     return obj;
 }
+
+
+} // namespace Kalburator::Sync

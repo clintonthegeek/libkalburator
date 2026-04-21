@@ -10,6 +10,8 @@
 #include <QSaveFile>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // Construction
 // ============================================================================
@@ -332,3 +334,6 @@ bool DecSyncGarbageCollector::compactHashFile(const QString &appDir,
 
     return true;
 }
+
+
+} // namespace Kalburator::Sync

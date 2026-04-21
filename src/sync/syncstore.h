@@ -10,6 +10,8 @@
 #include <QList>
 #include <QMap>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief SQLite-backed storage for sync metadata.
  *
@@ -386,5 +388,7 @@ private:
     // Use a unique connection name to support multiple SyncStore instances
     static int s_connectionCounter;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCSTORE_H

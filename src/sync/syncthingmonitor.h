@@ -11,6 +11,9 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 
+namespace Kalburator::Sync {
+
+
 /**
  * @brief Monitors a Syncthing instance for file sync events via REST API.
  *
@@ -147,5 +150,7 @@ private:
     int m_retryDelayMs = 1000;
     static constexpr int MAX_RETRY_DELAY_MS = 60000;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCTHINGMONITOR_H

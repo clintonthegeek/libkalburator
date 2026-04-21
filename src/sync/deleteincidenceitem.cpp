@@ -6,6 +6,8 @@
 #include <QEventLoop>
 #include <QTimer>
 
+namespace Kalburator::Sync {
+
 DeleteIncidenceItem::DeleteIncidenceItem(const QString &calendarId,
                                           const QString &uid,
                                           KCalendarCore::Incidence::Ptr deletedIncidence,
@@ -195,3 +197,6 @@ QJsonObject DeleteIncidenceItem::toJson() const
 
     return obj;
 }
+
+
+} // namespace Kalburator::Sync

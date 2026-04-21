@@ -12,6 +12,8 @@
 #include <QTimer>
 #include <QHostInfo>
 
+namespace Kalburator::Sync {
+
 const QString DecSyncBackend::BackendTypeName = QStringLiteral("decsync");
 
 QString DecSyncBackend::backendType() const { return BackendTypeName; }
@@ -1382,3 +1384,6 @@ QList<KCalendarCore::Incidence::Ptr> DecSyncBackend::deserializeIcal(const QStri
 
     return tempCal->incidences();
 }
+
+
+} // namespace Kalburator::Sync

@@ -5,6 +5,8 @@
 #include <QColor>
 #include <QDir>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Manages VDirSyncer-compatible calendar metadata files.
  *
@@ -66,5 +68,7 @@ private:
     bool removeFile(const QString &filePath);
     QString readFile(const QString &filePath) const;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // CALENDARMETADATAMANAGER_H

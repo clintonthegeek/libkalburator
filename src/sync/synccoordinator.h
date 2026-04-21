@@ -10,6 +10,8 @@
 #include <QPointer>
 #include <QThread>
 
+namespace Kalburator::Sync {
+
 class BackendRegistry;
 class ISyncHost;
 class ICalendarCollection;
@@ -110,11 +112,11 @@ public:
      * The registry is owned by the coordinator and lives for its
      * lifetime. Register handlers before starting sync operations.
      */
-    Kalburator::Sync::ConflictHandlerRegistry *conflictRegistry()
+    Kalburator::Sync::QSyncCore::ConflictHandlerRegistry *conflictRegistry()
     {
         return &m_conflictRegistry;
     }
-    const Kalburator::Sync::ConflictHandlerRegistry *conflictRegistry() const
+    const Kalburator::Sync::QSyncCore::ConflictHandlerRegistry *conflictRegistry() const
     {
         return &m_conflictRegistry;
     }
@@ -320,7 +322,7 @@ private:
     ISyncHost *m_controller;
     SyncStore *m_syncStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
-    Kalburator::Sync::ConflictHandlerRegistry m_conflictRegistry;
+    Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 
@@ -346,5 +348,7 @@ private:
     void setupWorkerConnections();
     void startWorkerThread();
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCCOORDINATOR_H

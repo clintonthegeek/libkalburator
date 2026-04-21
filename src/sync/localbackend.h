@@ -8,6 +8,8 @@
 #include "syncbackend.h"
 #include "syncoperation.h"
 
+namespace Kalburator::Sync {
+
 struct BackendCapabilities;
 class AsyncFileWriter;
 
@@ -119,5 +121,7 @@ private:
     // Helper for async write setup
     void ensureAsyncWriterReady();
 };
+
+} // namespace Kalburator::Sync
 
 #endif // LOCALBACKEND_H

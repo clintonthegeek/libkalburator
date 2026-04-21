@@ -1,6 +1,8 @@
 #ifndef ICONFLICTPRESENTER_H
 #define ICONFLICTPRESENTER_H
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Interface for presenting conflicts to the user.
  *
@@ -18,5 +20,7 @@ public:
 
     virtual void refreshConflicts() = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ICONFLICTPRESENTER_H

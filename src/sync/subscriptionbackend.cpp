@@ -5,6 +5,8 @@
 #include <QDebug>
 #include <QTimer>
 
+namespace Kalburator::Sync {
+
 const QString SubscriptionBackend::BackendTypeName = QStringLiteral("subscription");
 
 QString SubscriptionBackend::backendType() const { return BackendTypeName; }
@@ -283,3 +285,6 @@ QString SubscriptionBackend::sourceDisplayName(const QString &sourceId) const
     }
     return sourceId;
 }
+
+
+} // namespace Kalburator::Sync

@@ -6,6 +6,8 @@
 #include <QString>
 #include <KCalendarCore/MemoryCalendar>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Host contract for the sync engine's view of a calendar collection.
  *
@@ -50,5 +52,7 @@ public:
     /// calendar is not present.
     virtual void setCalendarVisible(const QString &calendarId, bool visible) = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ICALENDARCOLLECTION_H

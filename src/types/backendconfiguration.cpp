@@ -4,6 +4,8 @@
 #include <QColor>
 #include <QObject>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // PerCalendarCapabilities implementation
 // ============================================================================
@@ -220,3 +222,6 @@ QJsonObject BackendConfiguration::toJson() const
 
     return json;
 }
+
+
+} // namespace Kalburator::Sync

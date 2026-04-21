@@ -1,5 +1,7 @@
 #include "propertytranscoder.h"
 
+namespace Kalburator::Sync {
+
 bool PropertyTranscoder::appliesTo(const QString &source, const QString &target) const
 {
     bool sourceMatches = (sourceBackendType() == QLatin1String("*") ||
@@ -8,3 +10,6 @@ bool PropertyTranscoder::appliesTo(const QString &source, const QString &target)
                           targetBackendType() == target);
     return sourceMatches && targetMatches;
 }
+
+
+} // namespace Kalburator::Sync

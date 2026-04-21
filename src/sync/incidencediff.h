@@ -7,6 +7,8 @@
 #include <QDateTime>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 /**
  * Represents the comparison state of a single property across versions.
  *
@@ -283,5 +285,7 @@ private:
     // Format priority values
     static QString formatPriority(const QString &value);
 };
+
+} // namespace Kalburator::Sync
 
 #endif // INCIDENCEDIFF_H

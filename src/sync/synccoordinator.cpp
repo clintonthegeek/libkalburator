@@ -20,6 +20,8 @@
 #include <QSet>
 #include <QCoreApplication>
 
+namespace Kalburator::Sync {
+
 SyncCoordinator::SyncCoordinator(BackendRegistry *registry,
                                    ISyncHost *host,
                                    QObject *parent)
@@ -694,3 +696,6 @@ void SyncCoordinator::onWorkerTranscodingWarning(const QString &calendarId,
     // Forward the transcoding warning signal
     emit transcodingWarning(calendarId, uid, warnings);
 }
+
+
+} // namespace Kalburator::Sync

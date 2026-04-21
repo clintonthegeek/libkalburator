@@ -6,6 +6,8 @@
 #include <QEventLoop>
 #include <QTimer>
 
+namespace Kalburator::Sync {
+
 CreateIncidenceItem::CreateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr incidence,
                                           SyncBackend *backend,
@@ -182,3 +184,6 @@ QJsonObject CreateIncidenceItem::toJson() const
 
     return obj;
 }
+
+
+} // namespace Kalburator::Sync

@@ -1,6 +1,8 @@
 #include "backendregistry.h"
 #include "syncbackend.h"
 
+namespace Kalburator::Sync {
+
 BackendRegistry::BackendRegistry(QObject *parent)
     : QObject(parent)
 {
@@ -85,3 +87,6 @@ QList<BackendRegistry::BackendTypeInfo> BackendRegistry::availableBackendTypes()
     }
     return types;
 }
+
+
+} // namespace Kalburator::Sync

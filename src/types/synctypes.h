@@ -8,6 +8,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
+namespace Kalburator::Sync {
+
 /**
  * @file synctypes.h
  * @brief Common sync types designed for future extraction to qsynccore shared library.
@@ -346,12 +348,15 @@ inline QList<SyncMapping> syncMappingsFromJson(const QJsonArray &arr) {
 }
 
 // Declare metatypes for Qt signal/slot usage
-Q_DECLARE_METATYPE(ConflictResolution)
-Q_DECLARE_METATYPE(ConflictType)
-Q_DECLARE_METATYPE(ConflictInfo)
-Q_DECLARE_METATYPE(SyncStats)
-Q_DECLARE_METATYPE(SyncResult)
-Q_DECLARE_METATYPE(SyncMode)
-Q_DECLARE_METATYPE(SyncMapping)
+
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::ConflictResolution)
+Q_DECLARE_METATYPE(Kalburator::Sync::ConflictType)
+Q_DECLARE_METATYPE(Kalburator::Sync::ConflictInfo)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncStats)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncResult)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncMode)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncMapping)
 
 #endif // SYNCTYPES_H

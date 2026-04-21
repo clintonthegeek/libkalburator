@@ -3,6 +3,8 @@
 
 #include <QMetaType>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Types of calendars a backend can support.
  *
@@ -18,6 +20,8 @@ enum class CalendarType : int {
     Hybrid = 2  ///< Mixed VEVENT/VTODO in same calendar
 };
 
-Q_DECLARE_METATYPE(CalendarType)
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::CalendarType)
 
 #endif // CALENDARTYPE_H

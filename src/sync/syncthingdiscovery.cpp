@@ -6,6 +6,8 @@
 #include <QXmlStreamReader>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 SyncthingDiscovery::Config SyncthingDiscovery::discoverConfig()
 {
     return discoverFromPaths(standardConfigPaths());
@@ -111,3 +113,6 @@ QStringList SyncthingDiscovery::standardConfigPaths()
 
     return paths;
 }
+
+
+} // namespace Kalburator::Sync

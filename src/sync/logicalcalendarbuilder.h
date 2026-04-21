@@ -8,6 +8,8 @@
 #include <QMap>
 #include <QStringList>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Utility class for building LogicalCalendars from discovered calendars.
  *
@@ -183,5 +185,7 @@ private:
     QStringList m_syncBackendOrder;
     QStringList m_warnings;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // LOGICALCALENDARBUILDER_H

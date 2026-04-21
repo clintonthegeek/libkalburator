@@ -5,6 +5,8 @@
 #include <QString>
 #include <QVariantMap>
 
+namespace Kalburator::Sync {
+
 struct LogicalCalendar;
 struct SyncMapping;
 
@@ -46,5 +48,7 @@ public:
     // Persistence hook — host decides where/how to flush
     virtual void save() = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ISYNCCONFIGSTORE_H

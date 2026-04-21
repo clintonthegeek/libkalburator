@@ -3,7 +3,7 @@
 #include <QUuid>
 #include <QJsonArray>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Sync::QSyncCore {
 
 // ========== RecordSnapshot ==========
 
@@ -204,4 +204,4 @@ ConflictDecision conflictDecisionFromString(const QString &str)
     return ConflictDecision::Pending;
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Sync::QSyncCore

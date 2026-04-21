@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Reference to an incidence within a specific calendar.
  *
@@ -45,7 +47,9 @@ struct IncidenceRef
     }
 };
 
-Q_DECLARE_METATYPE(IncidenceRef)
-Q_DECLARE_METATYPE(QList<IncidenceRef>)
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::IncidenceRef)
+Q_DECLARE_METATYPE(Kalburator::Sync::QList<Kalburator::Sync::IncidenceRef>)
 
 #endif // INCIDENCEREF_H

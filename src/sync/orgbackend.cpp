@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 const QString OrgBackend::BackendTypeName = QStringLiteral("orgmode");
 
 QString OrgBackend::backendType() const { return BackendTypeName; }
@@ -733,3 +735,6 @@ QString OrgBackend::sourceFilePath(const QString &calendarId) const
 {
     return m_fileManager->filePathForCalendar(calendarId);
 }
+
+
+} // namespace Kalburator::Sync

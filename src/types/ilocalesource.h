@@ -5,6 +5,8 @@
 #include <QString>
 #include <QTimeZone>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Interface for locale, timezone, and time format settings.
  *
@@ -36,5 +38,7 @@ public:
 private:
     static ILocaleSource* s_global;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ILOCALESOURCE_H

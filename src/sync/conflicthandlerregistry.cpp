@@ -1,6 +1,6 @@
 #include "conflicthandlerregistry.h"
 
-namespace Kalburator::Sync {
+namespace Kalburator::Sync::QSyncCore {
 
 void ConflictHandlerRegistry::registerHandler(const QString &backendId,
                                               ConflictHandler *handler)
@@ -36,4 +36,4 @@ bool ConflictHandlerRegistry::hasHandler(const QString &backendId) const
     return m_handlers.contains(backendId);
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Sync::QSyncCore

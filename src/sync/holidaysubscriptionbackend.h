@@ -10,6 +10,8 @@
 #include <KHolidays/HolidayRegion>
 #include <KCalendarCore/Event>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Subscription backend for holiday calendars via KHolidays.
  *
@@ -158,5 +160,7 @@ private:
     // Cache of HolidayRegion instances (owned by this backend)
     QHash<QString, KHolidays::HolidayRegion*> m_regionCache;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // HOLIDAYSUBSCRIPTIONBACKEND_H

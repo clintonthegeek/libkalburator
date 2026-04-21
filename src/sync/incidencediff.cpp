@@ -11,6 +11,8 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Recurrence>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // Property Name Mappings
 // ============================================================================
@@ -1153,3 +1155,6 @@ bool IncidenceDiff::isExceptionIdenticalToMaster(
 
     return true;
 }
+
+
+} // namespace Kalburator::Sync

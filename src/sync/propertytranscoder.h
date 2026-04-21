@@ -4,6 +4,8 @@
 #include <QString>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Fidelity level for property transcoding.
  *
@@ -124,6 +126,9 @@ public:
 };
 
 // Qt metatype declaration
-Q_DECLARE_METATYPE(TranscodingFidelity)
+
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::TranscodingFidelity)
 
 #endif // PROPERTYTRANSCODER_H

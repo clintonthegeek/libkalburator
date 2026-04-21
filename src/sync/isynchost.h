@@ -6,6 +6,8 @@
 #include <QDateTime>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 class SyncBackend;
 class ICalendarCollection;
 class IIncidenceSource;
@@ -62,5 +64,7 @@ public:
     // that have no sync engine configured should implement as a no-op.
     virtual void generateSyncMappingsFromLogicalCalendars() = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ISYNCHOST_H

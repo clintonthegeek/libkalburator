@@ -12,6 +12,8 @@ namespace KCalendarCore {
 class Incidence;
 }
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Read-only interface for iterating over incidences.
  *
@@ -43,5 +45,7 @@ public:
     /** Get all entries matching a UID (may be multiple across calendars). */
     virtual QVector<Entry> lookupEntriesForUid(const QString &uid) const = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // IINCIDENCESOURCE_H

@@ -11,6 +11,9 @@
 class QNetworkAccessManager;
 class QNetworkReply;
 
+namespace Kalburator::Sync {
+
+
 /**
  * @brief Discovers CalDAV server capabilities using RFC 4791 PROPFIND.
  *
@@ -129,5 +132,7 @@ private:
     DiscoveredCapabilities m_capabilities;
     QString m_errorMessage;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // CALDAVCAPABILITYDISCOVERY_H

@@ -1,6 +1,8 @@
 #include "incidencelock_registry.h"
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 IncidenceLockRegistry::IncidenceLockRegistry(QObject *parent)
     : QObject(parent)
 {
@@ -218,3 +220,6 @@ void IncidenceLockRegistry::onOwnerDestroyed(QObject *owner)
     qDebug() << "IncidenceLockRegistry: Owner destroyed" << owner << "- releasing locks";
     unlockAll(owner);
 }
+
+
+} // namespace Kalburator::Sync

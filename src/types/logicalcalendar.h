@@ -12,6 +12,8 @@
 #include <algorithm>
 #include "calendartype.h"  // For CalendarType
 
+namespace Kalburator::Sync {
+
 /**
  * @file logicalcalendar.h
  * @brief Types for logical calendars that may span multiple backends.
@@ -612,8 +614,11 @@ inline QList<LogicalCalendar> logicalCalendarsFromJson(const QJsonArray &arr) {
 }
 
 // Qt metatype declaration
-Q_DECLARE_METATYPE(BackendRole)
-Q_DECLARE_METATYPE(CalendarBackendBinding)
-Q_DECLARE_METATYPE(LogicalCalendar)
+
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::BackendRole)
+Q_DECLARE_METATYPE(Kalburator::Sync::CalendarBackendBinding)
+Q_DECLARE_METATYPE(Kalburator::Sync::LogicalCalendar)
 
 #endif // LOGICALCALENDAR_H

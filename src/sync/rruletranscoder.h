@@ -3,6 +3,8 @@
 
 #include "propertytranscoder.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Transcoder for complex RRULE patterns to simpler backends.
  *
@@ -70,5 +72,7 @@ public:
 
     int priority() const override { return 10; }
 };
+
+} // namespace Kalburator::Sync
 
 #endif // RRULETRANSCODER_H

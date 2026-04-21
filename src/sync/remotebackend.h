@@ -3,9 +3,6 @@
 
 #include "syncbackend.h"
 #include <KDAV/DavUrl>
-
-class SyncStore;
-struct BackendCapabilities;
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
 #include <KDAV/DavJobBase>
@@ -15,6 +12,11 @@ struct BackendCapabilities;
 #include <QSqlDatabase>
 #include <QColor>
 #include <memory>
+
+namespace Kalburator::Sync {
+
+class SyncStore;
+struct BackendCapabilities;
 
 class RemoteBackend : public SyncBackend
 {
@@ -285,5 +287,7 @@ private:
     // Map item keys (calendarId/uid) to item URLs
     QMap<QString, QUrl> m_itemUrls;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // REMOTEBACKEND_H

@@ -6,6 +6,8 @@
 #include <QJsonDocument>
 #include <QLoggingCategory>
 
+namespace Kalburator::Sync {
+
 Q_LOGGING_CATEGORY(lcCrashJournal, "planstan.crashjournal")
 
 CrashJournal::CrashJournal(const QString &directory, const QString &suffix)
@@ -98,3 +100,6 @@ int CrashJournal::replay(const QString &entityId,
 
     return count;
 }
+
+
+} // namespace Kalburator::Sync

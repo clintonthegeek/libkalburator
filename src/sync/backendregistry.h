@@ -6,6 +6,8 @@
 #include <QString>
 #include <functional>
 
+namespace Kalburator::Sync {
+
 class SyncBackend;
 
 /**
@@ -130,5 +132,7 @@ private:
     QMap<QString, BackendFactory> m_factories;
     QMap<QString, SyncBackend*> m_instances;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // BACKENDREGISTRY_H

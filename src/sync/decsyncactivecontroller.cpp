@@ -8,6 +8,8 @@
 
 #include <KCalendarCore/ICalFormat>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // Static data
 // ============================================================================
@@ -565,3 +567,6 @@ void DecSyncActiveController::updateAppActivity(
         }
     }
 }
+
+
+} // namespace Kalburator::Sync

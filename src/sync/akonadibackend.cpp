@@ -33,6 +33,8 @@
 #include <QDebug>
 #include <memory>
 
+namespace Kalburator::Sync {
+
 static const QString AKONADI_PREFIX = QStringLiteral("akonadi-");
 
 // Calendar MIME types we care about
@@ -1031,3 +1033,6 @@ void AkonadiBackend::onCollectionRemoved(const Akonadi::Collection &col)
 }
 
 #endif // HAVE_AKONADI
+
+
+} // namespace Kalburator::Sync

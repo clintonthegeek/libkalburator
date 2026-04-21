@@ -2,7 +2,7 @@
 
 #include <QJsonObject>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Sync::QSyncCore {
 
 IdMappingStore::IdMappingStore(QObject *parent)
     : QObject(parent)
@@ -166,4 +166,4 @@ IdMapping IdMappingStore::mappingFromJson(const QJsonObject &json) const
     return mapping;
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Sync::QSyncCore

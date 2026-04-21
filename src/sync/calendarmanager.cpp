@@ -14,6 +14,8 @@
 #include <QTimeZone>
 #include <QUrl>
 
+namespace Kalburator::Sync {
+
 // Register metatypes for signals
 static bool s_metatypesRegistered = []() {
     qRegisterMetaType<DeleteMode>("DeleteMode");
@@ -995,3 +997,6 @@ bool CalendarManager::processNeedsCreation(const LogicalCalendar &logCal)
 
     return allSucceeded;
 }
+
+
+} // namespace Kalburator::Sync

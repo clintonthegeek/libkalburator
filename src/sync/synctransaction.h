@@ -16,6 +16,8 @@
 #include <QObject>
 #include <QList>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Manages a batch of SyncTransactionItem with atomic commit/rollback.
  *
@@ -175,5 +177,7 @@ private:
     int m_simulatedCount = 0;
     bool m_isSimulating = false;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCTRANSACTION_H

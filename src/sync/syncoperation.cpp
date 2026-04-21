@@ -2,6 +2,8 @@
 #include <QUuid>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 int SyncOperation::s_nextOperationId = 1;
 
 SyncOperation::SyncOperation(const QString &calendarId, QObject *parent)
@@ -178,3 +180,6 @@ void DeleteOperation::setFailedUids(const QStringList &uids)
 {
     m_failedUids = uids;
 }
+
+
+} // namespace Kalburator::Sync

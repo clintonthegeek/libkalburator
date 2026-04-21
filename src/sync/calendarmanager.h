@@ -11,6 +11,8 @@
 
 #include "logicalcalendar.h"
 
+namespace Kalburator::Sync {
+
 class ISyncHost;
 class ISyncConfigStore;
 class SyncBackend;
@@ -368,10 +370,13 @@ private:
 };
 
 // Qt metatype declarations
-Q_DECLARE_METATYPE(DeleteMode)
-Q_DECLARE_METATYPE(CreationResult)
-Q_DECLARE_METATYPE(DeletionResult)
-Q_DECLARE_METATYPE(CalendarSnapshot)
-Q_DECLARE_METATYPE(OperationType)
+
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::DeleteMode)
+Q_DECLARE_METATYPE(Kalburator::Sync::CreationResult)
+Q_DECLARE_METATYPE(Kalburator::Sync::DeletionResult)
+Q_DECLARE_METATYPE(Kalburator::Sync::CalendarSnapshot)
+Q_DECLARE_METATYPE(Kalburator::Sync::OperationType)
 
 #endif // CALENDARMANAGER_H

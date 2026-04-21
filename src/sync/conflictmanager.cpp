@@ -5,6 +5,8 @@
 
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 ConflictManager::ConflictManager(QObject *parent)
     : QObject(parent)
 {
@@ -241,3 +243,6 @@ QString ConflictManager::lastMergedIcalData() const
     }
     return QString();
 }
+
+
+} // namespace Kalburator::Sync

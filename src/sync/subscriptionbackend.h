@@ -11,6 +11,8 @@
 #include <KCalendarCore/Incidence>
 #include "syncbackend.h"
 
+namespace Kalburator::Sync {
+
 struct BackendCapabilities;
 
 /**
@@ -160,5 +162,7 @@ protected:
     QHash<QString, SourceInfo> m_sources;  // sourceId -> source info
     QString m_currentCollectionId;         // Collection ID for emitting signals
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SUBSCRIPTIONBACKEND_H

@@ -8,6 +8,8 @@
 #include <QJsonValue>
 #include <QJsonArray>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief A single DecSync entry (one line in an entry file).
  *
@@ -167,5 +169,7 @@ public:
 private:
     QString m_decsyncDir;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DECSYNCLIB_H

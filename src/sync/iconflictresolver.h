@@ -3,6 +3,8 @@
 
 #include "synctypes.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Interface for conflict resolution providers.
  *
@@ -54,5 +56,7 @@ public:
      */
     virtual QString lastMergedIcalData() const { return QString(); }
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ICONFLICTRESOLVER_H

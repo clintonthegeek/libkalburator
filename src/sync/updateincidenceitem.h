@@ -4,6 +4,8 @@
 #include "synctransactionitem.h"
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 class SyncBackend;
 class FetchOperation;
 
@@ -75,5 +77,7 @@ private:
     QString m_expectedVersionHash;
     FetchOperation *m_fetchOp = nullptr;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // UPDATEINCIDENCEITEM_H

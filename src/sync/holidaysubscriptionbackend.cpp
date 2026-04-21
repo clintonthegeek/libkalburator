@@ -5,6 +5,8 @@
 #include <QDebug>
 #include "ilocalesource.h"
 
+namespace Kalburator::Sync {
+
 HolidaySubscriptionBackend::HolidaySubscriptionBackend(QObject *parent)
     : SubscriptionBackend(parent)
 {
@@ -256,3 +258,6 @@ KHolidays::HolidayRegion* HolidaySubscriptionBackend::getOrCreateRegion(const QS
     delete region;
     return nullptr;
 }
+
+
+} // namespace Kalburator::Sync

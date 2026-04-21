@@ -12,6 +12,8 @@
 // (no circular dependency since syncbackend.h only forward-declares BackendCapabilities)
 #include "syncbackend.h"
 
+namespace Kalburator::Sync {
+
 // CalendarType is now in its own header (included via syncbackend.h)
 // to avoid circular dependency issues
 
@@ -246,5 +248,7 @@ struct CalendarCapabilities
      */
     QStringList supportedComponentTypes() const;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // BACKENDCAPABILITIES_H

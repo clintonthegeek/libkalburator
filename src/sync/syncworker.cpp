@@ -21,6 +21,8 @@
 #include <QMetaObject>
 #include <QTimer>
 
+namespace Kalburator::Sync {
+
 // Build a compound sync key from a SyncRecord (uid + recurrenceId).
 // Matches the syncRecordKey() format from syncdiff.cpp.
 static QString syncRecordKey(const SyncRecord &rec)
@@ -1419,3 +1421,6 @@ void SyncWorker::updatePropertyBaselines()
 
     qDebug() << "  Property baseline updated";
 }
+
+
+} // namespace Kalburator::Sync

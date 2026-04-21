@@ -4,6 +4,8 @@
 #include <KCalendarCore/RecurrenceRule>
 #include <KCalendarCore/ICalFormat>
 
+namespace Kalburator::Sync {
+
 bool RRuleTranscoder::transcode(KCalendarCore::Incidence::Ptr &incidence) const
 {
     if (!incidence) {
@@ -170,3 +172,6 @@ bool RRuleReverseTranscoder::transcode(KCalendarCore::Incidence::Ptr &incidence)
 
     return true;
 }
+
+
+} // namespace Kalburator::Sync

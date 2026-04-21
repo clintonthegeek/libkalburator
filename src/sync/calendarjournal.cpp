@@ -2,6 +2,8 @@
 #include <KCalendarCore/ICalFormat>
 #include <QJsonObject>
 
+namespace Kalburator::Sync {
+
 CalendarJournal::CalendarJournal(const QString &journalDirectory)
     : m_journal(journalDirectory, QStringLiteral(".calendar.journal"))
 {
@@ -66,3 +68,6 @@ int CalendarJournal::replay(const QString &calendarId,
 {
     return m_journal.replay(calendarId, handler);
 }
+
+
+} // namespace Kalburator::Sync

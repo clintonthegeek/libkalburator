@@ -7,6 +7,8 @@
 #include <QFileInfo>
 #include <QDir>
 
+namespace Kalburator::Sync {
+
 // Split a compound sync key (uid or uid\0recurrenceId) into uid and recurrence_id parts.
 // Matches the syncRecordKey() format from syncdiff.cpp.
 static void splitSyncKey(const QString &key, QString &uid, QString &recurrenceId)
@@ -1169,3 +1171,6 @@ void SyncStore::clearMappingData(const QString &mappingId)
         db.rollback();
     }
 }
+
+
+} // namespace Kalburator::Sync

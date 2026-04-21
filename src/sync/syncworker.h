@@ -9,6 +9,8 @@
 #include <QElapsedTimer>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 class BackendRegistry;
 class ISyncHost;
 class SyncStore;
@@ -228,7 +230,10 @@ private:
 };
 
 // Register metatypes for cross-thread signal/slot
-Q_DECLARE_METATYPE(SyncWorker::Request)
-Q_DECLARE_METATYPE(SyncWorker::Mode)
+
+} // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncWorker::Request)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncWorker::Mode)
 
 #endif // SYNCWORKER_H

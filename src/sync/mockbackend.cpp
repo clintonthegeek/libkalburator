@@ -6,6 +6,8 @@
 #include <QCryptographicHash>
 #include <KCalendarCore/ICalFormat>
 
+namespace Kalburator::Sync {
+
 const QString MockBackend::BackendTypeName = QStringLiteral("mock");
 
 QString MockBackend::backendType() const { return BackendTypeName; }
@@ -535,3 +537,6 @@ QString MockBackend::computeHash(const KCalendarCore::Incidence::Ptr &incidence)
     QByteArray hash = QCryptographicHash::hash(ical.toUtf8(), QCryptographicHash::Sha256);
     return QString::fromLatin1(hash.toHex().left(16));
 }
+
+
+} // namespace Kalburator::Sync

@@ -4,6 +4,8 @@
 #include <functional>
 #include <QString>
 
+namespace Kalburator::Sync {
+
 // Only compile test hooks in debug/test builds
 #ifdef PLANSTAN_TESTING
 
@@ -278,5 +280,7 @@ private:
 #define SYNC_HOOK_CHECK_FAIL(hook, ...) false
 
 #endif // PLANSTAN_TESTING
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCTESTHOOKS_H

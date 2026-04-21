@@ -7,6 +7,8 @@
 #include <QStringList>
 #include <optional>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Record representing a baseline iCal snapshot for a UID.
  *
@@ -203,5 +205,7 @@ private:
     QString m_lastError;
     bool m_isOpen = false;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DECSYNCCONTROLLERSTORE_H

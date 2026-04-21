@@ -6,6 +6,8 @@
 #include <QJsonObject>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 class SyncBackend;
 
 /**
@@ -198,5 +200,7 @@ private:
     QString m_errorString;
     SimulationResult m_simulationResult = SimulationResult::Pending;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCTRANSACTIONITEM_H

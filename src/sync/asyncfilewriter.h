@@ -10,6 +10,8 @@
 #include <QByteArray>
 #include <KCalendarCore/Incidence>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Internal worker class for AsyncFileWriter.
  *
@@ -153,5 +155,7 @@ private:
     QThread m_workerThread;
     AsyncFileWriterWorker *m_worker = nullptr;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ASYNCFILEWRITER_H

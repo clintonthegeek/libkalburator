@@ -7,6 +7,8 @@
 #include <QDateTime>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 CalDavCapabilityDiscovery::CalDavCapabilityDiscovery(const QUrl &serverUrl,
                                                        const QString &username,
                                                        const QString &password,
@@ -511,3 +513,6 @@ void CalDavCapabilityDiscovery::finishWithSuccess()
 
     emit finished(true);
 }
+
+
+} // namespace Kalburator::Sync

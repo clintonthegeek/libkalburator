@@ -7,6 +7,8 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief In-memory backend for fast automated testing.
  *
@@ -229,5 +231,7 @@ private:
     // Determinism
     bool m_deterministicMode = false;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // MOCKBACKEND_H

@@ -6,6 +6,8 @@
 #include <KCalendarCore/ICalFormat>
 #include <QCryptographicHash>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Adapter wrapping KCalendarCore::Incidence as an ISyncRecord.
  *
@@ -80,5 +82,7 @@ private:
     bool m_dirty;
     bool m_deleted;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // INCIDENCESYNCADAPTER_H

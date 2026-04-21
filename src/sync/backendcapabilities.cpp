@@ -4,6 +4,8 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Journal>
 
+namespace Kalburator::Sync {
+
 // ============================================================================
 // IncidenceSupport implementation
 // ============================================================================
@@ -667,3 +669,6 @@ QStringList CalendarCapabilities::supportedComponentTypes() const
         types << QStringLiteral("VJOURNAL");
     return types;
 }
+
+
+} // namespace Kalburator::Sync

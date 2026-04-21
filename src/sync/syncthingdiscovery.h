@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Auto-discover Syncthing configuration from local config files.
  *
@@ -54,5 +56,7 @@ public:
      */
     static QStringList standardConfigPaths();
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCTHINGDISCOVERY_H

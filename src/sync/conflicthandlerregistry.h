@@ -4,7 +4,7 @@
 #include <QHash>
 #include <QString>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Sync::QSyncCore {
 
 class ConflictHandler;
 
@@ -52,6 +52,6 @@ private:
     ConflictHandler *m_default = nullptr;
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Sync::QSyncCore
 
 #endif // KALBURATOR_SYNC_CONFLICTHANDLERREGISTRY_H

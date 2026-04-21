@@ -13,6 +13,8 @@
 #include <QTimer>
 #include <QCoreApplication>
 
+namespace Kalburator::Sync {
+
 const QString LocalBackend::BackendTypeName = QStringLiteral("local");
 
 QString LocalBackend::backendType() const { return BackendTypeName; }
@@ -1053,3 +1055,6 @@ bool LocalBackend::setRawIcs(const QString &calendarId, const QString &uid,
 
     return file.commit();
 }
+
+
+} // namespace Kalburator::Sync

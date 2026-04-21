@@ -1,6 +1,8 @@
 #include "synctransactionitem.h"
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 SyncTransactionItem::SyncTransactionItem(const QString &calendarId,
                                           const QString &uid,
                                           ItemType type,
@@ -71,3 +73,6 @@ SyncTransactionItem::ItemType SyncTransactionItem::stringToItemType(const QStrin
     qWarning() << "SyncTransactionItem: Unknown item type string:" << str;
     return ItemType::Create;
 }
+
+
+} // namespace Kalburator::Sync

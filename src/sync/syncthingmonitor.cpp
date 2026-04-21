@@ -9,6 +9,8 @@
 #include <QJsonObject>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 SyncthingMonitor::SyncthingMonitor(QObject *parent)
     : QObject(parent)
     , m_nam(new QNetworkAccessManager(this))
@@ -394,3 +396,6 @@ void SyncthingMonitor::onRetryTimeout()
     if (!m_running) return;
     validateConnection();
 }
+
+
+} // namespace Kalburator::Sync

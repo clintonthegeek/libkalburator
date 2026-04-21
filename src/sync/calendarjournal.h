@@ -5,6 +5,8 @@
 #include <KCalendarCore/Incidence>
 #include <QString>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Crash-recovery journal for calendar data.
  *
@@ -51,5 +53,7 @@ public:
 private:
     CrashJournal m_journal;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // CALENDARJOURNAL_H

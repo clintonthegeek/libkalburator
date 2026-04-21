@@ -6,6 +6,8 @@
 #include <QStringList>
 #include <functional>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Generic append-only JSON-lines journal for crash recovery.
  *
@@ -49,5 +51,7 @@ private:
     QString m_directory;
     QString m_suffix;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // CRASHJOURNAL_H

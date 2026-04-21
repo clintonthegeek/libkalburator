@@ -14,6 +14,11 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/Recurrence>
 
+#include "calendartype.h"   // CalendarType enum
+#include "datadomain.h"    // DataDomain enum
+
+namespace Kalburator::Sync {
+
 struct BackendCapabilities;
 struct CalendarBackendBinding;
 struct DiscoveredCalendar;
@@ -21,9 +26,6 @@ class SyncOperation;
 class FetchOperation;
 class PushOperation;
 class DeleteOperation;
-
-#include "calendartype.h"   // CalendarType enum
-#include "datadomain.h"    // DataDomain enum
 
 /**
  * @brief Describes what recurrence features a backend supports.
@@ -594,5 +596,7 @@ protected:
     /// Pending operations indexed by calendar ID
     QHash<QString, QList<SyncOperation*>> m_pendingOperations;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCBACKEND_H

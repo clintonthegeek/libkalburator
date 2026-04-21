@@ -2,6 +2,8 @@
 #include "synctesthooks.h"
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 SyncTransaction::SyncTransaction(const QString &transactionId,
                                  QObject *parent)
     : QObject(parent)
@@ -348,3 +350,6 @@ void SyncTransaction::rollbackCommitted()
 
     emit rollbackCompleted(true);
 }
+
+
+} // namespace Kalburator::Sync

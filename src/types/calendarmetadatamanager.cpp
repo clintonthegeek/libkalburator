@@ -6,6 +6,8 @@
 #include <QTextStream>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 // Vdir metadata file names (no extensions per spec)
 static const QString COLOR_FILE = QStringLiteral("color");
 static const QString DISPLAYNAME_FILE = QStringLiteral("displayname");
@@ -234,3 +236,6 @@ QString CalendarMetadataManager::readFile(const QString &filePath) const
     stream.setEncoding(QStringConverter::Utf8);
     return stream.readAll();
 }
+
+
+} // namespace Kalburator::Sync

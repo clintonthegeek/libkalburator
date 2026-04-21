@@ -9,6 +9,8 @@
 #include "decsynclib.h"
 #include "decsynccontrollerstore.h"
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Result of a per-UID merge operation.
  *
@@ -162,5 +164,7 @@ private:
     QString                   m_ownAppId;
     QString                   m_collectionId;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // DECSYNCACTIVECONTROLLER_H

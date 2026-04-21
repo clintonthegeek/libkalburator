@@ -14,6 +14,8 @@
 #include <QMap>
 #include <QSet>
 
+namespace Kalburator::Sync {
+
 class KalbConfigManager;
 class TagSettings;
 
@@ -151,4 +153,7 @@ private:
 };
 
 #endif // HAVE_AKONADI
+
+} // namespace Kalburator::Sync
+
 #endif // AKONADIBACKEND_H

@@ -3,6 +3,8 @@
 #include <QSet>
 #include <QDebug>
 
+namespace Kalburator::Sync {
+
 LogicalCalendarBuilder::LogicalCalendarBuilder()
 {
 }
@@ -329,3 +331,6 @@ CalendarType LogicalCalendarBuilder::determineCalendarType(const QList<Discovere
     // Mixed support - default to hybrid and let user adjust
     return CalendarType::Hybrid;
 }
+
+
+} // namespace Kalburator::Sync

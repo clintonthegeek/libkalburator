@@ -5,6 +5,9 @@
 
 class QUndoStack;
 
+namespace Kalburator::Sync {
+
+
 /**
  * @brief Narrow interface for undo/command infrastructure.
  *
@@ -25,5 +28,7 @@ public:
                                    const KCalendarCore::Incidence::Ptr &oldIncidence,
                                    const KCalendarCore::Incidence::Ptr &newIncidence) = 0;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // ICOMMANDDISPATCHER_H

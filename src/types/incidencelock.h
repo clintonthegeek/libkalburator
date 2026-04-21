@@ -6,6 +6,8 @@
 #include <QDateTime>
 #include <QString>
 
+namespace Kalburator::Sync {
+
 /**
  * @brief Information about a locked incidence.
  *
@@ -39,5 +41,7 @@ struct IncidenceLockInfo
             .arg(acquiredAt.toString(Qt::ISODate));
     }
 };
+
+} // namespace Kalburator::Sync
 
 #endif // INCIDENCELOCK_H

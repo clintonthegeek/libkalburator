@@ -10,6 +10,8 @@
 #include <QColor>
 #include <QDateTime>
 
+namespace Kalburator::Sync {
+
 /**
  * @file syncdiff.h
  * @brief Types for computing sync differences between two backends.
@@ -244,5 +246,7 @@ QList<SyncRecord> incidencesToSyncRecords(
     const QList<KCalendarCore::Incidence::Ptr> &incidences,
     const QString &calendarId,
     const QString &backendId);
+
+} // namespace Kalburator::Sync
 
 #endif // SYNCDIFF_H

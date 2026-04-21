@@ -6,6 +6,8 @@
 // Include built-in transcoders
 #include "rruletranscoder.h"
 
+namespace Kalburator::Sync {
+
 TranscodingRegistry& TranscodingRegistry::instance()
 {
     static TranscodingRegistry s_instance;
@@ -145,3 +147,6 @@ void TranscodingRegistry::clear()
     m_transcoders.clear();
     qDebug() << "TranscodingRegistry: Cleared all transcoders";
 }
+
+
+} // namespace Kalburator::Sync

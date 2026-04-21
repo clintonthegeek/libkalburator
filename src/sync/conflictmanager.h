@@ -7,9 +7,12 @@
 #include <QObject>
 #include <memory>
 
+class QWidget;
+
+namespace Kalburator::Sync {
+
 class IConflictPresenter;
 class SyncStore;
-class QWidget;
 
 /**
  * @brief Coordinates conflict resolution workflow.
@@ -186,5 +189,7 @@ private:
     QWidget *m_parentWidget = nullptr;
     std::unique_ptr<IConflictResolver> m_conflictResolver;
 };
+
+} // namespace Kalburator::Sync
 
 #endif // CONFLICTMANAGER_H
