@@ -91,3 +91,23 @@ a commit, each individually verifiable:
 - Public-forge hosting decision (Phase 4+).
 - WP's actual consumption of libkalburator (Phase E — happens after
   Phase C lands).
+
+## C.5 outcome (2026-04-21)
+
+**Scope correction.** Original plan assumed PlanStan had live callers of
+`SyncStore::setIdMapping` et al. Grep across both repos (on the morning
+of landing) showed zero production callers — the identity-mapping API
+on `SyncStore` had been dormant. C.5 therefore became a pure dead-code
+cleanup, not a call-site migration.
+
+**Shim decision.** "Delete" won over "shim" because there were no
+callers to protect. No deprecation window was needed.
+
+**Landed:** single commit in each repo. libkalburator: removed 6
+methods + CREATE + INDEX + clearBackendData's sync_id_mappings DELETE.
+PlanStan: deleted 6 identity tests + 1 coexistence test; rewrote 5
+tests that had used identity APIs as test fixtures
+(`testDatabaseReopen`, `testVacuum`, `testClearBackendData`,
+`testEmptyStrings`, `testSpecialCharacters`).
+
+**ctest delta:** unchanged. 88 pass / 4 fail / 23 not-run.

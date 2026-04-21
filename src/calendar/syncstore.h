@@ -58,60 +58,6 @@ public:
     QString databasePath() const { return m_dbPath; }
 
     // ========================================================================
-    // Identity Mapping
-    // ========================================================================
-    // Maps source incidence UIDs to target identifiers (URLs, hrefs, paths)
-    // This enables tracking the same incidence across different backends.
-
-    /**
-     * @brief Get the target identifier for a source UID.
-     * @param backendId The target backend ID (e.g., "caldav", "local")
-     * @param sourceUid The source incidence UID
-     * @return Target identifier, or empty string if not mapped
-     */
-    QString targetIdForSourceUid(const QString &backendId, const QString &sourceUid) const;
-
-    /**
-     * @brief Get the source UID for a target identifier.
-     * @param backendId The target backend ID
-     * @param targetId The target identifier
-     * @return Source UID, or empty string if not mapped
-     */
-    QString sourceUidForTargetId(const QString &backendId, const QString &targetId) const;
-
-    /**
-     * @brief Set an identity mapping between source UID and target ID.
-     * @param backendId The target backend ID
-     * @param sourceUid The source incidence UID
-     * @param targetId The target identifier
-     * @param calendarId Optional calendar ID for context
-     */
-    void setIdMapping(const QString &backendId,
-                      const QString &sourceUid,
-                      const QString &targetId,
-                      const QString &calendarId = QString());
-
-    /**
-     * @brief Remove an identity mapping.
-     * @param backendId The target backend ID
-     * @param sourceUid The source incidence UID
-     */
-    void removeIdMapping(const QString &backendId, const QString &sourceUid);
-
-    /**
-     * @brief Get all identity mappings for a backend.
-     * @param backendId The target backend ID
-     * @return Map of sourceUid -> targetId
-     */
-    QMap<QString, QString> allIdMappings(const QString &backendId) const;
-
-    /**
-     * @brief Remove all identity mappings for a backend.
-     * @param backendId The backend ID
-     */
-    void clearIdMappings(const QString &backendId);
-
-    // ========================================================================
     // Version Tracking
     // ========================================================================
     // Stores version hashes (ETags, content hashes) for change detection.
@@ -353,8 +299,11 @@ public:
     void vacuum();
 
     /**
-     * @brief Clear all data for a specific backend.
-     * Removes all identity mappings, versions, and related conflicts.
+     * @brief Remove SyncStore-owned sync data for a specific backend.
+     *
+     * Clears version hashes and conflicts for the backend. Does NOT
+     * clear identity mappings; use IDMappingStore::clearIdMappings for
+     * that.
      */
     void clearBackendData(const QString &backendId);
 

@@ -133,27 +133,6 @@ bool SyncStore::createTables()
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
     QSqlQuery query(db);
 
-    // Identity mappings table
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS sync_id_mappings ("
-        "  backend_id TEXT NOT NULL,"
-        "  local_uid TEXT NOT NULL,"
-        "  recurrence_id TEXT DEFAULT '',"
-        "  remote_id TEXT NOT NULL,"
-        "  calendar_id TEXT,"
-        "  created_at TEXT DEFAULT (datetime('now')),"
-        "  PRIMARY KEY (backend_id, local_uid, recurrence_id)"
-        ")"))) {
-        setError(QStringLiteral("Failed to create sync_id_mappings table: %1")
-                 .arg(query.lastError().text()));
-        return false;
-    }
-
-    // Index for reverse lookup
-    query.exec(QStringLiteral(
-        "CREATE INDEX IF NOT EXISTS idx_id_mappings_remote "
-        "ON sync_id_mappings(backend_id, remote_id)"));
-
     // Version tracking table
     if (!query.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS sync_versions ("
@@ -269,122 +248,6 @@ void SyncStore::setError(const QString &error)
 {
     m_lastError = error;
     qWarning() << "SyncStore error:" << error;
-}
-
-// ============================================================================
-// Identity Mapping
-// ============================================================================
-
-QString SyncStore::targetIdForSourceUid(const QString &backendId, const QString &sourceUid) const
-{
-    if (!m_isOpen) return QString();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // DB columns: local_uid = source, remote_id = target (kept for backward compat)
-    query.prepare(QStringLiteral(
-        "SELECT remote_id FROM sync_id_mappings "
-        "WHERE backend_id = ? AND local_uid = ? AND recurrence_id = ''"));
-    query.addBindValue(backendId);
-    query.addBindValue(sourceUid);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
-}
-
-QString SyncStore::sourceUidForTargetId(const QString &backendId, const QString &targetId) const
-{
-    if (!m_isOpen) return QString();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // DB columns: local_uid = source, remote_id = target (kept for backward compat)
-    query.prepare(QStringLiteral(
-        "SELECT local_uid FROM sync_id_mappings "
-        "WHERE backend_id = ? AND remote_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(targetId);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
-}
-
-void SyncStore::setIdMapping(const QString &backendId,
-                              const QString &sourceUid,
-                              const QString &targetId,
-                              const QString &calendarId)
-{
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // DB columns: local_uid = source, remote_id = target (kept for backward compat)
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO sync_id_mappings "
-        "(backend_id, local_uid, recurrence_id, remote_id, calendar_id, created_at) "
-        "VALUES (?, ?, '', ?, ?, datetime('now'))"));
-    query.addBindValue(backendId);
-    query.addBindValue(sourceUid);
-    query.addBindValue(targetId);
-    query.addBindValue(calendarId.isEmpty() ? QVariant() : calendarId);
-
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to set ID mapping: %1").arg(query.lastError().text()));
-    }
-}
-
-void SyncStore::removeIdMapping(const QString &backendId, const QString &sourceUid)
-{
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // DB column: local_uid = source (kept for backward compat)
-    // Removes all recurrence variants for this uid
-    query.prepare(QStringLiteral(
-        "DELETE FROM sync_id_mappings WHERE backend_id = ? AND local_uid = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(sourceUid);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::removeIdMapping - failed:" << query.lastError().text();
-    }
-}
-
-QMap<QString, QString> SyncStore::allIdMappings(const QString &backendId) const
-{
-    QMap<QString, QString> result;  // Returns sourceUid -> targetId
-    if (!m_isOpen) return result;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // DB columns: local_uid = source, remote_id = target (kept for backward compat)
-    query.prepare(QStringLiteral(
-        "SELECT local_uid, remote_id FROM sync_id_mappings WHERE backend_id = ?"));
-    query.addBindValue(backendId);
-
-    if (query.exec()) {
-        while (query.next()) {
-            result.insert(query.value(0).toString(), query.value(1).toString());
-        }
-    }
-    return result;
-}
-
-void SyncStore::clearIdMappings(const QString &backendId)
-{
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM sync_id_mappings WHERE backend_id = ?"));
-    query.addBindValue(backendId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearIdMappings - failed:" << query.lastError().text();
-    }
 }
 
 // ============================================================================
@@ -1078,22 +941,12 @@ void SyncStore::clearBackendData(const QString &backendId)
     QSqlQuery query(db);
     bool success = true;
 
-    // Remove identity mappings
-    query.prepare(QStringLiteral("DELETE FROM sync_id_mappings WHERE backend_id = ?"));
+    // Remove version hashes
+    query.prepare(QStringLiteral("DELETE FROM sync_versions WHERE backend_id = ?"));
     query.addBindValue(backendId);
     if (!query.exec()) {
-        qWarning() << "SyncStore::clearBackendData - failed to clear id_mappings:" << query.lastError().text();
+        qWarning() << "SyncStore::clearBackendData - failed to clear versions:" << query.lastError().text();
         success = false;
-    }
-
-    // Remove version hashes
-    if (success) {
-        query.prepare(QStringLiteral("DELETE FROM sync_versions WHERE backend_id = ?"));
-        query.addBindValue(backendId);
-        if (!query.exec()) {
-            qWarning() << "SyncStore::clearBackendData - failed to clear versions:" << query.lastError().text();
-            success = false;
-        }
     }
 
     // Remove conflicts for this backend

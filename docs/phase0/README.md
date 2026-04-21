@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase C.4).
+**Last updated:** 2026-04-21 (after Phase C.5).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -99,18 +99,31 @@ IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
   PK includes `recurrence_id` for iCal exceptions). 12 new tests in
   PlanStan's `tests/sync/tst_idmappingstore.cpp`, including a
   characterization test for the pre-C.5 INSERT-OR-REPLACE hazard.
+- **Phase C.5** — SyncStore identity-mapping dissolve. Removed
+  `setIdMapping` / `sourceUidForTargetId` / `targetIdForSourceUid` /
+  `allIdMappings` / `removeIdMapping` / `clearIdMappings` from
+  `SyncStore`; removed sync_id_mappings CREATE + INDEX from
+  `createTables`; narrowed `clearBackendData` to version hashes +
+  conflicts only. `IDMappingStore` is now the sole owner of the
+  `sync_id_mappings` table. Scope correction from original plan: no
+  PlanStan call-site migration needed — grep confirmed zero production
+  callers of the removed methods. Tests deleted (6 identity tests in
+  `tst_syncstore.cpp`) and rewritten (5 tests that had used identity
+  APIs as fixtures: `testDatabaseReopen`, `testVacuum`,
+  `testClearBackendData`, `testEmptyStrings`, `testSpecialCharacters`);
+  `test_coexistence_with_syncstore` in `tst_idmappingstore.cpp`
+  deleted (hazard it characterized no longer exists).
 
-**Next:** Phase C.5 — PlanStan call-site migration. PS's existing
-`SyncStore::setIdMapping` / `sourceUidForTargetId` / `allIdMappings` /
-`removeIdMapping` callers move to the new `IDMappingStore`. Decide
-shim-vs-delete for `SyncStore`'s methods during C.5 planning.
+**Next:** Phase C.6 — tag `v0.5-phase-c` once we're satisfied with
+the Phase-C endpoint. All C-series code work is complete.
 
 **Baseline health:** libkalburator standalone build clean. PlanStan
 builds clean. ctest target-level run: **88 pass / 4 fail / 23
-not-run** (tst_idmappingstore = the 1 new target, 12 internal tests
-all passing; failing targets unchanged from prior baseline —
-`tst_blockstore`, `sync_workflow_conflicts`, `sync_error_recovery`,
-`tst_treeflatteningproxymodel`). Not-run targets are env-dependent
+not-run** (unchanged from post-C.4 baseline; tst_syncstore now 29
+internal tests after 6 identity deletions, tst_idmappingstore now 11
+internal tests after coexistence deletion). Failing targets unchanged
+— `tst_blockstore`, `sync_workflow_conflicts`, `sync_error_recovery`,
+`tst_treeflatteningproxymodel`. Not-run targets are env-dependent
 integration/graffodil builds. No regressions.
 
 ---
@@ -133,7 +146,7 @@ integration/graffodil builds. No regressions.
 | **Phase C.2b** — namespace migration | done 2026-04-20 | `04f-phase-c2b-design.md` | 2 commits. |
 | **Phase C.3** — directory layering | done 2026-04-21 | `05-repo-strategy.md` | 2 commits. |
 | **Phase C.4** — SQLite IDMappingStore | done 2026-04-21 | `04g-phase-c4-design.md` | Merged-schema SQLite per Audit 2 + `recurrenceId`. Shares `.planstan-sync.db` via ALTER TABLE ADD COLUMN. 12 tests. |
-| **Phase C.5** — SyncStore call-site migration | queued | `04c-phase-c-plan.md` §C.5 | PlanStan's `SyncStore::setIdMapping` callers move to `IDMappingStore`. |
+| **Phase C.5** — SyncStore identity-mapping dissolve | done 2026-04-21 | `04c-phase-c-plan.md` §C.5 + `~/dev/PlanStan/docs/superpowers/specs/2026-04-21-c5-syncstore-identity-dissolve-design.md` | Dormant-code cleanup; zero production callers existed. IDMappingStore is sole owner of `sync_id_mappings`. |
 | **Phase C.6** — v0.5 tag | queued | `04c-phase-c-plan.md` §C.6 | After C.4 + C.5 land. |
 | Phase 4 — Wild Palms adoption | deferred | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. Own roadmap in WP. |
 | Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
@@ -265,15 +278,8 @@ same with a `TODO(phase-c-cleanup)` marker.
 
 ### Short-term (queued phases)
 
-- **C.5 — PlanStan SyncStore call-site migration.** Move PlanStan's
-  `SyncStore::setIdMapping` / `sourceUidForTargetId` /
-  `removeIdMapping` / `allIdMappings` callers onto the new
-  `IDMappingStore`. Remove the identity-mapping methods from
-  `SyncStore` (or keep as deprecated shim — decide during C.5).
-  Closing the pre-C.5 double-writer hazard characterized in
-  `tst_idmappingstore::test_coexistence_with_syncstore` happens
-  automatically when SyncStore stops writing to `sync_id_mappings`.
-- **C.6 — Tag `v0.5-phase-c`** once C.5 lands clean.
+- **C.6 — Tag `v0.5-phase-c`** once we're satisfied with the Phase-C
+  endpoint. All code work is complete.
 
 ### Medium-term (Phase 4+)
 
