@@ -99,17 +99,51 @@ bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
 
 // --- Method stubs: implementations land in subsequent tasks ---
 
-bool BlobBaselineStore::setBaseline(const QString &, const QString &,
-                                    const QString &)
+bool BlobBaselineStore::setBaseline(const QString &mappingId,
+                                    const QString &recordId,
+                                    const QString &contentHash)
 {
-    setError(QStringLiteral("setBaseline: not implemented yet"));
-    return false;
+    if (!m_isOpen) {
+        setError(QStringLiteral("setBaseline: store not open"));
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_baselines "
+        "(mapping_id, record_id, content_hash, updated_at) "
+        "VALUES (?, ?, ?, datetime('now'))"));
+    q.addBindValue(mappingId);
+    q.addBindValue(recordId);
+    q.addBindValue(contentHash);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("setBaseline: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
 }
 
-QString BlobBaselineStore::baselineHash(const QString &,
-                                        const QString &) const
+QString BlobBaselineStore::baselineHash(const QString &mappingId,
+                                        const QString &recordId) const
 {
-    return {};
+    if (!m_isOpen) {
+        return {};
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT content_hash FROM blob_baselines "
+        "WHERE mapping_id = ? AND record_id = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(recordId);
+
+    if (!q.exec() || !q.next()) {
+        return {};
+    }
+    return q.value(0).toString();
 }
 
 bool BlobBaselineStore::commitBaselines(const QString &,
