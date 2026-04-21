@@ -19,8 +19,7 @@ private slots:
     void baselineRecordIdsFiltersByMapping();
     void clearMappingRemovesOnlyThatMapping();
     void coexistsWithIDMappingStore();
-
-    // (More slots added in subsequent tasks.)
+    void dataPersistsAcrossReopen();
 
 private:
     QString dbPathIn(const QTemporaryDir &dir) const {
@@ -216,6 +215,29 @@ void TestBlobBaselineStore::coexistsWithIDMappingStore()
     QCOMPARE(idStore.targetIdForSourceUid(QStringLiteral("palm"),
                                           QStringLiteral("nonexistent")),
              QString());
+}
+
+void TestBlobBaselineStore::dataPersistsAcrossReopen()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dbPathIn(dir);
+
+    {
+        BlobBaselineStore store(path);
+        QVERIFY(store.isOpen());
+        QVERIFY(store.setBaseline(QStringLiteral("m"),
+                                  QStringLiteral("r"),
+                                  QStringLiteral("h")));
+    } // destructor closes + removes connection
+
+    {
+        BlobBaselineStore store(path);
+        QVERIFY(store.isOpen());
+        QCOMPARE(store.baselineHash(QStringLiteral("m"),
+                                    QStringLiteral("r")),
+                 QStringLiteral("h"));
+    }
 }
 
 QTEST_MAIN(TestBlobBaselineStore)
