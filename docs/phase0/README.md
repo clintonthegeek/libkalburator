@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase C.3).
+**Last updated:** 2026-04-21 (after Phase C.4).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -63,9 +63,9 @@ A reusable Qt6/KF6 calendar-sync substrate, extracted from PlanStan's
   `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
 
 The library carries both PlanStan-lineage sync infrastructure
-(SyncBackend, SyncCoordinator, CalendarJournal, transcoding) and
-Wild-Palms-lifted "qsynccore" conflict machinery (ConflictPolicy,
-ConflictRecord, ConflictStore, BaselineRecord, IDMappingStore).
+(SyncBackend, SyncCoordinator, CalendarJournal, transcoding,
+IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
+(ConflictPolicy, ConflictRecord, ConflictStore, BaselineRecord).
 
 ---
 
@@ -89,14 +89,29 @@ ConflictRecord, ConflictStore, BaselineRecord, IDMappingStore).
   `src/sync/` → `src/{calendar,conflict,transcoding,journal,discovery,blob}/`
   per `05-repo-strategy.md`. All six subdirs exposed as PUBLIC include
   paths so consumer code still uses bare `#include "foo.h"`.
+- **Phase C.4** — SQLite `IDMappingStore`. New store at
+  `src/journal/idmappingstore.{h,cpp}` (Kalburator::Sync top-level)
+  replaces the dormant WP JSON version. Shares `.planstan-sync.db`
+  with SyncStore; extends `sync_id_mappings` in place via idempotent
+  ALTER TABLE ADD COLUMN for the four Audit-2 WP fields (`last_synced`,
+  `source_category`, `target_categories`, `archived`). Adds
+  `recurrenceId` to the API (Audit 2 oversight; needed because PS's
+  PK includes `recurrence_id` for iCal exceptions). 12 new tests in
+  PlanStan's `tests/sync/tst_idmappingstore.cpp`, including a
+  characterization test for the pre-C.5 INSERT-OR-REPLACE hazard.
 
-**Next:** Phase C.4 — SQLite `IDMappingStore` rewrite per Audit 2.
-See `04c-phase-c-plan.md` for shape.
+**Next:** Phase C.5 — PlanStan call-site migration. PS's existing
+`SyncStore::setIdMapping` / `sourceUidForTargetId` / `allIdMappings` /
+`removeIdMapping` callers move to the new `IDMappingStore`. Decide
+shim-vs-delete for `SyncStore`'s methods during C.5 planning.
 
 **Baseline health:** libkalburator standalone build clean. PlanStan
-builds clean. ctest at **86 pass / 26 fail / 112 total** (same as
-Phase 3b baseline, modulo one flake that settled into passing and a
-two-test ctest-count variance unrelated to this work).
+builds clean. ctest target-level run: **88 pass / 4 fail / 23
+not-run** (tst_idmappingstore = the 1 new target, 12 internal tests
+all passing; failing targets unchanged from prior baseline —
+`tst_blockstore`, `sync_workflow_conflicts`, `sync_error_recovery`,
+`tst_treeflatteningproxymodel`). Not-run targets are env-dependent
+integration/graffodil builds. No regressions.
 
 ---
 
@@ -117,7 +132,7 @@ two-test ctest-count variance unrelated to this work).
 | **Phase C.2a** — layering | done 2026-04-20 | `04e-phase-c2a-design.md` | 4 commits. |
 | **Phase C.2b** — namespace migration | done 2026-04-20 | `04f-phase-c2b-design.md` | 2 commits. |
 | **Phase C.3** — directory layering | done 2026-04-21 | `05-repo-strategy.md` | 2 commits. |
-| **Phase C.4** — SQLite IDMappingStore | **queued** | `04c-phase-c-plan.md` §C.4 | Audit 2 decision: merged-schema SQLite with per-backend-qualified API. On-disk migration path needed. |
+| **Phase C.4** — SQLite IDMappingStore | done 2026-04-21 | `04g-phase-c4-design.md` | Merged-schema SQLite per Audit 2 + `recurrenceId`. Shares `.planstan-sync.db` via ALTER TABLE ADD COLUMN. 12 tests. |
 | **Phase C.5** — SyncStore call-site migration | queued | `04c-phase-c-plan.md` §C.5 | PlanStan's `SyncStore::setIdMapping` callers move to `IDMappingStore`. |
 | **Phase C.6** — v0.5 tag | queued | `04c-phase-c-plan.md` §C.6 | After C.4 + C.5 land. |
 | Phase 4 — Wild Palms adoption | deferred | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. Own roadmap in WP. |
@@ -154,6 +169,10 @@ two-test ctest-count variance unrelated to this work).
 - **`04e-phase-c2a-design.md`** — C.2a spec. Layering migration.
 - **`04f-phase-c2b-design.md`** — C.2b spec. Namespace migration with
   the QSyncCore sub-namespace collision resolution.
+- **`04g-phase-c4-design.md`** — C.4 spec. SQLite IDMappingStore,
+  in-place ALTER TABLE migration, schema-version coordination with
+  SyncStore, the pre-C.5 double-writer hazard, and the full test
+  matrix.
 - **`05-repo-strategy.md`** — naming, licensing, versioning,
   directory layout, build system, stewardship. Target directory
   layout lives here; C.3 implemented the mechanical move but kept
@@ -209,11 +228,13 @@ built into `kalburator-types`.
 Namespaces:
 - `Kalburator::Sync::*` — everything in `src/types/` and everything in
   `src/{calendar,conflict,transcoding,journal,discovery,blob}/` except:
-- `Kalburator::Sync::QSyncCore::*` — the 13 qsynccore files
+- `Kalburator::Sync::QSyncCore::*` — the remaining qsynccore files
   (`baselinestore`, `conflicthandlerregistry`, `conflictpolicy`,
-  `conflictrecord`, `conflictstore`, `idmappingstore`, `synccommon`).
-  Sub-namespace exists to avoid `ConflictResolution` / `SyncStats` /
-  `SyncResult` collisions with `src/types/synctypes.h`.
+  `conflictrecord`, `conflictstore`, `synccommon`). C.4 promoted
+  `idmappingstore` out of this sub-namespace into `Kalburator::Sync`
+  top-level as part of the SQLite rewrite. Sub-namespace exists to
+  avoid `ConflictResolution` / `SyncStats` / `SyncResult` collisions
+  with `src/types/synctypes.h`.
 
 ### `~/dev/PlanStan/`
 
@@ -244,17 +265,15 @@ same with a `TODO(phase-c-cleanup)` marker.
 
 ### Short-term (queued phases)
 
-- **C.4 — SQLite IDMappingStore rewrite.** Current IDMappingStore is
-  the JSON-backed implementation WP lifted; it's dormant (no consumer
-  in PlanStan). Rewrite to SQLite with merged schema per Audit 2.
-  Migration concern: existing PlanStan users on disk have
-  `.planstan-sync.db` with a specific ID-mapping schema; decide during
-  C.4 whether to preserve that schema or ship a migration step.
 - **C.5 — PlanStan SyncStore call-site migration.** Move PlanStan's
-  `SyncStore::setIdMapping` / `sourceUidForTargetId` callers onto the
-  new IDMappingStore. Remove the identity-mapping methods from
-  SyncStore (or keep as deprecated shim — decide during C.5).
-- **C.6 — Tag `v0.5-phase-c`** once C.4 + C.5 land clean.
+  `SyncStore::setIdMapping` / `sourceUidForTargetId` /
+  `removeIdMapping` / `allIdMappings` callers onto the new
+  `IDMappingStore`. Remove the identity-mapping methods from
+  `SyncStore` (or keep as deprecated shim — decide during C.5).
+  Closing the pre-C.5 double-writer hazard characterized in
+  `tst_idmappingstore::test_coexistence_with_syncstore` happens
+  automatically when SyncStore stops writing to `sync_id_mappings`.
+- **C.6 — Tag `v0.5-phase-c`** once C.5 lands clean.
 
 ### Medium-term (Phase 4+)
 

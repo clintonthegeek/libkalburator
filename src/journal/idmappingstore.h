@@ -1,162 +1,132 @@
-#ifndef QSYNCCORE_IDMAPPINGSTORE_H
-#define QSYNCCORE_IDMAPPINGSTORE_H
+#ifndef KALBURATOR_IDMAPPINGSTORE_H
+#define KALBURATOR_IDMAPPINGSTORE_H
 
 /**
  * @file idmappingstore.h
- * @brief Bidirectional ID mapping store for sync operations
+ * @brief SQLite-backed store for sync identity mappings.
  *
- * Manages the correspondence between record identifiers in two
- * different data stores. Essential for incremental sync to know
- * which records correspond to each other.
+ * Persistent (source UID, recurrence ID) ↔ target ID mapping keyed
+ * per backend, with optional calendar context, category annotations,
+ * and an archived-soft-delete flag. Backs the sync_id_mappings table
+ * in .planstan-sync.db, co-resident with SyncStore.
  *
- * Example usage:
- *   - Palm record ID 12345 ↔ file "memos/meeting-notes.md"
- *   - Local file UUID ↔ cloud service record ID
+ * Schema evolution: this class EXTENDS the sync_id_mappings table
+ * created by SyncStore by adding four nullable columns
+ * (last_synced, source_category, target_categories, archived) via
+ * idempotent ALTER TABLE ADD COLUMN on open. Fresh DBs are stamped
+ * with PRAGMA user_version = 3 to match SyncStore's schema-version
+ * policy; any mismatch causes SyncStore to delete the DB file on
+ * its next open.
  *
- * This class is designed to be:
- *   - Persistence-agnostic (storage handled by load/save callbacks)
- *   - Thread-safe for read operations
- *   - Suitable for extraction into QSyncCore shared library
+ * Pre-C.5 hazard: during the window where both SyncStore and this
+ * class are live, a SyncStore::setIdMapping (INSERT OR REPLACE) on
+ * a row this class has populated will reset the four WP columns
+ * to their defaults (NULL / 0). No PS code currently populates those
+ * columns, so the hazard has no data-loss surface until C.5 flips
+ * the PS call sites.
+ *
+ * Not thread-safe. Callers must serialize access to a given instance.
+ * Not a QObject — pure value-lifetime class with RAII connection
+ * ownership.
  */
 
-#include "synccommon.h"
+#include <QDateTime>
+#include <QList>
+#include <QString>
+#include <QStringList>
 
-#include <QObject>
-#include <QMap>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <functional>
+namespace Kalburator::Sync {
 
-namespace Kalburator::Sync::QSyncCore {
+struct IDMapping {
+    QString     backendId;         ///< required, non-empty
+    QString     sourceUid;         ///< required, non-empty
+    QString     recurrenceId;      ///< "" for master / non-recurring
+    QString     targetId;          ///< required, non-empty
+    QString     calendarId;        ///< optional
+    QDateTime   lastSynced;
+    QString     sourceCategory;    ///< optional; Palm-shaped backends only
+    QStringList targetCategories;  ///< optional
+    bool        archived = false;
 
-/**
- * @brief Manages bidirectional ID mappings between two sync stores
- *
- * Provides O(1) lookup in both directions via dual hash maps.
- * Supports serialization to/from JSON for persistence.
- */
-class IdMappingStore : public QObject
-{
-    Q_OBJECT
-
-public:
-    explicit IdMappingStore(QObject *parent = nullptr);
-    ~IdMappingStore() override = default;
-
-    // ========== Mapping Operations ==========
-
-    /**
-     * @brief Create or update a mapping between source and target IDs
-     *
-     * If either ID already has a mapping, the old mapping is removed
-     * to maintain 1:1 correspondence.
-     */
-    void mapIds(const RecordId &sourceId, const RecordId &targetId);
-
-    /**
-     * @brief Remove a mapping by source ID
-     * @return true if a mapping was removed
-     */
-    bool removeBySource(const RecordId &sourceId);
-
-    /**
-     * @brief Remove a mapping by target ID
-     * @return true if a mapping was removed
-     */
-    bool removeByTarget(const RecordId &targetId);
-
-    /**
-     * @brief Get target ID for a source record
-     * @return Target ID, or empty string if no mapping exists
-     */
-    RecordId targetForSource(const RecordId &sourceId) const;
-
-    /**
-     * @brief Get source ID for a target record
-     * @return Source ID, or empty string if no mapping exists
-     */
-    RecordId sourceForTarget(const RecordId &targetId) const;
-
-    /**
-     * @brief Check if a source ID has a mapping
-     */
-    bool hasSourceMapping(const RecordId &sourceId) const;
-
-    /**
-     * @brief Check if a target ID has a mapping
-     */
-    bool hasTargetMapping(const RecordId &targetId) const;
-
-    /**
-     * @brief Get all source IDs in the store
-     */
-    QStringList allSourceIds() const;
-
-    /**
-     * @brief Get all target IDs in the store
-     */
-    QStringList allTargetIds() const;
-
-    /**
-     * @brief Get the full mapping entry for a source ID
-     */
-    IdMapping getMapping(const RecordId &sourceId) const;
-
-    /**
-     * @brief Get total number of mappings
-     */
-    int count() const { return m_mappings.size(); }
-
-    /**
-     * @brief Check if store has any mappings
-     */
-    bool isEmpty() const { return m_mappings.isEmpty(); }
-
-    // ========== Category Support ==========
-
-    /**
-     * @brief Update category information for a mapping
-     */
-    void updateCategories(const RecordId &sourceId,
-                          const QString &sourceCategory,
-                          const QStringList &targetCategories);
-
-    // ========== Serialization ==========
-
-    /**
-     * @brief Serialize all mappings to JSON
-     */
-    QJsonArray toJson() const;
-
-    /**
-     * @brief Load mappings from JSON
-     * @param array JSON array of mapping objects
-     * @return Number of mappings loaded
-     */
-    int fromJson(const QJsonArray &array);
-
-    /**
-     * @brief Clear all mappings
-     */
-    void clear();
-
-signals:
-    /**
-     * @brief Emitted when mappings are modified
-     */
-    void mappingsChanged();
-
-private:
-    // Primary storage: source ID → full mapping
-    QMap<RecordId, IdMapping> m_mappings;
-
-    // Reverse lookup: target ID → source ID
-    QMap<RecordId, RecordId> m_reverseMap;
-
-    QJsonObject mappingToJson(const IdMapping &mapping) const;
-    IdMapping mappingFromJson(const QJsonObject &json) const;
+    bool isValid() const
+    {
+        return !backendId.isEmpty()
+            && !sourceUid.isEmpty()
+            && !targetId.isEmpty();
+    }
 };
 
-} // namespace Kalburator::Sync::QSyncCore
+class IDMappingStore
+{
+public:
+    explicit IDMappingStore(const QString &dbPath);
+    ~IDMappingStore();
 
-#endif // QSYNCCORE_IDMAPPINGSTORE_H
+    IDMappingStore(const IDMappingStore &) = delete;
+    IDMappingStore &operator=(const IDMappingStore &) = delete;
+    IDMappingStore(IDMappingStore &&) = delete;
+    IDMappingStore &operator=(IDMappingStore &&) = delete;
+
+    bool    isOpen() const;
+    QString lastError() const;
+    QString databasePath() const;
+
+    // --- Primary lookup API (PS-derived, extended with recurrenceId) ---
+
+    QString targetIdForSourceUid(const QString &backendId,
+                                 const QString &sourceUid,
+                                 const QString &recurrenceId = QString()) const;
+
+    QString sourceUidForTargetId(const QString &backendId,
+                                 const QString &targetId) const;
+
+    void    setIdMapping(const QString &backendId,
+                         const QString &sourceUid,
+                         const QString &recurrenceId,
+                         const QString &targetId,
+                         const QString &calendarId = QString());
+
+    void    removeIdMapping(const QString &backendId,
+                            const QString &sourceUid,
+                            const QString &recurrenceId = QString());
+
+    void    clearIdMappings(const QString &backendId);
+
+    // --- Bulk accessor (full struct list) ---
+
+    QList<IDMapping> allMappings(const QString &backendId) const;
+
+    // --- WP-contributed category + archive methods ---
+
+    IDMapping getMapping(const QString &backendId,
+                         const QString &sourceUid,
+                         const QString &recurrenceId = QString()) const;
+
+    void    updateCategories(const QString &backendId,
+                             const QString &sourceUid,
+                             const QString &recurrenceId,
+                             const QString &sourceCategory,
+                             const QStringList &targetCategories);
+
+    void    setArchived(const QString &backendId,
+                        const QString &sourceUid,
+                        const QString &recurrenceId,
+                        bool archived);
+
+private:
+    static int s_connectionCounter;
+
+    QString         m_dbPath;
+    QString         m_connName;
+    bool            m_isOpen = false;
+    mutable QString m_lastError;
+
+    bool ensureSchemaAndVersion(bool dbFileExistedBefore);
+    bool ensureColumn(const QString &column, const QString &ddl);
+
+    void setError(const QString &message) const;
+};
+
+} // namespace Kalburator::Sync
+
+#endif // KALBURATOR_IDMAPPINGSTORE_H

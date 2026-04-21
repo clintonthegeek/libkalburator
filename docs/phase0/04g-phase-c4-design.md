@@ -404,6 +404,47 @@ Single commit, message `Phase C.4: SQLite IDMappingStore`.
 
 ## Outcome
 
-_To be appended when C.4 lands. Record: actual commit SHA, actual
-ctest count, any deviations from this spec, anything discovered during
-implementation that future phases should know._
+**Landed:** 2026-04-21. See `git log --oneline --grep="Phase C.4"` in
+both repos for the landing commits.
+
+**ctest delta (target-level counts):** 87 → 88 pass (+1 new target,
+`tst_idmappingstore`, 12/12 internal tests green). 4 fail unchanged
+(pre-existing `tst_blockstore`, `sync_workflow_conflicts`,
+`sync_error_recovery`, `tst_treeflatteningproxymodel`). 23 not-run
+(env-dependent integration + graffodil targets). No regressions.
+
+**Deviations from spec:** none structural. Two implementation details
+surfaced during execution:
+
+1. **NULL-vs-'' recurrence_id bind bug (fixed).** First pass of the
+   implementation bound `QString()` directly as the `recurrence_id`
+   parameter. Qt's SQL driver binds a null `QString` as SQL `NULL`,
+   and `WHERE recurrence_id = NULL` never matches (SQL three-valued
+   logic). The existing `sync_id_mappings` schema defaults to `''`,
+   and `SyncStore::setBaseline` / `setVersionHash` already work around
+   this via an explicit `recurrenceId.isEmpty() ? "" : recurrenceId`
+   ternary. `IDMappingStore` now funnels every `recurrence_id` bind
+   through a `normRec()` helper that guarantees a non-null empty
+   string. Caught by 7 failing tests on first run; all 12 pass after
+   the fix.
+
+2. **Schema-version coordination with SyncStore.** `SyncStore::
+   initDatabase` deletes the DB file on `PRAGMA user_version != 3`.
+   `IDMappingStore::ensureSchemaAndVersion` therefore stamps
+   `user_version = 3` on fresh-DB creation only (never on an
+   existing DB, where SyncStore's policy takes precedence). The
+   constant `3` is hardcoded in both classes; bumps must stay
+   coordinated in the same commit — otherwise one class will
+   destroy the other's state.
+
+**Follow-ups queued for C.5:**
+
+- Move PS `SyncStore::setIdMapping` / `sourceUidForTargetId` /
+  `removeIdMapping` / `allIdMappings` callers onto `IDMappingStore`.
+- Decide shim-or-delete for `SyncStore`'s identity methods.
+- The pre-C.5 double-writer hazard (characterized in
+  `test_coexistence_with_syncstore`) closes when C.5 lands because
+  SyncStore stops writing to `sync_id_mappings` at that point.
+- Potentially consider a `CalBurator::Sync::SchemaVersion` shared
+  constant once a third class joins the DB — two is still fine at a
+  local `constexpr`.
