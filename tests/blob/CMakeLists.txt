@@ -16,3 +16,4 @@ function(kalburator_add_blob_test TEST_NAME)
 endfunction()
 
 kalburator_add_blob_test(tst_mockblobbackend)
+kalburator_add_blob_test(tst_localblobbackend)
