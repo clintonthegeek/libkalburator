@@ -2,6 +2,7 @@
 #include <QTemporaryDir>
 
 #include "blobbaselinestore.h"
+#include "idmappingstore.h"
 
 using Kalburator::Sync::BlobBaselineStore;
 
@@ -17,6 +18,7 @@ private slots:
     void commitBaselinesIsAtomic();
     void baselineRecordIdsFiltersByMapping();
     void clearMappingRemovesOnlyThatMapping();
+    void coexistsWithIDMappingStore();
 
     // (More slots added in subsequent tasks.)
 
@@ -174,6 +176,46 @@ void TestBlobBaselineStore::clearMappingRemovesOnlyThatMapping()
     QVERIFY(store.baselineRecordIds(QStringLiteral("m-a")).isEmpty());
     QCOMPARE(store.baselineRecordIds(QStringLiteral("m-b")),
              QStringList() << QStringLiteral("r2"));
+}
+
+void TestBlobBaselineStore::coexistsWithIDMappingStore()
+{
+    using Kalburator::Sync::IDMappingStore;
+
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dbPathIn(dir);
+
+    // Open both stores on the same file.
+    IDMappingStore idStore(path);
+    QVERIFY2(idStore.isOpen(), qUtf8Printable(idStore.lastError()));
+
+    BlobBaselineStore baseStore(path);
+    QVERIFY2(baseStore.isOpen(), qUtf8Printable(baseStore.lastError()));
+
+    // Exercise both independently.
+    idStore.setIdMapping(QStringLiteral("palm"),
+                         QStringLiteral("uid-1"),
+                         QString(),
+                         QStringLiteral("target-1"));
+    QCOMPARE(idStore.targetIdForSourceUid(QStringLiteral("palm"),
+                                          QStringLiteral("uid-1")),
+             QStringLiteral("target-1"));
+
+    QVERIFY(baseStore.setBaseline(QStringLiteral("mapping-1"),
+                                  QStringLiteral("rec-1"),
+                                  QStringLiteral("hash-1")));
+    QCOMPARE(baseStore.baselineHash(QStringLiteral("mapping-1"),
+                                    QStringLiteral("rec-1")),
+             QStringLiteral("hash-1"));
+
+    // Cross-check: baseline store didn't touch sync_id_mappings, and
+    // IDMappingStore didn't touch blob_baselines.
+    QCOMPARE(baseStore.baselineRecordIds(QStringLiteral("irrelevant")),
+             QStringList());
+    QCOMPARE(idStore.targetIdForSourceUid(QStringLiteral("palm"),
+                                          QStringLiteral("nonexistent")),
+             QString());
 }
 
 QTEST_MAIN(TestBlobBaselineStore)
