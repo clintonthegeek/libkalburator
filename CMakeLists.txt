@@ -57,8 +57,22 @@ target_link_libraries(kalburator-types
 set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- Kalburator::Sync -------------------------------------------------------
-file(GLOB KALBURATOR_SYNC_HEADERS CONFIGURE_DEPENDS src/sync/*.h)
-file(GLOB KALBURATOR_SYNC_SOURCES CONFIGURE_DEPENDS src/sync/*.cpp)
+# Sync sources are layered across sub-directories per docs/phase0/05-repo-strategy.md:
+#   calendar/   — backends, coordination, CRUD items, ISyncHost
+#   conflict/   — conflict framework (incl. Kalburator::Sync::QSyncCore files)
+#   transcoding/— property/RRULE transcoding + diffs
+#   journal/    — crash-recovery journal, baseline store, ID mapping, async writer
+#   discovery/  — Syncthing auto-discovery + monitor (experimental)
+#   blob/       — blob-backend layer (empty placeholder for future work)
+set(KALBURATOR_SYNC_SUBDIRS calendar conflict transcoding journal discovery blob)
+set(KALBURATOR_SYNC_HEADERS "")
+set(KALBURATOR_SYNC_SOURCES "")
+foreach(_subdir IN LISTS KALBURATOR_SYNC_SUBDIRS)
+    file(GLOB _subdir_headers CONFIGURE_DEPENDS src/${_subdir}/*.h)
+    file(GLOB _subdir_sources CONFIGURE_DEPENDS src/${_subdir}/*.cpp)
+    list(APPEND KALBURATOR_SYNC_HEADERS ${_subdir_headers})
+    list(APPEND KALBURATOR_SYNC_SOURCES ${_subdir_sources})
+endforeach()
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgbackend\\.h$")
@@ -78,7 +92,12 @@ add_library(Kalburator::Sync ALIAS kalburator)
 
 target_include_directories(kalburator
     PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transcoding>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
 )
 
 target_link_libraries(kalburator

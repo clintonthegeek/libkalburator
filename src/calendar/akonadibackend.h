@@ -14,10 +14,10 @@
 #include <QMap>
 #include <QSet>
 
-namespace Kalburator::Sync {
-
 class KalbConfigManager;
 class TagSettings;
+
+namespace Kalburator::Sync {
 
 /**
  * @brief Akonadi client backend for PlanStan.

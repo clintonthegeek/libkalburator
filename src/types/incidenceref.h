@@ -50,6 +50,6 @@ struct IncidenceRef
 } // namespace Kalburator::Sync
 
 Q_DECLARE_METATYPE(Kalburator::Sync::IncidenceRef)
-Q_DECLARE_METATYPE(Kalburator::Sync::QList<Kalburator::Sync::IncidenceRef>)
+Q_DECLARE_METATYPE(QList<Kalburator::Sync::IncidenceRef>)
 
 #endif // INCIDENCEREF_H
