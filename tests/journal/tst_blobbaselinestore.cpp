@@ -15,6 +15,7 @@ private slots:
     void setBaselineOverwritesExistingHash();
     void commitBaselinesBulkInsert();
     void commitBaselinesIsAtomic();
+    void baselineRecordIdsFiltersByMapping();
 
     // (More slots added in subsequent tasks.)
 
@@ -127,6 +128,32 @@ void TestBlobBaselineStore::commitBaselinesIsAtomic()
     QCOMPARE(store.baselineHash(QStringLiteral("m"),
                                 QStringLiteral("new-rec")),
              QStringLiteral("h-new2"));
+}
+
+void TestBlobBaselineStore::baselineRecordIdsFiltersByMapping()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BlobBaselineStore store(dbPathIn(dir));
+    QVERIFY(store.isOpen());
+
+    QVERIFY(store.setBaseline(QStringLiteral("m-a"),
+                              QStringLiteral("r1"), QStringLiteral("h")));
+    QVERIFY(store.setBaseline(QStringLiteral("m-a"),
+                              QStringLiteral("r2"), QStringLiteral("h")));
+    QVERIFY(store.setBaseline(QStringLiteral("m-b"),
+                              QStringLiteral("r3"), QStringLiteral("h")));
+
+    QStringList idsA = store.baselineRecordIds(QStringLiteral("m-a"));
+    std::sort(idsA.begin(), idsA.end());
+    QCOMPARE(idsA, QStringList() << QStringLiteral("r1")
+                                 << QStringLiteral("r2"));
+
+    QCOMPARE(store.baselineRecordIds(QStringLiteral("m-b")),
+             QStringList() << QStringLiteral("r3"));
+
+    QCOMPARE(store.baselineRecordIds(QStringLiteral("m-nothing")),
+             QStringList());
 }
 
 QTEST_MAIN(TestBlobBaselineStore)

@@ -193,9 +193,29 @@ bool BlobBaselineStore::commitBaselines(
     return true;
 }
 
-QStringList BlobBaselineStore::baselineRecordIds(const QString &) const
+QStringList BlobBaselineStore::baselineRecordIds(
+    const QString &mappingId) const
 {
-    return {};
+    if (!m_isOpen) {
+        return {};
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT record_id FROM blob_baselines WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("baselineRecordIds: %1")
+                     .arg(q.lastError().text()));
+        return {};
+    }
+
+    QStringList out;
+    while (q.next()) {
+        out.append(q.value(0).toString());
+    }
+    return out;
 }
 
 bool BlobBaselineStore::clearMapping(const QString &)
