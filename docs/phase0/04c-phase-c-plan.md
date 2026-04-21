@@ -1,7 +1,10 @@
 # Phase C — layered split + namespace migration + deferred Phase B bundling
 
 **Date:** 2026-04-20.
-**Status:** Plan. Sub-step C.1 execution in progress this session.
+**Status:** Superseded 2026-04-20. C.2 split into C.2a (layering) and
+C.2b (namespace) per `04d-phase-c2-blocker.md`. The layering migration
+plan is in `04e-phase-c2a-design.md`; C.2b retains the plan sketched
+here but assumes option-2 layering has landed.
 
 Phase C reshapes libkalburator into its v1.0-target form. Bundles the
 three deferred Phase B items (per user direction 2026-04-20).
