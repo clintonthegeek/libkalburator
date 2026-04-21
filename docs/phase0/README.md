@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase B3 — BlobBaselineStore landed).
+**Last updated:** 2026-04-21 (after Phase B4 — engine ↔ conflict wiring landed).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -143,19 +143,29 @@ IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
   persistence. Enables correct 3-way diff for the future
   `twoWayWithBaseline` engine operation (Phase B4). Tag:
   `v0.7-phase-b3-baseline`.
+- **Phase B4** — `BlobSyncEngine::twoWayWithBaseline` + ConflictStore
+  integration. Nine-case 3-way diff (no-change, unilateral mods both
+  ways, deletion propagation both ways, new-record propagation both
+  ways, both-modified conflict). Conflicts dispatched to per-backend
+  `ConflictHandler` via externally-owned `ConflictHandlerRegistry`
+  (borrowed pointer; not engine-owned). Skip/Pending decisions persist
+  to `ConflictStore` for deferred review. `BlobSyncStats` gained
+  `conflicts` count field. Nine new test slots in
+  `tests/blob/tst_blobsyncengine.cpp`, with `IdentifiedMock` +
+  `TestHandler` helpers. Closes the B2-deferred items for engine-side
+  conflict wiring. Tag: `v0.8-phase-b4-engine-conflicts`.
 
-**Next:** Phase B4 — `BlobSyncEngine::twoWayWithBaseline` + `ConflictStore`
-integration + `BlobSyncEngine::registerConflictHandler`. Consumes B3's
-`BlobBaselineStore`. Will close the remaining B2-deferred items needed
-to unblock Wild Palms Phase E.3+ on the WP side.
+**Next:** Wild Palms Phase E.3+ on the WP side. Upstream has no
+actively-queued phases.
 
 **Baseline health:** libkalburator standalone build clean — 4/4 ctest
-pass (3 blob tests + 1 journal test covering 10 internal slots).
-PlanStan builds clean against B3. PlanStan ctest (2026-04-21 run on
-WP-side machine): 81 pass / 6 actual fail / 18 not-run / 105 total.
-Real failures (5 integration_* SEGFAULTs + sync_error_recovery) are
-all pre-existing — documented in "Known debt" below; none touch
-journal/ code. No new failures introduced by Phase B3.
+pass. `tst_blobsyncengine` now has 19 internal slots (10 pre-B4 +
+9 new twoWayWithBaseline slots). `tst_blobbaselinestore` 10 slots.
+PlanStan builds clean against B4. PlanStan ctest (2026-04-21 run on
+WP-side machine): 81 pass / 6 actual fail / 18 not-run / 105 total
+— identical to post-B3 run; no new failures introduced by B4.
+Real failures (5 integration_* + sync_error_recovery) are all
+pre-existing per "Known debt" below.
 
 ---
 
@@ -181,7 +191,7 @@ journal/ code. No new failures introduced by Phase B3.
 | **Phase C.6** — v0.5 tag | done 2026-04-21 | `04c-phase-c-plan.md` §C.6 | `v0.5-phase-c` annotated tag on `main` at the C.5 commit. First named release. |
 | **Phase B2** — blob layer | done 2026-04-21 | `04h-blob-layer-design.md` + `04h-blob-layer-plan.md` | Net-new lower-layer blob sync substrate: IBlobBackend, BackendRecord, CollectionInfo, BlobSyncEngine (mirror + twoWayNaive), LocalBlobBackend, MockBlobBackend. First library-side tests. Scope narrow by design; sequel phase wires calendar layer to compose the engine. |
 | **Phase B3** — BlobBaselineStore | done 2026-04-21 | `04i-blob-baseline-store-design.md` | SQLite hash-per-record baseline store keyed by (mapping_id, record_id). Shares `.planstan-sync.db` with IDMappingStore + SyncStore. 10-slot test suite in `tests/journal/`. Tag: `v0.7-phase-b3-baseline`. Enables correct 3-way diff in Phase B4's twoWayWithBaseline. First WP-Phase-E-driven upstream deliverable. |
-| **Phase B4** — BlobSyncEngine ↔ ConflictStore | queued | (design doc pending, planned for WP Phase E.2) | `twoWayWithBaseline` + `registerConflictHandler` + ConflictStore integration inside the engine. Consumes B3's BlobBaselineStore. Unblocks WP Phase E.3+ on the WP side. |
+| **Phase B4** — BlobSyncEngine ↔ ConflictStore | done 2026-04-21 | `04j-engine-conflict-wiring-design.md` | `twoWayWithBaseline` + 9-case 3-way diff + per-backend ConflictHandler dispatch via externally-owned ConflictHandlerRegistry + ConflictStore persistence for Skip/Pending. BlobSyncStats.conflicts added. 9 new test slots. Tag: `v0.8-phase-b4-engine-conflicts`. Closes B2-deferred engine-conflict-wiring items; unblocks WP Phase E.3+. |
 | Phase 4 — Wild Palms adoption | in progress | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. B2 + B3 are the first upstream pieces. Next up on WP side: full plugin ABI rewrite + PalmBackend refactor, designed in `~/dev/WildPalms/docs/superpowers/specs/2026-04-21-phase-e-plugin-abi-rewrite-design.md`. |
 | Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
 

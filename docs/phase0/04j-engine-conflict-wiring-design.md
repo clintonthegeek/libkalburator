@@ -87,6 +87,26 @@ subclasses `MockBlobBackend` with an `IdentifiedMock` carrying an ID.
 Extend `tests/blob/tst_blobsyncengine.cpp` with slots covering each of
 the nine diff cases plus handler dispatch and Skip-persistence.
 
-## Outcome
+## Outcome (2026-04-21)
 
-(Filled in during Task 10.)
+Landed as planned. `twoWayWithBaseline` handles all nine diff cases.
+Nine new test slots in `tst_blobsyncengine.cpp` covering no-change,
+unilateral A/B modifications, deletion propagation both ways, creation
+propagation both ways, conflict dispatch with UseSource resolution,
+and Skip-decision persistence to ConflictStore.
+
+Two test helpers landed in the test file: `IdentifiedMock`
+(MockBlobBackend subclass with configurable backend ID, needed for
+per-backend handler dispatch) and `TestHandler` (ConflictHandler
+subclass recording invocations + configurable decision).
+
+`BlobSyncStats` gained `conflicts` count field. Registry is passed
+in as expected; no engine-owned registry.
+
+`ConflictRecord::source.id` / `target.id` are plain QString (alias
+`RecordId = QString`), not structs with backend fields — populated
+from `BackendRecord.id` directly.
+
+PlanStan ctest held baseline (81 pass / 6 pre-existing failures / 18
+env-dependent not-run / 105 total — identical to post-B3 run; no
+new failures).

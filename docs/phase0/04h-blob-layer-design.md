@@ -452,9 +452,9 @@ included** in Phase B2, with a note of who's expected to drive each.
 |---|---|
 | `BlobBaselineStore` (hash baseline per mapping) | **✅ Landed in Phase B3 (`v0.7-phase-b3-baseline`, 2026-04-21)** — see `04i-blob-baseline-store-design.md`. Consumed by Phase B4's `twoWayWithBaseline`. |
 | 3-way-merge blob sync | Same phase as `BlobBaselineStore` — they co-arrive. |
-| `ConflictStore` integration inside `BlobSyncEngine` | Same phase — the engine is the consumer of both baseline and conflict store. |
-| `AutomaticConflictHandler` wired into `BlobSyncEngine` | Same phase — sketch §"Conflict framework" describes. |
-| `BlobSyncEngine::registerConflictHandler(backendId, handler)` | Follows from the above. WP's `PalmConflictHandler` plugs in here. |
+| `ConflictStore` integration inside `BlobSyncEngine` | **✅ Landed in Phase B4 (`v0.8-phase-b4-engine-conflicts`, 2026-04-21)** — see `04j-engine-conflict-wiring-design.md`. `twoWayWithBaseline` routes Skip/Pending decisions through `ConflictStore::addConflict`. |
+| `AutomaticConflictHandler` wired into `BlobSyncEngine` | Handler dispatch landed via `ConflictHandlerRegistry` in Phase B4. Any `ConflictHandler` subclass (including `AutomaticConflictHandler`) registered with the registry is consulted for its backend. |
+| `BlobSyncEngine::registerConflictHandler(backendId, handler)` | **Landed in Phase B4 as registry-passed-in variant** rather than as a method on the engine — `twoWayWithBaseline(..., handlers, ...)` takes a borrowed `ConflictHandlerRegistry *` from the caller. Matches `SyncCoordinator::conflictRegistry()` ownership pattern. |
 | `MockBlobBackend`: latency injection, operation log, deterministic mode | On-demand — when a test requires it. |
 | Wiring `SyncCoordinator` (calendar) to compose `BlobSyncEngine` | Deliberately out of this phase (scope-(a) decision). Opens a later library-side phase that does the `SyncBackend` → `ICalendarBackend` rename, `SyncCoordinator` → `CalendarSyncCoordinator` rename, and composes the blob engine. That phase is the logical bookend of the blob/calendar split. |
 | `AsyncFileWriter` blob/calendar split (`BlobAsyncFileWriter` + `CalendarAsyncFileWriter`, atomic via `QSaveFile`) | Per Audit 4 — its own phase. Not gating this one. `LocalBlobBackend` uses plain `QFile` atomicity via `QSaveFile` directly for now. |
