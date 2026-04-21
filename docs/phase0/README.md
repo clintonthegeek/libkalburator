@@ -1,6 +1,6 @@
 # libkalburator — extraction progress overview
 
-**Last updated:** 2026-04-21 (after Phase C.6 — `v0.5-phase-c` tagged).
+**Last updated:** 2026-04-21 (after Phase B2 — blob layer landed).
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
@@ -120,11 +120,22 @@ IDMappingStore) and Wild-Palms-lifted "qsynccore" conflict machinery
   single-owner `sync_id_mappings`. Lightweight endpoint — no
   CMake version bump or install-target yet (those are Phase 4+
   concerns).
+- **Phase B2** — net-new blob layer. First Wild-Palms-driven
+  contribution. Landed `IBlobBackend` + `BackendRecord` +
+  `CollectionInfo` + `BlobSyncEngine` (mirror + twoWayNaive) +
+  `LocalBlobBackend` + `MockBlobBackend`. First library-side test
+  tree at `tests/blob/` gated by `KALBURATOR_BUILD_TESTS`
+  (ON for PROJECT_IS_TOP_LEVEL, OFF for add_subdirectory consumers).
+  Calendar layer untouched; PlanStan ctest baseline preserved. Scope
+  deliberately narrow — baseline store, conflict integration, and
+  calendar-layer bridging all explicitly deferred. See
+  `04h-blob-layer-design.md` §"Explicitly deferred" for the
+  catalogue. Tag: `v0.6-phase-b2-blob-layer` (pending Task 10).
 
-**Next:** Phase 4 (deferred) — Wild Palms adoption. WP currently
-carries its own `src/sync/` + `qsynccore/` and needs to migrate onto
-libkalburator. That work is gated on WP's own roadmap (two-mode UX
-design) and is out of scope here. Nothing is actively queued.
+**Next:** Wild Palms Phase E — refactor `PalmBackend` onto
+`IBlobBackend`, add `PalmCalendarBackend` adapter, delete WP's
+`src/sync/qsynccore/`. Gated on WP's own roadmap. Nothing actively
+queued in libkalburator itself.
 
 **Baseline health:** libkalburator standalone build clean. PlanStan
 builds clean. ctest target-level run: **88 pass / 4 fail / 23
@@ -157,7 +168,8 @@ integration/graffodil builds. No regressions.
 | **Phase C.4** — SQLite IDMappingStore | done 2026-04-21 | `04g-phase-c4-design.md` | Merged-schema SQLite per Audit 2 + `recurrenceId`. Shares `.planstan-sync.db` via ALTER TABLE ADD COLUMN. 12 tests. |
 | **Phase C.5** — SyncStore identity-mapping dissolve | done 2026-04-21 | `04c-phase-c-plan.md` §C.5 + `~/dev/PlanStan/docs/superpowers/specs/2026-04-21-c5-syncstore-identity-dissolve-design.md` | Dormant-code cleanup; zero production callers existed. IDMappingStore is sole owner of `sync_id_mappings`. |
 | **Phase C.6** — v0.5 tag | done 2026-04-21 | `04c-phase-c-plan.md` §C.6 | `v0.5-phase-c` annotated tag on `main` at the C.5 commit. First named release. |
-| Phase 4 — Wild Palms adoption | deferred | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. Own roadmap in WP. |
+| **Phase B2** — blob layer | done 2026-04-21 | `04h-blob-layer-design.md` + `04h-blob-layer-plan.md` | Net-new lower-layer blob sync substrate: IBlobBackend, BackendRecord, CollectionInfo, BlobSyncEngine (mirror + twoWayNaive), LocalBlobBackend, MockBlobBackend. First library-side tests. Scope narrow by design; sequel phase wires calendar layer to compose the engine. |
+| Phase 4 — Wild Palms adoption | in progress | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. B2 is the first upstream piece. Next up on WP side: PalmBackend refactor onto IBlobBackend (WP Phase E). |
 | Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
 
 ---
@@ -239,7 +251,8 @@ libkalburator/
     ├── journal/ (8)        ← CalendarJournal, BaselineStore, IDMappingStore,
     │                         AsyncFileWriter
     ├── discovery/ (4)      ← Syncthing auto-discovery (experimental)
-    └── blob/ (0)           ← placeholder for future blob backend layer
+    └── blob/ (8)           ← IBlobBackend, BlobSyncEngine,
+                              LocalBlobBackend, MockBlobBackend (Phase B2)
 ```
 
 CMake targets: `kalburator-types` (alias `Kalburator::Types`),
@@ -316,10 +329,14 @@ None. Phase C is complete as of `v0.5-phase-c`. The next active phase
   PlanStan uses them today, but long-term they may spin out to a
   `Kalburator::Discovery::*` sibling module (see 05-repo-strategy
   namespace note) or retire.
-- **`src/blob/` empty placeholder.** No BlobBackend implementation
-  exists yet. Was sketched in the merged interface for future work
-  (binary blob sync for attachments / vtodo attachments / etc.). Not
-  blocking any current goal.
+- **Blob-layer followups.** Phase B2 landed the minimum-viable blob
+  layer (mirror + twoWayNaive, no baseline, no conflict integration).
+  Explicit followups catalogued in `04h-blob-layer-design.md`
+  §"Explicitly deferred" — most notably `BlobBaselineStore`,
+  `ConflictStore` integration inside the engine, the calendar-layer
+  refactor that composes `BlobSyncEngine` from `SyncCoordinator`,
+  and the `AsyncFileWriter` blob/calendar split. Not blocking WP's
+  current Phase E.
 - **Remaining ctest failures (26).** Pre-existing baseline. Inventory
   in `memory/project_library_decomposition.md`: `tst_blockstore`
   testMoveBlock_withChildren, `tst_treeflatteningproxymodel`,
@@ -342,8 +359,16 @@ cmake -S ~/dev/libkalburator -B ~/dev/libkalburator/build
 cmake --build ~/dev/libkalburator/build -j"$(nproc)"
 ```
 
-No tests live in libkalburator yet (deferred to Phase 4 per
-05-repo-strategy). Build success is the verification gate.
+Tests live at `tests/blob/` as of Phase B2, gated by
+`KALBURATOR_BUILD_TESTS` (ON for standalone, OFF for
+add_subdirectory consumers). Run with:
+
+```bash
+ctest --test-dir ~/dev/libkalburator/build --output-on-failure
+```
+
+Expected: 3/3 pass (`tst_mockblobbackend`, `tst_localblobbackend`,
+`tst_blobsyncengine`).
 
 ### Build + test (PlanStan consuming libkalburator)
 

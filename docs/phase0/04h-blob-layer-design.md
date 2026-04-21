@@ -1,7 +1,9 @@
 # Phase B2 — blob-layer design (Wild Palms adoption, initial)
 
-**Status:** Design approved 2026-04-21. Not yet implemented. First
-net-new contribution driven by the Wild Palms integration.
+**Status:** ✅ Implemented 2026-04-21. First Wild-Palms-driven
+contribution to libkalburator. All success criteria met pending
+Task 9 (cross-repo verification) and Task 10 (tag) landing. 3/3
+library-side ctest pass.
 **Companion:** the overall phase map lives in `~/dev/WildPalms/docs/plans/2026-04-20-libkalburator-integration.md`
 as "Phase B2" of that integration.
 **Sibling upstream phase:** this is the first concrete slice of the
