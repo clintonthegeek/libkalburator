@@ -1,0 +1,355 @@
+# libkalburator — extraction progress overview
+
+**Last updated:** 2026-04-21 (after Phase C.3).
+**Maintainer:** Clinton (solo).
+**Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
+remote; static, single-developer branches.
+
+This document is the **first thing a new agent should read** when
+landing in either `~/dev/libkalburator/` or `~/dev/PlanStan/` with
+work that touches the extraction. It is a living index: update it
+when a phase lands, a decision flips, or a loose end gets tied off.
+
+---
+
+## What libkalburator is
+
+A reusable Qt6/KF6 calendar-sync substrate, extracted from PlanStan's
+`libs/sync/`. Two named consumers:
+
+- **PlanStan** (`~/dev/PlanStan/`) — multi-calendar personal PM app.
+  Currently consumes libkalburator in-tree via `add_subdirectory`.
+  Every commit that lands on `master` is expected to keep libkalburator
+  building.
+- **Wild Palms** (`~/dev/WildPalms/`) — Palm OS sync app. Not yet a
+  consumer; adoption planned for Phase 4 via the two-mode split
+  (Client Mode + Full Sync Mode) documented in
+  `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
+
+The library carries both PlanStan-lineage sync infrastructure
+(SyncBackend, SyncCoordinator, CalendarJournal, transcoding) and
+Wild-Palms-lifted "qsynccore" conflict machinery (ConflictPolicy,
+ConflictRecord, ConflictStore, BaselineRecord, IDMappingStore).
+
+---
+
+## Current status (2026-04-21)
+
+**Done:**
+
+- Phase 0 (alignment + repo setup).
+- Phase B partial (WP qsynccore lifted upstream).
+- Phase 1–3 (PlanStan consumes libkalburator in-tree).
+- Phase C.1 (qsynccore namespaced).
+- **Phase C.2a** — option-2 layering. PlanStan's duplicate shared-type
+  headers deleted; libkalburator is the single source via
+  `Kalburator::Types` + `Kalburator::Sync` targets.
+- **Phase C.2b** — namespace migration. Everything in libkalburator
+  lives under `Kalburator::Sync::*` (qsynccore files in
+  `Kalburator::Sync::QSyncCore` sub-namespace to resolve
+  ConflictResolution/SyncStats/SyncResult collisions). PlanStan
+  consumers carry TU-scope `using namespace Kalburator::Sync;`.
+- **Phase C.3** — directory layering.
+  `src/sync/` → `src/{calendar,conflict,transcoding,journal,discovery,blob}/`
+  per `05-repo-strategy.md`. All six subdirs exposed as PUBLIC include
+  paths so consumer code still uses bare `#include "foo.h"`.
+
+**Next:** Phase C.4 — SQLite `IDMappingStore` rewrite per Audit 2.
+See `04c-phase-c-plan.md` for shape.
+
+**Baseline health:** libkalburator standalone build clean. PlanStan
+builds clean. ctest at **86 pass / 26 fail / 112 total** (same as
+Phase 3b baseline, modulo one flake that settled into passing and a
+two-test ctest-count variance unrelated to this work).
+
+---
+
+## Phase map
+
+| Phase | Status | Key doc | Notes |
+|---|---|---|---|
+| 0 — alignment, inventory, repo | done | `00-open-questions.md`, `01-inventory-planstan.md`, `02-inventory-wildpalms.md`, `05-repo-strategy.md` | All 10 Phase-0 questions resolved. |
+| 0 — conflict engine audit | done | `03-conflict-engine-audit.md` | Split: generic conflict framework in lib, Palm-specific handler stays in WP. |
+| 0 — merged interface sketch | done | `04-merged-interface-sketch.md` | ICalendarBackend, IBlobBackend, ICalendarHost drafts. |
+| 0 — follow-ups (audits 1–4) | mostly done | `04a-followups.md` | Audit 1 & 4 closed; 2 & 3 rolled into Phase C. |
+| Phase 1 — extraction | done | `04b-phase3-status.md` | libs/sync's interface surface was already narrow; extraction copied files into `~/dev/libkalburator/src/`. |
+| Phase 2 — smoke test | done (implicit) | — | Integrated into Phase 3's PlanStan consumption. |
+| Phase 3 — PlanStan cutover | done | `04b-phase3-status.md` | add_subdirectory + KALBURATOR_PROVIDE_TYPES=OFF; libs/sync/ removed. |
+| Phase B — WP qsynccore lift | done (partial) | `04b-phase3-status.md` | 6 pairs copied upstream. Rest (IDMappingStore SQLite rewrite, ConflictHandlerRegistry call-site migration) rolled into Phase C. |
+| Phase C.1 — qsynccore namespace | done | `515ade2` commit | qsynccore files into `Kalburator::Sync` + compat alias. |
+| Phase C.2 (original) | **reverted** | `04d-phase-c2-blocker.md` | Flag-day namespace migration hit option-1 layering blocker. Split into C.2a + C.2b. |
+| **Phase C.2a** — layering | done 2026-04-20 | `04e-phase-c2a-design.md` | 4 commits. |
+| **Phase C.2b** — namespace migration | done 2026-04-20 | `04f-phase-c2b-design.md` | 2 commits. |
+| **Phase C.3** — directory layering | done 2026-04-21 | `05-repo-strategy.md` | 2 commits. |
+| **Phase C.4** — SQLite IDMappingStore | **queued** | `04c-phase-c-plan.md` §C.4 | Audit 2 decision: merged-schema SQLite with per-backend-qualified API. On-disk migration path needed. |
+| **Phase C.5** — SyncStore call-site migration | queued | `04c-phase-c-plan.md` §C.5 | PlanStan's `SyncStore::setIdMapping` callers move to `IDMappingStore`. |
+| **Phase C.6** — v0.5 tag | queued | `04c-phase-c-plan.md` §C.6 | After C.4 + C.5 land. |
+| Phase 4 — Wild Palms adoption | deferred | proposal §"Two-mode split" | Client Mode + Full Sync Mode profile selection. Own roadmap in WP. |
+| Phase 5 — Wild Palms Client Mode adapters | deferred | proposal §"Phase 5" | Akonadi / PlanStan D-Bus / plain-files adapters. |
+
+---
+
+## Key documents (annotated)
+
+### In `~/dev/libkalburator/docs/phase0/`
+
+- **`README.md`** — this file. Index + high-level state.
+- **`00-open-questions.md`** — initial Phase-0 questions (all resolved).
+- **`01-inventory-planstan.md`** — what PlanStan's `libs/sync/` looked
+  like before extraction.
+- **`02-inventory-wildpalms.md`** — what WP's `src/sync/` +
+  `qsynccore/` looked like.
+- **`03-conflict-engine-audit.md`** — conflict engine analysis; the
+  case for keeping Palm-specific handler in WP.
+- **`04-merged-interface-sketch.md`** — provisional interface names
+  and ownership.
+- **`04a-followups.md`** — four audit items from early Phase-0 review.
+  Audit 1 (SyncBackend lineage) and Audit 4 (AsyncFileWriter QSaveFile)
+  closed. Audit 2 → Phase C.4. Audit 3 → done in Phase C.1
+  (ConflictHandlerRegistry).
+- **`04b-phase3-status.md`** — what Phase 3 landed; defines the
+  "option 1 vs option 2" layering choice. **Load-bearing** for
+  understanding the pre-C.2a world.
+- **`04c-phase-c-plan.md`** — **superseded** for C.2 but still the
+  source of truth for C.3 / C.4 / C.5 / C.6 scope.
+- **`04d-phase-c2-blocker.md`** — post-mortem of the first C.2 attempt.
+  Explains why option-1 layering is incompatible with namespace
+  migration; source of the C.2a/C.2b split recommendation.
+- **`04e-phase-c2a-design.md`** — C.2a spec. Layering migration.
+- **`04f-phase-c2b-design.md`** — C.2b spec. Namespace migration with
+  the QSyncCore sub-namespace collision resolution.
+- **`05-repo-strategy.md`** — naming, licensing, versioning,
+  directory layout, build system, stewardship. Target directory
+  layout lives here; C.3 implemented the mechanical move but kept
+  existing file names (renames are future work).
+
+### In `~/dev/PlanStan/docs/`
+
+- **`proposals/2026-04-20-sync-library-extraction.md`** — top-level
+  proposal. Two-mode user-experience split (Client Mode + Full Sync
+  Mode in WP), motivation, phases. **Status line at the top of this
+  doc must track current reality.**
+- **`superpowers/plans/2026-04-20-c2a-layering-migration.md`** — the
+  four-task plan that implemented C.2a. Useful as a template for
+  future plans.
+- **`superpowers/plans/2026-04-20-c2b-namespace-migration.md`** —
+  the two-task plan that implemented C.2b, including the
+  `wrap_namespace.py` tooling notes.
+- **`todo/phase-c-qualify-consumer-headers.md`** — tracks the
+  `using namespace Kalburator::Sync;`-in-headers anti-pattern that
+  C.2b landed. 92 headers carry `TODO(phase-c-cleanup)` markers.
+  Cleanup is optional polish; build is semantically correct.
+- **`LibraryDecomposition.md`** — PlanStan's own library modularization
+  plan. libkalburator extraction is listed as a separate effort
+  orthogonal to the track 1/2 decomposition.
+
+---
+
+## Repo layout after Phase C.3
+
+### `~/dev/libkalburator/`
+
+```
+libkalburator/
+├── CMakeLists.txt          ← targets: kalburator-types, kalburator
+├── docs/
+│   └── phase0/             ← this dir; new agents start at README.md
+└── src/
+    ├── types/  (21 files)  ← Kalburator::Types target; no libkalburator-sync deps
+    ├── calendar/  (61)     ← backends, coordination, CRUD items, ISyncHost
+    ├── conflict/  (11)     ← ConflictManager + qsynccore (sub-namespace)
+    ├── transcoding/ (10)   ← property/RRULE transcoders, diffs
+    ├── journal/ (8)        ← CalendarJournal, BaselineStore, IDMappingStore,
+    │                         AsyncFileWriter
+    ├── discovery/ (4)      ← Syncthing auto-discovery (experimental)
+    └── blob/ (0)           ← placeholder for future blob backend layer
+```
+
+CMake targets: `kalburator-types` (alias `Kalburator::Types`),
+`kalburator` (alias `Kalburator::Sync` + transitional `PlanStan::Sync`,
+`planstan-sync`). No `KALBURATOR_PROVIDE_TYPES` flag; types are always
+built into `kalburator-types`.
+
+Namespaces:
+- `Kalburator::Sync::*` — everything in `src/types/` and everything in
+  `src/{calendar,conflict,transcoding,journal,discovery,blob}/` except:
+- `Kalburator::Sync::QSyncCore::*` — the 13 qsynccore files
+  (`baselinestore`, `conflicthandlerregistry`, `conflictpolicy`,
+  `conflictrecord`, `conflictstore`, `idmappingstore`, `synccommon`).
+  Sub-namespace exists to avoid `ConflictResolution` / `SyncStats` /
+  `SyncResult` collisions with `src/types/synctypes.h`.
+
+### `~/dev/PlanStan/`
+
+Relevant libs (unchanged elsewhere):
+
+- `libs/core/` — PUBLIC-links `Kalburator::Types`; lost 10 shared-type
+  headers + 2 .cpps to libkalburator in C.2a.
+- `libs/models/` — PUBLIC-links `Kalburator::Types`; lost 4 headers +
+  3 .cpps.
+- `libs/scheduling/` — PUBLIC-links `Kalburator::Types`; lost 2
+  headers.
+- Top-level `CMakeLists.txt` — `add_subdirectory(libkalburator)` comes
+  **before** the PlanStan libs (so `Kalburator::Types` is available
+  when they reference it); the `target_link_libraries(kalburator
+  PUBLIC PlanStan::Core …)` wiring comes **after** (so PlanStan::*
+  aliases resolve).
+
+Consumer pattern: every PlanStan `.cpp` that references libkalburator
+symbols carries `using namespace Kalburator::Sync;` at TU scope
+(inserted after the first contiguous `#include` block, preceded by a
+single-line `namespace Kalburator::Sync {}` in case the file's
+existing includes don't declare the namespace). Headers carry the
+same with a `TODO(phase-c-cleanup)` marker.
+
+---
+
+## Unfinished / future work
+
+### Short-term (queued phases)
+
+- **C.4 — SQLite IDMappingStore rewrite.** Current IDMappingStore is
+  the JSON-backed implementation WP lifted; it's dormant (no consumer
+  in PlanStan). Rewrite to SQLite with merged schema per Audit 2.
+  Migration concern: existing PlanStan users on disk have
+  `.planstan-sync.db` with a specific ID-mapping schema; decide during
+  C.4 whether to preserve that schema or ship a migration step.
+- **C.5 — PlanStan SyncStore call-site migration.** Move PlanStan's
+  `SyncStore::setIdMapping` / `sourceUidForTargetId` callers onto the
+  new IDMappingStore. Remove the identity-mapping methods from
+  SyncStore (or keep as deprecated shim — decide during C.5).
+- **C.6 — Tag `v0.5-phase-c`** once C.4 + C.5 land clean.
+
+### Medium-term (Phase 4+)
+
+- **Wild Palms adoption.** Currently WP has its own `src/sync/` +
+  `qsynccore/`; those need to move to consuming libkalburator. The
+  two-mode UX (Client Mode vs Full Sync Mode) is the main UX
+  deliverable; the technical lift is replacing WP's parallel
+  abstractions with libkalburator's.
+- **Public forge decision.** Phase 0 deferred the choice of where
+  libkalburator's public repo lives (GitHub / KDE Invent / Codeberg).
+  Only matters once we want external contributors.
+- **KalburatorConfig.cmake + install target.** Currently libkalburator
+  is consumed in-tree (add_subdirectory). For `find_package`
+  consumption by external apps, a proper install target + Config.cmake
+  is needed. Phase 5-ish.
+
+### Known debt
+
+- **`using namespace Kalburator::Sync;` in 92 PlanStan headers.**
+  Tracked at `~/dev/PlanStan/docs/todo/phase-c-qualify-consumer-headers.md`.
+  Correct semantics today but anti-pattern. Cleanup = qualify inline
+  and remove directive. No urgency.
+- **Syncthing files in `src/discovery/`.** Not part of
+  05-repo-strategy's canonical architecture. Kept in-tree because
+  PlanStan uses them today, but long-term they may spin out to a
+  `Kalburator::Discovery::*` sibling module (see 05-repo-strategy
+  namespace note) or retire.
+- **`src/blob/` empty placeholder.** No BlobBackend implementation
+  exists yet. Was sketched in the merged interface for future work
+  (binary blob sync for attachments / vtodo attachments / etc.). Not
+  blocking any current goal.
+- **Remaining ctest failures (26).** Pre-existing baseline. Inventory
+  in `memory/project_library_decomposition.md`: `tst_blockstore`
+  testMoveBlock_withChildren, `tst_treeflatteningproxymodel`,
+  `sync_error_recovery` SEGFAULT, `sync_workflow_conflicts` SEGFAULT,
+  plus integration tests that don't run in dev environment, plus
+  12 graph tests marked "Not Run". **Not caused by the extraction.**
+  Independent bugs.
+- **remotebackend.cpp's scattered `#include` pattern.** C.2b
+  consolidated the late-file includes; file is clean now. Mentioning
+  here only because it's a data point for future code-quality sweeps.
+
+---
+
+## How to work on this
+
+### Build + test (libkalburator standalone)
+
+```bash
+cmake -S ~/dev/libkalburator -B ~/dev/libkalburator/build
+cmake --build ~/dev/libkalburator/build -j"$(nproc)"
+```
+
+No tests live in libkalburator yet (deferred to Phase 4 per
+05-repo-strategy). Build success is the verification gate.
+
+### Build + test (PlanStan consuming libkalburator)
+
+```bash
+cmake -S ~/dev/PlanStan -B ~/dev/PlanStan/build -DPLANSTAN_DEV_BUILD=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build ~/dev/PlanStan/build -j"$(nproc)"
+cd ~/dev/PlanStan/build && WAYLAND_DISPLAY=wayland-0 QT_QPA_PLATFORM=wayland ctest -j"$(nproc)"
+```
+
+Baseline: **86 pass / 26 fail / 112 total**. A new failure blocks the
+commit.
+
+PlanStan's `CLAUDE.md` says "use `/project:build` instead of running
+make directly" — that's a project slash command. The equivalent raw
+commands are above. Either works.
+
+### Before landing a phase
+
+- Update the **Status** line at the top of
+  `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
+- Update the phase map in **this file** (`README.md`).
+- Ensure build + ctest baseline is held.
+- Commit message: follow the phase tag convention (`Phase C.X: …`).
+
+### Tooling survivors from the C.2 attempt
+
+- `/tmp/wrap_namespace.py` — wraps libkalburator files in `Kalburator::Sync`.
+  Handles Qt metatype hoisting and namespace forward-decls. Known quirks:
+  it places the namespace open after the last top-level `#include`; if a
+  file has late-file `#include`s (like remotebackend.cpp did), the
+  namespace opens too late and needs a manual adjustment.
+- `/tmp/add_using_cpp_v3.py` — inserts `namespace Kalburator::Sync {}`
+  + `using namespace Kalburator::Sync;` after the first contiguous
+  include block. The v1 script (still in `/tmp/add_using_cpp.py`) used
+  the LAST #include which misfires on files with late moc includes.
+- `/tmp/add_using_header_v2.py` — header variant; same fix.
+- `/tmp/kalb_real_syms.txt` — symbol list (105 entries). Used to
+  regenerate consumer lists.
+- `/tmp/planstan_consumers_live.txt` — most recent generated consumer
+  list (261 files post-C.2a).
+
+These live in `/tmp` and may not survive a reboot. If lost, regenerate
+from the plan docs and the tooling section of `04f-phase-c2b-design.md`.
+
+---
+
+## Single-developer caveat
+
+Every document in `docs/phase0/` assumes a static branch with one
+developer. There is **no upstream remote** on either repo's branches
+(`main` for libkalburator, `master` for PlanStan). Design decisions
+that would matter for multi-developer workflows (cross-repo CI,
+version pinning, PR etiquette) are out of scope until Phase 4.
+
+Until then: when a phase lands in libkalburator, the PlanStan
+dependency update can follow immediately in the same session. No
+coordination overhead.
+
+---
+
+## When to ask the maintainer vs decide autonomously
+
+The extraction work has had two modes:
+
+1. **Brainstorm-then-approve** — used for each new sub-phase (C.2a,
+   C.2b, C.3) to pin design decisions (target structure, collision
+   handling, atomicity strategy, directory layout). The pattern:
+   one clarifying question at a time, options A/B/C with a
+   recommendation, get approval, proceed.
+2. **Autonomous execution** — once the design is pinned, the
+   maintainer has been comfortable with autonomous execution through
+   the implementation, including commits landed directly on `master`
+   / `main`. Stop only on a real blocker (build fails unexpectedly,
+   scope drifts, semantic ambiguity in the plan).
+
+For a new agent: err toward mode (1) on any design-shaped question
+and toward mode (2) on mechanical execution. If a phase is already
+spec'd (there's a `docs/phase0/04X-phase-…-design.md` with
+"approved for implementation"), mode (2) is safe.
