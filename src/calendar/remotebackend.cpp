@@ -1623,8 +1623,22 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
         // URLs, so we do a lightweight Depth:0 PROPFIND ourselves.
         if (m_syncStore && m_davUrls.contains(calendarId)) {
             QString storedCtag = m_syncStore->ctag(backendType(), calendarId);
+            QString freshCtag;
+            bool freshFromPrimedCache = false;
 
-            if (!storedCtag.isEmpty()) {
+            // Phase-1 batched-CTag fast-path: was a fresh CTag primed for us?
+            auto primedIt = m_primedCtags.constFind(calendarId);
+            if (primedIt != m_primedCtags.constEnd()) {
+                const auto ageMs = primedIt->fetchedAt.msecsTo(QDateTime::currentDateTimeUtc());
+                if (ageMs >= 0 && ageMs <= kPrimedCtagFreshnessMs) {
+                    freshCtag = primedIt->value;
+                    freshFromPrimedCache = true;
+                    qDebug() << "RemoteBackend::fetchItems: using primed CTag for"
+                             << calendarId << "(age" << ageMs << "ms)";
+                }
+            }
+
+            if (!freshFromPrimedCache && !storedCtag.isEmpty()) {
                 QUrl propfindUrl = davUrl.url();
                 propfindUrl.setUserName(QString());
                 propfindUrl.setPassword(QString());
@@ -1646,7 +1660,6 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
                     "</D:propfind>";
 
                 QEventLoop loop;
-                QString freshCtag;
 
                 QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
                 connect(reply, &QNetworkReply::finished, this, [reply, &loop, &freshCtag]() {
@@ -1665,27 +1678,28 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
                     loop.quit();
                 });
                 loop.exec();
+            }
 
-                if (!freshCtag.isEmpty() && freshCtag == storedCtag) {
-                    qDebug() << "RemoteBackend::fetchItems: CTag unchanged for" << calendarId
-                             << "(" << freshCtag << ") - serving from cache";
+            // Cache-match check applies whether freshCtag came from primed cache or PROPFIND
+            if (!storedCtag.isEmpty() && !freshCtag.isEmpty() && freshCtag == storedCtag) {
+                qDebug() << "RemoteBackend::fetchItems: CTag unchanged for" << calendarId
+                         << "(" << freshCtag << ") - serving from cache";
 
-                    auto cachedIncidences = serveCachedItems(calendarId, davUrl);
+                auto cachedIncidences = serveCachedItems(calendarId, davUrl);
 
-                    emit fetchStarted(calendarId, cachedIncidences.size());
-                    qDebug() << "RemoteBackend::fetchItems: Served" << cachedIncidences.size()
-                             << "incidences from cache (CTag match) for" << calendarId;
+                emit fetchStarted(calendarId, cachedIncidences.size());
+                qDebug() << "RemoteBackend::fetchItems: Served" << cachedIncidences.size()
+                         << "incidences from cache (CTag match) for" << calendarId;
 
-                    op->setFetchedItems(cachedIncidences);
-                    op->complete();
-                    emit fetchFinished(calendarId, true);
-                    return;
-                }
+                op->setFetchedItems(cachedIncidences);
+                op->complete();
+                emit fetchFinished(calendarId, true);
+                return;
+            }
 
-                // CTag changed or unavailable — update in-memory cache for storage after full fetch
-                if (!freshCtag.isEmpty()) {
-                    m_calendarCtags[calendarId] = freshCtag;
-                }
+            // CTag changed or unavailable — update in-memory cache for storage after full fetch
+            if (!freshCtag.isEmpty()) {
+                m_calendarCtags[calendarId] = freshCtag;
             }
         }
 
