@@ -234,15 +234,21 @@ bool SyncStore::createTables()
         return false;
     }
 
-    query.exec(QStringLiteral(
+    // Note: updated_at is INTEGER (msecs since epoch) here, intentionally
+    // diverging from collection_ctags.updated_at (TEXT). Integer form is
+    // cheaper to compare and avoids string-format parsing. Unify in a
+    // future cleanup if it matters.
+    if (!query.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS local_fingerprints ("
         "  backend_id TEXT NOT NULL,"
         "  calendar_id TEXT NOT NULL,"
         "  fingerprint TEXT NOT NULL,"
         "  updated_at INTEGER NOT NULL,"
         "  PRIMARY KEY (backend_id, calendar_id)"
-        ")"
-    ));
+        ")"))) {
+        setError(QStringLiteral("Failed to create local_fingerprints table: %1").arg(query.lastError().text()));
+        return false;
+    }
 
     // Schema migration: add new columns if they don't exist (for existing databases)
     // SQLite ignores errors for already-existing columns
