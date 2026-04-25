@@ -7,7 +7,9 @@
 #include "conflicthandlerregistry.h"
 #include <QObject>
 #include <QList>
+#include <QMap>
 #include <QPointer>
+#include <QSet>
 #include <QThread>
 
 namespace Kalburator::Sync {
@@ -172,6 +174,17 @@ public:
     bool hasSyncWork() const;
 
     /**
+     * @brief Phase-2 perf: when true, the coordinator's pre-pass drops
+     * mappings from the work queue if both endpoints are demonstrably
+     * unchanged since the last successful sync (matching CTag for Remote
+     * endpoints, matching fingerprint for Local endpoints, and a stored
+     * baseline exists). Default false. Single-mapping runSync(mappingId)
+     * never skips regardless of this setting.
+     */
+    void setSkipUnchangedMappings(bool enabled);
+    bool skipUnchangedMappings() const { return m_skipUnchangedMappings; }
+
+    /**
      * @brief Enable or disable a sync mapping by ID.
      */
     void setMappingEnabled(const QString &mappingId, bool enabled);
@@ -297,12 +310,28 @@ private:
     void processNextMapping();
 
     /**
-     * @brief Phase-1 perf: collect RemoteBackend calendar IDs across all
-     * enabled mappings and prime each backend's CTag cache with one batched
-     * PROPFIND per parent URL. Idempotent and best-effort — failures fall
-     * back to per-call PROPFIND.
+     * @brief Phase-1 + Phase-2 pre-pass. Collects fresh CTags from
+     * RemoteBackends (one PROPFIND per parent URL) and fresh fingerprints
+     * from LocalBackends. For each mapping, if both endpoints' fresh
+     * state matches the stored baseline AND skipUnchangedMappings() is
+     * true, the mapping ID is added to m_skippedMappingIds. Fresh state
+     * is also stashed in m_freshState for write-back on success.
+     *
+     * Idempotent and best-effort. Network failures / missing baselines
+     * yield "no skip" (safe default).
      */
-    void primeBatchedCtags();
+    void prepareSyncFastPath();
+
+    /**
+     * @brief Per-mapping fresh state captured during prepareSyncFastPath
+     * and consumed by onWorkerSyncCompleted to persist baselines on success.
+     */
+    struct FreshSyncState {
+        QString sourceCtag;        // empty if source is not RemoteBackend
+        QString sourceFingerprint; // empty if source is not LocalBackend
+        QString targetCtag;        // empty if target is not RemoteBackend
+        QString targetFingerprint; // empty if target is not LocalBackend
+    };
 
     // Helper methods for sync algorithm
     void updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
@@ -338,6 +367,11 @@ private:
     bool m_cancelled = false;
     int m_currentMappingIndex = -1;
     SyncResult m_lastResult;
+
+    // Phase-2 skip optimization
+    bool m_skipUnchangedMappings = false;
+    QSet<QString> m_skippedMappingIds;
+    QMap<QString, FreshSyncState> m_freshState;
 
     // Worker thread infrastructure
     QThread m_workerThread;

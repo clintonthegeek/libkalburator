@@ -10,6 +10,7 @@
 #include "backendconfiguration.h"
 #include "syncbackend.h"
 #include "remotebackend.h"
+#include "localbackend.h"
 #include "syncoperation.h"
 #include "conflictmanager.h"
 #include "synctesthooks.h"
@@ -212,11 +213,11 @@ void SyncCoordinator::runSync(SyncBehavior behavior)
         it.value()->runActiveSync();
     }
 
-    // Phase-1 perf: prime fresh CTags across all RemoteBackend mappings in
-    // a single batched PROPFIND per parent URL. Best-effort; on failure we
-    // simply fall back to per-call PROPFIND inside SyncWorker.
+    // Phase-1 + Phase-2 perf: prime fresh CTags and fingerprints, decide
+    // per-mapping skip eligibility. Best-effort; on failure we simply fall
+    // back to per-call PROPFIND inside SyncWorker.
     if (!m_cancelled && !m_syncMappings.isEmpty()) {
-        primeBatchedCtags();
+        prepareSyncFastPath();
     }
 
     if (m_syncMappings.isEmpty() || m_cancelled) {
@@ -300,35 +301,145 @@ void SyncCoordinator::cancelSync()
     }
 }
 
-void SyncCoordinator::primeBatchedCtags()
+void SyncCoordinator::setSkipUnchangedMappings(bool enabled)
 {
+    m_skipUnchangedMappings = enabled;
+    qDebug() << "SyncCoordinator::setSkipUnchangedMappings:" << enabled;
+}
+
+void SyncCoordinator::prepareSyncFastPath()
+{
+    m_skippedMappingIds.clear();
+    m_freshState.clear();
+
     if (!m_registry) return;
 
-    // Group calIds per RemoteBackend instance.
-    QMap<RemoteBackend*, QStringList> calIdsByBackend;
-    auto collect = [&](const QString &backendId, const QString &calId) {
+    // ----- Phase 1: gather fresh CTags from each RemoteBackend (one batched
+    //                PROPFIND per parent URL) -----
+    QMap<RemoteBackend*, QStringList> remoteCalIdsByBackend;
+    QMap<RemoteBackend*, QString> remoteBackendIds;  // RemoteBackend* -> backendId string
+    auto collectRemote = [&](const QString &backendId, const QString &calId) {
         SyncBackend *base = m_registry->backendInstance(backendId);
-        if (auto *remote = qobject_cast<RemoteBackend*>(base)) {
-            calIdsByBackend[remote].append(calId);
+        if (auto *r = qobject_cast<RemoteBackend*>(base)) {
+            remoteCalIdsByBackend[r].append(calId);
+            remoteBackendIds[r] = backendId;
         }
     };
-
     for (const auto &mapping : m_syncMappings) {
         if (!mapping.enabled) continue;
-        collect(mapping.sourceBackend, mapping.sourceCalendar);
-        collect(mapping.targetBackend, mapping.targetCalendar);
+        collectRemote(mapping.sourceBackend, mapping.sourceCalendar);
+        collectRemote(mapping.targetBackend, mapping.targetCalendar);
     }
 
-    if (calIdsByBackend.isEmpty()) return;
-
-    for (auto it = calIdsByBackend.constBegin(); it != calIdsByBackend.constEnd(); ++it) {
+    QMap<QPair<QString, QString>, QString> freshRemoteCtags;  // (backendId, calId) -> ctag
+    for (auto it = remoteCalIdsByBackend.constBegin(); it != remoteCalIdsByBackend.constEnd(); ++it) {
         QStringList ids = it.value();
         ids.removeDuplicates();
-        QMap<QString, QString> ctags = it.key()->fetchAllCtags(ids);
+        const QMap<QString, QString> ctags = it.key()->fetchAllCtags(ids);
         if (!ctags.isEmpty()) {
             it.key()->primeCtagCache(ctags);
+            const QString backendId = remoteBackendIds.value(it.key());
+            for (auto cit = ctags.constBegin(); cit != ctags.constEnd(); ++cit) {
+                freshRemoteCtags[qMakePair(backendId, cit.key())] = cit.value();
+            }
         }
     }
+
+    // ----- Phase 2: gather fresh fingerprints from each LocalBackend -----
+    QMap<QPair<QString, QString>, QString> freshLocalFingerprints;
+    auto collectLocal = [&](const QString &backendId, const QString &calId) {
+        SyncBackend *base = m_registry->backendInstance(backendId);
+        if (auto *l = qobject_cast<LocalBackend*>(base)) {
+            const QString fp = l->calendarFingerprint(calId);
+            if (!fp.isEmpty()) {
+                freshLocalFingerprints[qMakePair(backendId, calId)] = fp;
+            }
+        }
+    };
+    for (const auto &mapping : m_syncMappings) {
+        if (!mapping.enabled) continue;
+        collectLocal(mapping.sourceBackend, mapping.sourceCalendar);
+        collectLocal(mapping.targetBackend, mapping.targetCalendar);
+    }
+
+    // ----- Decide skip per mapping. -----
+    if (!m_syncStore) return;  // can't compare without baselines
+
+    int wouldSkipCount = 0;
+    int actualSkipCount = 0;
+    for (const auto &mapping : m_syncMappings) {
+        if (!mapping.enabled) continue;
+
+        FreshSyncState fresh;
+        bool sourceCovered = false;
+        bool targetCovered = false;
+        bool sourceUnchanged = false;
+        bool targetUnchanged = false;
+
+        // Resolve source side.
+        SyncBackend *srcBase = m_registry->backendInstance(mapping.sourceBackend);
+        if (qobject_cast<RemoteBackend*>(srcBase)) {
+            sourceCovered = true;
+            fresh.sourceCtag = freshRemoteCtags.value(
+                qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
+            const QString stored = m_syncStore->ctag(mapping.sourceBackend, mapping.sourceCalendar);
+            sourceUnchanged = !fresh.sourceCtag.isEmpty()
+                              && !stored.isEmpty()
+                              && fresh.sourceCtag == stored;
+        } else if (qobject_cast<LocalBackend*>(srcBase)) {
+            sourceCovered = true;
+            fresh.sourceFingerprint = freshLocalFingerprints.value(
+                qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
+            const QString stored = m_syncStore->localFingerprint(
+                mapping.sourceBackend, mapping.sourceCalendar);
+            sourceUnchanged = !fresh.sourceFingerprint.isEmpty()
+                              && !stored.isEmpty()
+                              && fresh.sourceFingerprint == stored;
+        }
+
+        // Resolve target side (mirror logic).
+        SyncBackend *tgtBase = m_registry->backendInstance(mapping.targetBackend);
+        if (qobject_cast<RemoteBackend*>(tgtBase)) {
+            targetCovered = true;
+            fresh.targetCtag = freshRemoteCtags.value(
+                qMakePair(mapping.targetBackend, mapping.targetCalendar));
+            const QString stored = m_syncStore->ctag(mapping.targetBackend, mapping.targetCalendar);
+            targetUnchanged = !fresh.targetCtag.isEmpty()
+                              && !stored.isEmpty()
+                              && fresh.targetCtag == stored;
+        } else if (qobject_cast<LocalBackend*>(tgtBase)) {
+            targetCovered = true;
+            fresh.targetFingerprint = freshLocalFingerprints.value(
+                qMakePair(mapping.targetBackend, mapping.targetCalendar));
+            const QString stored = m_syncStore->localFingerprint(
+                mapping.targetBackend, mapping.targetCalendar);
+            targetUnchanged = !fresh.targetFingerprint.isEmpty()
+                              && !stored.isEmpty()
+                              && fresh.targetFingerprint == stored;
+        }
+
+        m_freshState[mapping.id] = fresh;
+
+        const bool eligibleToSkip = sourceCovered && targetCovered
+                                     && sourceUnchanged && targetUnchanged;
+        if (eligibleToSkip) {
+            ++wouldSkipCount;
+            if (m_skipUnchangedMappings) {
+                m_skippedMappingIds.insert(mapping.id);
+                ++actualSkipCount;
+                qInfo() << "SyncCoordinator: skipping unchanged mapping" << mapping.id;
+            } else {
+                qInfo() << "SyncCoordinator: would skip unchanged mapping (flag off)"
+                        << mapping.id;
+            }
+        }
+    }
+
+    qDebug() << "SyncCoordinator::prepareSyncFastPath: of"
+             << m_syncMappings.size() << "mappings,"
+             << wouldSkipCount << "are unchanged;"
+             << actualSkipCount << "actually skipped (flag="
+             << m_skipUnchangedMappings << ")";
 }
 
 void SyncCoordinator::processNextMapping()
@@ -373,11 +484,35 @@ void SyncCoordinator::processNextMapping()
         return;
     }
 
+    const SyncMapping &mapping = m_syncMappings[m_currentMappingIndex];
+
+    // Phase-2 skip: if this mapping's both endpoints are demonstrably
+    // unchanged AND the skip flag is on, short-circuit without dispatching
+    // to the worker. Emit syncCompleted with a successful no-op result so
+    // subscribers (UI progress, etc.) don't get stuck waiting.
+    if (m_skippedMappingIds.contains(mapping.id)) {
+        emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
+                             tr("Skipping unchanged %1").arg(mapping.id));
+
+        SyncResult skippedResult;
+        skippedResult.success = true;
+        skippedResult.startTime = QDateTime::currentDateTime();
+        skippedResult.endTime = skippedResult.startTime;
+
+        // Aggregate into last result (no stats to add; success stays true unless
+        // already false from a prior mapping failure).
+        SYNC_HOOK_CALL(onSyncMappingEnd, mapping.id, true);
+        emit syncCompleted(mapping.id, skippedResult);
+
+        // Advance to the next mapping without touching the worker.
+        processNextMapping();
+        return;
+    }
+
     emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
-                         tr("Syncing %1").arg(m_syncMappings[m_currentMappingIndex].id));
+                         tr("Syncing %1").arg(mapping.id));
 
     // Create request and invoke worker directly
-    const SyncMapping &mapping = m_syncMappings[m_currentMappingIndex];
     SyncWorker::Request request;
     request.mapping = mapping;
     request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
@@ -687,6 +822,41 @@ void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const Sync
         m_lastResult.success = false;
         if (!result.errorMessage.isEmpty())
             m_lastResult.errorMessage = result.errorMessage;
+    }
+
+    // Phase-2: persist fresh CTags / fingerprints so the next sync's
+    // pre-pass has up-to-date baselines.
+    if (result.success && m_syncStore) {
+        auto stateIt = m_freshState.constFind(mappingId);
+        if (stateIt != m_freshState.constEnd()) {
+            const FreshSyncState &fresh = stateIt.value();
+            const SyncMapping *mapping = nullptr;
+            for (const auto &m : m_syncMappings) {
+                if (m.id == mappingId) { mapping = &m; break; }
+            }
+            if (mapping) {
+                if (!fresh.sourceCtag.isEmpty()) {
+                    m_syncStore->setCtag(mapping->sourceBackend,
+                                          mapping->sourceCalendar,
+                                          fresh.sourceCtag);
+                }
+                if (!fresh.targetCtag.isEmpty()) {
+                    m_syncStore->setCtag(mapping->targetBackend,
+                                          mapping->targetCalendar,
+                                          fresh.targetCtag);
+                }
+                if (!fresh.sourceFingerprint.isEmpty()) {
+                    m_syncStore->setLocalFingerprint(mapping->sourceBackend,
+                                                      mapping->sourceCalendar,
+                                                      fresh.sourceFingerprint);
+                }
+                if (!fresh.targetFingerprint.isEmpty()) {
+                    m_syncStore->setLocalFingerprint(mapping->targetBackend,
+                                                      mapping->targetCalendar,
+                                                      fresh.targetFingerprint);
+                }
+            }
+        }
     }
 
     // Test hook: sync mapping end
