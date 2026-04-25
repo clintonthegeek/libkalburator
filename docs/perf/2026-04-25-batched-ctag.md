@@ -1,8 +1,9 @@
-# Batched CTag PROPFIND (Phase 1) — landed 2026-04-25
+# Batched CTag PROPFIND + Mapping Skip — landed 2026-04-25
 
-**Status:** Implemented and merged on `main`. Phase 2 (coordinator-level
-skip + local fingerprint, behind a `skipUnchangedMappings` config flag)
-deferred to a separate plan.
+**Status:** Phase 1 (batched PROPFIND) and Phase 2 (coordinator-level
+skip + local fingerprint, behind a `skipUnchangedMappings` config flag,
+default off) both implemented and merged on `main`. Phase 2b
+(StagingController hook for in-memory unsaved-change detection) deferred.
 
 ## Source of truth
 
@@ -39,12 +40,31 @@ Failure modes are graceful: any error in `fetchAllCtags` returns an
 empty result, the cache stays empty, and `fetchItems` falls back to
 the existing per-call PROPFIND path. No semantic change in any case.
 
-## What's left for Phase 2
+## Phase 2 — landed 2026-04-25
 
-- `LocalBackend::calendarFingerprint(calId)` — cheap fingerprint (filename + mtime + size hash).
-- `SyncCoordinator` mapping-skip decision (drop unchanged mappings from the queue pre-flight).
-- `skipUnchangedMappings` config flag (location TBD: KAlb config / PlanStan AppSettings / libkalburator runtime knob).
-- Telemetry / log-every-skip mode for the first release window.
-- Staging-aware skip via PlanStan's `StagingController::hasStagedChanges` hook.
+Code in this repo, on `main`:
 
-These will be planned in a separate doc once Phase 1 has been observable in real syncs for a while.
+| Commit | Scope |
+|---|---|
+| `e4d6997` + `c8e6450` | `SyncStore`: schema bump v3 → v4, `local_fingerprints` table + 4 accessors (`localFingerprint`, `setLocalFingerprint`, `clearLocalFingerprint`, `clearLocalFingerprints`). The `c8e6450` follow-up adds the missing CREATE-error check and the timestamp-type-divergence comment per code review. |
+| `4c2f9a9` + `873ddb5` | `LocalBackend::calendarFingerprint(calId) const`: sha256 hex digest over the sorted list of `(filename \| mtime \| size)` tuples for `*.ics` files. The `873ddb5` follow-up replaces deprecated `addData(const char*, int)` with the Qt 6 `QByteArrayView` overload (hash bytes unchanged). |
+| `0a93461` + `e43e0a4` | `SyncCoordinator`: rename `primeBatchedCtags` → `prepareSyncFastPath`, extend pre-pass to also collect Local fingerprints and decide per-mapping skip eligibility; new `setSkipUnchangedMappings(bool)` runtime setter; `processNextMapping` consults `m_skippedMappingIds` and emits a successful no-op `syncCompleted` for skipped mappings; `onWorkerSyncCompleted` persists fresh ctags / fingerprints to `SyncStore` on success. The `e43e0a4` follow-up clears `m_freshState` and `m_skippedMappingIds` at the start of single-mapping `runSync(mappingId, ...)` to prevent stale-baseline writes per code review. |
+
+Tests in PlanStan, on `master`: `f8efb581` (SyncStore round-trip) and `c9d2f097` (LocalBackend determinism). PlanStan-side wiring: `d88b5f0e` (`AppSettings::syncSkipUnchanged` + KConfig + coordinator setter call + settings-dialog checkbox) and `0bba93e1` (live-toggle via `AppSettings::settingsChanged` signal connection per code review).
+
+### Behavior
+
+`SyncCoordinator::prepareSyncFastPath` now extends the Phase 1 batched-CTag pre-pass with two further responsibilities:
+
+1. For each enabled mapping endpoint that's a `LocalBackend`, compute `calendarFingerprint(calId)` and cache it.
+2. Per mapping: if both endpoints are covered (each is a `RemoteBackend` with a fresh primed CTag matching `SyncStore::ctag(...)`, or a `LocalBackend` with a fresh fingerprint matching `SyncStore::localFingerprint(...)`), the mapping is **eligible** to skip. If `m_skipUnchangedMappings` is true, the mapping ID enters `m_skippedMappingIds` and `processNextMapping` emits `syncCompleted` with `success=true` without dispatching the worker. If the flag is false (default), a `qInfo` log line records "would skip" — telemetry-only.
+
+After a non-skipped mapping completes successfully, `onWorkerSyncCompleted` persists `m_freshState[mappingId]`'s ctags / fingerprints back to `SyncStore` so the next sync's pre-pass has up-to-date baselines.
+
+Default flag state: **off**. Coordinator runs in telemetry-only mode until a release window of feedback motivates flipping the default.
+
+### Out of scope, deferred to Phase 2b
+
+- `StagingController::hasStagedChanges(backendId, calId)` hook for in-memory unsaved-change detection (the file-mtime fingerprint catches everything that's been written through to disk).
+- UI surface for skip telemetry (e.g., a sync-summary line "5 of 11 calendars skipped").
+- Backends other than `LocalBackend` and `RemoteBackend` (DecSync, Org, Mock) — they're treated as "always changed" and never participate in the skip path until they get their own fingerprint mechanism.
