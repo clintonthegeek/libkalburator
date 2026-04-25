@@ -242,6 +242,18 @@ void SyncCoordinator::runSync(const QString &mappingId, SyncBehavior behavior)
         return;
     }
 
+    // Phase-2: clear any leftover state from a previous multi-mapping
+    // runSync. The single-mapping path does not run prepareSyncFastPath,
+    // so without this, onWorkerSyncCompleted could persist stale fresh
+    // state captured during an earlier multi-mapping sync.
+    m_freshState.clear();
+    m_skippedMappingIds.clear();
+    // Note: this also means that single-mapping runSync does NOT update
+    // Phase-2 ctag/fingerprint baselines on success. That's correct —
+    // baseline updates happen as part of the multi-mapping pre-pass
+    // (prepareSyncFastPath), and a stale single-mapping baseline would
+    // be more dangerous than no baseline update.
+
     for (const auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId && mapping.enabled) {
             m_isSyncing = true;
