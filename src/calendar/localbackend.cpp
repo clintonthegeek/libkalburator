@@ -5,6 +5,7 @@
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
 #include <KCalendarCore/ICalFormat>
+#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -703,11 +704,11 @@ QString LocalBackend::calendarFingerprint(const QString &calendarId) const
     for (const QString &name : entries) {
         const QFileInfo fi(dir.filePath(name));
         hasher.addData(name.toUtf8());
-        hasher.addData("|", 1);
+        hasher.addData(QByteArrayView("|"));
         hasher.addData(QByteArray::number(fi.lastModified().toMSecsSinceEpoch()));
-        hasher.addData("|", 1);
+        hasher.addData(QByteArrayView("|"));
         hasher.addData(QByteArray::number(fi.size()));
-        hasher.addData("\n", 1);
+        hasher.addData(QByteArrayView("\n"));
     }
     return QString::fromLatin1(hasher.result().toHex());
 }
