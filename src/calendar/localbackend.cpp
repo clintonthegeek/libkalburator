@@ -5,6 +5,7 @@
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
 #include <KCalendarCore/ICalFormat>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -688,6 +689,27 @@ void LocalBackend::onAsyncWriteProgress(int completed, int total)
 QString LocalBackend::filePathForCalendar(const QString &calendarId) const
 {
     return QDir(m_calendarRootPath).filePath(calendarId);
+}
+
+QString LocalBackend::calendarFingerprint(const QString &calendarId) const
+{
+    const QString calendarPath = filePathForCalendar(calendarId);
+    QDir dir(calendarPath);
+    if (!dir.exists()) return {};
+
+    const QStringList entries = dir.entryList(QStringList() << QStringLiteral("*.ics"),
+                                               QDir::Files, QDir::Name);
+    QCryptographicHash hasher(QCryptographicHash::Sha256);
+    for (const QString &name : entries) {
+        const QFileInfo fi(dir.filePath(name));
+        hasher.addData(name.toUtf8());
+        hasher.addData("|", 1);
+        hasher.addData(QByteArray::number(fi.lastModified().toMSecsSinceEpoch()));
+        hasher.addData("|", 1);
+        hasher.addData(QByteArray::number(fi.size()));
+        hasher.addData("\n", 1);
+    }
+    return QString::fromLatin1(hasher.result().toHex());
 }
 
 // ============================================================================

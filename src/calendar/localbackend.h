@@ -95,6 +95,18 @@ public:
     bool setRawIcs(const QString &calendarId, const QString &uid,
                    const QString &icsContent) override;
 
+    /**
+     * @brief Phase-2 perf: cheap fingerprint of a calendar's on-disk state.
+     *
+     * Returns sha256 hex digest of the sorted list of (filename | mtime | size)
+     * tuples for *.ics files in the calendar directory. Detects adds, removes,
+     * and modifications. Returns empty string if the calendar directory does
+     * not exist.
+     *
+     * Cost: O(N) stat calls; ~100 ms for ~600 files.
+     */
+    QString calendarFingerprint(const QString &calendarId) const;
+
 private slots:
     void onAsyncWriteCompleted(const QString &filePath, const QString &identifier,
                                 bool success, const QString &errorMessage);
