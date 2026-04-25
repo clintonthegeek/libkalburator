@@ -296,6 +296,14 @@ signals:
 private:
     void processNextMapping();
 
+    /**
+     * @brief Phase-1 perf: collect RemoteBackend calendar IDs across all
+     * enabled mappings and prime each backend's CTag cache with one batched
+     * PROPFIND per parent URL. Idempotent and best-effort — failures fall
+     * back to per-call PROPFIND.
+     */
+    void primeBatchedCtags();
+
     // Helper methods for sync algorithm
     void updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
                             const QList<SyncChange> &resolvedToTarget,

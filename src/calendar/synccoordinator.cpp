@@ -9,6 +9,7 @@
 #include "icalendarcollection.h"
 #include "backendconfiguration.h"
 #include "syncbackend.h"
+#include "remotebackend.h"
 #include "syncoperation.h"
 #include "conflictmanager.h"
 #include "synctesthooks.h"
@@ -211,6 +212,13 @@ void SyncCoordinator::runSync(SyncBehavior behavior)
         it.value()->runActiveSync();
     }
 
+    // Phase-1 perf: prime fresh CTags across all RemoteBackend mappings in
+    // a single batched PROPFIND per parent URL. Best-effort; on failure we
+    // simply fall back to per-call PROPFIND inside SyncWorker.
+    if (!m_cancelled && !m_syncMappings.isEmpty()) {
+        primeBatchedCtags();
+    }
+
     if (m_syncMappings.isEmpty() || m_cancelled) {
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
@@ -289,6 +297,37 @@ void SyncCoordinator::cancelSync()
             m_worker->cancel();
         }
         qDebug() << "SyncCoordinator::cancelSync - sync cancelled";
+    }
+}
+
+void SyncCoordinator::primeBatchedCtags()
+{
+    if (!m_registry) return;
+
+    // Group calIds per RemoteBackend instance.
+    QMap<RemoteBackend*, QStringList> calIdsByBackend;
+    auto collect = [&](const QString &backendId, const QString &calId) {
+        SyncBackend *base = m_registry->backendInstance(backendId);
+        if (auto *remote = qobject_cast<RemoteBackend*>(base)) {
+            calIdsByBackend[remote].append(calId);
+        }
+    };
+
+    for (const auto &mapping : m_syncMappings) {
+        if (!mapping.enabled) continue;
+        collect(mapping.sourceBackend, mapping.sourceCalendar);
+        collect(mapping.targetBackend, mapping.targetCalendar);
+    }
+
+    if (calIdsByBackend.isEmpty()) return;
+
+    for (auto it = calIdsByBackend.constBegin(); it != calIdsByBackend.constEnd(); ++it) {
+        QStringList ids = it.value();
+        ids.removeDuplicates();
+        QMap<QString, QString> ctags = it.key()->fetchAllCtags(ids);
+        if (!ctags.isEmpty()) {
+            it.key()->primeCtagCache(ctags);
+        }
     }
 }
 
