@@ -29,11 +29,33 @@
 #include <QDir>
 #include <QUuid>
 #include <QRegularExpression>
+#include <QXmlStreamReader>
 
 #include <KIO/Job>
 #include <KIO/TransferJob>
 #include <KIO/DeleteJob>
 #include <KDAV/DavItemFetchJob>
+
+namespace {
+
+// Returns the parent collection URL for a calendar URL.
+// Strips the last path segment (plus its trailing slash, if any) so that
+// sibling calendars under the same principal are grouped together and served
+// by a single Depth:1 PROPFIND.
+QUrl parentUrl(const QUrl &url)
+{
+    QString path = url.path();
+    if (path.endsWith(QLatin1Char('/'))) {
+        path.chop(1);
+    }
+    int lastSlash = path.lastIndexOf(QLatin1Char('/'));
+    if (lastSlash <= 0) return url;
+    QUrl parent = url;
+    parent.setPath(path.left(lastSlash + 1));
+    return parent;
+}
+
+} // anonymous namespace
 
 namespace Kalburator::Sync {
 
@@ -400,6 +422,110 @@ void RemoteBackend::primeCtagCache(const QMap<QString, QString> &ctags)
     }
     qDebug() << "RemoteBackend::primeCtagCache: primed" << ctags.size()
              << "ctags (total cache size now" << m_primedCtags.size() << ")";
+}
+
+QMap<QString, QString> RemoteBackend::fetchAllCtags(const QStringList &calendarIds)
+{
+    QMap<QString, QString> result;
+    if (calendarIds.isEmpty()) return result;
+
+    // Group calendar IDs by parent URL.
+    QMap<QUrl, QStringList> groups;    // parentUrl -> [calId, ...]
+    QMap<QString, QString> hrefByCalId; // calId -> URL path (for match-back)
+    for (const QString &calId : calendarIds) {
+        if (!m_davUrls.contains(calId)) continue;
+        const QUrl url = m_davUrls.value(calId).url();
+        QUrl parent = parentUrl(url);
+        parent.setUserName(QString());
+        parent.setPassword(QString());
+        groups[parent].append(calId);
+        hrefByCalId[calId] = url.path();
+    }
+
+    if (groups.isEmpty()) return result;
+
+    const QByteArray body =
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
+        "  <D:prop><CS:getctag/></D:prop>"
+        "</D:propfind>";
+
+    const QString credentials = m_username + QLatin1Char(':') + m_password;
+    const QByteArray authHeader = "Basic " + credentials.toUtf8().toBase64();
+
+    QNetworkAccessManager nam;
+
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+        QNetworkRequest request(it.key());
+        request.setHeader(QNetworkRequest::ContentTypeHeader,
+                          QStringLiteral("application/xml; charset=utf-8"));
+        request.setRawHeader("Depth", "1");
+        request.setRawHeader("Authorization", authHeader);
+
+        QEventLoop loop;
+        QByteArray responseData;
+        bool ok = false;
+
+        QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
+        connect(reply, &QNetworkReply::finished, &loop,
+                [reply, &loop, &responseData, &ok]() {
+            if (reply->error() == QNetworkReply::NoError) {
+                responseData = reply->readAll();
+                ok = true;
+            } else {
+                qWarning() << "RemoteBackend::fetchAllCtags: PROPFIND failed for"
+                           << reply->url() << ":" << reply->errorString();
+            }
+            reply->deleteLater();
+            loop.quit();
+        });
+        loop.exec();
+
+        if (!ok) continue;
+
+        // Parse multistatus: each <D:response> has a <D:href> and a <CS:getctag>.
+        // QXmlStreamReader returns the local name without prefix, so comparisons
+        // against "response", "href", and "getctag" are correct regardless of
+        // namespace prefix used by the server.
+        QXmlStreamReader xml(responseData);
+        QString currentHref;
+        QString currentCtag;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.isStartElement()) {
+                if (xml.name() == u"response") {
+                    currentHref.clear();
+                    currentCtag.clear();
+                } else if (xml.name() == u"href") {
+                    currentHref = xml.readElementText();
+                } else if (xml.name() == u"getctag") {
+                    currentCtag = xml.readElementText();
+                }
+            } else if (xml.isEndElement() && xml.name() == u"response") {
+                if (!currentHref.isEmpty() && !currentCtag.isEmpty()) {
+                    // Match href back to calId by path comparison.
+                    // TODO: if the server returns URL-encoded hrefs for calendars
+                    // with non-ASCII characters, this comparison may fail; normalize
+                    // both sides with QUrl::fromPercentEncoding if that becomes a concern.
+                    for (const QString &calId : it.value()) {
+                        if (hrefByCalId.value(calId) == currentHref) {
+                            result[calId] = currentCtag;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (xml.hasError()) {
+            qWarning() << "RemoteBackend::fetchAllCtags: XML parse error for"
+                       << it.key() << ":" << xml.errorString();
+        }
+    }
+
+    qDebug() << "RemoteBackend::fetchAllCtags: requested" << calendarIds.size()
+             << "calendars across" << groups.size() << "parent URLs, got"
+             << result.size() << "ctags";
+    return result;
 }
 
 QColor RemoteBackend::calendarColor(const QString &calendarId) const
