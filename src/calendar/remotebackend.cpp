@@ -392,6 +392,16 @@ QString RemoteBackend::discoveredCtag(const QString &calendarId) const
     return m_calendarCtags.value(calendarId);
 }
 
+void RemoteBackend::primeCtagCache(const QMap<QString, QString> &ctags)
+{
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (auto it = ctags.constBegin(); it != ctags.constEnd(); ++it) {
+        m_primedCtags[it.key()] = PrimedCtag{ it.value(), now };
+    }
+    qDebug() << "RemoteBackend::primeCtagCache: primed" << ctags.size()
+             << "ctags (total cache size now" << m_primedCtags.size() << ")";
+}
+
 QColor RemoteBackend::calendarColor(const QString &calendarId) const
 {
     // Return from cache (populated during discovery or after updateCalendar)

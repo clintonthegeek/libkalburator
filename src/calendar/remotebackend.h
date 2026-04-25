@@ -11,6 +11,8 @@
 #include <QPointer>
 #include <QSqlDatabase>
 #include <QColor>
+#include <QDateTime>
+#include <QStringList>
 #include <memory>
 
 namespace Kalburator::Sync {
@@ -93,6 +95,33 @@ public:
      * @return The discovered CTag, or empty string if not discovered or server doesn't support CTag
      */
     QString discoveredCtag(const QString &calendarId) const;
+
+    /**
+     * @brief Fetch fresh CTags for multiple calendars in a single network operation.
+     *
+     * Groups the requested calendars by parent URL (e.g. all calendars under
+     * /cal.php/calendars/user/) and issues one Depth:1 PROPFIND per group,
+     * collapsing N round-trips into K (K ≤ N, typically K = 1).
+     *
+     * @param calendarIds List of discovered calendar IDs to query.
+     * @return Map of calendarId -> fresh CTag. Calendars whose CTag the server
+     *         did not return are absent from the map. Network failures yield
+     *         an empty result (caller should treat as "fall back to per-call PROPFIND").
+     *
+     * Synchronous; runs an internal QEventLoop. Safe to call before sync starts.
+     */
+    QMap<QString, QString> fetchAllCtags(const QStringList &calendarIds);
+
+    /**
+     * @brief Prime the fresh-CTag cache for use by fetchItems().
+     *
+     * After priming, the next fetchItems() call for each calendarId in @p ctags
+     * will skip its own PROPFIND and use the primed value instead, provided
+     * the priming is recent (default freshness window: 60 seconds).
+     *
+     * @param ctags Map of calendarId -> fresh CTag (typically returned by fetchAllCtags).
+     */
+    void primeCtagCache(const QMap<QString, QString> &ctags);
 
     /**
      * @brief Check if discovered calendar supports VEVENT components.
@@ -226,6 +255,15 @@ private:
     QMap<QString, QColor> m_calendarColors;  // CalendarId -> discovered color
     QMap<QString, KDAV::DavCollection::ContentTypes> m_calendarContentTypes;  // CalendarId -> content types
     QMap<QString, QString> m_calendarCtags;  // CalendarId -> CTag from discovery
+    // Phase-1 batched-CTag cache: ctags primed by SyncCoordinator before the
+    // worker thread starts. Consulted from fetchItems() to skip the per-call
+    // PROPFIND when a fresh value is already on hand.
+    struct PrimedCtag {
+        QString value;
+        QDateTime fetchedAt;
+    };
+    QMap<QString, PrimedCtag> m_primedCtags;
+    static constexpr int kPrimedCtagFreshnessMs = 60'000;
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
     // Our own local etag cache: map from remote URL string to ETag
     QMap<QString, QString> m_localEtags;
