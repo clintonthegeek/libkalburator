@@ -113,15 +113,13 @@ void MockBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
     const QString calendarId = cal->id();
     logOperation(QStringLiteral("STORE_ITEMS"), calendarId);
 
-    if (shouldFail(FailurePoint::OnStoreItems)) {
-        emit writeStarted(calendarId, items.size());
-        emit writeFinished(calendarId, false, m_failureMessage.isEmpty()
+    if (shouldFail(FailurePoint::OnStoreItems) || shouldFail(FailurePoint::OnPush)) {
+        const QString msg = m_failureMessage.isEmpty()
             ? QStringLiteral("Mock failure on storeItems")
-            : m_failureMessage);
-        emit calendarError(QString(), calendarId,
-            m_failureMessage.isEmpty()
-                ? QStringLiteral("Mock failure on storeItems")
-                : m_failureMessage);
+            : m_failureMessage;
+        emit writeStarted(calendarId, items.size());
+        emit writeFinished(calendarId, false, msg);
+        emit calendarError(QString(), calendarId, msg);
         return;
     }
 
@@ -169,6 +167,15 @@ void MockBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
     const QString calendarId = cal->id();
     logOperation(QStringLiteral("UPDATE_ITEM"), calendarId, item->uid());
 
+    if (shouldFail(FailurePoint::OnStoreItems) || shouldFail(FailurePoint::OnPush)) {
+        const QString msg = m_failureMessage.isEmpty()
+            ? QStringLiteral("Mock failure on updateItem")
+            : m_failureMessage;
+        emit writeFinished(calendarId, false, msg);
+        emit calendarError(QString(), calendarId, msg);
+        return;
+    }
+
     applyDelay();
 
     auto result = executeTranscodingPlan(plan, item);
@@ -185,6 +192,8 @@ void MockBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
     if (updated) {
         m_calendars[calendarId][result.incidence->uid()] = updated;
     }
+
+    emit writeFinished(calendarId, true);
 }
 
 void MockBackend::startSync(const QString &collectionId,

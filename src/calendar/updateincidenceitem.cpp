@@ -165,10 +165,35 @@ bool UpdateIncidenceItem::commit()
     }
 
     // Use updateItem so the backend applies the transcoding plan and emits
-    // transcodingWarning for any lossy conversions. updateItem is synchronous.
+    // transcodingWarning for any lossy conversions. updateItem is void, so
+    // capture the write outcome via writeFinished before calling.
     // icalData is intentionally empty: backends that need it (e.g. CalDAV) read
     // from m_newIncidence; backends that don't (MockBackend, OrgBackend) ignore it.
+    const QString calId = m_calendar->id();
+    bool writeSucceeded = true;
+    QString writeError;
+
+    auto conn = QObject::connect(
+        backend(), &SyncBackend::writeFinished,
+        this, [&](const QString &signaledCalId, bool success, const QString &err) {
+            if (signaledCalId == calId && !success) {
+                writeSucceeded = false;
+                writeError = err;
+            }
+        },
+        Qt::DirectConnection);
+
     backend()->updateItem(m_calendar, m_newIncidence, QString(), m_plan);
+
+    QObject::disconnect(conn);
+
+    if (!writeSucceeded) {
+        setErrorString(writeError.isEmpty()
+            ? tr("updateItem failed for UID: %1").arg(m_newIncidence->uid())
+            : writeError);
+        return false;
+    }
+
     setCommitted(true);
     return true;
 }
