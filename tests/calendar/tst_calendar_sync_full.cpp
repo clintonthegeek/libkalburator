@@ -1,0 +1,254 @@
+// tst_calendar_sync_full.cpp
+//
+// Phase D.0 — Full bidirectional sync against MockBackend pair through
+// StubSyncHost. Pins SyncCoordinator/SyncWorker behavior before any
+// engine refactor lands.
+//
+// See: docs/phase0/04l-phase-d0-test-harness-design.md
+
+#include <QtTest/QtTest>
+#include <QSignalSpy>
+#include <QTemporaryDir>
+
+#include <QTimeZone>
+
+#include <KCalendarCore/Event>
+#include <KCalendarCore/MemoryCalendar>
+
+#include "backendregistry.h"
+#include "conflictmanager.h"
+#include "mockbackend.h"
+#include "synccoordinator.h"
+#include "syncstore.h"
+#include "synctypes.h"
+
+#include "stubs/stubsynchost.h"
+
+using namespace Kalburator::Sync;
+using namespace Kalburator::Sync::Test;
+
+namespace {
+
+constexpr auto kSourceBackendId = "source-mock";
+constexpr auto kTargetBackendId = "target-mock";
+constexpr auto kCollectionId    = "stub-collection";
+constexpr auto kCalendarId      = "calendar-1";
+constexpr auto kMappingId       = "mapping-1";
+
+constexpr int kSyncTimeoutMs = 5000;
+
+KCalendarCore::Event::Ptr makeEvent(const QString &uid, const QString &summary)
+{
+    auto event = KCalendarCore::Event::Ptr(new KCalendarCore::Event());
+    event->setUid(uid);
+    event->setSummary(summary);
+    event->setDtStart(QDateTime::currentDateTimeUtc());
+    return event;
+}
+
+SyncMapping makeTwoWayMapping()
+{
+    SyncMapping m;
+    m.id              = QString::fromLatin1(kMappingId);
+    m.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    m.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    m.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    m.targetCalendar  = QString::fromLatin1(kCalendarId);
+    m.mode            = SyncMode::TwoWay;
+    m.conflictPolicy  = ConflictResolution::LastWriteWins;
+    m.enabled         = true;
+    return m;
+}
+
+} // namespace
+
+class TestCalendarSyncFull : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void initTestCase();
+    void cleanupTestCase();
+    void init();
+    void cleanup();
+
+    void fullSync_bothEmpty_doesNothing();
+    void fullSync_sourceHasEvents_propagatesToTarget();
+    void fullSync_targetHasEvents_propagatesToSource();
+    void fullSync_disjointEvents_bothConverge();
+
+private:
+    bool runOneSync();
+    QStringList sourceUids() const { return m_source->allUids(QString::fromLatin1(kCalendarId)); }
+    QStringList targetUids() const { return m_target->allUids(QString::fromLatin1(kCalendarId)); }
+
+    std::unique_ptr<QTemporaryDir>    m_tmpDir;
+    std::unique_ptr<BackendRegistry>  m_registry;
+    std::unique_ptr<MockBackend>      m_source;
+    std::unique_ptr<MockBackend>      m_target;
+    std::unique_ptr<StubSyncHost>     m_host;
+    std::unique_ptr<SyncStore>        m_store;
+    std::unique_ptr<ConflictManager>  m_conflictManager;
+    std::unique_ptr<SyncCoordinator>  m_coordinator;
+};
+
+// ---- Lifecycle ------------------------------------------------------------
+
+void TestCalendarSyncFull::initTestCase() {}
+void TestCalendarSyncFull::cleanupTestCase() {}
+
+void TestCalendarSyncFull::init()
+{
+    m_tmpDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_tmpDir->isValid());
+
+    m_registry = std::make_unique<BackendRegistry>();
+    m_source   = std::make_unique<MockBackend>();
+    m_target   = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        m_source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        m_target.get());
+
+    // Both backends must have the calendar present before sync runs.
+    m_source->createCalendar(QString::fromLatin1(kCollectionId),
+                             QString::fromLatin1(kCalendarId),
+                             QStringLiteral("Calendar 1"));
+    m_target->createCalendar(QString::fromLatin1(kCollectionId),
+                             QString::fromLatin1(kCalendarId),
+                             QStringLiteral("Calendar 1"));
+
+    m_host = std::make_unique<StubSyncHost>(m_registry.get());
+
+    // SyncWorker::applyChangesToBackend looks up the calendar via
+    // host->collection()->calendar(calendarId). The collection must
+    // have a MemoryCalendar registered under the same id used in the
+    // SyncMapping for the engine to write changes back to either side.
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                 hostCal);
+
+    m_store = std::make_unique<SyncStore>(m_tmpDir->filePath(QStringLiteral("sync.db")));
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncStore(m_store.get());
+
+    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator->setSyncStore(m_store.get());
+    m_coordinator->setConflictManager(m_conflictManager.get());
+    m_coordinator->setCollection(m_host->stubCollection());
+    m_coordinator->setSyncMappings({ makeTwoWayMapping() });
+}
+
+void TestCalendarSyncFull::cleanup()
+{
+    m_coordinator.reset();
+    m_conflictManager.reset();
+    m_store.reset();
+    m_host.reset();
+    m_target.reset();
+    m_source.reset();
+    m_registry.reset();
+    m_tmpDir.reset();
+}
+
+bool TestCalendarSyncFull::runOneSync()
+{
+    // Use the multi-mapping form (runSync() with no mappingId). The
+    // single-mapping form does not cleanly exit the post-sync
+    // processNextMapping loop in SyncCoordinator, leading to a second
+    // queued sync that interferes with cleanup.
+    QSignalSpy allDoneSpy(m_coordinator.get(),
+                          &SyncCoordinator::allSyncsCompleted);
+    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+    if (!allDoneSpy.wait(kSyncTimeoutMs)) {
+        qWarning() << "allSyncsCompleted signal did not fire within"
+                   << kSyncTimeoutMs << "ms";
+        return false;
+    }
+    return true;
+}
+
+// ---- Tests ---------------------------------------------------------------
+
+void TestCalendarSyncFull::fullSync_bothEmpty_doesNothing()
+{
+    QVERIFY(sourceUids().isEmpty());
+    QVERIFY(targetUids().isEmpty());
+
+    QVERIFY(runOneSync());
+
+    QVERIFY(sourceUids().isEmpty());
+    QVERIFY(targetUids().isEmpty());
+    QCOMPARE(m_host->appliedAdditionCount(), 0);
+    QCOMPARE(m_host->appliedRemovalCount(), 0);
+    QCOMPARE(m_host->appliedUpdateCount(), 0);
+}
+
+void TestCalendarSyncFull::fullSync_sourceHasEvents_propagatesToTarget()
+{
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-1"),
+                                     QStringLiteral("Event One")));
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-2"),
+                                     QStringLiteral("Event Two")));
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-3"),
+                                     QStringLiteral("Event Three")));
+
+    QCOMPARE(sourceUids().size(), 3);
+    QVERIFY(targetUids().isEmpty());
+
+    QVERIFY(runOneSync());
+
+    QCOMPARE(sourceUids().size(), 3);
+    QCOMPARE(targetUids().size(), 3);
+    // Source-to-target propagation does NOT call applyIncidence* on the
+    // host — that channel is reserved for target→host propagation.
+    QCOMPARE(m_host->appliedAdditionCount(), 0);
+}
+
+void TestCalendarSyncFull::fullSync_targetHasEvents_propagatesToSource()
+{
+    m_target->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-A"),
+                                     QStringLiteral("Event A")));
+    m_target->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-B"),
+                                     QStringLiteral("Event B")));
+    m_target->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-C"),
+                                     QStringLiteral("Event C")));
+
+    QVERIFY(sourceUids().isEmpty());
+    QCOMPARE(targetUids().size(), 3);
+
+    QVERIFY(runOneSync());
+
+    QCOMPARE(sourceUids().size(), 3);
+    QCOMPARE(targetUids().size(), 3);
+}
+
+void TestCalendarSyncFull::fullSync_disjointEvents_bothConverge()
+{
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-A"),
+                                     QStringLiteral("From Source")));
+    m_target->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("evt-B"),
+                                     QStringLiteral("From Target")));
+
+    QVERIFY(runOneSync());
+
+    QCOMPARE(sourceUids().size(), 2);
+    QCOMPARE(targetUids().size(), 2);
+    QVERIFY(sourceUids().contains(QStringLiteral("evt-A")));
+    QVERIFY(sourceUids().contains(QStringLiteral("evt-B")));
+    QVERIFY(targetUids().contains(QStringLiteral("evt-A")));
+    QVERIFY(targetUids().contains(QStringLiteral("evt-B")));
+}
+
+QTEST_MAIN(TestCalendarSyncFull)
+#include "tst_calendar_sync_full.moc"

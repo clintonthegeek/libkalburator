@@ -34,3 +34,5 @@ function(kalburator_add_calendar_integration_test TEST_NAME)
     target_link_libraries(${TEST_NAME}
         PRIVATE kalburator_calendar_test_stubs)
 endfunction()
+
+kalburator_add_calendar_integration_test(tst_calendar_sync_full)
