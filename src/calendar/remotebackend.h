@@ -211,17 +211,17 @@ public:
                         const QList<KCalendarCore::MemoryCalendar*> &calendars) override;
     void storeItems(KCalendarCore::MemoryCalendar *cal,
                     const QList<KCalendarCore::Incidence::Ptr> &items,
-                    const TranscodingPlan& plan) override;
+                    const TranscodingPlan& plan = TranscodingPlan{}) override;
     void updateItem(KCalendarCore::MemoryCalendar *cal,
                     const KCalendarCore::Incidence::Ptr &item,
                     const QString &icalData,
-                    const TranscodingPlan& plan) override;
+                    const TranscodingPlan& plan = TranscodingPlan{}) override;
     void startSync(const QString &collectionId,
                    KCalendarCore::MemoryCalendar *calendar,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
                    const QMap<QString, QString> &stagedDeletions,
-                   const TranscodingPlan& plan) override;
+                   const TranscodingPlan& plan = TranscodingPlan{}) override;
     void removeItem(const QString &calId, const QString &itemUid) override;
     QMap<QString, QString> currentEtags() const;
     static const QString BackendTypeName;
