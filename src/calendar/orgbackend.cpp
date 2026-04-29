@@ -952,7 +952,7 @@ QString OrgBackend::createRecord(const QString &collectionId,
     storeCal->setId(collectionId);
     for (const auto &inc : incidences) storeCal->addIncidence(inc);
 
-    storeItems(storeCal, incidences);
+    storeItems(storeCal, incidences, TranscodingPlan{});
     delete storeCal;
     return record.id;
 }
@@ -995,7 +995,7 @@ bool OrgBackend::updateRecord(const BackendRecord &record)
             storeCal->addIncidence(inc);
         }
         const QString icalStr = QString::fromUtf8(record.data);
-        updateItem(storeCal, incidences.first(), icalStr);
+        updateItem(storeCal, incidences.first(), icalStr, TranscodingPlan{});
         delete storeCal;
         return true;
     }
