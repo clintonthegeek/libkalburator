@@ -4,6 +4,7 @@
 #include "isynchost.h"
 #include "icalendarcollection.h"
 #include "syncbackend.h"
+#include "iblobbackend.h"
 #include "syncoperation.h"
 #include "synctesthooks.h"
 #include "transcodingregistry.h"
@@ -255,6 +256,57 @@ void SyncWorker::resumeAfterConflict(ConflictResolution resolution, const QStrin
 // Sync Phases
 // ============================================================================
 
+// ============================================================================
+// Phase D Task 19 — blob-view fetch helper
+// ============================================================================
+
+// Convenience cast: every SyncBackend is-a IBlobBackend (Group 2 hoisted it).
+namespace {
+inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>(b); }
+} // namespace
+
+void SyncWorker::fetchRecordsViaBlob(const QString &backendId,
+                                      const QString &calendarId,
+                                      QList<SyncRecord> &out)
+{
+    SyncBackend *backend = m_controller->backendById(backendId);
+    if (!backend) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Backend not found: %1").arg(backendId);
+        return;
+    }
+
+    // Determine the lastSyncTime cutoff so modifiedSince only returns changed
+    // records.  A null/invalid QDateTime means "return all records" (first sync
+    // baseline-building step), but Task 21 intercepts the first-sync path
+    // before we get here, so in practice since is always set.
+    QDateTime since;
+    if (m_calendarBaselines) {
+        const QString mappingId = m_currentRequest.mapping.id;
+        QMetaObject::invokeMethod(m_calendarBaselines,
+            [this, mappingId, &since]() {
+                since = m_calendarBaselines->lastSyncTime(mappingId);
+            }, Qt::BlockingQueuedConnection);
+    }
+
+    // Fetch via blob view on the main thread (backends are main-thread objects).
+    QList<BackendRecord> records;
+    IBlobBackend *blob = asBlob(backend);
+    QMetaObject::invokeMethod(backend, [blob, calendarId, since, &records]() {
+        records = blob->modifiedSince(calendarId, since);
+    }, Qt::BlockingQueuedConnection);
+
+    // Translate BackendRecord → SyncRecord
+    KCalendarCore::ICalFormat icalFormat;
+    for (const BackendRecord &r : records) {
+        const QString ical = QString::fromUtf8(r.data);
+        KCalendarCore::Incidence::Ptr inc = icalFormat.fromString(ical);
+        if (inc) {
+            out.append(SyncRecord::fromIncidence(inc, calendarId, backendId));
+        }
+    }
+}
+
 void SyncWorker::fetchSourceRecords()
 {
     emit phaseChanged(m_currentRequest.mapping.id, 1);  // FetchingSource
@@ -262,6 +314,15 @@ void SyncWorker::fetchSourceRecords()
     if (!m_controller) {
         m_fetchFailed = true;
         m_fetchErrorMessage = QStringLiteral("No controller");
+        return;
+    }
+
+    // Subsequent-sync path (Phase D Task 19): use IBlobBackend::modifiedSince.
+    // Quick path (first sync, no baselines) continues via calendar-typed fetchItems.
+    if (!m_currentRequest.useQuickPath) {
+        fetchRecordsViaBlob(m_currentRequest.mapping.sourceBackend,
+                            m_currentRequest.mapping.sourceCalendar,
+                            m_sourceRecords);
         return;
     }
 
@@ -334,6 +395,15 @@ void SyncWorker::fetchSourceRecords()
 void SyncWorker::fetchTargetRecords()
 {
     emit phaseChanged(m_currentRequest.mapping.id, 2);  // FetchingTarget
+
+    // Subsequent-sync path (Phase D Task 19): use IBlobBackend::modifiedSince.
+    // Quick path (first sync, no baselines) continues via calendar-typed fetchItems.
+    if (!m_currentRequest.useQuickPath) {
+        fetchRecordsViaBlob(m_currentRequest.mapping.targetBackend,
+                            m_currentRequest.mapping.targetCalendar,
+                            m_targetRecords);
+        return;
+    }
 
     SyncBackend *backend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
     if (!backend) {

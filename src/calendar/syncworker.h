@@ -165,6 +165,14 @@ private:
     void applyChanges();
     void updateBaselines();
 
+    // Blob-view helpers (Phase D Task 19)
+    // Fetch records via IBlobBackend::modifiedSince, translating BackendRecord
+    // back to SyncRecord.  Used for the subsequent-sync path (!useQuickPath).
+    // Fills `out` with translated records; sets m_fetchFailed on error.
+    void fetchRecordsViaBlob(const QString &backendId,
+                             const QString &calendarId,
+                             QList<SyncRecord> &out);
+
     // Conflict handling
     void handleConflictUnmonitored(const SyncChange &change);
     void applyMonitoredResolution(const SyncChange &change,
