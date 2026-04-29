@@ -1,9 +1,9 @@
 # Phase F.0 — Test gap closure (design)
 
 **Date:** 2026-04-29
-**Status:** Approved 2026-04-29 by user via brainstorming session.
+**Status:** Landed 2026-04-29 on tag `v0.12-phase-f0-test-gaps`.
+Approved 2026-04-29 by user via brainstorming session.
 Implementation plan in `04o-phase-f0-test-gaps-plan.md` (sibling).
-**Phase tag on completion:** `v0.12-phase-f0-test-gaps`.
 **Gates:** Phase E complete (`v0.11-phase-e-transcoding-backends`).
 
 ## Goal

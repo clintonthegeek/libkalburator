@@ -1,5 +1,9 @@
 # Phase F.0 — Test gap closure Implementation Plan
 
+**Status:** Landed 2026-04-29 on tag `v0.12-phase-f0-test-gaps`.
+All tasks complete; libkalburator 21/21, PlanStan 96/120 (matches
+Phase E baseline), WildPalms 73/73 at tag.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:executing-plans (or subagent-driven-development) to
 > work this plan task-by-task. Steps use checkbox (`- [ ]`) syntax

@@ -1,14 +1,38 @@
 # Phase D / E / F / G — engine merger roadmap
 
-**Date:** 2026-04-28
-**Status:** Approved. Worktree `refactor/engine-merger` set up
-2026-04-28; Phase D.0 not yet started.
-**Phase tags on completion:**
+**Date:** 2026-04-28 (updated 2026-04-29 with F slice + F.0 prerequisite)
+**Status:** D.0, D, E, F.0 landed. F1 next.
 
-- `v0.9-phase-d-compose`
-- `v0.10-phase-e-transcoding-backends`
-- `v0.11-phase-f-unify`
-- `v0.12-phase-g-opaque-plugin`
+## At-a-glance phase status
+
+| Phase | Status | Tag |
+|---|---|---|
+| D.0 — Tests-first | ✅ landed 2026-04-28 | `v0.9-phase-d0-tests-first` |
+| D — Compose | ✅ landed 2026-04-29 | `v0.10-phase-d-compose` |
+| E — Transcoding-into-backends | ✅ landed 2026-04-29 | `v0.11-phase-e-transcoding-backends` |
+| F.0 — Test gap closure | ✅ landed 2026-04-29 | `v0.12-phase-f0-test-gaps` |
+| F1 — Unify (engine + adapter, threading verbatim) | ⬜ not started | `v0.13-phase-f1-unify` |
+| F2 — Threading API redesign | ⬜ not started | `v0.14-phase-f2-threading` |
+| G — Opaque + plugin | ⬜ not started | `v0.15-phase-g-opaque-plugin` |
+
+**Phase F slice rationale:** the original Phase F bundled the
+engine-shape pivot (single `SyncEngine` over `IDomainAdapter`)
+with the threading-API redesign (`QFuture`-based public API,
+cancellation tokens, operation handles). Brainstorm 2026-04-29
+sliced these apart on the same principle Phases D and E used:
+preserve threading verbatim while the structural change lands,
+then redesign threading on top of a stable unified engine.
+Cancellation has zero current test coverage; bundling its
+introduction with the engine collapse would put two unverified
+changes in the same tag. F1 lands the engine collapse with
+existing-threading tests as the safety net; F2 introduces the
+new threading API with new TDD-style cancellation tests.
+
+**Phase F.0 rationale:** the audit conducted during the F-scoping
+brainstorm found that backend write/fetch error propagation was
+only tested in PlanStan's `tst_sync_error_recovery`. Phase E
+nearly broke this contract; we got lucky that `verify-all.sh`
+runs PlanStan. F.0 moved the contract into a library-side test.
 
 **Cross-repo coordination:** the master plan lives in
 `~/dev/refactor-engine-merger/ROADMAP.md`. That doc explains the
