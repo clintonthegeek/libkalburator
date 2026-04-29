@@ -3,6 +3,7 @@
 #include "backendcapabilities.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "transcodingplan.h"
 
 #include <QDir>
 #include <QFile>
@@ -242,14 +243,15 @@ void OrgBackend::loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSign
 // ============================================================================
 
 void OrgBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
-                            const QList<KCalendarCore::Incidence::Ptr> &items)
+                            const QList<KCalendarCore::Incidence::Ptr> &items,
+                            const TranscodingPlan& plan)
 {
     if (!cal) {
         qWarning() << "OrgBackend::storeItems: Null calendar";
         return;
     }
 
-    QString calendarId = cal->id();
+    const QString calendarId = cal->id();
     if (calendarId.isEmpty()) {
         qWarning() << "OrgBackend::storeItems: Empty calendar ID";
         return;
@@ -263,11 +265,22 @@ void OrgBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
         return;
     }
 
-    int totalItems = items.size();
+    // Apply transcoding plan
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    int totalItems = finalItems.size();
     int currentItem = 0;
     emit writeStarted(calendarId, totalItems);
 
-    for (const auto &incidence : items) {
+    for (const auto &incidence : finalItems) {
         if (!incidence)
             continue;
 
@@ -328,7 +341,8 @@ void OrgBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
 
 void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
                             const KCalendarCore::Incidence::Ptr &item,
-                            const QString &icalData)
+                            const QString &icalData,
+                            const TranscodingPlan& plan)
 {
     Q_UNUSED(icalData)
 
@@ -337,11 +351,18 @@ void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
         return;
     }
 
-    QString calendarId = cal->id();
+    const QString calendarId = cal->id();
     if (calendarId.isEmpty()) {
         qWarning() << "OrgBackend::updateItem: Empty calendar ID";
         return;
     }
+
+    // Apply transcoding plan (OrgBackend serializes from the incidence, not icalData)
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calendarId, item->uid(), result.warnings);
+    }
+    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
 
     OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calendarId);
     if (!orgFile) {
@@ -349,7 +370,7 @@ void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
         return;
     }
 
-    QString uid = item->uid();
+    const QString uid = finalItem->uid();
     auto headline = m_fileManager->findHeadlineByUid(
         orgFile.staticCast<OrgMode::OrgElement>(), uid);
     if (!headline) {
@@ -358,7 +379,7 @@ void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
     }
 
     // Check reparenting
-    QString newParentUid = item->relatedTo(KCalendarCore::Incidence::RelTypeParent);
+    QString newParentUid = finalItem->relatedTo(KCalendarCore::Incidence::RelTypeParent);
     OrgMode::OrgElement *currentParent = headline->parent();
     QString currentParentUid;
     if (currentParent && currentParent != orgFile.data()) {
@@ -372,7 +393,7 @@ void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
         reparentHeadline(orgFile, headline, newParentUid);
     }
 
-    m_fileManager->updateHeadlineFromIncidence(headline, item,
+    m_fileManager->updateHeadlineFromIncidence(headline, finalItem,
         m_planningData.value(uid), m_roundtripData.value(uid));
 
     m_fileManager->saveOrgFile(calendarId, collectSiblingOrders());
@@ -407,7 +428,8 @@ void OrgBackend::startSync(const QString &collectionId,
                            KCalendarCore::MemoryCalendar *calendar,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                           const QMap<QString, QString> &stagedDeletions)
+                           const QMap<QString, QString> &stagedDeletions,
+                           const TranscodingPlan& plan)
 {
     Q_UNUSED(collectionId)
 
@@ -417,9 +439,10 @@ void OrgBackend::startSync(const QString &collectionId,
         return;
     }
 
+    // Delegate to storeItems which applies the transcoding plan
     QList<KCalendarCore::Incidence::Ptr> allChanges = stagedCreations + stagedUpdates;
     if (!allChanges.isEmpty()) {
-        storeItems(calendar, allChanges);
+        storeItems(calendar, allChanges, plan);
     }
 
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {

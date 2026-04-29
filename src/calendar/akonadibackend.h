@@ -61,15 +61,18 @@ public:
     void storeCalendars(const QString &collectionId,
                         const QList<KCalendarCore::MemoryCalendar*> &calendars) override;
     void storeItems(KCalendarCore::MemoryCalendar *cal,
-                    const QList<KCalendarCore::Incidence::Ptr> &items) override;
+                    const QList<KCalendarCore::Incidence::Ptr> &items,
+                    const TranscodingPlan& plan) override;
     void updateItem(KCalendarCore::MemoryCalendar *cal,
                     const KCalendarCore::Incidence::Ptr &item,
-                    const QString &icalData) override;
+                    const QString &icalData,
+                    const TranscodingPlan& plan) override;
     void startSync(const QString &collectionId,
                    KCalendarCore::MemoryCalendar *calendar,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                   const QMap<QString, QString> &stagedDeletions) override;
+                   const QMap<QString, QString> &stagedDeletions,
+                   const TranscodingPlan& plan) override;
     void removeItem(const QString &calId, const QString &itemUid) override;
 
     // === Operation-Based Async API ===

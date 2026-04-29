@@ -1,5 +1,6 @@
 #include "mockbackend.h"
 #include "syncoperation.h"
+#include "transcodingplan.h"
 
 #include <QThread>
 #include <QTimer>
@@ -104,11 +105,12 @@ void MockBackend::storeCalendars(const QString &collectionId,
 }
 
 void MockBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
-                              const QList<KCalendarCore::Incidence::Ptr> &items)
+                              const QList<KCalendarCore::Incidence::Ptr> &items,
+                              const TranscodingPlan& plan)
 {
     if (!cal) return;
 
-    QString calendarId = cal->id();
+    const QString calendarId = cal->id();
     logOperation(QStringLiteral("STORE_ITEMS"), calendarId);
 
     if (shouldFail(FailurePoint::OnStoreItems)) {
@@ -125,13 +127,24 @@ void MockBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
 
     applyDelay();
 
-    int total = items.size();
+    // Apply transcoding plan to each item
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    int total = finalItems.size();
     emit writeStarted(calendarId, total);
 
     auto &calendar = m_calendars[calendarId];
     KCalendarCore::ICalFormat format;
     int current = 0;
-    for (const auto &item : items) {
+    for (const auto &item : finalItems) {
         current++;
         logOperation(QStringLiteral("STORE_ITEM"), calendarId, item->uid());
         // Clone to avoid sharing pointers
@@ -148,19 +161,29 @@ void MockBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
 
 void MockBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
                               const KCalendarCore::Incidence::Ptr &item,
-                              const QString &icalData)
+                              const QString &icalData,
+                              const TranscodingPlan& plan)
 {
     if (!cal || !item) return;
 
-    QString calendarId = cal->id();
+    const QString calendarId = cal->id();
     logOperation(QStringLiteral("UPDATE_ITEM"), calendarId, item->uid());
 
     applyDelay();
 
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calendarId, item->uid(), result.warnings);
+    }
+
+    // MockBackend re-serializes from the incidence pointer (like OrgBackend/LocalBackend).
+    // icalData is ignored; the transcoded incidence is the source of truth.
+    Q_UNUSED(icalData)
     KCalendarCore::ICalFormat format;
-    auto updated = format.fromString(icalData);
+    QString ical = format.toICalString(result.incidence);
+    auto updated = format.fromString(ical);
     if (updated) {
-        m_calendars[calendarId][item->uid()] = updated;
+        m_calendars[calendarId][result.incidence->uid()] = updated;
     }
 }
 
@@ -168,7 +191,8 @@ void MockBackend::startSync(const QString &collectionId,
                              KCalendarCore::MemoryCalendar* calendar,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                             const QMap<QString, QString> &stagedDeletions)
+                             const QMap<QString, QString> &stagedDeletions,
+                             const TranscodingPlan& plan)
 {
     if (!calendar) {
         emit syncCompleted(collectionId);
@@ -178,7 +202,7 @@ void MockBackend::startSync(const QString &collectionId,
     // Use calendar->id() consistent with all other MockBackend methods.
     // (Previously used calendar->name() which was inconsistent with
     //  loadItems/storeItems/updateItem which all use cal->id().)
-    QString calendarId = calendar->id();
+    const QString calendarId = calendar->id();
     logOperation(QStringLiteral("START_SYNC"), calendarId);
 
     if (shouldFail(FailurePoint::OnStartSync)) {
@@ -191,11 +215,32 @@ void MockBackend::startSync(const QString &collectionId,
 
     applyDelay();
 
+    // Transcode creations and updates; deletions are never transcoded
+    QList<KCalendarCore::Incidence::Ptr> finalCreations;
+    finalCreations.reserve(stagedCreations.size());
+    for (const auto &original : stagedCreations) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalCreations.append(result.incidence);
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
+    finalUpdates.reserve(stagedUpdates.size());
+    for (const auto &original : stagedUpdates) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalUpdates.append(result.incidence);
+    }
+
     auto &calData = m_calendars[calendarId];
     KCalendarCore::ICalFormat format;
 
     // Process creations — check OnPush and OnStoreItems per-item for partial failure injection
-    for (const auto &item : stagedCreations) {
+    for (const auto &item : finalCreations) {
         if (shouldFail(FailurePoint::OnPush) || shouldFail(FailurePoint::OnStoreItems)) {
             QString msg = m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on push/store (creation) in startSync")
@@ -212,7 +257,7 @@ void MockBackend::startSync(const QString &collectionId,
     }
 
     // Process updates — check OnPush and OnStoreItems per-item for partial failure injection
-    for (const auto &item : stagedUpdates) {
+    for (const auto &item : finalUpdates) {
         if (shouldFail(FailurePoint::OnPush) || shouldFail(FailurePoint::OnStoreItems)) {
             QString msg = m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on push/store (update) in startSync")

@@ -4,6 +4,7 @@
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
+#include "transcodingplan.h"
 #include <KCalendarCore/ICalFormat>
 #include <QByteArrayView>
 #include <QCryptographicHash>
@@ -381,7 +382,8 @@ void LocalBackend::storeCalendars(const QString &someArg, const QList<KCalendarC
 }
 
 void LocalBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
-                              const QList<KCalendarCore::Incidence::Ptr> &items)
+                              const QList<KCalendarCore::Incidence::Ptr> &items,
+                              const TranscodingPlan& plan)
 {
     if (!cal) {
         qWarning() << "LocalBackend::storeItems: Null calendar provided";
@@ -399,6 +401,17 @@ void LocalBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
         return;
     }
 
+    // Apply transcoding plan
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
     QDir calDir(m_calendarRootPath + "/" + calId);
 
     if (!calDir.exists()) {
@@ -409,12 +422,12 @@ void LocalBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
     }
 
     KCalendarCore::ICalFormat icalFormat;
-    const int totalItems = items.size();
+    const int totalItems = finalItems.size();
     int currentItem = 0;
 
     emit writeStarted(calId, totalItems);
 
-    for (const KCalendarCore::Incidence::Ptr &incidence : items) {
+    for (const KCalendarCore::Incidence::Ptr &incidence : finalItems) {
         if (incidence.isNull()) {
             qWarning() << "LocalBackend::storeItems: Null incidence skipped";
             currentItem++;
@@ -491,7 +504,8 @@ void LocalBackend::writeIncidenceWithHierarchy(KCalendarCore::MemoryCalendar* ca
 
 void LocalBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
                               const KCalendarCore::Incidence::Ptr &item,
-                              const QString &icalData)
+                              const QString &icalData,
+                              const TranscodingPlan& plan)
 {
     Q_UNUSED(icalData)
 
@@ -506,6 +520,13 @@ void LocalBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
         return;
     }
 
+    // Apply transcoding plan (LocalBackend serializes from the incidence, not icalData)
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calId, item->uid(), result.warnings);
+    }
+    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
+
     QDir calDir(m_calendarRootPath + "/" + calId);
     if (!calDir.exists()) {
         if (!calDir.mkpath(".")) {
@@ -514,9 +535,9 @@ void LocalBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
         }
     }
 
-    QString fileName = calDir.filePath(item->uid() + ".ics");
+    QString fileName = calDir.filePath(finalItem->uid() + ".ics");
 
-    qDebug() << "Updating incidence" << item->uid() << "to file" << fileName;
+    qDebug() << "Updating incidence" << finalItem->uid() << "to file" << fileName;
 
     QSaveFile file(fileName);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -525,11 +546,11 @@ void LocalBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
     }
 
     // Serialize incidence with hierarchy info intact
-    writeIncidenceWithHierarchy(cal, item);
+    writeIncidenceWithHierarchy(cal, finalItem);
 
     KCalendarCore::ICalFormat icalFormat;
     auto tempCalRaw = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-    tempCalRaw->addIncidence(item);
+    tempCalRaw->addIncidence(finalItem);
     QSharedPointer<KCalendarCore::Calendar> tempCalPtr(tempCalRaw, [](KCalendarCore::Calendar*) {});
 
     QString icalDataStr = icalFormat.toString(tempCalPtr);
@@ -727,7 +748,8 @@ void LocalBackend::startSync(const QString &collectionId,
                              KCalendarCore::MemoryCalendar* calendar,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                             const QMap<QString, QString> &stagedDeletions)
+                             const QMap<QString, QString> &stagedDeletions,
+                             const TranscodingPlan& plan)
 {
     if (!calendar) {
         qWarning() << "LocalBackend::startSync: Null calendar provided";
@@ -735,15 +757,38 @@ void LocalBackend::startSync(const QString &collectionId,
         return;
     }
 
+    const QString calId = calendar->id();
+
+    // Apply transcoding plan to creations and updates; deletions are never transcoded
+    QList<KCalendarCore::Incidence::Ptr> finalCreations;
+    finalCreations.reserve(stagedCreations.size());
+    for (const auto &original : stagedCreations) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalCreations.append(result.incidence);
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
+    finalUpdates.reserve(stagedUpdates.size());
+    for (const auto &original : stagedUpdates) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalUpdates.append(result.incidence);
+    }
+
     // Apply deletions synchronously (fast operation)
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
         removeItem(calendar->id(), it.key());
     }
 
-    // Combine creations and updates for async writing
+    // Combine transcoded creations and updates for async writing
     QList<KCalendarCore::Incidence::Ptr> allWrites;
-    allWrites.append(stagedCreations);
-    allWrites.append(stagedUpdates);
+    allWrites.append(finalCreations);
+    allWrites.append(finalUpdates);
 
     if (allWrites.isEmpty()) {
         emit syncCompleted(collectionId);
@@ -753,7 +798,6 @@ void LocalBackend::startSync(const QString &collectionId,
     // Use async file writer for non-blocking writes
     ensureAsyncWriterReady();
 
-    const QString calId = calendar->id();
     QDir calDir(m_calendarRootPath + "/" + calId);
     if (!calDir.exists()) {
         if (!calDir.mkpath(".")) {

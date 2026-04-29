@@ -5,6 +5,7 @@
 #include "discoveredcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "transcodingplan.h"
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -889,17 +890,29 @@ void RemoteBackend::loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressS
 }
 
 void RemoteBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
-                               const QList<KCalendarCore::Incidence::Ptr> &items)
+                               const QList<KCalendarCore::Incidence::Ptr> &items,
+                               const TranscodingPlan& plan)
 {
     qDebug() << "RemoteBackend::storeItems called with" << items.count() << "items for calendar" << (cal ? cal->id() : "null");
     if (!cal || items.isEmpty()) return;
 
-    QString calId = cal->id();
+    const QString calId = cal->id();
     if (!m_davUrls.contains(calId)) {
         qWarning() << "RemoteBackend::storeItems: Unknown calendar DAV URL for" << calId;
         emit writeStarted(calId, 0);
         emit writeFinished(calId, false, QStringLiteral("Unknown calendar DAV URL"));
         return;
+    }
+
+    // Apply transcoding plan before dispatching async jobs
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
     }
 
     KDAV::DavUrl davUrl = m_davUrls.value(calId);
@@ -909,7 +922,7 @@ void RemoteBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
     QPointer<KCalendarCore::MemoryCalendar> calGuard(cal);
 
     // Track completion for write progress signals
-    const int totalItems = items.size();
+    const int totalItems = finalItems.size();
     int *completedItems = new int(0);
     QPointer<RemoteBackend> safeThis(this);
 
@@ -929,7 +942,7 @@ void RemoteBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
         }
     };
 
-    for (const auto &incidence : items) {
+    for (const auto &incidence : finalItems) {
         if (incidence.isNull()) {
             checkWriteDone();  // Still count for progress
             continue;
@@ -993,21 +1006,46 @@ void RemoteBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
 
 void RemoteBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
                                const KCalendarCore::Incidence::Ptr &item,
-                               const QString &icalData)
+                               const QString &icalData,
+                               const TranscodingPlan& plan)
 {
     if (!cal || item.isNull()) {
         qWarning() << "RemoteBackend::updateItem: Invalid calendar or incidence";
         return;
     }
 
-    QString calId = cal->id();
+    const QString calId = cal->id();
     if (!m_davUrls.contains(calId)) {
         qWarning() << "RemoteBackend::updateItem: Unknown calendar DAV URL for" << calId;
         return;
     }
 
+    // Apply transcoding plan. RemoteBackend sends icalData on the wire, so
+    // re-serialize from the transcoded incidence when the plan is non-empty.
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calId, item->uid(), result.warnings);
+    }
+    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
+
+    // Determine the wire data: use re-serialized ICS from the transcoded
+    // incidence when the plan produced a different object; otherwise fall
+    // back to the original icalData that was passed in.
+    QString wireData;
+    if (finalItem.data() != item.data()) {
+        // Plan produced a clone — re-serialize so the wire carries the
+        // transcoded properties.
+        KCalendarCore::ICalFormat fmt;
+        auto tmpCal = QSharedPointer<KCalendarCore::MemoryCalendar>(
+            new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+        tmpCal->addIncidence(finalItem);
+        wireData = fmt.toString(tmpCal);
+    } else {
+        wireData = icalData;
+    }
+
     KDAV::DavUrl davUrl = m_davUrls.value(calId);
-    QUrl itemUrl = generateItemUrl(davUrl, item->uid());
+    QUrl itemUrl = generateItemUrl(davUrl, finalItem->uid());
     KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
 
     QString oldEtag = cachedEtag(itemUrl.toString());
@@ -1015,7 +1053,7 @@ void RemoteBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
     KDAV::DavItem davItem;
     davItem.setUrl(itemDavUrl);
     davItem.setContentType(QStringLiteral("text/calendar"));
-    davItem.setData(icalData.toUtf8());
+    davItem.setData(wireData.toUtf8());
     davItem.setEtag(oldEtag);
 
     // Use QPointer to safely track calendar lifetime across async callbacks
@@ -1023,7 +1061,7 @@ void RemoteBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
 
     auto *modifyJob = new KDAV::DavItemModifyJob(davItem, this);
 
-    connect(modifyJob, &KDAV::DavItemModifyJob::result, this, [this, calGuard, calId, modifyJob, item, icalData](KJob *job) {
+    connect(modifyJob, &KDAV::DavItemModifyJob::result, this, [this, calGuard, calId, modifyJob, finalItem, wireData](KJob *job) {
         if (job->error()) {
             qWarning() << "RemoteBackend::updateItem: Failed to update item:" << job->errorString();
             return;
@@ -1045,11 +1083,11 @@ void RemoteBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
         m_localEtags[remoteUrl] = modifiedItem.etag();
 
         // Store content in cache so subsequent fetches can use delta sync
-        setCachedContent(remoteUrl, modifiedItem.etag(), icalData);
+        setCachedContent(remoteUrl, modifiedItem.etag(), wireData);
 
-        qDebug() << "RemoteBackend::updateItem: Updated incidence UID:" << item->uid() << "ETag:" << modifiedItem.etag();
+        qDebug() << "RemoteBackend::updateItem: Updated incidence UID:" << finalItem->uid() << "ETag:" << modifiedItem.etag();
 
-        emit itemLoaded(cal, item, modifiedItem.etag());
+        emit itemLoaded(cal, finalItem, modifiedItem.etag());
     });
 
     modifyJob->start();
@@ -1123,7 +1161,8 @@ void RemoteBackend::startSync(const QString &collectionId,
                               KCalendarCore::MemoryCalendar *calendar,
                               const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                               const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                              const QMap<QString, QString> &stagedDeletions)
+                              const QMap<QString, QString> &stagedDeletions,
+                              const TranscodingPlan& plan)
 {
     if (!calendar) {
         qWarning() << "RemoteBackend::startSync: Null calendar";
@@ -1144,10 +1183,32 @@ void RemoteBackend::startSync(const QString &collectionId,
         return;
     }
 
+    // Apply transcoding plan to creations and updates before dispatching async jobs.
+    // Deletions are never transcoded.
+    QList<KCalendarCore::Incidence::Ptr> finalCreations;
+    finalCreations.reserve(stagedCreations.size());
+    for (const auto &original : stagedCreations) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalCreations.append(result.incidence);
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
+    finalUpdates.reserve(stagedUpdates.size());
+    for (const auto &original : stagedUpdates) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalUpdates.append(result.incidence);
+    }
+
     const KDAV::DavUrl baseDavUrl = m_davUrls.value(calId);
 
     // Count total jobs for completion tracking
-    const int totalJobs = stagedCreations.size() + stagedUpdates.size() + stagedDeletions.size();
+    const int totalJobs = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();
     if (totalJobs == 0) {
         emit syncCompleted(collectionId);
         return;
@@ -1279,7 +1340,7 @@ void RemoteBackend::startSync(const QString &collectionId,
     };
 
     // Launch create jobs
-    for (const auto &inc : stagedCreations) {
+    for (const auto &inc : finalCreations) {
         if (!inc) {
             checkDone();
             continue;
@@ -1332,7 +1393,7 @@ void RemoteBackend::startSync(const QString &collectionId,
     }
 
     // Launch update jobs
-    for (const auto &inc : stagedUpdates) {
+    for (const auto &inc : finalUpdates) {
         if (!inc) {
             checkDone();
             continue;

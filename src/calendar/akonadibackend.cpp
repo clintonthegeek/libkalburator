@@ -6,6 +6,7 @@
 #include "logicalcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "transcodingplan.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -269,7 +270,8 @@ void AkonadiBackend::storeCalendars(const QString &collectionId,
 }
 
 void AkonadiBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
-                                 const QList<KCalendarCore::Incidence::Ptr> &items)
+                                 const QList<KCalendarCore::Incidence::Ptr> &items,
+                                 const TranscodingPlan& plan)
 {
     const QString calId = cal->id();
     auto colIt = m_collections.find(calId);
@@ -278,19 +280,30 @@ void AkonadiBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
         return;
     }
 
+    // Apply transcoding plan
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
     const Akonadi::Collection &col = *colIt;
-    int totalItems = items.size();
+    int totalItems = finalItems.size();
 
     emit writeStarted(calId, totalItems);
 
-    if (items.isEmpty()) {
+    if (finalItems.isEmpty()) {
         emit writeFinished(calId, true);
         return;
     }
 
     auto completedCount = std::make_shared<int>(0);
 
-    for (const auto &incidence : items) {
+    for (const auto &incidence : finalItems) {
         Akonadi::Item existing = findItemByUid(calId, incidence->uid());
 
         if (existing.isValid()) {
@@ -335,25 +348,34 @@ void AkonadiBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
 
 void AkonadiBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
                                  const KCalendarCore::Incidence::Ptr &item,
-                                 const QString &icalData)
+                                 const QString &icalData,
+                                 const TranscodingPlan& plan)
 {
     Q_UNUSED(icalData);  // We use the Incidence::Ptr directly
 
     const QString calId = cal->id();
-    Akonadi::Item existing = findItemByUid(calId, item->uid());
+
+    // Apply transcoding plan (AkonadiBackend uses the incidence ptr directly)
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calId, item->uid(), result.warnings);
+    }
+    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
+
+    Akonadi::Item existing = findItemByUid(calId, finalItem->uid());
 
     if (!existing.isValid()) {
-        qWarning() << "AkonadiBackend::updateItem: item not found" << item->uid();
+        qWarning() << "AkonadiBackend::updateItem: item not found" << finalItem->uid();
         return;
     }
 
-    existing.setPayload<KCalendarCore::Incidence::Ptr>(item);
+    existing.setPayload<KCalendarCore::Incidence::Ptr>(finalItem);
     auto *job = new Akonadi::ItemModifyJob(existing, m_session);
     connect(job, &Akonadi::ItemModifyJob::finished, this,
-            [this, calId, item, job]() {
+            [this, calId, finalItem, job]() {
         if (job->error()) {
             qWarning() << "AkonadiBackend: updateItem failed for"
-                       << item->uid() << ":" << job->errorString();
+                       << finalItem->uid() << ":" << job->errorString();
             emit calendarError(QString(), calId, job->errorString());
         }
     });
@@ -363,7 +385,8 @@ void AkonadiBackend::startSync(const QString &collectionId,
                                 KCalendarCore::MemoryCalendar *calendar,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                                const QMap<QString, QString> &stagedDeletions)
+                                const QMap<QString, QString> &stagedDeletions,
+                                const TranscodingPlan& plan)
 {
     const QString calId = calendar->id();
     auto colIt = m_collections.find(calId);
@@ -373,8 +396,29 @@ void AkonadiBackend::startSync(const QString &collectionId,
         return;
     }
 
+    // Apply transcoding plan to creations and updates; deletions are never transcoded
+    QList<KCalendarCore::Incidence::Ptr> finalCreations;
+    finalCreations.reserve(stagedCreations.size());
+    for (const auto &original : stagedCreations) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalCreations.append(result.incidence);
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
+    finalUpdates.reserve(stagedUpdates.size());
+    for (const auto &original : stagedUpdates) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalUpdates.append(result.incidence);
+    }
+
     const Akonadi::Collection &col = *colIt;
-    int pending = stagedCreations.size() + stagedUpdates.size() + stagedDeletions.size();
+    int pending = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();
 
     if (pending == 0) {
         emit syncCompleted(collectionId);
@@ -390,7 +434,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     };
 
     // Process creations
-    for (const auto &incidence : stagedCreations) {
+    for (const auto &incidence : finalCreations) {
         Akonadi::Item newItem;
         newItem.setMimeType(incidence->mimeType());
         newItem.setPayload<KCalendarCore::Incidence::Ptr>(incidence);
@@ -407,7 +451,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     }
 
     // Process updates
-    for (const auto &incidence : stagedUpdates) {
+    for (const auto &incidence : finalUpdates) {
         Akonadi::Item existing = findItemByUid(calId, incidence->uid());
         if (!existing.isValid()) {
             qWarning() << "AkonadiBackend: sync update - item not found:" << incidence->uid();

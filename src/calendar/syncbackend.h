@@ -17,6 +17,7 @@
 #include "calendartype.h"   // CalendarType enum
 #include "datadomain.h"    // DataDomain enum
 #include "iblobbackend.h"  // IBlobBackend pure interface (Phase D Group 2)
+#include "transcodingplan.h"
 
 namespace Kalburator::Sync {
 
@@ -149,22 +150,30 @@ public:
 
     /// Save multiple incidences into calendar
     virtual void storeItems(KCalendarCore::MemoryCalendar* cal,
-                            const QList<KCalendarCore::Incidence::Ptr> &items) = 0;
+                            const QList<KCalendarCore::Incidence::Ptr> &items,
+                            const TranscodingPlan& plan = TranscodingPlan{}) = 0;
 
     /// Update single incidence item in calendar with given iCal data
     virtual void updateItem(KCalendarCore::MemoryCalendar* cal,
                             const KCalendarCore::Incidence::Ptr &item,
-                            const QString &icalData) = 0;
+                            const QString &icalData,
+                            const TranscodingPlan& plan = TranscodingPlan{}) = 0;
 
     /// Perform full sync with staged creations, updates, and deletions
     virtual void startSync(const QString &collectionId,
                            KCalendarCore::MemoryCalendar* calendar,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                           const QMap<QString, QString> &stagedDeletions) = 0;
+                           const QMap<QString, QString> &stagedDeletions,
+                           const TranscodingPlan& plan = TranscodingPlan{}) = 0;
 
     /// Remove an item by calendar ID and item UID
     virtual void removeItem(const QString &calId, const QString &itemUid) = 0;
+
+    // Phase E note (2026-04-29): the operation-based API does not yet
+    // carry a TranscodingPlan parameter. If this API survives Phase F's
+    // threading-API redesign, it inherits the same plan-passing pattern
+    // used by storeItems/updateItem/startSync.
 
     // ========== Operation-Based API (Preferred) ==========
     // These methods return trackable SyncOperation handles and work with
@@ -573,6 +582,13 @@ Q_SIGNALS:
     void calendarError(const QString &collectionId,
                        const QString &calendarId,
                        const QString &errorMessage);
+
+    /// Emitted when a write operation invokes a non-lossless transcoder.
+    /// Carries calendar id, incidence uid, and the warning descriptions
+    /// from each transcoder that contributed to the loss.
+    void transcodingWarning(const QString& calendarId,
+                            const QString& uid,
+                            const QStringList& warnings);
 
     /// A loaded item's type does not match the collection's expected type.
     /// Emitted when e.g. a VTODO is found in a VEVENT-only collection.

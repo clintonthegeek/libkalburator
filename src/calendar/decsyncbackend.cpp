@@ -8,6 +8,7 @@
 #include "discoveredcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "transcodingplan.h"
 #include <KCalendarCore/ICalFormat>
 #include <QDir>
 #include <QDebug>
@@ -274,7 +275,8 @@ void DecSyncBackend::storeCalendars(const QString &collectionId,
 }
 
 void DecSyncBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
-                                 const QList<KCalendarCore::Incidence::Ptr> &items)
+                                 const QList<KCalendarCore::Incidence::Ptr> &items,
+                                 const TranscodingPlan& plan)
 {
     if (!cal) {
         qWarning() << "DecSyncBackend::storeItems: Null calendar";
@@ -292,13 +294,24 @@ void DecSyncBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
         }
     }
 
-    const int total = items.size();
+    // Apply transcoding plan
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    const int total = finalItems.size();
     emit writeStarted(calId, total);
 
     QList<DecSyncEntry> eventEntries;
     QList<DecSyncEntry> todoEntries;
 
-    for (const auto &item : items) {
+    for (const auto &item : finalItems) {
         if (item.isNull() || item->uid().isEmpty()) {
             continue;
         }
@@ -344,7 +357,8 @@ void DecSyncBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
 
 void DecSyncBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
                                  const KCalendarCore::Incidence::Ptr &item,
-                                 const QString &icalData)
+                                 const QString &icalData,
+                                 const TranscodingPlan& plan)
 {
     Q_UNUSED(icalData);
 
@@ -355,17 +369,24 @@ void DecSyncBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
 
     const QString calId = cal->id();
 
-    if (!isTypeAllowed(calId, item)) {
+    // Apply transcoding plan (DecSyncBackend serializes from the incidence, not icalData)
+    auto result = executeTranscodingPlan(plan, item);
+    if (!result.warnings.isEmpty() && item) {
+        emit transcodingWarning(calId, item->uid(), result.warnings);
+    }
+    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
+
+    if (!isTypeAllowed(calId, finalItem)) {
         CalendarType expected = discoveredCalendarType(calId);
-        CalendarType actual = incidenceCalendarType(item);
+        CalendarType actual = incidenceCalendarType(finalItem);
         qWarning() << "DecSyncBackend::updateItem: Type violation -"
-                    << item->uid() << "is"
+                    << finalItem->uid() << "is"
                     << (actual == CalendarType::Todo ? "VTODO" : "VEVENT")
                     << "but collection" << calId << "expects"
                     << (expected == CalendarType::Todo ? "VTODO" : "VEVENT");
         emit calendarError(QString(), calId,
             QStringLiteral("Cannot update %1 in %2 collection: type mismatch")
-                .arg(item->uid(), expected == CalendarType::Todo
+                .arg(finalItem->uid(), expected == CalendarType::Todo
                      ? QStringLiteral("tasks") : QStringLiteral("calendars")));
         return;
     }
@@ -373,7 +394,7 @@ void DecSyncBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
     // Route to correct collection based on incidence type for hybrid
     bool hybrid = isHybridCalendar(calId);
     DecSyncCollection *coll;
-    if (hybrid && incidenceCalendarType(item) == CalendarType::Todo) {
+    if (hybrid && incidenceCalendarType(finalItem) == CalendarType::Todo) {
         coll = ensureTodoCollection(calId);
     } else if (hybrid) {
         coll = ensureEventCollection(calId);
@@ -382,9 +403,9 @@ void DecSyncBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
     }
     if (!coll) return;
 
-    coll->setEntry({QStringLiteral("resources"), item->uid()},
+    coll->setEntry({QStringLiteral("resources"), finalItem->uid()},
                    QJsonValue(),  // null key
-                   QJsonValue(serializeIncidence(item)));
+                   QJsonValue(serializeIncidence(finalItem)));
 }
 
 void DecSyncBackend::removeItem(const QString &calId, const QString &itemUid)
@@ -415,7 +436,8 @@ void DecSyncBackend::startSync(const QString &collectionId,
                                 KCalendarCore::MemoryCalendar* calendar,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                                const QMap<QString, QString> &stagedDeletions)
+                                const QMap<QString, QString> &stagedDeletions,
+                                const TranscodingPlan& plan)
 {
     if (!calendar) {
         qWarning() << "DecSyncBackend::startSync: Null calendar";
@@ -439,10 +461,23 @@ void DecSyncBackend::startSync(const QString &collectionId,
         removeItem(calId, it.key());
     }
 
-    // Combine creations and updates
+    // Apply transcoding plan to creations and updates; combine into allWrites
     QList<KCalendarCore::Incidence::Ptr> allWrites;
-    allWrites.append(stagedCreations);
-    allWrites.append(stagedUpdates);
+    allWrites.reserve(stagedCreations.size() + stagedUpdates.size());
+    for (const auto &original : stagedCreations) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        allWrites.append(result.incidence);
+    }
+    for (const auto &original : stagedUpdates) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calId, original->uid(), result.warnings);
+        }
+        allWrites.append(result.incidence);
+    }
 
     if (!allWrites.isEmpty()) {
         QList<DecSyncEntry> eventEntries;
