@@ -34,6 +34,7 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     , m_registry(registry)
     , m_controller(host)
     , m_transcodingRouter(TranscodingRegistry::instance())
+    , m_calendarAdapter(m_transcodingRouter)
 {
     // Create worker but don't start thread yet
     m_worker = new SyncWorker(m_transcodingRouter);
@@ -84,7 +85,7 @@ void SyncEngine::startWorkerThread()
 
     // Set dependencies before moving to thread
     m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
-                              m_blobBaselines);
+                              m_blobBaselines, &m_calendarAdapter);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -122,6 +123,13 @@ void SyncEngine::stopWorkerThread()
 void SyncEngine::setCalendarBaselineStore(CalendarBaselineStore *store)
 {
     m_calendarBaselines = store;
+    m_calendarAdapter.setBaselineStore(store);
+}
+
+void SyncEngine::setCollection(ICalendarCollection *collection)
+{
+    m_collection = collection;
+    m_calendarAdapter.setCollection(collection);
 }
 
 void SyncEngine::setBlobBaselineStore(BlobBaselineStore *store)
@@ -137,7 +145,7 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 void SyncEngine::loadSyncMappings(ICalendarCollection *collection)
 {
     m_syncMappings.clear();
-    m_collection = collection;
+    setCollection(collection);
 
     if (!collection || !m_controller) {
         qDebug() << "SyncEngine::loadSyncMappings - no collection or controller";

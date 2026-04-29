@@ -16,6 +16,7 @@ class BackendRegistry;
 class ISyncHost;
 class BlobBaselineStore;
 class CalendarBaselineStore;
+class CalendarDomainAdapter;
 class ICalendarCollection;
 class SyncBackend;
 
@@ -69,7 +70,8 @@ public:
     void setDependencies(ISyncHost *host,
                          CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection,
-                         BlobBaselineStore *blobBaselines = nullptr);
+                         BlobBaselineStore *blobBaselines = nullptr,
+                         CalendarDomainAdapter *calendarAdapter = nullptr);
 
 public slots:
     /**
@@ -239,6 +241,9 @@ private:
     CalendarBaselineStore *m_calendarBaselines = nullptr;
     BlobBaselineStore *m_blobBaselines = nullptr;  // Phase D Task 20: per-record hash skip
     ICalendarCollection *m_collection = nullptr;
+    // F1 Task 5: engine-owned adapter; worker delegates the calendar-typed
+    // diff and apply-changes-to-backend body here.
+    CalendarDomainAdapter *m_calendarAdapter = nullptr;
 
     // Current sync state
     Request m_currentRequest;

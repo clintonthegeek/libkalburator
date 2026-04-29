@@ -4,6 +4,7 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "syncworker.h"
+#include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "transcodingrouter.h"
 #include <QObject>
@@ -156,7 +157,7 @@ public:
     /**
      * @brief Set collection directly (for testing without loadSyncMappings).
      */
-    void setCollection(ICalendarCollection *collection) { m_collection = collection; }
+    void setCollection(ICalendarCollection *collection);
 
     /**
      * @brief Check if any sync mappings are configured.
@@ -375,6 +376,7 @@ private:
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     TranscodingRouter m_transcodingRouter;
+    CalendarDomainAdapter m_calendarAdapter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 

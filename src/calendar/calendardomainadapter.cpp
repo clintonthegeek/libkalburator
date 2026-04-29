@@ -1,18 +1,28 @@
 #include "calendardomainadapter.h"
 
 #include "calendarbaselinestore.h"
+#include "createincidenceitem.h"
+#include "deleteincidenceitem.h"
 #include "icalendarcollection.h"
 #include "syncbackend.h"
 #include "syncdiff.h"
+#include "synctransaction.h"
+#include "synctransactionitem.h"
 #include "synctypes.h"
 #include "transcodingrouter.h"
+#include "updateincidenceitem.h"
 
 #include <KCalendarCore/ICalFormat>
+#include <KCalendarCore/MemoryCalendar>
 
+#include <QDateTime>
+#include <QDebug>
 #include <QHash>
 #include <QMap>
+#include <QMetaObject>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 namespace Kalburator::Sync {
 
@@ -346,6 +356,140 @@ bool CalendarDomainAdapter::saveBaselines(
         uidToIcal.insert(rec.id, QString::fromUtf8(rec.data));
     }
     return m_baselineStore->setBaselines(mappingId, uidToIcal);
+}
+
+// ---------------------------------------------------------------------------
+// Calendar-typed convenience entry points (F1 Task 5)
+// ---------------------------------------------------------------------------
+
+SyncDiff CalendarDomainAdapter::diffCalendarRecords(
+    const QList<SyncRecord> &source,
+    const QList<SyncRecord> &target,
+    const QMap<QString, QString> &baselines,
+    SyncMode mode,
+    bool useQuickPath) const
+{
+    if (useQuickPath || baselines.isEmpty()) {
+        return computeQuickDiff(source, target, mode);
+    }
+    return computeSyncDiff(source, target, baselines, mode);
+}
+
+bool CalendarDomainAdapter::applyChangesToBackend(
+    SyncBackend *backend,
+    const QString &calendarId,
+    const QList<SyncChange> &changes,
+    bool useTargetRecord,
+    const QString &mappingId,
+    const TranscodingPlan &plan,
+    QString *errorMessage)
+{
+    if (!backend) {
+        if (errorMessage) *errorMessage = QStringLiteral(
+            "CalendarDomainAdapter::applyChangesToBackend - backend is null");
+        return false;
+    }
+    if (!m_collection) {
+        if (errorMessage) *errorMessage = QStringLiteral(
+            "CalendarDomainAdapter::applyChangesToBackend - no collection");
+        return false;
+    }
+
+    KCalendarCore::MemoryCalendar *cal = m_collection->calendar(calendarId);
+    if (!cal) {
+        if (errorMessage) *errorMessage = QStringLiteral(
+            "CalendarDomainAdapter::applyChangesToBackend - calendar not found: %1")
+                .arg(calendarId);
+        return false;
+    }
+
+    const QString direction = useTargetRecord ? QStringLiteral("source")
+                                              : QStringLiteral("target");
+    const QString txId = QStringLiteral("sync-%1-%2-%3")
+        .arg(mappingId, direction,
+             QString::number(QDateTime::currentMSecsSinceEpoch()));
+
+    SyncTransaction tx(txId);
+    int itemCount = 0;
+
+    for (const auto &change : changes) {
+        switch (change.type) {
+            case SyncChangeType::Created: {
+                KCalendarCore::Incidence::Ptr inc = useTargetRecord
+                    ? change.targetRecord.incidence
+                    : change.sourceRecord.incidence;
+                if (!inc) break;
+
+                auto *item = new CreateIncidenceItem(calendarId, inc, cal,
+                                                      backend, plan);
+                tx.addItem(item);
+                itemCount++;
+                break;
+            }
+            case SyncChangeType::Modified: {
+                KCalendarCore::Incidence::Ptr newInc = useTargetRecord
+                    ? change.targetRecord.incidence
+                    : change.sourceRecord.incidence;
+                KCalendarCore::Incidence::Ptr oldInc = useTargetRecord
+                    ? change.sourceRecord.incidence
+                    : change.targetRecord.incidence;
+                if (!newInc) break;
+
+                auto *item = new UpdateIncidenceItem(calendarId, oldInc, newInc,
+                                                      cal, backend, plan);
+                tx.addItem(item);
+                itemCount++;
+                break;
+            }
+            case SyncChangeType::Deleted: {
+                KCalendarCore::Incidence::Ptr deletedInc = useTargetRecord
+                    ? change.sourceRecord.incidence
+                    : change.targetRecord.incidence;
+                auto *item = new DeleteIncidenceItem(calendarId, change.uid,
+                                                      deletedInc, backend);
+                tx.addItem(item);
+                itemCount++;
+                break;
+            }
+            case SyncChangeType::Unchanged:
+                break;
+        }
+    }
+
+    if (itemCount == 0) {
+        return true;
+    }
+
+    qDebug() << "CalendarDomainAdapter::applyChangesToBackend -"
+             << "items:" << itemCount
+             << "direction:" << direction
+             << "txId:" << txId;
+
+    // Backends are main-thread objects; commit must run there.
+    // BlockingQueuedConnection blocks the calling (worker) thread until
+    // commitAll() returns.
+    bool txResult = false;
+    QMetaObject::invokeMethod(backend, [&tx, &txResult]() {
+        txResult = tx.commitAll();
+    }, Qt::BlockingQueuedConnection);
+
+    if (!txResult) {
+        QStringList errors;
+        for (auto *item : tx.items()) {
+            if (!item->errorString().isEmpty()) {
+                errors.append(item->errorString());
+            }
+        }
+        const QString combined = errors.isEmpty()
+            ? QStringLiteral("SyncTransaction commitAll() failed")
+            : errors.join(QStringLiteral("; "));
+        qWarning() << "CalendarDomainAdapter::applyChangesToBackend - "
+                      "transaction failed:" << combined;
+        if (errorMessage) *errorMessage = combined;
+        return false;
+    }
+
+    return true;
 }
 
 } // namespace Kalburator::Sync

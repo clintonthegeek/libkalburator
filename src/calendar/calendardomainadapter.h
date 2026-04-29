@@ -2,7 +2,10 @@
 #define KALBURATOR_CALENDAR_CALENDARDOMAINADAPTER_H
 
 #include "idomainadapter.h"
+#include "syncdiff.h"
 
+#include <QList>
+#include <QMap>
 #include <QString>
 
 namespace Kalburator::Sync {
@@ -91,6 +94,41 @@ public:
     QList<BackendRecord> loadBaselines(const QString& mappingId) const override;
     bool                 saveBaselines(const QString& mappingId,
                                        const QList<BackendRecord>& baselines) override;
+
+    // --- Calendar-typed convenience entry points (F1 Task 5) ---
+    //
+    // These mirror the eventual BackendRecord-typed IDomainAdapter
+    // contract but take parsed calendar types so SyncWorker (and, after
+    // Task 8, SyncEngine itself) doesn't pay an iCal re-parse round-trip
+    // for every record. Internals route to the same `computeSyncDiff` /
+    // `computeQuickDiff` and `SyncTransaction` machinery as the
+    // BackendRecord-typed overloads.
+
+    /// Calendar-typed diff: dispatches to `computeQuickDiff` (when
+    /// `useQuickPath` or `baselines` empty) or `computeSyncDiff`. The
+    /// SyncDiff result drives SyncWorker's conflict-resolution and
+    /// apply-changes loops directly — no BackendRecord round-trip.
+    SyncDiff diffCalendarRecords(const QList<SyncRecord>& source,
+                                 const QList<SyncRecord>& target,
+                                 const QMap<QString, QString>& baselines,
+                                 SyncMode mode,
+                                 bool useQuickPath) const;
+
+    /// Calendar-typed apply: builds a SyncTransaction populated with
+    /// CreateIncidenceItem / UpdateIncidenceItem / DeleteIncidenceItem
+    /// wrappers and commits it on the main thread (BlockingQueuedConnection).
+    /// Returns true on success; on failure, fills `*errorMessage` with the
+    /// concatenated per-item errors. Caller is responsible for connecting
+    /// the backend's `transcodingWarning` signal to its preferred sink
+    /// around the call (the connection is per-apply and best left at the
+    /// call site for now — adapter promotion to QObject is F2 territory).
+    bool applyChangesToBackend(SyncBackend* backend,
+                               const QString& calendarId,
+                               const QList<SyncChange>& changes,
+                               bool useTargetRecord,
+                               const QString& mappingId,
+                               const TranscodingPlan& plan,
+                               QString* errorMessage);
 
 private:
     const TranscodingRouter& m_router;

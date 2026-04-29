@@ -1,5 +1,6 @@
 #include "syncworker.h"
 #include "calendarbaselinestore.h"
+#include "calendardomainadapter.h"
 #include "blobbaselinestore.h"
 #include "blobsyncengine.h"
 #include "syncdiff.h"
@@ -60,12 +61,14 @@ SyncWorker::~SyncWorker()
 void SyncWorker::setDependencies(ISyncHost *host,
                                   CalendarBaselineStore *calendarBaselines,
                                   ICalendarCollection *collection,
-                                  BlobBaselineStore *blobBaselines)
+                                  BlobBaselineStore *blobBaselines,
+                                  CalendarDomainAdapter *calendarAdapter)
 {
     m_controller = host;
     m_calendarBaselines = calendarBaselines;
     m_blobBaselines = blobBaselines;
     m_collection = collection;
+    m_calendarAdapter = calendarAdapter;
 }
 
 void SyncWorker::cancel()
@@ -630,23 +633,30 @@ void SyncWorker::computeDiff()
 {
     emit phaseChanged(m_currentRequest.mapping.id, 3);  // Processing
 
-    if (m_currentRequest.useQuickPath) {
-        // Use fast 2-way diff without baselines
+    // Load baselines from CalendarBaselineStore on the main thread
+    // (SQLite is thread-affine). Empty when useQuickPath is true; the
+    // adapter routes to computeQuickDiff in that case.
+    QMap<QString, QString> baselines;
+    if (!m_currentRequest.useQuickPath && m_calendarBaselines) {
+        const QString mappingId = m_currentRequest.mapping.id;
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &baselines]() {
+            const QHash<QString, QString> hash = m_calendarBaselines->allBaselines(mappingId);
+            for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
+                baselines.insert(it.key(), it.value());
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    // F1 Task 5: delegate the diff to CalendarDomainAdapter when wired
+    // (always wired in production paths; nullptr only in legacy unit tests
+    // that construct SyncWorker without going through SyncEngine).
+    if (m_calendarAdapter) {
+        m_currentDiff = m_calendarAdapter->diffCalendarRecords(
+            m_sourceRecords, m_targetRecords, baselines,
+            m_currentRequest.mapping.mode, m_currentRequest.useQuickPath);
+    } else if (m_currentRequest.useQuickPath) {
         m_currentDiff = computeQuickDiff(m_sourceRecords, m_targetRecords,
                                           m_currentRequest.mapping.mode);
     } else {
-        // Load baselines from CalendarBaselineStore (call on main thread - SQLite is thread-affine)
-        QMap<QString, QString> baselines;
-        if (m_calendarBaselines) {
-            QString mappingId = m_currentRequest.mapping.id;
-            QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &baselines]() {
-                const QHash<QString, QString> hash = m_calendarBaselines->allBaselines(mappingId);
-                for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
-                    baselines.insert(it.key(), it.value());
-            }, Qt::BlockingQueuedConnection);
-        }
-
-        // Compute 3-way diff (CPU intensive, fine to run in worker)
         m_currentDiff = computeSyncDiff(m_sourceRecords, m_targetRecords, baselines,
                                          m_currentRequest.mapping.mode);
     }
@@ -1121,145 +1131,67 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
         return;
     }
 
-    KCalendarCore::MemoryCalendar *cal = m_collection->calendar(calendarId);
-    if (!cal) {
-        qWarning() << "SyncWorker::applyChangesToBackend - calendar not found:" << calendarId;
+    if (!m_calendarAdapter) {
+        // Should never happen in production paths (SyncEngine always sets the
+        // adapter via setDependencies). Guard so legacy tests that bypass the
+        // engine still get a clear error rather than a null deref.
+        qWarning() << "SyncWorker::applyChangesToBackend - no CalendarDomainAdapter; "
+                      "construct SyncWorker via SyncEngine, not directly";
+        m_applyFailed = true;
+        m_applyErrorMessage = QStringLiteral(
+            "SyncWorker has no CalendarDomainAdapter wired");
         return;
     }
 
-    // Determine source and target backend types for transcoding
-    QString targetType = backend->backendType();
+    // Determine source and target backend types for transcoding. The
+    // transcoding plan is empty (no-op) when the types match; backends
+    // short-circuit executeTranscodingPlan on an empty plan, so no
+    // special-casing is needed here.
+    const QString targetType = backend->backendType();
     QString sourceType;
-
-    // Source type is the opposite of where we're applying
     if (useTargetRecord) {
-        // We're applying to source backend, so source of data is target
-        SyncBackend *sourceBackend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+        SyncBackend *sourceBackend =
+            m_controller->backendById(m_currentRequest.mapping.targetBackend);
         sourceType = sourceBackend ? sourceBackend->backendType() : QString();
     } else {
-        // We're applying to target backend, so source of data is source
-        SyncBackend *sourceBackend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+        SyncBackend *sourceBackend =
+            m_controller->backendById(m_currentRequest.mapping.sourceBackend);
         sourceType = sourceBackend ? sourceBackend->backendType() : QString();
     }
-
-    bool needsTranscoding = !sourceType.isEmpty() && !targetType.isEmpty() && sourceType != targetType;
-
-    // Ask the router for the transcoding plan for this source → target direction.
-    // The plan is empty (no-op) when needsTranscoding is false; the backends
-    // short-circuit executeTranscodingPlan on an empty plan, so no special-casing
-    // is needed here.
     const TranscodingPlan plan = m_router.plan(sourceType, targetType);
 
-    // Connect the backend's transcodingWarning to our own so it surfaces through
-    // SyncWorker → SyncEngine. DirectConnection: storeItems/updateItem run
-    // synchronously on the main thread (commitAll is marshalled there), so both
-    // signal and slot are on the same thread.
+    // Connect the backend's transcodingWarning to our own so it surfaces
+    // through SyncWorker → SyncEngine. DirectConnection: storeItems/updateItem
+    // run synchronously on the main thread (the adapter marshals commitAll
+    // there), so both signal and slot are on the same thread. Connection is
+    // scoped per-apply; promotion of the adapter to QObject is F2 territory.
     QMetaObject::Connection transcodingConn = connect(
             backend, &SyncBackend::transcodingWarning,
             this, &SyncWorker::transcodingWarning,
             Qt::DirectConnection);
 
-    // Build transaction ID
-    QString direction = useTargetRecord ? QStringLiteral("source") : QStringLiteral("target");
-    QString txId = QStringLiteral("sync-%1-%2-%3")
-        .arg(m_currentRequest.mapping.id, direction,
-             QString::number(QDateTime::currentMSecsSinceEpoch()));
-
-    // Create transaction items from sync changes
-    SyncTransaction tx(txId);
-
+    // Emit write progress before delegating; the adapter returns once commit
+    // completes, so the per-item progress emits happen up-front (matching
+    // pre-Task-5 behaviour).
     int itemCount = 0;
-
     for (const auto &change : changes) {
-        switch (change.type) {
-            case SyncChangeType::Created: {
-                KCalendarCore::Incidence::Ptr inc = useTargetRecord
-                    ? change.targetRecord.incidence
-                    : change.sourceRecord.incidence;
-                if (!inc) break;
-
-                auto *item = new CreateIncidenceItem(calendarId, inc, cal, backend, plan);
-                tx.addItem(item);
-                itemCount++;
-                break;
-            }
-
-            case SyncChangeType::Modified: {
-                KCalendarCore::Incidence::Ptr newInc = useTargetRecord
-                    ? change.targetRecord.incidence
-                    : change.sourceRecord.incidence;
-                KCalendarCore::Incidence::Ptr oldInc = useTargetRecord
-                    ? change.sourceRecord.incidence
-                    : change.targetRecord.incidence;
-                if (!newInc) break;
-
-                auto *item = new UpdateIncidenceItem(calendarId, oldInc, newInc, cal, backend, plan);
-                tx.addItem(item);
-                itemCount++;
-                break;
-            }
-
-            case SyncChangeType::Deleted: {
-                KCalendarCore::Incidence::Ptr deletedInc = useTargetRecord
-                    ? change.sourceRecord.incidence
-                    : change.targetRecord.incidence;
-
-                auto *item = new DeleteIncidenceItem(calendarId, change.uid, deletedInc, backend);
-                tx.addItem(item);
-                itemCount++;
-                break;
-            }
-
-            case SyncChangeType::Unchanged:
-                break;
-        }
+        if (change.type != SyncChangeType::Unchanged) ++itemCount;
     }
-
-    if (itemCount == 0) {
-        return;
-    }
-
-    qDebug() << "SyncWorker::applyChangesToBackend -"
-             << "items:" << itemCount
-             << "direction:" << direction
-             << (needsTranscoding ? QString("(transcoding %1->%2)").arg(sourceType, targetType) : QString());
-
-    // Emit write progress
-    for (int i = 0; i < itemCount; i++) {
+    for (int i = 0; i < itemCount; ++i) {
         emit writeProgress(calendarId, i + 1, itemCount);
     }
 
-    // Marshal commitAll() to the main thread — backends are main-thread objects.
-    // Transaction items' commit()/rollback() call backend->storeItems()/updateItem()/
-    // deleteItems(), which are synchronous but must run on the main thread.
-    // BlockingQueuedConnection blocks this worker thread until commitAll() returns.
-    bool txResult = false;
-    QMetaObject::invokeMethod(backend, [&tx, &txResult]() {
-        txResult = tx.commitAll();
-    }, Qt::BlockingQueuedConnection);
+    QString errorMessage;
+    const bool ok = m_calendarAdapter->applyChangesToBackend(
+        backend, calendarId, changes, useTargetRecord,
+        m_currentRequest.mapping.id, plan, &errorMessage);
 
-    // Disconnect the per-apply transcodingWarning forwarding now that commitAll
-    // has returned. The connection is scoped to this write operation.
     QObject::disconnect(transcodingConn);
 
-    if (!txResult) {
+    if (!ok) {
         m_applyFailed = true;
-
-        // Collect error information from the transaction
-        QStringList errors;
-        for (auto *item : tx.items()) {
-            if (!item->errorString().isEmpty()) {
-                errors.append(item->errorString());
-            }
-        }
-        m_applyErrorMessage = errors.isEmpty()
-            ? QStringLiteral("SyncTransaction commitAll() failed")
-            : errors.join(QStringLiteral("; "));
-
-        qWarning() << "SyncWorker::applyChangesToBackend - transaction failed:"
-                   << m_applyErrorMessage;
+        m_applyErrorMessage = errorMessage;
     }
-
 }
 
 void SyncWorker::updateBaselines()
