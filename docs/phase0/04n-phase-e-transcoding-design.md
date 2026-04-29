@@ -1,7 +1,7 @@
 # Phase E — Transcoding into backends (design)
 
 **Date:** 2026-04-29
-**Status:** Approved 2026-04-29 by user via brainstorming session.
+**Status:** Landed 2026-04-29 on tag `v0.11-phase-e-transcoding-backends` (libkalburator HEAD `438e545`). Approved 2026-04-29 by user via brainstorming session.
 Implementation plan in `04n-phase-e-transcoding-plan.md` (sibling).
 **Phase tag on completion:** `v0.11-phase-e-transcoding-backends`.
 **Gates:** Phase D complete (`v0.10-phase-d-compose`).

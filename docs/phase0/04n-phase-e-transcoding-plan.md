@@ -1,5 +1,13 @@
 # Phase E — Transcoding into backends Implementation Plan
 
+**Status:** Landed 2026-04-29 on tag `v0.11-phase-e-transcoding-backends` (libkalburator HEAD `438e545`). All 14 plan tasks complete; libkalburator 20/20, PlanStan 96/120 (matches Phase D baseline), WildPalms 73/73 at tag.
+
+**Plan-doc errata** (recorded so the next reader doesn't get tripped):
+- `startSync`'s `stagedDeletions` parameter is **`const QMap<QString, QString>&`** (uid → ical-data) in the real `SyncBackend` interface, not `QList<Incidence::Ptr>` as several code blocks below suggest. The implementation correctly uses the actual type.
+- `CreateIncidenceItem` / `UpdateIncidenceItem` constructor signatures grew calendar+plan parameters in Task 9. Task 11 had to amend PlanStan's `tst_synctransaction.cpp` (21 call sites + a new `MemoryCalendar` fixture) to compile against the new signature.
+- Task 9's switch from `pushItems` to synchronous `storeItems`/`updateItem` lost the wrapper's error detection (the void return type carries no failure signal). Restored mid-phase via a `writeFinished` connect-capture-disconnect pattern in `commit()`. See FINDINGS for the full pattern.
+- Backend override declarations needed `= TranscodingPlan{}` defaults too — concrete-type callers (e.g., `LocalBackend* m_backend->storeItems(cal, items)`) won't compile without the default redeclared on the override. Counter to the plan's "base owns the default" guidance; both base and override carry the default in the final code.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move `TranscodingRegistry` invocation off `SyncWorker::applyChanges` into each calendar backend's write path, via a per-engine `TranscodingRouter` that produces a `TranscodingPlan` consumed by the backend. After this phase, `SyncWorker.cpp` contains zero `TranscodingRegistry` references and the calendar engine is capability-blind on the normal write path.
