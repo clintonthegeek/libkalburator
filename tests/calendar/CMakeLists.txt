@@ -26,6 +26,7 @@ endfunction()
 
 kalburator_add_calendar_test(tst_icsfeedfetcher)
 kalburator_add_calendar_test(tst_calendar_baseline_store)
+kalburator_add_calendar_test(tst_calendar_domain_adapter)
 kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_remotebackend_blob_view)

@@ -78,6 +78,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/backendregistry.h
     src/calendar/caldavcapabilitydiscovery.h
     src/calendar/calendarbaselinestore.h
+    src/calendar/calendardomainadapter.h
     src/calendar/calendarmanager.h
     src/calendar/createincidenceitem.h
     src/calendar/decsyncactivecontroller.h
@@ -116,6 +117,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/backendregistry.cpp
     src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/calendarbaselinestore.cpp
+    src/calendar/calendardomainadapter.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/createincidenceitem.cpp
     src/calendar/decsyncactivecontroller.cpp
