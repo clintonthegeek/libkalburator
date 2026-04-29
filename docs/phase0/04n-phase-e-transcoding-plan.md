@@ -1,6 +1,6 @@
 # Phase E — Transcoding into backends Implementation Plan
 
-**Status:** Landed 2026-04-29 on tag `v0.11-phase-e-transcoding-backends` (libkalburator HEAD `438e545`). All 14 plan tasks complete; libkalburator 20/20, PlanStan 96/120 (matches Phase D baseline), WildPalms 73/73 at tag.
+**Status:** Landed 2026-04-29 on tag `v0.11-phase-e-transcoding-backends`. All 14 plan tasks complete; libkalburator 20/20, PlanStan 96/120 (matches Phase D baseline), WildPalms 73/73 at tag.
 
 **Plan-doc errata** (recorded so the next reader doesn't get tripped):
 - `startSync`'s `stagedDeletions` parameter is **`const QMap<QString, QString>&`** (uid → ical-data) in the real `SyncBackend` interface, not `QList<Incidence::Ptr>` as several code blocks below suggest. The implementation correctly uses the actual type.
