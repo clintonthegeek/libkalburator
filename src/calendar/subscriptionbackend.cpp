@@ -294,10 +294,12 @@ QString SubscriptionBackend::sourceDisplayName(const QString &sourceId) const
 namespace {
 
 /// Build a BackendRecord from a single incidence serialised to iCal.
+/// Uses toICalString() to produce a complete VCALENDAR-wrapped payload so
+/// that the stored blob can be fed back into any compliant iCal parser.
 static BackendRecord subscriptionBlobRecord(const KCalendarCore::Incidence::Ptr &inc)
 {
     KCalendarCore::ICalFormat fmt;
-    const QByteArray ical = fmt.toString(inc).toUtf8();
+    const QByteArray ical = fmt.toICalString(inc).toUtf8();
 
     BackendRecord rec;
     rec.id           = inc->uid();
