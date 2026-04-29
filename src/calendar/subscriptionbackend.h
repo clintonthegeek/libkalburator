@@ -10,6 +10,9 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Incidence>
 #include "syncbackend.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
+#include <QDateTime>
 
 namespace Kalburator::Sync {
 
@@ -86,6 +89,47 @@ public:
 
     // Backend capabilities
     BackendCapabilities capabilities() const override;
+
+    // ========== IBlobBackend Overrides (Phase D Task 17) ==========
+    // Read-only: writes return {} / false.
+    // recordId     = uid (from incidence->uid())
+    // collectionId = sourceId
+    // data         = serialised iCal bytes via ICalFormat::toString()
+    // contentHash  = SHA-256 of data
+    // lastModified = QDateTime::currentDateTimeUtc() (no per-incidence mtime)
+
+    // Identity
+    QString backendId()   const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records — loadRecords / loadRecord use fetchEventsForSource()
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+
+    // Writes — always rejected (read-only backend)
+    QString createRecord(const QString &collectionId,
+                         const BackendRecord &record) override;
+    bool    updateRecord(const BackendRecord &record) override;
+    bool    deleteRecord(const QString &recordId) override;
+
+    // Change detection
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool supportsDeleteTracking() const override { return false; }
+
+    // Batch — no-op
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
     // ========== Subscription Source Management ==========
 

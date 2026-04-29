@@ -2,6 +2,7 @@
 #include "backendcapabilities.h"
 #include "syncoperation.h"
 #include <KCalendarCore/ICalFormat>
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QTimer>
 
@@ -286,5 +287,177 @@ QString SubscriptionBackend::sourceDisplayName(const QString &sourceId) const
     return sourceId;
 }
 
+// =============================================================================
+// IBlobBackend implementation (Phase D Task 17) — read-only subscription view
+// =============================================================================
+
+namespace {
+
+/// Build a BackendRecord from a single incidence serialised to iCal.
+static BackendRecord subscriptionBlobRecord(const KCalendarCore::Incidence::Ptr &inc)
+{
+    KCalendarCore::ICalFormat fmt;
+    const QByteArray ical = fmt.toString(inc).toUtf8();
+
+    BackendRecord rec;
+    rec.id           = inc->uid();
+    rec.type         = QStringLiteral("event");
+    rec.displayName  = inc->summary();
+    rec.data         = ical;
+    rec.contentHash  = QCryptographicHash::hash(ical, QCryptographicHash::Sha256).toHex();
+    rec.lastModified = inc->lastModified().isValid()
+                           ? inc->lastModified()
+                           : QDateTime::currentDateTimeUtc();
+    rec.isDeleted    = false;
+    return rec;
+}
+
+} // anonymous namespace
+
+// --- Identity ---
+
+QString SubscriptionBackend::backendId() const
+{
+    return QStringLiteral("subscription:%1").arg(BackendTypeName);
+}
+
+QString SubscriptionBackend::displayName() const
+{
+    return QObject::tr("Subscription Calendar");
+}
+
+bool SubscriptionBackend::isAvailable() const
+{
+    return true;  // In-process generator; always available
+}
+
+// --- Collections ---
+
+QList<CollectionInfo> SubscriptionBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    for (const SourceInfo &info : m_sources) {
+        CollectionInfo ci;
+        ci.id   = info.sourceId;
+        ci.name = sourceDisplayName(info.sourceId);
+        ci.type = QStringLiteral("calendar");
+        result.append(ci);
+    }
+    return result;
+}
+
+CollectionInfo SubscriptionBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo ci;
+    if (m_sources.contains(collectionId)) {
+        ci.id   = collectionId;
+        ci.name = sourceDisplayName(collectionId);
+        ci.type = QStringLiteral("calendar");
+    }
+    return ci;
+}
+
+QString SubscriptionBackend::createCollection(const CollectionInfo &info)
+{
+    Q_UNUSED(info);
+    qWarning() << "SubscriptionBackend::createCollection: read-only backend, creation rejected";
+    return {};
+}
+
+// --- Records ---
+
+QList<BackendRecord> SubscriptionBackend::loadRecords(const QString &collectionId)
+{
+    if (!m_sources.contains(collectionId)) {
+        qWarning() << "SubscriptionBackend::loadRecords: unknown source" << collectionId;
+        return {};
+    }
+
+    const QDate today     = QDate::currentDate();
+    const QDate startDate = today.addYears(-1);
+    const QDate endDate   = today.addYears(2);
+
+    const QList<KCalendarCore::Incidence::Ptr> incidences =
+        fetchEventsForSource(collectionId, startDate, endDate);
+
+    QList<BackendRecord> records;
+    records.reserve(incidences.size());
+    for (const auto &inc : incidences) {
+        if (inc) {
+            records.append(subscriptionBlobRecord(inc));
+        }
+    }
+    return records;
+}
+
+std::optional<BackendRecord> SubscriptionBackend::loadRecord(const QString &recordId)
+{
+    // Search all sources for a matching uid
+    for (const SourceInfo &info : m_sources) {
+        const QDate today     = QDate::currentDate();
+        const QDate startDate = today.addYears(-1);
+        const QDate endDate   = today.addYears(2);
+
+        const QList<KCalendarCore::Incidence::Ptr> incidences =
+            fetchEventsForSource(info.sourceId, startDate, endDate);
+
+        for (const auto &inc : incidences) {
+            if (inc && inc->uid() == recordId) {
+                return subscriptionBlobRecord(inc);
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+// --- Writes — rejected (read-only) ---
+
+QString SubscriptionBackend::createRecord(const QString &collectionId,
+                                          const BackendRecord &record)
+{
+    Q_UNUSED(collectionId);
+    Q_UNUSED(record);
+    qWarning() << "SubscriptionBackend::createRecord: read-only backend";
+    return {};
+}
+
+bool SubscriptionBackend::updateRecord(const BackendRecord &record)
+{
+    Q_UNUSED(record);
+    qWarning() << "SubscriptionBackend::updateRecord: read-only backend";
+    return false;
+}
+
+bool SubscriptionBackend::deleteRecord(const QString &recordId)
+{
+    Q_UNUSED(recordId);
+    qWarning() << "SubscriptionBackend::deleteRecord: read-only backend";
+    return false;
+}
+
+// --- Change detection ---
+
+QList<BackendRecord> SubscriptionBackend::modifiedSince(const QString &collectionId,
+                                                         const QDateTime &since)
+{
+    // No server-side delta; return all records and let the engine diff by hash
+    const QList<BackendRecord> all = loadRecords(collectionId);
+    QList<BackendRecord> result;
+    for (const BackendRecord &rec : all) {
+        if (rec.lastModified > since) {
+            result.append(rec);
+        }
+    }
+    return result;
+}
+
+QStringList SubscriptionBackend::deletedSince(const QString &collectionId,
+                                               const QDateTime &since)
+{
+    Q_UNUSED(collectionId);
+    Q_UNUSED(since);
+    // Read-only generated feeds have no deletion tracking
+    return {};
+}
 
 } // namespace Kalburator::Sync
