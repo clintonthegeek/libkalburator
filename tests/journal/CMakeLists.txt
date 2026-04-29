@@ -17,3 +17,4 @@ function(kalburator_add_journal_test TEST_NAME)
 endfunction()
 
 kalburator_add_journal_test(tst_blobbaselinestore)
+kalburator_add_journal_test(tst_blob_baseline_store_per_record_keys)
