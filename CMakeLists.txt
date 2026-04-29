@@ -64,6 +64,14 @@ set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 #   journal/    — crash-recovery journal, baseline store, ID mapping, async writer
 #   discovery/  — Syncthing auto-discovery + monitor (experimental)
 #   blob/       — blob-backend layer (empty placeholder for future work)
+#
+# NOTE: Source lists below are explicit (not file(GLOB)) on purpose.
+# AUTOMOC's timestamp file (build/kalburator_autogen/timestamp) is
+# invalidated by changes to the explicit source list, but NOT by new
+# files appearing under a globbed directory — so adding a Q_OBJECT
+# class to a globbed subdir produces a confusing vtable link error on
+# first build until the timestamp is manually removed. See FINDINGS.md
+# (2026-04-28 entry) and docs/phase0/04n-phase-e-transcoding-plan.md.
 set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/akonadibackend.h
     src/calendar/backendcapabilities.h
