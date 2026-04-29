@@ -1,5 +1,7 @@
 # Phase D — Compose Implementation Plan
 
+**Status:** Landed 2026-04-29 on tag `v0.10-phase-d-compose` (libkalburator HEAD `6cbd849`). All four groups complete; libkalburator 19/19, PlanStan 96/120, WildPalms 73/73 at tag.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the calendar/blob layer `╳` non-coupling with composition: every concrete `SyncBackend` becomes an `IBlobBackend` (inheritance hoisted to the `SyncBackend` base), `SyncWorker` delegates byte-level fetch/store via the blob view, and the first-sync path is dispatched through `BlobSyncEngine` end-to-end. Bundle in the `SyncStore` carve-up.

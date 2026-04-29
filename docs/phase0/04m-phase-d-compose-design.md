@@ -1,7 +1,7 @@
 # Phase D — Compose (design)
 
 **Date:** 2026-04-28
-**Status:** Approved 2026-04-28 by user via brainstorming session.
+**Status:** Landed 2026-04-29 on tag `v0.10-phase-d-compose` (libkalburator HEAD `6cbd849`). Approved 2026-04-28 by user via brainstorming session.
 Implementation plan in `04m-phase-d-compose-plan.md` (sibling).
 **Phase tag on completion:** `v0.10-phase-d-compose`.
 **Gates:** Phase D.0 complete (`v0.9-phase-d0-tests-first`).
