@@ -38,6 +38,12 @@ If any production shape has drifted from the design, **stop** and fix the design
 
 ## Group 1 — Storage carve-up
 
+**Status: landed 2026-04-28** (libkalburator commit `41e00cf`, PlanStan commit `4481b47`).
+Tasks 1–9 complete. `SyncStore` dissolved; `CalendarBaselineStore`, `SyncConflictStore`,
+`BlobBaselineStore` (triple-keyed), `RemoteBackend::CTagStore`, `LocalBackend::FingerprintStore`
+in place. DB renamed `.kalburator-sync.db`. PlanStan migrated (Task 23 done ahead of schedule).
+libkalburator 11/11 pass; PlanStan 96/120 pass (baseline refreshed).
+
 Goal: every `SyncStore` concern moves to its proper home; `SyncStore` becomes a deprecated thin facade; libkalburator's ctest stays green throughout.
 
 ### Task 1: `CalendarBaselineStore` skeleton
