@@ -22,13 +22,14 @@ calendar-side transcoding surface, gated by a string comparison
 Capabilities objects exist on every backend but are not consulted
 by the transcoding path.
 
-Bundled in: conversion of `src/calendar/CMakeLists.txt`,
-`src/blob/CMakeLists.txt`, and `src/transcoding/CMakeLists.txt`
-from `file(GLOB ...)` to explicit source lists, removing the
-AUTOMOC-timestamp footgun documented in `FINDINGS.md` (entry of
-2026-04-28). Phase E adds one new file (`transcodingrouter.{h,cpp}`)
-and one near-empty header (`transcodingplan.h`); the cleanup is
-self-contained and small.
+Bundled in: conversion of the root `CMakeLists.txt`'s
+`KALBURATOR_SYNC_SUBDIRS` foreach loop (lines 67–75) — which
+currently globs `src/${_subdir}/*.h` and `*.cpp` per subdir — to
+explicit per-subdir source lists. Removes the AUTOMOC-timestamp
+footgun documented in `FINDINGS.md` (entry of 2026-04-28). Phase E
+adds one new pair (`transcodingplan.{h,cpp}`) and one new pair
+(`transcodingrouter.{h,cpp}`) under `src/transcoding/`; the
+cleanup is self-contained and small.
 
 ## Decisions made during the brainstorm
 
@@ -188,20 +189,24 @@ incremental value.
 
 ### 7. Bundle CMake glob → explicit source lists
 
-`src/calendar/CMakeLists.txt` and `src/blob/CMakeLists.txt` use
-`file(GLOB CONFIGURE_DEPENDS ...)`. FINDINGS entry of 2026-04-28
-documents that adding a new `Q_OBJECT` class via globbed sources
-fails to invalidate `kalburator_autogen/timestamp`, producing a
-confusing vtable link error on first build.
+The root `CMakeLists.txt` (lines 67–75) builds
+`KALBURATOR_SYNC_SOURCES` by foreach-globbing each entry of
+`KALBURATOR_SYNC_SUBDIRS = calendar conflict transcoding journal
+discovery blob`. FINDINGS entry of 2026-04-28 documents that
+adding a new `Q_OBJECT` class via globbed sources fails to
+invalidate `kalburator_autogen/timestamp`, producing a confusing
+vtable link error on first build.
 
-**Settled: bundled.** Phase E adds one new file
-(`transcodingrouter.cpp`) and would re-trigger the same workaround
+**Settled: bundled.** Phase E adds two new pairs in
+`src/transcoding/` and would re-trigger the same workaround
 without the conversion. Phase F will churn these source lists
 heavily during engine unification; converting glob → explicit
 mid-Phase-F is worse than doing it as a small standalone commit
-during Phase E. Three CMakeLists touched
-(`src/calendar/`, `src/blob/`, `src/transcoding/` if it uses
-glob — verified during plan authoring).
+during Phase E. The conversion replaces the foreach-glob with one
+explicit `set(KALBURATOR_${SUBDIR}_SOURCES …)` per subdir and a
+single `list(APPEND KALBURATOR_SYNC_SOURCES …)` aggregation —
+keeping the existing `KALBURATOR_HAVE_ORG_IO` /
+`KALBURATOR_HAVE_AKONADI` filtering intact.
 
 ## Components
 
