@@ -3,6 +3,8 @@
 
 #include "syncbackend.h"
 #include "orgfilemanager.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 namespace Kalburator::Sync {
 
@@ -62,6 +64,48 @@ public:
     // Calendar Property Getters
     QColor calendarColor(const QString &calendarId) const override;
     QString calendarDescription(const QString &calendarId) const override;
+
+    // =========================================================================
+    // IBlobBackend overrides (Phase D Task 14)
+    //
+    // Gated: this class is only compiled when KALBURATOR_HAVE_ORG_IO=ON.
+    // recordId     = uid from the org :ID: property (incidence->uid())
+    // collectionId = calendarId (each .org file is a calendar)
+    // data         = serialized iCal bytes of the incidence
+    // contentHash  = SHA-256 of the iCal bytes
+    // lastModified = .org file mtime (whole-file granularity; Phase E improves)
+    // =========================================================================
+
+    // Identity
+    QString backendId()   const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString                      createRecord(const QString &collectionId,
+                                              const BackendRecord &record) override;
+    bool                         updateRecord(const BackendRecord &record) override;
+    bool                         deleteRecord(const QString &recordId) override;
+
+    // Change detection — whole-.org-file mtime short-circuit
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool                 supportsDeleteTracking() const override { return false; }
+
+    // Batch — file I/O is synchronous; no batching needed in Phase D
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
 private:
     OrgFileManager *m_fileManager;

@@ -30,6 +30,10 @@ kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_remotebackend_blob_view)
 
+if(KALBURATOR_HAVE_ORG_IO)
+    kalburator_add_calendar_test(tst_orgbackend_blob_view)
+endif()
+
 # Phase D.0 — integration tests against MockBackend through stub host.
 add_subdirectory(stubs)
 

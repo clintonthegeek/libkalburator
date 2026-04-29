@@ -1,12 +1,16 @@
 #include "orgbackend.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QTimer>
 #include <QDebug>
+#include <QCryptographicHash>
+#include <KCalendarCore/ICalFormat>
 
 namespace Kalburator::Sync {
 
@@ -736,5 +740,299 @@ QString OrgBackend::sourceFilePath(const QString &calendarId) const
     return m_fileManager->filePathForCalendar(calendarId);
 }
 
+// ============================================================================
+// IBlobBackend implementation (Phase D Task 14)
+//
+// recordId     = uid derived from the org :ID: property (becomes incidence->uid())
+// collectionId = calendarId (each .org file is a calendar)
+// data         = serialized iCal text of the incidence via ICalFormat
+// contentHash  = SHA-256 of the iCal bytes
+// lastModified = QFileInfo::lastModified() of the .org file (whole-file granularity;
+//                Phase E can improve to per-headline modified timestamp)
+//
+// GATED: this file is only compiled when KALBURATOR_HAVE_ORG_IO=ON.
+// ============================================================================
+
+namespace {
+
+/// Serialize a single incidence to iCal bytes.
+static QByteArray serializeIncidenceToIcal(const KCalendarCore::Incidence::Ptr &incidence)
+{
+    if (!incidence) return {};
+    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    tmpCal->addIncidence(incidence);
+    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+    const QString icalStr = KCalendarCore::ICalFormat().toString(tmpCalPtr);
+    return icalStr.toUtf8();
+}
+
+/// Build a BackendRecord from an incidence and .org file modification time.
+static Kalburator::Sync::BackendRecord orgBlobRecord(
+    const KCalendarCore::Incidence::Ptr &incidence,
+    const QDateTime &orgFileMtime)
+{
+    const QByteArray bytes = serializeIncidenceToIcal(incidence);
+    Kalburator::Sync::BackendRecord rec;
+    rec.id          = incidence->uid();
+    rec.type        = QStringLiteral("calendar");
+    rec.data        = bytes;
+    rec.contentHash = QString::fromLatin1(
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    rec.lastModified = orgFileMtime;
+    rec.isDeleted   = false;
+    return rec;
+}
+
+} // anonymous namespace
+
+// --- Identity ---------------------------------------------------------------
+
+QString OrgBackend::backendId() const
+{
+    const QString rootPath = m_fileManager->rootPath();
+    const QByteArray h = QCryptographicHash::hash(
+        (BackendTypeName + QLatin1Char(':') + rootPath).toUtf8(),
+        QCryptographicHash::Sha256);
+    return BackendTypeName + QLatin1Char(':') + QString::fromLatin1(h.toHex().left(16));
+}
+
+QString OrgBackend::displayName() const
+{
+    return QStringLiteral("OrgBackend(%1)").arg(m_fileManager->rootPath());
+}
+
+bool OrgBackend::isAvailable() const
+{
+    const QString rootPath = m_fileManager->rootPath();
+    return !rootPath.isEmpty() && QDir(rootPath).exists();
+}
+
+// --- Collections ------------------------------------------------------------
+
+QList<CollectionInfo> OrgBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    const QString rootPath = m_fileManager->rootPath();
+    if (rootPath.isEmpty()) return result;
+
+    const QDir dir(rootPath);
+    if (!dir.exists()) return result;
+
+    const QStringList orgFiles = dir.entryList(
+        QStringList() << QStringLiteral("*.org"),
+        QDir::Files | QDir::NoDotAndDotDot);
+    for (const QString &fileName : orgFiles) {
+        const QString calId = QFileInfo(fileName).baseName();
+        CollectionInfo info;
+        info.id   = calId;
+        info.name = calId;
+        info.path = dir.filePath(fileName);
+        info.type = QStringLiteral("calendar");
+        result.append(info);
+    }
+    return result;
+}
+
+CollectionInfo OrgBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo info;
+    info.id   = collectionId;
+    info.name = collectionId;
+    info.path = m_fileManager->filePathForCalendar(collectionId);
+    info.type = QStringLiteral("calendar");
+    return info;
+}
+
+QString OrgBackend::createCollection(const CollectionInfo &info)
+{
+    // Delegate to existing calendar creation infrastructure.
+    if (createCalendar(QString(), info.id, info.name.isEmpty() ? info.id : info.name)) {
+        return info.id;
+    }
+    return {};
+}
+
+// --- Records ----------------------------------------------------------------
+
+QList<BackendRecord> OrgBackend::loadRecords(const QString &collectionId)
+{
+    QList<BackendRecord> result;
+    if (collectionId.isEmpty()) return result;
+
+    OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(collectionId);
+    if (!orgFile) return result;
+
+    const QFileInfo fi(m_fileManager->filePathForCalendar(collectionId));
+    const QDateTime mtime = fi.lastModified();
+
+    m_fileManager->traverseHeadlines(orgFile.staticCast<OrgMode::OrgElement>(), collectionId,
+        [&](const OrgHeadlineResult &hr) {
+            if (!hr.incidence) return;
+            result.append(orgBlobRecord(hr.incidence, mtime));
+        });
+    return result;
+}
+
+std::optional<BackendRecord> OrgBackend::loadRecord(const QString &recordId)
+{
+    // recordId == uid; search all .org calendars.
+    if (recordId.isEmpty()) return std::nullopt;
+
+    const QString rootPath = m_fileManager->rootPath();
+    const QDir dir(rootPath);
+    const QStringList orgFiles = dir.entryList(
+        QStringList() << QStringLiteral("*.org"),
+        QDir::Files | QDir::NoDotAndDotDot);
+
+    for (const QString &fileName : orgFiles) {
+        const QString calId = QFileInfo(fileName).baseName();
+        OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calId);
+        if (!orgFile) continue;
+
+        const QFileInfo fi(dir.filePath(fileName));
+        const QDateTime mtime = fi.lastModified();
+        std::optional<BackendRecord> found;
+
+        m_fileManager->traverseHeadlines(orgFile.staticCast<OrgMode::OrgElement>(), calId,
+            [&](const OrgHeadlineResult &hr) {
+                if (!hr.incidence) return;
+                if (hr.incidence->uid() == recordId) {
+                    found = orgBlobRecord(hr.incidence, mtime);
+                }
+            });
+        if (found.has_value()) return found;
+    }
+    return std::nullopt;
+}
+
+QString OrgBackend::createRecord(const QString &collectionId,
+                                  const BackendRecord &record)
+{
+    if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
+        return {};
+
+    // Parse the iCal back to an Incidence::Ptr, then store via storeItems.
+    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+    if (!KCalendarCore::ICalFormat().fromRawString(tmpCalPtr, record.data)) {
+        qWarning() << "OrgBackend::createRecord: cannot parse iCal for uid" << record.id;
+        return {};
+    }
+    const auto incidences = tmpCal->incidences();
+    if (incidences.isEmpty()) {
+        qWarning() << "OrgBackend::createRecord: no incidences in iCal for uid" << record.id;
+        return {};
+    }
+
+    // Create a MemoryCalendar with the correct ID for storeItems.
+    auto storeCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    storeCal->setId(collectionId);
+    for (const auto &inc : incidences) storeCal->addIncidence(inc);
+
+    storeItems(storeCal, incidences);
+    delete storeCal;
+    return record.id;
+}
+
+bool OrgBackend::updateRecord(const BackendRecord &record)
+{
+    if (record.id.isEmpty() || record.data.isEmpty()) return false;
+
+    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+    if (!KCalendarCore::ICalFormat().fromRawString(tmpCalPtr, record.data))
+        return false;
+
+    const auto incidences = tmpCal->incidences();
+    if (incidences.isEmpty()) return false;
+
+    // Find which calendar owns this uid.
+    const QString rootPath = m_fileManager->rootPath();
+    const QDir dir(rootPath);
+    const QStringList orgFiles = dir.entryList(
+        QStringList() << QStringLiteral("*.org"),
+        QDir::Files | QDir::NoDotAndDotDot);
+
+    for (const QString &fileName : orgFiles) {
+        const QString calId = QFileInfo(fileName).baseName();
+        OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calId);
+        if (!orgFile) continue;
+
+        bool found = false;
+        m_fileManager->traverseHeadlines(orgFile.staticCast<OrgMode::OrgElement>(), calId,
+            [&](const OrgHeadlineResult &hr) {
+                if (hr.incidence && hr.incidence->uid() == record.id) found = true;
+            });
+        if (!found) continue;
+
+        auto storeCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+        storeCal->setId(calId);
+        for (const auto &inc : incidences) {
+            inc->setReadOnly(false);
+            storeCal->addIncidence(inc);
+        }
+        const QString icalStr = QString::fromUtf8(record.data);
+        updateItem(storeCal, incidences.first(), icalStr);
+        delete storeCal;
+        return true;
+    }
+    return false;
+}
+
+bool OrgBackend::deleteRecord(const QString &recordId)
+{
+    if (recordId.isEmpty()) return false;
+
+    const QString rootPath = m_fileManager->rootPath();
+    const QDir dir(rootPath);
+    const QStringList orgFiles = dir.entryList(
+        QStringList() << QStringLiteral("*.org"),
+        QDir::Files | QDir::NoDotAndDotDot);
+
+    for (const QString &fileName : orgFiles) {
+        const QString calId = QFileInfo(fileName).baseName();
+        OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calId);
+        if (!orgFile) continue;
+
+        bool found = false;
+        m_fileManager->traverseHeadlines(orgFile.staticCast<OrgMode::OrgElement>(), calId,
+            [&](const OrgHeadlineResult &hr) {
+                if (hr.incidence && hr.incidence->uid() == recordId) found = true;
+            });
+        if (!found) continue;
+
+        removeItem(calId, recordId);
+        return true;
+    }
+    return false;
+}
+
+// --- Change detection -------------------------------------------------------
+
+QList<BackendRecord> OrgBackend::modifiedSince(const QString &collectionId,
+                                                const QDateTime &since)
+{
+    // .org files have no per-headline mtime; use whole-file mtime.
+    if (collectionId.isEmpty()) return {};
+
+    const QString filePath = m_fileManager->filePathForCalendar(collectionId);
+    const QFileInfo fi(filePath);
+    if (!fi.exists()) return {};
+
+    if (since.isValid() && fi.lastModified() <= since) {
+        return {};  // org file not touched since last sync
+    }
+
+    return loadRecords(collectionId);
+}
+
+QStringList OrgBackend::deletedSince(const QString &collectionId,
+                                      const QDateTime &since)
+{
+    // OrgBackend has no deletion log — Phase E can improve this.
+    Q_UNUSED(collectionId)
+    Q_UNUSED(since)
+    return {};
+}
 
 } // namespace Kalburator::Sync
