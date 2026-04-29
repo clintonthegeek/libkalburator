@@ -25,3 +25,12 @@ function(kalburator_add_calendar_test TEST_NAME)
 endfunction()
 
 kalburator_add_calendar_test(tst_icsfeedfetcher)
+
+# Phase D.0 — integration tests against MockBackend through stub host.
+add_subdirectory(stubs)
+
+function(kalburator_add_calendar_integration_test TEST_NAME)
+    kalburator_add_calendar_test(${TEST_NAME})
+    target_link_libraries(${TEST_NAME}
+        PRIVATE kalburator_calendar_test_stubs)
+endfunction()
