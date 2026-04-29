@@ -5,6 +5,7 @@
 #include "syncdiff.h"
 #include "syncworker.h"
 #include "conflicthandlerregistry.h"
+#include "transcodingrouter.h"
 #include <QObject>
 #include <QList>
 #include <QMap>
@@ -373,6 +374,7 @@ private:
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
+    TranscodingRouter m_transcodingRouter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 

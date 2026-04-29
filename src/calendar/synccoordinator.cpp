@@ -1,4 +1,5 @@
 #include "synccoordinator.h"
+#include "transcodingregistry.h"
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
@@ -32,9 +33,10 @@ SyncCoordinator::SyncCoordinator(BackendRegistry *registry,
     : QObject(parent)
     , m_registry(registry)
     , m_controller(host)
+    , m_transcodingRouter(TranscodingRegistry::instance())
 {
     // Create worker but don't start thread yet
-    m_worker = new SyncWorker();
+    m_worker = new SyncWorker(m_transcodingRouter);
     setupWorkerConnections();
 }
 

@@ -3,6 +3,7 @@
 
 #include "synctypes.h"
 #include "syncdiff.h"
+#include "transcodingrouter.h"
 
 #include <QObject>
 #include <QMutex>
@@ -58,7 +59,7 @@ public:
         QString collectionId;       ///< Collection ID for backend operations
     };
 
-    explicit SyncWorker(QObject *parent = nullptr);
+    explicit SyncWorker(const TranscodingRouter &router, QObject *parent = nullptr);
     ~SyncWorker() override;
 
     /**
@@ -231,6 +232,7 @@ private:
     qint64 m_diffMs = 0;
 
     // Dependencies (set before moveToThread)
+    const TranscodingRouter &m_router;
     ISyncHost *m_controller = nullptr;
     CalendarBaselineStore *m_calendarBaselines = nullptr;
     BlobBaselineStore *m_blobBaselines = nullptr;  // Phase D Task 20: per-record hash skip

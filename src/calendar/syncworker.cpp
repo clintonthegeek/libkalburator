@@ -46,8 +46,9 @@ static bool metatypesRegistered = []() {
     return true;
 }();
 
-SyncWorker::SyncWorker(QObject *parent)
+SyncWorker::SyncWorker(const TranscodingRouter &router, QObject *parent)
     : QObject(parent)
+    , m_router(router)
 {
 }
 
