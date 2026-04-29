@@ -5,3 +5,4 @@
 add_subdirectory(blob)
 add_subdirectory(journal)
 add_subdirectory(calendar)
+add_subdirectory(transcoding)
