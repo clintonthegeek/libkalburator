@@ -9,6 +9,8 @@
 #include <KCalendarCore/MemoryCalendar>
 #include "syncbackend.h"
 #include "syncoperation.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 namespace Kalburator::Sync {
 
@@ -110,6 +112,48 @@ public:
     /// The backend does NOT own the monitor — just connects signals.
     /// When set, remoteChangesReady triggers checkForRemoteChanges() for all calendars.
     void setSyncthingMonitor(SyncthingMonitor *monitor);
+
+    // =========================================================================
+    // IBlobBackend overrides (Phase D Task 16)
+    //
+    // Mirrors LocalBackend semantics (file-based I/O via DecSync's API).
+    // recordId     = uid (DecSync "resources" map key)
+    // collectionId = calendarId
+    // data         = raw iCal bytes (DecSync stores iCal strings natively)
+    // contentHash  = SHA-256 of the iCal bytes
+    // lastModified = parsed from DecSyncEntry::datetime (ISO 8601)
+    // =========================================================================
+
+    // Identity
+    QString backendId()   const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString                      createRecord(const QString &collectionId,
+                                              const BackendRecord &record) override;
+    bool                         updateRecord(const BackendRecord &record) override;
+    bool                         deleteRecord(const QString &recordId) override;
+
+    // Change detection — filters by DecSyncEntry::datetime
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool                 supportsDeleteTracking() const override { return true; }
+
+    // Batch — DecSync write operations are synchronous; no batching in Phase D
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
 private:
     /// Parse calendarId into syncType + collectionId

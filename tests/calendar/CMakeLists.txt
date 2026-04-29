@@ -38,6 +38,8 @@ if(KALBURATOR_HAVE_AKONADI)
     kalburator_add_calendar_test(tst_akonadibackend_blob_view)
 endif()
 
+kalburator_add_calendar_test(tst_decsyncbackend_blob_view)
+
 # Phase D.0 — integration tests against MockBackend through stub host.
 add_subdirectory(stubs)
 

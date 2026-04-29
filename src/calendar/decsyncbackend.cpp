@@ -6,11 +6,14 @@
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 #include <KCalendarCore/ICalFormat>
 #include <QDir>
 #include <QDebug>
 #include <QTimer>
 #include <QHostInfo>
+#include <QCryptographicHash>
 
 namespace Kalburator::Sync {
 
@@ -1385,5 +1388,257 @@ QList<KCalendarCore::Incidence::Ptr> DecSyncBackend::deserializeIcal(const QStri
     return tempCal->incidences();
 }
 
+
+
+// ============================================================================
+// IBlobBackend implementation (Phase D Task 16)
+//
+// recordId     = uid (key in DecSync "resources" map)
+// collectionId = calendarId (maps to a DecSync collection)
+// data         = raw iCal bytes (DecSync stores iCal strings natively)
+// contentHash  = SHA-256 of the iCal bytes
+// lastModified = parsed from DecSyncEntry::datetime (ISO 8601)
+// ============================================================================
+
+namespace {
+
+/// Build a BackendRecord from a DecSync uid + iCal string + timestamp.
+static Kalburator::Sync::BackendRecord decSyncBlobRecord(
+    const QString &uid,
+    const QString &icalStr,
+    const QString &datetimeIso)
+{
+    const QByteArray bytes = icalStr.toUtf8();
+    Kalburator::Sync::BackendRecord rec;
+    rec.id          = uid;
+    rec.type        = QStringLiteral("calendar");
+    rec.data        = bytes;
+    rec.contentHash = QString::fromLatin1(
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    rec.lastModified = QDateTime::fromString(datetimeIso, Qt::ISODate);
+    if (!rec.lastModified.isValid())
+        rec.lastModified = QDateTime::currentDateTimeUtc();
+    rec.isDeleted   = false;
+    return rec;
+}
+
+} // anonymous namespace
+
+// --- Identity ---------------------------------------------------------------
+
+QString DecSyncBackend::backendId() const
+{
+    const QString dir = m_dir ? m_dir->decsyncDir() : QString();
+    const QByteArray h = QCryptographicHash::hash(
+        (BackendTypeName + QLatin1Char(':') + dir + QLatin1Char(':') + m_appId).toUtf8(),
+        QCryptographicHash::Sha256);
+    return BackendTypeName + QLatin1Char(':') + QString::fromLatin1(h.toHex().left(16));
+}
+
+QString DecSyncBackend::displayName() const
+{
+    const QString dir = m_dir ? m_dir->decsyncDir() : QString();
+    return QStringLiteral("DecSyncBackend(%1)").arg(dir);
+}
+
+bool DecSyncBackend::isAvailable() const
+{
+    if (!m_dir) return false;
+    return QDir(m_dir->decsyncDir()).exists();
+}
+
+// --- Collections ------------------------------------------------------------
+
+QList<CollectionInfo> DecSyncBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    if (!m_dir) return result;
+
+    // Mirror loadCalendars() discovery logic.
+    const QStringList calendars = m_dir->listCollections(QStringLiteral("calendars"));
+    for (const QString &calId : calendars) {
+        QMap<QString, QJsonValue> info = m_dir->getStaticInfo(QStringLiteral("calendars"), calId);
+        if (info.value(QStringLiteral("deleted")).toBool(false)) continue;
+
+        CollectionInfo ci;
+        ci.id   = calId;
+        ci.name = info.value(QStringLiteral("name")).toString(calId);
+        ci.type = QStringLiteral("calendar");
+        result.append(ci);
+    }
+
+    const QStringList tasks = m_dir->listCollections(QStringLiteral("tasks"));
+    for (const QString &taskId : tasks) {
+        QMap<QString, QJsonValue> info = m_dir->getStaticInfo(QStringLiteral("tasks"), taskId);
+        if (info.value(QStringLiteral("deleted")).toBool(false)) continue;
+        if (info.value(QStringLiteral("hybrid")).toBool(false)) continue;
+
+        CollectionInfo ci;
+        ci.id   = QStringLiteral("tasks/") + taskId;
+        ci.name = info.value(QStringLiteral("name")).toString(taskId);
+        ci.type = QStringLiteral("calendar");
+        result.append(ci);
+    }
+
+    return result;
+}
+
+CollectionInfo DecSyncBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo info;
+    info.id   = collectionId;
+    info.name = collectionId;
+    info.type = QStringLiteral("calendar");
+    return info;
+}
+
+QString DecSyncBackend::createCollection(const CollectionInfo &info)
+{
+    if (createCalendar(QString(), info.id, info.name.isEmpty() ? info.id : info.name))
+        return info.id;
+    return {};
+}
+
+// --- Records ----------------------------------------------------------------
+
+QList<BackendRecord> DecSyncBackend::loadRecords(const QString &collectionId)
+{
+    QList<BackendRecord> result;
+    if (collectionId.isEmpty()) return result;
+
+    auto loadFromColl = [&](DecSyncCollection *coll) {
+        if (!coll) return;
+        const QMap<QString, DecSyncEntry> resources = coll->readAllResources();
+        for (auto it = resources.constBegin(); it != resources.constEnd(); ++it) {
+            const QString icalStr = it.value().value.toString();
+            if (icalStr.isEmpty()) continue;
+            result.append(decSyncBlobRecord(it.key(), icalStr, it.value().datetime));
+        }
+    };
+
+    loadFromColl(collectionFor(collectionId));
+    loadFromColl(todoCollectionFor(collectionId));
+
+    return result;
+}
+
+std::optional<BackendRecord> DecSyncBackend::loadRecord(const QString &recordId)
+{
+    // Search all known collections for this uid.
+    if (recordId.isEmpty()) return std::nullopt;
+
+    const QStringList calIds = m_collections.keys();
+    for (const QString &calId : calIds) {
+        DecSyncCollection *coll = m_collections.value(calId);
+        if (!coll) continue;
+        const QMap<QString, DecSyncEntry> resources = coll->readAllResources();
+        if (!resources.contains(recordId)) continue;
+        const DecSyncEntry &entry = resources.value(recordId);
+        const QString icalStr = entry.value.toString();
+        if (icalStr.isEmpty()) continue;
+        return decSyncBlobRecord(recordId, icalStr, entry.datetime);
+    }
+    return std::nullopt;
+}
+
+QString DecSyncBackend::createRecord(const QString &collectionId,
+                                      const BackendRecord &record)
+{
+    if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
+        return {};
+
+    DecSyncCollection *coll = collectionFor(collectionId);
+    if (!coll) {
+        qWarning() << "DecSyncBackend::createRecord: no collection for" << collectionId;
+        return {};
+    }
+
+    const QString icalStr = QString::fromUtf8(record.data);
+    coll->setEntry({QStringLiteral("resources"), record.id},
+                   QJsonValue(),
+                   QJsonValue(icalStr));
+    return record.id;
+}
+
+bool DecSyncBackend::updateRecord(const BackendRecord &record)
+{
+    if (record.id.isEmpty() || record.data.isEmpty()) return false;
+
+    // Find which collection owns this uid.
+    for (auto it = m_collections.constBegin(); it != m_collections.constEnd(); ++it) {
+        DecSyncCollection *coll = it.value();
+        if (!coll) continue;
+        const QMap<QString, DecSyncEntry> resources = coll->readAllResources();
+        if (!resources.contains(record.id)) continue;
+
+        const QString icalStr = QString::fromUtf8(record.data);
+        coll->setEntry({QStringLiteral("resources"), record.id},
+                       QJsonValue(),
+                       QJsonValue(icalStr));
+        return true;
+    }
+    qWarning() << "DecSyncBackend::updateRecord: uid not found in any collection:" << record.id;
+    return false;
+}
+
+bool DecSyncBackend::deleteRecord(const QString &recordId)
+{
+    if (recordId.isEmpty()) return false;
+
+    for (auto it = m_collections.constBegin(); it != m_collections.constEnd(); ++it) {
+        DecSyncCollection *coll = it.value();
+        if (!coll) continue;
+        const QMap<QString, DecSyncEntry> resources = coll->readAllResources();
+        if (!resources.contains(recordId)) continue;
+
+        // Write null value = deleted
+        coll->setEntry({QStringLiteral("resources"), recordId},
+                       QJsonValue(),
+                       QJsonValue());
+        return true;
+    }
+    return false;
+}
+
+// --- Change detection -------------------------------------------------------
+
+QList<BackendRecord> DecSyncBackend::modifiedSince(const QString &collectionId,
+                                                    const QDateTime &since)
+{
+    QList<BackendRecord> all = loadRecords(collectionId);
+    if (!since.isValid()) return all;
+    QList<BackendRecord> result;
+    for (const auto &rec : all) {
+        if (rec.lastModified > since) result.append(rec);
+    }
+    return result;
+}
+
+QStringList DecSyncBackend::deletedSince(const QString &collectionId,
+                                          const QDateTime &since)
+{
+    // DecSync marks deletions as null values in the resources map.
+    // Scan per-app resources to find entries written after `since` with null value.
+    QStringList result;
+    if (collectionId.isEmpty()) return result;
+
+    DecSyncCollection *coll = collectionFor(collectionId);
+    if (!coll) return result;
+
+    const auto perApp = coll->readPerAppResources();
+    for (auto appIt = perApp.constBegin(); appIt != perApp.constEnd(); ++appIt) {
+        for (auto it = appIt->constBegin(); it != appIt->constEnd(); ++it) {
+            const DecSyncEntry &entry = it.value();
+            if (!entry.value.isNull()) continue;  // not a deletion
+            if (since.isValid()) {
+                const QDateTime entryDt = QDateTime::fromString(entry.datetime, Qt::ISODate);
+                if (entryDt.isValid() && entryDt <= since) continue;
+            }
+            if (!result.contains(it.key()))
+                result.append(it.key());
+        }
+    }
+    return result;
+}
 
 } // namespace Kalburator::Sync
