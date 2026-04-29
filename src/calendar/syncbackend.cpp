@@ -384,4 +384,135 @@ void SyncBackend::unregisterOperation(SyncOperation *op)
 }
 
 
+// ============================================================================
+// IBlobBackend default implementations
+// These emit qWarning if invoked before a concrete backend overrides them.
+// They cover the build window between Task 10 (hoist) and Tasks 11-18
+// (per-backend overrides). Once every backend has its overrides, these
+// bodies are only reachable by mistake.
+// ============================================================================
+
+// --- Identity / capability (sensible fallbacks, no warning) ---
+
+QString SyncBackend::backendId() const
+{
+    return backendType();
+}
+
+QString SyncBackend::displayName() const
+{
+    return backendType();
+}
+
+bool SyncBackend::isAvailable() const
+{
+    return true;
+}
+
+bool SyncBackend::supportsBatch() const
+{
+    return false;
+}
+
+bool SyncBackend::supportsDeleteTracking() const
+{
+    return false;
+}
+
+// --- Batch (no-op true defaults) ---
+
+void SyncBackend::beginBatch() {}
+
+bool SyncBackend::commitBatch() { return true; }
+
+void SyncBackend::rollbackBatch() {}
+
+// --- Data-path (emit warning and return empty/false) ---
+
+QList<BackendRecord> SyncBackend::loadRecords(const QString &collectionId)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "loadRecords(" << collectionId << ")";
+    return {};
+}
+
+std::optional<BackendRecord> SyncBackend::loadRecord(const QString &recordId)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "loadRecord(" << recordId << ")";
+    return std::nullopt;
+}
+
+QString SyncBackend::createRecord(const QString &collectionId, const BackendRecord &record)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "createRecord(" << collectionId << ")";
+    Q_UNUSED(record);
+    return {};
+}
+
+bool SyncBackend::updateRecord(const BackendRecord &record)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "updateRecord";
+    Q_UNUSED(record);
+    return false;
+}
+
+bool SyncBackend::deleteRecord(const QString &recordId)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "deleteRecord(" << recordId << ")";
+    return false;
+}
+
+QList<BackendRecord> SyncBackend::modifiedSince(const QString &collectionId,
+                                                 const QDateTime &since)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "modifiedSince(" << collectionId << ")";
+    Q_UNUSED(since);
+    return {};
+}
+
+QStringList SyncBackend::deletedSince(const QString &collectionId, const QDateTime &since)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "deletedSince(" << collectionId << ")";
+    Q_UNUSED(since);
+    return {};
+}
+
+QList<CollectionInfo> SyncBackend::availableCollections()
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "availableCollections";
+    return {};
+}
+
+CollectionInfo SyncBackend::collectionInfo(const QString &collectionId)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "collectionInfo(" << collectionId << ")";
+    return {};
+}
+
+QString SyncBackend::createCollection(const CollectionInfo &info)
+{
+    qWarning() << "SyncBackend default IBlobBackend impl invoked on"
+               << metaObject()->className()
+               << "createCollection";
+    Q_UNUSED(info);
+    return {};
+}
+
 } // namespace Kalburator::Sync

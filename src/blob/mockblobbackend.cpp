@@ -3,7 +3,7 @@
 namespace Kalburator::Sync {
 
 MockBlobBackend::MockBlobBackend(QObject *parent)
-    : IBlobBackend(parent)
+    : QObject(parent)
 {
 }
 

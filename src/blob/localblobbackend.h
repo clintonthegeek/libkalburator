@@ -2,6 +2,7 @@
 #define KALBURATOR_BLOB_LOCALBLOBBACKEND_H
 
 #include <QDir>
+#include <QObject>
 #include <QString>
 
 #include "iblobbackend.h"
@@ -24,7 +25,7 @@ namespace Kalburator::Sync {
  * isDeleted: not tracked (file-based backend; supportsDeleteTracking
  * returns false).
  */
-class LocalBlobBackend : public IBlobBackend {
+class LocalBlobBackend : public QObject, public IBlobBackend {
     Q_OBJECT
 public:
     explicit LocalBlobBackend(const QString &basePath,
@@ -52,6 +53,13 @@ public:
                              const QDateTime &since) override;
 
     QString basePath() const { return m_basePath; }
+
+Q_SIGNALS:
+    void recordCreated(const QString &recordId);
+    void recordUpdated(const QString &recordId);
+    void recordDeleted(const QString &recordId);
+    void errorOccurred(const QString &error);
+    void progressUpdated(int current, int total, const QString &message);
 
 private:
     QString extensionForType(const QString &type) const;

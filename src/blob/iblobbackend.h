@@ -5,7 +5,6 @@
 
 #include <QDateTime>
 #include <QList>
-#include <QObject>
 #include <QString>
 #include <QStringList>
 
@@ -21,15 +20,22 @@ namespace Kalburator::Sync {
  * `CollectionInfo`-keyed collections. Host-neutral; no calendar,
  * contact, or other domain knowledge.
  *
- * The upper calendar-typed layer (`SyncBackend` etc.) is independent
- * of this interface in Phase B2. A later phase bridges the two via
- * per-backend adapters.
+ * This is a pure abstract interface (no QObject). Concrete implementations
+ * supply QObject and its signal machinery through their own inheritance
+ * (e.g. `class MockBlobBackend : public IBlobBackend` with Q_OBJECT).
+ * The split is necessary so `SyncBackend`, which already inherits QObject,
+ * can add IBlobBackend as a second base without creating a QObject diamond.
+ *
+ * Signals expected from implementations (declare in each concrete class):
+ *   void recordCreated(const QString &recordId);
+ *   void recordUpdated(const QString &recordId);
+ *   void recordDeleted(const QString &recordId);
+ *   void errorOccurred(const QString &error);
+ *   void progressUpdated(int current, int total, const QString &message);
  */
-class IBlobBackend : public QObject {
-    Q_OBJECT
+class IBlobBackend {
 public:
-    explicit IBlobBackend(QObject *parent = nullptr);
-    ~IBlobBackend() override;
+    virtual ~IBlobBackend() = default;
 
     // --- Identity ---
     virtual QString backendId() const = 0;
@@ -61,13 +67,6 @@ public:
     virtual bool commitBatch()      { return true; }
     virtual void rollbackBatch()    {}
     virtual bool supportsBatch() const { return false; }
-
-Q_SIGNALS:
-    void recordCreated(const QString &recordId);
-    void recordUpdated(const QString &recordId);
-    void recordDeleted(const QString &recordId);
-    void errorOccurred(const QString &error);
-    void progressUpdated(int current, int total, const QString &message);
 };
 
 } // namespace Kalburator::Sync

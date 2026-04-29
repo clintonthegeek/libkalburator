@@ -44,7 +44,7 @@ QString sha256Hex(const QByteArray &data)
 } // namespace
 
 LocalBlobBackend::LocalBlobBackend(const QString &basePath, QObject *parent)
-    : IBlobBackend(parent)
+    : QObject(parent)
     , m_basePath(basePath)
 {
 }

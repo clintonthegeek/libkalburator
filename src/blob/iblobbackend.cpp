@@ -1,12 +1,3 @@
+// IBlobBackend is a pure abstract interface; no out-of-line definitions needed.
+// This file exists so the build system has a compilation unit for the header.
 #include "iblobbackend.h"
-
-namespace Kalburator::Sync {
-
-IBlobBackend::IBlobBackend(QObject *parent)
-    : QObject(parent)
-{
-}
-
-IBlobBackend::~IBlobBackend() = default;
-
-} // namespace Kalburator::Sync

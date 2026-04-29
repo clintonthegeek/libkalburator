@@ -3,6 +3,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QObject>
 
 #include "iblobbackend.h"
 
@@ -16,7 +17,7 @@ namespace Kalburator::Sync {
  * deterministic-mode features of the calendar-layer MockBackend;
  * those are deferred until a specific test needs them.
  */
-class MockBlobBackend : public IBlobBackend {
+class MockBlobBackend : public QObject, public IBlobBackend {
     Q_OBJECT
 public:
     enum class FailurePoint {
@@ -61,6 +62,13 @@ public:
 
     // Direct store access for test assertions
     QHash<QString, BackendRecord> recordsIn(const QString &collectionId) const;
+
+Q_SIGNALS:
+    void recordCreated(const QString &recordId);
+    void recordUpdated(const QString &recordId);
+    void recordDeleted(const QString &recordId);
+    void errorOccurred(const QString &error);
+    void progressUpdated(int current, int total, const QString &message);
 
 private:
     bool consumeFailure(FailurePoint point, const QString &context);

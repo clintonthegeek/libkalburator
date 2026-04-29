@@ -134,7 +134,7 @@ void TestMockBlobBackend::failureInjectionOnLoadRecords()
     b.createCollection(makeCollection(QStringLiteral("memos")));
     b.createRecord(QStringLiteral("memos"), makeRecord(QStringLiteral("r-1"), QStringLiteral("x")));
 
-    QSignalSpy errSpy(&b, &Kalburator::Sync::IBlobBackend::errorOccurred);
+    QSignalSpy errSpy(&b, &Kalburator::Sync::MockBlobBackend::errorOccurred);
     b.setFailNext(MockBlobBackend::FailurePoint::OnLoadRecords, 1);
 
     QVERIFY(b.loadRecords(QStringLiteral("memos")).isEmpty()); // first call fails
@@ -157,7 +157,7 @@ void TestMockBlobBackend::recordCreatedSignalFires()
 {
     MockBlobBackend b;
     b.createCollection(makeCollection(QStringLiteral("memos")));
-    QSignalSpy spy(&b, &Kalburator::Sync::IBlobBackend::recordCreated);
+    QSignalSpy spy(&b, &Kalburator::Sync::MockBlobBackend::recordCreated);
     b.createRecord(QStringLiteral("memos"), makeRecord(QStringLiteral("r-1"), QStringLiteral("x")));
     QCOMPARE(spy.size(), 1);
     QCOMPARE(spy.first().first().toString(), QStringLiteral("r-1"));

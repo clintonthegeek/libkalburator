@@ -16,6 +16,7 @@
 
 #include "calendartype.h"   // CalendarType enum
 #include "datadomain.h"    // DataDomain enum
+#include "iblobbackend.h"  // IBlobBackend pure interface (Phase D Group 2)
 
 namespace Kalburator::Sync {
 
@@ -112,7 +113,7 @@ struct RecurrenceLossInfo
  * sources (local files, org-mode, CalDAV, etc.). The interface is designed
  * to support the future SyncRouter and qsynccore integration.
  */
-class SyncBackend : public QObject
+class SyncBackend : public QObject, public IBlobBackend
 {
     Q_OBJECT
 
@@ -491,6 +492,42 @@ public:
     ///   local:   { "rootPath": "/path/to/storage" }
     ///   orgmode: { "rootPath": "/path/to/org/files" }
     ///   caldav:  { "url": "https://...", "username": "...", "password": "..." }
+
+    // ========== IBlobBackend default implementations ==========
+    // These are default bodies that emit a qWarning if called before a
+    // concrete backend overrides them (Tasks 11-18). They keep the build
+    // green across the Group 2 migration window.
+    //
+    // Identity/capability — sensible fallbacks:
+    QString backendId() const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+    bool    supportsBatch() const override;
+    bool    supportsDeleteTracking() const override;
+
+    // Collections:
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo collectionInfo(const QString &collectionId) override;
+    QString createCollection(const CollectionInfo &info) override;
+
+    // Records:
+    QList<BackendRecord> loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString createRecord(const QString &collectionId, const BackendRecord &record) override;
+    bool    updateRecord(const BackendRecord &record) override;
+    bool    deleteRecord(const QString &recordId) override;
+
+    // Change detection:
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList deletedSince(const QString &collectionId,
+                             const QDateTime &since) override;
+
+    // Batch — no-op defaults (IBlobBackend already has inline defaults,
+    // but re-declare here so the QObject/IBlobBackend vtable is unambiguous):
+    void beginBatch() override;
+    bool commitBatch() override;
+    void rollbackBatch() override;
 
 Q_SIGNALS:
     // ========== Calendar Discovery & Loading Events ==========
