@@ -905,6 +905,19 @@ bash ~/dev/refactor-engine-merger/scripts/verify-all.sh 2>&1 | tail -10
 
 ## Group 3 — Engine wiring
 
+**Status: landed 2026-04-29** (libkalburator commits `a78c444`–`3f9b155`).
+Tasks 19–22 complete. `SyncWorker` fetches via `IBlobBackend::loadRecords`, first-sync
+OneWayUpload dispatches through `BlobSyncEngine::mirror` (empty-target guard added),
+`BlobBaselineStore` seeded after first-sync to enable 3-way merge on subsequent syncs.
+`tst_calendar_first_sync_via_blob_engine` and `tst_calendar_subsequent_sync_uses_blob_view` pin both paths.
+
+**Implementation notes vs. design:**
+- `fetchRecordsViaBlob` uses `loadRecords` (not `modifiedSince`) so `computeSyncDiff` can
+  distinguish "unchanged record" from "deleted record" — `modifiedSince` omits unchanged
+  records which made them appear deleted in the 3-way diff.
+- `dispatchFirstSync` guards on `tgt->loadRecords(colId).isEmpty()` before routing to
+  `BlobSyncEngine::mirror`; non-empty targets fall through to quick-path for conflict resolution.
+
 Goal: `SyncWorker` actually uses the blob view. First-sync goes through `BlobSyncEngine`. The four D.0 tests still pass.
 
 ### Task 19: Wire `SyncWorker` fetches to the blob view (subsequent-sync path)
