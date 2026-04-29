@@ -108,7 +108,7 @@ public:
     /// Run active sync for a standalone DecSync calendar (case C).
     void checkForRemoteChanges(const QString &calendarId);
 
-    /// Get the active controller for a calendar (for SyncCoordinator integration).
+    /// Get the active controller for a calendar (for SyncEngine integration).
     DecSyncActiveController* activeController(const QString &calendarId) const;
 
     /// Set a Syncthing monitor for event-driven sync triggers.

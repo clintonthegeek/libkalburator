@@ -17,7 +17,7 @@ class ISyncConfigStore;
 /**
  * @brief Abstract interface decoupling sync engine from CollectionController.
  *
- * SyncCoordinator, CalendarManager, and SyncWorker use this interface
+ * SyncEngine, CalendarManager, and SyncWorker use this interface
  * instead of depending on CollectionController directly.
  * The app shell implements this interface in CollectionController.
  *
@@ -52,7 +52,7 @@ public:
     // Calendar discovery (narrow host-side view of the collection)
     virtual ICalendarCollection* collection() = 0;
 
-    // Subsystem access (for SyncCoordinator and CalendarManager)
+    // Subsystem access (for SyncEngine and CalendarManager)
     virtual IIncidenceSource* incidenceSource() = 0;
     virtual IIncidenceRegistry* incidenceRegistry() = 0;
     virtual ISyncConfigStore* configStore() = 0;

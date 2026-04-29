@@ -136,7 +136,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/subscriptionbackend.cpp
     src/calendar/syncbackend.cpp
     src/calendar/syncconflictstore.cpp
-    src/calendar/synccoordinator.cpp
     src/calendar/syncoperation.cpp
     src/calendar/synctransaction.cpp
     src/calendar/synctransactionitem.cpp
@@ -222,9 +221,11 @@ set(KALBURATOR_BLOB_SOURCES
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
     src/engine/idomainadapter.h
+    src/engine/syncengine.h
 )
 set(KALBURATOR_ENGINE_SOURCES
     src/engine/enginediff.cpp
+    src/engine/syncengine.cpp
 )
 
 # Aggregate

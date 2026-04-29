@@ -23,7 +23,7 @@
 #include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -106,7 +106,7 @@ private:
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 void TestCalendarConflict::init()
@@ -148,7 +148,7 @@ void TestCalendarConflict::init()
     m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::AutoResolve);
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -199,11 +199,11 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
     seedDivergentConflictState();
 
     QSignalSpy conflictSpy(m_coordinator.get(),
-                           &SyncCoordinator::conflictDetected);
+                           &SyncEngine::conflictDetected);
     QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncCoordinator::allSyncsCompleted);
+                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
     QVERIFY(allDoneSpy.wait(kSyncTimeoutMs));
 
     QVERIFY2(conflictSpy.count() >= 1,
@@ -228,14 +228,14 @@ void TestCalendarConflict::monitored_sameUidDivergent_pausesUntilResume()
     seedDivergentConflictState();
 
     QSignalSpy conflictSpy(m_coordinator.get(),
-                           &SyncCoordinator::conflictDetected);
+                           &SyncEngine::conflictDetected);
     QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncCoordinator::allSyncsCompleted);
+                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Monitored);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Monitored);
 
     // In monitored mode, the worker emits conflictPauseRequested and
-    // yields. SyncCoordinator's onWorkerConflictPauseRequested calls
+    // yields. SyncEngine's onWorkerConflictPauseRequested calls
     // ConflictManager::handleConflict() inline; with workflow mode
     // AutoResolve the manager returns SourceWins immediately, and the
     // coordinator calls resumeAfterConflictResolution to unblock the

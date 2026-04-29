@@ -6,7 +6,7 @@
 #include "remotebackend.h"
 #include "localbackend.h"
 #include "icalendarcollection.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "transcodingregistry.h"
 
 #include <QDebug>

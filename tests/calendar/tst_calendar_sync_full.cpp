@@ -1,7 +1,7 @@
 // tst_calendar_sync_full.cpp
 //
 // Phase D.0 — Full bidirectional sync against MockBackend pair through
-// StubSyncHost. Pins SyncCoordinator/SyncWorker behavior before any
+// StubSyncHost. Pins SyncEngine/SyncWorker behavior before any
 // engine refactor lands.
 //
 // See: docs/phase0/04l-phase-d0-test-harness-design.md
@@ -19,7 +19,7 @@
 #include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -91,7 +91,7 @@ private:
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 // ---- Lifecycle ------------------------------------------------------------
@@ -138,7 +138,7 @@ void TestCalendarSyncFull::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -163,11 +163,11 @@ bool TestCalendarSyncFull::runOneSync()
 {
     // Use the multi-mapping form (runSync() with no mappingId). The
     // single-mapping form does not cleanly exit the post-sync
-    // processNextMapping loop in SyncCoordinator, leading to a second
+    // processNextMapping loop in SyncEngine, leading to a second
     // queued sync that interferes with cleanup.
     QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncCoordinator::allSyncsCompleted);
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+                          &SyncEngine::allSyncsCompleted);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
     if (!allDoneSpy.wait(kSyncTimeoutMs)) {
         qWarning() << "allSyncsCompleted signal did not fire within"
                    << kSyncTimeoutMs << "ms";

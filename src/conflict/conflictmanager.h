@@ -151,7 +151,7 @@ public:
      * @brief Get the merged iCal data from the last CustomMerge resolution.
      *
      * Only valid if the last handleConflict() returned CustomMerge.
-     * Used by SyncCoordinator to get the actual merged incidence data.
+     * Used by SyncEngine to get the actual merged incidence data.
      *
      * @return The merged iCal data, or empty if not applicable
      */

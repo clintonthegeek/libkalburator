@@ -30,7 +30,7 @@
 #include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -130,7 +130,7 @@ private:
     std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 void TestCalendarSubsequentSyncUsesBlobView::initTestCase() {}
@@ -184,7 +184,7 @@ void TestCalendarSubsequentSyncUsesBlobView::cleanup()
 
 void TestCalendarSubsequentSyncUsesBlobView::setupCoordinator()
 {
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
@@ -195,8 +195,8 @@ void TestCalendarSubsequentSyncUsesBlobView::setupCoordinator()
 
 bool TestCalendarSubsequentSyncUsesBlobView::runOneSync()
 {
-    QSignalSpy allDoneSpy(m_coordinator.get(), &SyncCoordinator::allSyncsCompleted);
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+    QSignalSpy allDoneSpy(m_coordinator.get(), &SyncEngine::allSyncsCompleted);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
     if (!allDoneSpy.wait(kSyncTimeoutMs)) {
         qWarning() << "allSyncsCompleted did not fire within" << kSyncTimeoutMs << "ms";
         return false;

@@ -331,7 +331,7 @@ private:
     QMap<QString, QColor> m_calendarColors;  // CalendarId -> discovered color
     QMap<QString, KDAV::DavCollection::ContentTypes> m_calendarContentTypes;  // CalendarId -> content types
     QMap<QString, QString> m_calendarCtags;  // CalendarId -> CTag from discovery
-    // Phase-1 batched-CTag cache: ctags primed by SyncCoordinator before the
+    // Phase-1 batched-CTag cache: ctags primed by SyncEngine before the
     // worker thread starts. Consulted from fetchItems() to skip the per-call
     // PROPFIND when a fresh value is already on hand.
     struct PrimedCtag {

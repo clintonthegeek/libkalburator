@@ -1,4 +1,4 @@
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "transcodingregistry.h"
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
@@ -27,7 +27,7 @@
 
 namespace Kalburator::Sync {
 
-SyncCoordinator::SyncCoordinator(BackendRegistry *registry,
+SyncEngine::SyncEngine(BackendRegistry *registry,
                                    ISyncHost *host,
                                    QObject *parent)
     : QObject(parent)
@@ -40,43 +40,43 @@ SyncCoordinator::SyncCoordinator(BackendRegistry *registry,
     setupWorkerConnections();
 }
 
-SyncCoordinator::~SyncCoordinator()
+SyncEngine::~SyncEngine()
 {
     stopWorkerThread();
 }
 
-void SyncCoordinator::setupWorkerConnections()
+void SyncEngine::setupWorkerConnections()
 {
     if (!m_worker) return;
 
     // Connect worker signals to coordinator slots (Qt::QueuedConnection for cross-thread)
     connect(m_worker, &SyncWorker::syncStarted,
-            this, &SyncCoordinator::onWorkerSyncStarted, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerSyncStarted, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::phaseChanged,
-            this, &SyncCoordinator::onWorkerPhaseChanged, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerPhaseChanged, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::fetchProgress,
-            this, &SyncCoordinator::onWorkerFetchProgress, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerFetchProgress, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::itemReady,
-            this, &SyncCoordinator::onWorkerItemReady, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerItemReady, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::writeProgress,
-            this, &SyncCoordinator::onWorkerWriteProgress, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerWriteProgress, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::conflictDetected,
-            this, &SyncCoordinator::onWorkerConflictDetected, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerConflictDetected, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::conflictPauseRequested,
-            this, &SyncCoordinator::onWorkerConflictPauseRequested, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerConflictPauseRequested, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::syncCompleted,
-            this, &SyncCoordinator::onWorkerSyncCompleted, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerSyncCompleted, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::syncError,
-            this, &SyncCoordinator::onWorkerSyncError, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerSyncError, Qt::QueuedConnection);
     connect(m_worker, &SyncWorker::transcodingWarning,
-            this, &SyncCoordinator::onWorkerTranscodingWarning, Qt::QueuedConnection);
+            this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
 
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
     // by the time finished is emitted.
 }
 
-void SyncCoordinator::startWorkerThread()
+void SyncEngine::startWorkerThread()
 {
     if (m_workerThread.isRunning()) {
         return;
@@ -92,10 +92,10 @@ void SyncCoordinator::startWorkerThread()
     // Start thread
     m_workerThread.start();
 
-    qDebug() << "SyncCoordinator: Worker thread started";
+    qDebug() << "SyncEngine: Worker thread started";
 }
 
-void SyncCoordinator::stopWorkerThread()
+void SyncEngine::stopWorkerThread()
 {
     if (m_workerThread.isRunning()) {
         if (m_worker) {
@@ -105,7 +105,7 @@ void SyncCoordinator::stopWorkerThread()
         m_workerThread.quit();
         m_workerThread.wait();
 
-        qDebug() << "SyncCoordinator: Worker thread stopped";
+        qDebug() << "SyncEngine: Worker thread stopped";
     }
 
     // After wait() returns, the thread's event loop has stopped and it's safe
@@ -119,45 +119,45 @@ void SyncCoordinator::stopWorkerThread()
     }
 }
 
-void SyncCoordinator::setCalendarBaselineStore(CalendarBaselineStore *store)
+void SyncEngine::setCalendarBaselineStore(CalendarBaselineStore *store)
 {
     m_calendarBaselines = store;
 }
 
-void SyncCoordinator::setBlobBaselineStore(BlobBaselineStore *store)
+void SyncEngine::setBlobBaselineStore(BlobBaselineStore *store)
 {
     m_blobBaselines = store;
 }
 
-void SyncCoordinator::setSyncConflictStore(SyncConflictStore *store)
+void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 {
     m_conflictStore = store;
 }
 
-void SyncCoordinator::loadSyncMappings(ICalendarCollection *collection)
+void SyncEngine::loadSyncMappings(ICalendarCollection *collection)
 {
     m_syncMappings.clear();
     m_collection = collection;
 
     if (!collection || !m_controller) {
-        qDebug() << "SyncCoordinator::loadSyncMappings - no collection or controller";
+        qDebug() << "SyncEngine::loadSyncMappings - no collection or controller";
         return;
     }
 
     // Load mappings from KalbConfigManager
     ISyncConfigStore *configManager = m_controller->configStore();
     if (!configManager) {
-        qDebug() << "SyncCoordinator::loadSyncMappings - no config manager";
+        qDebug() << "SyncEngine::loadSyncMappings - no config manager";
         return;
     }
 
     if (!configManager->hasSyncMappings()) {
-        qDebug() << "SyncCoordinator::loadSyncMappings - no sync mappings configured";
+        qDebug() << "SyncEngine::loadSyncMappings - no sync mappings configured";
         return;
     }
 
     m_syncMappings = configManager->syncMappings();
-    qDebug() << "SyncCoordinator::loadSyncMappings - loaded"
+    qDebug() << "SyncEngine::loadSyncMappings - loaded"
              << m_syncMappings.size() << "mappings";
 
     // Log mapping details
@@ -170,7 +170,7 @@ void SyncCoordinator::loadSyncMappings(ICalendarCollection *collection)
     }
 }
 
-void SyncCoordinator::setMappingEnabled(const QString &mappingId, bool enabled)
+void SyncEngine::setMappingEnabled(const QString &mappingId, bool enabled)
 {
     for (auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId) {
@@ -180,32 +180,32 @@ void SyncCoordinator::setMappingEnabled(const QString &mappingId, bool enabled)
     }
 }
 
-void SyncCoordinator::registerActiveController(const QString &calendarId,
+void SyncEngine::registerActiveController(const QString &calendarId,
                                                  DecSyncActiveController *controller)
 {
     m_activeControllers[calendarId] = controller;
-    qDebug() << "SyncCoordinator: Registered active controller for" << calendarId;
+    qDebug() << "SyncEngine: Registered active controller for" << calendarId;
 }
 
-void SyncCoordinator::unregisterActiveController(const QString &calendarId)
+void SyncEngine::unregisterActiveController(const QString &calendarId)
 {
     m_activeControllers.remove(calendarId);
 }
 
-bool SyncCoordinator::hasSyncWork() const
+bool SyncEngine::hasSyncWork() const
 {
     return !m_syncMappings.isEmpty() || !m_activeControllers.isEmpty();
 }
 
-void SyncCoordinator::runSync(SyncBehavior behavior)
+void SyncEngine::runSync(SyncBehavior behavior)
 {
     if (m_isSyncing) {
-        qWarning() << "SyncCoordinator::runSync - sync already in progress";
+        qWarning() << "SyncEngine::runSync - sync already in progress";
         return;
     }
 
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
-        qDebug() << "SyncCoordinator::runSync - no sync work configured";
+        qDebug() << "SyncEngine::runSync - no sync work configured";
         m_lastResult = SyncResult{};
         m_lastResult.success = true;
         emit allSyncsCompleted(m_lastResult);
@@ -250,10 +250,10 @@ void SyncCoordinator::runSync(SyncBehavior behavior)
     processNextMapping();
 }
 
-void SyncCoordinator::runSync(const QString &mappingId, SyncBehavior behavior)
+void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
 {
     if (m_isSyncing) {
-        qWarning() << "SyncCoordinator::runSync - sync already in progress";
+        qWarning() << "SyncEngine::runSync - sync already in progress";
         return;
     }
 
@@ -296,18 +296,18 @@ void SyncCoordinator::runSync(const QString &mappingId, SyncBehavior behavior)
             return;
         }
     }
-    qWarning() << "SyncCoordinator::runSync - mapping not found:" << mappingId;
+    qWarning() << "SyncEngine::runSync - mapping not found:" << mappingId;
 }
 
-void SyncCoordinator::resumeAfterConflictResolution(ConflictResolution resolution,
+void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
                                                      const QString &mergedIcal)
 {
     if (!m_worker) {
-        qWarning() << "SyncCoordinator::resumeAfterConflictResolution - no worker";
+        qWarning() << "SyncEngine::resumeAfterConflictResolution - no worker";
         return;
     }
 
-    qDebug() << "SyncCoordinator::resumeAfterConflictResolution - resolution:"
+    qDebug() << "SyncEngine::resumeAfterConflictResolution - resolution:"
              << static_cast<int>(resolution);
 
     // Invoke on worker thread
@@ -317,24 +317,24 @@ void SyncCoordinator::resumeAfterConflictResolution(ConflictResolution resolutio
                               Q_ARG(QString, mergedIcal));
 }
 
-void SyncCoordinator::cancelSync()
+void SyncEngine::cancelSync()
 {
     if (m_isSyncing) {
         m_cancelled = true;
         if (m_worker) {
             m_worker->cancel();
         }
-        qDebug() << "SyncCoordinator::cancelSync - sync cancelled";
+        qDebug() << "SyncEngine::cancelSync - sync cancelled";
     }
 }
 
-void SyncCoordinator::setSkipUnchangedMappings(bool enabled)
+void SyncEngine::setSkipUnchangedMappings(bool enabled)
 {
     m_skipUnchangedMappings = enabled;
-    qDebug() << "SyncCoordinator::setSkipUnchangedMappings:" << enabled;
+    qDebug() << "SyncEngine::setSkipUnchangedMappings:" << enabled;
 }
 
-void SyncCoordinator::prepareSyncFastPath()
+void SyncEngine::prepareSyncFastPath()
 {
     m_skippedMappingIds.clear();
     m_freshState.clear();
@@ -452,22 +452,22 @@ void SyncCoordinator::prepareSyncFastPath()
             if (m_skipUnchangedMappings) {
                 m_skippedMappingIds.insert(mapping.id);
                 ++actualSkipCount;
-                qInfo() << "SyncCoordinator: skipping unchanged mapping" << mapping.id;
+                qInfo() << "SyncEngine: skipping unchanged mapping" << mapping.id;
             } else {
-                qInfo() << "SyncCoordinator: would skip unchanged mapping (flag off)"
+                qInfo() << "SyncEngine: would skip unchanged mapping (flag off)"
                         << mapping.id;
             }
         }
     }
 
-    qDebug() << "SyncCoordinator::prepareSyncFastPath: of"
+    qDebug() << "SyncEngine::prepareSyncFastPath: of"
              << m_syncMappings.size() << "mappings,"
              << wouldSkipCount << "are unchanged;"
              << actualSkipCount << "actually skipped (flag="
              << m_skipUnchangedMappings << ")";
 }
 
-void SyncCoordinator::processNextMapping()
+void SyncEngine::processNextMapping()
 {
     // Debug log removed - SyncWorker provides detailed timing
 
@@ -558,12 +558,12 @@ void SyncCoordinator::processNextMapping()
 // Helper Methods
 // ============================================================================
 
-void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
+void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
                                           const QList<SyncChange> &resolvedToTarget,
                                           const QList<SyncChange> &resolvedToSource)
 {
     if (!m_calendarBaselines) {
-        qDebug() << "SyncCoordinator::updateSyncMetadata - no CalendarBaselineStore, skipping baseline update";
+        qDebug() << "SyncEngine::updateSyncMetadata - no CalendarBaselineStore, skipping baseline update";
         return;
     }
 
@@ -610,7 +610,7 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         }
 
         if (change.sourceRecord.isValid()) {
-            qDebug() << "SyncCoordinator::updateSyncMetadata - updating baseline for resolved conflict:"
+            qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(source wins/merged)";
             m_calendarBaselines->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
         }
@@ -623,7 +623,7 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         }
 
         if (change.targetRecord.isValid()) {
-            qDebug() << "SyncCoordinator::updateSyncMetadata - updating baseline for resolved conflict:"
+            qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(target wins)";
             m_calendarBaselines->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
         }
@@ -636,7 +636,7 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         }
 
         // This shouldn't happen in normal operation, but handle gracefully
-        qDebug() << "SyncCoordinator::updateSyncMetadata - unchanged item has no baseline:" << uid;
+        qDebug() << "SyncEngine::updateSyncMetadata - unchanged item has no baseline:" << uid;
     }
 
     // Update last sync time
@@ -647,25 +647,25 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
 // Worker Thread Signal Handlers
 // ============================================================================
 
-void SyncCoordinator::onWorkerSyncStarted(const QString &mappingId)
+void SyncEngine::onWorkerSyncStarted(const QString &mappingId)
 {
     // Debug log removed - SyncWorker shows detailed start info
     emit syncStarted(mappingId);
 }
 
-void SyncCoordinator::onWorkerPhaseChanged(const QString &mappingId, int phase)
+void SyncEngine::onWorkerPhaseChanged(const QString &mappingId, int phase)
 {
     Q_UNUSED(mappingId);
     m_currentPhase = static_cast<SyncPhase>(phase);
     emit phaseChanged(m_currentPhase);
 }
 
-void SyncCoordinator::onWorkerFetchProgress(const QString &calendarId, int current, int total)
+void SyncEngine::onWorkerFetchProgress(const QString &calendarId, int current, int total)
 {
     emit fetchProgress(calendarId, current, total);
 }
 
-void SyncCoordinator::onWorkerItemReady(const QString &calendarId,
+void SyncEngine::onWorkerItemReady(const QString &calendarId,
                                          const KCalendarCore::Incidence::Ptr &incidence,
                                          int changeType)
 {
@@ -689,7 +689,7 @@ void SyncCoordinator::onWorkerItemReady(const QString &calendarId,
                 static QSet<QString> warnedCalendars;
                 if (!warnedCalendars.contains(calendarId)) {
                     warnedCalendars.insert(calendarId);
-                    qWarning() << "SyncCoordinator::onWorkerItemReady: No MemoryCalendar for" << calendarId
+                    qWarning() << "SyncEngine::onWorkerItemReady: No MemoryCalendar for" << calendarId
                                << "- items will not appear in CategoryManager!";
                     QStringList availableIds;
                     for (auto *c : m_collection->calendars()) {
@@ -747,7 +747,7 @@ void SyncCoordinator::onWorkerItemReady(const QString &calendarId,
     }
 }
 
-void SyncCoordinator::onWorkerWriteProgress(const QString &calendarId, int current, int total)
+void SyncEngine::onWorkerWriteProgress(const QString &calendarId, int current, int total)
 {
     emit writeProgress(calendarId, current, total);
 }
@@ -769,7 +769,7 @@ static void resolveConflictDisplayNames(ConflictInfo &conflict, BackendRegistry 
         conflict.targetBackendDisplayName = resolveOne(conflict.targetBackendId);
 }
 
-void SyncCoordinator::onWorkerConflictDetected(const ConflictInfo &conflict)
+void SyncEngine::onWorkerConflictDetected(const ConflictInfo &conflict)
 {
     // Resolve human-readable backend names for UI
     ConflictInfo enriched = conflict;
@@ -790,9 +790,9 @@ void SyncCoordinator::onWorkerConflictDetected(const ConflictInfo &conflict)
     m_pendingUnmonitoredConflicts.append(enriched);
 }
 
-void SyncCoordinator::onWorkerConflictPauseRequested(const ConflictInfo &conflict)
+void SyncEngine::onWorkerConflictPauseRequested(const ConflictInfo &conflict)
 {
-    qDebug() << "SyncCoordinator::onWorkerConflictPauseRequested - conflict:" << conflict.sourceId;
+    qDebug() << "SyncEngine::onWorkerConflictPauseRequested - conflict:" << conflict.sourceId;
 
     // Resolve human-readable backend names for UI
     ConflictInfo enriched = conflict;
@@ -821,13 +821,13 @@ void SyncCoordinator::onWorkerConflictPauseRequested(const ConflictInfo &conflic
     }
 }
 
-void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const SyncResult &result)
+void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResult &result)
 {
     // Batch-present any unmonitored conflicts collected during this mapping.
     // handleConflicts() (plural) applies hybrid threshold: shows dialogs for
     // small batches, defers large batches to the dock widget.
     if (m_conflictManager && !m_pendingUnmonitoredConflicts.isEmpty()) {
-        qDebug() << "SyncCoordinator: Batch-presenting"
+        qDebug() << "SyncEngine: Batch-presenting"
                  << m_pendingUnmonitoredConflicts.size()
                  << "conflicts for mapping" << mappingId;
         m_conflictManager->handleConflicts(m_pendingUnmonitoredConflicts);
@@ -899,9 +899,9 @@ void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const Sync
     processNextMapping();
 }
 
-void SyncCoordinator::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)
+void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)
 {
-    qWarning() << "SyncCoordinator::onWorkerSyncError - mapping:" << mappingId
+    qWarning() << "SyncEngine::onWorkerSyncError - mapping:" << mappingId
                << "error:" << errorMessage;
 
     // Create failed result
@@ -922,11 +922,11 @@ void SyncCoordinator::onWorkerSyncError(const QString &mappingId, const QString 
     processNextMapping();
 }
 
-void SyncCoordinator::onWorkerTranscodingWarning(const QString &calendarId,
+void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,
                                                   const QString &uid,
                                                   const QStringList &warnings)
 {
-    qDebug() << "SyncCoordinator::onWorkerTranscodingWarning - calendar:" << calendarId
+    qDebug() << "SyncEngine::onWorkerTranscodingWarning - calendar:" << calendarId
              << "uid:" << uid << "warnings:" << warnings;
 
     // Forward the transcoding warning signal

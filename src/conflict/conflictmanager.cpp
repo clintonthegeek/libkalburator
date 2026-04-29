@@ -219,7 +219,7 @@ bool ConflictManager::applyResolution(const QString &conflictId, ConflictResolut
     }
 
     // Note: ConflictManager only marks resolutions in the store.
-    // SyncCoordinator reads the resolution and applies data modifications.
+    // SyncEngine reads the resolution and applies data modifications.
 
     m_syncStore->resolveConflict(conflictId, resolution);
     emit conflictResolved(conflictId, resolution);

@@ -24,7 +24,7 @@ struct SyncMapping;
  * Sync Mode) provides its own implementation — typically backed by
  * QSettings, a profile JSON, or whatever its config story is.
  *
- * Surface matches the calls `SyncCoordinator` + `CalendarManager`
+ * Surface matches the calls `SyncEngine` + `CalendarManager`
  * actually make, audited 2026-04-20.
  */
 class ISyncConfigStore

@@ -24,7 +24,7 @@
 #include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -105,7 +105,7 @@ private slots:
     void firstSync_twoWay_usesOldQuickPathAndConverges();
 
 private:
-    bool runOneSync(SyncCoordinator::SyncBehavior behavior = SyncCoordinator::SyncBehavior::Unmonitored);
+    bool runOneSync(SyncEngine::SyncBehavior behavior = SyncEngine::SyncBehavior::Unmonitored);
     QStringList sourceUids() const;
     QStringList targetUids() const;
     void setupCoordinator(const QList<SyncMapping> &mappings);
@@ -119,7 +119,7 @@ private:
     std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 // ---- Lifecycle ------------------------------------------------------------
@@ -175,7 +175,7 @@ void TestCalendarFirstSyncViaBlobEngine::cleanup()
 
 void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMapping> &mappings)
 {
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
@@ -184,9 +184,9 @@ void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMappin
     m_coordinator->setSyncMappings(mappings);
 }
 
-bool TestCalendarFirstSyncViaBlobEngine::runOneSync(SyncCoordinator::SyncBehavior behavior)
+bool TestCalendarFirstSyncViaBlobEngine::runOneSync(SyncEngine::SyncBehavior behavior)
 {
-    QSignalSpy allDoneSpy(m_coordinator.get(), &SyncCoordinator::allSyncsCompleted);
+    QSignalSpy allDoneSpy(m_coordinator.get(), &SyncEngine::allSyncsCompleted);
     m_coordinator->runSync(behavior);
     if (!allDoneSpy.wait(kSyncTimeoutMs)) {
         qWarning() << "allSyncsCompleted did not fire within" << kSyncTimeoutMs << "ms";
@@ -225,7 +225,7 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlo
 
     setupCoordinator({ makeOneWayUploadMapping() });
 
-    QSignalSpy completedSpy(m_coordinator.get(), &SyncCoordinator::syncCompleted);
+    QSignalSpy completedSpy(m_coordinator.get(), &SyncEngine::syncCompleted);
     QVERIFY(runOneSync());
 
     // syncCompleted fired exactly once.

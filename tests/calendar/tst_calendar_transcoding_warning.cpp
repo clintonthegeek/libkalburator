@@ -22,7 +22,7 @@
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "propertytranscoder.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 #include "transcodingregistry.h"
@@ -142,7 +142,7 @@ private:
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 void TestCalendarTranscodingWarning::init()
@@ -178,7 +178,7 @@ void TestCalendarTranscodingWarning::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -217,11 +217,11 @@ void TestCalendarTranscodingWarning::transcoding_sourceHasRruleByDay_targetCantR
                            makeRecurringEventWithByDay(QStringLiteral("evt-rrule-1")));
 
     QSignalSpy warningSpy(m_coordinator.get(),
-                          &SyncCoordinator::transcodingWarning);
+                          &SyncEngine::transcodingWarning);
     QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncCoordinator::allSyncsCompleted);
+                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
     QVERIFY(allDoneSpy.wait(kSyncTimeoutMs));
 
     QVERIFY2(warningSpy.count() >= 1,

@@ -123,13 +123,13 @@ public:
     std::function<void(const QString &backendId, const QString &calendarId, int itemCount)> onBackendDelete;
 
     /**
-     * @brief Called when SyncCoordinator starts syncing a mapping.
+     * @brief Called when SyncEngine starts syncing a mapping.
      * @param mappingId Mapping ID
      */
     std::function<void(const QString &mappingId)> onSyncMappingStart;
 
     /**
-     * @brief Called when SyncCoordinator finishes syncing a mapping.
+     * @brief Called when SyncEngine finishes syncing a mapping.
      * @param mappingId Mapping ID
      * @param success Whether sync succeeded
      */

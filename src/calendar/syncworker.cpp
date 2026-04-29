@@ -1151,7 +1151,7 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
     const TranscodingPlan plan = m_router.plan(sourceType, targetType);
 
     // Connect the backend's transcodingWarning to our own so it surfaces through
-    // SyncWorker → SyncCoordinator. DirectConnection: storeItems/updateItem run
+    // SyncWorker → SyncEngine. DirectConnection: storeItems/updateItem run
     // synchronously on the main thread (commitAll is marshalled there), so both
     // signal and slot are on the same thread.
     QMetaObject::Connection transcodingConn = connect(

@@ -18,7 +18,7 @@
 #include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
-#include "synccoordinator.h"
+#include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -88,7 +88,7 @@ private:
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncCoordinator>       m_coordinator;
+    std::unique_ptr<SyncEngine>       m_coordinator;
 };
 
 void TestCalendarSyncOneway::init()
@@ -125,7 +125,7 @@ void TestCalendarSyncOneway::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -149,8 +149,8 @@ void TestCalendarSyncOneway::cleanup()
 bool TestCalendarSyncOneway::runOneSync()
 {
     QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncCoordinator::allSyncsCompleted);
-    m_coordinator->runSync(SyncCoordinator::SyncBehavior::Unmonitored);
+                          &SyncEngine::allSyncsCompleted);
+    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
     if (!allDoneSpy.wait(kSyncTimeoutMs)) {
         qWarning() << "allSyncsCompleted did not fire within"
                    << kSyncTimeoutMs << "ms";
