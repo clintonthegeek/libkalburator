@@ -398,12 +398,11 @@ void SyncCoordinator::prepareSyncFastPath()
             sourceUnchanged = !fresh.sourceCtag.isEmpty()
                               && !stored.isEmpty()
                               && fresh.sourceCtag == stored;
-        } else if (qobject_cast<LocalBackend*>(srcBase)) {
+        } else if (auto *srcLocal = qobject_cast<LocalBackend*>(srcBase)) {
             sourceCovered = true;
             fresh.sourceFingerprint = freshLocalFingerprints.value(
                 qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
-            const QString stored = m_syncStore->localFingerprint(
-                mapping.sourceBackend, mapping.sourceCalendar);
+            const QString stored = srcLocal->cachedFingerprint(mapping.sourceCalendar);
             sourceUnchanged = !fresh.sourceFingerprint.isEmpty()
                               && !stored.isEmpty()
                               && fresh.sourceFingerprint == stored;
@@ -419,12 +418,11 @@ void SyncCoordinator::prepareSyncFastPath()
             targetUnchanged = !fresh.targetCtag.isEmpty()
                               && !stored.isEmpty()
                               && fresh.targetCtag == stored;
-        } else if (qobject_cast<LocalBackend*>(tgtBase)) {
+        } else if (auto *tgtLocal = qobject_cast<LocalBackend*>(tgtBase)) {
             targetCovered = true;
             fresh.targetFingerprint = freshLocalFingerprints.value(
                 qMakePair(mapping.targetBackend, mapping.targetCalendar));
-            const QString stored = m_syncStore->localFingerprint(
-                mapping.targetBackend, mapping.targetCalendar);
+            const QString stored = tgtLocal->cachedFingerprint(mapping.targetCalendar);
             targetUnchanged = !fresh.targetFingerprint.isEmpty()
                               && !stored.isEmpty()
                               && fresh.targetFingerprint == stored;
@@ -858,14 +856,16 @@ void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const Sync
                         r->setCtag(mapping->targetCalendar, fresh.targetCtag);
                 }
                 if (!fresh.sourceFingerprint.isEmpty()) {
-                    m_syncStore->setLocalFingerprint(mapping->sourceBackend,
-                                                      mapping->sourceCalendar,
-                                                      fresh.sourceFingerprint);
+                    if (auto *l = qobject_cast<LocalBackend*>(
+                            m_registry->backendInstance(mapping->sourceBackend)))
+                        l->setCachedFingerprint(mapping->sourceCalendar,
+                                                fresh.sourceFingerprint);
                 }
                 if (!fresh.targetFingerprint.isEmpty()) {
-                    m_syncStore->setLocalFingerprint(mapping->targetBackend,
-                                                      mapping->targetCalendar,
-                                                      fresh.targetFingerprint);
+                    if (auto *l = qobject_cast<LocalBackend*>(
+                            m_registry->backendInstance(mapping->targetBackend)))
+                        l->setCachedFingerprint(mapping->targetCalendar,
+                                                fresh.targetFingerprint);
                 }
             }
         }

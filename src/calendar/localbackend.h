@@ -7,11 +7,14 @@
 #include <KCalendarCore/MemoryCalendar>
 #include "syncbackend.h"
 #include "syncoperation.h"
+#include <memory>
 
 namespace Kalburator::Sync {
 
 struct BackendCapabilities;
 class AsyncFileWriter;
+class FingerprintStore;
+class SyncStore;
 
 class LocalBackend : public SyncBackend
 {
@@ -19,6 +22,7 @@ class LocalBackend : public SyncBackend
 
 public:
     explicit LocalBackend(const QString &calendarRootPath, QObject *parent = nullptr);
+    ~LocalBackend() override;
 
     void setcalendarRootPath(const QString &path);
 
@@ -41,6 +45,23 @@ public:
 
     static const QString BackendTypeName;
     QString backendType() const override;
+
+    /**
+     * @brief Wire up the SyncStore so the private FingerprintStore can be
+     * initialised from the same DB file. Mirrors RemoteBackend::setSyncStore().
+     */
+    void setSyncStore(SyncStore *store);
+
+    /**
+     * @brief Get the persisted fingerprint for a calendar.
+     * @return Stored fingerprint, or empty string if not present or store not set.
+     */
+    QString cachedFingerprint(const QString &calendarId) const;
+
+    /**
+     * @brief Persist a fingerprint for a calendar.
+     */
+    void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
 
     /**
      * @brief Check if a calendar directory is writable.
@@ -115,6 +136,9 @@ private slots:
 
 private:
     QString m_calendarRootPath;
+
+    // Private per-backend fingerprint store (persisted to same DB as SyncStore)
+    std::unique_ptr<FingerprintStore> m_fingerprints;
 
     // Async file writer for non-blocking writes
     AsyncFileWriter *m_asyncWriter = nullptr;

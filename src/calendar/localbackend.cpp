@@ -1,4 +1,5 @@
 #include "localbackend.h"
+#include "syncstore.h"
 #include "calendarmetadatamanager.h"
 #include "asyncfilewriter.h"
 #include "backendcapabilities.h"
@@ -12,10 +13,137 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QSaveFile>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QSqlError>
 #include <QTimer>
 #include <QCoreApplication>
 
 namespace Kalburator::Sync {
+
+// ============================================================================
+// FingerprintStore — private inner store for per-backend local directory fingerprints
+//
+// Persists to a `local_fingerprints` table in the same DB file as SyncStore.
+// BackendId is fixed at construction time so callers only pass calendarId.
+// ============================================================================
+
+class FingerprintStore
+{
+public:
+    explicit FingerprintStore(const QString &dbPath, const QString &backendId)
+        : m_backendId(backendId)
+        , m_connectionName(QStringLiteral("FingerprintStore_%1_%2")
+                               .arg(backendId)
+                               .arg(reinterpret_cast<quintptr>(this)))
+    {
+        if (dbPath.isEmpty()) {
+            qWarning() << "FingerprintStore: empty dbPath for backend" << backendId;
+            return;
+        }
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        db.setDatabaseName(dbPath);
+        if (!db.open()) {
+            qWarning() << "FingerprintStore: failed to open" << dbPath
+                       << ":" << db.lastError().text();
+            QSqlDatabase::removeDatabase(m_connectionName);
+            m_connectionName.clear();
+            return;
+        }
+        ensureSchema();
+    }
+
+    ~FingerprintStore()
+    {
+        if (!m_connectionName.isEmpty()) {
+            if (QSqlDatabase::contains(m_connectionName)) {
+                QSqlDatabase::database(m_connectionName).close();
+                QSqlDatabase::removeDatabase(m_connectionName);
+            }
+        }
+    }
+
+    bool isValid() const { return !m_connectionName.isEmpty(); }
+
+    QString get(const QString &calendarId) const
+    {
+        if (!isValid()) return QString();
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "SELECT fingerprint FROM local_fingerprints "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        if (q.exec() && q.next())
+            return q.value(0).toString();
+        return QString();
+    }
+
+    bool set(const QString &calendarId, const QString &fingerprint)
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO local_fingerprints "
+            "(backend_id, calendar_id, fingerprint) VALUES (?, ?, ?)"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        q.addBindValue(fingerprint);
+        if (!q.exec()) {
+            qWarning() << "FingerprintStore::set failed:" << q.lastError().text();
+            return false;
+        }
+        return true;
+    }
+
+    bool clear(const QString &calendarId)
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "DELETE FROM local_fingerprints "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        return q.exec();
+    }
+
+    bool clearAll()
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "DELETE FROM local_fingerprints WHERE backend_id = ?"));
+        q.addBindValue(m_backendId);
+        return q.exec();
+    }
+
+private:
+    bool ensureSchema()
+    {
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        bool ok = q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS local_fingerprints ("
+            "  backend_id   TEXT NOT NULL,"
+            "  calendar_id  TEXT NOT NULL,"
+            "  fingerprint  TEXT NOT NULL,"
+            "  PRIMARY KEY (backend_id, calendar_id)"
+            ")"));
+        if (!ok)
+            qWarning() << "FingerprintStore::ensureSchema failed:" << q.lastError().text();
+        return ok;
+    }
+
+    QString m_backendId;
+    QString m_connectionName;
+};
+
+// (FingerprintStore class ends above; LocalBackend methods continue below in the same namespace)
 
 const QString LocalBackend::BackendTypeName = QStringLiteral("local");
 
@@ -25,6 +153,28 @@ LocalBackend::LocalBackend(const QString &calendarRootPath, QObject *parent)
     : SyncBackend(parent)
     , m_calendarRootPath(calendarRootPath)
 {
+}
+
+LocalBackend::~LocalBackend() = default;
+
+void LocalBackend::setSyncStore(SyncStore *store)
+{
+    if (store && !m_fingerprints) {
+        m_fingerprints = std::make_unique<FingerprintStore>(store->databasePath(), backendType());
+    }
+}
+
+QString LocalBackend::cachedFingerprint(const QString &calendarId) const
+{
+    if (m_fingerprints)
+        return m_fingerprints->get(calendarId);
+    return QString();
+}
+
+void LocalBackend::setCachedFingerprint(const QString &calendarId, const QString &fingerprint)
+{
+    if (m_fingerprints)
+        m_fingerprints->set(calendarId, fingerprint);
 }
 
 BackendCapabilities LocalBackend::capabilities() const

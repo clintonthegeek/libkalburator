@@ -213,37 +213,6 @@ public:
      */
     QMap<QString, QString> allPropertyBaselines(const QString &mappingId) const;
 
-    // ========== Local Fingerprint Tracking ==========
-    // Phase-2 perf: fingerprint of a Local backend's on-disk calendar dir
-    // (sha256 over sorted (filename | mtime | size)). Stored at sync end,
-    // compared at sync start to short-circuit unchanged mappings.
-
-    /**
-     * @brief Get the stored local-side fingerprint for a calendar.
-     * @return Stored fingerprint, or empty string if not present.
-     */
-    QString localFingerprint(const QString &backendId,
-                              const QString &calendarId) const;
-
-    /**
-     * @brief Store a local-side fingerprint for a calendar.
-     * Overwrites any previous value for the (backendId, calendarId) pair.
-     */
-    void setLocalFingerprint(const QString &backendId,
-                              const QString &calendarId,
-                              const QString &fingerprint);
-
-    /**
-     * @brief Remove the stored fingerprint for a single calendar.
-     */
-    void clearLocalFingerprint(const QString &backendId,
-                                const QString &calendarId);
-
-    /**
-     * @brief Remove all stored fingerprints for a backend.
-     */
-    void clearLocalFingerprints(const QString &backendId);
-
     // ========================================================================
     // Conflict Tracking
     // ========================================================================

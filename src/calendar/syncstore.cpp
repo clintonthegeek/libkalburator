@@ -74,7 +74,7 @@ bool SyncStore::initDatabase()
 
     // Check schema version. If outdated, delete DB file and start fresh.
     // This avoids DROP TABLE + CREATE TABLE races on WAL-mode databases.
-    static constexpr int EXPECTED_SCHEMA_VERSION = 5;  // v5: CTag storage moved to CTagStore (RemoteBackend-private)
+    static constexpr int EXPECTED_SCHEMA_VERSION = 6;  // v6: local-fingerprint storage moved to FingerprintStore (LocalBackend-private)
 
     if (QFile::exists(m_dbPath)) {
         int currentVersion = 0;
@@ -221,20 +221,6 @@ bool SyncStore::createTables()
     query.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_conflicts_unresolved "
         "ON sync_conflicts(mapping_id, resolved_at)"));
-
-    // Note: updated_at is INTEGER (msecs since epoch) here.
-    // Integer form is cheaper to compare and avoids string-format parsing.
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS local_fingerprints ("
-        "  backend_id TEXT NOT NULL,"
-        "  calendar_id TEXT NOT NULL,"
-        "  fingerprint TEXT NOT NULL,"
-        "  updated_at INTEGER NOT NULL,"
-        "  PRIMARY KEY (backend_id, calendar_id)"
-        ")"))) {
-        setError(QStringLiteral("Failed to create local_fingerprints table: %1").arg(query.lastError().text()));
-        return false;
-    }
 
     // Schema migration: add new columns if they don't exist (for existing databases)
     // SQLite ignores errors for already-existing columns
@@ -858,75 +844,6 @@ int SyncStore::unresolvedConflictCount(const QString &mappingId) const
         return query.value(0).toInt();
     }
     return 0;
-}
-
-// ============================================================================
-// Local Fingerprint Tracking
-// ============================================================================
-
-QString SyncStore::localFingerprint(const QString &backendId,
-                                     const QString &calendarId) const
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT fingerprint FROM local_fingerprints "
-        "WHERE backend_id = ? AND calendar_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return {};
-}
-
-void SyncStore::setLocalFingerprint(const QString &backendId,
-                                     const QString &calendarId,
-                                     const QString &fingerprint)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO local_fingerprints "
-        "(backend_id, calendar_id, fingerprint, updated_at) "
-        "VALUES (?, ?, ?, ?)"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.addBindValue(fingerprint);
-    query.addBindValue(QDateTime::currentMSecsSinceEpoch());
-    if (!query.exec()) {
-        qWarning() << "SyncStore::setLocalFingerprint: failed:"
-                   << query.lastError().text();
-    }
-}
-
-void SyncStore::clearLocalFingerprint(const QString &backendId,
-                                       const QString &calendarId)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM local_fingerprints "
-        "WHERE backend_id = ? AND calendar_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearLocalFingerprint: failed:"
-                   << query.lastError().text();
-    }
-}
-
-void SyncStore::clearLocalFingerprints(const QString &backendId)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM local_fingerprints WHERE backend_id = ?"));
-    query.addBindValue(backendId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearLocalFingerprints: failed:"
-                   << query.lastError().text();
-    }
 }
 
 // ============================================================================
