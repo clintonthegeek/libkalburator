@@ -140,30 +140,42 @@ void SubscriptionBackend::storeCalendars(const QString &collectionId,
     qDebug() << "SubscriptionBackend::storeCalendars: no-op (read-only backend)";
 }
 
-void SubscriptionBackend::storeItems(KCalendarCore::MemoryCalendar* /*cal*/,
-                                     const QList<KCalendarCore::Incidence::Ptr>& /*items*/,
-                                     const TranscodingPlan& /*plan*/)
+void SubscriptionBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
+                                     const QList<KCalendarCore::Incidence::Ptr>& items,
+                                     const TranscodingPlan& plan)
 {
+    Q_UNUSED(cal);
+    Q_UNUSED(items);
+    Q_UNUSED(plan);
     // Read-only backend; existing no-op behavior preserved.
     qDebug() << "SubscriptionBackend::storeItems: no-op (read-only backend)";
 }
 
-void SubscriptionBackend::updateItem(KCalendarCore::MemoryCalendar* /*cal*/,
-                                     const KCalendarCore::Incidence::Ptr& /*item*/,
-                                     const QString& /*icalData*/,
-                                     const TranscodingPlan& /*plan*/)
+void SubscriptionBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
+                                     const KCalendarCore::Incidence::Ptr& item,
+                                     const QString& icalData,
+                                     const TranscodingPlan& plan)
 {
+    Q_UNUSED(cal);
+    Q_UNUSED(item);
+    Q_UNUSED(icalData);
+    Q_UNUSED(plan);
     // Read-only backend; existing no-op behavior preserved.
     qDebug() << "SubscriptionBackend::updateItem: no-op (read-only backend)";
 }
 
 void SubscriptionBackend::startSync(const QString &collectionId,
-                                    KCalendarCore::MemoryCalendar* /*calendar*/,
-                                    const QList<KCalendarCore::Incidence::Ptr>& /*stagedCreations*/,
-                                    const QList<KCalendarCore::Incidence::Ptr>& /*stagedUpdates*/,
-                                    const QMap<QString, QString>& /*stagedDeletions*/,
-                                    const TranscodingPlan& /*plan*/)
+                                    KCalendarCore::MemoryCalendar* calendar,
+                                    const QList<KCalendarCore::Incidence::Ptr>& stagedCreations,
+                                    const QList<KCalendarCore::Incidence::Ptr>& stagedUpdates,
+                                    const QMap<QString, QString>& stagedDeletions,
+                                    const TranscodingPlan& plan)
 {
+    Q_UNUSED(calendar);
+    Q_UNUSED(stagedCreations);
+    Q_UNUSED(stagedUpdates);
+    Q_UNUSED(stagedDeletions);
+    Q_UNUSED(plan);
     // Read-only backend - just emit sync completed
     qDebug() << "SubscriptionBackend::startSync: no-op (read-only backend)";
     emit syncCompleted(collectionId);
