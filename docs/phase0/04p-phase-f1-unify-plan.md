@@ -517,7 +517,7 @@ shorter as logic moves to the adapter.
 - Modify: `src/engine/syncengine.{h,cpp}`
 - Modify: `src/calendar/syncworker.{h,cpp}`
 
-- [ ] **Step 1: `SyncEngine` owns a `CalendarDomainAdapter`**
+- [x] **Step 1: `SyncEngine` owns a `CalendarDomainAdapter`**
 
 ```cpp
 // src/engine/syncengine.h
@@ -542,7 +542,7 @@ The `setCalendarBaselineStore` / `setCollection` slots that
 already exist on `SyncCoordinator` now also call the adapter's
 setters.
 
-- [ ] **Step 2: `SyncWorker::applyChangesToBackend` delegates**
+- [x] **Step 2: `SyncWorker::applyChangesToBackend` delegates**
 
 Replace the body (lines ~1108–1210 of the current file) with a
 call to `m_engine->m_calendarAdapter.applyChanges(...)`. The
@@ -553,7 +553,18 @@ Similarly, the diff/merge sections of `SyncWorker::onFetchComplete`
 delegate to `m_calendarAdapter.diff()` /
 `m_calendarAdapter.merge()`.
 
-- [ ] **Step 3: Build, run all tests**
+**Landed:** Two calendar-typed convenience entry points were added
+to `CalendarDomainAdapter`: `diffCalendarRecords()` (thin wrap
+around `computeQuickDiff`/`computeSyncDiff` — mirrors the
+BackendRecord-typed `diff()` but skips the iCal re-parse round-trip)
+and `applyChangesToBackend()` (absorbs the SyncTransaction +
+incidence-item wrappers + BlockingQueuedConnection commit body).
+The IDomainAdapter::applyChanges (BackendRecord-typed) override
+remains the F1 Task 3 stub — Task 7's unified-boundary integration
+test wires it. Worker now passes the adapter pointer through
+`setDependencies()` and delegates diff + apply.
+
+- [x] **Step 3: Build, run all tests**
 
 ```bash
 cmake --build build -j 12
@@ -564,7 +575,10 @@ Expected: 21+ tests pass (including the seven `tst_calendar_*`
 integration tests). The adapter's `applyChanges` is now
 exercised by every calendar sync test.
 
-- [ ] **Step 4: Commit**
+**Landed:** library 23/23 pass (21 baseline + 2 from Tasks 2-3);
+verify-all green on consumers.
+
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/engine/syncengine.{h,cpp} src/calendar/syncworker.{h,cpp}
