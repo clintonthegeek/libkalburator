@@ -1,6 +1,7 @@
 #ifndef SYNCSTORE_H
 #define SYNCSTORE_H
 
+#include "calendarbaselinestore.h"
 #include "synctypes.h"
 
 #include <QObject>
@@ -9,6 +10,7 @@
 #include <QSqlDatabase>
 #include <QList>
 #include <QMap>
+#include <memory>
 
 namespace Kalburator::Sync {
 
@@ -119,7 +121,9 @@ public:
      * @param mappingId The sync mapping ID
      * @param uid The incidence UID
      * @return iCal data, or empty string if no baseline
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     QString baseline(const QString &mappingId, const QString &uid) const;
 
     /**
@@ -127,7 +131,9 @@ public:
      * @param mappingId The sync mapping ID
      * @param uid The incidence UID
      * @param icalData The iCal representation at sync time
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void setBaseline(const QString &mappingId,
                      const QString &uid,
                      const QString &icalData);
@@ -137,44 +143,58 @@ public:
      * Much more efficient than calling setBaseline repeatedly.
      * @param mappingId The sync mapping ID
      * @param baselines Map of uid -> icalData
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void setBaselines(const QString &mappingId,
                       const QMap<QString, QString> &baselines);
 
     /**
      * @brief Remove a baseline.
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void removeBaseline(const QString &mappingId, const QString &uid);
 
     /**
      * @brief Remove multiple baselines in a single transaction.
      * @param mappingId The sync mapping ID
      * @param uids List of UIDs to remove
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void removeBaselines(const QString &mappingId, const QStringList &uids);
 
     /**
      * @brief Get all baselines for a sync mapping.
      * @param mappingId The sync mapping ID
      * @return Map of uid -> icalData
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     QMap<QString, QString> allBaselines(const QString &mappingId) const;
 
     /**
      * @brief Clear all baselines for a sync mapping.
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void clearBaselines(const QString &mappingId);
 
     /**
      * @brief Get the last sync time for a mapping.
      * @param mappingId The sync mapping ID
      * @return Last sync datetime, or invalid datetime if never synced
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     QDateTime lastSyncTime(const QString &mappingId) const;
 
     /**
      * @brief Update the last sync time for a mapping.
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void setLastSyncTime(const QString &mappingId, const QDateTime &time);
 
     // ========================================================================
@@ -188,7 +208,9 @@ public:
      * @param mappingId The sync mapping ID
      * @param calendarId The calendar ID
      * @return JSON properties, or empty string if no baseline
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     QString propertyBaseline(const QString &mappingId, const QString &calendarId) const;
 
     /**
@@ -196,21 +218,27 @@ public:
      * @param mappingId The sync mapping ID
      * @param calendarId The calendar ID
      * @param propertiesJson The JSON representation of properties
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void setPropertyBaseline(const QString &mappingId,
                             const QString &calendarId,
                             const QString &propertiesJson);
 
     /**
      * @brief Remove a property baseline.
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     void removePropertyBaseline(const QString &mappingId, const QString &calendarId);
 
     /**
      * @brief Get all property baselines for a sync mapping.
      * @param mappingId The sync mapping ID
      * @return Map of calendarId -> propertiesJson
+     * @deprecated Use CalendarBaselineStore directly.
      */
+    [[deprecated("use CalendarBaselineStore directly")]]
     QMap<QString, QString> allPropertyBaselines(const QString &mappingId) const;
 
     // ========================================================================
@@ -300,6 +328,8 @@ private:
     QString m_connectionName;
     QString m_lastError;
     bool m_isOpen = false;
+
+    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
 
     // Use a unique connection name to support multiple SyncStore instances
     static int s_connectionCounter;

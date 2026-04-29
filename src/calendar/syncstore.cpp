@@ -9,29 +9,6 @@
 
 namespace Kalburator::Sync {
 
-// Split a compound sync key (uid or uid\0recurrenceId) into uid and recurrence_id parts.
-// Matches the syncRecordKey() format from syncdiff.cpp.
-static void splitSyncKey(const QString &key, QString &uid, QString &recurrenceId)
-{
-    int sep = key.indexOf(QChar(0));
-    if (sep >= 0) {
-        uid = key.left(sep);
-        recurrenceId = key.mid(sep + 1);
-    } else {
-        uid = key;
-        recurrenceId = QString();
-    }
-}
-
-// Build a compound sync key from uid and recurrence_id.
-// Matches the syncRecordKey() format from syncdiff.cpp.
-static QString buildSyncKey(const QString &uid, const QString &recurrenceId)
-{
-    if (!recurrenceId.isEmpty())
-        return uid + QChar(0) + recurrenceId;
-    return uid;
-}
-
 int SyncStore::s_connectionCounter = 0;
 
 SyncStore::SyncStore(const QString &dbPath, QObject *parent)
@@ -40,6 +17,7 @@ SyncStore::SyncStore(const QString &dbPath, QObject *parent)
     , m_connectionName(QStringLiteral("SyncStore_%1").arg(++s_connectionCounter))
 {
     m_isOpen = initDatabase();
+    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath, this);
 }
 
 SyncStore::~SyncStore()
@@ -74,7 +52,7 @@ bool SyncStore::initDatabase()
 
     // Check schema version. If outdated, delete DB file and start fresh.
     // This avoids DROP TABLE + CREATE TABLE races on WAL-mode databases.
-    static constexpr int EXPECTED_SCHEMA_VERSION = 6;  // v6: local-fingerprint storage moved to FingerprintStore (LocalBackend-private)
+    static constexpr int EXPECTED_SCHEMA_VERSION = 7;  // v7: baseline tables removed; forwarded to CalendarBaselineStore
 
     if (QFile::exists(m_dbPath)) {
         int currentVersion = 0;
@@ -149,47 +127,8 @@ bool SyncStore::createTables()
         return false;
     }
 
-    // Baselines table for 3-way merge
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS sync_baselines ("
-        "  mapping_id TEXT NOT NULL,"
-        "  uid TEXT NOT NULL,"
-        "  recurrence_id TEXT DEFAULT '',"
-        "  ical_data TEXT NOT NULL,"
-        "  synced_at TEXT DEFAULT (datetime('now')),"
-        "  PRIMARY KEY (mapping_id, uid, recurrence_id)"
-        ")"))) {
-        setError(QStringLiteral("Failed to create sync_baselines table: %1")
-                 .arg(query.lastError().text()));
-        return false;
-    }
-
-    // Property baselines table for calendar-level properties (color, description)
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS property_baselines ("
-        "  mapping_id TEXT NOT NULL,"
-        "  calendar_id TEXT NOT NULL,"
-        "  properties TEXT NOT NULL,"
-        "  synced_at TEXT DEFAULT (datetime('now')),"
-        "  PRIMARY KEY (mapping_id, calendar_id)"
-        ")"))) {
-        setError(QStringLiteral("Failed to create property_baselines table: %1")
-                 .arg(query.lastError().text()));
-        return false;
-    }
-
-    // Sync metadata table (last sync times, etc.)
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS sync_metadata ("
-        "  mapping_id TEXT PRIMARY KEY,"
-        "  last_sync_time TEXT,"
-        "  sync_token TEXT,"
-        "  extra_data TEXT"
-        ")"))) {
-        setError(QStringLiteral("Failed to create sync_metadata table: %1")
-                 .arg(query.lastError().text()));
-        return false;
-    }
+    // Baseline tables (sync_baselines, property_baselines, sync_metadata) have been
+    // moved to CalendarBaselineStore (Phase D, Task 7). SyncStore no longer owns them.
 
     // Conflicts table
     if (!query.exec(QStringLiteral(
@@ -350,305 +289,101 @@ void SyncStore::clearVersionHashes(const QString &backendId, const QString &cale
 }
 
 // ============================================================================
-// Baseline Storage
+// Baseline Storage — thin forwarders to CalendarBaselineStore
 // ============================================================================
 
 QString SyncStore::baseline(const QString &mappingId, const QString &uid) const
 {
-    if (!m_isOpen) return QString();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT ical_data FROM sync_baselines "
-        "WHERE mapping_id = ? AND uid = ? AND recurrence_id = ''"));
-    query.addBindValue(mappingId);
-    query.addBindValue(uid);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
+    return m_calendarBaselines->baseline(mappingId, uid);
 }
 
 void SyncStore::setBaseline(const QString &mappingId,
                              const QString &uid,
                              const QString &icalData)
 {
-    if (!m_isOpen) return;
-
-    // uid parameter may be a compound key (uid\0recurrenceId)
-    QString actualUid, recurrenceId;
-    splitSyncKey(uid, actualUid, recurrenceId);
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO sync_baselines "
-        "(mapping_id, uid, recurrence_id, ical_data, synced_at) "
-        "VALUES (?, ?, ?, ?, datetime('now'))"));
-    query.addBindValue(mappingId);
-    query.addBindValue(actualUid);
-    query.addBindValue(recurrenceId.isEmpty() ? QStringLiteral("") : recurrenceId);
-    query.addBindValue(icalData);
-
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to set baseline: %1").arg(query.lastError().text()));
-    }
+    // uid parameter may be a compound key (uid\0recurrenceId); preserve that
+    // behaviour by forwarding the key as-is — CalendarBaselineStore stores
+    // it verbatim in its uid column.
+    m_calendarBaselines->setBaseline(mappingId, uid, icalData);
 }
 
 void SyncStore::setBaselines(const QString &mappingId,
                               const QMap<QString, QString> &baselines)
 {
-    if (!m_isOpen || baselines.isEmpty()) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-
-    if (!db.transaction()) {
-        qWarning() << "SyncStore::setBaselines - failed to start transaction";
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO sync_baselines "
-        "(mapping_id, uid, recurrence_id, ical_data, synced_at) "
-        "VALUES (?, ?, ?, ?, datetime('now'))"));
-
-    bool success = true;
-    for (auto it = baselines.constBegin(); it != baselines.constEnd(); ++it) {
-        // Key may be a compound key (uid\0recurrenceId)
-        QString uid, recurrenceId;
-        splitSyncKey(it.key(), uid, recurrenceId);
-
-        query.bindValue(0, mappingId);
-        query.bindValue(1, uid);
-        query.bindValue(2, recurrenceId.isEmpty() ? QStringLiteral("") : recurrenceId);
-        query.bindValue(3, it.value());
-
-        if (!query.exec()) {
-            qWarning() << "SyncStore::setBaselines - failed to set baseline for"
-                       << it.key() << ":" << query.lastError().text();
-            success = false;
-            break;
-        }
-    }
-
-    if (success) {
-        db.commit();
-    } else {
-        db.rollback();
-    }
+    // CalendarBaselineStore bulk-insert takes QHash; convert.
+    QHash<QString, QString> hash;
+    hash.reserve(baselines.size());
+    for (auto it = baselines.constBegin(); it != baselines.constEnd(); ++it)
+        hash.insert(it.key(), it.value());
+    m_calendarBaselines->setBaselines(mappingId, hash);
 }
 
 void SyncStore::removeBaseline(const QString &mappingId, const QString &uid)
 {
-    if (!m_isOpen) return;
-
-    // uid parameter may be a compound key (uid\0recurrenceId)
-    QString actualUid, recurrenceId;
-    splitSyncKey(uid, actualUid, recurrenceId);
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM sync_baselines "
-        "WHERE mapping_id = ? AND uid = ? AND recurrence_id = ?"));
-    query.addBindValue(mappingId);
-    query.addBindValue(actualUid);
-    query.addBindValue(recurrenceId.isEmpty() ? QStringLiteral("") : recurrenceId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::removeBaseline - failed:" << query.lastError().text();
-    }
+    m_calendarBaselines->removeBaseline(mappingId, uid);
 }
 
 void SyncStore::removeBaselines(const QString &mappingId, const QStringList &uids)
 {
-    if (!m_isOpen || uids.isEmpty()) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-
-    if (!db.transaction()) {
-        qWarning() << "SyncStore::removeBaselines - failed to start transaction";
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM sync_baselines "
-        "WHERE mapping_id = ? AND uid = ? AND recurrence_id = ?"));
-
-    bool success = true;
-    for (const QString &key : uids) {
-        // key may be a compound key (uid\0recurrenceId)
-        QString uid, recurrenceId;
-        splitSyncKey(key, uid, recurrenceId);
-
-        query.bindValue(0, mappingId);
-        query.bindValue(1, uid);
-        query.bindValue(2, recurrenceId.isEmpty() ? QStringLiteral("") : recurrenceId);
-
-        if (!query.exec()) {
-            qWarning() << "SyncStore::removeBaselines - failed to remove baseline for"
-                       << key << ":" << query.lastError().text();
-            success = false;
-            break;
-        }
-    }
-
-    if (success) {
-        db.commit();
-    } else {
-        db.rollback();
-    }
+    for (const QString &uid : uids)
+        m_calendarBaselines->removeBaseline(mappingId, uid);
 }
 
 QMap<QString, QString> SyncStore::allBaselines(const QString &mappingId) const
 {
+    // CalendarBaselineStore returns QHash; convert to QMap to preserve the
+    // existing SyncStore return type.
+    const QHash<QString, QString> hash = m_calendarBaselines->allBaselines(mappingId);
     QMap<QString, QString> result;
-    if (!m_isOpen) return result;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT uid, recurrence_id, ical_data FROM sync_baselines WHERE mapping_id = ?"));
-    query.addBindValue(mappingId);
-
-    if (query.exec()) {
-        while (query.next()) {
-            QString uid = query.value(0).toString();
-            QString recurrenceId = query.value(1).toString();
-            QString key = buildSyncKey(uid, recurrenceId);
-            result.insert(key, query.value(2).toString());
-        }
-    }
+    for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
+        result.insert(it.key(), it.value());
     return result;
 }
 
 void SyncStore::clearBaselines(const QString &mappingId)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM sync_baselines WHERE mapping_id = ?"));
-    query.addBindValue(mappingId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearBaselines - failed:" << query.lastError().text();
-    }
+    m_calendarBaselines->removeBaselines(mappingId);
 }
 
 QDateTime SyncStore::lastSyncTime(const QString &mappingId) const
 {
-    if (!m_isOpen) return QDateTime();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT last_sync_time FROM sync_metadata WHERE mapping_id = ?"));
-    query.addBindValue(mappingId);
-
-    if (query.exec() && query.next()) {
-        QString timeStr = query.value(0).toString();
-        if (!timeStr.isEmpty()) {
-            return QDateTime::fromString(timeStr, Qt::ISODate);
-        }
-    }
-    return QDateTime();
+    return m_calendarBaselines->lastSyncTime(mappingId);
 }
 
 void SyncStore::setLastSyncTime(const QString &mappingId, const QDateTime &time)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO sync_metadata (mapping_id, last_sync_time) "
-        "VALUES (?, ?)"));
-    query.addBindValue(mappingId);
-    query.addBindValue(time.toString(Qt::ISODate));
-
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to set last sync time: %1").arg(query.lastError().text()));
-    }
+    m_calendarBaselines->setLastSyncTime(mappingId, time);
 }
 
 // ============================================================================
-// Property Baselines
+// Property Baselines — thin forwarders to CalendarBaselineStore
 // ============================================================================
 
 QString SyncStore::propertyBaseline(const QString &mappingId, const QString &calendarId) const
 {
-    if (!m_isOpen) return QString();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT properties FROM property_baselines "
-        "WHERE mapping_id = ? AND calendar_id = ?"));
-    query.addBindValue(mappingId);
-    query.addBindValue(calendarId);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
+    return m_calendarBaselines->propertyBaseline(mappingId, calendarId);
 }
 
 void SyncStore::setPropertyBaseline(const QString &mappingId,
                                     const QString &calendarId,
                                     const QString &propertiesJson)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO property_baselines "
-        "(mapping_id, calendar_id, properties, synced_at) "
-        "VALUES (?, ?, ?, datetime('now'))"));
-    query.addBindValue(mappingId);
-    query.addBindValue(calendarId);
-    query.addBindValue(propertiesJson);
-
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to set property baseline: %1").arg(query.lastError().text()));
-    }
+    m_calendarBaselines->setPropertyBaseline(mappingId, calendarId, propertiesJson);
 }
 
 void SyncStore::removePropertyBaseline(const QString &mappingId, const QString &calendarId)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM property_baselines WHERE mapping_id = ? AND calendar_id = ?"));
-    query.addBindValue(mappingId);
-    query.addBindValue(calendarId);
-
-    if (!query.exec()) {
-        qWarning() << "SyncStore::removePropertyBaseline - failed:" << query.lastError().text();
-    }
+    m_calendarBaselines->removePropertyBaseline(mappingId, calendarId);
 }
 
 QMap<QString, QString> SyncStore::allPropertyBaselines(const QString &mappingId) const
 {
+    // CalendarBaselineStore returns QHash; convert to QMap to preserve the
+    // existing SyncStore return type.
+    const QHash<QString, QString> hash = m_calendarBaselines->allPropertyBaselines(mappingId);
     QMap<QString, QString> result;
-    if (!m_isOpen) return result;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT calendar_id, properties FROM property_baselines WHERE mapping_id = ?"));
-    query.addBindValue(mappingId);
-
-    if (query.exec()) {
-        while (query.next()) {
-            result.insert(query.value(0).toString(), query.value(1).toString());
-        }
-    }
+    for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
+        result.insert(it.key(), it.value());
     return result;
 }
 
@@ -904,6 +639,14 @@ void SyncStore::clearMappingData(const QString &mappingId)
 {
     if (!m_isOpen) return;
 
+    // Clear baseline data owned by CalendarBaselineStore.
+    m_calendarBaselines->removeBaselines(mappingId);
+    const QHash<QString, QString> propBaselines =
+        m_calendarBaselines->allPropertyBaselines(mappingId);
+    for (auto it = propBaselines.constBegin(); it != propBaselines.constEnd(); ++it)
+        m_calendarBaselines->removePropertyBaseline(mappingId, it.key());
+
+    // Clear SyncStore-owned data (conflicts) in a single transaction.
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
 
     if (!db.transaction()) {
@@ -914,42 +657,12 @@ void SyncStore::clearMappingData(const QString &mappingId)
     QSqlQuery query(db);
     bool success = true;
 
-    // Remove baselines
-    query.prepare(QStringLiteral("DELETE FROM sync_baselines WHERE mapping_id = ?"));
+    // Remove conflicts for this mapping
+    query.prepare(QStringLiteral("DELETE FROM sync_conflicts WHERE mapping_id = ?"));
     query.addBindValue(mappingId);
     if (!query.exec()) {
-        qWarning() << "SyncStore::clearMappingData - failed to clear baselines:" << query.lastError().text();
+        qWarning() << "SyncStore::clearMappingData - failed to clear conflicts:" << query.lastError().text();
         success = false;
-    }
-
-    // Remove property baselines
-    if (success) {
-        query.prepare(QStringLiteral("DELETE FROM property_baselines WHERE mapping_id = ?"));
-        query.addBindValue(mappingId);
-        if (!query.exec()) {
-            qWarning() << "SyncStore::clearMappingData - failed to clear property baselines:" << query.lastError().text();
-            success = false;
-        }
-    }
-
-    // Remove metadata
-    if (success) {
-        query.prepare(QStringLiteral("DELETE FROM sync_metadata WHERE mapping_id = ?"));
-        query.addBindValue(mappingId);
-        if (!query.exec()) {
-            qWarning() << "SyncStore::clearMappingData - failed to clear metadata:" << query.lastError().text();
-            success = false;
-        }
-    }
-
-    // Remove conflicts for this mapping
-    if (success) {
-        query.prepare(QStringLiteral("DELETE FROM sync_conflicts WHERE mapping_id = ?"));
-        query.addBindValue(mappingId);
-        if (!query.exec()) {
-            qWarning() << "SyncStore::clearMappingData - failed to clear conflicts:" << query.lastError().text();
-            success = false;
-        }
     }
 
     if (success) {
