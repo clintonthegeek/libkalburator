@@ -18,6 +18,7 @@ SyncStore::SyncStore(const QString &dbPath, QObject *parent)
 {
     m_isOpen = initDatabase();
     m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath, this);
+    m_blobBaselines     = std::make_unique<BlobBaselineStore>(dbPath);
 }
 
 SyncStore::~SyncStore()
@@ -52,7 +53,7 @@ bool SyncStore::initDatabase()
 
     // Check schema version. If outdated, delete DB file and start fresh.
     // This avoids DROP TABLE + CREATE TABLE races on WAL-mode databases.
-    static constexpr int EXPECTED_SCHEMA_VERSION = 7;  // v7: baseline tables removed; forwarded to CalendarBaselineStore
+    static constexpr int EXPECTED_SCHEMA_VERSION = 8;  // v8: version_hashes table removed; forwarded to BlobBaselineStore triple-keyed API
 
     if (QFile::exists(m_dbPath)) {
         int currentVersion = 0;
@@ -111,22 +112,9 @@ bool SyncStore::createTables()
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
     QSqlQuery query(db);
 
-    // Version tracking table
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS sync_versions ("
-        "  backend_id TEXT NOT NULL,"
-        "  calendar_id TEXT NOT NULL,"
-        "  uid TEXT NOT NULL,"
-        "  recurrence_id TEXT DEFAULT '',"
-        "  version_hash TEXT NOT NULL,"
-        "  modified_at TEXT DEFAULT (datetime('now')),"
-        "  PRIMARY KEY (backend_id, calendar_id, uid, recurrence_id)"
-        ")"))) {
-        setError(QStringLiteral("Failed to create sync_versions table: %1")
-                 .arg(query.lastError().text()));
-        return false;
-    }
-
+    // Version tracking table (sync_versions) has been moved to BlobBaselineStore's
+    // blob_baselines_triple table (Phase D, Task 8). SyncStore no longer owns it.
+    //
     // Baseline tables (sync_baselines, property_baselines, sync_metadata) have been
     // moved to CalendarBaselineStore (Phase D, Task 7). SyncStore no longer owns them.
 
@@ -185,21 +173,7 @@ QString SyncStore::versionHash(const QString &backendId,
                                 const QString &calendarId,
                                 const QString &uid) const
 {
-    if (!m_isOpen) return QString();
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT version_hash FROM sync_versions "
-        "WHERE backend_id = ? AND calendar_id = ? AND uid = ? AND recurrence_id = ''"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.addBindValue(uid);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
+    return m_blobBaselines->baselineHash(backendId, calendarId, uid);
 }
 
 void SyncStore::setVersionHash(const QString &backendId,
@@ -207,84 +181,47 @@ void SyncStore::setVersionHash(const QString &backendId,
                                 const QString &uid,
                                 const QString &hash)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO sync_versions "
-        "(backend_id, calendar_id, uid, recurrence_id, version_hash, modified_at) "
-        "VALUES (?, ?, ?, '', ?, datetime('now'))"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.addBindValue(uid);
-    query.addBindValue(hash);
-
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to set version hash: %1").arg(query.lastError().text()));
-    }
+    m_blobBaselines->setBaseline(backendId, calendarId, uid, hash);
 }
 
 void SyncStore::removeVersionHash(const QString &backendId,
                                    const QString &calendarId,
                                    const QString &uid)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    // Removes all recurrence variants for this uid
-    query.prepare(QStringLiteral(
-        "DELETE FROM sync_versions "
-        "WHERE backend_id = ? AND calendar_id = ? AND uid = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.addBindValue(uid);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::removeVersionHash - failed:" << query.lastError().text();
-    }
+    // BlobBaselineStore has no delete-by-triple; write an empty hash to
+    // signal "no version tracked" (empty == not-tracked from the caller's
+    // perspective, as baselineHash() also returns "" when absent).
+    m_blobBaselines->setBaseline(backendId, calendarId, uid, QString());
 }
 
 QMap<QString, QString> SyncStore::allVersionHashes(const QString &backendId,
                                                     const QString &calendarId) const
 {
     QMap<QString, QString> result;
-    if (!m_isOpen) return result;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT uid, version_hash FROM sync_versions "
-        "WHERE backend_id = ? AND calendar_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-
-    if (query.exec()) {
-        while (query.next()) {
-            result.insert(query.value(0).toString(), query.value(1).toString());
-        }
+    const QStringList recordIds = m_blobBaselines->baselineRecordIds(backendId, calendarId);
+    for (const QString &uid : recordIds) {
+        result.insert(uid, m_blobBaselines->baselineHash(backendId, calendarId, uid));
     }
     return result;
 }
 
 void SyncStore::clearVersionHashes(const QString &backendId, const QString &calendarId)
 {
-    if (!m_isOpen) return;
-
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-
-    if (calendarId.isEmpty()) {
-        query.prepare(QStringLiteral("DELETE FROM sync_versions WHERE backend_id = ?"));
-        query.addBindValue(backendId);
+    if (!calendarId.isEmpty()) {
+        m_blobBaselines->clearCollection(backendId, calendarId);
     } else {
+        // BlobBaselineStore has no backend-wide clear; execute directly on the
+        // shared DB file. This path is only reached by the deprecated
+        // clearBackendData() helper — Task 9 will migrate callers away.
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery query(db);
         query.prepare(QStringLiteral(
-            "DELETE FROM sync_versions WHERE backend_id = ? AND calendar_id = ?"));
+            "DELETE FROM blob_baselines_triple WHERE backend_id = ?"));
         query.addBindValue(backendId);
-        query.addBindValue(calendarId);
-    }
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearVersionHashes - failed:" << query.lastError().text();
+        if (!query.exec()) {
+            qWarning() << "SyncStore::clearVersionHashes(backend-wide) - failed:"
+                       << query.lastError().text();
+        }
     }
 }
 
@@ -610,22 +547,17 @@ void SyncStore::clearBackendData(const QString &backendId)
     QSqlQuery query(db);
     bool success = true;
 
-    // Remove version hashes
-    query.prepare(QStringLiteral("DELETE FROM sync_versions WHERE backend_id = ?"));
-    query.addBindValue(backendId);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::clearBackendData - failed to clear versions:" << query.lastError().text();
-        success = false;
-    }
+    // Remove version hashes from BlobBaselineStore's triple-keyed table.
+    // Done outside the SyncStore transaction because BlobBaselineStore owns
+    // its own connection; clearVersionHashes handles the backend-wide case.
+    clearVersionHashes(backendId);
 
     // Remove conflicts for this backend
-    if (success) {
-        query.prepare(QStringLiteral("DELETE FROM sync_conflicts WHERE backend_id = ?"));
-        query.addBindValue(backendId);
-        if (!query.exec()) {
-            qWarning() << "SyncStore::clearBackendData - failed to clear conflicts:" << query.lastError().text();
-            success = false;
-        }
+    query.prepare(QStringLiteral("DELETE FROM sync_conflicts WHERE backend_id = ?"));
+    query.addBindValue(backendId);
+    if (!query.exec()) {
+        qWarning() << "SyncStore::clearBackendData - failed to clear conflicts:" << query.lastError().text();
+        success = false;
     }
 
     if (success) {

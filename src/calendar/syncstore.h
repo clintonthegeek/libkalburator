@@ -1,6 +1,7 @@
 #ifndef SYNCSTORE_H
 #define SYNCSTORE_H
 
+#include "blobbaselinestore.h"
 #include "calendarbaselinestore.h"
 #include "synctypes.h"
 
@@ -71,7 +72,9 @@ public:
      * @param calendarId The calendar ID
      * @param uid The incidence UID
      * @return Version hash, or empty string if not tracked
+     * @deprecated Use BlobBaselineStore::baselineHash(backendId, collectionId, recordId) directly.
      */
+    [[deprecated("use BlobBaselineStore::baselineHash(backendId, collectionId, recordId)")]]
     QString versionHash(const QString &backendId,
                         const QString &calendarId,
                         const QString &uid) const;
@@ -82,7 +85,9 @@ public:
      * @param calendarId The calendar ID
      * @param uid The incidence UID
      * @param hash The version hash (ETag, content hash, etc.)
+     * @deprecated Use BlobBaselineStore::setBaseline(backendId, collectionId, recordId, hash) directly.
      */
+    [[deprecated("use BlobBaselineStore::setBaseline(backendId, collectionId, recordId, hash)")]]
     void setVersionHash(const QString &backendId,
                         const QString &calendarId,
                         const QString &uid,
@@ -90,7 +95,9 @@ public:
 
     /**
      * @brief Remove version tracking for an incidence.
+     * @deprecated Use BlobBaselineStore::setBaseline(backendId, collectionId, recordId, {}) directly.
      */
+    [[deprecated("use BlobBaselineStore::setBaseline(backendId, collectionId, recordId, {})")]]
     void removeVersionHash(const QString &backendId,
                            const QString &calendarId,
                            const QString &uid);
@@ -100,13 +107,17 @@ public:
      * @param backendId The backend ID
      * @param calendarId The calendar ID
      * @return Map of uid -> versionHash
+     * @deprecated Use BlobBaselineStore::baselineRecordIds + baselineHash directly.
      */
+    [[deprecated("use BlobBaselineStore::baselineRecordIds + baselineHash directly")]]
     QMap<QString, QString> allVersionHashes(const QString &backendId,
                                              const QString &calendarId) const;
 
     /**
      * @brief Clear all version hashes for a backend/calendar.
+     * @deprecated Use BlobBaselineStore::clearCollection(backendId, collectionId) directly.
      */
+    [[deprecated("use BlobBaselineStore::clearCollection(backendId, collectionId)")]]
     void clearVersionHashes(const QString &backendId,
                             const QString &calendarId = QString());
 
@@ -330,6 +341,7 @@ private:
     bool m_isOpen = false;
 
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
 
     // Use a unique connection name to support multiple SyncStore instances
     static int s_connectionCounter;
