@@ -73,6 +73,7 @@ bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
     QSqlDatabase db = QSqlDatabase::database(m_connName);
     QSqlQuery q(db);
 
+    // --- Legacy table (unchanged) -------------------------------------------
     if (!q.exec(QStringLiteral(
             "CREATE TABLE IF NOT EXISTS blob_baselines ("
             "  mapping_id   TEXT NOT NULL,"
@@ -81,13 +82,35 @@ bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
             "  updated_at   TEXT DEFAULT (datetime('now')),"
             "  PRIMARY KEY (mapping_id, record_id)"
             ")"))) {
-        setError(QStringLiteral("CREATE TABLE failed: %1")
+        setError(QStringLiteral("CREATE TABLE blob_baselines failed: %1")
                      .arg(q.lastError().text()));
         return false;
     }
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_blob_baselines_mapping "
         "ON blob_baselines(mapping_id)"));
+
+    // --- Triple-key table (Phase D addition) --------------------------------
+    // Separate table avoids any conflict with the legacy PRIMARY KEY and
+    // ensures (backend_id, collection_id, record_id) uniqueness without a
+    // disruptive table rebuild.
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS blob_baselines_triple ("
+            "  backend_id    TEXT NOT NULL,"
+            "  collection_id TEXT NOT NULL,"
+            "  record_id     TEXT NOT NULL,"
+            "  content_hash  TEXT NOT NULL,"
+            "  updated_at    TEXT DEFAULT (datetime('now')),"
+            "  PRIMARY KEY (backend_id, collection_id, record_id)"
+            ")"))) {
+        setError(
+            QStringLiteral("CREATE TABLE blob_baselines_triple failed: %1")
+                .arg(q.lastError().text()));
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_blob_baselines_triple_collection "
+        "ON blob_baselines_triple(backend_id, collection_id)"));
 
     if (!dbFileExistedBefore) {
         q.exec(QStringLiteral("PRAGMA user_version = %1")
@@ -97,7 +120,9 @@ bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
     return true;
 }
 
-// --- Method stubs: implementations land in subsequent tasks ---
+// ===========================================================================
+// Legacy flat-keyed API — stored in blob_baselines.
+// ===========================================================================
 
 bool BlobBaselineStore::setBaseline(const QString &mappingId,
                                     const QString &recordId,
@@ -233,6 +258,164 @@ bool BlobBaselineStore::clearMapping(const QString &mappingId)
 
     if (!q.exec()) {
         setError(QStringLiteral("clearMapping: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+// ===========================================================================
+// Triple-keyed API — stored in blob_baselines_triple.
+// ===========================================================================
+
+bool BlobBaselineStore::setBaseline(const QString &backendId,
+                                    const QString &collectionId,
+                                    const QString &recordId,
+                                    const QString &contentHash)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setBaseline(triple): store not open"));
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_baselines_triple "
+        "(backend_id, collection_id, record_id, content_hash, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'))"));
+    q.addBindValue(backendId);
+    q.addBindValue(collectionId);
+    q.addBindValue(recordId);
+    q.addBindValue(contentHash);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("setBaseline(triple): %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+QString BlobBaselineStore::baselineHash(const QString &backendId,
+                                        const QString &collectionId,
+                                        const QString &recordId) const
+{
+    if (!m_isOpen) {
+        return {};
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT content_hash FROM blob_baselines_triple "
+        "WHERE backend_id = ? AND collection_id = ? AND record_id = ?"));
+    q.addBindValue(backendId);
+    q.addBindValue(collectionId);
+    q.addBindValue(recordId);
+
+    if (!q.exec() || !q.next()) {
+        return {};
+    }
+    return q.value(0).toString();
+}
+
+bool BlobBaselineStore::commitBaselines(
+    const QString &backendId,
+    const QString &collectionId,
+    const QMap<QString, QString> &recordIdToHash)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("commitBaselines(triple): store not open"));
+        return false;
+    }
+    if (recordIdToHash.isEmpty()) {
+        return true;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    if (!db.transaction()) {
+        setError(QStringLiteral("commitBaselines(triple): BEGIN failed: %1")
+                     .arg(db.lastError().text()));
+        return false;
+    }
+
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_baselines_triple "
+        "(backend_id, collection_id, record_id, content_hash, updated_at) "
+        "VALUES (?, ?, ?, ?, datetime('now'))"));
+
+    for (auto it = recordIdToHash.constBegin();
+         it != recordIdToHash.constEnd(); ++it) {
+        q.addBindValue(backendId);
+        q.addBindValue(collectionId);
+        q.addBindValue(it.key());
+        q.addBindValue(it.value());
+        if (!q.exec()) {
+            setError(
+                QStringLiteral("commitBaselines(triple): insert failed: %1")
+                    .arg(q.lastError().text()));
+            db.rollback();
+            return false;
+        }
+    }
+
+    if (!db.commit()) {
+        setError(
+            QStringLiteral("commitBaselines(triple): COMMIT failed: %1")
+                .arg(db.lastError().text()));
+        db.rollback();
+        return false;
+    }
+    return true;
+}
+
+QStringList BlobBaselineStore::baselineRecordIds(
+    const QString &backendId,
+    const QString &collectionId) const
+{
+    if (!m_isOpen) {
+        return {};
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT record_id FROM blob_baselines_triple "
+        "WHERE backend_id = ? AND collection_id = ?"));
+    q.addBindValue(backendId);
+    q.addBindValue(collectionId);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("baselineRecordIds(triple): %1")
+                     .arg(q.lastError().text()));
+        return {};
+    }
+
+    QStringList out;
+    while (q.next()) {
+        out.append(q.value(0).toString());
+    }
+    return out;
+}
+
+bool BlobBaselineStore::clearCollection(const QString &backendId,
+                                        const QString &collectionId)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearCollection: store not open"));
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "DELETE FROM blob_baselines_triple "
+        "WHERE backend_id = ? AND collection_id = ?"));
+    q.addBindValue(backendId);
+    q.addBindValue(collectionId);
+
+    if (!q.exec()) {
+        setError(QStringLiteral("clearCollection: %1")
                      .arg(q.lastError().text()));
         return false;
     }
