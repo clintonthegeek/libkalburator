@@ -55,3 +55,6 @@ kalburator_add_calendar_integration_test(tst_calendar_sync_full)
 kalburator_add_calendar_integration_test(tst_calendar_sync_oneway)
 kalburator_add_calendar_integration_test(tst_calendar_conflict)
 kalburator_add_calendar_integration_test(tst_calendar_transcoding_warning)
+
+# Phase D Task 21 — first-sync path via BlobSyncEngine
+kalburator_add_calendar_integration_test(tst_calendar_first_sync_via_blob_engine)

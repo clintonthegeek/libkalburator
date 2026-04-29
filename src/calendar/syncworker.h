@@ -167,6 +167,14 @@ private:
     void applyChanges();
     void updateBaselines();
 
+    // First-sync dispatch via BlobSyncEngine (Phase D Task 21)
+    // Called when there is no CalendarBaselineStore baseline yet for the mapping.
+    // Routes through BlobSyncEngine::mirror (OneWayUpload) or twoWayNaive (other
+    // modes), then seeds CalendarBaselineStore + BlobBaselineStore so subsequent
+    // syncs use the 3-way merge path.
+    void dispatchFirstSync(const Request &request);
+    void harvestBaselinesAfterFirstSync(const Request &request);
+
     // Blob-view helpers (Phase D Task 19)
     // Fetch records via IBlobBackend::modifiedSince, translating BackendRecord
     // back to SyncRecord.  Used for the subsequent-sync path (!useQuickPath).

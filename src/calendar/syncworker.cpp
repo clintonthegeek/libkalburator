@@ -1,6 +1,7 @@
 #include "syncworker.h"
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
+#include "blobsyncengine.h"
 #include "syncdiff.h"
 #include "isynchost.h"
 #include "icalendarcollection.h"
@@ -133,6 +134,16 @@ void SyncWorker::processSync(const SyncWorker::Request &request)
 
     emit syncStarted(request.mapping.id);
 
+    // === First-sync fast path (Phase D Task 21) ===
+    // When no CalendarBaselineStore baseline exists AND the mode is OneWayUpload,
+    // delegate directly to BlobSyncEngine::mirror.  Two-way / OneWayDownload first
+    // syncs stay on the existing quick-path (2-way diff with no baselines) so that
+    // the transcoding and host-change-tracking paths remain intact for those modes.
+    if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
+        dispatchFirstSync(request);
+        return;
+    }
+
     // === Property Sync (before incidence sync) ===
 
     // Property Phase 1: Fetch calendar properties
@@ -261,13 +272,134 @@ void SyncWorker::resumeAfterConflict(ConflictResolution resolution, const QStrin
 // ============================================================================
 
 // ============================================================================
-// Phase D Task 19 — blob-view fetch helper
+// Blob-view cast helper — defined early so dispatchFirstSync can use it too
 // ============================================================================
 
-// Convenience cast: every SyncBackend is-a IBlobBackend (Group 2 hoisted it).
 namespace {
 inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>(b); }
 } // namespace
+
+// ============================================================================
+// Phase D Task 21 — first-sync dispatch via BlobSyncEngine
+// ============================================================================
+
+void SyncWorker::dispatchFirstSync(const Request &request)
+{
+    qDebug() << "SyncWorker::dispatchFirstSync - routing first sync via BlobSyncEngine for"
+             << request.mapping.id;
+
+    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
+
+    if (!srcBackend || !tgtBackend) {
+        SyncResult result;
+        result.success = false;
+        result.errorMessage = QStringLiteral("dispatchFirstSync: backend not found");
+        emit syncCompleted(request.mapping.id, result);
+        return;
+    }
+
+    IBlobBackend *src = asBlob(srcBackend);
+    IBlobBackend *tgt = asBlob(tgtBackend);
+
+    // Run BlobSyncEngine on the main thread (backends are main-thread objects).
+    // We use srcBackend as the trampoline since it lives on the main thread.
+    BlobSyncResult blobResult;
+    const QString colId = request.mapping.sourceCalendar;  // same for both in our setup
+    const SyncMode mode  = request.mapping.mode;
+
+    QMetaObject::invokeMethod(srcBackend,
+        [src, tgt, colId, mode, &blobResult]() {
+            BlobSyncEngine engine;
+            if (mode == SyncMode::OneWayUpload) {
+                blobResult = engine.mirror(src, tgt, colId);
+            } else {
+                blobResult = engine.twoWayNaive(src, tgt, colId);
+            }
+        }, Qt::BlockingQueuedConnection);
+
+    SyncResult result;
+    if (!blobResult.success) {
+        result.success = false;
+        result.errorMessage = blobResult.errorMessage;
+        qWarning() << "SyncWorker::dispatchFirstSync - BlobSyncEngine failed:"
+                   << blobResult.errorMessage;
+        emit syncCompleted(request.mapping.id, result);
+        return;
+    }
+
+    // Seed CalendarBaselineStore + BlobBaselineStore so subsequent syncs
+    // take the 3-way merge path.
+    harvestBaselinesAfterFirstSync(request);
+
+    result.success = true;
+    result.startTime = m_currentResult.startTime;
+    result.endTime = QDateTime::currentDateTime();
+    emit syncCompleted(request.mapping.id, result);
+}
+
+void SyncWorker::harvestBaselinesAfterFirstSync(const Request &request)
+{
+    if (!m_calendarBaselines) {
+        qDebug() << "SyncWorker::harvestBaselinesAfterFirstSync - no CalendarBaselineStore, skipping";
+        return;
+    }
+
+    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    if (!srcBackend) {
+        qWarning() << "SyncWorker::harvestBaselinesAfterFirstSync - source backend not found";
+        return;
+    }
+
+    IBlobBackend *src = asBlob(srcBackend);
+    const QString colId = request.mapping.sourceCalendar;
+    const QString backendId = request.mapping.sourceBackend;
+
+    // Load all records from source on main thread.
+    QList<BackendRecord> records;
+    QMetaObject::invokeMethod(srcBackend,
+        [src, colId, &records]() {
+            records = src->loadRecords(colId);
+        }, Qt::BlockingQueuedConnection);
+
+    // Build uid→ical map for CalendarBaselineStore and uid→hash for BlobBaselineStore.
+    KCalendarCore::ICalFormat icalFormat;
+    QHash<QString, QString> uidToIcal;
+
+    for (const BackendRecord &r : records) {
+        const QString ical = QString::fromUtf8(r.data);
+        uidToIcal.insert(r.id, ical);
+
+        // Seed BlobBaselineStore triple-key baseline.
+        if (m_blobBaselines) {
+            BlobBaselineStore *bbs = m_blobBaselines;
+            const QString bId = backendId;
+            const QString cId = colId;
+            const QString rId = r.id;
+            const QString hash = r.contentHash;
+            QMetaObject::invokeMethod(m_calendarBaselines,
+                [bbs, bId, cId, rId, hash]() {
+                    bbs->setBaseline(bId, cId, rId, hash);
+                }, Qt::BlockingQueuedConnection);
+        }
+    }
+
+    // Batch-set CalendarBaselineStore and record last-sync time.
+    const QString mappingId = request.mapping.id;
+    const QDateTime now = QDateTime::currentDateTime();
+    QMetaObject::invokeMethod(m_calendarBaselines,
+        [this, mappingId, uidToIcal, now]() {
+            m_calendarBaselines->setBaselines(mappingId, uidToIcal);
+            m_calendarBaselines->setLastSyncTime(mappingId, now);
+        }, Qt::BlockingQueuedConnection);
+
+    qDebug().noquote() << QString("SyncWorker::harvestBaselinesAfterFirstSync - seeded %1 baselines for %2")
+        .arg(uidToIcal.size()).arg(mappingId);
+}
+
+// ============================================================================
+// Phase D Task 19 — blob-view fetch helper
+// ============================================================================
 
 void SyncWorker::fetchRecordsViaBlob(const QString &backendId,
                                       const QString &calendarId,
