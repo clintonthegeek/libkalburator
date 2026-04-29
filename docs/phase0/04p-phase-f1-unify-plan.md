@@ -602,7 +602,7 @@ synthetic mapping, run through `BlobDomainAdapter`.
   appropriate since it's a blob-flavored API)
 - Modify: `tests/blob/CMakeLists.txt`
 
-- [ ] **Step 1: Implement `runBlobTwoWay`**
+- [x] **Step 1: Implement `runBlobTwoWay`**
 
 ```cpp
 BlobSyncResult SyncEngine::runBlobTwoWay(IBlobBackend* a, IBlobBackend* b,
@@ -629,13 +629,16 @@ BlobSyncResult SyncEngine::runBlobTwoWay(IBlobBackend* a, IBlobBackend* b,
 `runBlobMirror` is the one-way variant. Bodies are lifted from
 `BlobSyncEngine::twoWayWithBaseline` / `mirror`.
 
-- [ ] **Step 2: Write `tst_engine_blob_one_shot`**
+- [x] **Step 2: Write `tst_engine_blob_one_shot`**
 
 Mirrors `tst_blobsyncengine`'s scenarios, calling
 `SyncEngine::runBlobTwoWay` / `runBlobMirror` instead. Confirms
 behavior parity.
 
-- [ ] **Step 3: Build, run, commit**
+**Landed:** 16 test methods covering mirror + twoWayWithBaseline
+scenarios. Library now 24/24 pass.
+
+- [x] **Step 3: Build, run, commit**
 
 ```bash
 cmake --build build -j 12
