@@ -5,6 +5,8 @@
 
 #include "syncbackend.h"
 #include "syncoperation.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 #include <Akonadi/Session>
 #include <Akonadi/Monitor>
@@ -106,6 +108,55 @@ public:
     void setConfigManager(KalbConfigManager *mgr);
     void fetchTagColors(KalbConfigManager *configManager);
     void pushTagColors(const TagSettings &tagSettings);
+
+    // =========================================================================
+    // IBlobBackend overrides (Phase D Task 15)
+    //
+    // Gated: compiled only when KALBURATOR_HAVE_AKONADI=ON (and HAVE_AKONADI
+    // is defined at build time).
+    //
+    // recordId     = Akonadi::Item::id().toString()
+    // collectionId = calendarId ("akonadi-<collectionId>")
+    // data         = serialized iCal bytes of the incidence
+    // contentHash  = SHA-256 of the iCal bytes
+    // lastModified = item's modification time from Akonadi::Item
+    //
+    // Phase D stubs: all methods emit qWarning and return empty/false because
+    // Akonadi async jobs require a running Akonadi server. Phase F will wrap
+    // these properly with QEventLoop or a dedicated worker thread strategy.
+    // The type-system change (SyncBackend : IBlobBackend) is honored here.
+    // =========================================================================
+
+    // Identity
+    QString backendId()   const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records — stub implementations; Akonadi live server required
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString                      createRecord(const QString &collectionId,
+                                              const BackendRecord &record) override;
+    bool                         updateRecord(const BackendRecord &record) override;
+    bool                         deleteRecord(const QString &recordId) override;
+
+    // Change detection — stubs
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool                 supportsDeleteTracking() const override { return false; }
+
+    // Batch — no-op; Akonadi has its own transaction layer
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
 Q_SIGNALS:
     void tagColorsSynced(int importedCount);

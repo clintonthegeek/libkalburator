@@ -4,6 +4,8 @@
 #include "backendcapabilities.h"
 #include "discoveredcalendar.h"
 #include "logicalcalendar.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -31,6 +33,7 @@
 #include "tagsettings.h"
 
 #include <QDebug>
+#include <QCryptographicHash>
 #include <memory>
 
 namespace Kalburator::Sync {
@@ -1030,6 +1033,178 @@ void AkonadiBackend::onCollectionRemoved(const Akonadi::Collection &col)
         m_itemsByCalendar.remove(calId);
         emit calendarDeleted(QString(), calId);
     }
+}
+
+
+// ============================================================================
+// IBlobBackend implementation (Phase D Task 15)
+//
+// STUB: Akonadi requires a running D-Bus session and Akonadi daemon.
+// Phase D honours the type-system change (SyncBackend : IBlobBackend) by
+// providing compilable overrides. Full implementations are deferred to Phase F.
+//
+// recordId     = Akonadi::Item::id().toString()
+// collectionId = calendarId ("akonadi-<Akonadi::Collection::Id>")
+// data         = serialized iCal bytes via KCalendarCore::ICalFormat
+// contentHash  = SHA-256 of the iCal bytes
+// lastModified = Akonadi::Item::modificationTime() (when available)
+// ============================================================================
+
+QString AkonadiBackend::backendId() const
+{
+    // Stable per-process id — no persistent Akonadi connection in Phase D stubs.
+    return QStringLiteral("akonadi:default");
+}
+
+QString AkonadiBackend::displayName() const
+{
+    return QStringLiteral("AkonadiBackend");
+}
+
+bool AkonadiBackend::isAvailable() const
+{
+    // m_session is only non-null after a live Akonadi connection is set up.
+    return m_session != nullptr;
+}
+
+QList<CollectionInfo> AkonadiBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    for (auto it = m_collections.constBegin(); it != m_collections.constEnd(); ++it) {
+        CollectionInfo info;
+        info.id   = it.key();
+        info.name = it.value().displayName();
+        info.type = QStringLiteral("calendar");
+        result.append(info);
+    }
+    return result;
+}
+
+CollectionInfo AkonadiBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo info;
+    info.id   = collectionId;
+    info.type = QStringLiteral("calendar");
+    if (m_collections.contains(collectionId)) {
+        info.name = m_collections.value(collectionId).displayName();
+    } else {
+        info.name = collectionId;
+    }
+    return info;
+}
+
+QString AkonadiBackend::createCollection(const CollectionInfo &info)
+{
+    qWarning() << "AkonadiBackend::createCollection: Phase D stub — Akonadi live server required."
+               << "collectionId:" << info.id;
+    return {};
+}
+
+QList<BackendRecord> AkonadiBackend::loadRecords(const QString &collectionId)
+{
+    // Build BackendRecord list from the in-memory item cache.
+    QList<BackendRecord> result;
+    if (!m_itemsByCalendar.contains(collectionId)) return result;
+
+    KCalendarCore::ICalFormat fmt;
+    const auto &itemMap = m_itemsByCalendar.value(collectionId);
+    for (auto it = itemMap.constBegin(); it != itemMap.constEnd(); ++it) {
+        const Akonadi::Item &aItem = it.value();
+        const KCalendarCore::Incidence::Ptr incidence = extractIncidence(aItem);
+        if (!incidence) continue;
+
+        auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+        tmpCal->addIncidence(incidence);
+        QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+        const QByteArray bytes = fmt.toString(tmpCalPtr).toUtf8();
+
+        BackendRecord rec;
+        rec.id          = QString::number(aItem.id());
+        rec.type        = QStringLiteral("calendar");
+        rec.data        = bytes;
+        rec.contentHash = QString::fromLatin1(
+            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+        rec.lastModified = aItem.modificationTime();
+        rec.isDeleted   = false;
+        result.append(rec);
+    }
+    return result;
+}
+
+std::optional<BackendRecord> AkonadiBackend::loadRecord(const QString &recordId)
+{
+    // Search in-memory cache across all known calendars.
+    KCalendarCore::ICalFormat fmt;
+    for (auto calIt = m_itemsByCalendar.constBegin(); calIt != m_itemsByCalendar.constEnd(); ++calIt) {
+        for (auto itemIt = calIt->constBegin(); itemIt != calIt->constEnd(); ++itemIt) {
+            const Akonadi::Item &aItem = itemIt.value();
+            if (QString::number(aItem.id()) != recordId) continue;
+
+            const KCalendarCore::Incidence::Ptr incidence = extractIncidence(aItem);
+            if (!incidence) return std::nullopt;
+
+            auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+            tmpCal->addIncidence(incidence);
+            QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+            const QByteArray bytes = fmt.toString(tmpCalPtr).toUtf8();
+
+            BackendRecord rec;
+            rec.id          = recordId;
+            rec.type        = QStringLiteral("calendar");
+            rec.data        = bytes;
+            rec.contentHash = QString::fromLatin1(
+                QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+            rec.lastModified = aItem.modificationTime();
+            rec.isDeleted   = false;
+            return rec;
+        }
+    }
+    return std::nullopt;
+}
+
+QString AkonadiBackend::createRecord(const QString &collectionId,
+                                      const BackendRecord &record)
+{
+    qWarning() << "AkonadiBackend::createRecord: Phase D stub — Akonadi live server required."
+               << "collectionId:" << collectionId << "uid:" << record.id;
+    return {};
+}
+
+bool AkonadiBackend::updateRecord(const BackendRecord &record)
+{
+    qWarning() << "AkonadiBackend::updateRecord: Phase D stub — Akonadi live server required."
+               << "uid:" << record.id;
+    return false;
+}
+
+bool AkonadiBackend::deleteRecord(const QString &recordId)
+{
+    qWarning() << "AkonadiBackend::deleteRecord: Phase D stub — Akonadi live server required."
+               << "recordId:" << recordId;
+    return false;
+}
+
+QList<BackendRecord> AkonadiBackend::modifiedSince(const QString &collectionId,
+                                                    const QDateTime &since)
+{
+    // Filter in-memory cache by modification time.
+    QList<BackendRecord> all = loadRecords(collectionId);
+    if (!since.isValid()) return all;
+    QList<BackendRecord> result;
+    for (const auto &rec : all) {
+        if (rec.lastModified > since) result.append(rec);
+    }
+    return result;
+}
+
+QStringList AkonadiBackend::deletedSince(const QString &collectionId,
+                                          const QDateTime &since)
+{
+    // Akonadi tracks deletions via Monitor notifications; no persistent log.
+    // Phase F will implement tombstone-based deletion tracking.
+    Q_UNUSED(collectionId)
+    Q_UNUSED(since)
+    return {};
 }
 
 #endif // HAVE_AKONADI

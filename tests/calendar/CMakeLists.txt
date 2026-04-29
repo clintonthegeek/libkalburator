@@ -34,6 +34,10 @@ if(KALBURATOR_HAVE_ORG_IO)
     kalburator_add_calendar_test(tst_orgbackend_blob_view)
 endif()
 
+if(KALBURATOR_HAVE_AKONADI)
+    kalburator_add_calendar_test(tst_akonadibackend_blob_view)
+endif()
+
 # Phase D.0 — integration tests against MockBackend through stub host.
 add_subdirectory(stubs)
 
