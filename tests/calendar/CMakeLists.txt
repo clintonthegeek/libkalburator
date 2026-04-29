@@ -36,3 +36,4 @@ function(kalburator_add_calendar_integration_test TEST_NAME)
 endfunction()
 
 kalburator_add_calendar_integration_test(tst_calendar_sync_full)
+kalburator_add_calendar_integration_test(tst_calendar_sync_oneway)
