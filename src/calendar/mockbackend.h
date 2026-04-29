@@ -2,7 +2,10 @@
 #define MOCKBACKEND_H
 
 #include "syncbackend.h"
+#include <optional>
 #include <QHash>
+#include <QList>
+#include <QPair>
 #include <QStringList>
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
@@ -34,7 +37,8 @@ class MockBackend : public SyncBackend
     Q_OBJECT
 
 public:
-    explicit MockBackend(QObject *parent = nullptr);
+    explicit MockBackend(const QString &backendId = QStringLiteral("mock"),
+                         QObject *parent = nullptr);
     ~MockBackend() override = default;
 
     // =========================================================================
@@ -202,6 +206,41 @@ public:
      */
     void clearAllData();
 
+    // =========================================================================
+    // IBlobBackend Overrides
+    // =========================================================================
+
+    // Identity
+    QString backendId() const override   { return m_backendId; }
+    QString displayName() const override { return m_backendId; }
+    bool    isAvailable() const override { return true; }
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records
+    QList<BackendRecord>          loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord>  loadRecord(const QString &recordId) override;
+    QString                       createRecord(const QString &collectionId,
+                                               const BackendRecord &record) override;
+    bool                          updateRecord(const BackendRecord &record) override;
+    bool                          deleteRecord(const QString &recordId) override;
+
+    // Change detection
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool supportsDeleteTracking() const override { return true; }
+
+    // Batch (no-op — in-memory operations are atomic)
+    void beginBatch()  override {}
+    bool commitBatch() override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
+
 private:
     void logOperation(const QString &operation,
                       const QString &calendarId,
@@ -209,6 +248,13 @@ private:
     bool shouldFail(FailurePoint point);
     void applyDelay();
     QString computeHash(const KCalendarCore::Incidence::Ptr &incidence) const;
+
+    // Tracks which UIDs were deleted (per calendarId), for deletedSince()
+    // Key: calendarId, Value: list of (uid, deletionTime) pairs
+    QHash<QString, QList<QPair<QString, QDateTime>>> m_deletionLog;
+
+    // Backend identity (set at construction, used for backendId())
+    QString m_backendId;
 
     // In-memory storage: calendarId -> (uid -> incidence)
     QHash<QString, QHash<QString, KCalendarCore::Incidence::Ptr>> m_calendars;
