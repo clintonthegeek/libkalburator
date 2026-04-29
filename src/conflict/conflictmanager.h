@@ -12,7 +12,7 @@ class QWidget;
 namespace Kalburator::Sync {
 
 class IConflictPresenter;
-class SyncStore;
+class SyncConflictStore;
 
 /**
  * @brief Coordinates conflict resolution workflow.
@@ -74,10 +74,10 @@ public:
     int hybridThreshold() const { return m_hybridThreshold; }
 
     /**
-     * @brief Set the SyncStore for recording/querying conflicts.
+     * @brief Set the SyncConflictStore for recording/querying conflicts.
      */
-    void setSyncStore(SyncStore *store);
-    SyncStore *syncStore() const { return m_syncStore; }
+    void setSyncConflictStore(SyncConflictStore *store);
+    SyncConflictStore *syncConflictStore() const { return m_syncStore; }
 
     /**
      * @brief Set the parent widget for modal dialogs.
@@ -184,7 +184,7 @@ private:
     ConflictResolution m_autoPolicy = ConflictResolution::AskUser;
     int m_hybridThreshold = 3;
 
-    SyncStore *m_syncStore = nullptr;
+    SyncConflictStore *m_syncStore = nullptr;
     IConflictPresenter *m_conflictPresenter = nullptr;
     QWidget *m_parentWidget = nullptr;
     std::unique_ptr<IConflictResolver> m_conflictResolver;

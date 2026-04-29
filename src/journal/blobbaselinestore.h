@@ -10,8 +10,8 @@
  * enabling the engine to compute a correct 3-way diff and distinguish
  * "deleted since last sync" from "never existed on source."
  *
- * Lives in .planstan-sync.db alongside sync_id_mappings (IDMappingStore)
- * and sync_store_* (SyncStore). Uses idempotent CREATE TABLE IF NOT
+ * Lives in .kalburator-sync.db alongside sync_id_mappings (IDMappingStore).
+ * Uses idempotent CREATE TABLE IF NOT
  * EXISTS; stamps PRAGMA user_version = 3 only on freshly-created DBs.
  *
  * Key shape (Phase D):
@@ -83,8 +83,7 @@ public:
     // -----------------------------------------------------------------------
     // Triple-keyed API — keyed by (backendId, collectionId, recordId).
     // Stored in blob_baselines_triple table (added in Phase D migration).
-    // Intended for calendar-side per-uid version hashes carved out of
-    // the dissolving SyncStore (Phase D Task 8).
+    // Intended for calendar-side per-uid version hashes (Phase D Task 8).
     // -----------------------------------------------------------------------
 
     /// Single-record set keyed by (backendId, collectionId, recordId).

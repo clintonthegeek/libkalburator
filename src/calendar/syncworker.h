@@ -13,7 +13,7 @@ namespace Kalburator::Sync {
 
 class BackendRegistry;
 class ISyncHost;
-class SyncStore;
+class CalendarBaselineStore;
 class ICalendarCollection;
 class SyncBackend;
 
@@ -65,7 +65,7 @@ public:
      * Must be called before moveToThread().
      */
     void setDependencies(ISyncHost *host,
-                         SyncStore *syncStore,
+                         CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection);
 
 public slots:
@@ -210,7 +210,7 @@ private:
 
     // Dependencies (set before moveToThread)
     ISyncHost *m_controller = nullptr;
-    SyncStore *m_syncStore = nullptr;
+    CalendarBaselineStore *m_calendarBaselines = nullptr;
     ICalendarCollection *m_collection = nullptr;
 
     // Current sync state

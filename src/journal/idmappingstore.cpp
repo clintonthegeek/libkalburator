@@ -16,8 +16,7 @@ namespace Kalburator::Sync {
 
 namespace {
 
-// Must match SyncStore::initDatabase's EXPECTED_SCHEMA_VERSION.
-// See design doc §"Interaction with SyncStore" and the header comment.
+// DB schema version for sync_id_mappings table.
 constexpr int kSchemaVersion = 3;
 
 QString encodeCategories(const QStringList &categories)
@@ -60,7 +59,7 @@ QDateTime decodeDateTime(const QVariant &v)
 // matches (SQL three-valued logic). The existing sync_id_mappings
 // schema has `recurrence_id TEXT DEFAULT ''`; to match on the empty
 // case we must bind an empty-but-not-null string rather than a null
-// QString. This mirrors SyncStore's splitSyncKey/buildSyncKey idiom.
+// QString (null vs empty distinction).
 inline QString normRec(const QString &r)
 {
     return r.isNull() ? QStringLiteral("") : r;
@@ -138,7 +137,7 @@ bool IDMappingStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
     QSqlDatabase db = QSqlDatabase::database(m_connName);
     QSqlQuery q(db);
 
-    // Base table (may already exist if SyncStore ran first).
+    // Base table.
     if (!q.exec(QStringLiteral(
             "CREATE TABLE IF NOT EXISTS sync_id_mappings ("
             "  backend_id TEXT NOT NULL,"

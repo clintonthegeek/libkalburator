@@ -1,6 +1,6 @@
 #include "conflictmanager.h"
 #include "iconflictpresenter.h"
-#include "syncstore.h"
+#include "syncconflictstore.h"
 #include "iconflictresolver.h"
 
 #include <QDebug>
@@ -27,7 +27,7 @@ void ConflictManager::setHybridThreshold(int threshold)
     m_hybridThreshold = qMax(1, threshold);
 }
 
-void ConflictManager::setSyncStore(SyncStore *store)
+void ConflictManager::setSyncConflictStore(SyncConflictStore *store)
 {
     m_syncStore = store;
 }

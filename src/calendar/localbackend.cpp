@@ -1,5 +1,4 @@
 #include "localbackend.h"
-#include "syncstore.h"
 #include "calendarmetadatamanager.h"
 #include "asyncfilewriter.h"
 #include "backendcapabilities.h"
@@ -24,7 +23,7 @@ namespace Kalburator::Sync {
 // ============================================================================
 // FingerprintStore — private inner store for per-backend local directory fingerprints
 //
-// Persists to a `local_fingerprints` table in the same DB file as SyncStore.
+// Persists to a `local_fingerprints` table in the .kalburator-sync.db file.
 // BackendId is fixed at construction time so callers only pass calendarId.
 // ============================================================================
 
@@ -157,10 +156,10 @@ LocalBackend::LocalBackend(const QString &calendarRootPath, QObject *parent)
 
 LocalBackend::~LocalBackend() = default;
 
-void LocalBackend::setSyncStore(SyncStore *store)
+void LocalBackend::setDbPath(const QString &dbPath)
 {
-    if (store && !m_fingerprints) {
-        m_fingerprints = std::make_unique<FingerprintStore>(store->databasePath(), backendType());
+    if (!dbPath.isEmpty() && !m_fingerprints) {
+        m_fingerprints = std::make_unique<FingerprintStore>(dbPath, backendType());
     }
 }
 

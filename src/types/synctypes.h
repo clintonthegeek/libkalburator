@@ -68,7 +68,7 @@ enum class ConflictType {
  */
 struct ConflictInfo {
     // Identity
-    QString conflictId;         ///< Unique ID (set by SyncStore when recorded)
+    QString conflictId;         ///< Unique ID (set by SyncConflictStore when recorded)
     QString mappingId;          ///< Sync mapping that detected this conflict
 
     // Item identification (using neutral source/target terminology)

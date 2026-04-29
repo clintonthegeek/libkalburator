@@ -261,7 +261,7 @@ namespace {
 
 QString dbIn(const QTemporaryDir &d)
 {
-    return d.filePath(QStringLiteral(".planstan-sync.db"));
+    return d.filePath(QStringLiteral(".kalburator-sync.db"));
 }
 
 BackendRecord hashedRecord(const QString &id, const QString &data,

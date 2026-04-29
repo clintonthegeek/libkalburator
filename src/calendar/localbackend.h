@@ -14,7 +14,6 @@ namespace Kalburator::Sync {
 struct BackendCapabilities;
 class AsyncFileWriter;
 class FingerprintStore;
-class SyncStore;
 
 class LocalBackend : public SyncBackend
 {
@@ -47,10 +46,11 @@ public:
     QString backendType() const override;
 
     /**
-     * @brief Wire up the SyncStore so the private FingerprintStore can be
-     * initialised from the same DB file. Mirrors RemoteBackend::setSyncStore().
+     * @brief Set the DB file path so the private FingerprintStore can be
+     * initialised. Must be called before using fingerprint-based optimizations.
+     * Mirrors RemoteBackend::setDbPath().
      */
-    void setSyncStore(SyncStore *store);
+    void setDbPath(const QString &dbPath);
 
     /**
      * @brief Get the persisted fingerprint for a calendar.
@@ -137,7 +137,7 @@ private slots:
 private:
     QString m_calendarRootPath;
 
-    // Private per-backend fingerprint store (persisted to same DB as SyncStore)
+    // Private per-backend fingerprint store (persisted to .kalburator-sync.db)
     std::unique_ptr<FingerprintStore> m_fingerprints;
 
     // Async file writer for non-blocking writes

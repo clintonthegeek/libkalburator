@@ -1,5 +1,5 @@
 #include "syncworker.h"
-#include "syncstore.h"
+#include "calendarbaselinestore.h"
 #include "syncdiff.h"
 #include "isynchost.h"
 #include "icalendarcollection.h"
@@ -55,11 +55,11 @@ SyncWorker::~SyncWorker()
 }
 
 void SyncWorker::setDependencies(ISyncHost *host,
-                                  SyncStore *syncStore,
+                                  CalendarBaselineStore *calendarBaselines,
                                   ICalendarCollection *collection)
 {
     m_controller = host;
-    m_syncStore = syncStore;
+    m_calendarBaselines = calendarBaselines;
     m_collection = collection;
 }
 
@@ -406,12 +406,14 @@ void SyncWorker::computeDiff()
         m_currentDiff = computeQuickDiff(m_sourceRecords, m_targetRecords,
                                           m_currentRequest.mapping.mode);
     } else {
-        // Load baselines from SyncStore (call on main thread - SQLite is thread-affine)
+        // Load baselines from CalendarBaselineStore (call on main thread - SQLite is thread-affine)
         QMap<QString, QString> baselines;
-        if (m_syncStore) {
+        if (m_calendarBaselines) {
             QString mappingId = m_currentRequest.mapping.id;
-            QMetaObject::invokeMethod(m_syncStore, [this, mappingId, &baselines]() {
-                baselines = m_syncStore->allBaselines(mappingId);
+            QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &baselines]() {
+                const QHash<QString, QString> hash = m_calendarBaselines->allBaselines(mappingId);
+                for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
+                    baselines.insert(it.key(), it.value());
             }, Qt::BlockingQueuedConnection);
         }
 
@@ -1035,8 +1037,8 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
 
 void SyncWorker::updateBaselines()
 {
-    if (!m_syncStore) {
-        qDebug() << "SyncWorker::updateBaselines - no SyncStore, skipping";
+    if (!m_calendarBaselines) {
+        qDebug() << "SyncWorker::updateBaselines - no CalendarBaselineStore, skipping";
         return;
     }
 
@@ -1055,7 +1057,7 @@ void SyncWorker::updateBaselines()
 
     // Batch all baseline operations to minimize main-thread invocations
     // Using single transaction batches is dramatically faster than per-item calls
-    QMap<QString, QString> baselinesToSet;
+    QHash<QString, QString> baselinesToSet;
     QStringList baselinesToRemove;
 
     // Collect baselines for non-conflict changes to target
@@ -1109,19 +1111,10 @@ void SyncWorker::updateBaselines()
         }
     }
 
-    // For unchanged items, we need to check which ones are missing baselines
-    // Build source map for quick lookup (compound key)
-    QMap<QString, SyncRecord> sourceMap;
-    for (const auto &rec : m_sourceRecords) {
-        if (rec.isValid()) {
-            sourceMap[syncRecordKey(rec)] = rec;
-        }
-    }
-
-    // Get existing baselines in a single call to determine which unchanged items need baselines
-    QMap<QString, QString> existingBaselines;
-    QMetaObject::invokeMethod(m_syncStore, [this, mappingId, &existingBaselines]() {
-        existingBaselines = m_syncStore->allBaselines(mappingId);
+    // Get existing baselines to determine which unchanged items are missing them
+    QHash<QString, QString> existingBaselines;
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &existingBaselines]() {
+        existingBaselines = m_calendarBaselines->allBaselines(mappingId);
     }, Qt::BlockingQueuedConnection);
 
     // Add missing baselines for unchanged items (first sync scenario)
@@ -1137,14 +1130,15 @@ void SyncWorker::updateBaselines()
 
     // Execute batch operations with single cross-thread calls
     if (!baselinesToRemove.isEmpty()) {
-        QMetaObject::invokeMethod(m_syncStore, [this, mappingId, baselinesToRemove]() {
-            m_syncStore->removeBaselines(mappingId, baselinesToRemove);
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, baselinesToRemove]() {
+            for (const QString &uid : baselinesToRemove)
+                m_calendarBaselines->removeBaseline(mappingId, uid);
         }, Qt::BlockingQueuedConnection);
     }
 
     if (!baselinesToSet.isEmpty()) {
-        QMetaObject::invokeMethod(m_syncStore, [this, mappingId, baselinesToSet]() {
-            m_syncStore->setBaselines(mappingId, baselinesToSet);
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, baselinesToSet]() {
+            m_calendarBaselines->setBaselines(mappingId, baselinesToSet);
         }, Qt::BlockingQueuedConnection);
     }
 
@@ -1157,8 +1151,8 @@ void SyncWorker::updateBaselines()
 
     // Update last sync time
     QDateTime now = QDateTime::currentDateTime();
-    QMetaObject::invokeMethod(m_syncStore, [this, mappingId, now]() {
-        m_syncStore->setLastSyncTime(mappingId, now);
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, now]() {
+        m_calendarBaselines->setLastSyncTime(mappingId, now);
     }, Qt::BlockingQueuedConnection);
 }
 // Property sync method implementations for SyncWorker
@@ -1212,18 +1206,18 @@ void SyncWorker::computePropertyDiff()
 {
     qDebug() << "SyncWorker::computePropertyDiff: Computing property changes";
 
-    if (!m_syncStore) {
-        qWarning() << "SyncWorker::computePropertyDiff: No SyncStore available";
+    if (!m_calendarBaselines) {
+        qWarning() << "SyncWorker::computePropertyDiff: No CalendarBaselineStore available";
         return;
     }
 
-    // Load baseline from SyncStore
+    // Load baseline from CalendarBaselineStore
     QString baselineJson;
     QString mappingId = m_currentRequest.mapping.id;
     QString calendarId = m_currentRequest.mapping.sourceCalendar;
 
-    QMetaObject::invokeMethod(m_syncStore, [this, mappingId, calendarId, &baselineJson]() {
-        baselineJson = m_syncStore->propertyBaseline(mappingId, calendarId);
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, calendarId, &baselineJson]() {
+        baselineJson = m_calendarBaselines->propertyBaseline(mappingId, calendarId);
     }, Qt::BlockingQueuedConnection);
 
     qDebug().noquote() << QString("  Baseline check: isEmpty=%1 length=%2")
@@ -1404,8 +1398,8 @@ void SyncWorker::updatePropertyBaselines()
 {
     qDebug() << "SyncWorker::updatePropertyBaselines: Updating property baselines";
 
-    if (!m_syncStore) {
-        qWarning() << "SyncWorker::updatePropertyBaselines: No SyncStore available";
+    if (!m_calendarBaselines) {
+        qWarning() << "SyncWorker::updatePropertyBaselines: No CalendarBaselineStore available";
         return;
     }
 
@@ -1415,8 +1409,8 @@ void SyncWorker::updatePropertyBaselines()
     QString mappingId = m_currentRequest.mapping.id;
     QString calendarId = m_currentRequest.mapping.sourceCalendar;
 
-    QMetaObject::invokeMethod(m_syncStore, [this, mappingId, calendarId, propertiesJson]() {
-        m_syncStore->setPropertyBaseline(mappingId, calendarId, propertiesJson);
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, calendarId, propertiesJson]() {
+        m_calendarBaselines->setPropertyBaseline(mappingId, calendarId, propertiesJson);
     }, Qt::BlockingQueuedConnection);
 
     qDebug() << "  Property baseline updated";

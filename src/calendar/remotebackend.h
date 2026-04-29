@@ -17,7 +17,6 @@
 
 namespace Kalburator::Sync {
 
-class SyncStore;
 class CTagStore;
 struct BackendCapabilities;
 
@@ -46,7 +45,11 @@ public:
      */
     static SyncBackend* create(const QVariantMap &config, QObject *parent);
 
-    void setSyncStore(SyncStore *store);
+    /**
+     * @brief Set the DB file path so the private CTagStore can be initialised.
+     * Must be called before using CTag-based sync optimizations.
+     */
+    void setDbPath(const QString &dbPath);
 
     // ---- Per-backend CTag access (CalDAV sync optimisation) ----
     /**
@@ -269,7 +272,7 @@ signals:
     void calendarOperationError(const QString &calendarId, const QString &errorMessage);
 
 private:
-    SyncStore *m_syncStore = nullptr;  // Not owned
+    // No SyncStore member — CTags have their own CTagStore below
     std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setSyncStore()
     QUrl m_url;
     QString m_username;

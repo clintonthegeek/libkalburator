@@ -17,7 +17,8 @@ namespace Kalburator::Sync {
 class BackendRegistry;
 class ISyncHost;
 class ICalendarCollection;
-class SyncStore;
+class CalendarBaselineStore;
+class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
 class DecSyncActiveController;
@@ -31,17 +32,14 @@ class DecSyncActiveController;
  * 2. For each enabled mapping:
  *    a. Load records from source backend
  *    b. Load records from target backend
- *    c. Load baselines from SyncStore
+ *    c. Load baselines from CalendarBaselineStore
  *    d. Compute 3-way diff
  *    e. Apply changes based on sync mode
  *    f. Handle conflicts according to policy
- *    g. Update baselines in SyncStore
+ *    g. Update baselines in CalendarBaselineStore
  *
- * The SyncStore provides persistent storage for:
- * - Identity mappings (local UID <-> remote ID)
- * - Version hashes for change detection
- * - Baseline data for 3-way merge
- * - Unresolved conflict tracking
+ * Persistent storage is split across CalendarBaselineStore (baselines,
+ * last-sync time, property baselines) and SyncConflictStore (conflict records).
  */
 class SyncCoordinator : public QObject
 {
@@ -81,18 +79,20 @@ public:
     ~SyncCoordinator() override;
 
     /**
-     * @brief Set the SyncStore for persistent sync metadata.
+     * @brief Set the CalendarBaselineStore for iCal/property baselines.
      *
-     * Must be called before runSync() to enable baseline tracking
-     * and conflict detection. If not set, sync operations will still
-     * work but won't persist baselines (every sync is treated as first sync).
+     * Must be called before runSync() to enable baseline tracking.
+     * If not set, sync operations still work but every sync is treated
+     * as a first sync (no 3-way merge).
      */
-    void setSyncStore(SyncStore *store);
+    void setCalendarBaselineStore(CalendarBaselineStore *store);
+    CalendarBaselineStore *calendarBaselineStore() const { return m_calendarBaselines; }
 
     /**
-     * @brief Get the current SyncStore.
+     * @brief Set the SyncConflictStore for persistent conflict records.
      */
-    SyncStore* syncStore() const { return m_syncStore; }
+    void setSyncConflictStore(SyncConflictStore *store);
+    SyncConflictStore *syncConflictStore() const { return m_conflictStore; }
 
     /**
      * @brief Set the ConflictManager for handling user-resolved conflicts.
@@ -357,7 +357,8 @@ private slots:
 private:
     BackendRegistry *m_registry;
     ISyncHost *m_controller;
-    SyncStore *m_syncStore = nullptr;
+    CalendarBaselineStore *m_calendarBaselines = nullptr;
+    SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     ICalendarCollection *m_collection = nullptr;

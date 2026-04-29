@@ -23,7 +23,7 @@ private slots:
 
 private:
     QString dbPathIn(const QTemporaryDir &dir) const {
-        return dir.filePath(QStringLiteral(".planstan-sync.db"));
+        return dir.filePath(QStringLiteral(".kalburator-sync.db"));
     }
 };
 

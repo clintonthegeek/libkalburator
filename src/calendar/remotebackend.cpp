@@ -1,5 +1,4 @@
 #include "remotebackend.h"
-#include "syncstore.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -62,7 +61,7 @@ namespace Kalburator::Sync {
 // ============================================================================
 // CTagStore — private inner store for per-backend CalDAV CTags
 //
-// Persists to a `remote_ctags` table in the same DB file as SyncStore.
+// Persists to a `remote_ctags` table in the .kalburator-sync.db file.
 // BackendId is fixed at construction time so callers only pass calendarId.
 // ============================================================================
 
@@ -220,11 +219,10 @@ RemoteBackend::RemoteBackend(const QUrl &url,
 
 RemoteBackend::~RemoteBackend() = default;
 
-void RemoteBackend::setSyncStore(SyncStore *store)
+void RemoteBackend::setDbPath(const QString &dbPath)
 {
-    m_syncStore = store;
-    if (store && !m_ctags) {
-        m_ctags = std::make_unique<CTagStore>(store->databasePath(), backendType());
+    if (!dbPath.isEmpty() && !m_ctags) {
+        m_ctags = std::make_unique<CTagStore>(dbPath, backendType());
     }
 }
 

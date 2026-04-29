@@ -16,10 +16,11 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
+#include "calendarbaselinestore.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "synccoordinator.h"
-#include "syncstore.h"
+#include "syncconflictstore.h"
 #include "synctypes.h"
 
 #include "stubs/stubsynchost.h"
@@ -82,14 +83,15 @@ private:
     QStringList sourceUids() const { return m_source->allUids(QString::fromLatin1(kCalendarId)); }
     QStringList targetUids() const { return m_target->allUids(QString::fromLatin1(kCalendarId)); }
 
-    std::unique_ptr<QTemporaryDir>    m_tmpDir;
-    std::unique_ptr<BackendRegistry>  m_registry;
-    std::unique_ptr<MockBackend>      m_source;
-    std::unique_ptr<MockBackend>      m_target;
-    std::unique_ptr<StubSyncHost>     m_host;
-    std::unique_ptr<SyncStore>        m_store;
-    std::unique_ptr<ConflictManager>  m_conflictManager;
-    std::unique_ptr<SyncCoordinator>  m_coordinator;
+    std::unique_ptr<QTemporaryDir>         m_tmpDir;
+    std::unique_ptr<BackendRegistry>       m_registry;
+    std::unique_ptr<MockBackend>           m_source;
+    std::unique_ptr<MockBackend>           m_target;
+    std::unique_ptr<StubSyncHost>          m_host;
+    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<SyncConflictStore>     m_conflictStore;
+    std::unique_ptr<ConflictManager>       m_conflictManager;
+    std::unique_ptr<SyncCoordinator>       m_coordinator;
 };
 
 // ---- Lifecycle ------------------------------------------------------------
@@ -129,13 +131,16 @@ void TestCalendarSyncFull::init()
     m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
                                                  hostCal);
 
-    m_store = std::make_unique<SyncStore>(m_tmpDir->filePath(QStringLiteral("sync.db")));
+    const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
+    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
-    m_conflictManager->setSyncStore(m_store.get());
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
     m_coordinator = std::make_unique<SyncCoordinator>(m_registry.get(), m_host.get());
-    m_coordinator->setSyncStore(m_store.get());
+    m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());
     m_coordinator->setSyncMappings({ makeTwoWayMapping() });
@@ -145,7 +150,8 @@ void TestCalendarSyncFull::cleanup()
 {
     m_coordinator.reset();
     m_conflictManager.reset();
-    m_store.reset();
+    m_conflictStore.reset();
+    m_calendarBaselines.reset();
     m_host.reset();
     m_target.reset();
     m_source.reset();

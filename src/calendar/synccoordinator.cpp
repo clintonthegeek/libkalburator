@@ -1,6 +1,7 @@
 #include "synccoordinator.h"
 #include "decsyncactivecontroller.h"
-#include "syncstore.h"
+#include "calendarbaselinestore.h"
+#include "syncconflictstore.h"
 #include "syncdiff.h"
 #include "backendregistry.h"
 #include "isynchost.h"
@@ -79,7 +80,7 @@ void SyncCoordinator::startWorkerThread()
     }
 
     // Set dependencies before moving to thread
-    m_worker->setDependencies(m_controller, m_syncStore, m_collection);
+    m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -114,9 +115,14 @@ void SyncCoordinator::stopWorkerThread()
     }
 }
 
-void SyncCoordinator::setSyncStore(SyncStore *store)
+void SyncCoordinator::setCalendarBaselineStore(CalendarBaselineStore *store)
 {
-    m_syncStore = store;
+    m_calendarBaselines = store;
+}
+
+void SyncCoordinator::setSyncConflictStore(SyncConflictStore *store)
+{
+    m_conflictStore = store;
 }
 
 void SyncCoordinator::loadSyncMappings(ICalendarCollection *collection)
@@ -272,7 +278,7 @@ void SyncCoordinator::runSync(const QString &mappingId, SyncBehavior behavior)
                 ? SyncWorker::Mode::Monitored
                 : SyncWorker::Mode::Unmonitored;
             request.collectionId = m_collection ? m_collection->id() : QString();
-            request.useQuickPath = !m_syncStore || m_syncStore->allBaselines(mapping.id).isEmpty();
+            request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
 
             // Invoke worker in its thread
             QMetaObject::invokeMethod(m_worker, "processSync",
@@ -375,7 +381,7 @@ void SyncCoordinator::prepareSyncFastPath()
     }
 
     // ----- Decide skip per mapping. -----
-    if (!m_syncStore) return;  // can't compare without baselines
+    if (!m_calendarBaselines) return;  // can't compare without baselines
 
     int wouldSkipCount = 0;
     int actualSkipCount = 0;
@@ -528,7 +534,7 @@ void SyncCoordinator::processNextMapping()
     request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
         ? SyncWorker::Mode::Monitored : SyncWorker::Mode::Unmonitored;
     request.collectionId = m_collection ? m_collection->id() : QString();
-    request.useQuickPath = !m_syncStore || m_syncStore->allBaselines(mapping.id).isEmpty();
+    request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
 
     QMetaObject::invokeMethod(m_worker, "processSync",
                               Qt::QueuedConnection,
@@ -547,8 +553,8 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
                                           const QList<SyncChange> &resolvedToTarget,
                                           const QList<SyncChange> &resolvedToSource)
 {
-    if (!m_syncStore) {
-        qDebug() << "SyncCoordinator::updateSyncMetadata - no SyncStore, skipping baseline update";
+    if (!m_calendarBaselines) {
+        qDebug() << "SyncCoordinator::updateSyncMetadata - no CalendarBaselineStore, skipping baseline update";
         return;
     }
 
@@ -563,10 +569,10 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
 
         if (change.type == SyncChangeType::Deleted) {
             // Remove baseline for deleted items
-            m_syncStore->removeBaseline(mapping.id, change.uid);
+            m_calendarBaselines->removeBaseline(mapping.id, change.uid);
         } else if (change.sourceRecord.isValid()) {
             // Update baseline to current source state
-            m_syncStore->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
+            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
         }
     }
 
@@ -577,9 +583,9 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         }
 
         if (change.type == SyncChangeType::Deleted) {
-            m_syncStore->removeBaseline(mapping.id, change.uid);
+            m_calendarBaselines->removeBaseline(mapping.id, change.uid);
         } else if (change.targetRecord.isValid()) {
-            m_syncStore->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
+            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
         }
     }
 
@@ -597,7 +603,7 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         if (change.sourceRecord.isValid()) {
             qDebug() << "SyncCoordinator::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(source wins/merged)";
-            m_syncStore->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
+            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
         }
     }
 
@@ -610,13 +616,13 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
         if (change.targetRecord.isValid()) {
             qDebug() << "SyncCoordinator::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(target wins)";
-            m_syncStore->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
+            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
         }
     }
 
     // For unchanged items, ensure baseline exists
     for (const QString &uid : diff.unchangedUids) {
-        if (!m_syncStore->baseline(mapping.id, uid).isEmpty()) {
+        if (!m_calendarBaselines->baseline(mapping.id, uid).isEmpty()) {
             continue;  // Already has baseline
         }
 
@@ -625,7 +631,7 @@ void SyncCoordinator::updateSyncMetadata(const SyncMapping &mapping, const SyncD
     }
 
     // Update last sync time
-    m_syncStore->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
+    m_calendarBaselines->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
 }
 
 // ============================================================================
@@ -763,9 +769,9 @@ void SyncCoordinator::onWorkerConflictDetected(const ConflictInfo &conflict)
     // Emit for UI notifications (status bar, conflict count badge)
     emit conflictDetected(enriched);
 
-    // Record in sync store if available
-    if (m_syncStore) {
-        m_syncStore->recordConflict(enriched);
+    // Record in conflict store if available
+    if (m_conflictStore) {
+        m_conflictStore->recordConflict(enriched);
     }
 
     // Collect for batch presentation after sync mapping completes.
@@ -836,7 +842,7 @@ void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const Sync
 
     // Phase-2: persist fresh CTags / fingerprints so the next sync's
     // pre-pass has up-to-date baselines.
-    if (result.success && m_syncStore) {
+    if (result.success && m_calendarBaselines) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
             const FreshSyncState &fresh = stateIt.value();
