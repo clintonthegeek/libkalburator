@@ -61,3 +61,6 @@ kalburator_add_calendar_integration_test(tst_calendar_first_sync_via_blob_engine
 
 # Phase D Task 22 — subsequent-sync blob view + hash skip
 kalburator_add_calendar_integration_test(tst_calendar_subsequent_sync_uses_blob_view)
+
+# Phase F.0 — Backend write/fetch failure paths
+kalburator_add_calendar_integration_test(tst_calendar_sync_error_recovery)
