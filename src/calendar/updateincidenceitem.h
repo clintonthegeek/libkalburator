@@ -2,7 +2,9 @@
 #define UPDATEINCIDENCEITEM_H
 
 #include "synctransactionitem.h"
+#include "transcodingplan.h"
 #include <KCalendarCore/Incidence>
+#include <KCalendarCore/MemoryCalendar>
 
 namespace Kalburator::Sync {
 
@@ -28,13 +30,17 @@ public:
      * @param calendarId Calendar containing the incidence
      * @param oldIncidence The original incidence (for rollback)
      * @param newIncidence The updated incidence to commit
+     * @param calendar MemoryCalendar used by the backend (must outlive commit)
      * @param backend Backend to operate on
+     * @param plan Transcoding plan for write; empty plan is a no-op
      * @param parent Parent QObject
      */
     UpdateIncidenceItem(const QString &calendarId,
                         KCalendarCore::Incidence::Ptr oldIncidence,
                         KCalendarCore::Incidence::Ptr newIncidence,
+                        KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
+                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     /**
@@ -46,7 +52,9 @@ public:
                         KCalendarCore::Incidence::Ptr oldIncidence,
                         KCalendarCore::Incidence::Ptr newIncidence,
                         const QString &expectedVersionHash,
+                        KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
+                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     ~UpdateIncidenceItem() override;
@@ -75,6 +83,8 @@ private:
     KCalendarCore::Incidence::Ptr m_oldIncidence;
     KCalendarCore::Incidence::Ptr m_newIncidence;
     QString m_expectedVersionHash;
+    KCalendarCore::MemoryCalendar *m_calendar = nullptr;
+    TranscodingPlan m_plan;
     FetchOperation *m_fetchOp = nullptr;
 };
 

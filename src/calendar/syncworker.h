@@ -232,6 +232,8 @@ private:
     qint64 m_diffMs = 0;
 
     // Dependencies (set before moveToThread)
+    // Owned by SyncCoordinator; outlives this worker (deleted in
+    // stopWorkerThread before coordinator dtor runs).
     const TranscodingRouter &m_router;
     ISyncHost *m_controller = nullptr;
     CalendarBaselineStore *m_calendarBaselines = nullptr;

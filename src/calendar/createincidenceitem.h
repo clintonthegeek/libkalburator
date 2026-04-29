@@ -2,7 +2,9 @@
 #define CREATEINCIDENCEITEM_H
 
 #include "synctransactionitem.h"
+#include "transcodingplan.h"
 #include <KCalendarCore/Incidence>
+#include <KCalendarCore/MemoryCalendar>
 
 namespace Kalburator::Sync {
 
@@ -13,7 +15,8 @@ class FetchOperation;
  * @brief Transaction item for creating a new incidence.
  *
  * Simulation checks that no incidence with the same UID exists.
- * Commit pushes the incidence to the backend.
+ * Commit calls backend->storeItems() with the transcoding plan so the
+ * backend applies transcoding and emits transcodingWarning if needed.
  * Rollback deletes the created incidence.
  */
 class CreateIncidenceItem : public SyncTransactionItem
@@ -26,12 +29,16 @@ public:
      *
      * @param calendarId Calendar to create the incidence in
      * @param incidence The incidence to create
+     * @param calendar MemoryCalendar used by the backend (must outlive commit)
      * @param backend Backend to operate on
+     * @param plan Transcoding plan for write; empty plan is a no-op
      * @param parent Parent QObject
      */
     CreateIncidenceItem(const QString &calendarId,
                         KCalendarCore::Incidence::Ptr incidence,
+                        KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
+                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     ~CreateIncidenceItem() override;
@@ -53,6 +60,8 @@ private slots:
 
 private:
     KCalendarCore::Incidence::Ptr m_incidence;
+    KCalendarCore::MemoryCalendar *m_calendar = nullptr;
+    TranscodingPlan m_plan;
     FetchOperation *m_fetchOp = nullptr;
 };
 

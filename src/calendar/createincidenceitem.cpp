@@ -5,16 +5,21 @@
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimer>
+#include <QList>
 
 namespace Kalburator::Sync {
 
 CreateIncidenceItem::CreateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr incidence,
+                                          KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
+                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId, incidence ? incidence->uid() : QString(),
                           ItemType::Create, parent)
     , m_incidence(incidence)
+    , m_calendar(calendar)
+    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -94,34 +99,21 @@ bool CreateIncidenceItem::commit()
         return false;
     }
 
+    if (!m_calendar) {
+        setErrorString(tr("Cannot commit: calendar is null"));
+        return false;
+    }
+
     if (isCommitted()) {
         qWarning() << "CreateIncidenceItem::commit: Already committed:" << uid();
         return true;
     }
 
-    // Push the incidence to the backend
-    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_incidence});
-
-    // Wait synchronously for completion (with timeout)
-    QEventLoop loop;
-    connect(pushOp, &PushOperation::finished, &loop, &QEventLoop::quit);
-    QTimer::singleShot(30000, &loop, &QEventLoop::quit);  // 30 second timeout
-    loop.exec();
-
-    bool success = pushOp->state() == SyncOperation::Succeeded &&
-                   pushOp->succeededUids().contains(m_incidence->uid());
-
-    if (!success) {
-        QString error = pushOp->state() == SyncOperation::Failed
-            ? pushOp->errorString()
-            : tr("Push operation did not complete successfully for UID: %1").arg(m_incidence->uid());
-        setErrorString(error);
-    } else {
-        setCommitted(true);
-    }
-
-    pushOp->deleteLater();
-    return success;
+    // Use storeItems so the backend applies the transcoding plan and emits
+    // transcodingWarning for any lossy conversions. storeItems is synchronous.
+    backend()->storeItems(m_calendar, {m_incidence}, m_plan);
+    setCommitted(true);
+    return true;
 }
 
 bool CreateIncidenceItem::rollback()

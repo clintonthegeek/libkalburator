@@ -12,13 +12,17 @@ namespace Kalburator::Sync {
 UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr oldIncidence,
                                           KCalendarCore::Incidence::Ptr newIncidence,
+                                          KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
+                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId,
                           newIncidence ? newIncidence->uid() : QString(),
                           ItemType::Update, parent)
     , m_oldIncidence(oldIncidence)
     , m_newIncidence(newIncidence)
+    , m_calendar(calendar)
+    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -27,7 +31,9 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr oldIncidence,
                                           KCalendarCore::Incidence::Ptr newIncidence,
                                           const QString &expectedVersionHash,
+                                          KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
+                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId,
                           newIncidence ? newIncidence->uid() : QString(),
@@ -35,6 +41,8 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
     , m_oldIncidence(oldIncidence)
     , m_newIncidence(newIncidence)
     , m_expectedVersionHash(expectedVersionHash)
+    , m_calendar(calendar)
+    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -146,34 +154,23 @@ bool UpdateIncidenceItem::commit()
         return false;
     }
 
+    if (!m_calendar) {
+        setErrorString(tr("Cannot commit: calendar is null"));
+        return false;
+    }
+
     if (isCommitted()) {
         qWarning() << "UpdateIncidenceItem::commit: Already committed:" << uid();
         return true;
     }
 
-    // Push the updated incidence to the backend
-    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_newIncidence});
-
-    // Wait synchronously for completion
-    QEventLoop loop;
-    connect(pushOp, &PushOperation::finished, &loop, &QEventLoop::quit);
-    QTimer::singleShot(30000, &loop, &QEventLoop::quit);
-    loop.exec();
-
-    bool success = pushOp->state() == SyncOperation::Succeeded &&
-                   pushOp->succeededUids().contains(m_newIncidence->uid());
-
-    if (!success) {
-        QString error = pushOp->state() == SyncOperation::Failed
-            ? pushOp->errorString()
-            : tr("Push operation did not complete successfully for UID: %1").arg(m_newIncidence->uid());
-        setErrorString(error);
-    } else {
-        setCommitted(true);
-    }
-
-    pushOp->deleteLater();
-    return success;
+    // Use updateItem so the backend applies the transcoding plan and emits
+    // transcodingWarning for any lossy conversions. updateItem is synchronous.
+    // icalData is intentionally empty: backends that need it (e.g. CalDAV) read
+    // from m_newIncidence; backends that don't (MockBackend, OrgBackend) ignore it.
+    backend()->updateItem(m_calendar, m_newIncidence, QString(), m_plan);
+    setCommitted(true);
+    return true;
 }
 
 bool UpdateIncidenceItem::rollback()

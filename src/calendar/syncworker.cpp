@@ -9,7 +9,6 @@
 #include "iblobbackend.h"
 #include "syncoperation.h"
 #include "synctesthooks.h"
-#include "transcodingregistry.h"
 #include "synctransaction.h"
 #include "createincidenceitem.h"
 #include "updateincidenceitem.h"
@@ -1145,6 +1144,21 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
 
     bool needsTranscoding = !sourceType.isEmpty() && !targetType.isEmpty() && sourceType != targetType;
 
+    // Ask the router for the transcoding plan for this source → target direction.
+    // The plan is empty (no-op) when needsTranscoding is false; the backends
+    // short-circuit executeTranscodingPlan on an empty plan, so no special-casing
+    // is needed here.
+    const TranscodingPlan plan = m_router.plan(sourceType, targetType);
+
+    // Connect the backend's transcodingWarning to our own so it surfaces through
+    // SyncWorker → SyncCoordinator. DirectConnection: storeItems/updateItem run
+    // synchronously on the main thread (commitAll is marshalled there), so both
+    // signal and slot are on the same thread.
+    QMetaObject::Connection transcodingConn = connect(
+            backend, &SyncBackend::transcodingWarning,
+            this, &SyncWorker::transcodingWarning,
+            Qt::DirectConnection);
+
     // Build transaction ID
     QString direction = useTargetRecord ? QStringLiteral("source") : QStringLiteral("target");
     QString txId = QStringLiteral("sync-%1-%2-%3")
@@ -1164,17 +1178,7 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
                     : change.sourceRecord.incidence;
                 if (!inc) break;
 
-                if (needsTranscoding) {
-                    auto transcoded = KCalendarCore::Incidence::Ptr(inc->clone());
-                    QStringList warnings = TranscodingRegistry::instance()
-                        .transcodeIncidence(sourceType, targetType, transcoded);
-                    if (!warnings.isEmpty()) {
-                        emit transcodingWarning(calendarId, inc->uid(), warnings);
-                    }
-                    inc = transcoded;
-                }
-
-                auto *item = new CreateIncidenceItem(calendarId, inc, backend);
+                auto *item = new CreateIncidenceItem(calendarId, inc, cal, backend, plan);
                 tx.addItem(item);
                 itemCount++;
                 break;
@@ -1189,17 +1193,7 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
                     : change.targetRecord.incidence;
                 if (!newInc) break;
 
-                if (needsTranscoding) {
-                    auto transcoded = KCalendarCore::Incidence::Ptr(newInc->clone());
-                    QStringList warnings = TranscodingRegistry::instance()
-                        .transcodeIncidence(sourceType, targetType, transcoded);
-                    if (!warnings.isEmpty()) {
-                        emit transcodingWarning(calendarId, newInc->uid(), warnings);
-                    }
-                    newInc = transcoded;
-                }
-
-                auto *item = new UpdateIncidenceItem(calendarId, oldInc, newInc, backend);
+                auto *item = new UpdateIncidenceItem(calendarId, oldInc, newInc, cal, backend, plan);
                 tx.addItem(item);
                 itemCount++;
                 break;
@@ -1236,14 +1230,17 @@ void SyncWorker::applyChangesToBackend(const QString &backendId,
     }
 
     // Marshal commitAll() to the main thread — backends are main-thread objects.
-    // Transaction items' commit()/rollback() call backend->pushItems()/deleteItems()
-    // which use QTimer::singleShot and QEventLoop internally, requiring the main
-    // thread's event loop. BlockingQueuedConnection blocks this worker thread
-    // until commitAll() returns on the main thread.
+    // Transaction items' commit()/rollback() call backend->storeItems()/updateItem()/
+    // deleteItems(), which are synchronous but must run on the main thread.
+    // BlockingQueuedConnection blocks this worker thread until commitAll() returns.
     bool txResult = false;
     QMetaObject::invokeMethod(backend, [&tx, &txResult]() {
         txResult = tx.commitAll();
     }, Qt::BlockingQueuedConnection);
+
+    // Disconnect the per-apply transcodingWarning forwarding now that commitAll
+    // has returned. The connection is scoped to this write operation.
+    QObject::disconnect(transcodingConn);
 
     if (!txResult) {
         m_applyFailed = true;
