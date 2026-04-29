@@ -214,6 +214,15 @@ set(KALBURATOR_BLOB_SOURCES
     src/blob/mockblobbackend.cpp
 )
 
+# Phase F1 — unified engine + IDomainAdapter interface.
+set(KALBURATOR_ENGINE_HEADERS
+    src/engine/enginediff.h
+    src/engine/idomainadapter.h
+)
+set(KALBURATOR_ENGINE_SOURCES
+    src/engine/enginediff.cpp
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -222,6 +231,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_JOURNAL_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
+    ${KALBURATOR_ENGINE_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -230,6 +240,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_JOURNAL_SOURCES}
     ${KALBURATOR_DISCOVERY_SOURCES}
     ${KALBURATOR_BLOB_SOURCES}
+    ${KALBURATOR_ENGINE_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -256,6 +267,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
 )
 
 target_link_libraries(kalburator

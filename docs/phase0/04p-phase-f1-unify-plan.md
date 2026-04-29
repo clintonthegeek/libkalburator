@@ -93,8 +93,8 @@ builds and passes 21/21.
 
 **Files (libkalburator):**
 - Create: `src/engine/idomainadapter.h`
-- Create: `src/engine/syncdiff.h`
-- Create: `src/engine/syncdiff.cpp` (small; just constructors)
+- Create: `src/engine/enginediff.h`
+- Create: `src/engine/enginediff.cpp` (small; just constructors)
 - Modify: `CMakeLists.txt` (add `engine` to `KALBURATOR_SYNC_SUBDIRS`
   with explicit source list per the Phase E pattern)
 
@@ -102,16 +102,16 @@ builds and passes 21/21.
 
 Per the design (`04p-...-design.md` §"`IDomainAdapter` — virtual
 interface"). Header-only abstract class. Forward-declare the value
-types from `syncdiff.h`. Include only what's needed
+types from `enginediff.h`. Include only what's needed
 (`<QString>`, `<QList>`, the existing `BackendRecord` and
 `SyncMapping` types from `synctypes.h`).
 
-- [ ] **Step 2: Write `syncdiff.h` and `.cpp`**
+- [ ] **Step 2: Write `enginediff.h` and `.cpp`**
 
 Three value types:
 
 ```cpp
-struct DiffOperation {
+struct EngineDiffOp {
     enum class Kind { Create, Update, Delete, Conflict };
     Kind kind;
     BackendRecord record;       // for Create/Update: the new state.
@@ -121,7 +121,7 @@ struct DiffOperation {
     BackendRecord baselineRecord; // populated for Update/Delete/Conflict.
 };
 
-struct SyncDiff {
+struct EngineDiff {
     QList<DiffOperation> toSource;  // operations to apply to source side
     QList<DiffOperation> toTarget;  // operations to apply to target side
 
@@ -129,7 +129,7 @@ struct SyncDiff {
     int totalOperations() const;
 };
 
-struct SyncMerge {
+struct EngineMerge {
     QList<BackendRecord> finalSource;   // post-merge state of source
     QList<BackendRecord> finalTarget;   // post-merge state of target
     QList<BackendRecord> updatedBaselines;
@@ -137,7 +137,7 @@ struct SyncMerge {
     int conflictsDeferred = 0;
 };
 
-struct ApplyResult {
+struct EngineApplyResult {
     bool success = true;
     QString errorMessage;
     int created = 0;
@@ -155,10 +155,10 @@ lists (mirror the Phase E pattern):
 ```cmake
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/idomainadapter.h
-    src/engine/syncdiff.h
+    src/engine/enginediff.h
 )
 set(KALBURATOR_ENGINE_SOURCES
-    src/engine/syncdiff.cpp
+    src/engine/enginediff.cpp
 )
 ```
 

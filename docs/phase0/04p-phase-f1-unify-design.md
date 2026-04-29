@@ -189,7 +189,7 @@ public:
     /// Compute the diff between source / target / baseline. The
     /// returned DiffResult is BackendRecord-shaped and can be
     /// inspected without re-parsing.
-    virtual SyncDiff diff(const QList<BackendRecord>& source,
+    virtual EngineDiff diff(const QList<BackendRecord>& source,
                           const QList<BackendRecord>& target,
                           const QList<BackendRecord>& baseline,
                           const BackendCapabilities& sourceCaps,
@@ -197,7 +197,7 @@ public:
 
     /// Resolve conflicts in the diff according to policy and
     /// produce the merged record set.
-    virtual SyncMerge merge(const SyncDiff& diff,
+    virtual EngineMerge merge(const EngineDiff& diff,
                             ConflictResolution policy) const = 0;
 
     /// Apply the merged result to the destination backend. Returns
@@ -205,8 +205,8 @@ public:
     /// success. On failure, errorMessage is populated and the
     /// returned baselines list reflects what was actually written
     /// before the error (for partial-failure recovery).
-    virtual ApplyResult applyChanges(
-        const SyncMerge& merge,
+    virtual EngineApplyResult applyChanges(
+        const EngineMerge& merge,
         SyncBackend* destination,
         const QString& calendarId,
         const TranscodingPlan& plan = TranscodingPlan{}) = 0;
@@ -223,8 +223,9 @@ public:
 } // namespace Kalburator::Sync
 ```
 
-`SyncDiff`, `SyncMerge`, `ApplyResult` are simple value types in
-`src/engine/syncdiff.h` (engine-internal). They carry lists of
+`EngineDiff`, `EngineMerge`, `EngineApplyResult` are simple value
+types in `src/engine/enginediff.h` (engine-internal). They carry
+lists of
 `BackendRecord` operations annotated with type
 (create/update/delete/conflict). Engine inspects them only at the
 control-flow level (counts, conflict presence) — never at the
@@ -244,7 +245,7 @@ Lives at `src/calendar/calendardomainadapter.{h,cpp}`. Owns:
 `fetchRecords()` calls `backend->loadRecords(calendarId)` (the
 `IBlobBackend` view from Phase D's inheritance). `diff()` uses
 `IncidenceDiff` against parsed `Incidence::Ptr`. `merge()` produces
-a `SyncMerge` with `BackendRecord`-shaped operations. `applyChanges()`
+a `EngineMerge` with `BackendRecord`-shaped operations. `applyChanges()`
 absorbs the body of today's
 `SyncWorker::applyChangesToBackend` — including the post-Phase-E
 `writeFinished`-capture pattern that's currently in
