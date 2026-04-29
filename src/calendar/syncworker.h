@@ -13,6 +13,7 @@ namespace Kalburator::Sync {
 
 class BackendRegistry;
 class ISyncHost;
+class BlobBaselineStore;
 class CalendarBaselineStore;
 class ICalendarCollection;
 class SyncBackend;
@@ -66,7 +67,8 @@ public:
      */
     void setDependencies(ISyncHost *host,
                          CalendarBaselineStore *calendarBaselines,
-                         ICalendarCollection *collection);
+                         ICalendarCollection *collection,
+                         BlobBaselineStore *blobBaselines = nullptr);
 
 public slots:
     /**
@@ -219,6 +221,7 @@ private:
     // Dependencies (set before moveToThread)
     ISyncHost *m_controller = nullptr;
     CalendarBaselineStore *m_calendarBaselines = nullptr;
+    BlobBaselineStore *m_blobBaselines = nullptr;  // Phase D Task 20: per-record hash skip
     ICalendarCollection *m_collection = nullptr;
 
     // Current sync state

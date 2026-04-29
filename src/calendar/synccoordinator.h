@@ -15,6 +15,7 @@
 namespace Kalburator::Sync {
 
 class BackendRegistry;
+class BlobBaselineStore;
 class ISyncHost;
 class ICalendarCollection;
 class CalendarBaselineStore;
@@ -87,6 +88,16 @@ public:
      */
     void setCalendarBaselineStore(CalendarBaselineStore *store);
     CalendarBaselineStore *calendarBaselineStore() const { return m_calendarBaselines; }
+
+    /**
+     * @brief Set the BlobBaselineStore for per-record hash-skip (Phase D Task 20).
+     *
+     * When set, SyncWorker's subsequent-sync blob fetch skips records whose
+     * contentHash matches the stored baseline — avoiding unnecessary merge work
+     * for unchanged records.
+     */
+    void setBlobBaselineStore(BlobBaselineStore *store);
+    BlobBaselineStore *blobBaselineStore() const { return m_blobBaselines; }
 
     /**
      * @brief Set the SyncConflictStore for persistent conflict records.
@@ -358,6 +369,7 @@ private:
     BackendRegistry *m_registry;
     ISyncHost *m_controller;
     CalendarBaselineStore *m_calendarBaselines = nullptr;
+    BlobBaselineStore *m_blobBaselines = nullptr;  // Phase D Task 20
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;

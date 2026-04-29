@@ -1,5 +1,6 @@
 #include "syncworker.h"
 #include "calendarbaselinestore.h"
+#include "blobbaselinestore.h"
 #include "syncdiff.h"
 #include "isynchost.h"
 #include "icalendarcollection.h"
@@ -15,6 +16,7 @@
 
 #include <KCalendarCore/ICalFormat>
 #include <QDebug>
+#include <QSet>
 #include <QThread>
 #include <QEventLoop>
 #include <QElapsedTimer>
@@ -57,10 +59,12 @@ SyncWorker::~SyncWorker()
 
 void SyncWorker::setDependencies(ISyncHost *host,
                                   CalendarBaselineStore *calendarBaselines,
-                                  ICalendarCollection *collection)
+                                  ICalendarCollection *collection,
+                                  BlobBaselineStore *blobBaselines)
 {
     m_controller = host;
     m_calendarBaselines = calendarBaselines;
+    m_blobBaselines = blobBaselines;
     m_collection = collection;
 }
 
@@ -296,9 +300,34 @@ void SyncWorker::fetchRecordsViaBlob(const QString &backendId,
         records = blob->modifiedSince(calendarId, since);
     }, Qt::BlockingQueuedConnection);
 
+    // Per-record hash skip (Phase D Task 20):
+    // Records whose contentHash matches the BlobBaselineStore baseline are
+    // unchanged since the last sync — skip the calendar-level merge for them.
+    // The BlobBaselineStore is not a QObject, so we piggy-back on
+    // m_calendarBaselines (which IS a main-thread QObject) as the trampoline.
+    QSet<QString> skipIds;
+    if (m_blobBaselines && m_calendarBaselines) {
+        QString bId = backendId;
+        QString cId = calendarId;
+        BlobBaselineStore *blobStore = m_blobBaselines;
+        QList<BackendRecord> *rPtr = &records;
+        QMetaObject::invokeMethod(m_calendarBaselines,
+            [blobStore, bId, cId, rPtr, &skipIds]() {
+                for (const BackendRecord &r : *rPtr) {
+                    const QString stored = blobStore->baselineHash(bId, cId, r.id);
+                    if (!stored.isEmpty() && stored == r.contentHash) {
+                        skipIds.insert(r.id);
+                    }
+                }
+            }, Qt::BlockingQueuedConnection);
+    }
+
     // Translate BackendRecord → SyncRecord
     KCalendarCore::ICalFormat icalFormat;
     for (const BackendRecord &r : records) {
+        if (skipIds.contains(r.id)) {
+            continue;  // Unchanged since last sync; skip calendar-level merge
+        }
         const QString ical = QString::fromUtf8(r.data);
         KCalendarCore::Incidence::Ptr inc = icalFormat.fromString(ical);
         if (inc) {

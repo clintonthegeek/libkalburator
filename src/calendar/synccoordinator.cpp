@@ -1,6 +1,7 @@
 #include "synccoordinator.h"
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
+#include "blobbaselinestore.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
 #include "backendregistry.h"
@@ -80,7 +81,8 @@ void SyncCoordinator::startWorkerThread()
     }
 
     // Set dependencies before moving to thread
-    m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection);
+    m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
+                              m_blobBaselines);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -118,6 +120,11 @@ void SyncCoordinator::stopWorkerThread()
 void SyncCoordinator::setCalendarBaselineStore(CalendarBaselineStore *store)
 {
     m_calendarBaselines = store;
+}
+
+void SyncCoordinator::setBlobBaselineStore(BlobBaselineStore *store)
+{
+    m_blobBaselines = store;
 }
 
 void SyncCoordinator::setSyncConflictStore(SyncConflictStore *store)
