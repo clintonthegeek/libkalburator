@@ -37,8 +37,8 @@ class MockBackend : public SyncBackend
     Q_OBJECT
 
 public:
-    explicit MockBackend(const QString &backendId = QStringLiteral("mock"),
-                         QObject *parent = nullptr);
+    explicit MockBackend(QObject *parent = nullptr);
+    explicit MockBackend(const QString &backendId, QObject *parent = nullptr);
     ~MockBackend() override = default;
 
     // =========================================================================

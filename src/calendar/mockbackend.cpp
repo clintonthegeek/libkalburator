@@ -12,6 +12,11 @@ const QString MockBackend::BackendTypeName = QStringLiteral("mock");
 
 QString MockBackend::backendType() const { return BackendTypeName; }
 
+MockBackend::MockBackend(QObject *parent)
+    : MockBackend(BackendTypeName, parent)
+{
+}
+
 MockBackend::MockBackend(const QString &backendId, QObject *parent)
     : SyncBackend(parent)
     , m_backendId(backendId)
