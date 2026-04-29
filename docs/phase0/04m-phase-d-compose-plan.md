@@ -567,6 +567,12 @@ If PlanStan or WildPalms references `SyncStore`, the verify script will flag a b
 
 ## Group 2 — Backend inheritance hoist
 
+**Status: landed 2026-04-28** (libkalburator commits `a1a46cd`–`65aee81`).
+Tasks 10–18 complete. IBlobBackend overrides on all 8 concrete backends.
+`tst_<backend>_blob_view` tests for all 8 (OrgBackend/AkonadiBackend gated on
+build flags). libkalburator 17/17 pass; PlanStan 96/120 pass; WildPalms 73/73 pass
+(baseline refreshed).
+
 Goal: every concrete `SyncBackend` is now also an `IBlobBackend`. Each backend gets a focused `tst_<backend>_blob_view` test.
 
 ### Task 10: Hoist `SyncBackend : public IBlobBackend`
