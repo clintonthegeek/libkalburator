@@ -1,13 +1,18 @@
 #ifndef LOCALBACKEND_H
 #define LOCALBACKEND_H
 
+#include <optional>
+#include <memory>
+
+#include <QDateTime>
 #include <QObject>
 #include <QString>
 #include <QColor>
 #include <KCalendarCore/MemoryCalendar>
 #include "syncbackend.h"
 #include "syncoperation.h"
-#include <memory>
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 namespace Kalburator::Sync {
 
@@ -115,6 +120,46 @@ public:
     QString getRawIcs(const QString &calendarId, const QString &uid) const override;
     bool setRawIcs(const QString &calendarId, const QString &uid,
                    const QString &icsContent) override;
+
+    // =========================================================================
+    // IBlobBackend overrides (Phase D Task 12)
+    // Maps calendar-typed .ics file storage through BackendRecord:
+    //   uid         → recordId / filename without ".ics"
+    //   file bytes  → data
+    //   SHA-256     → contentHash
+    //   file mtime  → lastModified
+    // =========================================================================
+
+    // Identity
+    QString backendId() const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString                      createRecord(const QString &collectionId,
+                                              const BackendRecord &record) override;
+    bool                         updateRecord(const BackendRecord &record) override;
+    bool                         deleteRecord(const QString &recordId) override;
+
+    // Change detection — consults m_fingerprints to short-circuit unchanged dirs
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool                 supportsDeleteTracking() const override { return false; }
+
+    // Batch — file I/O is synchronous; no real batching needed
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
     /**
      * @brief Phase-2 perf: cheap fingerprint of a calendar's on-disk state.

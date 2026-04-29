@@ -27,6 +27,7 @@ endfunction()
 kalburator_add_calendar_test(tst_icsfeedfetcher)
 kalburator_add_calendar_test(tst_calendar_baseline_store)
 kalburator_add_calendar_test(tst_mockbackend_blob_view)
+kalburator_add_calendar_test(tst_localbackend_blob_view)
 
 # Phase D.0 — integration tests against MockBackend through stub host.
 add_subdirectory(stubs)
