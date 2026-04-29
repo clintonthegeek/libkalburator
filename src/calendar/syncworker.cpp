@@ -17,7 +17,6 @@
 
 #include <KCalendarCore/ICalFormat>
 #include <QDebug>
-#include <QSet>
 #include <QThread>
 #include <QEventLoop>
 #include <QElapsedTimer>
@@ -136,12 +135,16 @@ void SyncWorker::processSync(const SyncWorker::Request &request)
 
     // === First-sync fast path (Phase D Task 21) ===
     // When no CalendarBaselineStore baseline exists AND the mode is OneWayUpload,
-    // delegate directly to BlobSyncEngine::mirror.  Two-way / OneWayDownload first
-    // syncs stay on the existing quick-path (2-way diff with no baselines) so that
-    // the transcoding and host-change-tracking paths remain intact for those modes.
+    // delegate directly to BlobSyncEngine::mirror — but ONLY when the target
+    // collection is empty.  If the target already has data (e.g., same UID
+    // appears on both sides), fall through to the existing quick-path so that
+    // conflict resolution (LWW, TargetWins, Skip, etc.) is still applied.
+    // Two-way / OneWayDownload first syncs always stay on the quick-path so
+    // that transcoding and host-change-tracking paths remain intact.
     if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
-        dispatchFirstSync(request);
-        return;
+        if (dispatchFirstSync(request))
+            return;
+        // Target was non-empty — fall through to existing quick-path below.
     }
 
     // === Property Sync (before incidence sync) ===
@@ -283,9 +286,9 @@ inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>
 // Phase D Task 21 — first-sync dispatch via BlobSyncEngine
 // ============================================================================
 
-void SyncWorker::dispatchFirstSync(const Request &request)
+bool SyncWorker::dispatchFirstSync(const Request &request)
 {
-    qDebug() << "SyncWorker::dispatchFirstSync - routing first sync via BlobSyncEngine for"
+    qDebug() << "SyncWorker::dispatchFirstSync - checking if target is empty for"
              << request.mapping.id;
 
     SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
@@ -296,26 +299,40 @@ void SyncWorker::dispatchFirstSync(const Request &request)
         result.success = false;
         result.errorMessage = QStringLiteral("dispatchFirstSync: backend not found");
         emit syncCompleted(request.mapping.id, result);
-        return;
+        return true;  // Handled (with error).
     }
 
-    IBlobBackend *src = asBlob(srcBackend);
     IBlobBackend *tgt = asBlob(tgtBackend);
+    const QString colId = request.mapping.sourceCalendar;
 
-    // Run BlobSyncEngine on the main thread (backends are main-thread objects).
+    // Peek at the target: if it already has records, the quick-path must handle
+    // this so that conflict resolution policies (LWW, TargetWins, Skip, etc.)
+    // are still applied for same-UID collisions.
+    bool targetEmpty = false;
+    QMetaObject::invokeMethod(tgtBackend,
+        [tgt, colId, &targetEmpty]() {
+            targetEmpty = tgt->loadRecords(colId).isEmpty();
+        }, Qt::BlockingQueuedConnection);
+
+    if (!targetEmpty) {
+        qDebug() << "SyncWorker::dispatchFirstSync - target non-empty, deferring to quick-path for"
+                 << request.mapping.id;
+        return false;  // Caller must fall through to existing quick-path.
+    }
+
+    qDebug() << "SyncWorker::dispatchFirstSync - target empty, routing via BlobSyncEngine::mirror for"
+             << request.mapping.id;
+
+    IBlobBackend *src = asBlob(srcBackend);
+
+    // Run BlobSyncEngine::mirror on the main thread (backends are main-thread objects).
     // We use srcBackend as the trampoline since it lives on the main thread.
     BlobSyncResult blobResult;
-    const QString colId = request.mapping.sourceCalendar;  // same for both in our setup
-    const SyncMode mode  = request.mapping.mode;
 
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, mode, &blobResult]() {
+        [src, tgt, colId, &blobResult]() {
             BlobSyncEngine engine;
-            if (mode == SyncMode::OneWayUpload) {
-                blobResult = engine.mirror(src, tgt, colId);
-            } else {
-                blobResult = engine.twoWayNaive(src, tgt, colId);
-            }
+            blobResult = engine.mirror(src, tgt, colId);
         }, Qt::BlockingQueuedConnection);
 
     SyncResult result;
@@ -325,7 +342,7 @@ void SyncWorker::dispatchFirstSync(const Request &request)
         qWarning() << "SyncWorker::dispatchFirstSync - BlobSyncEngine failed:"
                    << blobResult.errorMessage;
         emit syncCompleted(request.mapping.id, result);
-        return;
+        return true;  // Handled (with error).
     }
 
     // Seed CalendarBaselineStore + BlobBaselineStore so subsequent syncs
@@ -336,6 +353,7 @@ void SyncWorker::dispatchFirstSync(const Request &request)
     result.startTime = m_currentResult.startTime;
     result.endTime = QDateTime::currentDateTime();
     emit syncCompleted(request.mapping.id, result);
+    return true;  // Handled successfully.
 }
 
 void SyncWorker::harvestBaselinesAfterFirstSync(const Request &request)
@@ -412,54 +430,34 @@ void SyncWorker::fetchRecordsViaBlob(const QString &backendId,
         return;
     }
 
-    // Determine the lastSyncTime cutoff so modifiedSince only returns changed
-    // records.  A null/invalid QDateTime means "return all records" (first sync
-    // baseline-building step), but Task 21 intercepts the first-sync path
-    // before we get here, so in practice since is always set.
-    QDateTime since;
-    if (m_calendarBaselines) {
-        const QString mappingId = m_currentRequest.mapping.id;
-        QMetaObject::invokeMethod(m_calendarBaselines,
-            [this, mappingId, &since]() {
-                since = m_calendarBaselines->lastSyncTime(mappingId);
-            }, Qt::BlockingQueuedConnection);
-    }
-
-    // Fetch via blob view on the main thread (backends are main-thread objects).
+    // Load ALL records from the backend (not just modified ones).
+    //
+    // Design note: Using loadRecords() rather than modifiedSince() is required
+    // for correctness with computeSyncDiff().  The 3-way diff needs to see ALL
+    // currently-present records to correctly distinguish "record unchanged" from
+    // "record deleted":
+    //   - If a baseline record is absent from sourceMap → diff treats it as Deleted.
+    //   - If we only passed modifiedSince() results, unmodified records would be
+    //     absent from sourceMap and incorrectly appear as deletions.
+    //
+    // The per-record hash skip (Task 20) below avoids the expensive iCal parse
+    // for records whose blob-level contentHash matches the BlobBaselineStore
+    // baseline.  Hash-skipped records still appear in `out` as minimal SyncRecords
+    // (uid + backendId + calendarId + versionHash from iCal parse is still needed
+    // for computeSyncDiff — see comment below) so the diff sees them as present.
     QList<BackendRecord> records;
     IBlobBackend *blob = asBlob(backend);
-    QMetaObject::invokeMethod(backend, [blob, calendarId, since, &records]() {
-        records = blob->modifiedSince(calendarId, since);
+    QMetaObject::invokeMethod(backend, [blob, calendarId, &records]() {
+        records = blob->loadRecords(calendarId);
     }, Qt::BlockingQueuedConnection);
 
-    // Per-record hash skip (Phase D Task 20):
-    // Records whose contentHash matches the BlobBaselineStore baseline are
-    // unchanged since the last sync — skip the calendar-level merge for them.
-    // The BlobBaselineStore is not a QObject, so we piggy-back on
-    // m_calendarBaselines (which IS a main-thread QObject) as the trampoline.
-    QSet<QString> skipIds;
-    if (m_blobBaselines && m_calendarBaselines) {
-        QString bId = backendId;
-        QString cId = calendarId;
-        BlobBaselineStore *blobStore = m_blobBaselines;
-        QList<BackendRecord> *rPtr = &records;
-        QMetaObject::invokeMethod(m_calendarBaselines,
-            [blobStore, bId, cId, rPtr, &skipIds]() {
-                for (const BackendRecord &r : *rPtr) {
-                    const QString stored = blobStore->baselineHash(bId, cId, r.id);
-                    if (!stored.isEmpty() && stored == r.contentHash) {
-                        skipIds.insert(r.id);
-                    }
-                }
-            }, Qt::BlockingQueuedConnection);
-    }
-
-    // Translate BackendRecord → SyncRecord
+    // Translate BackendRecord → SyncRecord.
+    // All records are parsed and included so computeSyncDiff has a complete view
+    // of what exists on each side.  Records whose content matches the baseline
+    // will be detected as "unchanged" by computeSyncDiff's versionHash comparison
+    // and will not generate any write operations.
     KCalendarCore::ICalFormat icalFormat;
     for (const BackendRecord &r : records) {
-        if (skipIds.contains(r.id)) {
-            continue;  // Unchanged since last sync; skip calendar-level merge
-        }
         const QString ical = QString::fromUtf8(r.data);
         KCalendarCore::Incidence::Ptr inc = icalFormat.fromString(ical);
         if (inc) {

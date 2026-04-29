@@ -619,6 +619,7 @@ QString MockBackend::createCollection(const CollectionInfo &info)
 
 QList<BackendRecord> MockBackend::loadRecords(const QString &collectionId)
 {
+    logOperation(QStringLiteral("LOAD_RECORDS"), collectionId);
     QList<BackendRecord> result;
     if (!m_calendars.contains(collectionId)) {
         return result;
@@ -695,6 +696,7 @@ bool MockBackend::deleteRecord(const QString &recordId)
 QList<BackendRecord> MockBackend::modifiedSince(const QString &collectionId,
                                                  const QDateTime &since)
 {
+    logOperation(QStringLiteral("MODIFIED_SINCE"), collectionId);
     QList<BackendRecord> result;
     if (!m_calendars.contains(collectionId)) {
         return result;

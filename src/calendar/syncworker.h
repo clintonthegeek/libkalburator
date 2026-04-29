@@ -169,10 +169,14 @@ private:
 
     // First-sync dispatch via BlobSyncEngine (Phase D Task 21)
     // Called when there is no CalendarBaselineStore baseline yet for the mapping.
-    // Routes through BlobSyncEngine::mirror (OneWayUpload) or twoWayNaive (other
-    // modes), then seeds CalendarBaselineStore + BlobBaselineStore so subsequent
-    // syncs use the 3-way merge path.
-    void dispatchFirstSync(const Request &request);
+    // Routes through BlobSyncEngine::mirror (OneWayUpload), then seeds
+    // CalendarBaselineStore + BlobBaselineStore so subsequent syncs use the
+    // 3-way merge path.
+    //
+    // Returns true if it handled the sync completely (target was empty, mirror
+    // succeeded).  Returns false if the target was non-empty — caller must fall
+    // through to the existing quick-path so conflict resolution still fires.
+    bool dispatchFirstSync(const Request &request);
     void harvestBaselinesAfterFirstSync(const Request &request);
 
     // Blob-view helpers (Phase D Task 19)
