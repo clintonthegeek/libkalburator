@@ -2,6 +2,8 @@
 #define REMOTEBACKEND_H
 
 #include "syncbackend.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
@@ -254,6 +256,51 @@ public:
     QString getRawIcs(const QString &calendarId, const QString &uid) const override;
     bool setRawIcs(const QString &calendarId, const QString &uid,
                    const QString &icsContent) override;
+
+    // =========================================================================
+    // IBlobBackend overrides (Phase D Task 13)
+    //
+    // recordId     = uid (CalDAV uses uid.ics naming; href contains the uid)
+    // collectionId = calendarId (maps to a registered CalDAV calendar URL)
+    // data         = raw iCal bytes from a CalDAV GET
+    // contentHash  = SHA-256 of the bytes (NOT the ETag — content equality)
+    // lastModified = QDateTime::currentDateTimeUtc() (ETag-opaque; no getlastmodified)
+    //
+    // All methods that need network I/O wrap async KDAV jobs in QEventLoop::exec.
+    // This is acceptable because the blob view is called from SyncWorker (worker thread).
+    // Phase F revisits true async; Phase D blocks on the worker thread.
+    // =========================================================================
+
+    // Identity
+    QString backendId()   const override;
+    QString displayName() const override;
+    bool    isAvailable() const override;
+
+    // Collections
+    QList<CollectionInfo> availableCollections() override;
+    CollectionInfo        collectionInfo(const QString &collectionId) override;
+    QString               createCollection(const CollectionInfo &info) override;
+
+    // Records
+    QList<BackendRecord>         loadRecords(const QString &collectionId) override;
+    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    QString                      createRecord(const QString &collectionId,
+                                              const BackendRecord &record) override;
+    bool                         updateRecord(const BackendRecord &record) override;
+    bool                         deleteRecord(const QString &recordId) override;
+
+    // Change detection — short-circuits on CTagStore when CTag is unchanged
+    QList<BackendRecord> modifiedSince(const QString &collectionId,
+                                       const QDateTime &since) override;
+    QStringList          deletedSince(const QString &collectionId,
+                                      const QDateTime &since) override;
+    bool                 supportsDeleteTracking() const override { return false; }
+
+    // Batch — network I/O is synchronous-per-call; no real batching in Phase D
+    void beginBatch()    override {}
+    bool commitBatch()   override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
 signals:
     /**

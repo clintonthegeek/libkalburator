@@ -3,6 +3,8 @@
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
+#include "backendrecord.h"
+#include "collectioninfo.h"
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -29,6 +31,7 @@
 #include <QUuid>
 #include <QRegularExpression>
 #include <QXmlStreamReader>
+#include <QCryptographicHash>
 
 #include <KIO/Job>
 #include <KIO/TransferJob>
@@ -2621,5 +2624,313 @@ bool RemoteBackend::setRawIcs(const QString &calendarId, const QString &uid,
     return success;
 }
 
+
+
+// ============================================================================
+// IBlobBackend implementation (Phase D Task 13)
+//
+// recordId     = uid (uid.ics is the CalDAV href basename)
+// collectionId = calendarId
+// data         = raw iCal bytes
+// contentHash  = SHA-256 of the bytes
+// lastModified = current UTC time (ETag-opaque; CalDAV doesn't reliably
+//                expose getlastmodified; Phase E can improve this)
+// ============================================================================
+
+namespace {
+
+/// Build a BackendRecord from raw iCal bytes and a uid.
+static Kalburator::Sync::BackendRecord blobRecordFromIcal(
+    const QString &uid,
+    const QByteArray &icalBytes)
+{
+    Kalburator::Sync::BackendRecord rec;
+    rec.id          = uid;
+    rec.type        = QStringLiteral("calendar");
+    rec.data        = icalBytes;
+    rec.contentHash = QString::fromLatin1(
+        QCryptographicHash::hash(icalBytes, QCryptographicHash::Sha256).toHex());
+    rec.lastModified = QDateTime::currentDateTimeUtc();
+    rec.isDeleted   = false;
+    return rec;
+}
+
+} // anonymous namespace
+
+// --- Identity ---------------------------------------------------------------
+
+QString RemoteBackend::backendId() const
+{
+    // Stable id: type + base URL (credentials stripped)
+    QUrl cleanUrl = m_url;
+    cleanUrl.setUserInfo(QString());
+    const QByteArray h = QCryptographicHash::hash(
+        (BackendTypeName + QLatin1Char(':') + cleanUrl.toString()).toUtf8(),
+        QCryptographicHash::Sha256);
+    return BackendTypeName + QLatin1Char(':') + QString::fromLatin1(h.toHex().left(16));
+}
+
+QString RemoteBackend::displayName() const
+{
+    QUrl cleanUrl = m_url;
+    cleanUrl.setUserInfo(QString());
+    return QStringLiteral("RemoteBackend(%1)").arg(cleanUrl.toString());
+}
+
+bool RemoteBackend::isAvailable() const
+{
+    return m_url.isValid() && !m_url.isEmpty();
+}
+
+// --- Collections ------------------------------------------------------------
+
+QList<CollectionInfo> RemoteBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+        CollectionInfo info;
+        info.id   = it.key();
+        info.name = it.key();
+        info.path = it.value().url().toString(QUrl::RemovePassword);
+        info.type = QStringLiteral("calendar");
+        result.append(info);
+    }
+    return result;
+}
+
+CollectionInfo RemoteBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo info;
+    info.id   = collectionId;
+    info.name = collectionId;
+    if (m_davUrls.contains(collectionId)) {
+        info.path = m_davUrls.value(collectionId).url().toString(QUrl::RemovePassword);
+    }
+    info.type = QStringLiteral("calendar");
+    return info;
+}
+
+QString RemoteBackend::createCollection(const CollectionInfo &info)
+{
+    // Delegate to the existing createCalendar which handles MKCALENDAR over CalDAV.
+    // collectionId is used as both the calendarId and the name here.
+    const QString name = info.name.isEmpty() ? info.id : info.name;
+    if (createCalendar(QString(), info.id, name)) {
+        return info.id;
+    }
+    return {};
+}
+
+// --- Records ----------------------------------------------------------------
+
+QList<BackendRecord> RemoteBackend::loadRecords(const QString &collectionId)
+{
+    // Reuse the existing fetchItems FetchOperation, blocking on its finished signal.
+    FetchOperation *op = fetchItems(collectionId);
+    if (!op) {
+        qWarning() << "RemoteBackend::loadRecords: fetchItems returned null for" << collectionId;
+        return {};
+    }
+
+    // Block until the operation finishes.
+    if (!op->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+
+    QList<BackendRecord> result;
+    if (op->state() != SyncOperation::Succeeded) {
+        qWarning() << "RemoteBackend::loadRecords: fetchItems failed for" << collectionId
+                   << ":" << op->errorString();
+        op->deleteLater();
+        return result;
+    }
+
+    KCalendarCore::ICalFormat fmt;
+    for (const auto &incidence : op->fetchedItems()) {
+        if (incidence.isNull()) continue;
+
+        // Serialize the incidence back to iCal bytes.
+        auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+        tmpCal->addIncidence(incidence);
+        QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+        const QString icalStr = fmt.toString(tmpCalPtr);
+        const QByteArray icalBytes = icalStr.toUtf8();
+        result.append(blobRecordFromIcal(incidence->uid(), icalBytes));
+    }
+
+    op->deleteLater();
+    return result;
+}
+
+std::optional<BackendRecord> RemoteBackend::loadRecord(const QString &recordId)
+{
+    // recordId == uid; search all registered calendars.
+    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+        const QString icsContent = getRawIcs(it.key(), recordId);
+        if (!icsContent.isEmpty()) {
+            return blobRecordFromIcal(recordId, icsContent.toUtf8());
+        }
+    }
+    return std::nullopt;
+}
+
+QString RemoteBackend::createRecord(const QString &collectionId,
+                                    const BackendRecord &record)
+{
+    if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
+        return {};
+
+    // Parse the iCal to get an Incidence::Ptr for pushItems.
+    KCalendarCore::ICalFormat fmt;
+    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+    if (!fmt.fromRawString(tmpCalPtr, record.data)) {
+        qWarning() << "RemoteBackend::createRecord: cannot parse iCal for uid" << record.id;
+        return {};
+    }
+    const auto incidences = tmpCal->incidences();
+    if (incidences.isEmpty()) {
+        qWarning() << "RemoteBackend::createRecord: no incidences in iCal for uid" << record.id;
+        return {};
+    }
+
+    PushOperation *op = pushItems(collectionId, incidences);
+    if (!op) return {};
+
+    if (!op->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+
+    const bool ok = (op->state() == SyncOperation::Succeeded) &&
+                    op->failedUids().isEmpty();
+    op->deleteLater();
+    return ok ? record.id : QString{};
+}
+
+bool RemoteBackend::updateRecord(const BackendRecord &record)
+{
+    if (record.id.isEmpty() || record.data.isEmpty()) return false;
+
+    // Find which calendar this uid lives in.
+    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+        KDAV::DavUrl davUrl = it.value();
+        QUrl itemUrl = generateItemUrl(davUrl, record.id);
+        QString urlKey = normalizeUrlKey(itemUrl.toString());
+
+        // Check if we have an ETag for this item (proxy for "this calendar owns it").
+        if (!m_localEtags.contains(urlKey)) continue;
+
+        return setRawIcs(it.key(), record.id, QString::fromUtf8(record.data));
+    }
+
+    // Fallback: try all registered calendars (first success wins).
+    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+        if (setRawIcs(it.key(), record.id, QString::fromUtf8(record.data)))
+            return true;
+    }
+    qWarning() << "RemoteBackend::updateRecord: uid not found in any calendar:" << record.id;
+    return false;
+}
+
+bool RemoteBackend::deleteRecord(const QString &recordId)
+{
+    if (recordId.isEmpty()) return false;
+
+    // Try all registered calendars; deleteItems returns success if the uid exists.
+    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+        DeleteOperation *op = deleteItems(it.key(), QStringList{recordId});
+        if (!op) continue;
+
+        if (!op->isFinished()) {
+            QEventLoop loop;
+            QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+
+        const bool ok = (op->state() == SyncOperation::Succeeded) &&
+                        op->failedUids().isEmpty();
+        op->deleteLater();
+        if (ok) return true;
+    }
+    return false;
+}
+
+// --- Change detection -------------------------------------------------------
+
+QList<BackendRecord> RemoteBackend::modifiedSince(const QString &collectionId,
+                                                   const QDateTime &since)
+{
+    // CTag short-circuit: if the stored CTag matches what the server has, nothing changed.
+    // The freshCtag is fetched inside fetchItems via PROPFIND; we replicate just the check here.
+    // If the CTag matches, return empty — caller will skip a full fetch.
+    const QString storedCtag = ctag(collectionId);
+    if (!storedCtag.isEmpty() && m_davUrls.contains(collectionId)) {
+        // Do a lightweight Depth:0 PROPFIND to get the current CTag.
+        KDAV::DavUrl davUrl = m_davUrls.value(collectionId);
+        QUrl propfindUrl = davUrl.url();
+        propfindUrl.setUserName(QString());
+        propfindUrl.setPassword(QString());
+
+        QNetworkAccessManager nam;
+        QNetworkRequest request(propfindUrl);
+        request.setHeader(QNetworkRequest::ContentTypeHeader,
+                          QStringLiteral("application/xml; charset=utf-8"));
+        request.setRawHeader("Depth", "0");
+        request.setRawHeader("Authorization",
+                             "Basic " + (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64());
+
+        const QByteArray body =
+            "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+            "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
+            "  <D:prop><CS:getctag/></D:prop>"
+            "</D:propfind>";
+
+        QEventLoop loop;
+        QString freshCtag;
+
+        QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
+        QObject::connect(reply, &QNetworkReply::finished, &loop,
+                         [reply, &loop, &freshCtag]() {
+            if (reply->error() == QNetworkReply::NoError) {
+                const QString response = QString::fromUtf8(reply->readAll());
+                QRegularExpression re(QStringLiteral("<[^>]*:getctag[^>]*>([^<]+)</[^>]*:getctag>"));
+                auto m = re.match(response);
+                if (m.hasMatch()) freshCtag = m.captured(1);
+            }
+            reply->deleteLater();
+            loop.quit();
+        });
+        loop.exec();
+
+        if (!freshCtag.isEmpty() && freshCtag == storedCtag) {
+            return {};  // CTag unchanged — nothing modified
+        }
+    }
+
+    // CTag changed or unavailable — full load and filter by since.
+    QList<BackendRecord> all = loadRecords(collectionId);
+    QList<BackendRecord> result;
+    for (const auto &rec : all) {
+        if (!since.isValid() || rec.lastModified > since) {
+            result.append(rec);
+        }
+    }
+    return result;
+}
+
+QStringList RemoteBackend::deletedSince(const QString &collectionId,
+                                         const QDateTime &since)
+{
+    // CalDAV has deletion tombstones but they require a sync-collection report
+    // (RFC 6578) which KDAV doesn't expose in the current API surface.
+    // Phase E revisits; Phase D returns empty (no deletion tracking).
+    Q_UNUSED(collectionId)
+    Q_UNUSED(since)
+    return {};
+}
 
 } // namespace Kalburator::Sync
