@@ -4,6 +4,8 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "syncworker.h"
+#include "blobdomainadapter.h"
+#include "blobsyncengine.h"  // BlobSyncResult / BlobSyncStats types
 #include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "transcodingrouter.h"
@@ -18,6 +20,7 @@ namespace Kalburator::Sync {
 
 class BackendRegistry;
 class BlobBaselineStore;
+class IBlobBackend;
 class ISyncHost;
 class ICalendarCollection;
 class CalendarBaselineStore;
@@ -25,6 +28,11 @@ class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
 class DecSyncActiveController;
+
+namespace QSyncCore {
+    class ConflictStore;
+    struct ConflictPolicy;
+}
 
 /**
  * @brief Coordinates sync operations between backends according to sync mappings.
@@ -220,6 +228,34 @@ public:
      */
     void runSync(const QString &mappingId, SyncBehavior behavior = SyncBehavior::Unmonitored);
 
+    // --- One-shot blob API (F1 Task 6) ---
+    //
+    // Synchronous blob-typed sync facade for ad-hoc callers (WildPalms's
+    // SyncRunner). Replaces BlobSyncEngine::twoWayWithBaseline / mirror;
+    // Group 4 deletes BlobSyncEngine once WildPalms migrates. Behavior is
+    // equivalent to today's BlobSyncEngine — only the call site changes.
+    // These run synchronously on the calling thread (no worker thread).
+
+    /// Three-way blob sync consulting a baseline store. Propagates
+    /// deletions correctly and dispatches conflicts to per-backend
+    /// handlers looked up via the registry. On success commits new
+    /// baselines reflecting the synced state.
+    BlobSyncResult runBlobTwoWay(IBlobBackend *a,
+                                 IBlobBackend *b,
+                                 const QString &collectionId,
+                                 const QString &mappingId,
+                                 BlobBaselineStore *baseline,
+                                 QSyncCore::ConflictHandlerRegistry *handlers,
+                                 QSyncCore::ConflictStore *conflicts,
+                                 const QSyncCore::ConflictPolicy &policy);
+
+    /// One-way mirror: source → target. Records present in target but
+    /// not in source are deleted; records present in both with
+    /// matching contentHash are left untouched.
+    BlobSyncResult runBlobMirror(IBlobBackend *source,
+                                 IBlobBackend *target,
+                                 const QString &collectionId);
+
     /**
      * @brief Resume sync after user resolves a conflict (monitored mode only).
      *
@@ -377,6 +413,7 @@ private:
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     TranscodingRouter m_transcodingRouter;
     CalendarDomainAdapter m_calendarAdapter;
+    BlobDomainAdapter m_blobAdapter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 
