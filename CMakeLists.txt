@@ -64,15 +64,165 @@ set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 #   journal/    — crash-recovery journal, baseline store, ID mapping, async writer
 #   discovery/  — Syncthing auto-discovery + monitor (experimental)
 #   blob/       — blob-backend layer (empty placeholder for future work)
-set(KALBURATOR_SYNC_SUBDIRS calendar conflict transcoding journal discovery blob)
-set(KALBURATOR_SYNC_HEADERS "")
-set(KALBURATOR_SYNC_SOURCES "")
-foreach(_subdir IN LISTS KALBURATOR_SYNC_SUBDIRS)
-    file(GLOB _subdir_headers CONFIGURE_DEPENDS src/${_subdir}/*.h)
-    file(GLOB _subdir_sources CONFIGURE_DEPENDS src/${_subdir}/*.cpp)
-    list(APPEND KALBURATOR_SYNC_HEADERS ${_subdir_headers})
-    list(APPEND KALBURATOR_SYNC_SOURCES ${_subdir_sources})
-endforeach()
+set(KALBURATOR_CALENDAR_HEADERS
+    src/calendar/akonadibackend.h
+    src/calendar/backendcapabilities.h
+    src/calendar/backendregistry.h
+    src/calendar/caldavcapabilitydiscovery.h
+    src/calendar/calendarbaselinestore.h
+    src/calendar/calendarmanager.h
+    src/calendar/createincidenceitem.h
+    src/calendar/decsyncactivecontroller.h
+    src/calendar/decsyncbackend.h
+    src/calendar/decsynccontrollerstore.h
+    src/calendar/decsyncgarbagecollector.h
+    src/calendar/decsynclib.h
+    src/calendar/deleteincidenceitem.h
+    src/calendar/discoveredcalendar.h
+    src/calendar/holidaysubscriptionbackend.h
+    src/calendar/iconflictpresenter.h
+    src/calendar/iconflictresolver.h
+    src/calendar/icsfeedfetcher.h
+    src/calendar/incidencesyncadapter.h
+    src/calendar/isynchost.h
+    src/calendar/isyncrecord.h
+    src/calendar/localbackend.h
+    src/calendar/logicalcalendarbuilder.h
+    src/calendar/mockbackend.h
+    src/calendar/orgbackend.h
+    src/calendar/remotebackend.h
+    src/calendar/subscriptionbackend.h
+    src/calendar/syncbackend.h
+    src/calendar/syncconflictstore.h
+    src/calendar/synccoordinator.h
+    src/calendar/syncoperation.h
+    src/calendar/synctesthooks.h
+    src/calendar/synctransaction.h
+    src/calendar/synctransactionitem.h
+    src/calendar/syncworker.h
+    src/calendar/updateincidenceitem.h
+)
+set(KALBURATOR_CALENDAR_SOURCES
+    src/calendar/akonadibackend.cpp
+    src/calendar/backendcapabilities.cpp
+    src/calendar/backendregistry.cpp
+    src/calendar/caldavcapabilitydiscovery.cpp
+    src/calendar/calendarbaselinestore.cpp
+    src/calendar/calendarmanager.cpp
+    src/calendar/createincidenceitem.cpp
+    src/calendar/decsyncactivecontroller.cpp
+    src/calendar/decsyncbackend.cpp
+    src/calendar/decsynccontrollerstore.cpp
+    src/calendar/decsyncgarbagecollector.cpp
+    src/calendar/decsynclib.cpp
+    src/calendar/deleteincidenceitem.cpp
+    src/calendar/holidaysubscriptionbackend.cpp
+    src/calendar/icsfeedfetcher.cpp
+    src/calendar/localbackend.cpp
+    src/calendar/logicalcalendarbuilder.cpp
+    src/calendar/mockbackend.cpp
+    src/calendar/orgbackend.cpp
+    src/calendar/remotebackend.cpp
+    src/calendar/subscriptionbackend.cpp
+    src/calendar/syncbackend.cpp
+    src/calendar/syncconflictstore.cpp
+    src/calendar/synccoordinator.cpp
+    src/calendar/syncoperation.cpp
+    src/calendar/synctransaction.cpp
+    src/calendar/synctransactionitem.cpp
+    src/calendar/syncworker.cpp
+    src/calendar/updateincidenceitem.cpp
+)
+
+set(KALBURATOR_CONFLICT_HEADERS
+    src/conflict/conflicthandlerregistry.h
+    src/conflict/conflictmanager.h
+    src/conflict/conflictpolicy.h
+    src/conflict/conflictrecord.h
+    src/conflict/conflictstore.h
+    src/conflict/synccommon.h
+)
+set(KALBURATOR_CONFLICT_SOURCES
+    src/conflict/conflicthandlerregistry.cpp
+    src/conflict/conflictmanager.cpp
+    src/conflict/conflictpolicy.cpp
+    src/conflict/conflictrecord.cpp
+    src/conflict/conflictstore.cpp
+)
+
+set(KALBURATOR_TRANSCODING_HEADERS
+    src/transcoding/incidencediff.h
+    src/transcoding/propertytranscoder.h
+    src/transcoding/rruletranscoder.h
+    src/transcoding/syncdiff.h
+    src/transcoding/transcodingplan.h
+    src/transcoding/transcodingregistry.h
+    src/transcoding/transcodingrouter.h
+)
+set(KALBURATOR_TRANSCODING_SOURCES
+    src/transcoding/incidencediff.cpp
+    src/transcoding/propertytranscoder.cpp
+    src/transcoding/rruletranscoder.cpp
+    src/transcoding/syncdiff.cpp
+    src/transcoding/transcodingplan.cpp
+    src/transcoding/transcodingregistry.cpp
+    src/transcoding/transcodingrouter.cpp
+)
+
+set(KALBURATOR_JOURNAL_HEADERS
+    src/journal/asyncfilewriter.h
+    src/journal/baselinestore.h
+    src/journal/blobbaselinestore.h
+    src/journal/calendarjournal.h
+    src/journal/idmappingstore.h
+)
+set(KALBURATOR_JOURNAL_SOURCES
+    src/journal/asyncfilewriter.cpp
+    src/journal/baselinestore.cpp
+    src/journal/blobbaselinestore.cpp
+    src/journal/calendarjournal.cpp
+    src/journal/idmappingstore.cpp
+)
+
+set(KALBURATOR_DISCOVERY_HEADERS
+    src/discovery/syncthingdiscovery.h
+    src/discovery/syncthingmonitor.h
+)
+set(KALBURATOR_DISCOVERY_SOURCES
+    src/discovery/syncthingdiscovery.cpp
+    src/discovery/syncthingmonitor.cpp
+)
+
+set(KALBURATOR_BLOB_HEADERS
+    src/blob/blobsyncengine.h
+    src/blob/iblobbackend.h
+    src/blob/localblobbackend.h
+    src/blob/mockblobbackend.h
+)
+set(KALBURATOR_BLOB_SOURCES
+    src/blob/blobsyncengine.cpp
+    src/blob/iblobbackend.cpp
+    src/blob/localblobbackend.cpp
+    src/blob/mockblobbackend.cpp
+)
+
+# Aggregate
+set(KALBURATOR_SYNC_HEADERS
+    ${KALBURATOR_CALENDAR_HEADERS}
+    ${KALBURATOR_CONFLICT_HEADERS}
+    ${KALBURATOR_TRANSCODING_HEADERS}
+    ${KALBURATOR_JOURNAL_HEADERS}
+    ${KALBURATOR_DISCOVERY_HEADERS}
+    ${KALBURATOR_BLOB_HEADERS}
+)
+set(KALBURATOR_SYNC_SOURCES
+    ${KALBURATOR_CALENDAR_SOURCES}
+    ${KALBURATOR_CONFLICT_SOURCES}
+    ${KALBURATOR_TRANSCODING_SOURCES}
+    ${KALBURATOR_JOURNAL_SOURCES}
+    ${KALBURATOR_DISCOVERY_SOURCES}
+    ${KALBURATOR_BLOB_SOURCES}
+)
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgbackend\\.h$")
