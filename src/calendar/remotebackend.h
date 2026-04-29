@@ -18,6 +18,7 @@
 namespace Kalburator::Sync {
 
 class SyncStore;
+class CTagStore;
 struct BackendCapabilities;
 
 class RemoteBackend : public SyncBackend
@@ -29,7 +30,7 @@ public:
                            const QString &username,
                            const QString &password,
                            QObject *parent = nullptr);
-    ~RemoteBackend() override = default;
+    ~RemoteBackend() override;
 
     /**
      * @brief Factory method for BackendRegistry.
@@ -45,7 +46,28 @@ public:
      */
     static SyncBackend* create(const QVariantMap &config, QObject *parent);
 
-    void setSyncStore(SyncStore *store) { m_syncStore = store; }
+    void setSyncStore(SyncStore *store);
+
+    // ---- Per-backend CTag access (CalDAV sync optimisation) ----
+    /**
+     * @brief Get the stored CTag for a calendar.
+     * @param calendarId The calendar ID
+     * @return Stored CTag, or empty string if not cached
+     */
+    QString ctag(const QString &calendarId) const;
+
+    /**
+     * @brief Store a CTag for a calendar.
+     * @param calendarId The calendar ID
+     * @param ctag The CTag value from the server
+     */
+    void setCtag(const QString &calendarId, const QString &ctag);
+
+    /**
+     * @brief Remove the stored CTag for a calendar.
+     * @param calendarId The calendar ID
+     */
+    void clearCtag(const QString &calendarId);
 
     void loadCalendars(const QString &collectionId) override;
     void loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSignals = false) override;
@@ -248,6 +270,7 @@ signals:
 
 private:
     SyncStore *m_syncStore = nullptr;  // Not owned
+    std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setSyncStore()
     QUrl m_url;
     QString m_username;
     QString m_password;

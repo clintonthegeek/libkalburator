@@ -213,39 +213,6 @@ public:
      */
     QMap<QString, QString> allPropertyBaselines(const QString &mappingId) const;
 
-    // ========================================================================
-    // CTag Tracking (Collection Tags for CalDAV sync optimization)
-    // ========================================================================
-
-    /**
-     * @brief Get the stored CTag for a calendar.
-     * @param backendId The backend ID (e.g., "caldav-secondary")
-     * @param calendarId The calendar ID
-     * @return Stored CTag, or empty string if not cached
-     */
-    QString ctag(const QString &backendId, const QString &calendarId) const;
-
-    /**
-     * @brief Store a CTag for a calendar.
-     * @param backendId The backend ID
-     * @param calendarId The calendar ID
-     * @param ctag The CTag value from the server
-     */
-    void setCtag(const QString &backendId, const QString &calendarId, const QString &ctag);
-
-    /**
-     * @brief Remove the stored CTag for a calendar.
-     * @param backendId The backend ID
-     * @param calendarId The calendar ID
-     */
-    void clearCtag(const QString &backendId, const QString &calendarId);
-
-    /**
-     * @brief Remove all stored CTags for a backend.
-     * @param backendId The backend ID
-     */
-    void clearCtags(const QString &backendId);
-
     // ========== Local Fingerprint Tracking ==========
     // Phase-2 perf: fingerprint of a Local backend's on-disk calendar dir
     // (sha256 over sorted (filename | mtime | size)). Stored at sync end,

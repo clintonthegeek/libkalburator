@@ -59,6 +59,130 @@ QUrl parentUrl(const QUrl &url)
 
 namespace Kalburator::Sync {
 
+// ============================================================================
+// CTagStore — private inner store for per-backend CalDAV CTags
+//
+// Persists to a `remote_ctags` table in the same DB file as SyncStore.
+// BackendId is fixed at construction time so callers only pass calendarId.
+// ============================================================================
+
+class CTagStore
+{
+public:
+    explicit CTagStore(const QString &dbPath, const QString &backendId)
+        : m_backendId(backendId)
+        , m_connectionName(QStringLiteral("CTagStore_%1_%2")
+                               .arg(backendId)
+                               .arg(reinterpret_cast<quintptr>(this)))
+    {
+        if (dbPath.isEmpty()) {
+            qWarning() << "CTagStore: empty dbPath for backend" << backendId;
+            return;
+        }
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        db.setDatabaseName(dbPath);
+        if (!db.open()) {
+            qWarning() << "CTagStore: failed to open" << dbPath
+                       << ":" << db.lastError().text();
+            QSqlDatabase::removeDatabase(m_connectionName);
+            m_connectionName.clear();
+            return;
+        }
+        ensureSchema();
+    }
+
+    ~CTagStore()
+    {
+        if (!m_connectionName.isEmpty()) {
+            if (QSqlDatabase::contains(m_connectionName)) {
+                QSqlDatabase::database(m_connectionName).close();
+                QSqlDatabase::removeDatabase(m_connectionName);
+            }
+        }
+    }
+
+    bool isValid() const { return !m_connectionName.isEmpty(); }
+
+    QString get(const QString &calendarId) const
+    {
+        if (!isValid()) return QString();
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "SELECT ctag FROM remote_ctags "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        if (q.exec() && q.next())
+            return q.value(0).toString();
+        return QString();
+    }
+
+    bool set(const QString &calendarId, const QString &ctag)
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "INSERT OR REPLACE INTO remote_ctags "
+            "(backend_id, calendar_id, ctag) VALUES (?, ?, ?)"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        q.addBindValue(ctag);
+        if (!q.exec()) {
+            qWarning() << "CTagStore::set failed:" << q.lastError().text();
+            return false;
+        }
+        return true;
+    }
+
+    bool clear(const QString &calendarId)
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "DELETE FROM remote_ctags "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        return q.exec();
+    }
+
+    bool clearAll()
+    {
+        if (!isValid()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "DELETE FROM remote_ctags WHERE backend_id = ?"));
+        q.addBindValue(m_backendId);
+        return q.exec();
+    }
+
+private:
+    bool ensureSchema()
+    {
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        bool ok = q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS remote_ctags ("
+            "  backend_id   TEXT NOT NULL,"
+            "  calendar_id  TEXT NOT NULL,"
+            "  ctag         TEXT NOT NULL,"
+            "  PRIMARY KEY (backend_id, calendar_id)"
+            ")"));
+        if (!ok)
+            qWarning() << "CTagStore::ensureSchema failed:" << q.lastError().text();
+        return ok;
+    }
+
+    QString m_backendId;
+    QString m_connectionName;
+};
+
+// (CTagStore class ends above; RemoteBackend methods continue below in the same namespace)
+
 static int getHttpStatusCode(KJob *job)
 {
     if (auto kioJob = qobject_cast<KIO::Job *>(job)) {
@@ -92,6 +216,35 @@ RemoteBackend::RemoteBackend(const QUrl &url,
     m_url.setUserName(m_username);
     m_url.setPassword(m_password);
     qDebug() << "RemoteBackend initialized with URL:" << safeUrlString(m_url);
+}
+
+RemoteBackend::~RemoteBackend() = default;
+
+void RemoteBackend::setSyncStore(SyncStore *store)
+{
+    m_syncStore = store;
+    if (store && !m_ctags) {
+        m_ctags = std::make_unique<CTagStore>(store->databasePath(), backendType());
+    }
+}
+
+QString RemoteBackend::ctag(const QString &calendarId) const
+{
+    if (m_ctags)
+        return m_ctags->get(calendarId);
+    return QString();
+}
+
+void RemoteBackend::setCtag(const QString &calendarId, const QString &ctagValue)
+{
+    if (m_ctags)
+        m_ctags->set(calendarId, ctagValue);
+}
+
+void RemoteBackend::clearCtag(const QString &calendarId)
+{
+    if (m_ctags)
+        m_ctags->clear(calendarId);
 }
 
 // Static factory method for BackendRegistry
@@ -1747,8 +1900,8 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
         // CTag optimization: raw PROPFIND for CS:getctag on the calendar URL.
         // KDAV's DavCollectionsFetchJob doesn't return CTag for individual calendar
         // URLs, so we do a lightweight Depth:0 PROPFIND ourselves.
-        if (m_syncStore && m_davUrls.contains(calendarId)) {
-            QString storedCtag = m_syncStore->ctag(backendType(), calendarId);
+        if (m_davUrls.contains(calendarId)) {
+            QString storedCtag = ctag(calendarId);
             QString freshCtag;
             bool freshFromPrimedCache = false;
 
@@ -1972,9 +2125,8 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
                          << "incidences from cache for calendar" << calendarId;
 
                 // Update stored CTag after successful full fetch
-                if (m_syncStore && m_calendarCtags.contains(calendarId)) {
-                    m_syncStore->setCtag(backendType(), calendarId,
-                                         m_calendarCtags.value(calendarId));
+                if (m_calendarCtags.contains(calendarId)) {
+                    setCtag(calendarId, m_calendarCtags.value(calendarId));
                 }
 
                 op->setFetchedItems(fetchedIncidences);
@@ -2099,9 +2251,8 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
                                               : QStringLiteral(")"));
 
                 // Update stored CTag after successful full fetch
-                if (m_syncStore && m_calendarCtags.contains(calendarId)) {
-                    m_syncStore->setCtag(backendType(), calendarId,
-                                         m_calendarCtags.value(calendarId));
+                if (m_calendarCtags.contains(calendarId)) {
+                    setCtag(calendarId, m_calendarCtags.value(calendarId));
                 }
 
                 op->setFetchedItems(fetchedIncidences);
@@ -2215,8 +2366,8 @@ PushOperation* RemoteBackend::pushItems(const QString &calendarId,
                 (*remaining)--;
                 if (*remaining == 0) {
                     // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty() && m_syncStore) {
-                        m_syncStore->clearCtag(backendType(), op->calendarId());
+                    if (!op->succeededUids().isEmpty()) {
+                        clearCtag(op->calendarId());
                     }
 
                     if (*anyError || !op->failedUids().isEmpty()) {
@@ -2304,8 +2455,8 @@ DeleteOperation* RemoteBackend::deleteItems(const QString &calendarId,
                 (*remaining)--;
                 if (*remaining == 0) {
                     // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty() && m_syncStore) {
-                        m_syncStore->clearCtag(backendType(), op->calendarId());
+                    if (!op->succeededUids().isEmpty()) {
+                        clearCtag(op->calendarId());
                     }
 
                     if (*anyError || !op->failedUids().isEmpty()) {
@@ -2465,8 +2616,8 @@ bool RemoteBackend::setRawIcs(const QString &calendarId, const QString &uid,
     loop.exec();
 
     // Invalidate stored CTag — the server's CTag changed due to our push
-    if (success && m_syncStore) {
-        m_syncStore->clearCtag(backendType(), calendarId);
+    if (success) {
+        clearCtag(calendarId);
     }
 
     return success;

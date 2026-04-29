@@ -74,7 +74,7 @@ bool SyncStore::initDatabase()
 
     // Check schema version. If outdated, delete DB file and start fresh.
     // This avoids DROP TABLE + CREATE TABLE races on WAL-mode databases.
-    static constexpr int EXPECTED_SCHEMA_VERSION = 4;  // v4: added local_fingerprints table
+    static constexpr int EXPECTED_SCHEMA_VERSION = 5;  // v5: CTag storage moved to CTagStore (RemoteBackend-private)
 
     if (QFile::exists(m_dbPath)) {
         int currentVersion = 0;
@@ -222,22 +222,8 @@ bool SyncStore::createTables()
         "CREATE INDEX IF NOT EXISTS idx_conflicts_unresolved "
         "ON sync_conflicts(mapping_id, resolved_at)"));
 
-    // CTag table for CalDAV sync optimization
-    if (!query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS collection_ctags ("
-        "  backend_id TEXT NOT NULL,"
-        "  calendar_id TEXT NOT NULL,"
-        "  ctag TEXT NOT NULL,"
-        "  updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
-        "  PRIMARY KEY (backend_id, calendar_id))"))) {
-        setError(QStringLiteral("Failed to create collection_ctags table: %1").arg(query.lastError().text()));
-        return false;
-    }
-
-    // Note: updated_at is INTEGER (msecs since epoch) here, intentionally
-    // diverging from collection_ctags.updated_at (TEXT). Integer form is
-    // cheaper to compare and avoids string-format parsing. Unify in a
-    // future cleanup if it matters.
+    // Note: updated_at is INTEGER (msecs since epoch) here.
+    // Integer form is cheaper to compare and avoids string-format parsing.
     if (!query.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS local_fingerprints ("
         "  backend_id TEXT NOT NULL,"
@@ -872,60 +858,6 @@ int SyncStore::unresolvedConflictCount(const QString &mappingId) const
         return query.value(0).toInt();
     }
     return 0;
-}
-
-// ============================================================================
-// CTag Tracking
-// ============================================================================
-
-QString SyncStore::ctag(const QString &backendId, const QString &calendarId) const
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT ctag FROM collection_ctags WHERE backend_id = ? AND calendar_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-    return QString();
-}
-
-void SyncStore::setCtag(const QString &backendId, const QString &calendarId, const QString &ctag)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO collection_ctags (backend_id, calendar_id, ctag, updated_at) "
-        "VALUES (?, ?, ?, datetime('now'))"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.addBindValue(ctag);
-    if (!query.exec()) {
-        qWarning() << "SyncStore::setCtag: Failed:" << query.lastError().text();
-    }
-}
-
-void SyncStore::clearCtag(const QString &backendId, const QString &calendarId)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM collection_ctags WHERE backend_id = ? AND calendar_id = ?"));
-    query.addBindValue(backendId);
-    query.addBindValue(calendarId);
-    query.exec();
-}
-
-void SyncStore::clearCtags(const QString &backendId)
-{
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "DELETE FROM collection_ctags WHERE backend_id = ?"));
-    query.addBindValue(backendId);
-    query.exec();
 }
 
 // ============================================================================

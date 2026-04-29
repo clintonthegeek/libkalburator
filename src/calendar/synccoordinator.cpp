@@ -390,11 +390,11 @@ void SyncCoordinator::prepareSyncFastPath()
 
         // Resolve source side.
         SyncBackend *srcBase = m_registry->backendInstance(mapping.sourceBackend);
-        if (qobject_cast<RemoteBackend*>(srcBase)) {
+        if (auto *srcRemote = qobject_cast<RemoteBackend*>(srcBase)) {
             sourceCovered = true;
             fresh.sourceCtag = freshRemoteCtags.value(
                 qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
-            const QString stored = m_syncStore->ctag(mapping.sourceBackend, mapping.sourceCalendar);
+            const QString stored = srcRemote->ctag(mapping.sourceCalendar);
             sourceUnchanged = !fresh.sourceCtag.isEmpty()
                               && !stored.isEmpty()
                               && fresh.sourceCtag == stored;
@@ -411,11 +411,11 @@ void SyncCoordinator::prepareSyncFastPath()
 
         // Resolve target side (mirror logic).
         SyncBackend *tgtBase = m_registry->backendInstance(mapping.targetBackend);
-        if (qobject_cast<RemoteBackend*>(tgtBase)) {
+        if (auto *tgtRemote = qobject_cast<RemoteBackend*>(tgtBase)) {
             targetCovered = true;
             fresh.targetCtag = freshRemoteCtags.value(
                 qMakePair(mapping.targetBackend, mapping.targetCalendar));
-            const QString stored = m_syncStore->ctag(mapping.targetBackend, mapping.targetCalendar);
+            const QString stored = tgtRemote->ctag(mapping.targetCalendar);
             targetUnchanged = !fresh.targetCtag.isEmpty()
                               && !stored.isEmpty()
                               && fresh.targetCtag == stored;
@@ -848,14 +848,14 @@ void SyncCoordinator::onWorkerSyncCompleted(const QString &mappingId, const Sync
             }
             if (mapping) {
                 if (!fresh.sourceCtag.isEmpty()) {
-                    m_syncStore->setCtag(mapping->sourceBackend,
-                                          mapping->sourceCalendar,
-                                          fresh.sourceCtag);
+                    if (auto *r = qobject_cast<RemoteBackend*>(
+                            m_registry->backendInstance(mapping->sourceBackend)))
+                        r->setCtag(mapping->sourceCalendar, fresh.sourceCtag);
                 }
                 if (!fresh.targetCtag.isEmpty()) {
-                    m_syncStore->setCtag(mapping->targetBackend,
-                                          mapping->targetCalendar,
-                                          fresh.targetCtag);
+                    if (auto *r = qobject_cast<RemoteBackend*>(
+                            m_registry->backendInstance(mapping->targetBackend)))
+                        r->setCtag(mapping->targetCalendar, fresh.targetCtag);
                 }
                 if (!fresh.sourceFingerprint.isEmpty()) {
                     m_syncStore->setLocalFingerprint(mapping->sourceBackend,
