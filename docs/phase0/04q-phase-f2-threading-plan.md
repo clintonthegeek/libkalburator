@@ -3859,6 +3859,15 @@ git commit -m "chore: bump <plugin> submodule pointer for F2"
 
 ### Task 42: Delete void `runSync` overloads, `cancelSync` slot, completion signals
 
+**Status:** Landed 2026-04-30 on commit `cc8d94e` (libkalburator) +
+`98be4159` (PlanStan synctesthelper cleanup). The void `runSync`
+overloads' multi-mapping body is rebadged as private helper
+`driveQueue()` invoked solely from `runSyncFuture(behavior)`. Three
+libkalburator tests/calendar/ tests migrated off the deleted
+`syncCompleted` spy. Note: `runSyncFuture` is NOT renamed back to
+`runSync` — kept as-is to avoid churning Group 3 consumer migrations
+for a cosmetic gain.
+
 **Files:**
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/engine/syncengine.h`
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/engine/syncengine.cpp`
@@ -3919,6 +3928,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ---
 
 ### Task 43: Delete `loadItems`, `storeItems`, `updateItem`, `writeFinished` on `SyncBackend`
+
+**Status:** BLOCKED 2026-04-30 — broader consumer migration outside
+Group 3's actual scope is required first. See `FINDINGS.md` entry
+"F2 Group 3 left ~180 PlanStan backend-test call sites + 1
+production caller un-migrated" and `CURRENT-STATUS.md` "Blocked"
+section. Recommended path: spawn an F2 Task 43-prep that migrates
+PlanStan's `convertCalendarToBackend`, the ~180 PlanStan
+backend-test call sites, and WildPalms's `PalmCalendarBackend`
+overrides off the synchronous I/O API onto the operation API
+before this deletion can land.
 
 **Files:**
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/calendar/syncbackend.h`
