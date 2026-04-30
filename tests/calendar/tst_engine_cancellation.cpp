@@ -210,36 +210,29 @@ void TstEngineCancellation::cancelBeforeStart()
     // SyncResult should reflect cancellation. The design (04q section
     // "Multi-mapping queue" + Task 21 plan body) calls for a sentinel
     // SyncResult with cancelled=true && skipped=true to be delivered
-    // via future.results() for cancel-before-start.
+    // on the future for cancel-before-start.
     //
-    // Two production gaps surfaced by this C1 test land as a follow-
-    // up task (NOT Task 23 — per Task 23's "DO NOT modify production
-    // code just to make C1 pass; surface as a CONCERN" directive):
+    // Production gaps closed in the F2 Task 23 follow-up commit:
     //
-    //   1. SyncEngine::processSingleMapping has no top-level
-    //      cancel-precheck. Task 21's plan body specified one that
-    //      emits {cancelled=true, skipped=true} via the iface; the
-    //      landed Task 21 commit (35c1881) did not include it.
+    //   1. SyncEngine::processSingleMapping now has a top-level
+    //      cancel-precheck (defensive, symmetric to advanceQueue).
     //
-    //   2. QFutureInterface::reportResult silently drops results
-    //      once the Canceled flag is set, unless
-    //      setAddResultsIfCanceledEnabled(true) is called on the
-    //      iface. runSyncFuture does not call it, so even if the
-    //      engine populated a sentinel SyncResult after cancel(),
-    //      future.results() would still be empty for the consumer.
+    //   2. Both runSyncFuture overloads call
+    //      setAddResultsIfCanceledEnabled(true) on the iface so
+    //      reportResult is not silently dropped after reportCanceled.
     //
-    // The QEXPECT_FAIL block below pins the contract: when those
-    // gaps close, the XFAIL flips to XPASS and forces a refactor of
-    // this test (which is exactly the desired signal).
-    QEXPECT_FAIL("",
-        "F2 follow-up: SyncEngine lacks cancel-precheck + "
-        "setAddResultsIfCanceledEnabled, so the sentinel SyncResult "
-        "with cancelled=true && skipped=true never reaches "
-        "future.results() on cancel-before-start.",
-        Abort);
-    const auto results = future.results();
-    QVERIFY(!results.isEmpty());
-    const SyncResult &r = results.first();
+    //   3. SyncEngine::onCancelObserved sets the engine-side
+    //      m_cancelled flag, and onWorkerSyncCompleted decorates the
+    //      final SyncResult with cancelled=true (and skipped=true if
+    //      no items were touched) before reporting on the iface.
+    //
+    // Note: QFuture<T>::results() returns an empty QList<T> when the
+    // future is canceled (Qt6 design — see qfutureinterface.h
+    // QFutureInterface<T>::results), regardless of
+    // setAddResultsIfCanceledEnabled. Use resultCount() + resultAt()
+    // to read cancellation-marker results from the underlying store.
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0);
     QVERIFY(r.cancelled);
     QVERIFY(r.skipped);
 }

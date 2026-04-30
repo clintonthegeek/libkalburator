@@ -329,6 +329,35 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     // (prepareSyncFastPath), and a stale single-mapping baseline would
     // be more dangerous than no baseline update.
 
+    // F2 Task 23 follow-up: cancel-precheck. If cancellation was
+    // observed before the worker dispatches (e.g., the caller
+    // invoked QFuture::cancel() immediately after runSyncFuture
+    // returned), short-circuit with a cancelled SyncResult.
+    // Symmetric to the multi-mapping path's check at the top of
+    // advanceQueue(). Task 21's plan body specified this; the
+    // landed Task 21 commit (35c1881) did the structural split but
+    // did not include the precheck. C1 (commit 4b24a08) exposed
+    // the gap.
+    if (m_cancelled) {
+        SyncResult cancelled;
+        cancelled.success = false;
+        cancelled.cancelled = true;
+        cancelled.skipped = true;
+        cancelled.startTime = QDateTime::currentDateTime();
+        cancelled.endTime = cancelled.startTime;
+        if (m_currentSingleIface) {
+            m_currentSingleIface->reportResult(cancelled);
+            m_currentSingleIface->reportCanceled();
+            m_currentSingleIface->reportFinished();
+            delete m_currentSingleIface;
+            m_currentSingleIface = nullptr;
+        }
+        emit syncCompleted(mappingId, cancelled);
+        m_dispatchMode = DispatchMode::None;
+        m_isSyncing = false;
+        return;
+    }
+
     int idx = 0;
     for (const auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId && mapping.enabled) {
@@ -416,6 +445,14 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     // populate / finalise it.
     m_currentSingleIface = new QFutureInterface<SyncResult>;
     m_currentSingleIface->reportStarted();
+    // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
+    // reach future.results() even after reportCanceled(). Per Qt6
+    // QFutureInterface, reportResult is silently dropped once
+    // cancellation is reported unless this opt-in is set. The F2
+    // contract delivers a cancelled SyncResult on the future for
+    // cancel-before/after-start; without this opt-in, consumers
+    // see future.results() as empty.
+    m_currentSingleIface->setAddResultsIfCanceledEnabled(true);
     QFuture<SyncResult> future = m_currentSingleIface->future();
 
     // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
@@ -448,6 +485,10 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
 
     m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
     m_currentMultiIface->reportStarted();
+    // F2 Task 23 follow-up: see runSyncFuture(mappingId) overload —
+    // cancellation-marker results must reach future.results() even
+    // after reportCanceled().
+    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
     QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
 
     // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
@@ -469,6 +510,14 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
 // to wake nested QEventLoops in await<> / conflict pause.
 void SyncEngine::onCancelObserved()
 {
+    // F2 Task 23 follow-up: also set the engine-side m_cancelled flag
+    // so onWorkerSyncCompleted decorates the final SyncResult with
+    // cancelled=true (and reportCanceled fires on the iface). Without
+    // this, future.cancel() observed via the watcher only forwards to
+    // the worker; the worker's syncCompleted result lands with
+    // cancelled=false, and the iface never sees reportCanceled().
+    m_cancelled = true;
+
     if (!m_worker) {
         return;
     }
@@ -1111,9 +1160,29 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // leaky"). Single-mapping runs finish here; queue runs advance.
     if (m_dispatchMode == DispatchMode::Single) {
         // Finish the single-mapping future and shut the run down.
+        // F2 Task 23 follow-up: when cancellation was observed
+        // (m_cancelled set by onCancelObserved or cancelSync), decorate
+        // the SyncResult with cancelled=true so consumers reading the
+        // result via resultAt(0) / resultStoreBase see the marker.
+        // The worker sets success=false errorMessage="Cancelled" but
+        // doesn't flip the cancelled bit; do it here where we know.
+        SyncResult finalResult = result;
+        if (m_cancelled || result.cancelled) {
+            finalResult.cancelled = true;
+            // skipped=true marks "this slot in the run never produced
+            // a successful sync"; appropriate when cancelled before
+            // any items were applied (C1's case). Mid-fetch / mid-apply
+            // cancels with partial work leave skipped=false so consumers
+            // can distinguish never-started from cancelled-after-partial.
+            if (!finalResult.sourceStats.hasChanges() &&
+                !finalResult.targetStats.hasChanges()) {
+                finalResult.skipped = true;
+            }
+            finalResult.success = false;
+        }
         if (m_currentSingleIface) {
-            m_currentSingleIface->reportResult(result);
-            if (m_cancelled || result.cancelled) {
+            m_currentSingleIface->reportResult(finalResult);
+            if (m_cancelled || finalResult.cancelled) {
                 m_currentSingleIface->reportCanceled();
             }
             m_currentSingleIface->reportFinished();
