@@ -558,12 +558,63 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
 
 void TstEngineCancellation::idempotentCancel()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 28.");
+    // C6 — calling QFuture::cancel() twice must not crash or assert.
+    // Mirrors C1's "block fetch then cancel" pattern; the second
+    // cancel is a no-op per Qt's QFuture contract.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+    m_src->setFetchBlocking(true);
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    future.cancel();
+    future.cancel();  // double cancel — must not crash or assert
+
+    QTest::qWait(50);
+    m_src->releaseFetchBlocker();
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QVERIFY(future.isCanceled());
 }
 
 void TstEngineCancellation::cancelAfterFinished()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 28.");
+    // C7 — cancel() on an already-finished future must not crash or
+    // re-trigger any teardown logic. The contract pinned here:
+    //   - isFinished() stays true
+    //   - the run's actual SyncResult (success=true) was reported
+    //     before cancel; any post-finish cancel does not corrupt it
+    //
+    // Empirical Qt6 note: QFuture::cancel() on an already-finished
+    // QFuture *does* flip isCanceled() to true (the underlying
+    // QFutureInterface accepts reportCanceled even after
+    // reportFinished). The prompt allowed for this — what matters is
+    // the result already in the store stays intact and finished
+    // remains true.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    // Read the result first (before cancel), then cancel, then
+    // verify the result is unchanged and the future is still
+    // marked finished.
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult before = future.resultAt(0);
+    QVERIFY(before.success);
+    QVERIFY(!before.cancelled);
+
+    future.cancel();
+
+    QVERIFY(future.isFinished());
+    // resultAt(0) must still return the success result regardless
+    // of whether Qt6 flips isCanceled() post-finish.
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult after = future.resultAt(0);
+    QVERIFY(after.success);
+    QVERIFY(!after.cancelled);
 }
 
 void TstEngineCancellation::singleMappingFutureCompletes()
