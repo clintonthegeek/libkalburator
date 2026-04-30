@@ -77,8 +77,19 @@ public:
 
     // === Operation-Based Async API ===
     FetchOperation*  fetchItems(const QString &calendarId) override;
+
+    // F2 Task 10: 3-arg form holds the logic; 2-arg form delegates.
+    // The 2-arg override is kept until F2 Task 38 removes the base
+    // 2-arg virtual entirely. No default argument on the 3-arg form
+    // here because the 2-arg overload is still present — a default
+    // would make 2-arg calls ambiguous. The base virtual still
+    // declares the default for callers that bind to SyncBackend*.
+    PushOperation*   pushItems(const QString &calendarId,
+                               const QList<KCalendarCore::Incidence::Ptr> &items,
+                               const TranscodingPlan &plan) override;
     PushOperation*   pushItems(const QString &calendarId,
                                const QList<KCalendarCore::Incidence::Ptr> &items) override;
+
     DeleteOperation* deleteItems(const QString &calendarId,
                                  const QStringList &uids) override;
 

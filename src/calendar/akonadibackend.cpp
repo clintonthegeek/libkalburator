@@ -573,9 +573,23 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
-                                          const QList<KCalendarCore::Incidence::Ptr> &items)
+                                          const QList<KCalendarCore::Incidence::Ptr> &items,
+                                          const TranscodingPlan &plan)
 {
-    auto *op = new PushOperation(calendarId, items, this);
+    // F2 Task 10: apply the transcoding plan up front so all callers
+    // (including the 2-arg shim, which passes an empty plan) exercise
+    // a single code path. Mirrors storeItems()' behaviour.
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    auto *op = new PushOperation(calendarId, finalItems, this);
     registerOperation(op);
 
     auto colIt = m_collections.find(calendarId);
@@ -587,18 +601,18 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
 
     const Akonadi::Collection &col = *colIt;
     op->setState(SyncOperation::Running);
-    emit writeStarted(calendarId, items.size());
+    emit writeStarted(calendarId, finalItems.size());
 
-    if (items.isEmpty()) {
+    if (finalItems.isEmpty()) {
         op->complete();
         emit writeFinished(calendarId, true);
         return op;
     }
 
     auto completedCount = std::make_shared<int>(0);
-    int total = items.size();
+    int total = finalItems.size();
 
-    for (const auto &incidence : items) {
+    for (const auto &incidence : finalItems) {
         Akonadi::Item existing = findItemByUid(calendarId, incidence->uid());
 
         if (existing.isValid()) {
@@ -646,6 +660,14 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
     }
 
     return op;
+}
+
+PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
+                                          const QList<KCalendarCore::Incidence::Ptr> &items)
+{
+    // F2 Task 10: legacy 2-arg form delegates to the 3-arg form so all
+    // callers exercise the same transcoding path.
+    return pushItems(calendarId, items, TranscodingPlan{});
 }
 
 DeleteOperation* AkonadiBackend::deleteItems(const QString &calendarId,
