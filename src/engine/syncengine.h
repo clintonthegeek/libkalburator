@@ -425,6 +425,29 @@ public:
      */
     void runSync(const QString &mappingId, SyncBehavior behavior = SyncBehavior::Unmonitored);
 
+    /**
+     * @brief Run sync for one mapping. Future completes with the result.
+     *
+     * F2 transitional shim that delegates to runSync(mappingId, behavior)
+     * and captures completion via the syncCompleted signal. Group 4
+     * Task 42 deletes the void runSync and renames this method to runSync.
+     *
+     * The QFuture supports cancel() to request cancellation; the
+     * cancellation channel is wired in Group 2 Task 17.
+     */
+    QFuture<SyncResult> runSyncFuture(
+        const QString &mappingId,
+        SyncBehavior behavior = SyncBehavior::Unmonitored);
+
+    /**
+     * @brief Run sync for all enabled mappings. Future completes with
+     *        the per-mapping result list (one entry per enabled mapping).
+     *
+     * F2 transitional shim. See runSyncFuture(mappingId, behavior).
+     */
+    QFuture<QList<SyncResult>> runSyncFuture(
+        SyncBehavior behavior = SyncBehavior::Unmonitored);
+
     // --- One-shot blob API (F1 Task 6) ---
     //
     // Synchronous blob-typed sync facade for ad-hoc callers (WildPalms's

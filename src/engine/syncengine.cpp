@@ -39,6 +39,7 @@
 #include <QMetaObject>
 #include <QTimer>
 #include <QMutexLocker>
+#include <memory>
 
 namespace Kalburator::Sync {
 
@@ -320,6 +321,77 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
         }
     }
     qWarning() << "SyncEngine::runSync - mapping not found:" << mappingId;
+}
+
+// F2 Task 15: transitional shim. Delegates to the void runSync overload
+// and captures completion via the existing syncCompleted signal into a
+// heap-allocated QFutureInterface. The connection-management pattern
+// (heap iface + shared_ptr connection guards + manual disconnect inside
+// the lambda) is fragile by design -- Task 21 rewrites the worker to
+// populate m_currentSingleIface directly with proper lifetime
+// management. Task 42 then deletes the void runSync and renames this
+// to runSync.
+QFuture<SyncResult> SyncEngine::runSyncFuture(
+    const QString &mappingId,
+    SyncBehavior behavior)
+{
+    auto *iface = new QFutureInterface<SyncResult>;
+    iface->reportStarted();
+    QFuture<SyncResult> future = iface->future();
+
+    // Capture the completion signal once, then disconnect.
+    auto conn = std::make_shared<QMetaObject::Connection>();
+    *conn = connect(this, &SyncEngine::syncCompleted, this,
+        [iface, conn, mappingId](const QString &completedMappingId,
+                                  const SyncResult &result) {
+            if (completedMappingId != mappingId) return;
+            iface->reportResult(result);
+            iface->reportFinished();
+            delete iface;
+            QObject::disconnect(*conn);
+        });
+
+    // Trigger the existing void runSync.
+    runSync(mappingId, behavior);
+    return future;
+}
+
+// F2 Task 15: transitional shim for the multi-mapping form. Accumulates
+// per-mapping results from syncCompleted and finalises the future on
+// allSyncsCompleted. Same fragility caveats as the single-mapping
+// shim above.
+QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
+    SyncBehavior behavior)
+{
+    auto *iface = new QFutureInterface<QList<SyncResult>>;
+    iface->reportStarted();
+    QFuture<QList<SyncResult>> future = iface->future();
+
+    // Accumulate per-mapping results; finalise on allSyncsCompleted.
+    auto results = std::make_shared<QList<SyncResult>>();
+    auto perMappingConn = std::make_shared<QMetaObject::Connection>();
+    auto allConn = std::make_shared<QMetaObject::Connection>();
+
+    *perMappingConn = connect(this, &SyncEngine::syncCompleted, this,
+        [results](const QString &, const SyncResult &result) {
+            results->append(result);
+        });
+
+    // allSyncsCompleted carries an aggregate SyncResult, not a bool;
+    // the future resolves to the per-mapping result list (independent
+    // of aggregate.success).
+    *allConn = connect(this, &SyncEngine::allSyncsCompleted, this,
+        [iface, results, perMappingConn, allConn](
+                const SyncResult & /*aggregate*/) {
+            iface->reportResult(*results);
+            iface->reportFinished();
+            delete iface;
+            QObject::disconnect(*perMappingConn);
+            QObject::disconnect(*allConn);
+        });
+
+    runSync(behavior);
+    return future;
 }
 
 void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
