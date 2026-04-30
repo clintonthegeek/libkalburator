@@ -2332,12 +2332,26 @@ FetchOperation* RemoteBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* RemoteBackend::pushItems(const QString &calendarId,
-                                        const QList<KCalendarCore::Incidence::Ptr> &items)
+                                        const QList<KCalendarCore::Incidence::Ptr> &items,
+                                        const TranscodingPlan &plan)
 {
-    auto *op = new PushOperation(calendarId, items, this);
+    // F2 Task 8: apply the transcoding plan up front so all callers
+    // (including the 2-arg shim, which passes an empty plan) exercise
+    // a single code path. Mirrors storeItems()' behaviour.
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    auto *op = new PushOperation(calendarId, finalItems, this);
     registerOperation(op);
 
-    if (items.isEmpty()) {
+    if (finalItems.isEmpty()) {
         QTimer::singleShot(0, op, [op]() {
             op->complete();
         });
@@ -2354,10 +2368,10 @@ PushOperation* RemoteBackend::pushItems(const QString &calendarId,
     KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
 
     // Use shared counter to track completion
-    auto remaining = std::make_shared<int>(items.size());
+    auto remaining = std::make_shared<int>(finalItems.size());
     auto anyError = std::make_shared<bool>(false);
 
-    QMetaObject::invokeMethod(this, [this, op, davUrl, items, remaining, anyError]() mutable {
+    QMetaObject::invokeMethod(this, [this, op, davUrl, finalItems, remaining, anyError]() mutable {
         op->setState(SyncOperation::Running);
 
         // Initialize content cache so we can store pushed items for subsequent fetches
@@ -2365,7 +2379,7 @@ PushOperation* RemoteBackend::pushItems(const QString &calendarId,
 
         KCalendarCore::ICalFormat icalFormat;  // Create inside lambda (non-copyable)
 
-        for (const auto &incidence : items) {
+        for (const auto &incidence : finalItems) {
             if (incidence.isNull()) {
                 (*remaining)--;
                 continue;
@@ -2450,6 +2464,14 @@ PushOperation* RemoteBackend::pushItems(const QString &calendarId,
     }, Qt::QueuedConnection);
 
     return op;
+}
+
+PushOperation* RemoteBackend::pushItems(const QString &calendarId,
+                                        const QList<KCalendarCore::Incidence::Ptr> &items)
+{
+    // F2 Task 8: legacy 2-arg form delegates to the 3-arg form so all
+    // callers exercise the same transcoding path.
+    return pushItems(calendarId, items, TranscodingPlan{});
 }
 
 DeleteOperation* RemoteBackend::deleteItems(const QString &calendarId,
