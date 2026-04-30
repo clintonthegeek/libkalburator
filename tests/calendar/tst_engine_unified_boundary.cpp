@@ -195,11 +195,20 @@ void TestEngineUnifiedBoundary::cleanup()
 
 bool TestEngineUnifiedBoundary::runOneCalendarSync()
 {
-    QSignalSpy allDoneSpy(m_engine.get(), &SyncEngine::allSyncsCompleted);
-    m_engine->runSync(SyncEngine::SyncBehavior::Unmonitored);
-    if (!allDoneSpy.wait(kSyncTimeoutMs)) {
-        qWarning() << "allSyncsCompleted did not fire within"
+    auto future = m_engine->runSyncFuture(
+        SyncEngine::SyncBehavior::Unmonitored);
+    int waited = 0;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    if (!future.isFinished()) {
+        qWarning() << "runSyncFuture did not finish within"
                    << kSyncTimeoutMs << "ms";
+        return false;
+    }
+    if (future.isCanceled()) {
+        qWarning() << "runSyncFuture was canceled unexpectedly";
         return false;
     }
     return true;
