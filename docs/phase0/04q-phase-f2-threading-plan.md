@@ -2871,7 +2871,23 @@ EOF
 
 ---
 
-### Task 21: Fix the `runSync(mappingId)` leak — split worker drivers
+### Task 21: Fix the `runSync(mappingId)` leak — split worker drivers — **LANDED 2026-04-30** (commit `35c1881`)
+
+**Status:** Landed 2026-04-30 on commit `35c1881`. The split was
+implemented engine-side rather than worker-side — the per-mapping
+logic was already extracted into `SyncEngineWorker::processSync(Request)`
+(F1 Task 8 left it that way), so the natural seam was in the
+engine's queue iterator (`processNextMapping`), which was split into
+`processSingleMapping` + `processQueue`/`advanceQueue` with a new
+`DispatchMode` tag deciding whether `onWorkerSyncCompleted`
+finishes a single-mapping future or advances the queue. The
+`m_currentSingleIface`/`m_currentMultiIface` pointers moved from
+the worker to the engine (lifetime is naturally engine-side).
+Cancellation contract preserved (m_cancelled flag drives the
+queue's terminal branch + reportCanceled). 26/26 ctest pass;
+verify-all clean.
+
+
 
 **Files:**
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/engine/syncengine.cpp` (worker drivers)
