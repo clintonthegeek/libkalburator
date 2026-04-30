@@ -619,22 +619,85 @@ void TstEngineCancellation::cancelAfterFinished()
 
 void TstEngineCancellation::singleMappingFutureCompletes()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 29 (positive smoke).");
+    // Positive smoke — non-cancelled run via runSyncFuture(mappingId).
+    // Source has 3 events; target empty. After waitForFinished, the
+    // future is finished, not canceled, and resultAt(0) carries a
+    // successful SyncResult. The destination has the 3 items.
+    constexpr int kEventCount = 3;
+    for (int i = 1; i <= kEventCount; ++i) {
+        m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEvent(QStringLiteral("evt-%1").arg(i),
+                                      QStringLiteral("Event %1").arg(i)));
+    }
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(!future.isCanceled());
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0);
+    QVERIFY(r.success);
+    QVERIFY(!r.cancelled);
+
+    QCOMPARE(m_dst->allUids(QString::fromLatin1(kCalendarId)).size(), kEventCount);
 }
 
 void TstEngineCancellation::multiMappingFutureReturnsList()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 29 (positive smoke).");
+    // Positive smoke — runSyncFuture() (no mappingId) returns a
+    // QFuture<QList<SyncResult>>. With one enabled mapping in the
+    // fixture, the list has one entry.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+
+    auto future = m_engine->runSyncFuture();
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(!future.isCanceled());
+    QCOMPARE(future.resultCount(), 1);
+    const QList<SyncResult> resultList = future.resultAt(0);
+    QCOMPARE(resultList.size(), 1);
+    QVERIFY(resultList[0].success);
 }
 
 void TstEngineCancellation::watcherFinishedFiresOnce()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 29 (positive smoke).");
+    // Positive smoke — QFutureWatcher::finished must fire exactly
+    // once for a single runSyncFuture call. (The engine installs
+    // its own internal watcher for cancel forwarding; this tests
+    // a *consumer-side* watcher attached to the returned future.)
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+
+    QFutureWatcher<SyncResult> watcher;
+    QSignalSpy finishedSpy(&watcher, &QFutureWatcher<SyncResult>::finished);
+    watcher.setFuture(future);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    // Pump briefly so the watcher's queued finished signal lands.
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 1000);
 }
 
 void TstEngineCancellation::progressValueTicks()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 29 (positive smoke).");
+    // Positive smoke — does the future surface progress?
+    //
+    // Empirically: SyncEngine reports per-mapping progressUpdated
+    // signals, but does NOT call setProgressValue / setProgressRange
+    // on the QFutureInterface — so QFuture::progressValue() stays at
+    // 0 throughout. Wiring iface progress is a separate plumbing
+    // task (not in F2's scope per 04q). Skip with a concrete reason
+    // until that wiring lands.
+    QSKIP("QFuture progressValue is not wired to QFutureInterface in "
+          "the current engine; SyncEngine emits progressUpdated signals "
+          "instead. Wiring setProgressValue on the iface is a separate "
+          "task, deferred from F2.");
 }
 
 QTEST_MAIN(TstEngineCancellation)
