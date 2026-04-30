@@ -1347,6 +1347,17 @@ void SyncEngineWorker::cancel()
     m_cancelled = true;
 }
 
+void SyncEngineWorker::observeCancel()
+{
+    // F2 Task 16: invoked via queued connection from the engine side
+    // when QFutureWatcher::canceled fires (Task 17 wires the engine
+    // side). No mutex — atomic store is the right primitive here so
+    // that forwarding cancellation from the engine thread does not
+    // block on the worker's m_mutex.
+    m_cancelled.store(true, std::memory_order_release);
+    emit cancellationObserved();
+}
+
 void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
 {
     auto syncModeStr = [](SyncMode mode) -> const char* {
