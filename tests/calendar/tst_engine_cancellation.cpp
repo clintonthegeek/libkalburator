@@ -439,8 +439,121 @@ void TstEngineCancellation::cancelDuringConflictPause()
 
 void TstEngineCancellation::cancelMultiMappingMidQueue()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 27 once multi-mapping "
-          "queue cancellation is in place.");
+    // C5 — cancel a multi-mapping queue run after some mappings
+    // have completed and one is in flight.
+    //
+    // Fixture: build 5 mappings m1..m5, each with its own source/
+    // target MockBackend pair so they don't interfere. Block m3's
+    // source fetch so the queue stalls there. Wait for m1 + m2 to
+    // complete (allSyncsCompleted not yet — that fires only after
+    // the whole queue drains), then cancel.
+    //
+    // Per F2 Task 21's advanceQueue: on cancel, the queue exits
+    // early and reports m_queueResults on the multi-iface. m1 and
+    // m2's real results are already appended; m3..m5 are not.
+    // Per the prompt's contract, the test pins the structural
+    // claim that future.resultAt(0) returns a list, m1 + m2 are
+    // present and successful, and remaining slots either don't
+    // exist or are skipped/cancelled — see comments below.
+
+    constexpr int kMappingCount = 5;
+
+    // Extra backends owned by the test (not the fixture's m_src /
+    // m_dst, which we won't use). Register them with the fixture's
+    // BackendRegistry so the engine can resolve them.
+    std::vector<std::unique_ptr<MockBackend>> sources;
+    std::vector<std::unique_ptr<MockBackend>> targets;
+    for (int i = 1; i <= kMappingCount; ++i) {
+        sources.emplace_back(std::make_unique<MockBackend>());
+        targets.emplace_back(std::make_unique<MockBackend>());
+        const QString srcId = QStringLiteral("src-%1").arg(i);
+        const QString tgtId = QStringLiteral("tgt-%1").arg(i);
+        m_registry->registerBackendInstance(srcId, sources.back().get());
+        m_registry->registerBackendInstance(tgtId, targets.back().get());
+        const QString calId = QStringLiteral("cal-%1").arg(i);
+        sources.back()->createCalendar(QString::fromLatin1(kCollectionId),
+                                       calId,
+                                       QStringLiteral("Calendar %1").arg(i));
+        targets.back()->createCalendar(QString::fromLatin1(kCollectionId),
+                                       calId,
+                                       QStringLiteral("Calendar %1").arg(i));
+
+        // Host calendar shell so applyChangesToBackend can find it.
+        auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+        hostCal->setId(calId);
+        m_host->stubCollection()->addCalendarWithId(calId, hostCal);
+
+        // Seed each source with one event so the run has actual
+        // work to do (and m1/m2 have observable success).
+        sources.back()->addIncidence(calId,
+            makeEvent(QStringLiteral("evt-%1").arg(i),
+                      QStringLiteral("Event %1").arg(i)));
+    }
+
+    QList<SyncMapping> mappings;
+    for (int i = 1; i <= kMappingCount; ++i) {
+        SyncMapping m;
+        m.id              = QStringLiteral("m%1").arg(i);
+        m.sourceBackend   = QStringLiteral("src-%1").arg(i);
+        m.sourceCalendar  = QStringLiteral("cal-%1").arg(i);
+        m.targetBackend   = QStringLiteral("tgt-%1").arg(i);
+        m.targetCalendar  = QStringLiteral("cal-%1").arg(i);
+        m.mode            = SyncMode::TwoWay;
+        m.conflictPolicy  = ConflictResolution::LastWriteWins;
+        m.enabled         = true;
+        mappings.append(m);
+    }
+    m_engine->setSyncMappings(mappings);
+
+    // Block m3's source fetch so the queue stalls there.
+    sources[2]->setFetchBlocking(true);
+
+    // Track per-mapping completions so we can wait until m1 + m2
+    // are done before cancelling.
+    QSignalSpy completedSpy(m_engine.get(), &SyncEngine::syncCompleted);
+
+    auto future = m_engine->runSyncFuture();
+
+    // Wait until m1 + m2 have completed.
+    QTRY_VERIFY_WITH_TIMEOUT(completedSpy.count() >= 2, 5000);
+
+    future.cancel();
+
+    // Pump so the cancel chain reaches the worker before we
+    // release m3's blocker.
+    QTest::qWait(100);
+
+    sources[2]->releaseFetchBlocker();
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(future.isCanceled());
+
+    // The future result is the per-mapping QList<SyncResult>. Per
+    // advanceQueue, on cancel the multi-iface gets reportResult
+    // with whatever m_queueResults has accumulated (m1 + m2's real
+    // results, possibly m3 if it raced past) — m4 and m5 were never
+    // dispatched and are not in the queue results.
+    QCOMPARE(future.resultCount(), 1);
+    const QList<SyncResult> resultList = future.resultAt(0);
+
+    // m1 + m2 must be present and successful.
+    QVERIFY2(resultList.size() >= 2,
+             qPrintable(QStringLiteral("expected at least 2 results, got %1")
+                            .arg(resultList.size())));
+    QVERIFY(resultList[0].success);
+    QVERIFY(resultList[1].success);
+
+    // m4 and m5 were never dispatched, so they should not appear
+    // in the queue results.
+    QVERIFY2(resultList.size() < kMappingCount,
+             qPrintable(QStringLiteral("expected fewer than %1 results "
+                                       "(remaining mappings should be skipped), got %2")
+                            .arg(kMappingCount).arg(resultList.size())));
+
+    // Detach mappings before scope exits so backend pointers don't
+    // outlive the local std::unique_ptrs.
+    m_engine->setSyncMappings({});
 }
 
 void TstEngineCancellation::idempotentCancel()
