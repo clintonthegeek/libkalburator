@@ -765,10 +765,13 @@ SyncEngine private members verbatim. Threading model unchanged
 
 ### Task 9: Migrate WildPalms's `syncrunner_wp.cpp`
 
+**Status: landed 2026-04-29, commits `61e7d35` (runner) and `ac0d4ef`
+(plugin tests).**
+
 **Files:**
 - Modify: `WildPalms/src/runtime/syncrunner_wp.cpp`
 
-- [ ] **Step 1: Replace `BlobSyncEngine` with `SyncEngine`**
+- [x] **Step 1: Replace `BlobSyncEngine` with `SyncEngine`**
 
 In `syncrunner_wp.cpp:266`:
 
@@ -800,7 +803,20 @@ Replace the call site:
 The `runMirror` function (`syncrunner_wp.cpp:334+`) gets the same
 treatment for `engine.mirror(...)` → `engine.runBlobMirror(...)`.
 
-- [ ] **Step 2: Update WildPalms's
+Implementation note: `SyncEngine`'s constructor is nullptr-safe for
+the one-shot blob path — `m_registry` and `m_controller` are only
+read by the calendar-flow paths (`prepareSyncFastPath`,
+`onWorkerConflictDetected`, `loadSyncMappings`), none of which the
+blob facade touches. No default-constructed overload was needed.
+
+Eight WildPalms plugin tests (the V2 plugin tests for contacts /
+todos / calendar / memo, the e2e tests for webcalendar / plucker,
+and the `tst_palm{sync,device}_roundtrip` tests under
+`tests/palm{sync,device}/`) also held concrete `BlobSyncEngine`
+pointers and required the same mechanical rename. They were
+migrated in `ac0d4ef` alongside the runner commit.
+
+- [x] **Step 2: Update WildPalms's
   `#include "blobsyncengine.h"` lines**
 
 ```bash
@@ -811,7 +827,7 @@ Replace each with `#include "engine/syncengine.h"` (path is
 relative to libkalburator's installed include dir). Confirm
 WildPalms builds.
 
-- [ ] **Step 3: Build + test WildPalms**
+- [x] **Step 3: Build + test WildPalms** *(73/73 pass)*
 
 ```bash
 cd ~/dev/refactor-engine-merger/WildPalms
@@ -828,7 +844,7 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 
 Expected: 73/73 pass.
 
-- [ ] **Step 4: Commit (in WildPalms)**
+- [x] **Step 4: Commit (in WildPalms)** *(`61e7d35` runner, `ac0d4ef` plugin tests)*
 
 ```bash
 cd ~/dev/refactor-engine-merger/WildPalms
@@ -842,12 +858,35 @@ Mechanical rename: BlobSyncEngine → SyncEngine; twoWayWithBaseline
 
 ### Task 10: Delete `BlobSyncEngine`
 
+**Status: landed 2026-04-29, commit `c5330d1`.**
+
+Implementation note: two prerequisites surfaced during the work that
+the plan didn't anticipate:
+
+1. **Result types relocated.** `BlobSyncStats` and `BlobSyncResult`
+   structs live in `blobsyncengine.h` today but are part of
+   `SyncEngine`'s public one-shot API surface. Before deleting the
+   header, the structs were lifted into a new minimal header
+   `src/blob/blobsyncresult.h`. `syncengine.h` now includes that
+   header instead.
+2. **`dispatchFirstSync` had an internal call site.** The first-sync
+   path inside `SyncEngineWorker::dispatchFirstSync` was constructing
+   a short-lived `BlobSyncEngine` to perform the initial mirror.
+   Replaced with a call to the engine's own `runBlobMirror` via a
+   new back-pointer (`m_engine`) that `SyncEngine::startWorkerThread`
+   passes into `setDependencies`. The `BlockingQueuedConnection`
+   marshalling to the source backend's main thread is preserved.
+
 **Files (libkalburator):**
 - Delete: `src/blob/blobsyncengine.{h,cpp}`
-- Delete or migrate: `tests/blob/tst_blobsyncengine.cpp`
-- Modify: `CMakeLists.txt` (drop from `KALBURATOR_BLOB_*` lists)
+- Delete: `tests/blob/tst_blobsyncengine.cpp`
+- Add: `src/blob/blobsyncresult.h` (extracted result types)
+- Modify: `src/engine/syncengine.{h,cpp}` (worker back-pointer +
+  `dispatchFirstSync` rewrite)
+- Modify: `CMakeLists.txt` (drop blobsyncengine entries; add
+  blobsyncresult.h)
 
-- [ ] **Step 1: Confirm no callers**
+- [x] **Step 1: Confirm no callers**
 
 ```bash
 git grep -nE "BlobSyncEngine|blobsyncengine" src/ tests/
@@ -856,41 +895,13 @@ git grep -nE "BlobSyncEngine|blobsyncengine" src/ tests/
 Expected: only `src/blob/blobsyncengine.{h,cpp}` and possibly
 `tests/blob/tst_blobsyncengine.cpp`.
 
-- [ ] **Step 2: Decide test fate**
+- [x] **Step 2: Decide test fate** *(deleted; parity preserved by `tst_engine_blob_one_shot` from Task 6)*
 
-Either:
-- Delete `tst_blobsyncengine.cpp` (its scenarios are covered by
-  `tst_engine_blob_one_shot` from Task 6).
-- Or migrate its specific assertions into
-  `tst_engine_blob_one_shot` and then delete.
+- [x] **Step 3: Delete files; update `CMakeLists.txt`**
 
-Plan-author's call. Recommendation: delete; the parity test in
-Task 6 already exists.
+- [x] **Step 4: Build + test** *(24/24 pass; was 25, -1 from tst_blobsyncengine deletion as expected)*
 
-- [ ] **Step 3: Delete files; update `CMakeLists.txt`**
-
-```bash
-git rm src/blob/blobsyncengine.h src/blob/blobsyncengine.cpp
-git rm tests/blob/tst_blobsyncengine.cpp  # if deleting
-```
-
-Drop entries from `tests/blob/CMakeLists.txt` and root
-`CMakeLists.txt`'s `KALBURATOR_BLOB_*` lists.
-
-- [ ] **Step 4: Build + test**
-
-```bash
-rm -rf build
-cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build -j 12
-cd build && ctest --output-on-failure
-```
-
-Expected: all tests pass (count drops by 1 from `tst_blobsyncengine`
-deletion; the `tst_engine_blob_one_shot` from Task 6 took its
-place).
-
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
