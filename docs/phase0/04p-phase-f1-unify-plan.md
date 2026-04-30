@@ -717,44 +717,37 @@ folds into `SyncEngine`'s private members.
 - Modify: `CMakeLists.txt` (drop `syncworker.{h,cpp}` from
   `KALBURATOR_CALENDAR_*` lists)
 
-- [ ] **Step 1: Move worker body into `SyncEngine`**
+**Status: landed 2026-04-29, commit `391e8a5`.**
 
-Each `SyncWorker` slot becomes a private `SyncEngine` slot.
-Member fields move. The worker `QThread` instance becomes a
-private member. The `connect`s and `QMetaObject::invokeMethod`
-calls preserve their semantics; only the receiver type
-changes.
+- [x] **Step 1: Move worker body into `SyncEngine`**
 
-The signal forwarding layer (today's
-`SyncCoordinator::onWorkerSyncCompleted` etc.) collapses into
-direct emission since signal source and emitter are now the same
-object — but the public API (signal names, signatures) is
-unchanged, so callers don't notice.
+Implementation note: rather than collapsing the worker into
+`SyncEngine` itself (which would require either moving the whole
+QObject to the worker thread, or accepting unsafe concurrent state
+access from the public API), the worker became a private companion
+class `SyncEngineWorker` declared in `src/engine/syncengine.h` and
+implemented in `src/engine/syncengine.cpp`. It preserves the QThread
++ `QMetaObject::invokeMethod` dispatch verbatim. The "signal
+forwarding layer collapses into direct emission" intent is honored
+at the file / translation-unit level: there is no longer a separate
+`syncworker.{h,cpp}` boundary, but the QObject seam stays because
+Qt's threading model needs it. Public API of `SyncEngine` is
+unchanged; consumers see no diff.
 
-- [ ] **Step 2: Confirm no `SyncWorker` references**
+- [x] **Step 2: Confirm no `SyncWorker` references**
 
-```bash
-git grep -nE "SyncWorker|syncworker" src/ tests/
-```
+`git grep -nE "SyncWorker|syncworker" src/ tests/ CMakeLists.txt`
+returns zero hits.
 
-Should return zero hits.
+- [x] **Step 3: Delete the files**
 
-- [ ] **Step 3: Delete the files**
+`src/calendar/syncworker.{h,cpp}` removed; CMakeLists.txt updated.
 
-```bash
-git rm src/calendar/syncworker.h src/calendar/syncworker.cpp
-```
+- [x] **Step 4: Build, test, commit**
 
-- [ ] **Step 4: Build, test, commit**
-
-```bash
-rm -rf build
-cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build build -j 12
-cd build && ctest --output-on-failure
-```
-
-Expected: all tests pass.
+Library: 25/25 pass. `verify-all.sh` exit 3 — same F.0-baseline-vs-F1-current
+"improved" delta as Tasks 1-7; baseline refresh still deferred to
+Task 14. Consumers (PlanStan, WildPalms) unchanged.
 
 ```bash
 git add -A
