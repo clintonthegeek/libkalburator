@@ -290,6 +290,17 @@ PushOperation* SyncBackend::pushItems(const QString &calendarId,
     return op;
 }
 
+PushOperation* SyncBackend::pushItems(const QString &calendarId,
+                                      const QList<KCalendarCore::Incidence::Ptr> &items,
+                                      const TranscodingPlan &plan)
+{
+    Q_UNUSED(plan);
+    // Default: delegate to the existing 2-arg form, ignoring the
+    // plan. Subclasses that need to honour the plan override this
+    // method directly. F2 Tasks 6-12 migrate each concrete backend.
+    return pushItems(calendarId, items);
+}
+
 DeleteOperation* SyncBackend::deleteItems(const QString &calendarId,
                                           const QStringList &uids)
 {

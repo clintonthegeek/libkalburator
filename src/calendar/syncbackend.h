@@ -205,8 +205,29 @@ public:
      * @param items The incidences to push
      * @return PushOperation* tracking the operation (caller owns)
      */
+    // Existing 2-arg form: still virtual, kept until F2 Task 38.
     virtual PushOperation* pushItems(const QString &calendarId,
                                      const QList<KCalendarCore::Incidence::Ptr> &items);
+
+    /**
+     * @brief Push items to a calendar, with a transcoding plan.
+     *
+     * F2 form. Subclasses gradually override this and stop using the
+     * 2-arg form. F2 Tasks 6-12 migrate each concrete backend; Task
+     * 38 drops the 2-arg form entirely.
+     *
+     * The base default delegates to the 2-arg form, ignoring the
+     * plan, so existing concrete subclasses continue to compile and
+     * behave identically until they're individually migrated.
+     *
+     * @param calendarId The calendar ID to push to
+     * @param items The incidences to push
+     * @param plan Transcoding plan to honour for the push
+     * @return PushOperation* tracking the operation (caller owns)
+     */
+    virtual PushOperation* pushItems(const QString &calendarId,
+                                     const QList<KCalendarCore::Incidence::Ptr> &items,
+                                     const TranscodingPlan &plan);
 
     /**
      * @brief Delete items from a calendar.
