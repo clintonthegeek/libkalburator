@@ -56,8 +56,13 @@ Default profile: `KALBURATOR_HAVE_ORG_IO=OFF`, `KALBURATOR_HAVE_AKONADI=OFF`.
 ## Calendar-layer integration tests (since Phase D.0, 2026-04-28)
 
 `tests/calendar/` contains stub-`ISyncHost` integration tests that
-pin `SyncCoordinator`/`SyncWorker` behavior. They are the contract
-the engine-merger refactor (Phases D / E / F / G) preserves.
+pin `SyncEngine` behavior. They are the contract the engine-merger
+refactor (Phases D / E / F / G) preserves. Phase F1 (2026-04-30,
+tag `v0.13-phase-f1-unify`) collapsed `SyncCoordinator` +
+`SyncWorker` + `BlobSyncEngine` into the unified `SyncEngine` at
+`src/engine/syncengine.{h,cpp}` — historical references to those
+old class names appear in commit messages and FINDINGS but should
+not be used in new code or comments.
 
 When writing or modifying tests in this directory:
 
@@ -68,7 +73,7 @@ When writing or modifying tests in this directory:
   `kalburator_add_calendar_integration_test()` in
   `tests/calendar/CMakeLists.txt`.
 
-- **`SyncCoordinator::runSync(behavior)`** (no `mappingId` arg) —
+- **`SyncEngine::runSync(behavior)`** (no `mappingId` arg) —
   use this and wait on `allSyncsCompleted`. The single-mapping form
   `runSync(mappingId, …)` has a known leak (re-dispatches the same
   mapping in `processNextMapping`); see
