@@ -176,33 +176,32 @@ void TestCalendarSyncErrorRecovery::cleanup()
 
 bool TestCalendarSyncErrorRecovery::runOneSync()
 {
-    // Capture per-mapping SyncResult — fires once per mapping just
-    // before allSyncsCompleted aggregates. With one mapping, the
-    // per-mapping signal is the truth.
-    QSignalSpy completedSpy(m_coordinator.get(),
-                            &SyncEngine::syncCompleted);
-    QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncEngine::allSyncsCompleted);
-
-    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
-    if (!allDoneSpy.wait(kSyncTimeoutMs)) {
-        qWarning() << "allSyncsCompleted signal did not fire within"
+    // Capture per-mapping SyncResult via the multi-mapping
+    // runSyncFuture, which yields QList<SyncResult>. With one mapping,
+    // the first (and only) entry is the truth.
+    auto future = m_coordinator->runSyncFuture(
+        SyncEngine::SyncBehavior::Unmonitored);
+    int waited = 0;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    if (!future.isFinished()) {
+        qWarning() << "runSyncFuture did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
     }
-
-    if (completedSpy.isEmpty()) {
-        qWarning() << "syncCompleted did not fire (engine never reached "
-                      "per-mapping completion)";
+    if (future.isCanceled()) {
+        qWarning() << "runSyncFuture was canceled unexpectedly";
         return false;
     }
-    const auto args = completedSpy.takeLast();
-    if (args.size() < 2) {
-        qWarning() << "syncCompleted args size" << args.size()
-                   << "(expected 2: mappingId, SyncResult)";
+    const auto results = future.resultAt(0);
+    if (results.isEmpty()) {
+        qWarning() << "runSyncFuture produced no per-mapping result "
+                      "(engine never reached per-mapping completion)";
         return false;
     }
-    m_lastResult = args.at(1).value<SyncResult>();
+    m_lastResult = results.last();
     return true;
 }
 
