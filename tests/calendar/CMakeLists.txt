@@ -73,3 +73,7 @@ kalburator_add_calendar_integration_test(tst_engine_unified_boundary)
 # Phase F2 Task 2 — cancellation contract scaffold (skipped until
 # Group 2 lands the QFuture-based runSync and cancellation wiring).
 kalburator_add_calendar_integration_test(tst_engine_cancellation)
+
+# Phase F2 Task 4 — SyncOperation contract (State enum, idempotent
+# setState, cancelRequested flag, isFinished predicate).
+kalburator_add_calendar_test(tst_syncoperation_contract)

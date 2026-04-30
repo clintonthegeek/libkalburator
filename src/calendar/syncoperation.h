@@ -5,6 +5,7 @@
 #include <QString>
 #include <QList>
 #include <KCalendarCore/Incidence>
+#include <atomic>
 
 namespace Kalburator::Sync {
 
@@ -70,7 +71,7 @@ public:
     /**
      * @brief Current state of the operation.
      */
-    State state() const { return m_state; }
+    State state() const noexcept { return m_state.load(std::memory_order_acquire); }
 
     /**
      * @brief Progress percentage (0-100), or -1 if indeterminate.
@@ -85,13 +86,16 @@ public:
     /**
      * @brief Whether the operation has completed (success, failure, or cancelled).
      */
-    bool isFinished() const;
+    bool isFinished() const noexcept;
 
     /**
      * @brief Request cancellation of this operation.
      *
-     * The operation may not cancel immediately. When cancellation completes,
-     * state will be Cancelled and finished() will be emitted.
+     * The default implementation sets the atomic m_cancelRequested flag and
+     * (for backward compatibility with existing backend run-bodies that
+     * check op->state() == Cancelled) transitions to Cancelled if not yet
+     * finished. Subclasses may override (e.g. to call QNetworkReply::abort())
+     * but should still set the flag. Idempotent.
      */
     virtual void cancel();
 
@@ -125,6 +129,14 @@ public:
 
 signals:
     /**
+     * @brief Emitted exactly once when the operation transitions Pending -> Running.
+     *
+     * Part of the F2 standardised SyncOperation contract used by the
+     * await<Op>() helper.
+     */
+    void started();
+
+    /**
      * @brief Emitted when operation state changes.
      */
     void stateChanged(SyncOperation::State newState);
@@ -137,6 +149,7 @@ signals:
     /**
      * @brief Emitted when operation completes (any terminal state).
      *
+     * Emitted exactly once, regardless of which terminal state was reached.
      * Check state() to determine success/failure/cancellation.
      */
     void finished();
@@ -148,6 +161,22 @@ protected:
     void setErrorString(const QString &error);
 
     /**
+     * @brief Set the error string and transition to Failed in one step.
+     *
+     * Equivalent to setErrorString(message) followed by setState(Failed).
+     * Part of the F2 standardised SyncOperation contract.
+     */
+    void setError(const QString &message);
+
+    /**
+     * @brief Whether cancel() has been called on this operation.
+     *
+     * run() bodies and the F2 await<Op>() helper poll this between work
+     * units to observe cancellation requests.
+     */
+    bool cancelRequested() const noexcept;
+
+    /**
      * @brief Mark operation as started (Pending -> Running).
      */
     void start();
@@ -155,7 +184,8 @@ protected:
 private:
     QString m_operationId;
     QString m_calendarId;
-    State m_state = Pending;
+    std::atomic<State> m_state{Pending};
+    std::atomic<bool> m_cancelRequested{false};
     int m_progress = -1;
     QString m_errorString;
 
