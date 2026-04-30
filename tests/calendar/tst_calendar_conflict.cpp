@@ -200,11 +200,11 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
 
     QSignalSpy conflictSpy(m_coordinator.get(),
                            &SyncEngine::conflictDetected);
-    QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
-    QVERIFY(allDoneSpy.wait(kSyncTimeoutMs));
+    auto future = m_coordinator->runSyncFuture(
+        SyncEngine::SyncBehavior::Unmonitored);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY(!future.isCanceled());
 
     QVERIFY2(conflictSpy.count() >= 1,
              qPrintable(QStringLiteral("expected conflictDetected, got %1 signals")
@@ -229,10 +229,9 @@ void TestCalendarConflict::monitored_sameUidDivergent_pausesUntilResume()
 
     QSignalSpy conflictSpy(m_coordinator.get(),
                            &SyncEngine::conflictDetected);
-    QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncEngine::SyncBehavior::Monitored);
+    auto future = m_coordinator->runSyncFuture(
+        SyncEngine::SyncBehavior::Monitored);
 
     // In monitored mode, the worker emits conflictPauseRequested and
     // yields. SyncEngine's onWorkerConflictPauseRequested calls
@@ -240,8 +239,9 @@ void TestCalendarConflict::monitored_sameUidDivergent_pausesUntilResume()
     // AutoResolve the manager returns SourceWins immediately, and the
     // coordinator calls resumeAfterConflictResolution to unblock the
     // worker. So the test sees: signal fires, then sync completes.
-    QVERIFY2(allDoneSpy.wait(kSyncTimeoutMs),
-             "sync did not complete in monitored mode with AutoResolve");
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(),
+             "sync was canceled in monitored mode with AutoResolve");
 
     QVERIFY2(conflictSpy.count() >= 1,
              qPrintable(QStringLiteral("expected conflict signal, got %1")
