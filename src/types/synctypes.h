@@ -158,6 +158,20 @@ struct SyncResult {
     QStringList warnings;
     QList<ConflictInfo> unresolvedConflicts;
 
+    /// True iff QFuture::cancel() was observed during this run.
+    /// Distinct from success: success is "ran to completion without
+    /// errors"; cancelled is "ran for a while then stopped on
+    /// caller request". A cancelled SyncResult typically has
+    /// errorMessage empty; partial sourceStats/targetStats reflect
+    /// work done before cancellation took effect.
+    bool cancelled = false;
+
+    /// True iff this slot in a multi-mapping queue never started
+    /// (e.g. cancellation arrived after mapping 2 of 5 finished;
+    /// mappings 3-5 land here with skipped=true). Mutually
+    /// exclusive with success=true.
+    bool skipped = false;
+
     qint64 durationMs() const {
         return startTime.msecsTo(endTime);
     }
