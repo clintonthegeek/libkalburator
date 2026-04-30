@@ -218,11 +218,11 @@ void TestCalendarTranscodingWarning::transcoding_sourceHasRruleByDay_targetCantR
 
     QSignalSpy warningSpy(m_coordinator.get(),
                           &SyncEngine::transcodingWarning);
-    QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncEngine::allSyncsCompleted);
 
-    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
-    QVERIFY(allDoneSpy.wait(kSyncTimeoutMs));
+    auto future = m_coordinator->runSyncFuture(
+        SyncEngine::SyncBehavior::Unmonitored);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY(!future.isCanceled());
 
     QVERIFY2(warningSpy.count() >= 1,
              qPrintable(QStringLiteral("expected transcodingWarning, got %1 signals")
