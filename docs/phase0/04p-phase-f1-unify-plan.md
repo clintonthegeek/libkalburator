@@ -1,5 +1,7 @@
 # Phase F1 — Unify (engine collapse + IDomainAdapter) Implementation Plan
 
+**Status:** Landed 2026-04-30 on tag `v0.13-phase-f1-unify`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:executing-plans (or subagent-driven-development) to
 > implement this plan task-by-task. Steps use checkbox (`- [ ]`)
@@ -917,6 +919,8 @@ by tst_engine_blob_one_shot (Task 6)."
 
 ### Task 11: Drop the flat-keyed table; rename triple → canonical
 
+**Status: landed 2026-04-30, commits `5489a10` (libkalburator) and `e471406` (WildPalms).**
+
 **Files:**
 - Modify: `src/blob/blobbaselinestore.{h,cpp}`
 - Modify: `tests/journal/tst_blobbaselinestore.cpp` (drop
@@ -969,6 +973,8 @@ design (FINDINGS-noted full-resync-on-baseline-loss tolerance)."
 
 ### Task 12: PlanStan: `SyncCoordinator` → `SyncEngine`
 
+**Status: landed 2026-04-30, PlanStan commit `8ab5c82`.**
+
 **Files (PlanStan):**
 - Modify: every `.cpp` and `.h` referencing `SyncCoordinator`.
 
@@ -1013,6 +1019,8 @@ src and tests; behavior unchanged."
 ```
 
 ### Task 13: Remove the deprecation shim
+
+**Status: landed 2026-04-30, commits `01f2b04` (libkalburator) and `8c3fca7` (WildPalms — BackendPluginManager type rename, not anticipated by the original plan).**
 
 **Files (libkalburator):**
 - Delete: `src/calendar/synccoordinator.h` (the shim)
@@ -1066,6 +1074,8 @@ to SyncEngine. Shim served its purpose."
 ## Group 7 — Cleanup, verify-all, doc updates, tag
 
 ### Task 14: Verify-all green; baseline refresh
+
+**Status: landed 2026-04-30. Final libkalburator count: 23/23 (21 baseline + 4 new from F1 Tasks 2/3/6/7 − 2 deleted [`tst_blobsyncengine` Task 10, `tst_blobbaselinestore` Task 11]). Baseline file refreshed; verify-all exit 0.**
 
 - [ ] **Step 1: Run verify-all**
 

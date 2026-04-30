@@ -11,7 +11,7 @@
 | D — Compose | ✅ landed 2026-04-29 | `v0.10-phase-d-compose` |
 | E — Transcoding-into-backends | ✅ landed 2026-04-29 | `v0.11-phase-e-transcoding-backends` |
 | F.0 — Test gap closure | ✅ landed 2026-04-29 | `v0.12-phase-f0-test-gaps` |
-| F1 — Unify (engine + adapter, threading verbatim) | ⬜ not started | `v0.13-phase-f1-unify` |
+| F1 — Unify (engine + adapter, threading verbatim) | ✅ landed 2026-04-30 | `v0.13-phase-f1-unify` |
 | F2 — Threading API redesign | ⬜ not started | `v0.14-phase-f2-threading` |
 | G — Opaque + plugin | ⬜ not started | `v0.15-phase-g-opaque-plugin` |
 

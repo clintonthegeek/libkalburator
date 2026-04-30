@@ -1,9 +1,9 @@
 # Phase F1 — Unify (engine collapse + IDomainAdapter) — design
 
 **Date:** 2026-04-29
-**Status:** Approved 2026-04-29 by user via brainstorming session.
+**Status:** Landed 2026-04-30 on tag `v0.13-phase-f1-unify`.
 Implementation plan in `04p-phase-f1-unify-plan.md` (sibling).
-**Phase tag on completion:** `v0.13-phase-f1-unify`.
+**Phase tag:** `v0.13-phase-f1-unify`.
 **Gates:** Phase F.0 complete (`v0.12-phase-f0-test-gaps`).
 
 ## Goal
