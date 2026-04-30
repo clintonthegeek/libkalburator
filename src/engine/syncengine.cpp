@@ -380,6 +380,14 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
         m_currentSingleIface = nullptr;
     }
     m_dispatchMode = DispatchMode::None;
+    // F2 Task 21 follow-up: clear m_isSyncing on the not-found path.
+    // runSyncFuture sets m_isSyncing = true before calling
+    // processSingleMapping; if we return here without dispatching,
+    // nothing else will clear it and subsequent runSync* calls are
+    // rejected by the m_isSyncing guard. The void runSync(id, …) path
+    // does not pre-set m_isSyncing, so this assignment is a no-op for
+    // that caller — harmless.
+    m_isSyncing = false;
     emit syncCompleted(mappingId, err);
 }
 
