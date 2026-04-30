@@ -109,34 +109,44 @@ bool CreateIncidenceItem::commit()
         return true;
     }
 
-    // Use storeItems so the backend applies the transcoding plan and emits
-    // transcodingWarning for any lossy conversions. storeItems is void, so
-    // capture the write outcome via writeFinished before calling.
-    const QString calId = m_calendar->id();
-    bool writeSucceeded = true;
-    QString writeError;
-
-    auto conn = QObject::connect(
-        backend(), &SyncBackend::writeFinished,
-        this, [&](const QString &signaledCalId, bool success, const QString &err) {
-            if (signaledCalId == calId && !success) {
-                writeSucceeded = false;
-                writeError = err;
-            }
-        },
-        Qt::DirectConnection);
-
-    backend()->storeItems(m_calendar, {m_incidence}, m_plan);
-
-    QObject::disconnect(conn);
-
-    if (!writeSucceeded) {
-        setErrorString(writeError.isEmpty()
-            ? tr("storeItems failed for UID: %1").arg(m_incidence->uid())
-            : writeError);
+    // Use pushItems so the backend applies the transcoding plan and emits
+    // transcodingWarning for any lossy conversions. pushItems returns a
+    // PushOperation; observe success/failure via state()/errorString().
+    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_incidence}, m_plan);
+    if (!pushOp) {
+        setErrorString(tr("Backend returned null PushOperation for UID: %1")
+                           .arg(m_incidence->uid()));
         return false;
     }
 
+    // The operation may have completed synchronously (some backends finish
+    // before returning the handle); guard the wait with isFinished().
+    if (!pushOp->isFinished()) {
+        QEventLoop loop;
+        connect(pushOp, &PushOperation::finished, &loop, &QEventLoop::quit);
+        QTimer::singleShot(30000, &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+
+    if (!pushOp->isFinished()) {
+        setErrorString(tr("PushOperation timed out for UID: %1").arg(m_incidence->uid()));
+        pushOp->deleteLater();
+        return false;
+    }
+
+    bool success = pushOp->state() == SyncOperation::Succeeded &&
+                   pushOp->succeededUids().contains(m_incidence->uid());
+
+    if (!success) {
+        QString error = pushOp->errorString();
+        setErrorString(error.isEmpty()
+            ? tr("pushItems failed for UID: %1").arg(m_incidence->uid())
+            : error);
+        pushOp->deleteLater();
+        return false;
+    }
+
+    pushOp->deleteLater();
     setCommitted(true);
     return true;
 }

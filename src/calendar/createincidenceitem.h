@@ -15,8 +15,9 @@ class FetchOperation;
  * @brief Transaction item for creating a new incidence.
  *
  * Simulation checks that no incidence with the same UID exists.
- * Commit calls backend->storeItems() with the transcoding plan so the
- * backend applies transcoding and emits transcodingWarning if needed.
+ * Commit calls backend->pushItems() with the transcoding plan so the
+ * backend applies transcoding and emits transcodingWarning if needed,
+ * and observes the returned PushOperation handle to detect failure.
  * Rollback deletes the created incidence.
  */
 class CreateIncidenceItem : public SyncTransactionItem
