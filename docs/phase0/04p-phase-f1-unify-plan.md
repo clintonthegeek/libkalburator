@@ -662,7 +662,7 @@ BlobSyncEngine for ad-hoc callers. Behavior parity with old API."
 - Create: `tests/calendar/tst_engine_unified_boundary.cpp`
 - Modify: `tests/calendar/CMakeLists.txt`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Three methods (per design):
 - `runSync_calendarMapping_emitsExpectedSignals()` — the same
@@ -675,7 +675,17 @@ Three methods (per design):
 - `runSyncAll_mixedMappings_drivesBoth()` — calendar + blob
   mapping in one engine. Both run through `runSyncAll()`.
 
-- [ ] **Step 2: Build, run, commit**
+**Landed:** scoped to F1's reachable surface: a calendar mapping
+runs through `runSync()` (CalendarDomainAdapter underneath); blob
+domain reaches the engine via the `runBlobTwoWay` / `runBlobMirror`
+one-shot facade from Task 6 (no synthetic `domain="blob"` mapping
+yet — `registerAdapter()` plumbing + mapping-domain dispatch is
+Phase G territory). Mixed test runs both back-to-back on one engine.
+Methods named: `runSync_calendarMapping_propagatesEvents`,
+`runBlobTwoWay_propagatesRecordsAndCommitsBaselines`,
+`mixedDomains_oneEngineDrivesBoth`. Library 25/25 pass.
+
+- [x] **Step 2: Build, run, commit**
 
 ```bash
 cmake --build build -j 12 --target tst_engine_unified_boundary
