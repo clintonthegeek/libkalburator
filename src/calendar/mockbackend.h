@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QList>
 #include <QPair>
+#include <QSemaphore>
 #include <QStringList>
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
@@ -153,6 +154,31 @@ public:
     void setDeterministicMode(bool enabled) { m_deterministicMode = enabled; }
 
     // =========================================================================
+    // F2 Task 22 — Blockable fetch / push (test fixture)
+    // =========================================================================
+
+    /// F2 Task 22 test fixture: when set true, fetchItems() returns
+    /// a FetchOperation that blocks on m_fetchBlocker until
+    /// releaseFetchBlocker() is called. Use to deterministically
+    /// cancel a fetch mid-flight in cancellation tests (C2, C3).
+    /// Default false; existing tests are unaffected.
+    void setFetchBlocking(bool blocking) { m_fetchBlocking = blocking; }
+
+    /// F2 Task 22 test fixture: wake any fetch operation currently
+    /// blocked on m_fetchBlocker. Idempotent (releasing when no
+    /// blocker is waiting just bumps the semaphore counter; the
+    /// next blocking fetch consumes it immediately). Tests that
+    /// use this should pair each setFetchBlocking(true) + start
+    /// with exactly one releaseFetchBlocker() at the end.
+    void releaseFetchBlocker() { m_fetchBlocker.release(); }
+
+    /// F2 Task 22 test fixture: same shape for pushItems. Used by
+    /// C3 (cancel during apply) which needs a PushOperation that
+    /// hangs until the test releases it.
+    void setPushBlocking(bool blocking) { m_pushBlocking = blocking; }
+    void releasePushBlocker() { m_pushBlocker.release(); }
+
+    // =========================================================================
     // State Inspection (for test verification)
     // =========================================================================
 
@@ -290,6 +316,15 @@ private:
 
     // Determinism
     bool m_deterministicMode = false;
+
+    // F2 Task 22: blockable fetch / push test fixture state. Default
+    // off; the worker threads spawned in fetchItems()/pushItems()
+    // when these flags are true acquire the corresponding semaphore
+    // before completing, letting tests cancel mid-flight.
+    bool m_fetchBlocking = false;
+    bool m_pushBlocking  = false;
+    QSemaphore m_fetchBlocker;
+    QSemaphore m_pushBlocker;
 };
 
 } // namespace Kalburator::Sync

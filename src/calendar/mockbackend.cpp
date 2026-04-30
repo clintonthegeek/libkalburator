@@ -329,6 +329,31 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
                 ? QStringLiteral("Mock failure on fetch")
                 : m_failureMessage);
         });
+    } else if (m_fetchBlocking) {
+        // F2 Task 22: run the fetch on a worker thread that blocks
+        // on m_fetchBlocker until the test releases it. This lets
+        // cancellation tests (C2, C3) deterministically cancel a
+        // fetch mid-flight rather than racing the test thread
+        // against a fast-completing op. Default off; only opted
+        // into by tests that have called setFetchBlocking(true).
+        auto *thread = QThread::create([this, op, calendarId]() {
+            m_fetchBlocker.acquire();
+            // Observe cancellation AFTER acquiring the semaphore so
+            // the test has a window to call op->cancel() before we
+            // complete. SyncOperation::cancel() transitions the
+            // op to Cancelled atomically, so checking state() here
+            // is the public-API observation point.
+            if (op->state() == SyncOperation::Cancelled) {
+                return;
+            }
+            QList<KCalendarCore::Incidence::Ptr> items =
+                m_calendars.value(calendarId).values();
+            op->setFetchedItems(items);
+            op->complete();
+        });
+        QObject::connect(thread, &QThread::finished,
+                         thread, &QThread::deleteLater);
+        thread->start();
     } else {
         QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, this]() {
             QList<KCalendarCore::Incidence::Ptr> items = m_calendars.value(calendarId).values();
@@ -389,6 +414,36 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
                 ? QStringLiteral("Mock failure on push")
                 : m_failureMessage);
         });
+    } else if (m_pushBlocking) {
+        // F2 Task 22: blockable push, mirrors the fetch path. Used
+        // by C3 (cancel during apply) which needs a PushOperation
+        // that hangs until the test releases it.
+        auto *thread = QThread::create(
+            [this, op, calendarId, finalItems]() {
+            m_pushBlocker.acquire();
+            // See fetchItems(): cancel() already transitions the op
+            // to Cancelled, so a state() check is the public-API
+            // observation point.
+            if (op->state() == SyncOperation::Cancelled) {
+                return;
+            }
+            auto &calendar = m_calendars[calendarId];
+            KCalendarCore::ICalFormat format;
+            QStringList succeededUids;
+            for (const auto &item : finalItems) {
+                QString ical = format.toICalString(item);
+                auto clone = format.fromString(ical);
+                if (clone) {
+                    calendar[item->uid()] = clone;
+                    succeededUids.append(item->uid());
+                }
+            }
+            op->setSucceededUids(succeededUids);
+            op->complete();
+        });
+        QObject::connect(thread, &QThread::finished,
+                         thread, &QThread::deleteLater);
+        thread->start();
     } else {
         QTimer::singleShot(m_operationDelayMs, this,
                            [op, calendarId, finalItems, this]() {
