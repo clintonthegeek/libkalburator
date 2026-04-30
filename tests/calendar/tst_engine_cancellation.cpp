@@ -13,8 +13,11 @@
 #include "calendarbaselinestore.h"
 #include "calendardomainadapter.h"
 #include "mockbackend.h"
+#include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
+
+#include <KCalendarCore/ICalFormat>
 
 #include <QFuture>
 #include <QFutureWatcher>
@@ -351,9 +354,87 @@ void TstEngineCancellation::cancelDuringApply()
 
 void TstEngineCancellation::cancelDuringConflictPause()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 26 once the "
-          "conflict-pause QEventLoop is wired to the cancellation "
-          "channel.");
+    // C4 — cancel WHILE the worker is yielded for a monitored
+    // AskUser conflict.
+    //
+    // Per FINDINGS "Conflict signals require AskUser policy" + the
+    // tst_calendar_conflict.cpp template: AskUser conflict policy +
+    // baseline-seeded path are both required for the engine to
+    // emit conflictDetected / conflictPauseRequested rather than
+    // downgrading silently.
+    //
+    // Build a fresh mapping with conflictPolicy = AskUser, seed a
+    // baseline, and put divergent records on both sides. Monitored
+    // sync mode causes the worker to yield via m_yieldedForConflict
+    // when the conflict is observed in handleConflicts(). Cancel
+    // there: the worker's onCancelDuringConflictPause() slot
+    // (Task 20) clears the yield flag and emits syncCompleted with
+    // success=false. The engine decorates with cancelled=true.
+
+    constexpr auto kConflictUid = "evt-conflict";
+
+    // Reconfigure the mapping with AskUser policy.
+    SyncMapping mapping = makeCalendarMapping();
+    mapping.conflictPolicy = ConflictResolution::AskUser;
+    m_engine->setSyncMappings({ mapping });
+
+    // Wire a SyncConflictStore so the engine has somewhere to
+    // record / leave the conflict during the pause.
+    const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-conflicts.db"));
+    auto conflictStore = std::make_unique<SyncConflictStore>(dbPath);
+    m_engine->setSyncConflictStore(conflictStore.get());
+
+    // Seed baseline so the engine sees both sides as "modified
+    // since baseline" and triggers a conflict (the quick-path
+    // downgrades AskUser to SourceWins without baselines).
+    auto baselineEvent = makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Baseline"));
+    KCalendarCore::ICalFormat fmt;
+    const QString baselineIcal = fmt.toICalString(baselineEvent);
+    m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
+                                     QString::fromLatin1(kConflictUid),
+                                     baselineIcal);
+
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QString::fromLatin1(kConflictUid),
+                                  QStringLiteral("Source-Modified")));
+    m_dst->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QString::fromLatin1(kConflictUid),
+                                  QStringLiteral("Target-Modified")));
+
+    // Watch for the conflictDetected signal emitted when the
+    // worker observes the conflict in handleConflicts (the
+    // Monitored path emits both conflictDetected and
+    // conflictPauseRequested before yielding).
+    QSignalSpy conflictSpy(m_engine.get(),
+                           &SyncEngine::conflictDetected);
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
+                                          SyncEngine::SyncBehavior::Monitored);
+
+    // Wait for the conflict signal — proves the worker has
+    // yielded with m_yieldedForConflict = true.
+    QVERIFY2(conflictSpy.wait(5000),
+             "expected conflictDetected before conflict-pause cancel");
+
+    future.cancel();
+
+    // Pump so QFutureWatcher::canceled → onCancelObserved →
+    // queued observeCancel → cancellationObserved →
+    // onCancelDuringConflictPause reaches the worker.
+    QTest::qWait(100);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(future.isCanceled());
+
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0);
+    QVERIFY(r.cancelled);
+
+    // Detach the conflict store before destruction so the engine
+    // doesn't outlive it during cleanup.
+    m_engine->setSyncConflictStore(nullptr);
 }
 
 void TstEngineCancellation::cancelMultiMappingMidQueue()
