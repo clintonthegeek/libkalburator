@@ -339,6 +339,14 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     iface->reportStarted();
     QFuture<SyncResult> future = iface->future();
 
+    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
+    // to the worker via onCancelObserved slot.
+    delete m_singleWatcher;
+    m_singleWatcher = new QFutureWatcher<SyncResult>(this);
+    m_singleWatcher->setFuture(future);
+    connect(m_singleWatcher, &QFutureWatcher<SyncResult>::canceled,
+            this, &SyncEngine::onCancelObserved);
+
     // Capture the completion signal once, then disconnect.
     auto conn = std::make_shared<QMetaObject::Connection>();
     *conn = connect(this, &SyncEngine::syncCompleted, this,
@@ -369,6 +377,14 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     iface->reportStarted();
     QFuture<QList<SyncResult>> future = iface->future();
 
+    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
+    // to the worker via onCancelObserved slot.
+    delete m_multiWatcher;
+    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
+    m_multiWatcher->setFuture(future);
+    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
+            this, &SyncEngine::onCancelObserved);
+
     // Accumulate per-mapping results; finalise on allSyncsCompleted.
     auto results = std::make_shared<QList<SyncResult>>();
     auto perMappingConn = std::make_shared<QMetaObject::Connection>();
@@ -396,6 +412,20 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
 
     runSync(behavior);
     return future;
+}
+
+// F2 Task 17: forwards QFutureWatcher::canceled to the worker thread.
+// Runs on the engine thread (where the watcher lives); hops to the
+// worker thread via Qt::QueuedConnection. The worker's observeCancel
+// (added in Task 16) sets m_cancelled and emits cancellationObserved
+// to wake nested QEventLoops in await<> / conflict pause.
+void SyncEngine::onCancelObserved()
+{
+    if (!m_worker) {
+        return;
+    }
+    QMetaObject::invokeMethod(m_worker, "observeCancel",
+                              Qt::QueuedConnection);
 }
 
 void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,

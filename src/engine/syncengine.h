@@ -20,6 +20,7 @@
 #include <QThread>
 #include <QFuture>
 #include <QFutureInterface>
+#include <QFutureWatcher>
 #include <KCalendarCore/Incidence>
 #include <atomic>
 #include <type_traits>
@@ -687,6 +688,10 @@ private slots:
     void onWorkerTranscodingWarning(const QString &calendarId, const QString &uid,
                                      const QStringList &warnings);
 
+    // F2 Task 17: invoked when m_singleWatcher or m_multiWatcher
+    // fires canceled. Forwards to the worker via queued connection.
+    void onCancelObserved();
+
 private:
     BackendRegistry *m_registry;
     ISyncHost *m_controller;
@@ -710,6 +715,14 @@ private:
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
     QMap<QString, FreshSyncState> m_freshState;
+
+    // F2 Task 17: watchers tracking the in-flight QFuture from
+    // runSyncFuture. Only one is populated at a time (one for
+    // single-mapping, one for multi-mapping). On QFuture::cancel(),
+    // QFutureWatcher::canceled fires on the engine thread, and
+    // we forward to the worker via queued connection.
+    QFutureWatcher<SyncResult>* m_singleWatcher = nullptr;
+    QFutureWatcher<QList<SyncResult>>* m_multiWatcher = nullptr;
 
     // Worker thread infrastructure
     QThread m_workerThread;
