@@ -343,11 +343,13 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     auto conn = std::make_shared<QMetaObject::Connection>();
     *conn = connect(this, &SyncEngine::syncCompleted, this,
         [iface, conn, mappingId](const QString &completedMappingId,
-                                  const SyncResult &result) {
+                                  const SyncResult &result) mutable {
+            if (!iface) return;                          // double-fire guard
             if (completedMappingId != mappingId) return;
             iface->reportResult(result);
             iface->reportFinished();
             delete iface;
+            iface = nullptr;                              // close the window
             QObject::disconnect(*conn);
         });
 
@@ -382,10 +384,12 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     // of aggregate.success).
     *allConn = connect(this, &SyncEngine::allSyncsCompleted, this,
         [iface, results, perMappingConn, allConn](
-                const SyncResult & /*aggregate*/) {
+                const SyncResult & /*aggregate*/) mutable {
+            if (!iface) return;                           // double-fire guard
             iface->reportResult(*results);
             iface->reportFinished();
             delete iface;
+            iface = nullptr;
             QObject::disconnect(*perMappingConn);
             QObject::disconnect(*allConn);
         });
