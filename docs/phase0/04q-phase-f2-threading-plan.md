@@ -3609,10 +3609,11 @@ The `QTRY_VERIFY_WITH_TIMEOUT` is the test-side equivalent of
 
 ---
 
-### Task 35: Migrate `CreateIncidenceItem::commit()` and `UpdateIncidenceItem::commit()`
+### Task 35: Migrate `CreateIncidenceItem::commit()` and `UpdateIncidenceItem::commit()` — **LANDED 2026-04-30** (commit `4a92955`)
 
 **Files:**
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/calendar/createincidenceitem.cpp`
+- Modify: `~/dev/refactor-engine-merger/libkalburator/src/calendar/createincidenceitem.h`
 - Modify: `~/dev/refactor-engine-merger/libkalburator/src/calendar/updateincidenceitem.cpp`
 
 **Background:** Per FINDINGS "Wrapper commit() lost error
@@ -3620,8 +3621,23 @@ detection when switching from pushItems to storeItems", these
 wrappers use a fragile temporary-`connect` pattern to
 `writeFinished`. F2 replaces with the operation-handle pattern.
 
-- [ ] **Step 1: Inspect the existing commit() bodies**
-- [ ] **Step 2: Replace the temporary-connect pattern**
+**Outcome:** Both `commit()` bodies now call
+`backend->pushItems(calendarId, {item}, plan)` and observe
+`pushOp->state() == Succeeded` / `pushOp->errorString()`.
+`pushItems` handles both create and update (backend inspects UID
+existence to decide), so `UpdateIncidenceItem::commit` no longer
+calls `updateItem`. The wait pattern uses `QEventLoop` +
+`QTimer::singleShot(30 s)` guarded by `op->isFinished()` to handle
+backends that complete synchronously. Subsumes Task 18 (deferred
+under the actual code shape, which routes the apply path through
+these wrappers rather than direct backend calls). Resolves the
+2026-04-29 FINDINGS entry about wrapper error detection. 26/26
+ctest pass on libkalburator; verify-all exit 0.
+`DeleteIncidenceItem::commit` was already on the operation-handle
+pattern and required no change.
+
+- [x] **Step 1: Inspect the existing commit() bodies**
+- [x] **Step 2: Replace the temporary-connect pattern**
 
 ```cpp
 // OLD
@@ -3641,8 +3657,8 @@ const QString err = op->errorString();
 op->deleteLater();
 ```
 
-- [ ] **Step 3: Run libkalburator tests + verify-all**
-- [ ] **Step 4: Commit**
+- [x] **Step 3: Run libkalburator tests + verify-all**
+- [x] **Step 4: Commit**
 
 ---
 
