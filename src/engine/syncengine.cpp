@@ -1057,10 +1057,16 @@ BlobSyncResult SyncEngine::runBlobTwoWay(
     const QHash<QString, BackendRecord> byIdB =
         indexBlobById(m_blobAdapter.fetchRecordsBlob(b, collectionId));
 
+    // Triple-keyed baseline lookup (Phase F1 Task 11): backend identity is
+    // taken from the source backend `a`. The `mappingId` parameter is kept
+    // for conflict-record identification only.
+    const QString backendId = a->backendId();
     QHash<QString, QString> baselineHashes;
-    const QStringList baseIds = baseline->baselineRecordIds(mappingId);
+    const QStringList baseIds =
+        baseline->baselineRecordIds(backendId, collectionId);
     for (const QString &id : baseIds) {
-        baselineHashes.insert(id, baseline->baselineHash(mappingId, id));
+        baselineHashes.insert(id,
+                              baseline->baselineHash(backendId, collectionId, id));
     }
 
     QSet<QString> allIds;
@@ -1190,7 +1196,7 @@ BlobSyncResult SyncEngine::runBlobTwoWay(
     }
 
     if (!finalHashes.isEmpty()) {
-        baseline->commitBaselines(mappingId, finalHashes);
+        baseline->commitBaselines(backendId, collectionId, finalHashes);
     }
 
     result.success = (result.sourceStats.errors == 0 && result.targetStats.errors == 0);

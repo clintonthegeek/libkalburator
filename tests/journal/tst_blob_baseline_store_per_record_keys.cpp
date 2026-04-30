@@ -12,10 +12,8 @@ class TestBlobBaselineStorePerRecordKeys : public QObject
 private slots:
     void tripleKey_isolatesByBackend();
     void tripleKey_isolatesByCollection();
-    void flatAndTripleAreIndependent();
     void tripleKey_bulkCommit_returnsAll();
     void tripleKey_clearCollection_isolated();
-    void existingFlatTable_unaffectedByTripleWrites();
 };
 
 // ---------------------------------------------------------------------------
@@ -63,38 +61,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_isolatesByCollection()
 }
 
 // ---------------------------------------------------------------------------
-// Slot 3: flat and triple APIs operate on independent storage tables.
-// ---------------------------------------------------------------------------
-void TestBlobBaselineStorePerRecordKeys::flatAndTripleAreIndependent()
-{
-    QTemporaryDir dir;
-    QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
-    QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
-
-    const QString mappingId  = QStringLiteral("mapping-flat");
-    const QString recordId   = QStringLiteral("rec-shared");
-    const QString hashFlat   = QStringLiteral("sha256:flat");
-    const QString hashTriple = QStringLiteral("sha256:triple");
-
-    // Write via flat API.
-    QVERIFY(store.setBaseline(mappingId, recordId, hashFlat));
-
-    // Read via triple API with empty backend/collection — should return empty.
-    QCOMPARE(store.baselineHash(QStringLiteral(""), QStringLiteral(""), recordId), QString());
-
-    // Write via triple API using empty backend/collection keys.
-    QVERIFY(store.setBaseline(QStringLiteral(""), QStringLiteral(""), recordId, hashTriple));
-
-    // Flat read must still return hashFlat (triple write didn't touch flat table).
-    QCOMPARE(store.baselineHash(mappingId, recordId), hashFlat);
-
-    // Triple read must return hashTriple.
-    QCOMPARE(store.baselineHash(QStringLiteral(""), QStringLiteral(""), recordId), hashTriple);
-}
-
-// ---------------------------------------------------------------------------
-// Slot 4: bulk commit via triple API; readback via baselineRecordIds + hash.
+// Slot 3: bulk commit via triple API; readback via baselineRecordIds + hash.
 // ---------------------------------------------------------------------------
 void TestBlobBaselineStorePerRecordKeys::tripleKey_bulkCommit_returnsAll()
 {
@@ -129,7 +96,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_bulkCommit_returnsAll()
 }
 
 // ---------------------------------------------------------------------------
-// Slot 5: clearCollection removes only the targeted collection.
+// Slot 4: clearCollection removes only the targeted collection.
 // ---------------------------------------------------------------------------
 void TestBlobBaselineStorePerRecordKeys::tripleKey_clearCollection_isolated()
 {
@@ -160,47 +127,6 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_clearCollection_isolated()
     QCOMPARE(idsB.first(), QStringLiteral("rec-b1"));
     QCOMPARE(store.baselineHash(backend, collB, QStringLiteral("rec-b1")),
              QStringLiteral("hB1"));
-}
-
-// ---------------------------------------------------------------------------
-// Slot 6: exercising the triple API leaves the flat table's behavior unchanged.
-// ---------------------------------------------------------------------------
-void TestBlobBaselineStorePerRecordKeys::existingFlatTable_unaffectedByTripleWrites()
-{
-    QTemporaryDir dir;
-    QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
-    QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
-
-    // Seed the flat table.
-    QVERIFY(store.setBaseline(QStringLiteral("m1"), QStringLiteral("r1"),
-                              QStringLiteral("h-flat-1")));
-    QVERIFY(store.setBaseline(QStringLiteral("m1"), QStringLiteral("r2"),
-                              QStringLiteral("h-flat-2")));
-
-    // Exercise the triple table.
-    QVERIFY(store.setBaseline(QStringLiteral("be"), QStringLiteral("coll"),
-                              QStringLiteral("r1"), QStringLiteral("h-triple")));
-
-    QMap<QString, QString> bulk;
-    bulk[QStringLiteral("r3")] = QStringLiteral("h3");
-    QVERIFY(store.commitBaselines(QStringLiteral("be"),
-                                  QStringLiteral("coll"), bulk));
-
-    QVERIFY(store.clearCollection(QStringLiteral("be"),
-                                  QStringLiteral("coll")));
-
-    // Flat table must be completely unchanged.
-    QCOMPARE(store.baselineHash(QStringLiteral("m1"), QStringLiteral("r1")),
-             QStringLiteral("h-flat-1"));
-    QCOMPARE(store.baselineHash(QStringLiteral("m1"), QStringLiteral("r2")),
-             QStringLiteral("h-flat-2"));
-
-    QStringList ids = store.baselineRecordIds(QStringLiteral("m1"));
-    std::sort(ids.begin(), ids.end());
-    QCOMPARE(ids.size(), 2);
-    QCOMPARE(ids[0], QStringLiteral("r1"));
-    QCOMPARE(ids[1], QStringLiteral("r2"));
 }
 
 QTEST_GUILESS_MAIN(TestBlobBaselineStorePerRecordKeys)

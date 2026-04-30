@@ -224,8 +224,8 @@ void TestEngineBlobOneShot::twoWay_noChanges()
     b.createRecord(QStringLiteral("col"), rec);
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h1")));
 
     ConflictHandlerRegistry reg;
     ConflictStore store;
@@ -256,8 +256,8 @@ void TestEngineBlobOneShot::twoWay_modifiedOnAOnly()
                                 QStringLiteral("h-v1")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     ConflictStore store;
@@ -290,8 +290,8 @@ void TestEngineBlobOneShot::twoWay_modifiedOnBOnly()
                                 QStringLiteral("h-v2")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     ConflictStore store;
@@ -321,8 +321,8 @@ void TestEngineBlobOneShot::twoWay_deletedOnA()
                                 QStringLiteral("h-v1")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     ConflictStore store;
@@ -350,8 +350,8 @@ void TestEngineBlobOneShot::twoWay_deletedOnB()
                                 QStringLiteral("h-v1")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     ConflictStore store;
@@ -434,8 +434,8 @@ void TestEngineBlobOneShot::twoWay_conflictInvokesHandler()
                                 QStringLiteral("h-v2b")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     TestHandler handler;
@@ -472,8 +472,8 @@ void TestEngineBlobOneShot::twoWay_conflictSkipPersistsToStore()
                                 QStringLiteral("h-v2b")));
 
     BlobBaselineStore base(dbIn(dir));
-    QVERIFY(base.setBaseline(QStringLiteral("m"), QStringLiteral("r1"),
-                             QStringLiteral("h-v1")));
+    QVERIFY(base.setBaseline(QStringLiteral("a"), QStringLiteral("col"),
+                             QStringLiteral("r1"), QStringLiteral("h-v1")));
 
     ConflictHandlerRegistry reg;
     TestHandler handler;
