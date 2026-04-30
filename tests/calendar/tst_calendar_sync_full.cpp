@@ -161,16 +161,26 @@ void TestCalendarSyncFull::cleanup()
 
 bool TestCalendarSyncFull::runOneSync()
 {
-    // Use the multi-mapping form (runSync() with no mappingId). The
-    // single-mapping form does not cleanly exit the post-sync
+    // Use the multi-mapping form (runSyncFuture() with no mappingId).
+    // The single-mapping form does not cleanly exit the post-sync
     // processNextMapping loop in SyncEngine, leading to a second
     // queued sync that interferes with cleanup.
-    QSignalSpy allDoneSpy(m_coordinator.get(),
-                          &SyncEngine::allSyncsCompleted);
-    m_coordinator->runSync(SyncEngine::SyncBehavior::Unmonitored);
-    if (!allDoneSpy.wait(kSyncTimeoutMs)) {
-        qWarning() << "allSyncsCompleted signal did not fire within"
+    auto future = m_coordinator->runSyncFuture(
+        SyncEngine::SyncBehavior::Unmonitored);
+    // QFuture::waitForFinished() does not spin the event loop; poll
+    // with QTest::qWait() until the future finishes or we time out.
+    int waited = 0;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    if (!future.isFinished()) {
+        qWarning() << "runSyncFuture did not finish within"
                    << kSyncTimeoutMs << "ms";
+        return false;
+    }
+    if (future.isCanceled()) {
+        qWarning() << "runSyncFuture was canceled unexpectedly";
         return false;
     }
     return true;
