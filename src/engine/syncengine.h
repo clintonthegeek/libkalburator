@@ -16,7 +16,10 @@
 #include <QPointer>
 #include <QSet>
 #include <QThread>
+#include <QFuture>
+#include <QFutureInterface>
 #include <KCalendarCore/Incidence>
+#include <atomic>
 
 namespace Kalburator::Sync {
 
@@ -170,7 +173,20 @@ private:
                                bool useTargetRecord = false);
 
     QMutex m_mutex;
-    bool m_cancelled = false;
+
+    // F2 Task 14: pointers to the QFutureInterface for the current run.
+    // Only one is populated at a time; the unused one is nullptr.
+    // The engine constructs/destroys these around runSync calls.
+    // Not used yet; Tasks 15-21 wire them in.
+    QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
+    QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
+
+    // F2 Task 14: cancellation observation flag. Set by observeCancel()
+    // slot (added in Task 17) when QFutureWatcher::canceled fires on the
+    // engine side and the engine forwards via queued connection.
+    // Upgraded from plain bool so concurrent observers see writes
+    // without taking m_mutex.
+    std::atomic<bool> m_cancelled{false};
     bool m_fetchFailed = false;
     QString m_fetchErrorMessage;
     bool m_applyFailed = false;
