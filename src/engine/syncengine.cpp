@@ -1358,6 +1358,17 @@ SyncEngineWorker::SyncEngineWorker(const TranscodingRouter &router, QObject *par
     : QObject(parent)
     , m_router(router)
 {
+    // F2 Task 20: when cancellation is observed (via observeCancel()
+    // queued from the engine thread), wake any in-progress conflict
+    // pause. The conflict pause is a state-machine yield rather than
+    // a QEventLoop, so the wiring is a self-connection that performs
+    // the cancelled-completion teardown when m_yieldedForConflict is
+    // set. DirectConnection is correct: observeCancel() already runs
+    // on the worker thread, so cancellationObserved fires here on the
+    // worker thread.
+    connect(this, &SyncEngineWorker::cancellationObserved,
+            this, &SyncEngineWorker::onCancelDuringConflictPause,
+            Qt::DirectConnection);
 }
 
 SyncEngineWorker::~SyncEngineWorker()
@@ -1530,6 +1541,42 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     }
 
     continueAfterConflicts();
+}
+
+void SyncEngineWorker::onCancelDuringConflictPause()
+{
+    // F2 Task 20: cancellationObserved fired. The conflict pause is a
+    // state-machine yield (m_yieldedForConflict + early return in
+    // handleConflicts()), not a QEventLoop, so we don't need to quit
+    // anything — we just need to tear down the sync via the cancelled
+    // path if we're currently paused.
+    //
+    // If we're not yielded, this is a no-op: cancellation during the
+    // active phases is observed by the per-record CancelOracle (Task
+    // 19) and the await<> boundary check (Task 16), and processSync
+    // will already exit on the next mutex-guarded m_cancelled check.
+    if (!m_yieldedForConflict) {
+        return;
+    }
+
+    qInfo() << "SyncEngineWorker: cancellation observed during"
+            << "conflict pause — leaving conflict in store and"
+            << "completing sync as cancelled";
+
+    // Clear the yield flag so a late-arriving resumeAfterConflict
+    // (already queued before cancel) is ignored by its existing guard
+    // (the !m_yieldedForConflict check at the top of
+    // resumeAfterConflict).
+    m_yieldedForConflict = false;
+
+    // DO NOT modify SyncConflictStore: the conflict that was waiting
+    // on user resolution must remain in the persistent store so the
+    // next sync run picks it up.
+
+    m_currentResult.success = false;
+    m_currentResult.errorMessage = QStringLiteral("Cancelled");
+    m_currentResult.endTime = QDateTime::currentDateTime();
+    emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
 }
 
 void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal)

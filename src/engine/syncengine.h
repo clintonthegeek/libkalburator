@@ -129,6 +129,26 @@ public slots:
      */
     void observeCancel();
 
+private slots:
+    /**
+     * @brief F2 Task 20: handle cancellation that arrives while the
+     * worker is yielded for a monitored AskUser conflict.
+     *
+     * The conflict pause is not a QEventLoop — it's a state-machine
+     * yield (`m_yieldedForConflict = true; return;` in
+     * handleConflicts()). When cancellation observation fires while
+     * yielded, this slot tears the sync down via the cancelled-result
+     * path and emits syncCompleted. The conflict that was waiting on
+     * user resolution is left untouched in the persistent
+     * SyncConflictStore so the next run picks it up.
+     *
+     * Connected to `cancellationObserved` via DirectConnection in the
+     * worker constructor; both signal and slot run on the worker
+     * thread (observeCancel() is itself queued onto the worker
+     * thread), so direct invocation is safe.
+     */
+    void onCancelDuringConflictPause();
+
 public:
     /// F2 Task 19: lock-free observation of the cancellation flag,
     /// for use by the cancel oracle installed on the domain adapter.
