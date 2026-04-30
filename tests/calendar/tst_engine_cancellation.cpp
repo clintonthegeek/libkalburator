@@ -288,8 +288,65 @@ void TstEngineCancellation::cancelDuringFetch()
 
 void TstEngineCancellation::cancelDuringApply()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 25 once per-record "
-          "cancellation check in the apply phase is wired.");
+    // C3 — cancel WHILE the worker is in the apply phase (or, in
+    // the current production wiring, between fetch and apply).
+    //
+    // Production note: SyncEngine's apply path is synchronous (the
+    // domain adapter builds a SyncTransaction of the changes and
+    // commits via BlockingQueuedConnection to the main thread). The
+    // observable cancellation checkpoint that gates apply is the
+    // per-record CancelOracle in CalendarDomainAdapter::
+    // applyChangesToBackend (F2 Task 19) plus the post-target-fetch
+    // m_cancelled check in processSync.
+    //
+    // To get a deterministic "cancel before apply commits" test,
+    // we block the *target* fetch — the second fetch in the worker.
+    // The source fetch completes and produces records; the worker
+    // then parks in await<FetchOperation> for the target. Cancel
+    // there: observeCancel fires, await unwinds, and either the
+    // post-target-fetch m_cancelled check trips OR the per-record
+    // oracle fires inside applyChangesToBackend. Either way, no
+    // items reach the destination.
+    //
+    // The structural assertion C3 pins is "fewer than all 5 made
+    // it through, and the run is reported cancelled". The exact
+    // count is fixture-dependent (here: 0, because the cancel lands
+    // before commitAll runs).
+    for (int i = 1; i <= 5; ++i) {
+        m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEvent(QStringLiteral("evt-%1").arg(i),
+                                      QStringLiteral("Event %1").arg(i)));
+    }
+
+    m_dst->setFetchBlocking(true);
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+
+    // Let the source fetch complete and the worker reach the
+    // target-fetch await.
+    QTest::qWait(150);
+
+    future.cancel();
+
+    // Pump so QFutureWatcher::canceled → onCancelObserved →
+    // queued observeCancel reaches the worker before we release.
+    QTest::qWait(50);
+
+    m_dst->releaseFetchBlocker();
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(future.isCanceled());
+
+    // Structural assertion: not all 5 items made it through.
+    const int written = m_dst->allUids(QString::fromLatin1(kCalendarId)).size();
+    QVERIFY2(written < 5,
+             qPrintable(QStringLiteral("expected fewer than 5 written, got %1")
+                            .arg(written)));
+
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0);
+    QVERIFY(r.cancelled);
 }
 
 void TstEngineCancellation::cancelDuringConflictPause()
