@@ -354,16 +354,35 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* MockBackend::pushItems(const QString &calendarId,
-                                       const QList<KCalendarCore::Incidence::Ptr> &items)
+                                       const QList<KCalendarCore::Incidence::Ptr> &items,
+                                       const TranscodingPlan &plan)
 {
     for (const auto &item : items) {
         logOperation(QStringLiteral("PUSH"), calendarId, item->uid());
     }
 
-    auto *op = new PushOperation(calendarId, items, this);
+    // Apply transcoding plan up front so the failure-injection path
+    // and the success path see the same final items. Warnings are
+    // emitted now (consistent with storeItems()).
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    auto *op = new PushOperation(calendarId, finalItems, this);
     registerOperation(op);
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
 
+    // Unified failure injection: OnPush || OnStoreItems both drive
+    // the operation to Failed symmetrically. Per FINDINGS
+    // ("MockBackend missing failure injection on updateItem and OnPush
+    //  in storeItems"), the sync and async paths once disagreed about
+    //  which point to honour; F2 Task 6 collapses them onto this path.
     if (shouldFail(FailurePoint::OnPush) || shouldFail(FailurePoint::OnStoreItems)) {
         QTimer::singleShot(m_operationDelayMs, this, [op, this]() {
             op->fail(m_failureMessage.isEmpty()
@@ -371,12 +390,13 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
                 : m_failureMessage);
         });
     } else {
-        QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, items, this]() {
+        QTimer::singleShot(m_operationDelayMs, this,
+                           [op, calendarId, finalItems, this]() {
             // Store items
             auto &calendar = m_calendars[calendarId];
             KCalendarCore::ICalFormat format;
             QStringList succeededUids;
-            for (const auto &item : items) {
+            for (const auto &item : finalItems) {
                 QString ical = format.toICalString(item);
                 auto clone = format.fromString(ical);
                 if (clone) {
@@ -390,6 +410,14 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
     }
 
     return op;
+}
+
+PushOperation* MockBackend::pushItems(const QString &calendarId,
+                                       const QList<KCalendarCore::Incidence::Ptr> &items)
+{
+    // F2 Task 6: legacy 2-arg form delegates to the 3-arg form so all
+    // callers exercise the same failure-injection and transcoding path.
+    return pushItems(calendarId, items, TranscodingPlan{});
 }
 
 DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
