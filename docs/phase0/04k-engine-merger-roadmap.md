@@ -1,7 +1,7 @@
 # Phase D / E / F / G — engine merger roadmap
 
 **Date:** 2026-04-28 (updated 2026-04-29 with F slice + F.0 prerequisite)
-**Status:** D.0, D, E, F.0 landed. F1 next.
+**Status:** D.0, D, E, F.0, F1, F2 landed. Phase G next.
 
 ## At-a-glance phase status
 
@@ -12,7 +12,7 @@
 | E — Transcoding-into-backends | ✅ landed 2026-04-29 | `v0.11-phase-e-transcoding-backends` |
 | F.0 — Test gap closure | ✅ landed 2026-04-29 | `v0.12-phase-f0-test-gaps` |
 | F1 — Unify (engine + adapter, threading verbatim) | ✅ landed 2026-04-30 | `v0.13-phase-f1-unify` |
-| F2 — Threading API redesign | ⬜ not started | `v0.14-phase-f2-threading` |
+| F2 — Threading API redesign | ✅ landed 2026-04-30 | `v0.14-phase-f2-threading` |
 | G — Opaque + plugin | ⬜ not started | `v0.15-phase-g-opaque-plugin` |
 
 **Phase F slice rationale:** the original Phase F bundled the

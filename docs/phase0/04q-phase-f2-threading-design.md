@@ -1,8 +1,38 @@
 # Phase F2 — Threading API redesign — design
 
 **Date:** 2026-04-30
-**Status:** Authored 2026-04-30. Implementation plan to follow in
-`04q-phase-f2-threading-plan.md` (sibling).
+**Status:** Landed 2026-04-30 on tag `v0.14-phase-f2-threading`
+(pending user-authorised tagging in Task 50). Implementation plan
+sibling: `04q-phase-f2-threading-plan.md`.
+
+Scope adjustments during execution (documented in commits, plan,
+and FINDINGS):
+- Task 18 absorbed into Task 35 (apply-path migration done via
+  wrapper migration since wrappers are the actual call sites).
+- Tasks 33 / 39 / 40 / 44 deferred to Phase G — BlobDomainAdapter
+  registration for unified dispatch is a Phase G prerequisite.
+- Task 43 deferred to follow-up — ~180 PlanStan backend-test call
+  sites + 1 production caller + WildPalms palmcalendarbackend
+  still use storeItems/updateItem/writeFinished. Synchronous
+  methods on SyncBackend remain deprecated but undeleted.
+
+Net F2 contract delivered:
+- QFuture-based runSyncFuture(mappingId|behavior) public API.
+- End-to-end cancellation propagation via QFuture::cancel() →
+  QFutureWatcher → engine → worker → m_cancelled atomic →
+  cancellationObserved signal → nested QEventLoop wake.
+- 3-arg pushItems(id, items, TranscodingPlan) on all 8 concrete
+  backends; SyncOperation contract standardised; per-record
+  CancelOracle on the calendar adapter; conflict-pause loop
+  wired to cancellation channel.
+- 10 cancellation tests (C1-C7 + 3 of 4 smoke tests; progress
+  smoke deferred per Qt6 documented limitation).
+- void runSync overloads, cancelSync, syncCompleted/allSyncsCompleted
+  signals deleted from SyncEngine.
+- runSync(mappingId) leak structurally fixed (FINDINGS).
+- Wrapper commit() error-detection contract restored (FINDINGS).
+- MockBackend failure injection symmetric across OnPush/OnStoreItems
+  (FINDINGS).
 **Phase tag:** `v0.14-phase-f2-threading`.
 **Gates:** Phase F1 complete (`v0.13-phase-f1-unify`).
 
