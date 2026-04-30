@@ -73,11 +73,30 @@ When writing or modifying tests in this directory:
   `kalburator_add_calendar_integration_test()` in
   `tests/calendar/CMakeLists.txt`.
 
-- **`SyncEngine::runSync(behavior)`** (no `mappingId` arg) —
-  use this and wait on `allSyncsCompleted`. The single-mapping form
-  `runSync(mappingId, …)` has a known leak (re-dispatches the same
-  mapping in `processNextMapping`); see
-  `~/dev/refactor-engine-merger/FINDINGS.md`.
+- **`SyncEngine::runSyncFuture(behavior)`** returning
+  `QFuture<QList<SyncResult>>`. Wait via
+  `QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000)` (NOT
+  `waitForFinished` — Qt6's `waitForFinished` does NOT spin the
+  test event loop). Read results via `future.resultAt(0)` (NOT
+  `future.results()` — empty after cancel due to a Qt6 quirk).
+  The single-mapping form `runSyncFuture(mappingId, …)` is now
+  safe (the FINDINGS leak was structurally fixed by F2 Task 21).
+  The void `runSync` overloads, `cancelSync`, and the
+  `syncCompleted`/`allSyncsCompleted` signals were deleted in
+  F2 Task 42.
+
+- **Cancellation** — call `future.cancel()`. The cancellation
+  channel propagates through
+  `QFutureWatcher::canceled → SyncEngine::onCancelObserved →
+  SyncEngineWorker::observeCancel` and wakes any nested
+  `QEventLoop` (via `await<Op>` and the conflict-pause slot).
+
+- **Write path** — `SyncBackend::storeItems()` /
+  `updateItem()` / `writeFinished` still exist on the abstract
+  base but are deprecated. New code should use the 3-arg
+  `pushItems(id, items, TranscodingPlan)` returning a
+  `PushOperation*` and read `op->state()` / `op->errorString()`
+  for error reporting (per the F2 SyncOperation contract).
 
 - **Conflict tests** — set `mapping.conflictPolicy = AskUser` AND
   seed a baseline via `SyncStore::setBaseline()`. Other policies
