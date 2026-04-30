@@ -669,12 +669,26 @@ FetchOperation* DecSyncBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* DecSyncBackend::pushItems(const QString &calendarId,
-                                          const QList<KCalendarCore::Incidence::Ptr> &items)
+                                          const QList<KCalendarCore::Incidence::Ptr> &items,
+                                          const TranscodingPlan &plan)
 {
-    auto *op = new PushOperation(calendarId, items, this);
+    // F2 Task 11: apply the transcoding plan up front so all callers
+    // (including the 2-arg shim, which passes an empty plan) exercise
+    // a single code path. Mirrors storeItems()' behaviour.
+    QList<KCalendarCore::Incidence::Ptr> finalItems;
+    finalItems.reserve(items.size());
+    for (const auto &original : items) {
+        auto result = executeTranscodingPlan(plan, original);
+        if (!result.warnings.isEmpty() && original) {
+            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+        }
+        finalItems.append(result.incidence);
+    }
+
+    auto *op = new PushOperation(calendarId, finalItems, this);
     registerOperation(op);
 
-    QTimer::singleShot(0, this, [this, op, calendarId, items]() {
+    QTimer::singleShot(0, this, [this, op, calendarId, finalItems]() {
         if (op->state() == SyncOperation::Cancelled) return;
         op->setState(SyncOperation::Running);
 
@@ -694,7 +708,7 @@ PushOperation* DecSyncBackend::pushItems(const QString &calendarId,
         QStringList failedUids;
         QString dt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 
-        for (const auto &item : items) {
+        for (const auto &item : finalItems) {
             if (item.isNull() || item->uid().isEmpty()) continue;
 
             if (!isTypeAllowed(calendarId, item)) {
@@ -740,6 +754,14 @@ PushOperation* DecSyncBackend::pushItems(const QString &calendarId,
     });
 
     return op;
+}
+
+PushOperation* DecSyncBackend::pushItems(const QString &calendarId,
+                                          const QList<KCalendarCore::Incidence::Ptr> &items)
+{
+    // F2 Task 11: legacy 2-arg form delegates to the 3-arg form so all
+    // callers exercise the same transcoding path.
+    return pushItems(calendarId, items, TranscodingPlan{});
 }
 
 DeleteOperation* DecSyncBackend::deleteItems(const QString &calendarId,
