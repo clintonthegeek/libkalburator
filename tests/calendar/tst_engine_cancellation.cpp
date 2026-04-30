@@ -508,14 +508,16 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
     // Block m3's source fetch so the queue stalls there.
     sources[2]->setFetchBlocking(true);
 
-    // Track per-mapping completions so we can wait until m1 + m2
-    // are done before cancelling.
-    QSignalSpy completedSpy(m_engine.get(), &SyncEngine::syncCompleted);
-
     auto future = m_engine->runSyncFuture();
 
-    // Wait until m1 + m2 have completed.
-    QTRY_VERIFY_WITH_TIMEOUT(completedSpy.count() >= 2, 5000);
+    // Wait until m1 + m2 have completed by observing their target
+    // backends receiving the seeded event. Per-mapping QFuture
+    // signals were retired in F2 Task 42; observing the side effect
+    // (target writes landed) is the canonical observation channel.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        targets[0]->allUids(QStringLiteral("cal-1")).contains(QStringLiteral("evt-1")) &&
+        targets[1]->allUids(QStringLiteral("cal-2")).contains(QStringLiteral("evt-2")),
+        5000);
 
     future.cancel();
 

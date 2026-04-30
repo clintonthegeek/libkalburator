@@ -496,32 +496,16 @@ public:
     void setMappingEnabled(const QString &mappingId, bool enabled);
 
     /**
-     * @brief Run sync for all enabled mappings with specified mode.
-     *
-     * This is the main entry point for sync operations.
-     * The entire sync runs in a background thread.
-     *
-     * @param mode Sync mode (Monitored or Unmonitored)
-     */
-    void runSync(SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
-     * @brief Run sync for a specific mapping.
-     *
-     * @param mappingId The mapping ID to sync
-     * @param mode Sync mode (Monitored or Unmonitored)
-     */
-    void runSync(const QString &mappingId, SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
      * @brief Run sync for one mapping. Future completes with the result.
-     *
-     * F2 transitional shim that delegates to runSync(mappingId, behavior)
-     * and captures completion via the syncCompleted signal. Group 4
-     * Task 42 deletes the void runSync and renames this method to runSync.
      *
      * The QFuture supports cancel() to request cancellation; the
      * cancellation channel is wired in Group 2 Task 17.
+     *
+     * F2 Task 42 deleted the void runSync overloads in favor of these
+     * QFuture-returning forms. The name `runSyncFuture` is kept (rather
+     * than renaming back to `runSync`) because the QFuture return type
+     * is the load-bearing detail at call sites; renaming would churn
+     * every Group 3 consumer migration without a clarity gain.
      */
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
@@ -530,8 +514,6 @@ public:
     /**
      * @brief Run sync for all enabled mappings. Future completes with
      *        the per-mapping result list (one entry per enabled mapping).
-     *
-     * F2 transitional shim. See runSyncFuture(mappingId, behavior).
      */
     QFuture<QList<SyncResult>> runSyncFuture(
         SyncBehavior behavior = SyncBehavior::Unmonitored);
@@ -576,11 +558,6 @@ public:
                                         const QString &mergedIcal = QString());
 
     /**
-     * @brief Cancel any running sync operation.
-     */
-    void cancelSync();
-
-    /**
      * @brief Check if a sync operation is currently running.
      */
     bool isSyncing() const { return m_isSyncing; }
@@ -606,11 +583,6 @@ signals:
     void syncStarted(const QString &mappingId);
 
     /**
-     * @brief Emitted when sync completes for a mapping.
-     */
-    void syncCompleted(const QString &mappingId, const SyncResult &result);
-
-    /**
      * @brief Emitted when a conflict is detected.
      */
     void conflictDetected(const ConflictInfo &conflict);
@@ -619,11 +591,6 @@ signals:
      * @brief Emitted to report sync progress.
      */
     void progressUpdated(int current, int total, const QString &message);
-
-    /**
-     * @brief Emitted when all sync operations complete.
-     */
-    void allSyncsCompleted(const SyncResult &aggregateResult);
 
     /**
      * @brief Emitted when sync phase changes.
@@ -673,9 +640,18 @@ private:
      */
     enum class DispatchMode {
         None,    ///< No sync in flight.
-        Single,  ///< runSync(mappingId, ...) / runSyncFuture(mappingId, ...)
-        Queue    ///< runSync(behavior) / runSyncFuture(behavior)
+        Single,  ///< runSyncFuture(mappingId, ...)
+        Queue    ///< runSyncFuture(behavior)
     };
+
+    /**
+     * @brief F2 Task 42: queue driver. Sets up state for a multi-mapping
+     * run, runs active controllers + the fast-path pre-pass, and
+     * delegates to processQueue() to start dispatching to the worker.
+     * Called only from runSyncFuture(behavior); the previous void
+     * runSync(behavior) public API was deleted in F2 Task 42.
+     */
+    void driveQueue(SyncBehavior behavior);
 
     /**
      * @brief F2 Task 21: single-mapping driver. Dispatches exactly the

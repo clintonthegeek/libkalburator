@@ -229,12 +229,13 @@ void TestEngineUnifiedBoundary::runSync_calendarMapping_propagatesEvents()
                                         QStringLiteral("Event Two")));
 
     QSignalSpy startedSpy(m_engine.get(), &SyncEngine::syncStarted);
-    QSignalSpy completedSpy(m_engine.get(), &SyncEngine::syncCompleted);
 
     QVERIFY(runOneCalendarSync());
 
     QVERIFY(startedSpy.size() >= 1);
-    QVERIFY(completedSpy.size() >= 1);
+    // Completion is observed via QFuture::isFinished inside
+    // runOneCalendarSync (per-mapping syncCompleted signal retired
+    // in F2 Task 42).
 
     QCOMPARE(m_calSource->allUids(QString::fromLatin1(kCalendarId)).size(), 2);
     QCOMPARE(m_calTarget->allUids(QString::fromLatin1(kCalendarId)).size(), 2);

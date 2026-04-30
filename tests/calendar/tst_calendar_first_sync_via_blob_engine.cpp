@@ -12,7 +12,6 @@
 // baselines) to preserve the transcoding and host-change-tracking code paths.
 
 #include <QtTest/QtTest>
-#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTimeZone>
 
@@ -233,12 +232,9 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlo
 
     setupCoordinator({ makeOneWayUploadMapping() });
 
-    QSignalSpy completedSpy(m_coordinator.get(), &SyncEngine::syncCompleted);
     QVERIFY(runOneSync());
 
-    // syncCompleted fired exactly once.
-    QCOMPARE(completedSpy.count(), 1);
-
+    // Sync completed (runOneSync waits on QFuture::isFinished).
     // Target received the 3 events via BlobSyncEngine::mirror.
     QCOMPARE(targetUids().size(), 3);
     QVERIFY(targetUids().contains(QStringLiteral("evt-1")));
