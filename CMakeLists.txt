@@ -103,7 +103,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/subscriptionbackend.h
     src/calendar/syncbackend.h
     src/calendar/syncconflictstore.h
-    src/calendar/synccoordinator.h
     src/calendar/syncoperation.h
     src/calendar/synctesthooks.h
     src/calendar/synctransaction.h
