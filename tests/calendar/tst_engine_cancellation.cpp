@@ -9,18 +9,61 @@
 #include "stubs/stubsyncconfigstore.h"
 #include "stubs/stubsynchost.h"
 
-#include "syncengine.h"
-#include "mockbackend.h"
+#include "backendregistry.h"
+#include "calendarbaselinestore.h"
 #include "calendardomainadapter.h"
+#include "mockbackend.h"
+#include "syncengine.h"
+#include "synctypes.h"
 
 #include <QFuture>
 #include <QFutureWatcher>
 #include <QObject>
 #include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTimeZone>
 #include <QtTest>
+
+#include <KCalendarCore/Event>
+#include <KCalendarCore/MemoryCalendar>
+
+#include <memory>
 
 using namespace Kalburator::Sync;
 using namespace Kalburator::Sync::Test;
+
+namespace {
+
+constexpr auto kSourceBackendId = "source-mock";
+constexpr auto kTargetBackendId = "target-mock";
+constexpr auto kCollectionId    = "stub-collection";
+constexpr auto kCalendarId      = "cal1";
+constexpr auto kMappingId       = "m1";
+
+KCalendarCore::Event::Ptr makeEvent(const QString &uid, const QString &summary)
+{
+    auto event = KCalendarCore::Event::Ptr(new KCalendarCore::Event());
+    event->setUid(uid);
+    event->setSummary(summary);
+    event->setDtStart(QDateTime::currentDateTimeUtc());
+    return event;
+}
+
+SyncMapping makeCalendarMapping()
+{
+    SyncMapping m;
+    m.id              = QString::fromLatin1(kMappingId);
+    m.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    m.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    m.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    m.targetCalendar  = QString::fromLatin1(kCalendarId);
+    m.mode            = SyncMode::TwoWay;
+    m.conflictPolicy  = ConflictResolution::LastWriteWins;
+    m.enabled         = true;
+    return m;
+}
+
+} // namespace
 
 class TstEngineCancellation : public QObject
 {
@@ -48,18 +91,14 @@ private slots:
     void progressValueTicks();
 
 private:
-    // Fixtures populated in init(); torn down in cleanup().
-    // Pointers only — actual construction lands in Group 2 Task 22
-    // once the QFuture-based runSync is in place. The stub
-    // constructors take real arguments (BackendRegistry*, calendar
-    // id, etc.) that only become meaningful alongside the engine
-    // wiring; until then the test methods QSKIP before touching
-    // any of these.
-    SyncEngine *m_engine = nullptr;
-    StubSyncHost *m_host = nullptr;
-    StubSyncConfigStore *m_configStore = nullptr;
-    StubCalendarCollection *m_collection = nullptr;
-    StubIncidenceRegistry *m_registry = nullptr;
+    // Fixtures owned via unique_ptr; init() builds, cleanup() tears down.
+    std::unique_ptr<QTemporaryDir>         m_tmpDir;
+    std::unique_ptr<BackendRegistry>       m_registry;
+    std::unique_ptr<MockBackend>           m_src;
+    std::unique_ptr<MockBackend>           m_dst;
+    std::unique_ptr<StubSyncHost>          m_host;
+    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<SyncEngine>            m_engine;
 };
 
 void TstEngineCancellation::initTestCase() {}
@@ -67,24 +106,142 @@ void TstEngineCancellation::cleanupTestCase() {}
 
 void TstEngineCancellation::init()
 {
-    // No-op for now. Group 2 Task 22 fills this in with the
-    // BackendRegistry + StubSyncHost + SyncEngine wiring once
-    // the QFuture-based runSync is available.
+    m_tmpDir = std::make_unique<QTemporaryDir>();
+    QVERIFY(m_tmpDir->isValid());
+
+    m_registry = std::make_unique<BackendRegistry>();
+    m_src = std::make_unique<MockBackend>();
+    m_dst = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        m_src.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        m_dst.get());
+
+    m_host = std::make_unique<StubSyncHost>(m_registry.get());
+
+    // Seed both backends with the calendar that the mapping references.
+    m_src->createCalendar(QString::fromLatin1(kCollectionId),
+                          QString::fromLatin1(kCalendarId),
+                          QStringLiteral("Calendar 1"));
+    m_dst->createCalendar(QString::fromLatin1(kCollectionId),
+                          QString::fromLatin1(kCalendarId),
+                          QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                 hostCal);
+
+    const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
+    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_engine->setCollection(m_host->stubCollection());
+    m_engine->setSyncMappings({ makeCalendarMapping() });
 }
 
 void TstEngineCancellation::cleanup()
 {
-    delete m_engine; m_engine = nullptr;
-    delete m_registry; m_registry = nullptr;
-    delete m_collection; m_collection = nullptr;
-    delete m_configStore; m_configStore = nullptr;
-    delete m_host; m_host = nullptr;
+    m_engine.reset();
+    m_calendarBaselines.reset();
+    m_host.reset();
+    m_dst.reset();
+    m_src.reset();
+    m_registry.reset();
+    m_tmpDir.reset();
 }
 
 void TstEngineCancellation::cancelBeforeStart()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 23 once QFuture-based "
-          "runSync + QFutureWatcher cancellation observation are in place.");
+    // C1 — cancel BEFORE the worker observes the run.
+    //
+    // Pre-populate the source so a successful run would actually
+    // write items to the destination. After cancel-before-start,
+    // the destination MUST remain empty.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-2"),
+                                  QStringLiteral("Event Two")));
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-3"),
+                                  QStringLiteral("Event Three")));
+
+    // Block the source fetch so the worker cannot complete the run
+    // before our cancel propagates. This makes the cancel-wins
+    // outcome deterministic on fast machines (the simple
+    // "runSyncFuture then cancel" form races with the worker thread
+    // dispatching processSync). The contract C1 pins is "cancel
+    // observed before start"; blocking the fetch ensures the worker
+    // does not race past the cancellation check.
+    m_src->setFetchBlocking(true);
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+
+    // Cancel immediately — before the worker thread can dispatch
+    // processSync past the cancellation pre-check.
+    future.cancel();
+
+    // Spin the engine-thread event loop so the QFutureWatcher's
+    // canceled() signal is dispatched to onCancelObserved and the
+    // queued observeCancel reaches the worker. waitForFinished()
+    // does NOT spin the event loop, so without this the cancel
+    // never propagates and the test deadlocks on the blocked fetch.
+    QTest::qWait(50);
+
+    // Release the fetch blocker so the worker can observe the
+    // cancellation flag at the next checkpoint and tear down the
+    // run rather than wedging the test.
+    m_src->releaseFetchBlocker();
+
+    // Pump the event loop while the worker drains; QFuture::
+    // waitForFinished doesn't run our event loop, but the engine
+    // posts back to the main thread to finalize the future.
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(future.isFinished());
+    QVERIFY(future.isCanceled());
+
+    // No items written to the destination calendar.
+    QCOMPARE(m_dst->allUids(QString::fromLatin1(kCalendarId)).size(), 0);
+
+    // SyncResult should reflect cancellation. The design (04q section
+    // "Multi-mapping queue" + Task 21 plan body) calls for a sentinel
+    // SyncResult with cancelled=true && skipped=true to be delivered
+    // via future.results() for cancel-before-start.
+    //
+    // Two production gaps surfaced by this C1 test land as a follow-
+    // up task (NOT Task 23 — per Task 23's "DO NOT modify production
+    // code just to make C1 pass; surface as a CONCERN" directive):
+    //
+    //   1. SyncEngine::processSingleMapping has no top-level
+    //      cancel-precheck. Task 21's plan body specified one that
+    //      emits {cancelled=true, skipped=true} via the iface; the
+    //      landed Task 21 commit (35c1881) did not include it.
+    //
+    //   2. QFutureInterface::reportResult silently drops results
+    //      once the Canceled flag is set, unless
+    //      setAddResultsIfCanceledEnabled(true) is called on the
+    //      iface. runSyncFuture does not call it, so even if the
+    //      engine populated a sentinel SyncResult after cancel(),
+    //      future.results() would still be empty for the consumer.
+    //
+    // The QEXPECT_FAIL block below pins the contract: when those
+    // gaps close, the XFAIL flips to XPASS and forces a refactor of
+    // this test (which is exactly the desired signal).
+    QEXPECT_FAIL("",
+        "F2 follow-up: SyncEngine lacks cancel-precheck + "
+        "setAddResultsIfCanceledEnabled, so the sentinel SyncResult "
+        "with cancelled=true && skipped=true never reaches "
+        "future.results() on cancel-before-start.",
+        Abort);
+    const auto results = future.results();
+    QVERIFY(!results.isEmpty());
+    const SyncResult &r = results.first();
+    QVERIFY(r.cancelled);
+    QVERIFY(r.skipped);
 }
 
 void TstEngineCancellation::cancelDuringFetch()
