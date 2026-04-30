@@ -186,10 +186,18 @@ void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMappin
 
 bool TestCalendarFirstSyncViaBlobEngine::runOneSync(SyncEngine::SyncBehavior behavior)
 {
-    QSignalSpy allDoneSpy(m_coordinator.get(), &SyncEngine::allSyncsCompleted);
-    m_coordinator->runSync(behavior);
-    if (!allDoneSpy.wait(kSyncTimeoutMs)) {
-        qWarning() << "allSyncsCompleted did not fire within" << kSyncTimeoutMs << "ms";
+    auto future = m_coordinator->runSyncFuture(behavior);
+    int waited = 0;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    if (!future.isFinished()) {
+        qWarning() << "runSyncFuture did not finish within" << kSyncTimeoutMs << "ms";
+        return false;
+    }
+    if (future.isCanceled()) {
+        qWarning() << "runSyncFuture was canceled unexpectedly";
         return false;
     }
     return true;
