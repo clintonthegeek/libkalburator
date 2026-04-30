@@ -189,6 +189,33 @@ void SubscriptionBackend::removeItem(const QString &calId, const QString &itemUi
     qDebug() << "SubscriptionBackend::removeItem: no-op (read-only backend)";
 }
 
+PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
+                                              const QList<KCalendarCore::Incidence::Ptr> &items,
+                                              const TranscodingPlan &plan)
+{
+    // F2 Task 12: read-only backend; pushes are always rejected.
+    // The transcoding plan is intentionally ignored — items never
+    // reach storage so there's nothing to transcode and no warnings
+    // to emit. Behaviour mirrors the previous storeItems() / base
+    // pushItems() rejection paths. HolidaySubscriptionBackend
+    // inherits this override unchanged.
+    Q_UNUSED(plan);
+    auto *op = new PushOperation(calendarId, items, this);
+    registerOperation(op);
+    QTimer::singleShot(0, op, [op]() {
+        op->fail(QStringLiteral("read-only backend: pushItems rejected"));
+    });
+    emit writeFinished(calendarId, false);
+    return op;
+}
+
+PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
+                                              const QList<KCalendarCore::Incidence::Ptr> &items)
+{
+    // F2 Task 12: legacy 2-arg form delegates to the 3-arg form.
+    return pushItems(calendarId, items, TranscodingPlan{});
+}
+
 bool SubscriptionBackend::discoveredWritable(const QString &calendarId) const
 {
     Q_UNUSED(calendarId);
