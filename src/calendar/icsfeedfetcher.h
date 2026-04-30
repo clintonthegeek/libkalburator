@@ -25,7 +25,7 @@ namespace Kalburator::Sync {
  *
  * Designed for sibling-of-HolidaySubscriptionBackend reuse: a future
  * WebcalSubscriptionBackend can wrap this fetcher; the WildPalms webcal
- * plugin uses it directly as the source side of BlobSyncEngine::mirror.
+ * plugin uses it directly as the source side of SyncEngine::runBlobMirror.
  */
 class IcsFeedFetcher : public QObject
 {

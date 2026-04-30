@@ -4,7 +4,7 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "blobdomainadapter.h"
-#include "blobsyncengine.h"  // BlobSyncResult / BlobSyncStats types
+#include "blobsyncresult.h"  // BlobSyncResult / BlobSyncStats — split out F1 Task 10
 #include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "transcodingrouter.h"
@@ -94,7 +94,8 @@ public:
                          CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection,
                          BlobBaselineStore *blobBaselines = nullptr,
-                         CalendarDomainAdapter *calendarAdapter = nullptr);
+                         CalendarDomainAdapter *calendarAdapter = nullptr,
+                         SyncEngine *engine = nullptr);
 
 public slots:
     /**
@@ -144,7 +145,7 @@ private:
     void applyChanges();
     void updateBaselines();
 
-    // First-sync dispatch via BlobSyncEngine (Phase D Task 21)
+    // First-sync dispatch via the engine's blob mirror (Phase D Task 21)
     bool dispatchFirstSync(const Request &request);
     void harvestBaselinesAfterFirstSync(const Request &request);
 
@@ -195,6 +196,10 @@ private:
     BlobBaselineStore *m_blobBaselines = nullptr;
     ICalendarCollection *m_collection = nullptr;
     CalendarDomainAdapter *m_calendarAdapter = nullptr;
+    // F1 Task 10: back-pointer so dispatchFirstSync can drive the
+    // engine's own runBlobMirror facade, replacing the standalone
+    // BlobSyncEngine that was deleted alongside it.
+    SyncEngine *m_engine = nullptr;
 
     Request m_currentRequest;
     QList<SyncRecord> m_sourceRecords;
@@ -407,10 +412,10 @@ public:
     // --- One-shot blob API (F1 Task 6) ---
     //
     // Synchronous blob-typed sync facade for ad-hoc callers (WildPalms's
-    // SyncRunner). Replaces BlobSyncEngine::twoWayWithBaseline / mirror;
-    // Group 4 deletes BlobSyncEngine once WildPalms migrates. Behavior is
-    // equivalent to today's BlobSyncEngine — only the call site changes.
-    // These run synchronously on the calling thread (no worker thread).
+    // SyncRunner). Replaces the legacy BlobSyncEngine's twoWayWithBaseline
+    // / mirror, deleted in F1 Task 10. Behavior is byte-for-byte parity
+    // with the predecessor — only the call site changes. These run
+    // synchronously on the calling thread (no worker thread).
 
     /// Three-way blob sync consulting a baseline store. Propagates
     /// deletions correctly and dispatches conflicts to per-backend

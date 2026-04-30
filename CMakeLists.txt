@@ -202,14 +202,13 @@ set(KALBURATOR_DISCOVERY_SOURCES
 
 set(KALBURATOR_BLOB_HEADERS
     src/blob/blobdomainadapter.h
-    src/blob/blobsyncengine.h
+    src/blob/blobsyncresult.h
     src/blob/iblobbackend.h
     src/blob/localblobbackend.h
     src/blob/mockblobbackend.h
 )
 set(KALBURATOR_BLOB_SOURCES
     src/blob/blobdomainadapter.cpp
-    src/blob/blobsyncengine.cpp
     src/blob/iblobbackend.cpp
     src/blob/localblobbackend.cpp
     src/blob/mockblobbackend.cpp

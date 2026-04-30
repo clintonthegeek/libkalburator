@@ -17,6 +17,5 @@ endfunction()
 
 kalburator_add_blob_test(tst_mockblobbackend)
 kalburator_add_blob_test(tst_localblobbackend)
-kalburator_add_blob_test(tst_blobsyncengine)
 kalburator_add_blob_test(tst_blob_domain_adapter)
 kalburator_add_blob_test(tst_engine_blob_one_shot)

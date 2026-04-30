@@ -3,7 +3,7 @@
 
 /**
  * @file blobbaselinestore.h
- * @brief SQLite-backed hash-per-record baseline store for BlobSyncEngine.
+ * @brief SQLite-backed hash-per-record baseline store for the blob sync facade.
  *
  * Records the last-synced content hash for each (mapping, record) pair
  * (legacy API) or (backend, collection, record) triple (Phase D API),

@@ -100,7 +100,7 @@ void SyncEngine::startWorkerThread()
 
     // Set dependencies before moving to thread
     m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
-                              m_blobBaselines, &m_calendarAdapter);
+                              m_blobBaselines, &m_calendarAdapter, this);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -960,9 +960,9 @@ void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,
 // One-shot blob API (F1 Task 6)
 // ---------------------------------------------------------------------------
 //
-// Bodies lifted from BlobSyncEngine::twoWayWithBaseline / mirror. Behavior
-// parity is required (WildPalms migrates to these in Tasks 9-10, then
-// BlobSyncEngine is deleted). Fetch is routed through
+// Bodies lifted from the legacy BlobSyncEngine::twoWayWithBaseline / mirror
+// (deleted in F1 Task 10). Behavior parity is required for WildPalms's
+// migrated SyncRunner. Fetch is routed through
 // BlobDomainAdapter::fetchRecordsBlob; the rich ConflictHandlerRegistry /
 // ConflictStore / ConflictPolicy logic stays inline because the
 // IDomainAdapter::merge contract takes only ConflictResolution today
@@ -1248,13 +1248,15 @@ void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         CalendarBaselineStore *calendarBaselines,
                                         ICalendarCollection *collection,
                                         BlobBaselineStore *blobBaselines,
-                                        CalendarDomainAdapter *calendarAdapter)
+                                        CalendarDomainAdapter *calendarAdapter,
+                                        SyncEngine *engine)
 {
     m_controller = host;
     m_calendarBaselines = calendarBaselines;
     m_blobBaselines = blobBaselines;
     m_collection = collection;
     m_calendarAdapter = calendarAdapter;
+    m_engine = engine;
 }
 
 void SyncEngineWorker::cancel()
@@ -1427,7 +1429,9 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
 }
 
 // ----------------------------------------------------------------------------
-// First-sync dispatch via BlobSyncEngine (Phase D Task 21)
+// First-sync dispatch via the engine's own blob mirror (Phase D Task 21;
+// originally routed through the standalone BlobSyncEngine, now routed
+// through SyncEngine::runBlobMirror per F1 Task 10).
 // ----------------------------------------------------------------------------
 
 bool SyncEngineWorker::dispatchFirstSync(const Request &request)
@@ -1461,24 +1465,37 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         return false;
     }
 
-    qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, routing via BlobSyncEngine::mirror for"
+    qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, routing via SyncEngine::runBlobMirror for"
              << request.mapping.id;
 
     IBlobBackend *src = asBlob(srcBackend);
 
+    // F1 Task 10: route via the engine's own one-shot blob facade
+    // (replaces the deleted standalone BlobSyncEngine). Marshalled to
+    // the source backend's main thread because runBlobMirror walks
+    // backends synchronously.
     BlobSyncResult blobResult;
+    SyncEngine *engine = m_engine;
+
+    if (!engine) {
+        SyncResult result;
+        result.success = false;
+        result.errorMessage = QStringLiteral(
+            "dispatchFirstSync: SyncEngineWorker has no engine pointer");
+        emit syncCompleted(request.mapping.id, result);
+        return true;
+    }
 
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, &blobResult]() {
-            BlobSyncEngine engine;
-            blobResult = engine.mirror(src, tgt, colId);
+        [engine, src, tgt, colId, &blobResult]() {
+            blobResult = engine->runBlobMirror(src, tgt, colId);
         }, Qt::BlockingQueuedConnection);
 
     SyncResult result;
     if (!blobResult.success) {
         result.success = false;
         result.errorMessage = blobResult.errorMessage;
-        qWarning() << "SyncEngineWorker::dispatchFirstSync - BlobSyncEngine failed:"
+        qWarning() << "SyncEngineWorker::dispatchFirstSync - runBlobMirror failed:"
                    << blobResult.errorMessage;
         emit syncCompleted(request.mapping.id, result);
         return true;

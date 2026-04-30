@@ -171,9 +171,10 @@ EngineDiff BlobDomainAdapter::diff(
         } else if (!hasS && hasT && !hasB) {
             result.toSource.append(makeCreate(tRec));
         } else if (hasS && hasT && !hasB) {
-            // Both sides have the record, no baseline. BlobSyncEngine
-            // historically falls through this case; preserve "in sync if
-            // hashes match, otherwise treat as a both-modified conflict".
+            // Both sides have the record, no baseline. The legacy
+            // BlobSyncEngine (deleted F1 Task 10) historically fell through
+            // this case; preserve "in sync if hashes match, otherwise treat
+            // as a both-modified conflict".
             if (sRec.contentHash != tRec.contentHash) {
                 result.toTarget.append(makeConflict(sRec, tRec, BackendRecord{}));
             }

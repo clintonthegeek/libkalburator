@@ -16,9 +16,9 @@ class BlobBaselineStore;
 /// the adapter does not parse `data`. Conflict resolution per
 /// ConflictResolution policy.
 ///
-/// Phase F1 absorbs the body of BlobSyncEngine::twoWayWithBaseline into
-/// this adapter's diff/merge/applyChanges pipeline. The free-function
-/// blob engine remains in place until Group 4 deletes it.
+/// Phase F1 absorbed the body of the legacy BlobSyncEngine's
+/// twoWayWithBaseline into this adapter's diff/merge/applyChanges
+/// pipeline. The standalone blob engine class was deleted in Task 10.
 ///
 /// **Baseline keying.** The IDomainAdapter contract takes only
 /// `mappingId` for load/saveBaselines, but the design pins blob baselines

@@ -17,7 +17,7 @@ class SyncBackend;
 /// Per-domain glue between the unified SyncEngine and its backends.
 ///
 /// Phase F1 introduces this seam to collapse the two parallel sync
-/// engines (calendar SyncEngine + worker, blob BlobSyncEngine)
+/// engines (calendar SyncEngine + worker, plus the now-deleted blob engine)
 /// into a single SyncEngine that drives an IDomainAdapter*. Calendar
 /// adapter parses iCal text + uses IncidenceDiff; blob adapter is
 /// identity serde + hash-equality diff.
