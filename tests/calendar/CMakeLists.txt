@@ -65,3 +65,7 @@ kalburator_add_calendar_integration_test(tst_calendar_subsequent_sync_uses_blob_
 
 # Phase F.0 — Backend write/fetch failure paths
 kalburator_add_calendar_integration_test(tst_calendar_sync_error_recovery)
+
+# Phase F1 Task 7 — engine boundary integration (calendar mapping +
+# blob one-shot through one SyncEngine instance)
+kalburator_add_calendar_integration_test(tst_engine_unified_boundary)
