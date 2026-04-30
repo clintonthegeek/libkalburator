@@ -3,7 +3,6 @@
 
 #include "synctypes.h"
 #include "syncdiff.h"
-#include "syncworker.h"
 #include "blobdomainadapter.h"
 #include "blobsyncengine.h"  // BlobSyncResult / BlobSyncStats types
 #include "calendardomainadapter.h"
@@ -12,9 +11,12 @@
 #include <QObject>
 #include <QList>
 #include <QMap>
+#include <QMutex>
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QSet>
 #include <QThread>
+#include <KCalendarCore/Incidence>
 
 namespace Kalburator::Sync {
 
@@ -28,11 +30,185 @@ class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
 class DecSyncActiveController;
+class SyncEngine;
 
 namespace QSyncCore {
     class ConflictStore;
     struct ConflictPolicy;
 }
+
+/**
+ * @brief Internal worker class — runs sync operations on a background thread.
+ *
+ * Phase F1 Task 8 (2026-04-29): Formerly a standalone worker class in
+ * src/calendar/ (deleted in this task). Folded into the engine's translation
+ * unit. SyncEngine instantiates one of these and moves it to its
+ * private QThread; the worker reaches the rest of the engine's collaborators
+ * (CalendarDomainAdapter, baseline stores, host) via setDependencies.
+ *
+ * Sync phases handled here:
+ * - Fetching records from source and target backends
+ * - Computing 3-way diff (delegated to CalendarDomainAdapter since F1 Task 5)
+ * - Handling conflicts based on mode (monitored/unmonitored)
+ * - Applying changes to backends (delegated to CalendarDomainAdapter)
+ * - Updating baselines
+ *
+ * Two sync modes are supported:
+ * - Unmonitored: Conflicts are queued for later resolution, sync continues
+ * - Monitored: Worker pauses on each conflict until user resolves it
+ *
+ * Signals use Qt::QueuedConnection for thread-safe cross-thread communication.
+ */
+class SyncEngineWorker : public QObject
+{
+    Q_OBJECT
+
+public:
+    /**
+     * @brief Sync mode determining conflict handling behavior.
+     */
+    enum class Mode {
+        Monitored,      ///< Pause on each conflict for user resolution
+        Unmonitored     ///< Queue conflicts and continue (deferred resolution)
+    };
+    Q_ENUM(Mode)
+
+    /**
+     * @brief Request for a sync operation.
+     */
+    struct Request {
+        SyncMapping mapping;        ///< The sync mapping to execute
+        Mode mode = Mode::Unmonitored;  ///< How to handle conflicts
+        bool useQuickPath = false;  ///< Use fast 2-way diff (no baselines)
+        QString collectionId;       ///< Collection ID for backend operations
+    };
+
+    explicit SyncEngineWorker(const TranscodingRouter &router, QObject *parent = nullptr);
+    ~SyncEngineWorker() override;
+
+    /**
+     * @brief Set dependencies before moving to thread.
+     * Must be called before moveToThread().
+     */
+    void setDependencies(ISyncHost *host,
+                         CalendarBaselineStore *calendarBaselines,
+                         ICalendarCollection *collection,
+                         BlobBaselineStore *blobBaselines = nullptr,
+                         CalendarDomainAdapter *calendarAdapter = nullptr);
+
+public slots:
+    /**
+     * @brief Process a sync operation (called from worker thread).
+     */
+    void processSync(const SyncEngineWorker::Request &request);
+
+    /**
+     * @brief Resume after user resolves a conflict (monitored mode).
+     * Called from main thread when user completes conflict resolution dialog.
+     */
+    void resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal);
+
+    /**
+     * @brief Cancel the current sync operation.
+     */
+    void cancel();
+
+signals:
+    void syncStarted(const QString &mappingId);
+    void phaseChanged(const QString &mappingId, int phase);
+    void fetchProgress(const QString &calendarId, int current, int total);
+    void itemReady(const QString &calendarId,
+                   const KCalendarCore::Incidence::Ptr &incidence,
+                   int changeType);
+    void writeProgress(const QString &calendarId, int current, int total);
+    void conflictDetected(const ConflictInfo &conflict);
+    void conflictPauseRequested(const ConflictInfo &conflict);
+    void syncCompleted(const QString &mappingId, const SyncResult &result);
+    void syncError(const QString &mappingId, const QString &errorMessage);
+    void transcodingWarning(const QString &calendarId,
+                            const QString &uid,
+                            const QStringList &warnings);
+
+private:
+    // Property sync phases (run before incidence sync)
+    void fetchCalendarProperties();
+    void computePropertyDiff();
+    void applyPropertyChanges();
+    void updatePropertyBaselines();
+
+    // Sync phases
+    void fetchSourceRecords();
+    void fetchTargetRecords();
+    void computeDiff();
+    void handleConflicts();
+    void applyChanges();
+    void updateBaselines();
+
+    // First-sync dispatch via BlobSyncEngine (Phase D Task 21)
+    bool dispatchFirstSync(const Request &request);
+    void harvestBaselinesAfterFirstSync(const Request &request);
+
+    // Blob-view helpers (Phase D Task 19)
+    void fetchRecordsViaBlob(const QString &backendId,
+                             const QString &calendarId,
+                             QList<SyncRecord> &out);
+
+    // Conflict handling
+    void handleConflictUnmonitored(const SyncChange &change);
+    void applyMonitoredResolution(const SyncChange &change,
+                                   ConflictResolution resolution,
+                                   const QString &mergedIcal);
+    void resolveConflictAutomatically(const SyncChange &change,
+                                       ConflictResolution policy);
+
+    void continueAfterConflicts();
+
+    void applyChangesToBackend(const QString &backendId,
+                               const QString &calendarId,
+                               const QList<SyncChange> &changes,
+                               bool useTargetRecord = false);
+
+    QMutex m_mutex;
+    bool m_cancelled = false;
+    bool m_fetchFailed = false;
+    QString m_fetchErrorMessage;
+    bool m_applyFailed = false;
+    QString m_applyErrorMessage;
+
+    enum class ConflictPhase { ToTarget, ToSource, Done };
+    ConflictPhase m_conflictPhase = ConflictPhase::Done;
+    int m_conflictIndex = 0;
+    bool m_yieldedForConflict = false;
+
+    QElapsedTimer m_totalTimer;
+    QElapsedTimer m_phaseTimer;
+    qint64 m_propertyFetchMs = 0;
+    qint64 m_propertyDiffMs = 0;
+    qint64 m_propertyApplyMs = 0;
+    qint64 m_sourceFetchMs = 0;
+    qint64 m_targetFetchMs = 0;
+    qint64 m_diffMs = 0;
+
+    const TranscodingRouter &m_router;
+    ISyncHost *m_controller = nullptr;
+    CalendarBaselineStore *m_calendarBaselines = nullptr;
+    BlobBaselineStore *m_blobBaselines = nullptr;
+    ICalendarCollection *m_collection = nullptr;
+    CalendarDomainAdapter *m_calendarAdapter = nullptr;
+
+    Request m_currentRequest;
+    QList<SyncRecord> m_sourceRecords;
+    QList<SyncRecord> m_targetRecords;
+    SyncDiff m_currentDiff;
+    SyncResult m_currentResult;
+    QList<SyncChange> m_resolvedToTarget;
+    QList<SyncChange> m_resolvedToSource;
+    int m_resolvedToSourceConflictStart = 0;
+
+    CalendarPropertyRecord m_sourceProperties;
+    CalendarPropertyRecord m_targetProperties;
+    CalendarPropertyDiff m_propertyDiff;
+};
 
 /**
  * @brief Coordinates sync operations between backends according to sync mappings.
@@ -102,7 +278,7 @@ public:
     /**
      * @brief Set the BlobBaselineStore for per-record hash-skip (Phase D Task 20).
      *
-     * When set, SyncWorker's subsequent-sync blob fetch skips records whose
+     * When set, the engine's subsequent-sync blob fetch skips records whose
      * contentHash matches the stored baseline — avoiding unnecessary merge work
      * for unchanged records.
      */
@@ -344,7 +520,7 @@ signals:
     /**
      * @brief Emitted when transcoding causes potential data loss.
      *
-     * This signal is forwarded from SyncWorker when an incidence requires
+     * This signal is forwarded from the inner worker when an incidence requires
      * lossy transcoding between backends with different capabilities.
      *
      * @param calendarId The calendar being synced
@@ -429,7 +605,7 @@ private:
 
     // Worker thread infrastructure
     QThread m_workerThread;
-    SyncWorker *m_worker = nullptr;
+    SyncEngineWorker *m_worker = nullptr;
     SyncBehavior m_currentSyncBehavior = SyncBehavior::Unmonitored;
     ConflictInfo m_pendingConflict;  // For monitored mode dialog
     QList<ConflictInfo> m_pendingUnmonitoredConflicts;  // Batch for post-sync presentation
@@ -446,5 +622,8 @@ private:
 };
 
 } // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncEngineWorker::Request)
+Q_DECLARE_METATYPE(Kalburator::Sync::SyncEngineWorker::Mode)
 
 #endif // KALBURATOR_SYNCENGINE_H

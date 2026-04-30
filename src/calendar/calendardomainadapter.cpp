@@ -313,7 +313,7 @@ EngineApplyResult CalendarDomainAdapter::applyChanges(
     const QString & /*collectionId*/, const TranscodingPlan & /*plan*/)
 {
     // Phase F1 Task 3 stub. Task 5 ("SyncEngine routes calendar path through
-    // CalendarDomainAdapter") wires the SyncWorker::applyChangesToBackend
+    // CalendarDomainAdapter") wires the calendar apply-changes-to-backend
     // body — SyncTransaction + CreateIncidenceItem / UpdateIncidenceItem /
     // DeleteIncidenceItem wrappers + Phase E writeFinished-capture pattern
     // + BlockingQueuedConnection commit marshalling — into this method.
@@ -321,7 +321,7 @@ EngineApplyResult CalendarDomainAdapter::applyChanges(
     r.success = false;
     r.errorMessage = QStringLiteral(
         "CalendarDomainAdapter::applyChanges: not yet implemented "
-        "(scheduled for F1 Task 5; engine drives SyncWorker today)");
+        "(scheduled for F1 Task 5; engine drives the inner worker today)");
     return r;
 }
 

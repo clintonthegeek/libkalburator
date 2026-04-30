@@ -1,6 +1,6 @@
 // tst_calendar_transcoding_warning.cpp
 //
-// Phase D.0 — Transcoding warning emission. Verifies SyncWorker invokes
+// Phase D.0 — Transcoding warning emission. Verifies SyncEngine invokes
 // TranscodingRegistry on writes to a backend whose type differs from
 // the source's, and that the transcodingWarning signal surfaces lossy
 // conversions.

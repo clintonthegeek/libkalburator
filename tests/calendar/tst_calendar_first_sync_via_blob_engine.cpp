@@ -3,7 +3,7 @@
 // Phase D Task 21 — first-sync dispatch through BlobSyncEngine.
 //
 // When a SyncMapping has no CalendarBaselineStore baseline yet AND the mode
-// is OneWayUpload, SyncWorker routes through BlobSyncEngine::mirror and then
+// is OneWayUpload, SyncEngine routes through BlobSyncEngine::mirror and then
 // harvests the resulting records into CalendarBaselineStore + BlobBaselineStore
 // so subsequent syncs use the 3-way merge path.
 //

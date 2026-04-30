@@ -3,7 +3,7 @@
 // Phase D Task 22 — pins the subsequent-sync code path.
 //
 // When CalendarBaselineStore has baselines for the mapping (useQuickPath=false),
-// SyncWorker calls IBlobBackend::loadRecords (the blob view), not the legacy
+// SyncEngine calls IBlobBackend::loadRecords (the blob view), not the legacy
 // SyncBackend::fetchItems.  All records are fetched so computeSyncDiff can
 // correctly distinguish unchanged records from deletions.  Records whose
 // contentHash matches the BlobBaselineStore baseline generate no write
@@ -104,7 +104,7 @@ private slots:
     void init();
     void cleanup();
 
-    // SyncWorker calls IBlobBackend::loadRecords (not fetchItems) for the
+    // SyncEngine calls IBlobBackend::loadRecords (not fetchItems) for the
     // subsequent-sync path (useQuickPath = false).
     void subsequentSync_usesBlobViewNotFetchItems();
 

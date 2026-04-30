@@ -1,7 +1,7 @@
 // tst_calendar_sync_full.cpp
 //
 // Phase D.0 — Full bidirectional sync against MockBackend pair through
-// StubSyncHost. Pins SyncEngine/SyncWorker behavior before any
+// StubSyncHost. Pins SyncEngine/SyncEngine behavior before any
 // engine refactor lands.
 //
 // See: docs/phase0/04l-phase-d0-test-harness-design.md
@@ -122,7 +122,7 @@ void TestCalendarSyncFull::init()
 
     m_host = std::make_unique<StubSyncHost>(m_registry.get());
 
-    // SyncWorker::applyChangesToBackend looks up the calendar via
+    // SyncEngine::applyChangesToBackend looks up the calendar via
     // host->collection()->calendar(calendarId). The collection must
     // have a MemoryCalendar registered under the same id used in the
     // SyncMapping for the engine to write changes back to either side.

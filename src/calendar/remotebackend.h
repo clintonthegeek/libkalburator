@@ -270,7 +270,7 @@ public:
     // lastModified = QDateTime::currentDateTimeUtc() (ETag-opaque; no getlastmodified)
     //
     // All methods that need network I/O wrap async KDAV jobs in QEventLoop::exec.
-    // This is acceptable because the blob view is called from SyncWorker (worker thread).
+    // This is acceptable because the blob view is called from the engine worker (worker thread).
     // Phase F revisits true async; Phase D blocks on the worker thread.
     // =========================================================================
 

@@ -36,7 +36,7 @@ class TranscodingRouter;
 /// and LastWriteWins for BothModified conflicts. The richer
 /// resolveConflictAutomatically logic (ModifyDelete fixups, Duplicate
 /// clone-and-rename, Skip / AskUser deferral) is preserved by the
-/// existing SyncWorker today; Task 5 collapses it into this adapter
+/// engine's inner worker today; Task 5 collapses it into this adapter
 /// alongside the wrapper integration.
 ///
 /// **Encoding deletes.** Following the convention established by
@@ -98,16 +98,16 @@ public:
     // --- Calendar-typed convenience entry points (F1 Task 5) ---
     //
     // These mirror the eventual BackendRecord-typed IDomainAdapter
-    // contract but take parsed calendar types so SyncWorker (and, after
-    // Task 8, SyncEngine itself) doesn't pay an iCal re-parse round-trip
-    // for every record. Internals route to the same `computeSyncDiff` /
-    // `computeQuickDiff` and `SyncTransaction` machinery as the
-    // BackendRecord-typed overloads.
+    // contract but take parsed calendar types so SyncEngine's inner
+    // worker doesn't pay an iCal re-parse round-trip for every record.
+    // Internals route to the same `computeSyncDiff` / `computeQuickDiff`
+    // and `SyncTransaction` machinery as the BackendRecord-typed
+    // overloads.
 
     /// Calendar-typed diff: dispatches to `computeQuickDiff` (when
     /// `useQuickPath` or `baselines` empty) or `computeSyncDiff`. The
-    /// SyncDiff result drives SyncWorker's conflict-resolution and
-    /// apply-changes loops directly — no BackendRecord round-trip.
+    /// SyncDiff result drives the engine worker's conflict-resolution
+    /// and apply-changes loops directly — no BackendRecord round-trip.
     SyncDiff diffCalendarRecords(const QList<SyncRecord>& source,
                                  const QList<SyncRecord>& target,
                                  const QMap<QString, QString>& baselines,

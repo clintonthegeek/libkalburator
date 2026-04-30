@@ -488,7 +488,7 @@ SyncDiff computeSyncDiff(const QList<SyncRecord> &sourceRecords,
         }
     }
 
-    // Debug log removed - SyncWorker shows timing summary
+    // Debug log removed - SyncEngine shows timing summary
 
     return diff;
 }

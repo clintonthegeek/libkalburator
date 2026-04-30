@@ -17,8 +17,8 @@ class ISyncConfigStore;
 /**
  * @brief Abstract interface decoupling sync engine from CollectionController.
  *
- * SyncEngine, CalendarManager, and SyncWorker use this interface
- * instead of depending on CollectionController directly.
+ * SyncEngine and CalendarManager use this interface instead of
+ * depending on CollectionController directly.
  * The app shell implements this interface in CollectionController.
  *
  * Narrowed 2026-04-20 (Phase 1.2 of libkalburator extraction):

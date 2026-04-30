@@ -1,7 +1,7 @@
 // tst_calendar_conflict.cpp
 //
 // Phase D.0 — Conflict detection (= 3-way merge in action). Two methods
-// covering SyncWorker's two distinct conflict-handling code paths:
+// covering SyncEngine's two distinct conflict-handling code paths:
 //
 //   Unmonitored: ConflictDetected signal fires, sync continues, auto-
 //                resolution applied per policy.
@@ -68,7 +68,7 @@ SyncMapping makeTwoWayMapping()
     m.targetCalendar  = QString::fromLatin1(kCalendarId);
     m.mode            = SyncMode::TwoWay;
     // AskUser policy is required to make the engine emit conflict
-    // signals. With any direct policy (SourceWins, etc.), SyncWorker
+    // signals. With any direct policy (SourceWins, etc.), SyncEngine
     // resolves the conflict silently via resolveConflictAutomatically
     // and no signal reaches the coordinator. The ConflictManager's
     // workflow mode (set in init()) handles the actual resolution.
@@ -210,11 +210,11 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
              qPrintable(QStringLiteral("expected conflictDetected, got %1 signals")
                             .arg(conflictSpy.count())));
 
-    // In unmonitored mode SyncWorker records conflicts as unresolved
+    // In unmonitored mode SyncEngine records conflicts as unresolved
     // and does NOT apply a resolution inline. Backend-side resolution
     // happens later via ConflictManager::handleConflicts() (plural)
     // through its workflow logic — that's a separate test surface
-    // from what SyncWorker contracts. The contract pinned here is
+    // from what SyncEngine contracts. The contract pinned here is
     // "conflict was detected and surfaced as a signal, sync did not
     // apply silently."
     auto targetInc = m_target->incidence(QString::fromLatin1(kCalendarId),

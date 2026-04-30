@@ -108,7 +108,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/synctesthooks.h
     src/calendar/synctransaction.h
     src/calendar/synctransactionitem.h
-    src/calendar/syncworker.h
     src/calendar/updateincidenceitem.h
 )
 set(KALBURATOR_CALENDAR_SOURCES
@@ -139,7 +138,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/syncoperation.cpp
     src/calendar/synctransaction.cpp
     src/calendar/synctransactionitem.cpp
-    src/calendar/syncworker.cpp
     src/calendar/updateincidenceitem.cpp
 )
 

@@ -2,7 +2,8 @@
  * @file synctransaction.h
  * @brief Atomic transaction system for sync operations with rollback capability.
  *
- * Used by SyncWorker to apply multi-item changes to backends atomically.
+ * Used by CalendarDomainAdapter (via SyncEngine) to apply multi-item changes
+ * to backends atomically.
  * Provides simulation phase for conflict detection and automatic rollback
  * on failure.
  *

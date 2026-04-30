@@ -23,6 +23,10 @@
 #include "synctesthooks.h"
 #include "iincidencesource.h"
 #include "iincidenceregistry.h"
+#include "synctransaction.h"
+#include "createincidenceitem.h"
+#include "updateincidenceitem.h"
+#include "deleteincidenceitem.h"
 
 #include <KCalendarCore/ICalFormat>
 #include <QDebug>
@@ -30,6 +34,11 @@
 #include <QMap>
 #include <QSet>
 #include <QCoreApplication>
+#include <QEventLoop>
+#include <QPointer>
+#include <QMetaObject>
+#include <QTimer>
+#include <QMutexLocker>
 
 namespace Kalburator::Sync {
 
@@ -43,7 +52,7 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     , m_calendarAdapter(m_transcodingRouter)
 {
     // Create worker but don't start thread yet
-    m_worker = new SyncWorker(m_transcodingRouter);
+    m_worker = new SyncEngineWorker(m_transcodingRouter);
     setupWorkerConnections();
 }
 
@@ -57,25 +66,25 @@ void SyncEngine::setupWorkerConnections()
     if (!m_worker) return;
 
     // Connect worker signals to coordinator slots (Qt::QueuedConnection for cross-thread)
-    connect(m_worker, &SyncWorker::syncStarted,
+    connect(m_worker, &SyncEngineWorker::syncStarted,
             this, &SyncEngine::onWorkerSyncStarted, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::phaseChanged,
+    connect(m_worker, &SyncEngineWorker::phaseChanged,
             this, &SyncEngine::onWorkerPhaseChanged, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::fetchProgress,
+    connect(m_worker, &SyncEngineWorker::fetchProgress,
             this, &SyncEngine::onWorkerFetchProgress, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::itemReady,
+    connect(m_worker, &SyncEngineWorker::itemReady,
             this, &SyncEngine::onWorkerItemReady, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::writeProgress,
+    connect(m_worker, &SyncEngineWorker::writeProgress,
             this, &SyncEngine::onWorkerWriteProgress, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::conflictDetected,
+    connect(m_worker, &SyncEngineWorker::conflictDetected,
             this, &SyncEngine::onWorkerConflictDetected, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::conflictPauseRequested,
+    connect(m_worker, &SyncEngineWorker::conflictPauseRequested,
             this, &SyncEngine::onWorkerConflictPauseRequested, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::syncCompleted,
+    connect(m_worker, &SyncEngineWorker::syncCompleted,
             this, &SyncEngine::onWorkerSyncCompleted, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::syncError,
+    connect(m_worker, &SyncEngineWorker::syncError,
             this, &SyncEngine::onWorkerSyncError, Qt::QueuedConnection);
-    connect(m_worker, &SyncWorker::transcodingWarning,
+    connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
 
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
@@ -244,7 +253,7 @@ void SyncEngine::runSync(SyncBehavior behavior)
 
     // Phase-1 + Phase-2 perf: prime fresh CTags and fingerprints, decide
     // per-mapping skip eligibility. Best-effort; on failure we simply fall
-    // back to per-call PROPFIND inside SyncWorker.
+    // back to per-call PROPFIND inside SyncEngineWorker.
     if (!m_cancelled && !m_syncMappings.isEmpty()) {
         prepareSyncFastPath();
     }
@@ -295,18 +304,18 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
             startWorkerThread();
 
             // Create request and invoke worker
-            SyncWorker::Request request;
+            SyncEngineWorker::Request request;
             request.mapping = mapping;
             request.mode = (behavior == SyncBehavior::Monitored)
-                ? SyncWorker::Mode::Monitored
-                : SyncWorker::Mode::Unmonitored;
+                ? SyncEngineWorker::Mode::Monitored
+                : SyncEngineWorker::Mode::Unmonitored;
             request.collectionId = m_collection ? m_collection->id() : QString();
             request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
 
             // Invoke worker in its thread
             QMetaObject::invokeMethod(m_worker, "processSync",
                                       Qt::QueuedConnection,
-                                      Q_ARG(SyncWorker::Request, request));
+                                      Q_ARG(SyncEngineWorker::Request, request));
             return;
         }
     }
@@ -483,7 +492,7 @@ void SyncEngine::prepareSyncFastPath()
 
 void SyncEngine::processNextMapping()
 {
-    // Debug log removed - SyncWorker provides detailed timing
+    // Debug log removed - SyncEngineWorker provides detailed timing
 
     if (m_cancelled) {
         m_isSyncing = false;
@@ -552,16 +561,16 @@ void SyncEngine::processNextMapping()
                          tr("Syncing %1").arg(mapping.id));
 
     // Create request and invoke worker directly
-    SyncWorker::Request request;
+    SyncEngineWorker::Request request;
     request.mapping = mapping;
     request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
-        ? SyncWorker::Mode::Monitored : SyncWorker::Mode::Unmonitored;
+        ? SyncEngineWorker::Mode::Monitored : SyncEngineWorker::Mode::Unmonitored;
     request.collectionId = m_collection ? m_collection->id() : QString();
     request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
 
     QMetaObject::invokeMethod(m_worker, "processSync",
                               Qt::QueuedConnection,
-                              Q_ARG(SyncWorker::Request, request));
+                              Q_ARG(SyncEngineWorker::Request, request));
 
     // NOTE: Do NOT recurse here!
     // The async operation will call onWorkerSyncCompleted() when done,
@@ -663,7 +672,7 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
 
 void SyncEngine::onWorkerSyncStarted(const QString &mappingId)
 {
-    // Debug log removed - SyncWorker shows detailed start info
+    // Debug log removed - SyncEngineWorker shows detailed start info
     emit syncStarted(mappingId);
 }
 
@@ -1186,6 +1195,1338 @@ BlobSyncResult SyncEngine::runBlobTwoWay(
 
     result.success = (result.sourceStats.errors == 0 && result.targetStats.errors == 0);
     return result;
+}
+
+// ============================================================================
+// SyncEngineWorker — runs sync operations on m_workerThread.
+//
+// Phase F1 Task 8 (2026-04-29): formerly a standalone worker class in
+// src/calendar/ (deleted in this task). The implementation is moved here
+// verbatim; the file boundary went away because the worker is now a private
+// implementation detail of SyncEngine.
+// ============================================================================
+
+namespace {
+
+// Build a compound sync key from a SyncRecord (uid + recurrenceId).
+// Matches the syncRecordKey() format from syncdiff.cpp.
+QString syncRecordKey(const SyncRecord &rec)
+{
+    if (rec.recurrenceId.isValid())
+        return rec.uid + QChar(0) + rec.recurrenceId.toString(Qt::ISODate);
+    return rec.uid;
+}
+
+inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>(b); }
+
+// Register metatypes for cross-thread signal/slot.
+const bool engineWorkerMetatypesRegistered = []() {
+    qRegisterMetaType<SyncEngineWorker::Request>("SyncEngineWorker::Request");
+    qRegisterMetaType<SyncEngineWorker::Mode>("SyncEngineWorker::Mode");
+    qRegisterMetaType<ConflictResolution>("ConflictResolution");
+    qRegisterMetaType<ConflictInfo>("ConflictInfo");
+    qRegisterMetaType<SyncResult>("SyncResult");
+    qRegisterMetaType<KCalendarCore::Incidence::Ptr>("KCalendarCore::Incidence::Ptr");
+    return true;
+}();
+
+} // namespace
+
+SyncEngineWorker::SyncEngineWorker(const TranscodingRouter &router, QObject *parent)
+    : QObject(parent)
+    , m_router(router)
+{
+}
+
+SyncEngineWorker::~SyncEngineWorker()
+{
+    QMutexLocker locker(&m_mutex);
+    m_cancelled = true;
+}
+
+void SyncEngineWorker::setDependencies(ISyncHost *host,
+                                        CalendarBaselineStore *calendarBaselines,
+                                        ICalendarCollection *collection,
+                                        BlobBaselineStore *blobBaselines,
+                                        CalendarDomainAdapter *calendarAdapter)
+{
+    m_controller = host;
+    m_calendarBaselines = calendarBaselines;
+    m_blobBaselines = blobBaselines;
+    m_collection = collection;
+    m_calendarAdapter = calendarAdapter;
+}
+
+void SyncEngineWorker::cancel()
+{
+    QMutexLocker locker(&m_mutex);
+    m_cancelled = true;
+}
+
+void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
+{
+    auto syncModeStr = [](SyncMode mode) -> const char* {
+        switch (mode) {
+            case SyncMode::Disabled: return "Disabled";
+            case SyncMode::OneWayUpload: return "OneWayUpload";
+            case SyncMode::OneWayDownload: return "OneWayDownload";
+            case SyncMode::TwoWay: return "TwoWay";
+            default: return "Unknown";
+        }
+    };
+
+    qDebug().noquote() << QString("SyncEngineWorker: === Starting sync [%1/%2] -> [%3/%4] ===")
+        .arg(request.mapping.sourceBackend, request.mapping.sourceCalendar,
+             request.mapping.targetBackend, request.mapping.targetCalendar);
+    qDebug() << "  mapping:" << request.mapping.id
+             << "mode:" << syncModeStr(request.mapping.mode)
+             << (request.mode == Mode::Monitored ? "(monitored)" : "(unmonitored)");
+
+    m_totalTimer.start();
+    m_propertyFetchMs = 0;
+    m_propertyDiffMs = 0;
+    m_propertyApplyMs = 0;
+    m_sourceFetchMs = 0;
+    m_targetFetchMs = 0;
+    m_diffMs = 0;
+
+    {
+        QMutexLocker locker(&m_mutex);
+        m_cancelled = false;
+        m_fetchFailed = false;
+        m_applyFailed = false;
+    }
+    m_fetchErrorMessage.clear();
+    m_applyErrorMessage.clear();
+    m_yieldedForConflict = false;
+    m_conflictPhase = ConflictPhase::Done;
+    m_conflictIndex = 0;
+
+    m_currentRequest = request;
+    m_sourceRecords.clear();
+    m_targetRecords.clear();
+    m_currentDiff = SyncDiff();
+    m_currentResult = SyncResult{};
+    m_currentResult.startTime = QDateTime::currentDateTime();
+    m_resolvedToTarget.clear();
+    m_resolvedToSource.clear();
+    m_resolvedToSourceConflictStart = 0;
+
+    m_sourceProperties = CalendarPropertyRecord();
+    m_targetProperties = CalendarPropertyRecord();
+    m_propertyDiff = CalendarPropertyDiff();
+
+    emit syncStarted(request.mapping.id);
+
+    // First-sync fast path (Phase D Task 21).
+    if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
+        if (dispatchFirstSync(request))
+            return;
+    }
+
+    m_phaseTimer.start();
+    fetchCalendarProperties();
+    m_propertyFetchMs = m_phaseTimer.elapsed();
+
+    m_phaseTimer.restart();
+    computePropertyDiff();
+    m_propertyDiffMs = m_phaseTimer.elapsed();
+
+    m_phaseTimer.restart();
+    applyPropertyChanges();
+    m_propertyApplyMs = m_phaseTimer.elapsed();
+
+    m_phaseTimer.start();
+    fetchSourceRecords();
+    m_sourceFetchMs = m_phaseTimer.elapsed();
+
+    if (m_fetchFailed) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = m_fetchErrorMessage.isEmpty()
+            ? QStringLiteral("Source fetch failed") : m_fetchErrorMessage;
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        qWarning() << "SyncEngineWorker: Source fetch failed, aborting sync:" << m_currentResult.errorMessage;
+        emit syncCompleted(request.mapping.id, m_currentResult);
+        return;
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_cancelled) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(request.mapping.id, m_currentResult);
+            return;
+        }
+    }
+
+    m_phaseTimer.restart();
+    fetchTargetRecords();
+    m_targetFetchMs = m_phaseTimer.elapsed();
+
+    if (m_fetchFailed) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = m_fetchErrorMessage.isEmpty()
+            ? QStringLiteral("Target fetch failed") : m_fetchErrorMessage;
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        qWarning() << "SyncEngineWorker: Target fetch failed, aborting sync:" << m_currentResult.errorMessage;
+        emit syncCompleted(request.mapping.id, m_currentResult);
+        return;
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_cancelled) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(request.mapping.id, m_currentResult);
+            return;
+        }
+    }
+
+    m_phaseTimer.restart();
+    computeDiff();
+    handleConflicts();
+
+    if (m_yieldedForConflict) {
+        return;
+    }
+
+    continueAfterConflicts();
+}
+
+void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal)
+{
+    qDebug() << "SyncEngineWorker::resumeAfterConflict - resolution:" << static_cast<int>(resolution);
+
+    if (!m_yieldedForConflict) {
+        qWarning() << "SyncEngineWorker::resumeAfterConflict called but not yielded — ignoring";
+        return;
+    }
+
+    const QList<SyncChange> &currentList =
+        (m_conflictPhase == ConflictPhase::ToTarget) ? m_currentDiff.toTarget : m_currentDiff.toSource;
+
+    if (m_conflictIndex < currentList.size()) {
+        const SyncChange &change = currentList[m_conflictIndex];
+        applyMonitoredResolution(change, resolution, mergedIcal);
+    }
+
+    m_conflictIndex++;
+    m_yieldedForConflict = false;
+
+    handleConflicts();
+
+    if (m_yieldedForConflict) {
+        return;
+    }
+
+    continueAfterConflicts();
+}
+
+// ----------------------------------------------------------------------------
+// First-sync dispatch via BlobSyncEngine (Phase D Task 21)
+// ----------------------------------------------------------------------------
+
+bool SyncEngineWorker::dispatchFirstSync(const Request &request)
+{
+    qDebug() << "SyncEngineWorker::dispatchFirstSync - checking if target is empty for"
+             << request.mapping.id;
+
+    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
+
+    if (!srcBackend || !tgtBackend) {
+        SyncResult result;
+        result.success = false;
+        result.errorMessage = QStringLiteral("dispatchFirstSync: backend not found");
+        emit syncCompleted(request.mapping.id, result);
+        return true;
+    }
+
+    IBlobBackend *tgt = asBlob(tgtBackend);
+    const QString colId = request.mapping.sourceCalendar;
+
+    bool targetEmpty = false;
+    QMetaObject::invokeMethod(tgtBackend,
+        [tgt, colId, &targetEmpty]() {
+            targetEmpty = tgt->loadRecords(colId).isEmpty();
+        }, Qt::BlockingQueuedConnection);
+
+    if (!targetEmpty) {
+        qDebug() << "SyncEngineWorker::dispatchFirstSync - target non-empty, deferring to quick-path for"
+                 << request.mapping.id;
+        return false;
+    }
+
+    qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, routing via BlobSyncEngine::mirror for"
+             << request.mapping.id;
+
+    IBlobBackend *src = asBlob(srcBackend);
+
+    BlobSyncResult blobResult;
+
+    QMetaObject::invokeMethod(srcBackend,
+        [src, tgt, colId, &blobResult]() {
+            BlobSyncEngine engine;
+            blobResult = engine.mirror(src, tgt, colId);
+        }, Qt::BlockingQueuedConnection);
+
+    SyncResult result;
+    if (!blobResult.success) {
+        result.success = false;
+        result.errorMessage = blobResult.errorMessage;
+        qWarning() << "SyncEngineWorker::dispatchFirstSync - BlobSyncEngine failed:"
+                   << blobResult.errorMessage;
+        emit syncCompleted(request.mapping.id, result);
+        return true;
+    }
+
+    harvestBaselinesAfterFirstSync(request);
+
+    result.success = true;
+    result.startTime = m_currentResult.startTime;
+    result.endTime = QDateTime::currentDateTime();
+    emit syncCompleted(request.mapping.id, result);
+    return true;
+}
+
+void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
+{
+    if (!m_calendarBaselines) {
+        qDebug() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - no CalendarBaselineStore, skipping";
+        return;
+    }
+
+    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    if (!srcBackend) {
+        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - source backend not found";
+        return;
+    }
+
+    IBlobBackend *src = asBlob(srcBackend);
+    const QString colId = request.mapping.sourceCalendar;
+    const QString backendId = request.mapping.sourceBackend;
+
+    QList<BackendRecord> records;
+    QMetaObject::invokeMethod(srcBackend,
+        [src, colId, &records]() {
+            records = src->loadRecords(colId);
+        }, Qt::BlockingQueuedConnection);
+
+    KCalendarCore::ICalFormat icalFormat;
+    QHash<QString, QString> uidToIcal;
+
+    for (const BackendRecord &r : records) {
+        const QString ical = QString::fromUtf8(r.data);
+        uidToIcal.insert(r.id, ical);
+
+        if (m_blobBaselines) {
+            BlobBaselineStore *bbs = m_blobBaselines;
+            const QString bId = backendId;
+            const QString cId = colId;
+            const QString rId = r.id;
+            const QString hash = r.contentHash;
+            QMetaObject::invokeMethod(m_calendarBaselines,
+                [bbs, bId, cId, rId, hash]() {
+                    bbs->setBaseline(bId, cId, rId, hash);
+                }, Qt::BlockingQueuedConnection);
+        }
+    }
+
+    const QString mappingId = request.mapping.id;
+    const QDateTime now = QDateTime::currentDateTime();
+    QMetaObject::invokeMethod(m_calendarBaselines,
+        [this, mappingId, uidToIcal, now]() {
+            m_calendarBaselines->setBaselines(mappingId, uidToIcal);
+            m_calendarBaselines->setLastSyncTime(mappingId, now);
+        }, Qt::BlockingQueuedConnection);
+
+    qDebug().noquote() << QString("SyncEngineWorker::harvestBaselinesAfterFirstSync - seeded %1 baselines for %2")
+        .arg(uidToIcal.size()).arg(mappingId);
+}
+
+// ----------------------------------------------------------------------------
+// Blob-view fetch helper (Phase D Task 19)
+// ----------------------------------------------------------------------------
+
+void SyncEngineWorker::fetchRecordsViaBlob(const QString &backendId,
+                                            const QString &calendarId,
+                                            QList<SyncRecord> &out)
+{
+    SyncBackend *backend = m_controller->backendById(backendId);
+    if (!backend) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Backend not found: %1").arg(backendId);
+        return;
+    }
+
+    QList<BackendRecord> records;
+    IBlobBackend *blob = asBlob(backend);
+    QMetaObject::invokeMethod(backend, [blob, calendarId, &records]() {
+        records = blob->loadRecords(calendarId);
+    }, Qt::BlockingQueuedConnection);
+
+    KCalendarCore::ICalFormat icalFormat;
+    for (const BackendRecord &r : records) {
+        const QString ical = QString::fromUtf8(r.data);
+        KCalendarCore::Incidence::Ptr inc = icalFormat.fromString(ical);
+        if (inc) {
+            out.append(SyncRecord::fromIncidence(inc, calendarId, backendId));
+        }
+    }
+}
+
+void SyncEngineWorker::fetchSourceRecords()
+{
+    emit phaseChanged(m_currentRequest.mapping.id, 1);
+
+    if (!m_controller) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("No controller");
+        return;
+    }
+
+    if (!m_currentRequest.useQuickPath) {
+        fetchRecordsViaBlob(m_currentRequest.mapping.sourceBackend,
+                            m_currentRequest.mapping.sourceCalendar,
+                            m_sourceRecords);
+        return;
+    }
+
+    SyncBackend *backend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+    if (!backend) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Source backend not found: %1").arg(m_currentRequest.mapping.sourceBackend);
+        return;
+    }
+
+    FetchOperation *fetchOpRaw = nullptr;
+    QMetaObject::invokeMethod(backend, [backend, this, &fetchOpRaw]() {
+        fetchOpRaw = backend->fetchItems(m_currentRequest.mapping.sourceCalendar);
+    }, Qt::BlockingQueuedConnection);
+
+    QPointer<FetchOperation> fetchOp = fetchOpRaw;
+    if (!fetchOp) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Source fetchItems returned null");
+        return;
+    }
+
+    QEventLoop loop;
+    connect(fetchOp.data(), &SyncOperation::finished, &loop, &QEventLoop::quit, Qt::QueuedConnection);
+
+    connect(backend, &SyncBackend::fetchProgressChanged, this,
+            [this](const QString &calendarId, int current, int total) {
+                emit fetchProgress(calendarId, current, total);
+            }, Qt::QueuedConnection);
+
+    if (fetchOp && (fetchOp->state() == SyncOperation::Succeeded ||
+                    fetchOp->state() == SyncOperation::Failed ||
+                    fetchOp->state() == SyncOperation::Cancelled)) {
+        // Already done
+    } else {
+        loop.exec();
+    }
+
+    backend->disconnect(this);
+
+    if (!fetchOp || fetchOp->state() == SyncOperation::Failed) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = fetchOp ? fetchOp->errorString() : QStringLiteral("Source fetch operation deleted");
+        return;
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> incidences = fetchOp->fetchedItems();
+    for (const auto &inc : incidences) {
+        if (inc) {
+            m_sourceRecords.append(SyncRecord::fromIncidence(inc,
+                                                              m_currentRequest.mapping.sourceCalendar,
+                                                              m_currentRequest.mapping.sourceBackend));
+        }
+    }
+}
+
+void SyncEngineWorker::fetchTargetRecords()
+{
+    emit phaseChanged(m_currentRequest.mapping.id, 2);
+
+    if (!m_currentRequest.useQuickPath) {
+        fetchRecordsViaBlob(m_currentRequest.mapping.targetBackend,
+                            m_currentRequest.mapping.targetCalendar,
+                            m_targetRecords);
+        return;
+    }
+
+    SyncBackend *backend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+    if (!backend) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Target backend not found: %1").arg(m_currentRequest.mapping.targetBackend);
+        return;
+    }
+
+    FetchOperation *fetchOpRaw = nullptr;
+    QMetaObject::invokeMethod(backend, [backend, this, &fetchOpRaw]() {
+        fetchOpRaw = backend->fetchItems(m_currentRequest.mapping.targetCalendar);
+    }, Qt::BlockingQueuedConnection);
+
+    QPointer<FetchOperation> fetchOp = fetchOpRaw;
+    if (!fetchOp) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = QStringLiteral("Target fetchItems returned null");
+        return;
+    }
+
+    QEventLoop loop;
+    connect(fetchOp.data(), &SyncOperation::finished, &loop, &QEventLoop::quit, Qt::QueuedConnection);
+
+    connect(backend, &SyncBackend::fetchProgressChanged, this,
+            [this](const QString &calendarId, int current, int total) {
+                emit fetchProgress(calendarId, current, total);
+            }, Qt::QueuedConnection);
+
+    if (fetchOp && (fetchOp->state() == SyncOperation::Succeeded ||
+                    fetchOp->state() == SyncOperation::Failed ||
+                    fetchOp->state() == SyncOperation::Cancelled)) {
+        // Already done
+    } else {
+        loop.exec();
+    }
+
+    backend->disconnect(this);
+
+    if (!fetchOp || fetchOp->state() == SyncOperation::Failed) {
+        m_fetchFailed = true;
+        m_fetchErrorMessage = fetchOp ? fetchOp->errorString() : QStringLiteral("Target fetch operation deleted");
+        return;
+    }
+
+    QList<KCalendarCore::Incidence::Ptr> incidences = fetchOp->fetchedItems();
+    for (const auto &inc : incidences) {
+        if (inc) {
+            m_targetRecords.append(SyncRecord::fromIncidence(inc,
+                                                              m_currentRequest.mapping.targetCalendar,
+                                                              m_currentRequest.mapping.targetBackend));
+        }
+    }
+}
+
+void SyncEngineWorker::computeDiff()
+{
+    emit phaseChanged(m_currentRequest.mapping.id, 3);
+
+    QMap<QString, QString> baselines;
+    if (!m_currentRequest.useQuickPath && m_calendarBaselines) {
+        const QString mappingId = m_currentRequest.mapping.id;
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &baselines]() {
+            const QHash<QString, QString> hash = m_calendarBaselines->allBaselines(mappingId);
+            for (auto it = hash.constBegin(); it != hash.constEnd(); ++it)
+                baselines.insert(it.key(), it.value());
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    if (m_calendarAdapter) {
+        m_currentDiff = m_calendarAdapter->diffCalendarRecords(
+            m_sourceRecords, m_targetRecords, baselines,
+            m_currentRequest.mapping.mode, m_currentRequest.useQuickPath);
+    } else if (m_currentRequest.useQuickPath) {
+        m_currentDiff = computeQuickDiff(m_sourceRecords, m_targetRecords,
+                                          m_currentRequest.mapping.mode);
+    } else {
+        m_currentDiff = computeSyncDiff(m_sourceRecords, m_targetRecords, baselines,
+                                         m_currentRequest.mapping.mode);
+    }
+
+    if (!m_currentDiff.toTarget.isEmpty() || !m_currentDiff.toSource.isEmpty() ||
+        !m_currentDiff.conflicts.isEmpty()) {
+        qDebug().noquote() << QString("  Diff: toTarget=%1 toSource=%2 conflicts=%3")
+            .arg(m_currentDiff.toTarget.size())
+            .arg(m_currentDiff.toSource.size())
+            .arg(m_currentDiff.conflicts.size());
+    }
+}
+
+void SyncEngineWorker::handleConflicts()
+{
+    if (m_conflictPhase == ConflictPhase::Done && !m_yieldedForConflict) {
+        m_resolvedToSourceConflictStart = m_resolvedToSource.size();
+        m_conflictPhase = ConflictPhase::ToTarget;
+        m_conflictIndex = 0;
+    }
+
+    ConflictResolution effectivePolicy = m_currentRequest.mapping.conflictPolicy;
+    if (m_currentRequest.useQuickPath && effectivePolicy == ConflictResolution::AskUser) {
+        effectivePolicy = ConflictResolution::SourceWins;
+        if (m_conflictPhase == ConflictPhase::ToTarget && m_conflictIndex == 0) {
+            qDebug() << "SyncEngineWorker: First sync (no baselines) — auto-resolving"
+                     << "BothCreated conflicts as SourceWins";
+        }
+    }
+
+    if (m_conflictPhase == ConflictPhase::ToTarget) {
+        for (int i = m_conflictIndex; i < m_currentDiff.toTarget.size(); ++i) {
+            {
+                QMutexLocker locker(&m_mutex);
+                if (m_cancelled) return;
+            }
+
+            const SyncChange &change = m_currentDiff.toTarget[i];
+
+            if (change.isConflict) {
+                SYNC_HOOK_CALL(onConflictDetected, change.conflictInfo);
+#ifdef PLANSTAN_TESTING
+                SyncTestHooks::instance().conflictCount++;
+#endif
+
+                if (effectivePolicy == ConflictResolution::AskUser) {
+                    if (m_currentRequest.mode == Mode::Monitored) {
+                        m_conflictPhase = ConflictPhase::ToTarget;
+                        m_conflictIndex = i;
+                        m_yieldedForConflict = true;
+                        qDebug() << "SyncEngineWorker::handleConflicts - yielding for monitored conflict:" << change.uid;
+                        emit conflictPauseRequested(change.conflictInfo);
+                        return;
+                    } else {
+                        handleConflictUnmonitored(change);
+                    }
+                } else {
+                    resolveConflictAutomatically(change, effectivePolicy);
+                }
+            } else {
+                m_resolvedToTarget.append(change);
+            }
+        }
+
+        m_conflictPhase = ConflictPhase::ToSource;
+        m_conflictIndex = 0;
+    }
+
+    if (m_conflictPhase == ConflictPhase::ToSource) {
+        for (int i = m_conflictIndex; i < m_currentDiff.toSource.size(); ++i) {
+            {
+                QMutexLocker locker(&m_mutex);
+                if (m_cancelled) return;
+            }
+
+            const SyncChange &change = m_currentDiff.toSource[i];
+
+            if (change.isConflict) {
+                SYNC_HOOK_CALL(onConflictDetected, change.conflictInfo);
+#ifdef PLANSTAN_TESTING
+                SyncTestHooks::instance().conflictCount++;
+#endif
+
+                if (effectivePolicy == ConflictResolution::AskUser) {
+                    if (m_currentRequest.mode == Mode::Monitored) {
+                        m_conflictPhase = ConflictPhase::ToSource;
+                        m_conflictIndex = i;
+                        m_yieldedForConflict = true;
+                        qDebug() << "SyncEngineWorker::handleConflicts - yielding for monitored conflict:" << change.uid;
+                        emit conflictPauseRequested(change.conflictInfo);
+                        return;
+                    } else {
+                        handleConflictUnmonitored(change);
+                    }
+                } else {
+                    resolveConflictAutomatically(change, effectivePolicy);
+                }
+            } else {
+                m_resolvedToSource.append(change);
+            }
+        }
+
+        m_conflictPhase = ConflictPhase::Done;
+    }
+}
+
+void SyncEngineWorker::continueAfterConflicts()
+{
+    m_diffMs = m_phaseTimer.elapsed();
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_cancelled) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
+            return;
+        }
+    }
+
+    QElapsedTimer applyTimer;
+    applyTimer.start();
+    applyChanges();
+    qint64 applyMs = applyTimer.elapsed();
+
+    QElapsedTimer baselinesTimer;
+    baselinesTimer.start();
+    updateBaselines();
+    updatePropertyBaselines();
+    qint64 baselinesMs = baselinesTimer.elapsed();
+
+    m_currentResult.success = !m_applyFailed &&
+                              !m_currentResult.hasUnresolvedConflicts() &&
+                              !m_currentResult.sourceStats.hasErrors() &&
+                              !m_currentResult.targetStats.hasErrors();
+    if (m_applyFailed && m_currentResult.errorMessage.isEmpty()) {
+        m_currentResult.errorMessage = m_applyErrorMessage;
+    }
+    m_currentResult.endTime = QDateTime::currentDateTime();
+
+    qint64 totalMs = m_totalTimer.elapsed();
+    qDebug().noquote() << QString("SyncEngineWorker: === Completed [%1] %2 in %3ms (%4 items) ===")
+        .arg(m_currentRequest.mapping.sourceCalendar,
+             m_currentResult.success ? "OK" : "FAILED",
+             QString::number(totalMs),
+             QString::number(m_sourceRecords.size()));
+    qDebug().noquote() << QString("  Timing: props=%1+%2+%3ms fetch=%4+%5ms diff=%6ms apply=%7ms baselines=%8ms")
+        .arg(m_propertyFetchMs).arg(m_propertyDiffMs).arg(m_propertyApplyMs)
+        .arg(m_sourceFetchMs).arg(m_targetFetchMs).arg(m_diffMs).arg(applyMs).arg(baselinesMs);
+
+    emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
+}
+
+void SyncEngineWorker::handleConflictUnmonitored(const SyncChange &change)
+{
+    qDebug() << "SyncEngineWorker::handleConflictUnmonitored - queuing conflict:" << change.uid;
+    emit conflictDetected(change.conflictInfo);
+    m_currentResult.unresolvedConflicts.append(change.conflictInfo);
+}
+
+void SyncEngineWorker::applyMonitoredResolution(const SyncChange &change,
+                                                 ConflictResolution resolution,
+                                                 const QString &mergedIcal)
+{
+    qDebug() << "SyncEngineWorker::applyMonitoredResolution - resolved with:" << static_cast<int>(resolution);
+
+    if (resolution == ConflictResolution::Skip || resolution == ConflictResolution::AskUser) {
+        m_currentResult.unresolvedConflicts.append(change.conflictInfo);
+        return;
+    }
+
+    if (resolution == ConflictResolution::CustomMerge) {
+        if (!mergedIcal.isEmpty()) {
+            KCalendarCore::ICalFormat icalFormat;
+            auto tempCal = QSharedPointer<KCalendarCore::MemoryCalendar>(
+                new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone())
+            );
+            if (icalFormat.fromString(tempCal, mergedIcal)) {
+                auto incidences = tempCal->incidences();
+                if (!incidences.isEmpty()) {
+                    KCalendarCore::Incidence::Ptr mergedIncidence = incidences.first();
+
+                    SyncChange resolved = change;
+                    resolved.isConflict = false;
+                    resolved.type = SyncChangeType::Modified;
+                    resolved.sourceRecord.incidence = mergedIncidence;
+                    resolved.sourceRecord.icalData = mergedIcal;
+                    resolved.targetRecord.incidence = mergedIncidence;
+                    resolved.targetRecord.icalData = mergedIcal;
+
+                    m_resolvedToTarget.append(resolved);
+                    m_resolvedToSource.append(resolved);
+                    return;
+                }
+            }
+        }
+        m_currentResult.unresolvedConflicts.append(change.conflictInfo);
+        return;
+    }
+
+    resolveConflictAutomatically(change, resolution);
+}
+
+void SyncEngineWorker::resolveConflictAutomatically(const SyncChange &change,
+                                                     ConflictResolution policy)
+{
+    SyncChange resolved = change;
+    resolved.isConflict = false;
+
+    switch (policy) {
+        case ConflictResolution::SourceWins: {
+            if (change.conflictInfo.type == ConflictType::ModifyDelete) {
+                if (!change.sourceRecord.incidence) {
+                    resolved.type = SyncChangeType::Deleted;
+                } else if (!change.targetRecord.incidence) {
+                    resolved.type = SyncChangeType::Created;
+                    resolved.targetRecord.incidence = change.sourceRecord.incidence;
+                    resolved.targetRecord.icalData = change.sourceRecord.icalData;
+                }
+            }
+            m_resolvedToTarget.append(resolved);
+            break;
+        }
+
+        case ConflictResolution::TargetWins: {
+            if (change.conflictInfo.type == ConflictType::ModifyDelete) {
+                if (!change.targetRecord.incidence) {
+                    resolved.type = SyncChangeType::Deleted;
+                } else if (!change.sourceRecord.incidence) {
+                    resolved.type = SyncChangeType::Created;
+                    resolved.sourceRecord.incidence = change.targetRecord.incidence;
+                    resolved.sourceRecord.icalData = change.targetRecord.icalData;
+                }
+            }
+            m_resolvedToSource.append(resolved);
+            break;
+        }
+
+        case ConflictResolution::LastWriteWins: {
+            bool sourceNewer = change.sourceRecord.lastModified > change.targetRecord.lastModified;
+            if (sourceNewer) {
+                if (change.conflictInfo.type == ConflictType::ModifyDelete) {
+                    if (!change.sourceRecord.incidence) {
+                        resolved.type = SyncChangeType::Deleted;
+                    } else if (!change.targetRecord.incidence) {
+                        resolved.type = SyncChangeType::Created;
+                        resolved.targetRecord.incidence = change.sourceRecord.incidence;
+                        resolved.targetRecord.icalData = change.sourceRecord.icalData;
+                    }
+                }
+                m_resolvedToTarget.append(resolved);
+            } else {
+                if (change.conflictInfo.type == ConflictType::ModifyDelete) {
+                    if (!change.targetRecord.incidence) {
+                        resolved.type = SyncChangeType::Deleted;
+                    } else if (!change.sourceRecord.incidence) {
+                        resolved.type = SyncChangeType::Created;
+                        resolved.sourceRecord.incidence = change.targetRecord.incidence;
+                        resolved.sourceRecord.icalData = change.targetRecord.icalData;
+                    }
+                }
+                m_resolvedToSource.append(resolved);
+            }
+            break;
+        }
+
+        case ConflictResolution::Duplicate: {
+            if (!change.sourceRecord.incidence && !change.targetRecord.incidence) {
+                break;
+            }
+
+            if (!change.sourceRecord.incidence || !change.targetRecord.incidence) {
+                if (change.sourceRecord.incidence) {
+                    SyncChange recreate = resolved;
+                    recreate.type = SyncChangeType::Created;
+                    recreate.targetRecord.incidence = change.sourceRecord.incidence;
+                    recreate.targetRecord.icalData = change.sourceRecord.icalData;
+                    m_resolvedToTarget.append(recreate);
+                } else {
+                    SyncChange recreate = resolved;
+                    recreate.type = SyncChangeType::Created;
+                    recreate.sourceRecord.incidence = change.targetRecord.incidence;
+                    recreate.sourceRecord.icalData = change.targetRecord.icalData;
+                    m_resolvedToSource.append(recreate);
+                }
+                break;
+            }
+
+            m_resolvedToTarget.append(resolved);
+
+            KCalendarCore::Incidence::Ptr targetClone =
+                KCalendarCore::Incidence::Ptr(change.targetRecord.incidence->clone());
+            QString newUid = KCalendarCore::CalFormat::createUniqueId();
+            targetClone->setUid(newUid);
+            targetClone->setSummary(targetClone->summary() + QStringLiteral(" (conflict copy)"));
+            targetClone->setLastModified(QDateTime::currentDateTimeUtc());
+
+            SyncChange cloneToSource;
+            cloneToSource.type = SyncChangeType::Created;
+            cloneToSource.uid = newUid;
+            cloneToSource.isConflict = false;
+            cloneToSource.sourceRecord.uid = newUid;
+            cloneToSource.sourceRecord.incidence = targetClone;
+            cloneToSource.targetRecord.uid = newUid;
+            cloneToSource.targetRecord.incidence = targetClone;
+            m_resolvedToSource.append(cloneToSource);
+
+            SyncChange cloneToTarget;
+            cloneToTarget.type = SyncChangeType::Created;
+            cloneToTarget.uid = newUid;
+            cloneToTarget.isConflict = false;
+            cloneToTarget.sourceRecord.uid = newUid;
+            cloneToTarget.sourceRecord.incidence = targetClone;
+            cloneToTarget.targetRecord.uid = newUid;
+            cloneToTarget.targetRecord.incidence = targetClone;
+            m_resolvedToTarget.append(cloneToTarget);
+            break;
+        }
+
+        case ConflictResolution::Skip:
+            m_currentResult.unresolvedConflicts.append(change.conflictInfo);
+            break;
+
+        case ConflictResolution::AskUser:
+            m_currentResult.unresolvedConflicts.append(change.conflictInfo);
+            break;
+
+        case ConflictResolution::CustomMerge:
+            m_resolvedToTarget.append(resolved);
+            break;
+    }
+}
+
+void SyncEngineWorker::applyChanges()
+{
+    emit phaseChanged(m_currentRequest.mapping.id, 3);
+
+    for (const auto &change : m_resolvedToTarget) {
+        KCalendarCore::Incidence::Ptr inc = change.sourceRecord.incidence;
+        if (inc) {
+            emit itemReady(m_currentRequest.mapping.targetCalendar, inc,
+                          static_cast<int>(change.type));
+        }
+    }
+
+    if (!m_resolvedToTarget.isEmpty()) {
+        qDebug().noquote() << QString("  Applying %1 changes to target")
+            .arg(m_resolvedToTarget.size());
+        SYNC_HOOK_CALL(onBackendPush, m_currentRequest.mapping.targetBackend,
+                       m_currentRequest.mapping.targetCalendar, m_resolvedToTarget.size());
+
+        applyChangesToBackend(m_currentRequest.mapping.targetBackend,
+                              m_currentRequest.mapping.targetCalendar,
+                              m_resolvedToTarget);
+        m_currentResult.targetStats = m_currentDiff.targetStats();
+    }
+
+    QList<SyncChange> sourceChangesToApply;
+    if (m_currentRequest.mapping.mode == SyncMode::TwoWay) {
+        sourceChangesToApply = m_resolvedToSource;
+    } else {
+        for (int i = m_resolvedToSourceConflictStart; i < m_resolvedToSource.size(); ++i) {
+            sourceChangesToApply.append(m_resolvedToSource[i]);
+        }
+    }
+
+    if (!sourceChangesToApply.isEmpty()) {
+        for (const auto &change : sourceChangesToApply) {
+            KCalendarCore::Incidence::Ptr inc = change.targetRecord.incidence;
+            if (inc) {
+                emit itemReady(m_currentRequest.mapping.sourceCalendar, inc,
+                              static_cast<int>(change.type));
+            }
+        }
+
+        qDebug().noquote() << QString("  Applying %1 changes to source")
+            .arg(sourceChangesToApply.size());
+        SYNC_HOOK_CALL(onBackendPush, m_currentRequest.mapping.sourceBackend,
+                       m_currentRequest.mapping.sourceCalendar, sourceChangesToApply.size());
+
+        applyChangesToBackend(m_currentRequest.mapping.sourceBackend,
+                              m_currentRequest.mapping.sourceCalendar,
+                              sourceChangesToApply, true);
+        m_currentResult.sourceStats = m_currentDiff.sourceStats();
+    }
+}
+
+void SyncEngineWorker::applyChangesToBackend(const QString &backendId,
+                                              const QString &calendarId,
+                                              const QList<SyncChange> &changes,
+                                              bool useTargetRecord)
+{
+    if (!m_controller || !m_collection) {
+        qWarning() << "SyncEngineWorker::applyChangesToBackend - no controller or collection";
+        return;
+    }
+
+    SyncBackend *backend = m_controller->backendById(backendId);
+    if (!backend) {
+        qWarning() << "SyncEngineWorker::applyChangesToBackend - backend not found:" << backendId;
+        return;
+    }
+
+    if (!m_calendarAdapter) {
+        qWarning() << "SyncEngineWorker::applyChangesToBackend - no CalendarDomainAdapter; "
+                      "construct via SyncEngine, not directly";
+        m_applyFailed = true;
+        m_applyErrorMessage = QStringLiteral(
+            "SyncEngineWorker has no CalendarDomainAdapter wired");
+        return;
+    }
+
+    const QString targetType = backend->backendType();
+    QString sourceType;
+    if (useTargetRecord) {
+        SyncBackend *sourceBackend =
+            m_controller->backendById(m_currentRequest.mapping.targetBackend);
+        sourceType = sourceBackend ? sourceBackend->backendType() : QString();
+    } else {
+        SyncBackend *sourceBackend =
+            m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+        sourceType = sourceBackend ? sourceBackend->backendType() : QString();
+    }
+    const TranscodingPlan plan = m_router.plan(sourceType, targetType);
+
+    QMetaObject::Connection transcodingConn = connect(
+            backend, &SyncBackend::transcodingWarning,
+            this, &SyncEngineWorker::transcodingWarning,
+            Qt::DirectConnection);
+
+    int itemCount = 0;
+    for (const auto &change : changes) {
+        if (change.type != SyncChangeType::Unchanged) ++itemCount;
+    }
+    for (int i = 0; i < itemCount; ++i) {
+        emit writeProgress(calendarId, i + 1, itemCount);
+    }
+
+    QString errorMessage;
+    const bool ok = m_calendarAdapter->applyChangesToBackend(
+        backend, calendarId, changes, useTargetRecord,
+        m_currentRequest.mapping.id, plan, &errorMessage);
+
+    QObject::disconnect(transcodingConn);
+
+    if (!ok) {
+        m_applyFailed = true;
+        m_applyErrorMessage = errorMessage;
+    }
+}
+
+void SyncEngineWorker::updateBaselines()
+{
+    if (!m_calendarBaselines) {
+        qDebug() << "SyncEngineWorker::updateBaselines - no CalendarBaselineStore, skipping";
+        return;
+    }
+
+    if (m_applyFailed) {
+        qWarning() << "SyncEngineWorker::updateBaselines - SKIPPING baseline update because "
+                      "apply phase failed:" << m_applyErrorMessage;
+        return;
+    }
+
+    const QString mappingId = m_currentRequest.mapping.id;
+
+    QHash<QString, QString> baselinesToSet;
+    QStringList baselinesToRemove;
+
+    for (const auto &change : m_currentDiff.toTarget) {
+        if (change.isConflict) continue;
+
+        QString key = change.sourceRecord.isValid()
+            ? syncRecordKey(change.sourceRecord)
+            : (change.targetRecord.isValid() ? syncRecordKey(change.targetRecord) : change.uid);
+
+        if (change.type == SyncChangeType::Deleted) {
+            baselinesToRemove.append(key);
+        } else if (change.sourceRecord.isValid()) {
+            baselinesToSet[key] = change.sourceRecord.icalData;
+        }
+    }
+
+    for (const auto &change : m_currentDiff.toSource) {
+        if (change.isConflict) continue;
+
+        QString key = change.targetRecord.isValid()
+            ? syncRecordKey(change.targetRecord)
+            : (change.sourceRecord.isValid() ? syncRecordKey(change.sourceRecord) : change.uid);
+
+        if (change.type == SyncChangeType::Deleted) {
+            if (!baselinesToRemove.contains(key)) {
+                baselinesToRemove.append(key);
+            }
+        } else if (change.targetRecord.isValid()) {
+            baselinesToSet[key] = change.targetRecord.icalData;
+        }
+    }
+
+    for (const auto &change : m_resolvedToTarget) {
+        if (change.type == SyncChangeType::Created && change.baselineRecord.uid.isEmpty()) {
+            continue;
+        }
+        if (change.sourceRecord.isValid()) {
+            baselinesToSet[syncRecordKey(change.sourceRecord)] = change.sourceRecord.icalData;
+        }
+    }
+
+    for (const auto &change : m_resolvedToSource) {
+        if (change.type == SyncChangeType::Created && change.baselineRecord.uid.isEmpty()) {
+            continue;
+        }
+        if (change.targetRecord.isValid()) {
+            baselinesToSet[syncRecordKey(change.targetRecord)] = change.targetRecord.icalData;
+        }
+    }
+
+    QHash<QString, QString> existingBaselines;
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, &existingBaselines]() {
+        existingBaselines = m_calendarBaselines->allBaselines(mappingId);
+    }, Qt::BlockingQueuedConnection);
+
+    for (const auto &rec : m_sourceRecords) {
+        if (!rec.isValid()) continue;
+        if (!m_currentDiff.unchangedUids.contains(rec.uid)) continue;
+        QString key = syncRecordKey(rec);
+        if (!existingBaselines.contains(key)) {
+            baselinesToSet[key] = rec.icalData;
+        }
+    }
+
+    if (!baselinesToRemove.isEmpty()) {
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, baselinesToRemove]() {
+            for (const QString &uid : baselinesToRemove)
+                m_calendarBaselines->removeBaseline(mappingId, uid);
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    if (!baselinesToSet.isEmpty()) {
+        QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, baselinesToSet]() {
+            m_calendarBaselines->setBaselines(mappingId, baselinesToSet);
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    if (!baselinesToSet.isEmpty() || !baselinesToRemove.isEmpty()) {
+        qDebug().noquote() << QString("  Baselines: +%1 -%2")
+            .arg(baselinesToSet.size())
+            .arg(baselinesToRemove.size());
+    }
+
+    QDateTime now = QDateTime::currentDateTime();
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, now]() {
+        m_calendarBaselines->setLastSyncTime(mappingId, now);
+    }, Qt::BlockingQueuedConnection);
+}
+
+// ----------------------------------------------------------------------------
+// Property sync
+// ----------------------------------------------------------------------------
+
+void SyncEngineWorker::fetchCalendarProperties()
+{
+    qDebug() << "SyncEngineWorker::fetchCalendarProperties: Fetching calendar properties";
+
+    if (!m_controller || !m_collection) {
+        qWarning() << "SyncEngineWorker::fetchCalendarProperties: Missing dependencies";
+        return;
+    }
+
+    SyncBackend *sourceBackend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+    SyncBackend *targetBackend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+
+    if (!sourceBackend || !targetBackend) {
+        qWarning() << "SyncEngineWorker::fetchCalendarProperties: Backends not available";
+        return;
+    }
+
+    m_sourceProperties.backendId = m_currentRequest.mapping.sourceBackend;
+    m_sourceProperties.calendarId = m_currentRequest.mapping.sourceCalendar;
+    m_sourceProperties.color = sourceBackend->calendarColor(m_currentRequest.mapping.sourceCalendar);
+    m_sourceProperties.description = sourceBackend->calendarDescription(m_currentRequest.mapping.sourceCalendar);
+    m_sourceProperties.versionHash = CalendarPropertyRecord::computeHash(m_sourceProperties);
+
+    m_targetProperties.backendId = m_currentRequest.mapping.targetBackend;
+    m_targetProperties.calendarId = m_currentRequest.mapping.targetCalendar;
+    m_targetProperties.color = targetBackend->calendarColor(m_currentRequest.mapping.targetCalendar);
+    m_targetProperties.description = targetBackend->calendarDescription(m_currentRequest.mapping.targetCalendar);
+    m_targetProperties.versionHash = CalendarPropertyRecord::computeHash(m_targetProperties);
+
+    qDebug().noquote() << QString("  Source props: color=%1 desc=%2")
+        .arg(m_sourceProperties.color.isValid() ? m_sourceProperties.color.name() : "(none)")
+        .arg(m_sourceProperties.description.isEmpty() ? "(none)" : m_sourceProperties.description.left(30));
+    qDebug().noquote() << QString("  Target props: color=%1 desc=%2")
+        .arg(m_targetProperties.color.isValid() ? m_targetProperties.color.name() : "(none)")
+        .arg(m_targetProperties.description.isEmpty() ? "(none)" : m_targetProperties.description.left(30));
+}
+
+void SyncEngineWorker::computePropertyDiff()
+{
+    qDebug() << "SyncEngineWorker::computePropertyDiff: Computing property changes";
+
+    if (!m_calendarBaselines) {
+        qWarning() << "SyncEngineWorker::computePropertyDiff: No CalendarBaselineStore available";
+        return;
+    }
+
+    QString baselineJson;
+    QString mappingId = m_currentRequest.mapping.id;
+    QString calendarId = m_currentRequest.mapping.sourceCalendar;
+
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, calendarId, &baselineJson]() {
+        baselineJson = m_calendarBaselines->propertyBaseline(mappingId, calendarId);
+    }, Qt::BlockingQueuedConnection);
+
+    qDebug().noquote() << QString("  Baseline check: isEmpty=%1 length=%2")
+        .arg(baselineJson.isEmpty() ? "true" : "false")
+        .arg(baselineJson.length());
+
+    if (baselineJson.isEmpty()) {
+        qDebug() << "  First property sync - storing baseline, no changes to apply";
+        m_propertyDiff = CalendarPropertyDiff();
+        return;
+    }
+
+    CalendarPropertyRecord baseline = CalendarPropertyRecord::fromJson(
+        baselineJson,
+        m_sourceProperties.backendId,
+        m_sourceProperties.calendarId
+    );
+
+    bool sourceColorChanged = (m_sourceProperties.color != baseline.color);
+    bool targetColorChanged = (m_targetProperties.color != baseline.color);
+
+    if (sourceColorChanged && !targetColorChanged) {
+        m_propertyDiff.colorChanged = true;
+        m_propertyDiff.newColor = m_sourceProperties.color;
+        qDebug().noquote() << QString("  Color change detected: %1 -> %2 (propagate to target)")
+            .arg(baseline.color.name())
+            .arg(m_sourceProperties.color.name());
+    } else if (targetColorChanged && !sourceColorChanged &&
+               m_currentRequest.mapping.mode == SyncMode::TwoWay) {
+        m_propertyDiff.colorChanged = true;
+        m_propertyDiff.newColor = m_targetProperties.color;
+        qDebug().noquote() << QString("  Color change detected: %1 -> %2 (propagate to source)")
+            .arg(baseline.color.name())
+            .arg(m_targetProperties.color.name());
+    } else if (sourceColorChanged && targetColorChanged) {
+        qWarning() << "  Property conflict: both sides changed color";
+        if (m_currentRequest.mapping.conflictPolicy == ConflictResolution::SourceWins) {
+            m_propertyDiff.colorChanged = true;
+            m_propertyDiff.newColor = m_sourceProperties.color;
+            qDebug() << "    Resolved: source wins";
+        } else {
+            m_propertyDiff.colorChanged = true;
+            m_propertyDiff.newColor = m_targetProperties.color;
+            qDebug() << "    Resolved: target wins";
+        }
+    }
+
+    bool sourceDescChanged = (m_sourceProperties.description != baseline.description);
+    bool targetDescChanged = (m_targetProperties.description != baseline.description);
+
+    if (sourceDescChanged && !targetDescChanged) {
+        m_propertyDiff.descriptionChanged = true;
+        m_propertyDiff.newDescription = m_sourceProperties.description;
+        qDebug() << "  Description change detected (propagate to target)";
+    } else if (targetDescChanged && !sourceDescChanged &&
+               m_currentRequest.mapping.mode == SyncMode::TwoWay) {
+        m_propertyDiff.descriptionChanged = true;
+        m_propertyDiff.newDescription = m_targetProperties.description;
+        qDebug() << "  Description change detected (propagate to source)";
+    } else if (sourceDescChanged && targetDescChanged) {
+        qWarning() << "  Property conflict: both sides changed description";
+        if (m_currentRequest.mapping.conflictPolicy == ConflictResolution::SourceWins) {
+            m_propertyDiff.descriptionChanged = true;
+            m_propertyDiff.newDescription = m_sourceProperties.description;
+        } else {
+            m_propertyDiff.descriptionChanged = true;
+            m_propertyDiff.newDescription = m_targetProperties.description;
+        }
+    }
+
+    if (!m_propertyDiff.hasChanges()) {
+        qDebug() << "  No property changes detected";
+    }
+}
+
+void SyncEngineWorker::applyPropertyChanges()
+{
+    if (!m_propertyDiff.hasChanges()) {
+        return;
+    }
+
+    qDebug() << "SyncEngineWorker::applyPropertyChanges: Applying property changes";
+
+    if (!m_controller) {
+        qWarning() << "SyncEngineWorker::applyPropertyChanges: Missing controller";
+        return;
+    }
+
+    SyncBackend *sourceBackend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+    SyncBackend *targetBackend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+
+    if (!sourceBackend || !targetBackend) {
+        qWarning() << "SyncEngineWorker::applyPropertyChanges: Backends not available";
+        return;
+    }
+
+    QVariantMap properties;
+    if (m_propertyDiff.colorChanged) {
+        properties[QStringLiteral("color")] = m_propertyDiff.newColor;
+    }
+    if (m_propertyDiff.descriptionChanged) {
+        properties[QStringLiteral("description")] = m_propertyDiff.newDescription;
+    }
+
+    bool updateSource = false;
+    bool updateTarget = false;
+
+    if (m_currentRequest.mapping.mode == SyncMode::OneWayUpload) {
+        updateTarget = true;
+    } else if (m_currentRequest.mapping.mode == SyncMode::OneWayDownload) {
+        updateSource = true;
+    } else if (m_currentRequest.mapping.mode == SyncMode::TwoWay) {
+        updateSource = true;
+        updateTarget = true;
+    }
+
+    bool success = true;
+
+    if (updateTarget) {
+        qDebug() << "  Updating target calendar properties";
+        if (!targetBackend->updateCalendar(
+                m_currentRequest.collectionId,
+                m_currentRequest.mapping.targetCalendar,
+                properties)) {
+            qWarning() << "  Failed to update target calendar properties";
+            success = false;
+        } else {
+            if (m_propertyDiff.colorChanged) {
+                m_targetProperties.color = m_propertyDiff.newColor;
+            }
+            if (m_propertyDiff.descriptionChanged) {
+                m_targetProperties.description = m_propertyDiff.newDescription;
+            }
+            m_targetProperties.versionHash = CalendarPropertyRecord::computeHash(m_targetProperties);
+        }
+    }
+
+    if (updateSource) {
+        qDebug() << "  Updating source calendar properties";
+        if (!sourceBackend->updateCalendar(
+                m_currentRequest.collectionId,
+                m_currentRequest.mapping.sourceCalendar,
+                properties)) {
+            qWarning() << "  Failed to update source calendar properties";
+            success = false;
+        } else {
+            if (m_propertyDiff.colorChanged) {
+                m_sourceProperties.color = m_propertyDiff.newColor;
+            }
+            if (m_propertyDiff.descriptionChanged) {
+                m_sourceProperties.description = m_propertyDiff.newDescription;
+            }
+            m_sourceProperties.versionHash = CalendarPropertyRecord::computeHash(m_sourceProperties);
+        }
+    }
+
+    if (success) {
+        qDebug() << "  Property changes applied successfully";
+    }
+}
+
+void SyncEngineWorker::updatePropertyBaselines()
+{
+    qDebug() << "SyncEngineWorker::updatePropertyBaselines: Updating property baselines";
+
+    if (!m_calendarBaselines) {
+        qWarning() << "SyncEngineWorker::updatePropertyBaselines: No CalendarBaselineStore available";
+        return;
+    }
+
+    QString propertiesJson = m_sourceProperties.toJson();
+    QString mappingId = m_currentRequest.mapping.id;
+    QString calendarId = m_currentRequest.mapping.sourceCalendar;
+
+    QMetaObject::invokeMethod(m_calendarBaselines, [this, mappingId, calendarId, propertiesJson]() {
+        m_calendarBaselines->setPropertyBaseline(mappingId, calendarId, propertiesJson);
+    }, Qt::BlockingQueuedConnection);
+
+    qDebug() << "  Property baseline updated";
 }
 
 } // namespace Kalburator::Sync
