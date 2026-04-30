@@ -239,8 +239,51 @@ void TstEngineCancellation::cancelBeforeStart()
 
 void TstEngineCancellation::cancelDuringFetch()
 {
-    QSKIP("Stub. Implemented in Group 2 Task 24 once await<Op> + "
-          "MockBackend blockable fetch are in place.");
+    // C2 — cancel WHILE the worker is awaiting the source fetch.
+    //
+    // Seed source with items so a successful run would write to dst.
+    // Block the source fetch so the worker yields inside await<Op>;
+    // cancel after a brief delay so the watcher's canceled() fires
+    // while the worker is parked. After cancel, release the blocker
+    // so the FetchOperation finishes and the await loop unwinds via
+    // the cancellationObserved branch.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-2"),
+                                  QStringLiteral("Event Two")));
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-3"),
+                                  QStringLiteral("Event Three")));
+
+    m_src->setFetchBlocking(true);
+
+    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+
+    // Let the worker dispatch processSync and reach the source fetch.
+    QTest::qWait(100);
+
+    future.cancel();
+
+    // Pump so the QFutureWatcher::canceled → onCancelObserved →
+    // queued observeCancel chain reaches the worker thread before
+    // we release the fetch blocker.
+    QTest::qWait(50);
+
+    m_src->releaseFetchBlocker();
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+
+    QVERIFY(future.isCanceled());
+
+    // No items written to the destination calendar — fetch was
+    // interrupted before any apply work could begin.
+    QCOMPARE(m_dst->allUids(QString::fromLatin1(kCalendarId)).size(), 0);
+
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0);
+    QVERIFY(r.cancelled);
 }
 
 void TstEngineCancellation::cancelDuringApply()
