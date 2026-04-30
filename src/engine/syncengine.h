@@ -269,13 +269,6 @@ private:
 
     QMutex m_mutex;
 
-    // F2 Task 14: pointers to the QFutureInterface for the current run.
-    // Only one is populated at a time; the unused one is nullptr.
-    // The engine constructs/destroys these around runSync calls.
-    // Not used yet; Tasks 15-21 wire them in.
-    QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
-    QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
-
     // F2 Task 14: cancellation observation flag. Set by observeCancel()
     // slot (added in Task 17) when QFutureWatcher::canceled fires on the
     // engine side and the engine forwards via queued connection.
@@ -671,7 +664,38 @@ signals:
                             const QStringList &warnings);
 
 private:
-    void processNextMapping();
+    /**
+     * @brief F2 Task 21: dispatch-mode tag tracking which entry path
+     * is currently driving the worker. Replaces the implicit shared
+     * state where both runSync overloads ran through processNextMapping
+     * and the single-mapping form double-dispatched after worker
+     * completion (see FINDINGS "SyncEngine::runSync(mappingId) is leaky").
+     */
+    enum class DispatchMode {
+        None,    ///< No sync in flight.
+        Single,  ///< runSync(mappingId, ...) / runSyncFuture(mappingId, ...)
+        Queue    ///< runSync(behavior) / runSyncFuture(behavior)
+    };
+
+    /**
+     * @brief F2 Task 21: single-mapping driver. Dispatches exactly the
+     * named mapping to the worker once. Queue iteration is structurally
+     * impossible — onWorkerSyncCompleted distinguishes Single vs Queue
+     * via m_dispatchMode and finishes immediately for Single.
+     */
+    void processSingleMapping(const QString &mappingId, SyncBehavior behavior);
+
+    /**
+     * @brief F2 Task 21: multi-mapping driver. Iterates m_syncMappings
+     * via re-entry from onWorkerSyncCompleted; per-mapping result is
+     * forwarded to m_currentMultiIface (if populated) at the end.
+     */
+    void processQueue();
+
+    /// F2 Task 21 helper: advance m_currentMappingIndex to the next
+    /// enabled mapping (or past the end) and dispatch it; called from
+    /// processQueue() and from onWorkerSyncCompleted() during a Queue run.
+    void advanceQueue();
 
     /**
      * @brief Phase-1 + Phase-2 pre-pass. Collects fresh CTags from
@@ -740,6 +764,24 @@ private:
     bool m_cancelled = false;
     int m_currentMappingIndex = -1;
     SyncResult m_lastResult;
+
+    // F2 Task 21: which entry-path drove the current run. Read by
+    // onWorkerSyncCompleted to decide whether to advance the queue
+    // or finish the single-mapping future.
+    DispatchMode m_dispatchMode = DispatchMode::None;
+
+    // F2 Task 21: pointers to the QFutureInterface for the current run.
+    // Only one is populated at a time (matched to m_dispatchMode); the
+    // unused one is nullptr. Owned by the engine — populated by the
+    // runSyncFuture overloads, cleared+deleted in onWorkerSyncCompleted
+    // (Single) or after queue iteration completes (Queue). The void
+    // runSync overloads leave both nullptr (legacy signal callers).
+    QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
+    QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
+
+    // F2 Task 21: per-mapping results accumulated during a Queue run,
+    // reported via m_currentMultiIface->reportResult() at the end.
+    QList<SyncResult> m_queueResults;
 
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;

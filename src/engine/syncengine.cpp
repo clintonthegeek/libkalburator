@@ -254,6 +254,12 @@ void SyncEngine::runSync(SyncBehavior behavior)
     m_lastResult = SyncResult{};
     m_lastResult.startTime = QDateTime::currentDateTime();
 
+    // F2 Task 21: tag this run as a queue dispatch so
+    // onWorkerSyncCompleted advances to the next mapping rather than
+    // finishing a single-mapping future.
+    m_dispatchMode = DispatchMode::Queue;
+    m_queueResults.clear();
+
     // Run active controllers first (they're fast, synchronous)
     for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
         if (m_cancelled) break;
@@ -275,13 +281,22 @@ void SyncEngine::runSync(SyncBehavior behavior)
         emit phaseChanged(m_currentPhase);
         m_lastResult.success = !m_cancelled;
         m_lastResult.endTime = QDateTime::currentDateTime();
+        // Finish the multi-iface (if any caller is waiting on it).
+        if (m_currentMultiIface) {
+            m_currentMultiIface->reportResult(m_queueResults);
+            if (m_cancelled) m_currentMultiIface->reportCanceled();
+            m_currentMultiIface->reportFinished();
+            delete m_currentMultiIface;
+            m_currentMultiIface = nullptr;
+        }
+        m_dispatchMode = DispatchMode::None;
         emit allSyncsCompleted(m_lastResult);
         return;
     }
 
     // Start worker thread for mapping-based sync
     startWorkerThread();
-    processNextMapping();
+    processQueue();
 }
 
 void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
@@ -290,7 +305,18 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
         qWarning() << "SyncEngine::runSync - sync already in progress";
         return;
     }
+    processSingleMapping(mappingId, behavior);
+}
 
+// F2 Task 21: single-mapping driver. Dispatches exactly one Request to
+// the worker; onWorkerSyncCompleted distinguishes via m_dispatchMode and
+// finishes immediately rather than advancing a queue. This replaces the
+// leaky path documented in FINDINGS where the single-mapping form
+// re-entered processNextMapping (which iterated from index 0 and
+// double-dispatched the same mapping).
+void SyncEngine::processSingleMapping(const QString &mappingId,
+                                      SyncBehavior behavior)
+{
     // Phase-2: clear any leftover state from a previous multi-mapping
     // runSync. The single-mapping path does not run prepareSyncFastPath,
     // so without this, onWorkerSyncCompleted could persist stale fresh
@@ -303,6 +329,7 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
     // (prepareSyncFastPath), and a stale single-mapping baseline would
     // be more dangerous than no baseline update.
 
+    int idx = 0;
     for (const auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId && mapping.enabled) {
             m_isSyncing = true;
@@ -310,6 +337,12 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
             m_currentSyncBehavior = behavior;
             m_lastResult = SyncResult{};
             m_lastResult.startTime = QDateTime::currentDateTime();
+
+            // F2 Task 21: tag the run mode and remember which mapping is
+            // in flight so onWorkerItemReady can resolve metadata. This
+            // is the only field shared with the Queue path.
+            m_dispatchMode = DispatchMode::Single;
+            m_currentMappingIndex = idx;
 
             // Start worker thread if not running
             startWorkerThread();
@@ -329,25 +362,53 @@ void SyncEngine::runSync(const QString &mappingId, SyncBehavior behavior)
                                       Q_ARG(SyncEngineWorker::Request, request));
             return;
         }
+        ++idx;
     }
     qWarning() << "SyncEngine::runSync - mapping not found:" << mappingId;
+
+    // Mapping-not-found: report failure on the future iface (if any
+    // QFuture caller is waiting) and emit the legacy syncCompleted.
+    SyncResult err;
+    err.success = false;
+    err.errorMessage = QStringLiteral("Mapping not found: %1").arg(mappingId);
+    err.startTime = QDateTime::currentDateTime();
+    err.endTime = err.startTime;
+    if (m_currentSingleIface) {
+        m_currentSingleIface->reportResult(err);
+        m_currentSingleIface->reportFinished();
+        delete m_currentSingleIface;
+        m_currentSingleIface = nullptr;
+    }
+    m_dispatchMode = DispatchMode::None;
+    emit syncCompleted(mappingId, err);
 }
 
-// F2 Task 15: transitional shim. Delegates to the void runSync overload
-// and captures completion via the existing syncCompleted signal into a
-// heap-allocated QFutureInterface. The connection-management pattern
-// (heap iface + shared_ptr connection guards + manual disconnect inside
-// the lambda) is fragile by design -- Task 21 rewrites the worker to
-// populate m_currentSingleIface directly with proper lifetime
-// management. Task 42 then deletes the void runSync and renames this
-// to runSync.
+// F2 Task 21: rewritten to populate m_currentSingleIface directly
+// (replacing the fragile signal-shim from Task 15). The engine owns the
+// iface; processSingleMapping installs m_dispatchMode = Single, and
+// onWorkerSyncCompleted reports the single result and finishes the
+// future. No connection-management gymnastics, no double-fire window.
 QFuture<SyncResult> SyncEngine::runSyncFuture(
     const QString &mappingId,
     SyncBehavior behavior)
 {
-    auto *iface = new QFutureInterface<SyncResult>;
-    iface->reportStarted();
-    QFuture<SyncResult> future = iface->future();
+    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
+        // Reject overlapping runs cleanly with a finished failed future.
+        QFutureInterface<SyncResult> rejected;
+        rejected.reportStarted();
+        SyncResult err;
+        err.success = false;
+        err.errorMessage = QStringLiteral("Sync already in progress");
+        rejected.reportResult(err);
+        rejected.reportFinished();
+        return rejected.future();
+    }
+
+    // Allocate iface; processSingleMapping → onWorkerSyncCompleted will
+    // populate / finalise it.
+    m_currentSingleIface = new QFutureInterface<SyncResult>;
+    m_currentSingleIface->reportStarted();
+    QFuture<SyncResult> future = m_currentSingleIface->future();
 
     // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
     // to the worker via onCancelObserved slot.
@@ -357,35 +418,29 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     connect(m_singleWatcher, &QFutureWatcher<SyncResult>::canceled,
             this, &SyncEngine::onCancelObserved);
 
-    // Capture the completion signal once, then disconnect.
-    auto conn = std::make_shared<QMetaObject::Connection>();
-    *conn = connect(this, &SyncEngine::syncCompleted, this,
-        [iface, conn, mappingId](const QString &completedMappingId,
-                                  const SyncResult &result) mutable {
-            if (!iface) return;                          // double-fire guard
-            if (completedMappingId != mappingId) return;
-            iface->reportResult(result);
-            iface->reportFinished();
-            delete iface;
-            iface = nullptr;                              // close the window
-            QObject::disconnect(*conn);
-        });
-
-    // Trigger the existing void runSync.
-    runSync(mappingId, behavior);
+    m_isSyncing = true;
+    processSingleMapping(mappingId, behavior);
     return future;
 }
 
-// F2 Task 15: transitional shim for the multi-mapping form. Accumulates
-// per-mapping results from syncCompleted and finalises the future on
-// allSyncsCompleted. Same fragility caveats as the single-mapping
-// shim above.
+// F2 Task 21: rewritten to populate m_currentMultiIface directly. The
+// per-mapping results accumulate in m_queueResults (filled by
+// onWorkerSyncCompleted during a Queue run); when the queue drains,
+// processQueue's terminal branch reports them on the iface.
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     SyncBehavior behavior)
 {
-    auto *iface = new QFutureInterface<QList<SyncResult>>;
-    iface->reportStarted();
-    QFuture<QList<SyncResult>> future = iface->future();
+    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
+        QFutureInterface<QList<SyncResult>> rejected;
+        rejected.reportStarted();
+        rejected.reportResult(QList<SyncResult>{});
+        rejected.reportFinished();
+        return rejected.future();
+    }
+
+    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
+    m_currentMultiIface->reportStarted();
+    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
 
     // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
     // to the worker via onCancelObserved slot.
@@ -394,31 +449,6 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     m_multiWatcher->setFuture(future);
     connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
             this, &SyncEngine::onCancelObserved);
-
-    // Accumulate per-mapping results; finalise on allSyncsCompleted.
-    auto results = std::make_shared<QList<SyncResult>>();
-    auto perMappingConn = std::make_shared<QMetaObject::Connection>();
-    auto allConn = std::make_shared<QMetaObject::Connection>();
-
-    *perMappingConn = connect(this, &SyncEngine::syncCompleted, this,
-        [results](const QString &, const SyncResult &result) {
-            results->append(result);
-        });
-
-    // allSyncsCompleted carries an aggregate SyncResult, not a bool;
-    // the future resolves to the per-mapping result list (independent
-    // of aggregate.success).
-    *allConn = connect(this, &SyncEngine::allSyncsCompleted, this,
-        [iface, results, perMappingConn, allConn](
-                const SyncResult & /*aggregate*/) mutable {
-            if (!iface) return;                           // double-fire guard
-            iface->reportResult(*results);
-            iface->reportFinished();
-            delete iface;
-            iface = nullptr;
-            QObject::disconnect(*perMappingConn);
-            QObject::disconnect(*allConn);
-        });
 
     runSync(behavior);
     return future;
@@ -606,7 +636,18 @@ void SyncEngine::prepareSyncFastPath()
              << m_skipUnchangedMappings << ")";
 }
 
-void SyncEngine::processNextMapping()
+// F2 Task 21: multi-mapping driver — entry point for a queue run.
+// Initializes the index and kicks off the first iteration. Subsequent
+// iterations are driven by onWorkerSyncCompleted -> advanceQueue while
+// m_dispatchMode == Queue. This replaces processNextMapping; the
+// single-mapping form no longer participates in queue iteration, fixing
+// the FINDINGS leak structurally.
+void SyncEngine::processQueue()
+{
+    advanceQueue();
+}
+
+void SyncEngine::advanceQueue()
 {
     // Debug log removed - SyncEngineWorker provides detailed timing
 
@@ -617,6 +658,16 @@ void SyncEngine::processNextMapping()
         m_lastResult.success = false;
         m_lastResult.errorMessage = QStringLiteral("Sync cancelled");
         m_lastResult.endTime = QDateTime::currentDateTime();
+
+        // F2 Task 21: finish the multi-iface (if any) with what we have.
+        if (m_currentMultiIface) {
+            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportCanceled();
+            m_currentMultiIface->reportFinished();
+            delete m_currentMultiIface;
+            m_currentMultiIface = nullptr;
+        }
+        m_dispatchMode = DispatchMode::None;
         emit allSyncsCompleted(m_lastResult);
         return;
     }
@@ -644,6 +695,17 @@ void SyncEngine::processNextMapping()
                        !m_lastResult.hasUnresolvedConflicts();
         m_lastResult.success = m_lastResult.success && statsOk;
         m_lastResult.endTime = QDateTime::currentDateTime();
+
+        // F2 Task 21: finish the multi-iface (if any) with the per-
+        // mapping results. The aggregate is reported via the legacy
+        // allSyncsCompleted; the future resolves to the per-mapping list.
+        if (m_currentMultiIface) {
+            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportFinished();
+            delete m_currentMultiIface;
+            m_currentMultiIface = nullptr;
+        }
+        m_dispatchMode = DispatchMode::None;
         emit allSyncsCompleted(m_lastResult);
         return;
     }
@@ -666,10 +728,11 @@ void SyncEngine::processNextMapping()
         // Aggregate into last result (no stats to add; success stays true unless
         // already false from a prior mapping failure).
         SYNC_HOOK_CALL(onSyncMappingEnd, mapping.id, true);
+        m_queueResults.append(skippedResult);
         emit syncCompleted(mapping.id, skippedResult);
 
         // Advance to the next mapping without touching the worker.
-        processNextMapping();
+        advanceQueue();
         return;
     }
 
@@ -690,7 +753,7 @@ void SyncEngine::processNextMapping()
 
     // NOTE: Do NOT recurse here!
     // The async operation will call onWorkerSyncCompleted() when done,
-    // which will then call processNextMapping() again.
+    // which will then call advanceQueue() again (Queue mode only).
 }
 
 // ============================================================================
@@ -1034,8 +1097,35 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     m_currentPhase = SyncPhase::Complete;
     emit phaseChanged(m_currentPhase);
 
-    // Continue to next mapping
-    processNextMapping();
+    // F2 Task 21: dispatch on mode rather than unconditionally calling
+    // processNextMapping (which iterated from index 0 for the single-
+    // mapping form — see FINDINGS "SyncEngine::runSync(mappingId) is
+    // leaky"). Single-mapping runs finish here; queue runs advance.
+    if (m_dispatchMode == DispatchMode::Single) {
+        // Finish the single-mapping future and shut the run down.
+        if (m_currentSingleIface) {
+            m_currentSingleIface->reportResult(result);
+            if (m_cancelled || result.cancelled) {
+                m_currentSingleIface->reportCanceled();
+            }
+            m_currentSingleIface->reportFinished();
+            delete m_currentSingleIface;
+            m_currentSingleIface = nullptr;
+        }
+        m_dispatchMode = DispatchMode::None;
+        m_isSyncing = false;
+        m_currentPhase = SyncPhase::Idle;
+        emit phaseChanged(m_currentPhase);
+        return;
+    }
+
+    // Queue mode: append to the per-mapping result list and advance.
+    if (m_dispatchMode == DispatchMode::Queue) {
+        m_queueResults.append(result);
+    }
+
+    // Continue to next mapping (queue mode only).
+    advanceQueue();
 }
 
 void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)
@@ -1057,8 +1147,27 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
     // Emit completion with error
     emit syncCompleted(mappingId, failedResult);
 
-    // Continue to next mapping (don't fail the whole batch)
-    processNextMapping();
+    // F2 Task 21: same dispatch-on-mode pattern as onWorkerSyncCompleted.
+    if (m_dispatchMode == DispatchMode::Single) {
+        if (m_currentSingleIface) {
+            m_currentSingleIface->reportResult(failedResult);
+            m_currentSingleIface->reportFinished();
+            delete m_currentSingleIface;
+            m_currentSingleIface = nullptr;
+        }
+        m_dispatchMode = DispatchMode::None;
+        m_isSyncing = false;
+        m_currentPhase = SyncPhase::Idle;
+        emit phaseChanged(m_currentPhase);
+        return;
+    }
+
+    if (m_dispatchMode == DispatchMode::Queue) {
+        m_queueResults.append(failedResult);
+    }
+
+    // Continue to next mapping (don't fail the whole batch).
+    advanceQueue();
 }
 
 void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,
