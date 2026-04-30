@@ -129,6 +129,16 @@ public slots:
      */
     void observeCancel();
 
+public:
+    /// F2 Task 19: lock-free observation of the cancellation flag,
+    /// for use by the cancel oracle installed on the domain adapter.
+    /// Reads with acquire ordering — paired with the release store
+    /// in observeCancel().
+    bool isCancelled() const noexcept
+    {
+        return m_cancelled.load(std::memory_order_acquire);
+    }
+
 signals:
     void syncStarted(const QString &mappingId);
     void phaseChanged(const QString &mappingId, int phase);

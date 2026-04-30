@@ -55,6 +55,16 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     // Create worker but don't start thread yet
     m_worker = new SyncEngineWorker(m_transcodingRouter);
     setupWorkerConnections();
+
+    // F2 Task 19: install the cancel oracle on the calendar adapter.
+    // The lambda captures `this` (the engine), and reads m_worker at
+    // call-time so it remains valid across stopWorkerThread()/restart.
+    // The engine outlives the adapter (engine owns the adapter as a
+    // value member), so the lambda's captured `this` is always live
+    // while the adapter is alive.
+    m_calendarAdapter.setCancelOracle([this]() {
+        return m_worker && m_worker->isCancelled();
+    });
 }
 
 SyncEngine::~SyncEngine()

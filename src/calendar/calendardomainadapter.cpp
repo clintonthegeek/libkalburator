@@ -413,6 +413,22 @@ bool CalendarDomainAdapter::applyChangesToBackend(
     int itemCount = 0;
 
     for (const auto &change : changes) {
+        // F2 Task 19: per-record cancellation check. The oracle is
+        // installed by SyncEngine at construction and reads the
+        // worker's m_cancelled atomic with acquire ordering. This
+        // catches "cancel was already requested when we entered the
+        // loop" and prevents dispatching the next record. The
+        // already-built SyncTransaction is dropped (commitAll() is
+        // not called). Returns false to indicate apply did not
+        // complete fully; cancellation isn't an error, so
+        // errorMessage is left empty — outer logic interprets
+        // success == false as the cancellation marker.
+        if (m_cancelOracle && m_cancelOracle()) {
+            qInfo() << "CalendarDomainAdapter::applyChangesToBackend -"
+                    << "cancellation observed mid-apply, returning early"
+                    << "(itemsBuiltSoFar:" << itemCount << ")";
+            return false;
+        }
         switch (change.type) {
             case SyncChangeType::Created: {
                 KCalendarCore::Incidence::Ptr inc = useTargetRecord

@@ -8,6 +8,8 @@
 #include <QMap>
 #include <QString>
 
+#include <functional>
+
 namespace Kalburator::Sync {
 
 class CalendarBaselineStore;
@@ -65,6 +67,14 @@ public:
     /// when there are no baselines for the mapping. Default: full
     /// 3-way `computeSyncDiff`.
     void setUseQuickPath(bool quick) noexcept;
+
+    /// F2 Task 19: lock-free oracle for cancellation observation.
+    /// Installed by the engine at registration; called from the
+    /// per-record loop in applyChangesToBackend to short-circuit
+    /// the apply phase when cancellation arrives. Returns true iff
+    /// cancellation has been observed.
+    using CancelOracle = std::function<bool()>;
+    void setCancelOracle(CancelOracle oracle) { m_cancelOracle = std::move(oracle); }
 
     CalendarBaselineStore* baselineStore() const noexcept { return m_baselineStore; }
     ICalendarCollection*   collection()    const noexcept { return m_collection; }
@@ -136,6 +146,7 @@ private:
     ICalendarCollection*     m_collection    = nullptr;
     SyncMode                 m_syncMode      = SyncMode::TwoWay;
     bool                     m_useQuickPath  = false;
+    CancelOracle             m_cancelOracle;
 };
 
 } // namespace Kalburator::Sync
