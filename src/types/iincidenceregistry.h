@@ -7,7 +7,7 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "datadomain.h"
+#include "shape.h"
 
 namespace Kalburator::Sync {
 
@@ -27,7 +27,7 @@ public:
                               const QString &calendarId,
                               const QString &backendType,
                               KCalendarCore::MemoryCalendar *sourceCal,
-                              DataDomain dataDomain = DataDomain::Calendar) = 0;
+                              Kalburator::Shape::Shape shape = Kalburator::Shape::Shape{}) = 0;
 
     virtual bool removeIncidenceFromCalendar(const QString &uid,
                                              const QString &calendarId) = 0;
@@ -44,7 +44,7 @@ public:
                                           const QString &backendType,
                                           KCalendarCore::MemoryCalendar *sourceCalendar,
                                           const QVector<KCalendarCore::Incidence::Ptr> &incidences,
-                                          DataDomain dataDomain = DataDomain::Calendar) = 0;
+                                          Kalburator::Shape::Shape shape = Kalburator::Shape::Shape{}) = 0;
 
     /** Clear all incidences */
     virtual void clear() = 0;

@@ -6,7 +6,7 @@ bool StubIncidenceRegistry::addIncidence(const KCalendarCore::Incidence::Ptr &in
                                          const QString &calendarId,
                                          const QString & /*backendType*/,
                                          KCalendarCore::MemoryCalendar * /*sourceCal*/,
-                                         DataDomain /*dataDomain*/)
+                                         Kalburator::Shape::Shape /*shape*/)
 {
     if (!inc) return false;
     ++m_callsAdd;
@@ -42,7 +42,7 @@ void StubIncidenceRegistry::setIncidencesForCalendar(const QString &calendarId,
                                                      const QString & /*backendType*/,
                                                      KCalendarCore::MemoryCalendar * /*sourceCalendar*/,
                                                      const QVector<KCalendarCore::Incidence::Ptr> &incidences,
-                                                     DataDomain /*dataDomain*/)
+                                                     Kalburator::Shape::Shape /*shape*/)
 {
     ++m_callsBulkSet;
     // Drop existing entries for this calendar before bulk-loading.

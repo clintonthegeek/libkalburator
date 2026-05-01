@@ -946,7 +946,7 @@ void SyncEngine::onWorkerItemReady(const QString &calendarId,
                         }
                         // Add to incidence registry (for UI display)
                         registry->addIncidence(incidence, calendarId, backendType, cal,
-                                               backend->dataDomain());
+                                               backend->shapeFor(calendarId));
                     }
                     break;
                 }

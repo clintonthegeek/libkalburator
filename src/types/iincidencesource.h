@@ -6,7 +6,7 @@
 #include <QSharedPointer>
 #include <QVector>
 
-#include "datadomain.h"
+#include "shape.h"
 
 namespace KCalendarCore {
 class Incidence;
@@ -28,7 +28,7 @@ public:
         QSharedPointer<KCalendarCore::Incidence> incidence;
         QString calendarId;
         QString backendType;
-        DataDomain dataDomain = DataDomain::Calendar;
+        Kalburator::Shape::Shape shape;
     };
 
     virtual ~IIncidenceSource() = default;
