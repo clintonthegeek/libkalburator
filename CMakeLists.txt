@@ -224,6 +224,18 @@ set(KALBURATOR_ENGINE_SOURCES
     src/engine/syncengine.cpp
 )
 
+# Phase G — shape-pipeline architecture primitives.
+# Foundational vocabulary: Shape, PropertyCatalogue, LossProfile,
+# TransformationEdge/Pipeline, TransformationRegistry, DomainPlugin.
+# No domain edges registered here; calendar plugin lands in G.2,
+# new domains (contacts/memo/todo) in G.5/G.10.
+set(KALBURATOR_SHAPE_HEADERS
+    src/shape/shape.h
+)
+set(KALBURATOR_SHAPE_SOURCES
+    src/shape/shape.cpp
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -233,6 +245,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
+    ${KALBURATOR_SHAPE_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -242,6 +255,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_DISCOVERY_SOURCES}
     ${KALBURATOR_BLOB_SOURCES}
     ${KALBURATOR_ENGINE_SOURCES}
+    ${KALBURATOR_SHAPE_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -269,6 +283,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
 
 target_link_libraries(kalburator
