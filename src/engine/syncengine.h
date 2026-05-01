@@ -41,6 +41,19 @@ class ConflictManager;
 class DecSyncActiveController;
 class SyncEngine;
 
+/// Per-call execution override for runSyncFuture(). Lets callers
+/// request mirror-direction semantics for a mapping that's
+/// otherwise configured for bidirectional sync. Used by WildPalms's
+/// Tools-menu Copy Palm→PC / Copy PC→Palm actions.
+struct ExecutionOverride {
+    enum class Direction {
+        Default,      ///< Use the mapping's stored direction (today: bidirectional).
+        MirrorAToB,   ///< One-way: source overwrites target; target-only records deleted.
+        MirrorBToA,   ///< One-way: target overwrites source; source-only records deleted.
+    };
+    Direction direction = Direction::Default;
+};
+
 namespace QSyncCore {
     class ConflictStore;
     struct ConflictPolicy;
@@ -514,6 +527,20 @@ public:
      */
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
+        SyncBehavior behavior = SyncBehavior::Unmonitored);
+
+    /**
+     * @brief Run a single mapping with a per-call execution override.
+     *
+     * Used by WildPalms's Copy Palm→PC / Copy PC→Palm modes to run
+     * a mapping as a one-way mirror without persisting that direction
+     * on the mapping itself. The full implementation honoring the
+     * override lands in Task 9; this declaration with a stub body
+     * (Task 7) lets Task 8 write failing tests against the API.
+     */
+    QFuture<SyncResult> runSyncFuture(
+        const QString &mappingId,
+        const ExecutionOverride &override,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
     /**

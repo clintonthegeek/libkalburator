@@ -461,6 +461,17 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     return future;
 }
 
+QFuture<SyncResult> SyncEngine::runSyncFuture(
+    const QString &mappingId,
+    const ExecutionOverride &override,
+    SyncBehavior behavior)
+{
+    Q_UNUSED(override);
+    // Stub: ignore override, route through the existing overload.
+    // Mirror semantics land in Task 9.
+    return runSyncFuture(mappingId, behavior);
+}
+
 // F2 Task 21: rewritten to populate m_currentMultiIface directly. The
 // per-mapping results accumulate in m_queueResults (filled by
 // onWorkerSyncCompleted during a Queue run); when the queue drains,
