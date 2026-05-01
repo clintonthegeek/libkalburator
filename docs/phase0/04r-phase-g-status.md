@@ -7,7 +7,7 @@
 **Sub-phase status:**
 
 - G.1 Foundations — ✅ landed 2026-04-30
-- G.2 Calendar plugin — ⬜ not started
+- G.2 Calendar plugin — ✅ landed 2026-04-30
 - G.3 Backend interface migration — ⬜ not started
 - G.4 Mapping-keyed baselines — ⬜ not started
 - G.5 New domain plugins — ⬜ not started
@@ -17,8 +17,8 @@
 - G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
 - G.10 Loss profile UX + new stock backends — ⬜ not started
 
-**Last task completed:** Task 12 (G.1 verify-all gate)
-**Next task:** Task 13 (calendar property catalogue, G.2)
+**Last task completed:** Task 18 (G.2 verify-all gate)
+**Next task:** Task 19 (add nativeShapes()/resourceId() to SyncBackend base, G.3)
 
 ## What landed in G.1
 
@@ -67,3 +67,10 @@ Test counts: libkalburator 26 → 32 (six new test executables under
   `unique_ptr<IRecord*>` returns require complete IRecord types
   wherever a plugin is instantiated; forward-decls alone don't work.
 - Task 12 (G.1 verify-all gate; baseline refreshed)
+- Task 13 (makeICalCatalogue — 18-property PropertyCatalogue)
+- Task 14 (IRecordDifferICal — wraps IncidenceDiff::compare; tst_ical_record_differ)
+- Task 15 (IRecordMergerICal — 3-way merge via IncidenceDiff; tst_ical_record_merger)
+- Task 16 (KalburatorDomainCalendar plugin + static-init registrar; tst_calendar_plugin)
+- Task 17 (CalendarDomainAdapter wired: CustomMerge delegates to
+  registry IRecordMergerICal; no behavior change to existing policies)
+- Task 18 (G.2 verify-all gate; libkalburator 32→35/35; baseline refreshed)
