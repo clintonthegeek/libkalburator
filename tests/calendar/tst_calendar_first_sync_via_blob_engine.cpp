@@ -269,10 +269,6 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_mirrorsSourceToT
     QVERIFY(targetUids().contains(QStringLiteral("src-1")));
     QVERIFY(targetUids().contains(QStringLiteral("src-2")));
 
-    // Source-to-target direction: host additions should be 0 (BlobSyncEngine
-    // writes directly to backend, bypassing the host channel which is reserved
-    // for target→host model propagation).
-    QCOMPARE(m_host->appliedAdditionCount(), 0);
 }
 
 void TestCalendarFirstSyncViaBlobEngine::firstSync_twoWay_usesOldQuickPathAndConverges()

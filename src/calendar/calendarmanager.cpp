@@ -26,10 +26,13 @@ static bool s_metatypesRegistered = []() {
     return true;
 }();
 
-CalendarManager::CalendarManager(ISyncHost *host, QObject *parent)
+CalendarManager::CalendarManager(ISyncHost *host,
+                                 ICalendarCollection *collection,
+                                 QObject *parent)
     : QObject(parent)
     , m_controller(host)
     , m_configManager(host ? host->configStore() : nullptr)
+    , m_collection(collection)
     , m_transcodingRegistry(nullptr)  // Will be implemented in Phase 5
 {
     Q_ASSERT(m_controller);
@@ -48,7 +51,7 @@ CreationResult CalendarManager::createCalendar(const LogicalCalendar &logCal)
     CreationResult result;
     result.logicalCalendarId = logCal.id;
 
-    if (!m_configManager || !m_controller->collection()) {
+    if (!m_configManager || !m_collection) {
         result.errors.append(tr("No collection loaded"));
         emit operationFailed(QStringLiteral("createCalendar"), result.errors.first());
         return result;
@@ -86,7 +89,7 @@ CreationResult CalendarManager::createCalendar(const LogicalCalendar &logCal)
 
         if (binding.needsCreation) {
             // IMMEDIATE creation - no staging
-            QString collectionId = m_controller->collection()->id();
+            QString collectionId = m_collection->id();
 
             qDebug() << "CalendarManager: Creating calendar on backend"
                      << binding.backendId << ":" << binding.calendarId;
@@ -207,7 +210,7 @@ bool CalendarManager::updateCalendar(const QString &logicalCalendarId,
 
         // Only update backend if it supports calendar updates
         if (backend->supportsCalendarCreation()) {
-            QString collectionId = m_controller->collection()->id();
+            QString collectionId = m_collection->id();
             if (!backend->updateCalendar(collectionId, binding.calendarId, properties)) {
                 qWarning() << "CalendarManager: Failed to update calendar on"
                           << binding.backendId;
@@ -221,15 +224,15 @@ bool CalendarManager::updateCalendar(const QString &logicalCalendarId,
     m_configManager->save();
 
     // Update Collection runtime state
-    if (m_controller->collection()) {
+    if (m_collection) {
         CalendarBackendBinding primary = logCal.primaryBinding();
         if (primary.isValid()) {
             if (properties.contains(QStringLiteral("color"))) {
-                m_controller->collection()->setCalendarColor(
+                m_collection->setCalendarColor(
                     primary.calendarId, logCal.color);
             }
             if (properties.contains(QStringLiteral("visible"))) {
-                m_controller->collection()->setCalendarVisible(
+                m_collection->setCalendarVisible(
                     primary.calendarId, logCal.visible);
             }
         }
@@ -274,8 +277,8 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
         // Just hide from UI (set visible=false)
         logCal.visible = false;
         m_configManager->updateLogicalCalendar(logCal);
-        if (m_controller->collection() && !primaryCalendarId.isEmpty()) {
-            m_controller->collection()->setCalendarVisible(primaryCalendarId, false);
+        if (m_collection && !primaryCalendarId.isEmpty()) {
+            m_collection->setCalendarVisible(primaryCalendarId, false);
         }
         result.success = true;
         break;
@@ -285,7 +288,7 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
         logCal.enabled = false;
         m_configManager->updateLogicalCalendar(logCal);
         if (!primaryCalendarId.isEmpty()) {
-            m_controller->unloadCalendar(primaryCalendarId);
+            emit calendarUnloadRequested(primaryCalendarId);
         }
         result.success = true;
         break;
@@ -306,7 +309,7 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
     case DeleteMode::Forget:
         // Remove from config only, keep backend data
         if (!primaryCalendarId.isEmpty()) {
-            m_controller->unloadCalendar(primaryCalendarId);
+            emit calendarUnloadRequested(primaryCalendarId);
         }
         m_configManager->removeLogicalCalendar(logicalCalendarId);
         result.success = true;
@@ -323,8 +326,8 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
             }
 
             // IMMEDIATE deletion - no staging
-            QString collectionId = m_controller->collection() ?
-                                   m_controller->collection()->id() : QString();
+            QString collectionId = m_collection ?
+                                   m_collection->id() : QString();
 
             qDebug() << "CalendarManager: Deleting calendar from backend"
                      << binding.backendId << ":" << binding.calendarId;
@@ -341,7 +344,7 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
 
         // Unload and remove from config
         if (!primaryCalendarId.isEmpty()) {
-            m_controller->unloadCalendar(primaryCalendarId);
+            emit calendarUnloadRequested(primaryCalendarId);
         }
         m_configManager->removeLogicalCalendar(logicalCalendarId);
 
@@ -404,8 +407,8 @@ bool CalendarManager::addBinding(const QString &logicalCalendarId,
             return false;
         }
 
-        QString collectionId = m_controller->collection() ?
-                               m_controller->collection()->id() : QString();
+        QString collectionId = m_collection ?
+                               m_collection->id() : QString();
 
         success = backend->createCalendar(
             collectionId,
@@ -511,8 +514,8 @@ bool CalendarManager::removeBinding(const QString &logicalCalendarId,
     if (deleteFromBackend) {
         SyncBackend *backend = m_controller->backendById(backendId);
         if (backend) {
-            QString collectionId = m_controller->collection() ?
-                                   m_controller->collection()->id() : QString();
+            QString collectionId = m_collection ?
+                                   m_collection->id() : QString();
             if (!backend->deleteCalendar(collectionId, targetBinding.calendarId)) {
                 qWarning() << "CalendarManager: Failed to delete from backend"
                           << backendId << "but continuing with binding removal";
@@ -813,9 +816,9 @@ CalendarSnapshot CalendarManager::captureSnapshot(const QString &logicalCalendar
 
     // Capture all incidences from the primary calendar
     CalendarBackendBinding primary = logCal.primaryBinding();
-    if (primary.isValid() && m_controller->collection()) {
+    if (primary.isValid() && m_collection) {
         KCalendarCore::MemoryCalendar *cal =
-            m_controller->collection()->calendar(primary.calendarId);
+            m_collection->calendar(primary.calendarId);
         if (cal) {
             const auto incidences = cal->incidences();
             for (const auto &inc : incidences) {
@@ -916,12 +919,12 @@ QString CalendarManager::getBackendType(const QString &backendId) const
 void CalendarManager::ensureMemoryCalendar(const QString &calendarId,
                                            const QString &displayName)
 {
-    if (!m_controller->collection()) {
+    if (!m_collection) {
         return;
     }
 
     // Check if calendar already exists
-    if (m_controller->collection()->calendar(calendarId)) {
+    if (m_collection->calendar(calendarId)) {
         return;
     }
 
@@ -929,7 +932,7 @@ void CalendarManager::ensureMemoryCalendar(const QString &calendarId,
     // collection for ownership; no explicit setParent needed.
     auto *workingCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
     workingCal->setId(calendarId);
-    m_controller->collection()->addCalendar(workingCal);
+    m_collection->addCalendar(workingCal);
 
     qDebug() << "CalendarManager: Created MemoryCalendar" << calendarId
              << "(" << displayName << ")";
@@ -943,7 +946,7 @@ void CalendarManager::regenerateSyncMappings()
     }
     // Unconditionally fire regeneration. Hosts without sync configured
     // implement generateSyncMappingsFromLogicalCalendars() as a no-op.
-    m_controller->generateSyncMappingsFromLogicalCalendars();
+    emit syncMappingRegenerationRequested();
 }
 
 void CalendarManager::beginBatch()
@@ -976,8 +979,8 @@ bool CalendarManager::processNeedsCreation(const LogicalCalendar &logCal)
             continue;
         }
 
-        QString collectionId = m_controller->collection() ?
-                               m_controller->collection()->id() : QString();
+        QString collectionId = m_collection ?
+                               m_collection->id() : QString();
 
         qDebug() << "CalendarManager: Processing deferred creation for"
                  << binding.calendarId << "on" << binding.backendId;

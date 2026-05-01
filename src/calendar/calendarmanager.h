@@ -15,6 +15,7 @@ namespace Kalburator::Sync {
 
 class ISyncHost;
 class ISyncConfigStore;
+class ICalendarCollection;
 class SyncBackend;
 class TranscodingRegistry;
 
@@ -104,7 +105,9 @@ class CalendarManager : public QObject
     Q_OBJECT
 
 public:
-    explicit CalendarManager(ISyncHost *host, QObject *parent = nullptr);
+    explicit CalendarManager(ISyncHost *host,
+                             ICalendarCollection *collection,
+                             QObject *parent = nullptr);
     ~CalendarManager() override;
 
     // ========== IMMEDIATE Calendar CRUD ==========
@@ -251,6 +254,7 @@ public:
 
     ISyncHost* host() const { return m_controller; }
     ISyncConfigStore* configManager() const { return m_configManager; }
+    void setCollection(ICalendarCollection *collection) { m_collection = collection; }
 
     // ========== Batch mode ==========
 
@@ -298,9 +302,14 @@ signals:
     // Progress (for batch operations)
     void operationProgress(const QString &operation, int current, int total);
 
+    // G.9.a Task 67 — host callbacks decoupled from ISyncHost
+    void calendarUnloadRequested(const QString &calendarId);
+    void syncMappingRegenerationRequested();
+
 private:
     ISyncHost *m_controller;
     ISyncConfigStore *m_configManager;
+    ICalendarCollection *m_collection = nullptr;
     TranscodingRegistry *m_transcodingRegistry;  // Will be implemented in Phase 5
 
     int m_batchDepth = 0;

@@ -1,15 +1,11 @@
 #include "stubsynchost.h"
 
-#include <algorithm>
-
 #include "backendregistry.h"
 
 namespace Kalburator::Sync::Test {
 
-StubSyncHost::StubSyncHost(BackendRegistry *registry,
-                           IIncidenceSource *source)
+StubSyncHost::StubSyncHost(BackendRegistry *registry)
     : m_backendRegistry(registry)
-    , m_source(source)
     , m_collection(std::make_unique<StubCalendarCollection>())
     , m_registry(std::make_unique<StubIncidenceRegistry>())
     , m_config(std::make_unique<StubSyncConfigStore>())
@@ -33,53 +29,28 @@ QHash<QString, SyncBackend*> StubSyncHost::backends()
     return result;
 }
 
-bool StubSyncHost::applyIncidenceAddition(const QString &calendarId,
-                                          const KCalendarCore::Incidence::Ptr &inc,
-                                          bool stageForSync)
+void StubSyncHost::recordChanged(const QString &mappingId,
+                                 const QString &recordId,
+                                 ChangeKind kind)
 {
-    m_appliedChanges.append({AppliedChange::Kind::Add, calendarId,
-                             inc ? inc->uid() : QString(), inc, stageForSync});
-    return true;
+    Q_UNUSED(mappingId)
+    Q_UNUSED(recordId)
+    ++m_recordChangedCount;
+    switch (kind) {
+        case ChangeKind::Created: ++m_createdCount; break;
+        case ChangeKind::Updated: ++m_updatedCount; break;
+        case ChangeKind::Deleted: ++m_deletedCount; break;
+    }
 }
 
-bool StubSyncHost::applyIncidenceRemoval(const QString &calendarId,
-                                         const QString &uid,
-                                         bool stageForSync,
-                                         const QDateTime & /*recurrenceId*/)
+int StubSyncHost::recordChangedCount(ChangeKind kind) const
 {
-    m_appliedChanges.append({AppliedChange::Kind::Remove, calendarId, uid,
-                             {}, stageForSync});
-    return true;
-}
-
-bool StubSyncHost::applyIncidenceUpdate(const QString &calendarId,
-                                        const KCalendarCore::Incidence::Ptr &inc,
-                                        bool stageForSync)
-{
-    m_appliedChanges.append({AppliedChange::Kind::Update, calendarId,
-                             inc ? inc->uid() : QString(), inc, stageForSync});
-    return true;
-}
-
-int StubSyncHost::appliedAdditionCount() const
-{
-    return static_cast<int>(std::count_if(m_appliedChanges.cbegin(),
-                                          m_appliedChanges.cend(),
-        [](const AppliedChange &c) { return c.kind == AppliedChange::Kind::Add; }));
-}
-
-int StubSyncHost::appliedRemovalCount() const
-{
-    return static_cast<int>(std::count_if(m_appliedChanges.cbegin(),
-                                          m_appliedChanges.cend(),
-        [](const AppliedChange &c) { return c.kind == AppliedChange::Kind::Remove; }));
-}
-
-int StubSyncHost::appliedUpdateCount() const
-{
-    return static_cast<int>(std::count_if(m_appliedChanges.cbegin(),
-                                          m_appliedChanges.cend(),
-        [](const AppliedChange &c) { return c.kind == AppliedChange::Kind::Update; }));
+    switch (kind) {
+        case ChangeKind::Created: return m_createdCount;
+        case ChangeKind::Updated: return m_updatedCount;
+        case ChangeKind::Deleted: return m_deletedCount;
+    }
+    return 0;
 }
 
 } // namespace Kalburator::Sync::Test

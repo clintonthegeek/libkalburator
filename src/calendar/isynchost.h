@@ -1,10 +1,8 @@
 #ifndef ISYNCHOST_H
 #define ISYNCHOST_H
 
-#include <QDateTime>
 #include <QHash>
 #include <QString>
-#include <KCalendarCore/Incidence>
 
 #include "canonicalrecord.h"
 #include "lossprofile.h"
@@ -13,9 +11,6 @@
 namespace Kalburator::Sync {
 
 class SyncBackend;
-class ICalendarCollection;
-class IIncidenceSource;
-class IIncidenceRegistry;
 class ISyncConfigStore;
 
 /**
@@ -68,42 +63,6 @@ public:
 
     virtual void errorOccurred(const QString &mappingId, const QString &msg) {}
 
-    // ---- Deprecated calendar-typed methods (deleted in Task 67) ----
-
-    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
-    virtual bool applyIncidenceAddition(const QString &calendarId,
-                                        const KCalendarCore::Incidence::Ptr &inc,
-                                        bool stageForSync = true)
-    { Q_UNUSED(calendarId) Q_UNUSED(inc) Q_UNUSED(stageForSync) return false; }
-
-    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
-    virtual bool applyIncidenceRemoval(const QString &calendarId,
-                                       const QString &uid,
-                                       bool stageForSync = true,
-                                       const QDateTime &recurrenceId = {})
-    { Q_UNUSED(calendarId) Q_UNUSED(uid) Q_UNUSED(stageForSync) Q_UNUSED(recurrenceId) return false; }
-
-    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
-    virtual bool applyIncidenceUpdate(const QString &calendarId,
-                                      const KCalendarCore::Incidence::Ptr &inc,
-                                      bool stageForSync = true)
-    { Q_UNUSED(calendarId) Q_UNUSED(inc) Q_UNUSED(stageForSync) return false; }
-
-    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
-    virtual ICalendarCollection* collection() { return nullptr; }
-
-    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
-    virtual IIncidenceSource* incidenceSource() { return nullptr; }
-
-    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
-    virtual IIncidenceRegistry* incidenceRegistry() { return nullptr; }
-
-    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
-    virtual void unloadCalendar(const QString &calendarId)
-    { Q_UNUSED(calendarId) }
-
-    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
-    virtual void generateSyncMappingsFromLogicalCalendars() {}
 };
 
 } // namespace Kalburator::Sync

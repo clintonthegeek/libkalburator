@@ -311,9 +311,6 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_hashEqualRecordsAreS
         QVERIFY2(!entry.startsWith(QStringLiteral("PUSH:")),
                  qPrintable(QStringLiteral("Unexpected PUSH in target log (hash-equal records should be skipped): %1").arg(entry)));
     }
-    QCOMPARE(m_host->appliedAdditionCount(), 0);
-    QCOMPARE(m_host->appliedUpdateCount(),   0);
-    QCOMPARE(m_host->appliedRemovalCount(),  0);
 }
 
 void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_modifiedRecordPropagates()

@@ -197,9 +197,6 @@ void TestCalendarSyncFull::fullSync_bothEmpty_doesNothing()
 
     QVERIFY(sourceUids().isEmpty());
     QVERIFY(targetUids().isEmpty());
-    QCOMPARE(m_host->appliedAdditionCount(), 0);
-    QCOMPARE(m_host->appliedRemovalCount(), 0);
-    QCOMPARE(m_host->appliedUpdateCount(), 0);
 }
 
 void TestCalendarSyncFull::fullSync_sourceHasEvents_propagatesToTarget()
@@ -221,9 +218,6 @@ void TestCalendarSyncFull::fullSync_sourceHasEvents_propagatesToTarget()
 
     QCOMPARE(sourceUids().size(), 3);
     QCOMPARE(targetUids().size(), 3);
-    // Source-to-target propagation does NOT call applyIncidence* on the
-    // host — that channel is reserved for target→host propagation.
-    QCOMPARE(m_host->appliedAdditionCount(), 0);
 }
 
 void TestCalendarSyncFull::fullSync_targetHasEvents_propagatesToSource()

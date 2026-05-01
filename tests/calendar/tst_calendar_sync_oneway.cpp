@@ -207,7 +207,6 @@ void TestCalendarSyncOneway::oneWayUpload_ignoresTargetOnlyEvents()
 
     // Source must remain empty — one-way upload doesn't pull target.
     QVERIFY(sourceUids().isEmpty());
-    QCOMPARE(m_host->appliedAdditionCount(), 0);
 }
 
 QTEST_MAIN(TestCalendarSyncOneway)
