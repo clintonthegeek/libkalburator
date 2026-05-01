@@ -1,9 +1,15 @@
 #include "calendardomainadapter.h"
 
 #include "calendarbaselinestore.h"
+#include "canonicalrecord.h"
+#include "conflictpolicy.h"
 #include "createincidenceitem.h"
 #include "deleteincidenceitem.h"
+#include "domainplugin.h"
+#include "domainregistry.h"
+#include "irecordmerger.h"
 #include "icalendarcollection.h"
+#include "shape.h"
 #include "syncbackend.h"
 #include "syncdiff.h"
 #include "synctransaction.h"
@@ -300,6 +306,39 @@ EngineMerge CalendarDomainAdapter::merge(const EngineDiff &d,
                 routeOp(resolved, /*toTarget=*/false);
             }
             ++m.conflictsResolved;
+        } else if (policy == ConflictResolution::CustomMerge) {
+            // G.2 Task 17: delegate 3-way merge to the registry's IRecordMergerICal.
+            // Non-conflicting per-property changes (only source changed, or only
+            // target changed) are merged automatically; properties where both sides
+            // changed fall back to the baseline value.
+            using Kalburator::Shape::DomainId;
+            using Kalburator::Shape::EncodingId;
+            using Kalburator::Sync::QSyncCore::ConflictPolicy;
+
+            auto* plugin = Kalburator::Shape::DomainRegistry::instance()
+                               .findByDomain(DomainId{"calendar"});
+            if (plugin) {
+                const Kalburator::Shape::Shape calIcal{DomainId{"calendar"}, EncodingId{"ical"}};
+                Kalburator::Shape::CanonicalRecord srcRec{calIcal, op.record.data,         op.record.id};
+                Kalburator::Shape::CanonicalRecord tgtRec{calIcal, op.targetRecord.data,   op.record.id};
+                Kalburator::Shape::CanonicalRecord baseRec{calIcal, op.baselineRecord.data, op.record.id};
+
+                auto merger = plugin->createCanonicalMerger();
+                const auto merged = merger->merge(srcRec, tgtRec, baseRec,
+                                                  ConflictPolicy::deferAll());
+
+                BackendRecord mergedRecord = op.record;
+                mergedRecord.data = merged.data;
+
+                EngineDiffOp resolved;
+                resolved.kind           = EngineDiffOp::Kind::Update;
+                resolved.record         = mergedRecord;
+                resolved.baselineRecord = op.baselineRecord;
+                routeOp(resolved, /*toTarget=*/true);
+                ++m.conflictsResolved;
+            } else {
+                ++m.conflictsDeferred;
+            }
         } else {
             ++m.conflictsDeferred;
         }

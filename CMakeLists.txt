@@ -108,6 +108,11 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/synctransaction.h
     src/calendar/synctransactionitem.h
     src/calendar/updateincidenceitem.h
+    # Phase G.2 — calendar plugin
+    src/calendar/icalproperties.h
+    src/calendar/icalrecorddiffer.h
+    src/calendar/icalrecordmerger.h
+    src/calendar/calendardomainplugin.h
 )
 set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
@@ -138,6 +143,11 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/synctransaction.cpp
     src/calendar/synctransactionitem.cpp
     src/calendar/updateincidenceitem.cpp
+    # Phase G.2 — calendar plugin
+    src/calendar/icalproperties.cpp
+    src/calendar/icalrecorddiffer.cpp
+    src/calendar/icalrecordmerger.cpp
+    src/calendar/calendardomainplugin.cpp
 )
 
 set(KALBURATOR_CONFLICT_HEADERS

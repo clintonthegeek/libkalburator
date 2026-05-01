@@ -78,3 +78,7 @@ kalburator_add_calendar_integration_test(tst_engine_cancellation)
 # Phase F2 Task 4 — SyncOperation contract (State enum, idempotent
 # setState, cancelRequested flag, isFinished predicate).
 kalburator_add_calendar_test(tst_syncoperation_contract)
+
+# Phase G.2 — calendar property catalogue, differ, merger, plugin
+add_subdirectory(differs)
+add_subdirectory(plugin)
