@@ -1,10 +1,14 @@
 #ifndef ISYNCHOST_H
 #define ISYNCHOST_H
 
-#include <QString>
-#include <QHash>
 #include <QDateTime>
+#include <QHash>
+#include <QString>
 #include <KCalendarCore/Incidence>
+
+#include "canonicalrecord.h"
+#include "lossprofile.h"
+#include "synctypes.h"
 
 namespace Kalburator::Sync {
 
@@ -15,54 +19,91 @@ class IIncidenceRegistry;
 class ISyncConfigStore;
 
 /**
- * @brief Abstract interface decoupling sync engine from CollectionController.
+ * @brief Abstract interface decoupling sync engine from the application shell.
  *
- * SyncEngine and CalendarManager use this interface instead of
- * depending on CollectionController directly.
- * The app shell implements this interface in CollectionController.
- *
- * Narrowed 2026-04-20 (Phase 1.2 of libkalburator extraction):
- *   - `collection()` returns `ICalendarCollection*` (was `Collection*`)
- *   - `kalbConfigManager()` replaced with `configStore()` returning
- *     `ISyncConfigStore*`
- *   - Removed `syncCoordinator()` — circular; CalendarManager now
- *     fires `generateSyncMappingsFromLogicalCalendars()` unconditionally
+ * G.9.a narrows this interface to ~7 generic methods. Calendar-typed methods
+ * are deprecated and will be deleted in Task 67. New code should implement
+ * only the generic lifecycle events.
  */
 class ISyncHost
 {
 public:
     virtual ~ISyncHost() = default;
 
-    // Backend lifecycle
+    // ---- Registry access (kept) ----
     virtual SyncBackend* backendById(const QString &id) = 0;
     virtual QHash<QString, SyncBackend*> backends() = 0;
+    virtual ISyncConfigStore* configStore() = 0;
 
-    // Incidence propagation (sync -> model)
+    // ---- Generic lifecycle events (G.9.a — new in Task 63) ----
+
+    enum class ChangeKind { Created, Updated, Deleted };
+
+    virtual void syncStarted(const QString &mappingId,
+                             const Kalburator::Shape::LossProfile &pipelineLoss) {}
+
+    virtual void syncFinished(const QString &mappingId,
+                              const Kalburator::Sync::SyncResult &result) {}
+
+    virtual void recordChanged(const QString &mappingId,
+                               const QString &recordId,
+                               ChangeKind kind) {}
+
+    virtual ConflictResolution resolveConflict(const QString &mappingId,
+                                               const QString &recordId,
+                                               const Kalburator::Shape::CanonicalRecord &source,
+                                               const Kalburator::Shape::CanonicalRecord &target,
+                                               const Kalburator::Shape::CanonicalRecord &baseline)
+    {
+        Q_UNUSED(mappingId) Q_UNUSED(recordId)
+        Q_UNUSED(source) Q_UNUSED(target) Q_UNUSED(baseline)
+        return ConflictResolution::SourceWins;
+    }
+
+    virtual void progressChanged(const QString &mappingId,
+                                 int current, int total,
+                                 const QString &msg) {}
+
+    virtual void phaseChanged(const QString &mappingId, int phase) {}
+
+    virtual void errorOccurred(const QString &mappingId, const QString &msg) {}
+
+    // ---- Deprecated calendar-typed methods (deleted in Task 67) ----
+
+    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
     virtual bool applyIncidenceAddition(const QString &calendarId,
                                         const KCalendarCore::Incidence::Ptr &inc,
-                                        bool stageForSync = true) = 0;
+                                        bool stageForSync = true)
+    { Q_UNUSED(calendarId) Q_UNUSED(inc) Q_UNUSED(stageForSync) return false; }
+
+    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
     virtual bool applyIncidenceRemoval(const QString &calendarId,
                                        const QString &uid,
                                        bool stageForSync = true,
-                                       const QDateTime &recurrenceId = {}) = 0;
+                                       const QDateTime &recurrenceId = {})
+    { Q_UNUSED(calendarId) Q_UNUSED(uid) Q_UNUSED(stageForSync) Q_UNUSED(recurrenceId) return false; }
+
+    [[deprecated("Use recordChanged() — deleted in G.9 Task 67")]]
     virtual bool applyIncidenceUpdate(const QString &calendarId,
                                       const KCalendarCore::Incidence::Ptr &inc,
-                                      bool stageForSync = true) = 0;
+                                      bool stageForSync = true)
+    { Q_UNUSED(calendarId) Q_UNUSED(inc) Q_UNUSED(stageForSync) return false; }
 
-    // Calendar discovery (narrow host-side view of the collection)
-    virtual ICalendarCollection* collection() = 0;
+    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
+    virtual ICalendarCollection* collection() { return nullptr; }
 
-    // Subsystem access (for SyncEngine and CalendarManager)
-    virtual IIncidenceSource* incidenceSource() = 0;
-    virtual IIncidenceRegistry* incidenceRegistry() = 0;
-    virtual ISyncConfigStore* configStore() = 0;
+    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
+    virtual IIncidenceSource* incidenceSource() { return nullptr; }
 
-    // Calendar lifecycle
-    virtual void unloadCalendar(const QString &calendarId) = 0;
+    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
+    virtual IIncidenceRegistry* incidenceRegistry() { return nullptr; }
 
-    // Sync mapping regeneration (called after calendar CRUD). Hosts
-    // that have no sync engine configured should implement as a no-op.
-    virtual void generateSyncMappingsFromLogicalCalendars() = 0;
+    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
+    virtual void unloadCalendar(const QString &calendarId)
+    { Q_UNUSED(calendarId) }
+
+    [[deprecated("Consumer-side responsibility — deleted in G.9 Task 67")]]
+    virtual void generateSyncMappingsFromLogicalCalendars() {}
 };
 
 } // namespace Kalburator::Sync

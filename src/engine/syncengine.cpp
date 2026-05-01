@@ -997,7 +997,18 @@ void SyncEngine::onWorkerItemReady(const QString &calendarId,
     // Forward to itemFetched signal for backward compatibility
     emit itemFetched(calendarId, incidence);
 
-    // Update incidence model on main thread
+    // Notify host via new generic interface (G.9.a Task 66)
+    if (m_controller && incidence && m_currentMappingIndex >= 0 &&
+        m_currentMappingIndex < m_syncMappings.size()) {
+        const QString &mappingId = m_syncMappings[m_currentMappingIndex].id;
+        SyncChangeType changeKind = static_cast<SyncChangeType>(changeType);
+        ISyncHost::ChangeKind kind = ISyncHost::ChangeKind::Updated;
+        if (changeKind == SyncChangeType::Created)  kind = ISyncHost::ChangeKind::Created;
+        if (changeKind == SyncChangeType::Deleted)  kind = ISyncHost::ChangeKind::Deleted;
+        m_controller->recordChanged(mappingId, incidence->uid(), kind);
+    }
+
+    // Update incidence model on main thread (deprecated path — removed in G.9 Task 67)
     if (m_controller && incidence && m_currentMappingIndex >= 0 &&
         m_currentMappingIndex < m_syncMappings.size()) {
         IIncidenceSource *source = m_controller->incidenceSource();
