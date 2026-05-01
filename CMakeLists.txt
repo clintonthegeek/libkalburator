@@ -231,9 +231,11 @@ set(KALBURATOR_ENGINE_SOURCES
 # new domains (contacts/memo/todo) in G.5/G.10.
 set(KALBURATOR_SHAPE_HEADERS
     src/shape/shape.h
+    src/shape/propertycatalogue.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     src/shape/shape.cpp
+    src/shape/propertycatalogue.cpp
 )
 
 # Aggregate

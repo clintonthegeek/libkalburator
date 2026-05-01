@@ -16,3 +16,4 @@ function(kalburator_add_shape_test TEST_NAME)
 endfunction()
 
 kalburator_add_shape_test(tst_shape)
+kalburator_add_shape_test(tst_property_catalogue)
