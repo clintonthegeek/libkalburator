@@ -23,6 +23,7 @@ find_package(KF6CalendarCore REQUIRED)
 find_package(KF6DAV REQUIRED)
 find_package(KF6KIO REQUIRED)
 find_package(KF6Holidays REQUIRED)
+find_package(KF6Contacts REQUIRED)
 
 # Optional org-io support for OrgBackend. When ON, host must provide the
 # planstan-org-io target via PUBLIC linkage from outside; standalone builds
@@ -272,6 +273,48 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/domainregistry.cpp
 )
 
+# Phase G.5 — new domain plugins (todo, contacts, memo).
+set(KALBURATOR_TODO_HEADERS
+    src/todo/icalvtodoproperties.h
+    src/todo/icalvtododiffer.h
+    src/todo/icalvtodomerger.h
+    src/todo/todotxttransformation.h
+    src/todo/tododomainplugin.h
+)
+set(KALBURATOR_TODO_SOURCES
+    src/todo/icalvtodoproperties.cpp
+    src/todo/icalvtododiffer.cpp
+    src/todo/icalvtodomerger.cpp
+    src/todo/todotxttransformation.cpp
+    src/todo/tododomainplugin.cpp
+)
+
+set(KALBURATOR_CONTACTS_HEADERS
+    src/contacts/vcardproperties.h
+    src/contacts/vcarddiffer.h
+    src/contacts/vcardmerger.h
+    src/contacts/contactsdomainplugin.h
+)
+set(KALBURATOR_CONTACTS_SOURCES
+    src/contacts/vcardproperties.cpp
+    src/contacts/vcarddiffer.cpp
+    src/contacts/vcardmerger.cpp
+    src/contacts/contactsdomainplugin.cpp
+)
+
+set(KALBURATOR_MEMO_HEADERS
+    src/memo/memoproperties.h
+    src/memo/textdiffer.h
+    src/memo/textmerger.h
+    src/memo/memodomainplugin.h
+)
+set(KALBURATOR_MEMO_SOURCES
+    src/memo/memoproperties.cpp
+    src/memo/textdiffer.cpp
+    src/memo/textmerger.cpp
+    src/memo/memodomainplugin.cpp
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -282,6 +325,9 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_BLOB_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
     ${KALBURATOR_SHAPE_HEADERS}
+    ${KALBURATOR_TODO_HEADERS}
+    ${KALBURATOR_CONTACTS_HEADERS}
+    ${KALBURATOR_MEMO_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -292,6 +338,9 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_BLOB_SOURCES}
     ${KALBURATOR_ENGINE_SOURCES}
     ${KALBURATOR_SHAPE_SOURCES}
+    ${KALBURATOR_TODO_SOURCES}
+    ${KALBURATOR_CONTACTS_SOURCES}
+    ${KALBURATOR_MEMO_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -320,6 +369,9 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/todo>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/contacts>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/memo>
 )
 
 target_link_libraries(kalburator
@@ -332,6 +384,7 @@ target_link_libraries(kalburator
         KF6::DAV
         KF6::KIOCore
         KF6::Holidays
+        KF6::Contacts
 )
 
 if(KALBURATOR_HAVE_AKONADI)
