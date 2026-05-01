@@ -2123,13 +2123,6 @@ PushOperation* RemoteBackend::pushItems(const QString &calendarId,
     return op;
 }
 
-PushOperation* RemoteBackend::pushItems(const QString &calendarId,
-                                        const QList<KCalendarCore::Incidence::Ptr> &items)
-{
-    // F2 Task 8: legacy 2-arg form delegates to the 3-arg form so all
-    // callers exercise the same transcoding path.
-    return pushItems(calendarId, items, TranscodingPlan{});
-}
 
 DeleteOperation* RemoteBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
@@ -2536,7 +2529,7 @@ QString RemoteBackend::createRecord(const QString &collectionId,
         return {};
     }
 
-    PushOperation *op = pushItems(collectionId, incidences);
+    PushOperation *op = pushItems(collectionId, incidences, TranscodingPlan{});
     if (!op) return {};
 
     if (!op->isFinished()) {

@@ -341,13 +341,6 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
     return op;
 }
 
-PushOperation* MockBackend::pushItems(const QString &calendarId,
-                                       const QList<KCalendarCore::Incidence::Ptr> &items)
-{
-    // F2 Task 6: legacy 2-arg form delegates to the 3-arg form so all
-    // callers exercise the same failure-injection and transcoding path.
-    return pushItems(calendarId, items, TranscodingPlan{});
-}
 
 DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
                                            const QStringList &uids)

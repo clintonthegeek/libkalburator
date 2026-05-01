@@ -411,7 +411,7 @@ void DecSyncBackendTest::testStoreAndLoadItems()
     auto event = createTestEvent(QStringLiteral("event-1"), QStringLiteral("Test Event"));
 
     // Push items
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("store-cal"), {event});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("store-cal"), {event}, TranscodingPlan{});
     QVERIFY(pushOp);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
@@ -443,7 +443,7 @@ void DecSyncBackendTest::testUpdateItem()
     auto event = createTestEvent(QStringLiteral("update-uid"), QStringLiteral("Original"));
 
     // Push original
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("update-cal"), {event});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("update-cal"), {event}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -451,7 +451,7 @@ void DecSyncBackendTest::testUpdateItem()
 
     // Update: change summary and push again (replaces by uid)
     event->setSummary(QStringLiteral("Updated"));
-    PushOperation *updateOp = backend.pushItems(QStringLiteral("update-cal"), {event});
+    PushOperation *updateOp = backend.pushItems(QStringLiteral("update-cal"), {event}, TranscodingPlan{});
     QSignalSpy updateSpy(updateOp, &SyncOperation::finished);
     QTRY_COMPARE(updateSpy.count(), 1);
     QCOMPARE(updateOp->state(), SyncOperation::Succeeded);
@@ -479,7 +479,7 @@ void DecSyncBackendTest::testRemoveItem()
     auto event = createTestEvent(QStringLiteral("remove-uid"), QStringLiteral("To Remove"));
 
     // Push item
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("remove-cal"), {event});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("remove-cal"), {event}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -509,14 +509,14 @@ void DecSyncBackendTest::testStartSync()
     auto update = createTestEvent(QStringLiteral("updated-uid"), QStringLiteral("Updated"));
 
     // Pre-store the item that will be "updated"
-    PushOperation *prePushOp = backend.pushItems(QStringLiteral("sync-cal"), {update});
+    PushOperation *prePushOp = backend.pushItems(QStringLiteral("sync-cal"), {update}, TranscodingPlan{});
     QSignalSpy prePushSpy(prePushOp, &SyncOperation::finished);
     QTRY_COMPARE(prePushSpy.count(), 1);
     QCOMPARE(prePushOp->state(), SyncOperation::Succeeded);
     delete prePushOp;
 
     // Push both (creation + updated version of update)
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("sync-cal"), {creation, update});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("sync-cal"), {creation, update}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -546,7 +546,7 @@ void DecSyncBackendTest::testFetchItems()
     PushOperation *prePushOp = backend.pushItems(QStringLiteral("fetch-cal"), {
         createTestEvent(QStringLiteral("f1"), QStringLiteral("Fetch 1")),
         createTestEvent(QStringLiteral("f2"), QStringLiteral("Fetch 2"))
-    });
+    }, TranscodingPlan{});
     QSignalSpy prePushSpy(prePushOp, &SyncOperation::finished);
     QTRY_COMPARE(prePushSpy.count(), 1);
     QCOMPARE(prePushOp->state(), SyncOperation::Succeeded);
@@ -574,7 +574,7 @@ void DecSyncBackendTest::testPushItems()
     auto event1 = createTestEvent(QStringLiteral("p1"), QStringLiteral("Push 1"));
     auto event2 = createTestEvent(QStringLiteral("p2"), QStringLiteral("Push 2"));
 
-    PushOperation *op = backend.pushItems(QStringLiteral("push-cal"), {event1, event2});
+    PushOperation *op = backend.pushItems(QStringLiteral("push-cal"), {event1, event2}, TranscodingPlan{});
     QVERIFY(op);
 
     QSignalSpy finishedSpy(op, &SyncOperation::finished);
@@ -604,7 +604,7 @@ void DecSyncBackendTest::testDeleteItems()
     PushOperation *prePushOp = backend.pushItems(QStringLiteral("del-cal"), {
         createTestEvent(QStringLiteral("d1"), QStringLiteral("Del 1")),
         createTestEvent(QStringLiteral("d2"), QStringLiteral("Del 2"))
-    });
+    }, TranscodingPlan{});
     QSignalSpy prePushSpy(prePushOp, &SyncOperation::finished);
     QTRY_COMPARE(prePushSpy.count(), 1);
     QCOMPARE(prePushOp->state(), SyncOperation::Succeeded);
@@ -647,7 +647,7 @@ void DecSyncBackendTest::testTasksCollection()
 
     // Push a todo item
     auto todo = createTestTodo(QStringLiteral("todo-1"), QStringLiteral("Buy milk"));
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("tasks/groceries"), {todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("tasks/groceries"), {todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -752,7 +752,7 @@ void DecSyncBackendTest::testRoundTripFormat()
     event->setDtEnd(QDateTime(QDate(2024, 6, 15), QTime(11, 0), QTimeZone::utc()));
     event->setCategories({QStringLiteral("Work"), QStringLiteral("Meeting")});
 
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("roundtrip"), {event});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("roundtrip"), {event}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -791,7 +791,8 @@ void DecSyncBackendTest::testGetRawIcs()
                            QStringLiteral("Raw Cal"), CalendarType::Event);
 
     PushOperation *pushOp = backend.pushItems(QStringLiteral("raw-cal"),
-                                              {createTestEvent(QStringLiteral("raw-uid"), QStringLiteral("Raw Event"))});
+                                              {createTestEvent(QStringLiteral("raw-uid"), QStringLiteral("Raw Event"))},
+                                              TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -878,7 +879,7 @@ void DecSyncBackendTest::testStoreRejectsWrongType()
     auto event = createTestEvent(QStringLiteral("good-event"), QStringLiteral("Right Type"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("event-cal"), {todo, event});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("event-cal"), {todo, event}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
 
@@ -909,7 +910,7 @@ void DecSyncBackendTest::testUpdateRejectsWrongType()
     auto todo = createTestTodo(QStringLiteral("bad-todo-upd"), QStringLiteral("Was Wrong Type"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("event-cal-upd"), {todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("event-cal-upd"), {todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
 
@@ -932,7 +933,7 @@ void DecSyncBackendTest::testPushRejectsWrongType()
     auto todo = createTestTodo(QStringLiteral("good-todo"), QStringLiteral("Right Type"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *op = backend.pushItems(QStringLiteral("tasks/push-tasks"), {event, todo});
+    PushOperation *op = backend.pushItems(QStringLiteral("tasks/push-tasks"), {event, todo}, TranscodingPlan{});
 
     QSignalSpy finishedSpy(op, &SyncOperation::finished);
     QTRY_COMPARE(finishedSpy.count(), 1);
@@ -957,7 +958,7 @@ void DecSyncBackendTest::testStartSyncRejectsWrongType()
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
     // Push both: auto-promotion means no error, both accepted
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("sync-event-cal"), {event, todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("sync-event-cal"), {event, todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
 
@@ -1198,7 +1199,7 @@ void DecSyncBackendTest::testHybridStoreAndLoad()
 
     // Push mixed items — should succeed without errors and lazily create dirs
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-sl"), {event, todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-sl"), {event, todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(errorSpy.count(), 0);
@@ -1261,7 +1262,7 @@ void DecSyncBackendTest::testHybridPushItems()
     auto event = createTestEvent(QStringLiteral("hp-event"), QStringLiteral("Push Event"));
     auto todo = createTestTodo(QStringLiteral("hp-todo"), QStringLiteral("Push Todo"));
 
-    PushOperation *op = backend.pushItems(QStringLiteral("hybrid-push"), {event, todo});
+    PushOperation *op = backend.pushItems(QStringLiteral("hybrid-push"), {event, todo}, TranscodingPlan{});
     QVERIFY(op);
 
     QSignalSpy finishedSpy(op, &SyncOperation::finished);
@@ -1301,7 +1302,7 @@ void DecSyncBackendTest::testHybridStartSync()
     auto todo = createTestTodo(QStringLiteral("hs-todo"), QStringLiteral("Sync Todo"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-sync"), {event, todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-sync"), {event, todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(errorSpy.count(), 0);  // No type errors for hybrid
@@ -1338,7 +1339,7 @@ void DecSyncBackendTest::testHybridRemoveItem()
     auto event = createTestEvent(QStringLiteral("hr-event"), QStringLiteral("Remove Event"));
     auto todo = createTestTodo(QStringLiteral("hr-todo"), QStringLiteral("Remove Todo"));
 
-    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-rm"), {event, todo});
+    PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-rm"), {event, todo}, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -1385,7 +1386,7 @@ void DecSyncBackendTest::testHybridDeleteCalendar()
     PushOperation *pushOp = backend.pushItems(QStringLiteral("hybrid-del2"), {
         createTestEvent(QStringLiteral("hd-event"), QStringLiteral("Del Event")),
         createTestTodo(QStringLiteral("hd-todo"), QStringLiteral("Del Todo"))
-    });
+    }, TranscodingPlan{});
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy.count(), 1);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -1427,7 +1428,7 @@ void DecSyncBackendTest::testStandaloneTasksUnaffected()
     auto todo = createTestTodo(QStringLiteral("sa-todo"), QStringLiteral("Standalone Todo"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp1 = backend.pushItems(QStringLiteral("tasks/standalone"), {todo});
+    PushOperation *pushOp1 = backend.pushItems(QStringLiteral("tasks/standalone"), {todo}, TranscodingPlan{});
     QSignalSpy pushSpy1(pushOp1, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy1.count(), 1);
     QCOMPARE(errorSpy.count(), 0);
@@ -1435,7 +1436,7 @@ void DecSyncBackendTest::testStandaloneTasksUnaffected()
 
     // Push an event — should be rejected
     auto event = createTestEvent(QStringLiteral("sa-event"), QStringLiteral("Bad Event"));
-    PushOperation *pushOp2 = backend.pushItems(QStringLiteral("tasks/standalone"), {event});
+    PushOperation *pushOp2 = backend.pushItems(QStringLiteral("tasks/standalone"), {event}, TranscodingPlan{});
     QSignalSpy pushSpy2(pushOp2, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy2.count(), 1);
     QCOMPARE(errorSpy.count(), 1);
@@ -1462,7 +1463,7 @@ void DecSyncBackendTest::testStandaloneCalendarsUnaffected()
     auto event = createTestEvent(QStringLiteral("se-event"), QStringLiteral("Standalone Event"));
 
     QSignalSpy errorSpy(&backend, &SyncBackend::calendarError);
-    PushOperation *pushOp1 = backend.pushItems(QStringLiteral("standalone-events"), {event});
+    PushOperation *pushOp1 = backend.pushItems(QStringLiteral("standalone-events"), {event}, TranscodingPlan{});
     QSignalSpy pushSpy1(pushOp1, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy1.count(), 1);
     QCOMPARE(errorSpy.count(), 0);
@@ -1470,7 +1471,7 @@ void DecSyncBackendTest::testStandaloneCalendarsUnaffected()
 
     // Push a todo — should auto-promote to hybrid
     auto todo = createTestTodo(QStringLiteral("se-todo"), QStringLiteral("Was Bad Todo"));
-    PushOperation *pushOp2 = backend.pushItems(QStringLiteral("standalone-events"), {todo});
+    PushOperation *pushOp2 = backend.pushItems(QStringLiteral("standalone-events"), {todo}, TranscodingPlan{});
     QSignalSpy pushSpy2(pushOp2, &SyncOperation::finished);
     QTRY_COMPARE(pushSpy2.count(), 1);
     QCOMPARE(errorSpy.count(), 0);  // No error, auto-promoted

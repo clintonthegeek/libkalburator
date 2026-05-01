@@ -42,7 +42,7 @@ inline KCalendarCore::Incidence::Ptr createTestTodo(const QString &uid, const QS
 inline void pushAndVerify(OrgBackend &backend, const QString &calendarId,
                           const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 }
@@ -1079,7 +1079,7 @@ void OrgBackendTest::testPushItems()
     items << createTestEvent(QStringLiteral("uid-1"), QStringLiteral("Event 1"));
     items << createTestTodo(QStringLiteral("uid-2"), QStringLiteral("Todo 1"));
 
-    auto *op = backend.pushItems(QStringLiteral("store-test"), items);
+    auto *op = backend.pushItems(QStringLiteral("store-test"), items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -1099,7 +1099,7 @@ void OrgBackendTest::testStartSync()
     QList<KCalendarCore::Incidence::Ptr> items;
     items << createTestEvent(QStringLiteral("sync-event-1"), QStringLiteral("Synced Event"));
 
-    auto *op = backend.pushItems(QStringLiteral("sync-test"), items);
+    auto *op = backend.pushItems(QStringLiteral("sync-test"), items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 

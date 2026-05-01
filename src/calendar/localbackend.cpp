@@ -916,13 +916,6 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
     return op;
 }
 
-PushOperation* LocalBackend::pushItems(const QString &calendarId,
-                                        const QList<KCalendarCore::Incidence::Ptr> &items)
-{
-    // F2 Task 7: legacy 2-arg form delegates to the 3-arg form so all
-    // callers exercise the same transcoding path.
-    return pushItems(calendarId, items, TranscodingPlan{});
-}
 
 DeleteOperation* LocalBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)

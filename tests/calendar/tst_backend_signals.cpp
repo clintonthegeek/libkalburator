@@ -316,7 +316,7 @@ private slots:
         }
 
         // Execute push via operation API
-        PushOperation *op = backend.pushItems("write_started_test", items);
+        PushOperation *op = backend.pushItems("write_started_test", items, TranscodingPlan{});
         QVERIFY(op != nullptr);
 
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
@@ -345,7 +345,7 @@ private slots:
         }
 
         // Execute push via operation API
-        PushOperation *op = backend.pushItems("write_progress_test", items);
+        PushOperation *op = backend.pushItems("write_progress_test", items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -367,7 +367,7 @@ private slots:
         items.append(createTestEvent("wfinish-uid-1", "Write Finish Test"));
 
         // Execute push via operation API
-        PushOperation *op = backend.pushItems("write_finished_test", items);
+        PushOperation *op = backend.pushItems("write_finished_test", items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -432,7 +432,7 @@ private slots:
         }
 
         // Execute push via operation API
-        PushOperation *op = backend.pushItems("mock_write_test", items);
+        PushOperation *op = backend.pushItems("mock_write_test", items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -503,7 +503,7 @@ private slots:
         QList<Incidence::Ptr> emptyItems;
 
         // Execute push via operation API
-        PushOperation *op = backend.pushItems("empty_write_test", emptyItems);
+        PushOperation *op = backend.pushItems("empty_write_test", emptyItems, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -653,7 +653,7 @@ private slots:
         QVERIFY(writeStartedSpy.isValid());
 
         // OrgBackend::pushItems emits write signals
-        PushOperation *op = backend.pushItems("test_cal", items);
+        PushOperation *op = backend.pushItems("test_cal", items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -686,7 +686,7 @@ private slots:
         QVERIFY(progressSpy.isValid());
 
         // OrgBackend::pushItems emits write progress signals
-        PushOperation *op = backend.pushItems("test_cal", items);
+        PushOperation *op = backend.pushItems("test_cal", items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
@@ -717,7 +717,7 @@ private slots:
         items.append(todo);
 
         // OrgBackend::pushItems completes via operation state
-        PushOperation *op = backend.pushItems("test_cal", items);
+        PushOperation *op = backend.pushItems("test_cal", items, TranscodingPlan{});
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
         // Verify operation completed successfully
@@ -776,7 +776,7 @@ private slots:
         }
 
         // Push items to server
-        PushOperation *pushOp = backend.pushItems(calendarId, testItems);
+        PushOperation *pushOp = backend.pushItems(calendarId, testItems, TranscodingPlan{});
         QSignalSpy pushFinishedSpy(pushOp, &SyncOperation::finished);
         QVERIFY(pushFinishedSpy.wait(15000));
         QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
@@ -853,7 +853,7 @@ private slots:
         }
 
         // Push items via operation API
-        PushOperation *op = backend.pushItems(calendarId, items);
+        PushOperation *op = backend.pushItems(calendarId, items, TranscodingPlan{});
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QVERIFY(finishedSpy.wait(30000));  // Wait up to 30s for network operations
 

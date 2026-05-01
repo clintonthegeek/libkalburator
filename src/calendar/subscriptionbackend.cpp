@@ -137,12 +137,6 @@ PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
     return op;
 }
 
-PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
-                                              const QList<KCalendarCore::Incidence::Ptr> &items)
-{
-    // F2 Task 12: legacy 2-arg form delegates to the 3-arg form.
-    return pushItems(calendarId, items, TranscodingPlan{});
-}
 
 bool SubscriptionBackend::discoveredWritable(const QString &calendarId) const
 {

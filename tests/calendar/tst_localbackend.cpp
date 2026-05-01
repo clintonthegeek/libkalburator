@@ -111,7 +111,7 @@ void LocalBackendTest::testIcsFileCreation()
     QList<KCalendarCore::Incidence::Ptr> items;
     items << createTestEvent(QStringLiteral("uid-1"), QStringLiteral("Test Event"));
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -136,7 +136,7 @@ void LocalBackendTest::testIcsFileFormat()
     QList<KCalendarCore::Incidence::Ptr> items;
     items << createTestEventWithDetails();
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -172,7 +172,7 @@ void LocalBackendTest::testMultipleIcsFilesInCalendar()
     items << createTestEvent(QStringLiteral("uid-2"), QStringLiteral("Event 2"));
     items << createTestEvent(QStringLiteral("uid-3"), QStringLiteral("Event 3"));
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -222,7 +222,7 @@ void LocalBackendTest::testHierarchySupport()
     QList<KCalendarCore::Incidence::Ptr> items;
     items << parentEvent << childEvent;
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -251,7 +251,7 @@ void LocalBackendTest::testIncidenceFilePath()
     QList<KCalendarCore::Incidence::Ptr> items;
     items << createTestEvent(QStringLiteral("special-uid-123"), QStringLiteral("Event"));
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -386,7 +386,7 @@ void LocalBackendTest::testPushItems()
     items << createTestEvent(QStringLiteral("uid-1"), QStringLiteral("Event 1"));
     items << createTestTodo(QStringLiteral("uid-2"), QStringLiteral("Todo 1"));
 
-    auto *op = backend.pushItems(QStringLiteral("store-test"), items);
+    auto *op = backend.pushItems(QStringLiteral("store-test"), items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -433,7 +433,7 @@ void LocalBackendTest::testCalendarFingerprintDeterminism()
     event->setDtStart(QDateTime::currentDateTime());
     QList<KCalendarCore::Incidence::Ptr> items{ event };
 
-    auto *push = backend.pushItems(calendarId, items);
+    auto *push = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(push->isFinished(), 5000);
     QCOMPARE(push->state(), SyncOperation::Succeeded);
 

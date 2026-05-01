@@ -210,7 +210,7 @@ QString OrgBackendExternalTest::serializeToOrg(KCalendarCore::MemoryCalendar *ca
         items.append(inc);
     }
 
-    auto *op = backend.pushItems(calendarId, items);
+    auto *op = backend.pushItems(calendarId, items, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
     QCOMPARE(op->state(), SyncOperation::Succeeded);
 
@@ -1275,7 +1275,7 @@ void OrgBackendExternalTest::testKeywordRoundtrip()
     auto inc = fetched.first();
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1328,7 +1328,7 @@ void OrgBackendExternalTest::testSourceBlockSurvivesRoundtrip()
              qPrintable(QStringLiteral("Description should NOT contain source block markers: ") + inc->description()));
 
     // Store back (description unchanged)
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1377,7 +1377,7 @@ void OrgBackendExternalTest::testTableSurvivesRoundtrip()
     auto inc = fetched.first();
 
     // Store back (description unchanged -- no prose lines here)
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1422,7 +1422,7 @@ void OrgBackendExternalTest::testCheckboxesSurviveRoundtrip()
     auto inc = fetched.first();
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1473,7 +1473,7 @@ void OrgBackendExternalTest::testLogbookDrawerSurvivesRoundtrip()
              qPrintable(QStringLiteral("Description should NOT contain LOGBOOK entries: ") + inc->description()));
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1523,7 +1523,7 @@ void OrgBackendExternalTest::testDescriptionChangePreservesStructural()
     inc->setDescription(QStringLiteral("Updated description text"));
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1577,7 +1577,7 @@ void OrgBackendExternalTest::testMultilineDescriptionRoundtrip()
     QVERIFY(inc->description().contains(QStringLiteral("Third line")));
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 
@@ -1622,7 +1622,7 @@ void OrgBackendExternalTest::testOrgzlyStyleRoundtrip()
     QVERIFY(inc->description().contains(QStringLiteral("Remember to check prices")));
 
     // Store back
-    auto *pushOp = backend.pushItems(calendarId, {inc});
+    auto *pushOp = backend.pushItems(calendarId, {inc}, TranscodingPlan{});
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 5000);
     QCOMPARE(pushOp->state(), SyncOperation::Succeeded);
 

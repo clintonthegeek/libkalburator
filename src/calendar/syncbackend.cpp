@@ -295,23 +295,13 @@ FetchOperation* SyncBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* SyncBackend::pushItems(const QString &calendarId,
-                                      const QList<KCalendarCore::Incidence::Ptr> &items)
-{
-    // Default implementation: create a failed operation
-    auto *op = new PushOperation(calendarId, items, this);
-    op->fail(QStringLiteral("pushItems() not implemented by this backend"));
-    return op;
-}
-
-PushOperation* SyncBackend::pushItems(const QString &calendarId,
                                       const QList<KCalendarCore::Incidence::Ptr> &items,
                                       const TranscodingPlan &plan)
 {
     Q_UNUSED(plan);
-    // Default: delegate to the existing 2-arg form, ignoring the
-    // plan. Subclasses that need to honour the plan override this
-    // method directly. F2 Tasks 6-12 migrate each concrete backend.
-    return pushItems(calendarId, items);
+    auto *op = new PushOperation(calendarId, items, this);
+    op->fail(QStringLiteral("pushItems() not implemented by this backend"));
+    return op;
 }
 
 DeleteOperation* SyncBackend::deleteItems(const QString &calendarId,

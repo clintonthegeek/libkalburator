@@ -89,13 +89,14 @@ void TstMockBackendFailureInjection::pushItemsThreeArgSucceedsWithoutFailureInje
 
 void TstMockBackendFailureInjection::twoArgPushItemsDelegatesToThreeArgForm()
 {
-    // Sanity: the legacy 2-arg form must still work and exercise the
-    // same failure-injection path (it delegates to the 3-arg form).
+    // Sanity: the 2-arg convenience wrapper (non-virtual inline in
+    // SyncBackend) must forward to the 3-arg override and exercise the
+    // same failure-injection path.
     MockBackend mock;
     mock.setFailurePoint(MockBackend::FailurePoint::OnStoreItems);
 
     auto items = makeOneEvent(QStringLiteral("evt-4"));
-    auto *op = mock.pushItems(QStringLiteral("cal1"), items);
+    auto *op = mock.pushItems(QStringLiteral("cal1"), items, TranscodingPlan{});
     QVERIFY(op);
 
     QSignalSpy finished(op, &SyncOperation::finished);

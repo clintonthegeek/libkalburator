@@ -418,6 +418,19 @@ message(STATUS "libkalburator: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "
         "akonadi=${KALBURATOR_HAVE_AKONADI})")
 
+# -- Kalburator::Widgets (G.10 Task 83) ------------------------------------
+# Optional UI component — depends on Qt6::Widgets. Excluded from
+# add_subdirectory consumers that don't want widget deps.
+if(PROJECT_IS_TOP_LEVEL)
+    option(KALBURATOR_BUILD_WIDGETS "Build Kalburator::Widgets (requires Qt6::Widgets)" ON)
+else()
+    option(KALBURATOR_BUILD_WIDGETS "Build Kalburator::Widgets (requires Qt6::Widgets)" OFF)
+endif()
+
+if(KALBURATOR_BUILD_WIDGETS)
+    add_subdirectory(widgets)
+endif()
+
 # -- Library tests ----------------------------------------------------------
 # Gated so that add_subdirectory consumers (PlanStan, WP) don't pick up
 # libkalburator's own test executables. Top-level standalone builds get

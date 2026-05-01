@@ -196,20 +196,17 @@ public:
      * @param items The incidences to push
      * @return PushOperation* tracking the operation (caller owns)
      */
-    // Existing 2-arg form: still virtual, kept until F2 Task 38.
-    virtual PushOperation* pushItems(const QString &calendarId,
-                                     const QList<KCalendarCore::Incidence::Ptr> &items);
+    // Non-virtual convenience wrapper: callers that omit the plan get
+    // an empty TranscodingPlan forwarded to the 3-arg virtual.
+    PushOperation* pushItems(const QString &calendarId,
+                             const QList<KCalendarCore::Incidence::Ptr> &items)
+    { return pushItems(calendarId, items, TranscodingPlan{}); }
 
     /**
      * @brief Push items to a calendar, with a transcoding plan.
      *
-     * F2 form. Subclasses gradually override this and stop using the
-     * 2-arg form. F2 Tasks 6-12 migrate each concrete backend; Task
-     * 38 drops the 2-arg form entirely.
-     *
-     * The base default delegates to the 2-arg form, ignoring the
-     * plan, so existing concrete subclasses continue to compile and
-     * behave identically until they're individually migrated.
+     * Pure virtual; all backends must implement this. The base class
+     * provides a default that fails with "not implemented".
      *
      * @param calendarId The calendar ID to push to
      * @param items The incidences to push
