@@ -235,6 +235,7 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/lossprofile.h
     src/shape/transformationedge.h
     src/shape/pipeline.h
+    src/shape/transformationregistry.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     src/shape/shape.cpp
@@ -242,6 +243,7 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/lossprofile.cpp
     src/shape/transformationedge.cpp
     src/shape/pipeline.cpp
+    src/shape/transformationregistry.cpp
 )
 
 # Aggregate
