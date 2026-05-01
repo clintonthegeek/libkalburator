@@ -32,6 +32,7 @@ kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
 kalburator_add_calendar_test(tst_remotebackend_blob_view)
+kalburator_add_calendar_test(tst_remotebackend)
 
 if(KALBURATOR_HAVE_ORG_IO)
     kalburator_add_calendar_test(tst_orgbackend_blob_view)
