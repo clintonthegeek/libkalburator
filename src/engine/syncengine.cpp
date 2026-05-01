@@ -1,5 +1,6 @@
 #include "syncengine.h"
 #include "transcodingregistry.h"
+#include "transformationregistry.h"
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
@@ -1650,6 +1651,18 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     m_propertyDiff = CalendarPropertyDiff();
 
     emit syncStarted(request.mapping.id);
+
+    // Task 82: compute composed loss profile for the mapping and notify host.
+    if (m_controller) {
+        Kalburator::Shape::LossProfile loss;
+        SyncBackend *src = m_controller->backendById(request.mapping.sourceBackend);
+        SyncBackend *tgt = m_controller->backendById(request.mapping.targetBackend);
+        if (src && tgt && !src->nativeShapes().isEmpty() && !tgt->nativeShapes().isEmpty()) {
+            loss = Kalburator::Shape::TransformationRegistry::instance().inspect(
+                src->nativeShapes().first(), tgt->nativeShapes().first());
+        }
+        m_controller->syncStarted(request.mapping.id, loss);
+    }
 
     // G.6 Task 41 / G.7: route non-calendar-domain mappings through the blob
     // pipeline. "blob" domain is the original opaque path; any other non-

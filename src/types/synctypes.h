@@ -200,6 +200,27 @@ enum class SyncMode {
  *
  * Part of the sync routing graph defined in .kalb configuration.
  */
+enum class WhenLossWouldOccur {
+    Abort,    ///< Refuse to sync if the composed pipeline is lossy
+    Warn,     ///< Sync but emit ISyncHost::transcodingWarning (default)
+    Proceed,  ///< Sync silently even if data would be dropped
+};
+
+inline QString whenLossWouldOccurToString(WhenLossWouldOccur v) {
+    switch (v) {
+        case WhenLossWouldOccur::Abort:   return QStringLiteral("abort");
+        case WhenLossWouldOccur::Warn:    return QStringLiteral("warn");
+        case WhenLossWouldOccur::Proceed: return QStringLiteral("proceed");
+    }
+    return QStringLiteral("warn");
+}
+
+inline WhenLossWouldOccur whenLossWouldOccurFromString(const QString &s) {
+    if (s == QLatin1String("abort"))   return WhenLossWouldOccur::Abort;
+    if (s == QLatin1String("proceed")) return WhenLossWouldOccur::Proceed;
+    return WhenLossWouldOccur::Warn;
+}
+
 struct SyncMapping {
     QString id;                 ///< Unique mapping ID
     QString sourceBackend;      ///< Backend ID (e.g. "local", "caldav")
@@ -208,6 +229,7 @@ struct SyncMapping {
     QString targetCalendar;     ///< Calendar ID on target backend
     SyncMode mode = SyncMode::TwoWay;
     ConflictResolution conflictPolicy = ConflictResolution::AskUser;
+    WhenLossWouldOccur lossPolicy = WhenLossWouldOccur::Warn;
     bool enabled = true;
 
     bool isValid() const {
@@ -316,6 +338,7 @@ inline QJsonObject syncMappingToJson(const SyncMapping &mapping) {
     obj[QStringLiteral("targetCalendar")] = mapping.targetCalendar;
     obj[QStringLiteral("mode")] = syncModeToString(mapping.mode);
     obj[QStringLiteral("conflictResolution")] = conflictResolutionToString(mapping.conflictPolicy);
+    obj[QStringLiteral("lossPolicy")] = whenLossWouldOccurToString(mapping.lossPolicy);
     obj[QStringLiteral("enabled")] = mapping.enabled;
     return obj;
 }
@@ -333,6 +356,8 @@ inline SyncMapping syncMappingFromJson(const QJsonObject &obj) {
     mapping.mode = syncModeFromString(obj.value(QStringLiteral("mode")).toString());
     mapping.conflictPolicy = conflictResolutionFromString(
         obj.value(QStringLiteral("conflictResolution")).toString());
+    mapping.lossPolicy = whenLossWouldOccurFromString(
+        obj.value(QStringLiteral("lossPolicy")).toString(QStringLiteral("warn")));
     mapping.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
     return mapping;
 }
