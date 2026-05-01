@@ -43,6 +43,9 @@ kalburator_add_calendar_test(tst_remotebackend)
 
 if(KALBURATOR_HAVE_ORG_IO)
     kalburator_add_calendar_test(tst_orgbackend_blob_view)
+    # G.9.b Tasks 68-69 — migrated from PlanStan
+    kalburator_add_calendar_test(tst_orgbackend)
+    kalburator_add_calendar_test(tst_orgbackend_external)
 endif()
 
 if(KALBURATOR_HAVE_AKONADI)
