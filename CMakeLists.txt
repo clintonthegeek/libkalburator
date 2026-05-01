@@ -36,15 +36,25 @@ set(KALBURATOR_HAVE_AKONADI OFF CACHE BOOL "Build with KPim6 Akonadi support")
 file(GLOB KALBURATOR_TYPE_HEADERS CONFIGURE_DEPENDS src/types/*.h)
 file(GLOB KALBURATOR_TYPE_SOURCES CONFIGURE_DEPENDS src/types/*.cpp)
 
+# Shape value type — pure Qt, no KCalendarCore / sync machinery.
+# Lives in src/shape/ but exposed via kalburator-types so that
+# IIncidenceSource::Entry and IIncidenceRegistry can carry Shape values
+# without consumers needing to link the full Kalburator::Sync library.
+set(KALBURATOR_SHAPE_CORE_HEADERS src/shape/shape.h)
+set(KALBURATOR_SHAPE_CORE_SOURCES src/shape/shape.cpp)
+
 add_library(kalburator-types STATIC
     ${KALBURATOR_TYPE_HEADERS}
     ${KALBURATOR_TYPE_SOURCES}
+    ${KALBURATOR_SHAPE_CORE_HEADERS}
+    ${KALBURATOR_SHAPE_CORE_SOURCES}
 )
 add_library(Kalburator::Types ALIAS kalburator-types)
 
 target_include_directories(kalburator-types
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/types>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
 
 target_link_libraries(kalburator-types
@@ -253,7 +263,7 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/domainregistry.h
 )
 set(KALBURATOR_SHAPE_SOURCES
-    src/shape/shape.cpp
+    # shape.cpp lives in kalburator-types (exposed via KALBURATOR_SHAPE_CORE_SOURCES)
     src/shape/propertycatalogue.cpp
     src/shape/lossprofile.cpp
     src/shape/transformationedge.cpp
