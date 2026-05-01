@@ -233,11 +233,15 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/shape.h
     src/shape/propertycatalogue.h
     src/shape/lossprofile.h
+    src/shape/transformationedge.h
+    src/shape/pipeline.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     src/shape/shape.cpp
     src/shape/propertycatalogue.cpp
     src/shape/lossprofile.cpp
+    src/shape/transformationedge.cpp
+    src/shape/pipeline.cpp
 )
 
 # Aggregate
