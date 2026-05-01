@@ -10,6 +10,10 @@ TransformationRegistry& TransformationRegistry::instance() {
 }
 
 void TransformationRegistry::registerShape(Shape shape, PropertyCatalogue catalogue) {
+    if (m_frozenDomains.contains(shape.domain)) {
+        qWarning("TransformationRegistry::registerShape: shape's domain is frozen — register before first compile()");
+        return;
+    }
     m_catalogues.insert(shape, std::move(catalogue));
 }
 
@@ -23,7 +27,22 @@ Shape TransformationRegistry::canonicalFor(const DomainId& d) const {
     return *it;
 }
 
+bool TransformationRegistry::isFrozen(const DomainId& d) const
+{
+    return m_frozenDomains.contains(d);
+}
+
+void TransformationRegistry::freeze(const DomainId& d) const
+{
+    m_frozenDomains.insert(d);
+}
+
 void TransformationRegistry::registerEdge(TransformationEdge edge) {
+    if (m_frozenDomains.contains(edge.from.domain)
+        || m_frozenDomains.contains(edge.to.domain)) {
+        qWarning("TransformationRegistry::registerEdge: edge endpoint domain is frozen — register before first compile()");
+        return;
+    }
     Q_ASSERT_X(m_catalogues.contains(edge.from),
                "TransformationRegistry::registerEdge",
                "from-shape not registered");
@@ -75,6 +94,10 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     if (from == hub) {
         // Single-leg from canonical → to.
         if (const auto* e = findEdge(from, to)) {
+            // Freeze the source domain so subsequent edge/shape registration
+            // is rejected; later compile() calls for the same domain remain
+            // valid because the registry data is unchanged.
+            freeze(from.domain);
             return Pipeline{ {*e} };
         }
         return std::nullopt;
@@ -82,6 +105,10 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     if (to == hub) {
         // Single-leg from → canonical.
         if (const auto* e = findEdge(from, to)) {
+            // Freeze the source domain so subsequent edge/shape registration
+            // is rejected; later compile() calls for the same domain remain
+            // valid because the registry data is unchanged.
+            freeze(from.domain);
             return Pipeline{ {*e} };
         }
         return std::nullopt;
@@ -91,6 +118,10 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     const auto* legA = findEdge(from, hub);
     const auto* legB = findEdge(hub, to);
     if (!legA || !legB) return std::nullopt;
+    // Freeze the source domain so subsequent edge/shape registration
+    // is rejected; later compile() calls for the same domain remain
+    // valid because the registry data is unchanged.
+    freeze(from.domain);
     return Pipeline{ {*legA, *legB} };
 }
 
@@ -112,6 +143,7 @@ void TransformationRegistry::clear() {
     m_catalogues.clear();
     m_edgesFrom.clear();
     m_canonicalByDomain.clear();
+    m_frozenDomains.clear();
 }
 
 const TransformationEdge*

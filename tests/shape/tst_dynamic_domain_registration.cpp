@@ -70,6 +70,49 @@ private slots:
 
         QVERIFY(pipeline.has_value());
     }
+
+    void registrationAfterCompile_isRejected() {
+        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<OfficeStubPlugin>());
+
+        // Compile something in the office domain — this freezes it.
+        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
+        QVERIFY(TransformationRegistry::instance().compile(from, to).has_value());
+
+        // Now try to add another peer shape via a second plugin.
+        // In debug the registerEdge() asserts; in release it returns
+        // silently and the shape doesn't appear. Test the release path
+        // (silent rejection) by asking compile() afterward.
+        class SecondOfficePlugin : public OfficeStubPlugin {
+        public:
+            QList<Shape> peerShapes() const override {
+                return { { DomainId{"office"}, EncodingId{"odt"} } };
+            }
+            void registerEdges(TransformationRegistry& r) override {
+                r.registerShape(peerShapes().first(), {});
+                TransformationEdge edge;
+                edge.from = peerShapes().first();
+                edge.to   = canonicalShape();
+                edge.loss = LossProfile{};
+                edge.stage = std::make_shared<IdentityStage>();
+                r.registerEdge(edge);
+            }
+        };
+
+        // We expect this to be rejected (silently in release; the
+        // attempt should not panic, but the new shape's pipeline
+        // should not compile).
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<SecondOfficePlugin>());
+
+        const Shape odt { DomainId{"office"}, EncodingId{"odt"} };
+        const auto p = TransformationRegistry::instance().compile(odt, to);
+        QVERIFY2(!p.has_value(),
+                 "post-freeze peer registration must not appear in compiled pipelines");
+    }
 };
 
 QTEST_GUILESS_MAIN(TestDynamicDomainRegistration)

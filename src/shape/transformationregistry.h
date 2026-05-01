@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QList>
 #include <QMultiHash>
+#include <QSet>
 #include <optional>
 
 #include "lossprofile.h"
@@ -40,6 +41,12 @@ public:
     /// Look up the canonical shape for a domain. Returns
     /// `Shape::Any()` if the domain has no canonical declared.
     Shape canonicalFor(const DomainId&) const;
+
+    /// True if compile() has been called against any shape in this
+    /// domain. After that, registerEdge / registerShape for shapes
+    /// in this domain are rejected. Test introspection for the
+    /// post-init dynamic-registration contract.
+    bool isFrozen(const DomainId&) const;
 
     /// Register a transformation edge. Both endpoints must already
     /// be registered shapes. Asserts on conflicting re-registration
@@ -82,9 +89,19 @@ private:
     /// Find the single edge from `a` to `b`, or nullptr if absent.
     const TransformationEdge* findEdge(const Shape& a, const Shape& b) const;
 
+    /// Internal: mark a domain frozen. Called by compile() on its
+    /// successful non-identity branch. `const` because compile() is
+    /// const; m_frozenDomains is `mutable`.
+    void freeze(const DomainId& d) const;
+
     QHash<Shape, PropertyCatalogue> m_catalogues;
     QMultiHash<Shape, TransformationEdge> m_edgesFrom;
     QHash<DomainId, Shape> m_canonicalByDomain;
+
+    /// Domains for which compile() has produced a non-identity Pipeline.
+    /// Once a domain is frozen, registerEdge / registerShape on shapes
+    /// in that domain are rejected.
+    mutable QSet<DomainId> m_frozenDomains;
 };
 
 }  // namespace Kalburator::Shape
