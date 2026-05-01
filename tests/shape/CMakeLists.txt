@@ -17,3 +17,4 @@ endfunction()
 
 kalburator_add_shape_test(tst_shape)
 kalburator_add_shape_test(tst_property_catalogue)
+kalburator_add_shape_test(tst_loss_profile)

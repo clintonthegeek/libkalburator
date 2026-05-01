@@ -232,10 +232,12 @@ set(KALBURATOR_ENGINE_SOURCES
 set(KALBURATOR_SHAPE_HEADERS
     src/shape/shape.h
     src/shape/propertycatalogue.h
+    src/shape/lossprofile.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     src/shape/shape.cpp
     src/shape/propertycatalogue.cpp
+    src/shape/lossprofile.cpp
 )
 
 # Aggregate
