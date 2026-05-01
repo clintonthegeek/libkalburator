@@ -1,0 +1,221 @@
+/// G.8 Task 61 — GenericSqliteBackend round-trip tests.
+
+#include <QtTest/QtTest>
+#include <QCryptographicHash>
+#include <QTemporaryDir>
+
+#include "genericsqlitebackend.h"
+#include "collectioninfo.h"
+#include "backendrecord.h"
+
+using Kalburator::Sinks::GenericSqliteBackend;
+using Kalburator::Sync::BackendRecord;
+using Kalburator::Sync::CollectionInfo;
+
+namespace {
+
+CollectionInfo makeCollection(const QString &id, const QString &name,
+                              const QString &type = QStringLiteral("memos"))
+{
+    CollectionInfo ci;
+    ci.id = id;
+    ci.name = name;
+    ci.type = type;
+    return ci;
+}
+
+BackendRecord makeRecord(const QString &id, const QByteArray &data)
+{
+    BackendRecord r;
+    r.id = id;
+    r.displayName = id;
+    r.data = data;
+    r.contentHash = QString::fromLatin1(QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
+    r.lastModified = QDateTime::currentDateTimeUtc();
+    r.type = QStringLiteral("raw");
+    return r;
+}
+
+} // namespace
+
+class TestGenericSqliteBackend : public QObject
+{
+    Q_OBJECT
+private slots:
+    void isAvailable_falseForUnopenedDb();
+    void createCollection_opensSqlite();
+    void availableCollections_reflectsCreated();
+    void createAndLoadRecord_roundTrip();
+    void updateRecord_modifiesExisting();
+    void deleteRecord_removesRow();
+    void loadRecords_returnsAll();
+    void clearCollection_emptiesTable();
+    void multipleCollections_separateTables();
+    void persistsAcrossInstances();
+};
+
+void TestGenericSqliteBackend::isAvailable_falseForUnopenedDb()
+{
+    GenericSqliteBackend b(QStringLiteral("/tmp/this_dir_does_not_exist_xyz/test.db"));
+    QVERIFY(!b.isAvailable());
+}
+
+void TestGenericSqliteBackend::createCollection_opensSqlite()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString id = b.createCollection(
+        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+    QCOMPARE(id, QStringLiteral("memo+plaintext"));
+    QVERIFY(b.isAvailable());
+}
+
+void TestGenericSqliteBackend::availableCollections_reflectsCreated()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    b.createCollection(makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+    b.createCollection(makeCollection(QStringLiteral("contacts+vcard"),
+                                      QStringLiteral("Contacts"), QStringLiteral("contacts")));
+    const auto cols = b.availableCollections();
+    QCOMPARE(cols.size(), 2);
+    QStringList ids;
+    for (const auto &c : cols) ids << c.id;
+    ids.sort();
+    QCOMPARE(ids, QStringList({QStringLiteral("contacts+vcard"), QStringLiteral("memo+plaintext")}));
+}
+
+void TestGenericSqliteBackend::createAndLoadRecord_roundTrip()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+
+    const QByteArray data = QByteArrayLiteral("hello sqlite");
+    const QString id = b.createRecord(colId, makeRecord(QStringLiteral("r1"), data));
+    QVERIFY(!id.isEmpty());
+
+    const auto loaded = b.loadRecord(id);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->data, data);
+}
+
+void TestGenericSqliteBackend::updateRecord_modifiesExisting()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+
+    const QString id = b.createRecord(colId,
+        makeRecord(QStringLiteral("r1"), QByteArrayLiteral("original")));
+    QVERIFY(!id.isEmpty());
+
+    BackendRecord updated;
+    updated.id = id;
+    updated.data = QByteArrayLiteral("modified");
+    updated.contentHash = QStringLiteral("new-hash");
+    updated.lastModified = QDateTime::currentDateTimeUtc();
+    QVERIFY(b.updateRecord(updated));
+
+    const auto loaded = b.loadRecord(id);
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->data, QByteArrayLiteral("modified"));
+}
+
+void TestGenericSqliteBackend::deleteRecord_removesRow()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+
+    const QString id = b.createRecord(colId,
+        makeRecord(QStringLiteral("r1"), QByteArrayLiteral("data")));
+    QVERIFY(!id.isEmpty());
+    QVERIFY(b.loadRecord(id).has_value());
+
+    QVERIFY(b.deleteRecord(id));
+    QVERIFY(!b.loadRecord(id).has_value());
+}
+
+void TestGenericSqliteBackend::loadRecords_returnsAll()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+
+    b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("one")));
+    b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("two")));
+    b.createRecord(colId, makeRecord(QStringLiteral("r3"), QByteArrayLiteral("three")));
+
+    QCOMPARE(b.loadRecords(colId).size(), 3);
+}
+
+void TestGenericSqliteBackend::clearCollection_emptiesTable()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+
+    b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("a")));
+    b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("b")));
+    b.clearCollection(colId);
+
+    QCOMPARE(b.loadRecords(colId).size(), 0);
+}
+
+void TestGenericSqliteBackend::multipleCollections_separateTables()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+
+    const QString memoCol = QStringLiteral("memo+plaintext");
+    const QString todoCol = QStringLiteral("todo+ical");
+    b.createCollection(makeCollection(memoCol, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(todoCol, QStringLiteral("Todos"), QStringLiteral("todos")));
+
+    b.createRecord(memoCol, makeRecord(QStringLiteral("m1"), QByteArrayLiteral("memo")));
+    b.createRecord(todoCol, makeRecord(QStringLiteral("t1"), QByteArrayLiteral("todo")));
+
+    QCOMPARE(b.loadRecords(memoCol).size(), 1);
+    QCOMPARE(b.loadRecords(todoCol).size(), 1);
+
+    b.clearCollection(memoCol);
+    QCOMPARE(b.loadRecords(memoCol).size(), 0);
+    QCOMPARE(b.loadRecords(todoCol).size(), 1);
+}
+
+void TestGenericSqliteBackend::persistsAcrossInstances()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString dbPath = tmp.filePath(QStringLiteral("persist.db"));
+    {
+        GenericSqliteBackend b(dbPath);
+        b.createCollection(makeCollection(
+            QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+        b.createRecord(QStringLiteral("memo+plaintext"),
+                       makeRecord(QStringLiteral("r1"), QByteArrayLiteral("persisted")));
+    }
+    GenericSqliteBackend b2(dbPath);
+    const auto cols = b2.availableCollections();
+    QCOMPARE(cols.size(), 1);
+    const auto records = b2.loadRecords(QStringLiteral("memo+plaintext"));
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().data, QByteArrayLiteral("persisted"));
+}
+
+QTEST_MAIN(TestGenericSqliteBackend)
+#include "tst_generic_sqlite_backend.moc"

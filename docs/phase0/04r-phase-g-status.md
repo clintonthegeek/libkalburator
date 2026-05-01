@@ -12,13 +12,16 @@
 - G.4 Mapping-keyed baselines — ✅ landed 2026-05-01
 - G.5 New domain plugins — ✅ landed 2026-05-01
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ✅ landed 2026-05-01
-- G.7 WildPalms transformation — ⬜ not started
-- G.8 F1 facade deletion + universal sinks — ⬜ not started
+- G.7 WildPalms transformation — ⏳ partial (Tasks 48-54 landed; Task 55 SyncRunner deletion deferred — deep integration with DeviceSession/DeviceWorker makes it a separate migration step)
+- G.8 F1 facade deletion + universal sinks — ⏳ partial (Tasks 59-61 landed: RawFilesBackend, GenericSqliteBackend, 29 tests; Tasks 55/58 deferred — 40+ WildPalms callers of runBlobTwoWay/runBlobMirror use IBlobBackend* not SyncBackend*)
 - G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
 - G.10 Loss profile UX + new stock backends — ⬜ not started
 
-**Last task completed:** Task 47 (G.6 verify-all gate)
-**Next task:** Task 48 (G.7 — HotSyncCoordinator skeleton)
+**Last task completed:** Task 61 (G.8 — universal sinks: RawFilesBackend, GenericSqliteBackend, tests; 49/49 green)
+**Next task:** G.9 ISyncHost narrowing + sync I/O retirement
+**Deferred:** Tasks 55/58 (SyncRunner_wp + F1 facade deletion) — 40+ WildPalms test callers use
+  IBlobBackend* (returned by plugin system); migrating to SyncBackend* requires adapter or full
+  plugin system migration. Deferred to G.9 or later.
 
 ## What landed in G.1
 
@@ -87,3 +90,18 @@ Test counts: libkalburator 26 → 32 (six new test executables under
 - Task 25 (delete dataDomain() virtual + DataDomain enum; delete datadomain.h;
   remove stale includes from palmcalendarbackend.cpp and tst_planningengine_blockgraph.cpp)
 - Task 26 (G.3 verify-all gate; 35/35, 96/120, 73/73; no flips)
+- Tasks 27-29 (G.4 mapping-keyed baselines; BlobBaselineStore v3 schema)
+- Task 30 (G.4 verify-all gate; tag prep)
+- Tasks 32-40 (G.5 domain plugins: todo, contacts, memo + catalogues/differs/mergers)
+- Task 41 (G.5/G.6 verify-all gate; 46/46 baseline)
+- Tasks 42-43 (G.6 MappingScheduler + subset dispatch runSyncFuture)
+- Task 44 (tst_mapping_scheduler; 9/9)
+- Task 45 (SyncEngineFuture + CancellationReason)
+- Task 46 (cancelWithReason + m_lostResources; tst_cancellation_reason 3/3)
+- Task 47 (G.6 verify-all gate; 46/46, 96/120, 73/73)
+- Task 48+49 (HotSyncCoordinator skeleton + engine wiring in WildPalms)
+- Task 50 (PalmContactsBackend)
+- Task 51 (PalmMemoBackend)
+- Task 52 (PalmToDoBackend)
+- Task 53 (Palm transformation stage stubs)
+- Task 54 (Profile-side mapping registry via syncMappingsJson)

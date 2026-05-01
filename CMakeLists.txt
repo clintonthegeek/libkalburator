@@ -321,6 +321,16 @@ set(KALBURATOR_MEMO_SOURCES
     src/memo/memodomainplugin.cpp
 )
 
+# Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
+set(KALBURATOR_SINKS_HEADERS
+    src/sinks/rawfilesbackend.h
+    src/sinks/genericsqlitebackend.h
+)
+set(KALBURATOR_SINKS_SOURCES
+    src/sinks/rawfilesbackend.cpp
+    src/sinks/genericsqlitebackend.cpp
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -334,6 +344,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_TODO_HEADERS}
     ${KALBURATOR_CONTACTS_HEADERS}
     ${KALBURATOR_MEMO_HEADERS}
+    ${KALBURATOR_SINKS_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -347,6 +358,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_TODO_SOURCES}
     ${KALBURATOR_CONTACTS_SOURCES}
     ${KALBURATOR_MEMO_SOURCES}
+    ${KALBURATOR_SINKS_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -372,6 +384,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transcoding>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sinks>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>

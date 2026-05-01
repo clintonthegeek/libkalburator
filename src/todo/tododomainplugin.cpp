@@ -65,6 +65,7 @@ void KalburatorDomainTodo::registerEdges(TransformationRegistry &registry)
     const auto todotxt   = Kalburator::Shape::Shape{ DomainId{"todo"}, EncodingId{"todotxt"} };
 
     registry.registerShape(canonical, canonicalCatalogue());
+    registry.registerShape(todotxt, catalogueFor(todotxt));
     registry.declareCanonical(domain(), canonical);
 
     // Identity edge: canonical ↔ canonical
