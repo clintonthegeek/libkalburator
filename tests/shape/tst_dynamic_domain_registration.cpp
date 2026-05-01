@@ -150,6 +150,40 @@ private slots:
         QVERIFY2(!p.has_value(),
                  "post-freeze peer registration must not appear in compiled pipelines");
     }
+
+    void multiplePluginsContributeToSameDomain_unionPeers() {
+        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<OfficeStubPlugin>());
+
+        // Second plugin for same domain, different peer.
+        // Note: doesn't redeclare canonical (idempotent same-value
+        // is allowed; conflicting would error).
+        class SecondPlugin : public OfficeStubPlugin {
+        public:
+            QList<Shape> peerShapes() const override {
+                return { { DomainId{"office"}, EncodingId{"odt"} } };
+            }
+            void registerEdges(TransformationRegistry& r) override {
+                r.registerShape(peerShapes().first(), {});
+                TransformationEdge edge;
+                edge.from = peerShapes().first();
+                edge.to   = canonicalShape();
+                edge.loss = LossProfile{};
+                edge.stage = std::make_shared<IdentityStage>();
+                r.registerEdge(edge);
+            }
+        };
+        DomainRegistry::instance().registerPlugin(std::make_shared<SecondPlugin>());
+
+        // Both peers should now be reachable.
+        const Shape canonical { DomainId{"office"}, EncodingId{"canonical"} };
+        const Shape docx      { DomainId{"office"}, EncodingId{"docx"} };
+        const Shape odt       { DomainId{"office"}, EncodingId{"odt"} };
+        QVERIFY(TransformationRegistry::instance().compile(docx, canonical).has_value());
+        QVERIFY(TransformationRegistry::instance().compile(odt,  canonical).has_value());
+    }
 };
 
 QTEST_GUILESS_MAIN(TestDynamicDomainRegistration)
