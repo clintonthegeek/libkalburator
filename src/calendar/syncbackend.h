@@ -15,7 +15,6 @@
 #include <KCalendarCore/Recurrence>
 
 #include "calendartype.h"   // CalendarType enum
-#include "datadomain.h"    // DataDomain enum
 #include "iblobbackend.h"  // IBlobBackend pure interface (Phase D Group 2)
 #include "transcodingplan.h"
 #include "shape.h"         // Kalburator::Shape::Shape (G.3)
@@ -139,10 +138,6 @@ public:
     /// Return the best shape for a specific collection (G.3).
     /// Default: nativeShapes().first(), or Shape::Any() if nativeShapes() is empty.
     virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
-
-    /// @deprecated Use nativeShapes() instead. Will be removed in G.3.
-    [[deprecated("Use nativeShapes() instead. Will be removed in G.3.")]]
-    virtual DataDomain dataDomain() const { return DataDomain::Calendar; }
 
     // ========== Calendar Discovery & Loading ==========
 
