@@ -30,6 +30,7 @@ QList<DomainPlugin*> DomainRegistry::all() const {
 }
 
 void DomainRegistry::initialize(TransformationRegistry& r) {
+    m_registry = &r;
     if (m_initialized) return;
     for (const auto& p : m_plugins) {
         p->registerEdges(r);
@@ -41,6 +42,9 @@ void DomainRegistry::registerPlugin(std::shared_ptr<DomainPlugin> plugin)
 {
     Q_ASSERT(plugin);
     if (!plugin) return;
+    Q_ASSERT_X(m_initialized, "registerPlugin",
+               "DomainRegistry::registerPlugin() called before initialize()");
+    if (!m_initialized) return;
 
     // Append to plugin list and (if new) index by domain.
     const auto domain = plugin->domain();
@@ -51,13 +55,14 @@ void DomainRegistry::registerPlugin(std::shared_ptr<DomainPlugin> plugin)
 
     // Drive its edges into the registry immediately. Subsequent calls
     // are no-ops courtesy of the registry's idempotent register*().
-    plugin->registerEdges(TransformationRegistry::instance());
+    plugin->registerEdges(*m_registry);
 }
 
 void DomainRegistry::clear() {
     m_plugins.clear();
     m_byDomain.clear();
     m_initialized = false;
+    m_registry = nullptr;
 }
 
 }  // namespace Kalburator::Shape

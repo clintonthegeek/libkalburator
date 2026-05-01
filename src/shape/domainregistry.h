@@ -54,6 +54,7 @@ private:
     QList<std::shared_ptr<DomainPlugin>> m_plugins;
     QHash<DomainId, DomainPlugin*> m_byDomain;
     bool m_initialized = false;
+    TransformationRegistry* m_registry = nullptr;
 };
 
 }  // namespace Kalburator::Shape
