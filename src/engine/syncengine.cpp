@@ -253,6 +253,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
 
     m_isSyncing = true;
     m_cancelled = false;
+    m_lostResources.clear();
     m_currentMappingIndex = -1;
     m_currentSyncBehavior = behavior;
     m_pendingUnmonitoredConflicts.clear();
@@ -494,6 +495,38 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     return future;
 }
 
+// G.6 Task 43: subset dispatch — run only the specified mapping IDs.
+// Uses the same Queue infrastructure as the all-mappings overload, but
+// sets m_mappingIdFilter so advanceQueue skips non-requested mappings.
+QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
+    const QList<QString> &ids,
+    SyncBehavior behavior)
+{
+    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
+        QFutureInterface<QList<SyncResult>> rejected;
+        rejected.reportStarted();
+        rejected.reportResult(QList<SyncResult>{});
+        rejected.reportFinished();
+        return rejected.future();
+    }
+
+    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
+    m_currentMultiIface->reportStarted();
+    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
+    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
+
+    delete m_multiWatcher;
+    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
+    m_multiWatcher->setFuture(future);
+    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
+            this, &SyncEngine::onCancelObserved);
+
+    m_hasMappingFilter = true;
+    m_mappingIdFilter  = QSet<QString>(ids.constBegin(), ids.constEnd());
+    driveQueue(behavior);
+    return future;
+}
+
 // F2 Task 17: forwards QFutureWatcher::canceled to the worker thread.
 // Runs on the engine thread (where the watcher lives); hops to the
 // worker thread via Qt::QueuedConnection. The worker's observeCancel
@@ -514,6 +547,31 @@ void SyncEngine::onCancelObserved()
     }
     QMetaObject::invokeMethod(m_worker, "observeCancel",
                               Qt::QueuedConnection);
+}
+
+// G.6 Task 46: resourceId-aware cancellation.
+// For ResourceLost + non-empty resourceId: adds to m_lostResources so that
+// advanceQueue skips pending mappings whose backends touch that resource with a
+// cancelled SyncResult. The in-flight mapping is NOT forcibly cancelled here —
+// it runs to completion, then advanceQueue skips the next resource-matching
+// mapping. Mappings not touching the resource continue normally.
+//
+// For all other reasons: stop the entire queue (same as QFuture::cancel()).
+void SyncEngine::cancelWithReason(CancellationReason reason,
+                                  const QString &resourceId)
+{
+    if (reason == CancellationReason::ResourceLost && !resourceId.isEmpty()) {
+        m_lostResources.insert(resourceId);
+        // advanceQueue reads m_lostResources when picking the next mapping.
+        // No m_cancelled=true here — we want the queue to continue with
+        // mappings that don't use the lost resource.
+    } else {
+        // All other reasons: stop the entire queue.
+        m_cancelled = true;
+        if (m_worker)
+            QMetaObject::invokeMethod(m_worker, "observeCancel",
+                                     Qt::QueuedConnection);
+    }
 }
 
 void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
@@ -689,6 +747,9 @@ void SyncEngine::advanceQueue()
     // Debug log removed - SyncEngineWorker provides detailed timing
 
     if (m_cancelled) {
+        m_hasMappingFilter = false;
+        m_mappingIdFilter.clear();
+        m_lostResources.clear();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -710,16 +771,23 @@ void SyncEngine::advanceQueue()
 
     m_currentMappingIndex++;
 
-    // Find next enabled mapping
+    // Find next enabled mapping; when m_hasMappingFilter is true
+    // (subset dispatch, G.6 Task 43) also skip IDs not in m_mappingIdFilter.
     while (m_currentMappingIndex < m_syncMappings.size()) {
-        if (m_syncMappings[m_currentMappingIndex].enabled) {
+        const SyncMapping &m = m_syncMappings[m_currentMappingIndex];
+        const bool enabled = m.enabled;
+        const bool inFilter = !m_hasMappingFilter ||
+                              m_mappingIdFilter.contains(m.id);
+        if (enabled && inFilter)
             break;
-        }
         m_currentMappingIndex++;
     }
 
     if (m_currentMappingIndex >= m_syncMappings.size()) {
-        // All mappings processed
+        // All mappings processed (or filtered)
+        m_hasMappingFilter = false;
+        m_mappingIdFilter.clear();
+        m_lostResources.clear();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -746,6 +814,27 @@ void SyncEngine::advanceQueue()
     }
 
     const SyncMapping &mapping = m_syncMappings[m_currentMappingIndex];
+
+    // G.6 Task 46: ResourceLost skip — if any of this mapping's backends
+    // uses a resource that became unavailable, add a cancelled SyncResult
+    // and advance without dispatching to the worker.
+    if (!m_lostResources.isEmpty() && m_controller) {
+        auto *src = m_controller->backendById(mapping.sourceBackend);
+        auto *tgt = m_controller->backendById(mapping.targetBackend);
+        const bool srcLost = src && m_lostResources.contains(src->resourceId());
+        const bool tgtLost = tgt && m_lostResources.contains(tgt->resourceId());
+        if (srcLost || tgtLost) {
+            SyncResult cancelled;
+            cancelled.success   = false;
+            cancelled.cancelled = true;
+            cancelled.errorMessage = QStringLiteral("Resource lost");
+            cancelled.startTime    = QDateTime::currentDateTime();
+            cancelled.endTime      = cancelled.startTime;
+            m_queueResults.append(cancelled);
+            advanceQueue();
+            return;
+        }
+    }
 
     // Phase-2 skip: if this mapping's both endpoints are demonstrably
     // unchanged AND the skip flag is on, short-circuit without dispatching
@@ -1624,6 +1713,17 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
 
     emit syncStarted(request.mapping.id);
 
+    // G.6 Task 41: route blob-domain mappings through the blob pipeline.
+    if (m_controller) {
+        SyncBackend *sb = m_controller->backendById(request.mapping.sourceBackend);
+        if (sb && !sb->nativeShapes().isEmpty() &&
+            sb->nativeShapes().first().domain ==
+                Kalburator::Shape::DomainId{QStringLiteral("blob")}) {
+            dispatchBlobSync(request);
+            return;
+        }
+    }
+
     // First-sync fast path (Phase D Task 21).
     if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
         if (dispatchFirstSync(request))
@@ -1826,10 +1926,16 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         return true;
     }
 
+    // Intentional use of deprecated facade — dispatchFirstSync is itself
+    // removed in G.8 when WildPalms migrates to HotSyncCoordinator.
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_GCC("-Wdeprecated-declarations")
+    QT_WARNING_DISABLE_CLANG("-Wdeprecated-declarations")
     QMetaObject::invokeMethod(srcBackend,
         [engine, src, tgt, colId, &blobResult]() {
             blobResult = engine->runBlobMirror(src, tgt, colId);
         }, Qt::BlockingQueuedConnection);
+    QT_WARNING_POP
 
     SyncResult result;
     if (!blobResult.success) {
@@ -1907,6 +2013,150 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 
     qDebug().noquote() << QString("SyncEngineWorker::harvestBaselinesAfterFirstSync - seeded %1 baselines for %2")
         .arg(uidToIcal.size()).arg(mappingId);
+}
+
+// ----------------------------------------------------------------------------
+// Blob-domain unified dispatch (G.6 Task 41)
+// Routes blob-typed mappings through processSync without the calendar pipeline.
+// ----------------------------------------------------------------------------
+
+bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request)
+{
+    if (!m_controller) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral("dispatchBlobSync: no controller");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(request.mapping.id, m_currentResult);
+        return true;
+    }
+
+    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
+    if (!srcBackend || !tgtBackend) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral("dispatchBlobSync: backend not found");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(request.mapping.id, m_currentResult);
+        return true;
+    }
+
+    IBlobBackend *srcBlob = asBlob(srcBackend);
+    IBlobBackend *tgtBlob = asBlob(tgtBackend);
+    const QString srcColId  = request.mapping.sourceCalendar;
+    const QString tgtColId  = request.mapping.targetCalendar;
+    const QString mappingId = request.mapping.id;
+
+    emit phaseChanged(mappingId, 1);
+
+    // --- Fetch source records (cross-thread) ---
+    QList<BackendRecord> sourceRecords;
+    QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &sourceRecords]() {
+        sourceRecords = srcBlob->loadRecords(srcColId);
+    }, Qt::BlockingQueuedConnection);
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_cancelled) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+    }
+
+    emit phaseChanged(mappingId, 2);
+
+    // --- Fetch target records (cross-thread) ---
+    QList<BackendRecord> targetRecords;
+    QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &targetRecords]() {
+        targetRecords = tgtBlob->loadRecords(tgtColId);
+    }, Qt::BlockingQueuedConnection);
+
+    emit phaseChanged(mappingId, 3);
+
+    // --- Load baselines (run on engine thread — BlobBaselineStore is not thread-safe) ---
+    QList<BackendRecord> baselineRecords;
+    if (m_blobBaselines && m_engine) {
+        BlobBaselineStore *bbs = m_blobBaselines;
+        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
+            for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
+                BackendRecord rec;
+                rec.id          = canonical.recordId;
+                rec.contentHash = QString::fromUtf8(canonical.data);
+                baselineRecords.append(rec);
+            }
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    // --- Diff + merge (pure computation, worker thread) ---
+    BlobDomainAdapter adapter;
+    const BackendCapabilities srcCaps, tgtCaps;
+    const EngineDiff engineDiff = adapter.diff(
+        sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
+
+    const ConflictResolution policy = ConflictResolution::SourceWins;
+    const EngineMerge engineMerge = adapter.merge(engineDiff, policy);
+
+    emit phaseChanged(mappingId, 4);
+
+    // --- Apply to target (cross-thread) ---
+    if (!engineMerge.finalTarget.isEmpty()) {
+        const QList<BackendRecord> toWrite = engineMerge.finalTarget;
+        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite]() {
+            for (const auto &rec : toWrite) {
+                if (rec.isDeleted) {
+                    tgtBlob->deleteRecord(rec.id);
+                } else if (!rec.id.isEmpty()) {
+                    tgtBlob->updateRecord(rec);
+                } else {
+                    tgtBlob->createRecord(tgtColId, rec);
+                }
+            }
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    // --- Apply to source (cross-thread) ---
+    if (!engineMerge.finalSource.isEmpty()) {
+        const QList<BackendRecord> toWrite = engineMerge.finalSource;
+        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite]() {
+            for (const auto &rec : toWrite) {
+                if (rec.isDeleted) {
+                    srcBlob->deleteRecord(rec.id);
+                } else if (!rec.id.isEmpty()) {
+                    srcBlob->updateRecord(rec);
+                } else {
+                    srcBlob->createRecord(srcColId, rec);
+                }
+            }
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    // --- Save baselines (run on engine thread — BlobBaselineStore is not thread-safe) ---
+    if (m_blobBaselines && m_engine && !engineMerge.updatedBaselines.isEmpty()) {
+        BlobBaselineStore *bbs = m_blobBaselines;
+        const Kalburator::Shape::Shape blobShape{
+            Kalburator::Shape::DomainId{QStringLiteral("blob")},
+            Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+        const QList<BackendRecord> updated = engineMerge.updatedBaselines;
+        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, blobShape, updated]() {
+            for (const auto &rec : updated) {
+                if (rec.id.isEmpty() || rec.isDeleted)
+                    continue;
+                Kalburator::Shape::CanonicalRecord canonical;
+                canonical.recordId = rec.id;
+                canonical.shape    = blobShape;
+                canonical.data     = rec.contentHash.toUtf8();
+                bbs->setBaselineV3(mappingId, canonical);
+            }
+        }, Qt::BlockingQueuedConnection);
+    }
+
+    m_currentResult.success = true;
+    m_currentResult.endTime = QDateTime::currentDateTime();
+    qDebug() << "SyncEngineWorker::dispatchBlobSync completed for" << mappingId;
+    emit syncCompleted(mappingId, m_currentResult);
+    return true;
 }
 
 // ----------------------------------------------------------------------------

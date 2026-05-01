@@ -75,6 +75,9 @@ kalburator_add_calendar_integration_test(tst_engine_unified_boundary)
 # Group 2 lands the QFuture-based runSync and cancellation wiring).
 kalburator_add_calendar_integration_test(tst_engine_cancellation)
 
+# Phase G.6 Task 43 — subset dispatch via runSyncFuture(QList<QString>)
+kalburator_add_calendar_integration_test(tst_engine_subset_dispatch)
+
 # Phase F2 Task 4 — SyncOperation contract (State enum, idempotent
 # setState, cancelRequested flag, isFinished predicate).
 kalburator_add_calendar_test(tst_syncoperation_contract)

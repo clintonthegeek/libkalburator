@@ -222,6 +222,7 @@ set(KALBURATOR_DISCOVERY_SOURCES
 
 set(KALBURATOR_BLOB_HEADERS
     src/blob/blobdomainadapter.h
+    src/blob/blobdomainplugin.h
     src/blob/blobsyncresult.h
     src/blob/iblobbackend.h
     src/blob/localblobbackend.h
@@ -229,6 +230,7 @@ set(KALBURATOR_BLOB_HEADERS
 )
 set(KALBURATOR_BLOB_SOURCES
     src/blob/blobdomainadapter.cpp
+    src/blob/blobdomainplugin.cpp
     src/blob/iblobbackend.cpp
     src/blob/localblobbackend.cpp
     src/blob/mockblobbackend.cpp
@@ -238,11 +240,15 @@ set(KALBURATOR_BLOB_SOURCES
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
     src/engine/idomainadapter.h
+    src/engine/mappingscheduler.h
     src/engine/syncengine.h
+    src/engine/syncenginefuture.h
 )
 set(KALBURATOR_ENGINE_SOURCES
     src/engine/enginediff.cpp
+    src/engine/mappingscheduler.cpp
     src/engine/syncengine.cpp
+    src/engine/syncenginefuture.cpp
 )
 
 # Phase G — shape-pipeline architecture primitives.

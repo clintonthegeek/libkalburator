@@ -7,6 +7,8 @@
 #include "blobsyncresult.h"  // BlobSyncResult / BlobSyncStats — split out F1 Task 10
 #include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
+#include "mappingscheduler.h"
+#include "syncenginefuture.h"
 #include "transcodingrouter.h"
 #include "syncoperation.h"  // F2 Task 16: required by await<Op> template
 #include <QObject>
@@ -246,6 +248,9 @@ private:
     // First-sync dispatch via the engine's blob mirror (Phase D Task 21)
     bool dispatchFirstSync(const Request &request);
     void harvestBaselinesAfterFirstSync(const Request &request);
+
+    // Blob-domain unified dispatch (G.6 Task 41)
+    bool dispatchBlobSync(const Request &request);
 
     // Blob-view helpers (Phase D Task 19)
     void fetchRecordsViaBlob(const QString &backendId,
@@ -518,6 +523,16 @@ public:
     QFuture<QList<SyncResult>> runSyncFuture(
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
+    /**
+     * @brief Run sync for a subset of mappings identified by their IDs.
+     *        Only mappings in `ids` that are enabled are dispatched.
+     *        Future completes with one SyncResult per dispatched mapping.
+     *        G.6 Task 43.
+     */
+    QFuture<QList<SyncResult>> runSyncFuture(
+        const QList<QString> &ids,
+        SyncBehavior behavior = SyncBehavior::Unmonitored);
+
     // --- One-shot blob API (F1 Task 6) ---
     //
     // Synchronous blob-typed sync facade for ad-hoc callers (WildPalms's
@@ -530,6 +545,9 @@ public:
     /// deletions correctly and dispatches conflicts to per-backend
     /// handlers looked up via the registry. On success commits new
     /// baselines reflecting the synced state.
+    /// @deprecated Use runSyncFuture() with a blob-domain SyncMapping instead.
+    ///             Will be deleted in G.8 after WildPalms migrates to HotSyncCoordinator.
+    [[deprecated("Use runSyncFuture() with a blob-domain SyncMapping; facade deleted in G.8")]]
     BlobSyncResult runBlobTwoWay(IBlobBackend *a,
                                  IBlobBackend *b,
                                  const QString &collectionId,
@@ -542,6 +560,9 @@ public:
     /// One-way mirror: source → target. Records present in target but
     /// not in source are deleted; records present in both with
     /// matching contentHash are left untouched.
+    /// @deprecated Use runSyncFuture() with a blob-domain SyncMapping instead.
+    ///             Will be deleted in G.8 after WildPalms migrates to HotSyncCoordinator.
+    [[deprecated("Use runSyncFuture() with a blob-domain SyncMapping; facade deleted in G.8")]]
     BlobSyncResult runBlobMirror(IBlobBackend *source,
                                  IBlobBackend *target,
                                  const QString &collectionId);
@@ -575,6 +596,20 @@ public:
      * Safe to call multiple times (idempotent).
      */
     void stopWorkerThread();
+
+    /**
+     * @brief G.6 Task 46: cancel the current queue run with an explicit reason.
+     *
+     * For ResourceLost + non-empty @p resourceId: marks the resource as
+     * lost and skips any pending mappings whose backends use that resource.
+     * The in-flight mapping is also cancelled if it uses that resource.
+     * Mappings whose backends do NOT use the resource continue normally.
+     *
+     * For all other reasons (or empty resourceId): equivalent to cancelling
+     * the underlying QFuture — stops the entire queue.
+     */
+    void cancelWithReason(CancellationReason reason,
+                          const QString &resourceId = {});
 
 signals:
     /**
@@ -763,6 +798,25 @@ private:
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
     QMap<QString, FreshSyncState> m_freshState;
+
+    // G.6 Task 43: subset filter for runSyncFuture(QList<QString>).
+    // m_hasMappingFilter distinguishes "no filter" from "empty filter".
+    // When true, advanceQueue skips mappings whose id is not in m_mappingIdFilter.
+    // An empty m_mappingIdFilter with m_hasMappingFilter=true means "run nothing".
+    bool m_hasMappingFilter = false;
+    QSet<QString> m_mappingIdFilter;
+
+    // G.6 Task 46: resource IDs that became unavailable mid-queue.
+    // advanceQueue adds a cancelled SyncResult for any pending mapping
+    // whose source or target backend's resourceId() is in this set.
+    // Cleared at queue completion or when a new queue run starts.
+    QSet<QString> m_lostResources;
+
+    // G.6 Task 44: resource-aware FIFO scheduler. Tracks mapping→resource
+    // sets for cancelWithReason(ResourceLost). The engine still drives
+    // execution via advanceQueue; the scheduler is consulted for
+    // resource-based selective cancellation.
+    MappingScheduler m_scheduler;
 
     // F2 Task 17: watchers tracking the in-flight QFuture from
     // runSyncFuture. Only one is populated at a time (one for
