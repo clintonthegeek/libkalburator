@@ -3,36 +3,33 @@
 
 /**
  * @file blobbaselinestore.h
- * @brief SQLite-backed hash-per-record baseline store for the blob sync facade.
+ * @brief SQLite-backed baseline store for the blob sync engine.
  *
- * Records the last-synced content hash for each
- * (backendId, collectionId, recordId) triple, enabling the engine to
- * compute a correct 3-way diff and distinguish "deleted since last sync"
- * from "never existed on source."
+ * Two table generations co-exist:
  *
- * Lives in .kalburator-sync.db alongside sync_id_mappings (IDMappingStore).
- * Uses idempotent CREATE TABLE IF NOT EXISTS; stamps PRAGMA user_version = 3
- * only on freshly-created DBs.
+ * v2 (post-F1, user_version=3): `blob_baselines`
+ *   Keyed by (backend_id, collection_id, record_id) → content_hash.
+ *   Legacy API; deprecated in G.4.
  *
- * Key shape:
- *
- *   (backend_id, collection_id, record_id) — stored in the canonical
- *   blob_baselines table. (Phase F1 Task 11 dropped the legacy flat
- *   (mapping_id, record_id) API + table; the prior triple-keyed
- *   blob_baselines_triple table was renamed to blob_baselines as the
- *   canonical store. On-disk DBs from before this change have their
- *   triple-keyed data preserved; flat-keyed data is dropped and the
- *   first sync after upgrade falls into "first sync" semantics — see
- *   docs/phase0/04p-phase-f1-unify-design.md.)
+ * v3 (G.4, user_version=4): `blob_baselines_v3`
+ *   Keyed by (mapping_id, record_id) → canonical Shape + bytes.
+ *   New preferred API. On first open after upgrade, data is migrated
+ *   from blob_baselines via a mapping resolver supplied by the engine.
  *
  * Not thread-safe. Callers must serialize access to a given instance.
  * Not a QObject — pure value-lifetime class with RAII connection
  * ownership.
  */
 
+#include <functional>
+#include <optional>
+
+#include <QList>
 #include <QMap>
 #include <QString>
 #include <QStringList>
+
+#include "canonicalrecord.h"
 
 namespace Kalburator::Sync {
 
@@ -52,32 +49,69 @@ public:
     QString databasePath() const;
 
     // -----------------------------------------------------------------------
-    // Triple-keyed API — keyed by (backendId, collectionId, recordId).
-    // Stored in the canonical blob_baselines table.
+    // Mapping resolver (G.4)
+    //
+    // The engine calls setMappingResolver() during init so the v2→v3
+    // migration can discover which mapping_ids reference a given
+    // (backend_id, collection_id) pair.  Signature:
+    //   fn(backendId, collectionId) → list of mapping IDs that include
+    //   that pair as source or target collection.
+    // -----------------------------------------------------------------------
+    using MappingResolver =
+        std::function<QStringList(const QString &backendId,
+                                  const QString &collectionId)>;
+    void setMappingResolver(MappingResolver fn);
+
+    /// Perform v2→v3 data migration using the current mapping resolver.
+    /// Safe to call multiple times (idempotent after user_version==4).
+    /// Returns true on success or if already migrated.
+    bool migrateV3();
+
+    // -----------------------------------------------------------------------
+    // v3 mapping-keyed API — keyed by (mappingId, recordId).
+    // Stored in blob_baselines_v3.
     // -----------------------------------------------------------------------
 
-    /// Single-record set keyed by (backendId, collectionId, recordId).
+    bool setBaselineV3(const QString &mappingId,
+                       const Kalburator::Shape::CanonicalRecord &rec);
+
+    std::optional<Kalburator::Shape::CanonicalRecord>
+    baselineV3(const QString &mappingId, const QString &recordId) const;
+
+    QList<Kalburator::Shape::CanonicalRecord>
+    baselinesForMappingV3(const QString &mappingId) const;
+
+    bool removeBaselineV3(const QString &mappingId, const QString &recordId);
+
+    bool clearMappingV3(const QString &mappingId);
+
+    // -----------------------------------------------------------------------
+    // Triple-keyed API — keyed by (backendId, collectionId, recordId).
+    // Stored in blob_baselines.
+    // @deprecated Use the v3 mapping-keyed API instead.
+    // -----------------------------------------------------------------------
+
+    [[deprecated("Use setBaselineV3() / mapping-keyed API (G.4).")]]
     bool setBaseline(const QString &backendId,
                      const QString &collectionId,
                      const QString &recordId,
                      const QString &contentHash);
 
-    /// Returns the hash for the (backendId, collectionId, recordId) triple,
-    /// or empty QString if none has been recorded.
+    [[deprecated("Use baselineV3() / mapping-keyed API (G.4).")]]
     QString baselineHash(const QString &backendId,
                          const QString &collectionId,
                          const QString &recordId) const;
 
-    /// Bulk commit for a (backendId, collectionId) scope.
+    [[deprecated("Use setBaselineV3() / mapping-keyed API (G.4).")]]
     bool commitBaselines(const QString &backendId,
                          const QString &collectionId,
                          const QMap<QString, QString> &recordIdToHash);
 
-    /// All record IDs for a (backendId, collectionId) scope.
+    [[deprecated("Use baselinesForMappingV3() / mapping-keyed API (G.4).")]]
     QStringList baselineRecordIds(const QString &backendId,
                                   const QString &collectionId) const;
 
-    /// Remove all rows for a (backendId, collectionId) scope.
+    [[deprecated("Use clearMappingV3() / mapping-keyed API (G.4).")]]
     bool clearCollection(const QString &backendId,
                          const QString &collectionId);
 
@@ -87,9 +121,12 @@ private:
     QString         m_dbPath;
     QString         m_connName;
     bool            m_isOpen = false;
+    bool            m_needsV3Migration = false;
     mutable QString m_lastError;
+    MappingResolver m_mappingResolver;
 
     bool ensureSchemaAndVersion(bool dbFileExistedBefore);
+    bool ensureSchemaV3();
     void setError(const QString &message) const;
 };
 

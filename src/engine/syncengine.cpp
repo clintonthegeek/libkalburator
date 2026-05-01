@@ -3,6 +3,7 @@
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
+#include "canonicalrecord.h"
 #include "iblobbackend.h"
 #include "conflictpolicy.h"
 #include "conflictrecord.h"
@@ -1330,16 +1331,10 @@ BlobSyncResult SyncEngine::runBlobTwoWay(
     const QHash<QString, BackendRecord> byIdB =
         indexBlobById(m_blobAdapter.fetchRecordsBlob(b, collectionId));
 
-    // Triple-keyed baseline lookup (Phase F1 Task 11): backend identity is
-    // taken from the source backend `a`. The `mappingId` parameter is kept
-    // for conflict-record identification only.
-    const QString backendId = a->backendId();
+    // G.4: mapping-keyed baseline lookup. Data field stores contentHash bytes.
     QHash<QString, QString> baselineHashes;
-    const QStringList baseIds =
-        baseline->baselineRecordIds(backendId, collectionId);
-    for (const QString &id : baseIds) {
-        baselineHashes.insert(id,
-                              baseline->baselineHash(backendId, collectionId, id));
+    for (const auto &rec : baseline->baselinesForMappingV3(mappingId)) {
+        baselineHashes.insert(rec.recordId, QString::fromUtf8(rec.data));
     }
 
     QSet<QString> allIds;
@@ -1468,8 +1463,16 @@ BlobSyncResult SyncEngine::runBlobTwoWay(
         // Other edge cases (both missing, or impossible combos) fall through.
     }
 
-    if (!finalHashes.isEmpty()) {
-        baseline->commitBaselines(backendId, collectionId, finalHashes);
+    // G.4: write to mapping-keyed v3 table (contentHash stored as bytes).
+    static const Kalburator::Shape::Shape kBlobShape{
+        Kalburator::Shape::DomainId{QStringLiteral("blob")},
+        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+    for (auto it = finalHashes.constBegin(); it != finalHashes.constEnd(); ++it) {
+        Kalburator::Shape::CanonicalRecord rec;
+        rec.recordId = it.key();
+        rec.shape    = kBlobShape;
+        rec.data     = it.value().toUtf8();
+        baseline->setBaselineV3(mappingId, rec);
     }
 
     result.success = (result.sourceStats.errors == 0 && result.targetStats.errors == 0);
@@ -1872,6 +1875,7 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 
     KCalendarCore::ICalFormat icalFormat;
     QHash<QString, QString> uidToIcal;
+    const QString mappingId = request.mapping.id;
 
     for (const BackendRecord &r : records) {
         const QString ical = QString::fromUtf8(r.data);
@@ -1879,18 +1883,21 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 
         if (m_blobBaselines) {
             BlobBaselineStore *bbs = m_blobBaselines;
-            const QString bId = backendId;
-            const QString cId = colId;
             const QString rId = r.id;
-            const QString hash = r.contentHash;
+            const QByteArray hashBytes = r.contentHash.toUtf8();
+            // G.4: store via mapping-keyed v3 API.
             QMetaObject::invokeMethod(m_calendarBaselines,
-                [bbs, bId, cId, rId, hash]() {
-                    bbs->setBaseline(bId, cId, rId, hash);
+                [bbs, mappingId, rId, hashBytes]() {
+                    Kalburator::Shape::CanonicalRecord rec;
+                    rec.recordId = rId;
+                    rec.shape    = Kalburator::Shape::Shape{
+                        Kalburator::Shape::DomainId{QStringLiteral("blob")},
+                        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+                    rec.data = hashBytes;
+                    bbs->setBaselineV3(mappingId, rec);
                 }, Qt::BlockingQueuedConnection);
         }
     }
-
-    const QString mappingId = request.mapping.id;
     const QDateTime now = QDateTime::currentDateTime();
     QMetaObject::invokeMethod(m_calendarBaselines,
         [this, mappingId, uidToIcal, now]() {

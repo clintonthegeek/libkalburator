@@ -245,19 +245,11 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlo
     QVERIFY(m_calendarBaselines->hasBaselines(QString::fromLatin1(kMappingId)));
     QCOMPARE(m_calendarBaselines->allBaselines(QString::fromLatin1(kMappingId)).size(), 3);
 
-    // BlobBaselineStore was seeded: each source record has a stored hash.
-    QVERIFY(!m_blobBaselines->baselineHash(
-        QString::fromLatin1(kSourceBackendId),
-        QString::fromLatin1(kCalendarId),
-        QStringLiteral("evt-1")).isEmpty());
-    QVERIFY(!m_blobBaselines->baselineHash(
-        QString::fromLatin1(kSourceBackendId),
-        QString::fromLatin1(kCalendarId),
-        QStringLiteral("evt-2")).isEmpty());
-    QVERIFY(!m_blobBaselines->baselineHash(
-        QString::fromLatin1(kSourceBackendId),
-        QString::fromLatin1(kCalendarId),
-        QStringLiteral("evt-3")).isEmpty());
+    // BlobBaselineStore was seeded via mapping-keyed v3 API (G.4).
+    const QString mid = QString::fromLatin1(kMappingId);
+    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-1")).has_value());
+    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-2")).has_value());
+    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-3")).has_value());
 }
 
 void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_mirrorsSourceToTarget()

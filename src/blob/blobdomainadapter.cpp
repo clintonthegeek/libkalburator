@@ -1,6 +1,7 @@
 #include "blobdomainadapter.h"
 
 #include "blobbaselinestore.h"
+#include "canonicalrecord.h"
 #include "syncbackend.h"  // SyncBackend definition for IBlobBackend dispatch
 #include "iblobbackend.h"
 #include "synctypes.h"
@@ -305,40 +306,49 @@ EngineApplyResult BlobDomainAdapter::applyChangesBlob(
     return r;
 }
 
+namespace {
+// Shape used for blob-path canonical records (G.4).
+const Kalburator::Shape::Shape kBlobShape{
+    Kalburator::Shape::DomainId{QStringLiteral("blob")},
+    Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+} // namespace
+
 QList<BackendRecord> BlobDomainAdapter::loadBaselines(
-    const QString & /*mappingId*/) const
+    const QString &mappingId) const
 {
-    if (!m_baselineStore || m_backendId.isEmpty() || m_collectionId.isEmpty()) {
+    if (!m_baselineStore || mappingId.isEmpty()) {
         return {};
     }
     QList<BackendRecord> out;
-    const QStringList ids =
-        m_baselineStore->baselineRecordIds(m_backendId, m_collectionId);
-    out.reserve(ids.size());
-    for (const QString &id : ids) {
+    for (const auto &canonical : m_baselineStore->baselinesForMappingV3(mappingId)) {
         BackendRecord rec;
-        rec.id = id;
-        rec.contentHash =
-            m_baselineStore->baselineHash(m_backendId, m_collectionId, id);
+        rec.id          = canonical.recordId;
+        rec.contentHash = QString::fromUtf8(canonical.data);
         out.append(rec);
     }
     return out;
 }
 
 bool BlobDomainAdapter::saveBaselines(
-    const QString & /*mappingId*/, const QList<BackendRecord> &baselines)
+    const QString &mappingId, const QList<BackendRecord> &baselines)
 {
-    if (!m_baselineStore || m_backendId.isEmpty() || m_collectionId.isEmpty()) {
+    if (!m_baselineStore || mappingId.isEmpty()) {
         return false;
     }
-    QMap<QString, QString> recordIdToHash;
+    bool ok = true;
     for (const auto &rec : baselines) {
-        if (!rec.id.isEmpty() && !rec.isDeleted) {
-            recordIdToHash.insert(rec.id, rec.contentHash);
+        if (rec.id.isEmpty() || rec.isDeleted) {
+            continue;
+        }
+        Kalburator::Shape::CanonicalRecord canonical;
+        canonical.recordId = rec.id;
+        canonical.shape    = kBlobShape;
+        canonical.data     = rec.contentHash.toUtf8();
+        if (!m_baselineStore->setBaselineV3(mappingId, canonical)) {
+            ok = false;
         }
     }
-    return m_baselineStore->commitBaselines(m_backendId, m_collectionId,
-                                            recordIdToHash);
+    return ok;
 }
 
 } // namespace Kalburator::Sync

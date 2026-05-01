@@ -275,12 +275,9 @@ void TestEngineUnifiedBoundary::runBlobTwoWay_propagatesRecordsAndCommitsBaselin
     QCOMPARE(a.loadRecords(QString::fromLatin1(kBlobCollection)).size(), 2);
     QCOMPARE(b.loadRecords(QString::fromLatin1(kBlobCollection)).size(), 2);
 
-    // Baselines persisted for both record IDs. After Phase F1 Task 11 the
-    // BlobBaselineStore is triple-keyed (backendId, collectionId, recordId);
-    // SyncEngine::runBlobTwoWay derives the backendId from the source
-    // backend (`a` here, MockBlobBackend → "mock-blob").
-    const auto persisted = baseline.baselineRecordIds(
-        a.backendId(), QString::fromLatin1(kBlobCollection));
+    // G.4: baselines now keyed by (mapping_id, record_id) in blob_baselines_v3.
+    const auto persisted = baseline.baselinesForMappingV3(
+        QString::fromLatin1(kBlobMappingId));
     QCOMPARE(persisted.size(), 2);
 }
 
