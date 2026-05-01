@@ -14,14 +14,14 @@
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ✅ landed 2026-05-01
 - G.7 WildPalms transformation — ⏳ partial (Tasks 48-54 landed; Task 55 SyncRunner deletion deferred — deep integration with DeviceSession/DeviceWorker makes it a separate migration step)
 - G.8 F1 facade deletion + universal sinks — ⏳ partial (Tasks 59-61 landed: RawFilesBackend, GenericSqliteBackend, 29 tests; Tasks 55/58 deferred — 40+ WildPalms callers of runBlobTwoWay/runBlobMirror use IBlobBackend* not SyncBackend*)
-- G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
-- G.10 Loss profile UX + new stock backends — ⬜ not started
+- G.9 ISyncHost narrowing + sync I/O retirement — ✅ landed 2026-05-01
+- G.10 Loss profile UX + new stock backends — ✅ landed 2026-05-01
 
-**Last task completed:** Task 61 (G.8 — universal sinks: RawFilesBackend, GenericSqliteBackend, tests; 49/49 green)
-**Next task:** G.9 ISyncHost narrowing + sync I/O retirement
-**Deferred:** Tasks 55/58 (SyncRunner_wp + F1 facade deletion) — 40+ WildPalms test callers use
-  IBlobBackend* (returned by plugin system); migrating to SyncBackend* requires adapter or full
-  plugin system migration. Deferred to G.9 or later.
+**Last task completed:** Task 90 (G.10 — retire 2-arg pushItems virtual; verify-all green)
+**Next task:** User to authorize tag `v0.16-phase-g-shape-pipeline`
+**Deferred:** Tasks 55/58 (SyncRunner_wp + F1 facade deletion); Task 84-87 (Akonadi/CardDAV
+  stock backends — kf6pim not installed); Task 89 (WildPalms mapping UI — no topology editor
+  in WildPalms).
 
 ## What landed in G.1
 
@@ -105,3 +105,32 @@ Test counts: libkalburator 26 → 32 (six new test executables under
 - Task 52 (PalmToDoBackend)
 - Task 53 (Palm transformation stage stubs)
 - Task 54 (Profile-side mapping registry via syncMappingsJson)
+
+## Tasks completed in G.9
+
+- Task 63 (ISyncHost narrowing — delete calendar-typed virtuals, add lifecycle events)
+- Task 64 (CalendarManager wired via signals; CollectionController adapted)
+- Task 65 (WildPalms ISyncHost consumers adapted)
+- Task 66-67 (G.9.a verify-all; ISyncHost narrowed)
+- Task 68 (tst_localbackend + tst_mockbackend_failure_injection migrated from PlanStan to libkalburator)
+- Task 69 (tst_orgbackend + tst_orgbackend_external migrated; gated KALBURATOR_HAVE_ORG_IO)
+- Task 70 (tst_decsyncbackend migrated)
+- Task 71 (tst_remotebackend migrated)
+- Task 72 (tst_backend_signals migrated)
+- Task 73 (tst_akonadibackend migrated; gated KALBURATOR_HAVE_AKONADI)
+- Tasks 74-79 (delete deprecated loadItems/storeItems/updateItem/writeFinished from SyncBackend + all backends)
+- Task 75 (PlanStan tst_sync_directions migrated)
+- Task 76 (PlanStan tst_calendarcrud migrated)
+- Task 78 (PlanStan CollectionController::convertCalendarToBackend → pushItems + QEventLoop)
+- Task 80 (G.9.b verify-all; 53/53, 90/114, 73/73)
+
+## Tasks completed in G.10
+
+- Task 81 (WhenLossWouldOccur enum + JSON serialization on SyncMapping)
+- Task 82 (SyncEngine computes LossProfile and passes to ISyncHost::syncStarted)
+- Task 83 (Kalburator::Widgets CMake target; LossProfileDetailView widget)
+- Task 84-87 (Akonadi/CardDAV backends — deferred; kf6pim not installed)
+- Task 88 (PlanStan TopologyInspectorPanel loss-policy combo + SyncTopologyWidget wiring)
+- Task 89 (WildPalms mapping UI — N/A; no topology editor in WildPalms)
+- Task 90 (retire vestigial 2-arg pushItems virtual; non-virtual inline replaces it)
+- Task 91 (verify-all green; 53/53, 90/114, 73/73; tag pending user authorization)
