@@ -19,16 +19,8 @@ public:
 
     // SyncBackend interface
     void loadCalendars(const QString &collectionId) override;
-    void loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSignals = false) override;
     void storeCalendars(const QString &collectionId,
                         const QList<KCalendarCore::MemoryCalendar*> &calendars) override;
-    void storeItems(KCalendarCore::MemoryCalendar *cal,
-                    const QList<KCalendarCore::Incidence::Ptr> &items,
-                    const TranscodingPlan& plan = TranscodingPlan{}) override;
-    void updateItem(KCalendarCore::MemoryCalendar *cal,
-                    const KCalendarCore::Incidence::Ptr &item,
-                    const QString &icalData,
-                    const TranscodingPlan& plan = TranscodingPlan{}) override;
     void startSync(const QString &collectionId,
                    KCalendarCore::MemoryCalendar *calendar,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,

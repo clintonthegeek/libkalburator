@@ -181,230 +181,8 @@ void OrgBackend::loadCalendars(const QString &collectionId)
 }
 
 // ============================================================================
-// Loading
-// ============================================================================
-
-void OrgBackend::loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSignals)
-{
-    if (!cal) {
-        qWarning() << "OrgBackend::loadItems: Null calendar";
-        if (!suppressSignals) emit calendarLoaded(cal);
-        return;
-    }
-
-    QString calendarId = cal->id();
-    if (calendarId.isEmpty()) {
-        qWarning() << "OrgBackend::loadItems: Empty calendar ID";
-        if (!suppressSignals) emit calendarLoaded(cal);
-        return;
-    }
-
-    OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calendarId);
-    if (!orgFile) {
-        qWarning() << "OrgBackend::loadItems: Failed to load org file for calendar" << calendarId;
-        if (!suppressSignals) {
-            emit fetchStarted(calendarId, 0);
-            emit fetchFinished(calendarId, false, QStringLiteral("Failed to load org file"));
-            emit calendarLoaded(cal);
-        }
-        return;
-    }
-
-    // Clear existing incidences
-    for (const auto &inc : cal->incidences()) {
-        cal->deleteIncidence(inc);
-    }
-
-    int totalCount = m_fileManager->countHeadlines(orgFile.staticCast<OrgMode::OrgElement>());
-    if (!suppressSignals) {
-        emit fetchStarted(calendarId, totalCount);
-    }
-
-    int currentProgress = 0;
-    m_fileManager->traverseHeadlines(orgFile.staticCast<OrgMode::OrgElement>(), calendarId,
-        [&](const OrgHeadlineResult &result) {
-            if (!result.incidence)
-                return;
-
-            QString uid = result.incidence->uid();
-            m_roundtripData.insert(uid, result.roundtrip);
-            m_planningData.insert(uid, result.planning);
-
-            cal->addIncidence(result.incidence);
-            if (!suppressSignals) {
-                emit itemLoaded(cal, result.incidence, QString());
-                emit itemFetched(calendarId, result.incidence);
-                currentProgress++;
-                emit fetchProgressChanged(calendarId, currentProgress, totalCount);
-            }
-        });
-
-    if (!suppressSignals) {
-        emit fetchFinished(calendarId, true);
-        emit calendarLoaded(cal);
-    }
-}
-
-// ============================================================================
 // Storing / Updating / Removing
 // ============================================================================
-
-void OrgBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
-                            const QList<KCalendarCore::Incidence::Ptr> &items,
-                            const TranscodingPlan& plan)
-{
-    if (!cal) {
-        qWarning() << "OrgBackend::storeItems: Null calendar";
-        return;
-    }
-
-    const QString calendarId = cal->id();
-    if (calendarId.isEmpty()) {
-        qWarning() << "OrgBackend::storeItems: Empty calendar ID";
-        return;
-    }
-
-    OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calendarId);
-    if (!orgFile) {
-        qWarning() << "OrgBackend::storeItems: Failed to load org file";
-        emit writeStarted(calendarId, 0);
-        emit writeFinished(calendarId, false, QStringLiteral("Failed to load org file"));
-        return;
-    }
-
-    // Apply transcoding plan
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    int totalItems = finalItems.size();
-    int currentItem = 0;
-    emit writeStarted(calendarId, totalItems);
-
-    for (const auto &incidence : finalItems) {
-        if (!incidence)
-            continue;
-
-        QString uid = incidence->uid();
-        if (uid.isEmpty()) {
-            qWarning() << "OrgBackend::storeItems: Incidence with empty UID skipped";
-            continue;
-        }
-
-        auto headline = m_fileManager->findHeadlineByUid(
-            orgFile.staticCast<OrgMode::OrgElement>(), uid);
-
-        if (headline) {
-            // Check reparenting
-            QString newParentUid = incidence->relatedTo(KCalendarCore::Incidence::RelTypeParent);
-            OrgMode::OrgElement *currentParent = headline->parent();
-            QString currentParentUid;
-            if (currentParent && currentParent != orgFile.data()) {
-                auto currentParentHeadline = dynamic_cast<OrgMode::Headline*>(currentParent);
-                if (currentParentHeadline) {
-                    currentParentUid = m_fileManager->getUid(currentParentHeadline);
-                }
-            }
-
-            if (currentParentUid != newParentUid) {
-                reparentHeadline(orgFile, headline, newParentUid);
-            }
-
-            m_fileManager->updateHeadlineFromIncidence(headline, incidence,
-                m_planningData.value(uid), m_roundtripData.value(uid));
-        } else {
-            // Create new headline
-            QString parentUid = incidence->relatedTo(KCalendarCore::Incidence::RelTypeParent);
-            OrgMode::OrgElement::Pointer parentElement;
-
-            if (!parentUid.isEmpty()) {
-                auto parentHeadline = m_fileManager->findHeadlineByUid(
-                    orgFile.staticCast<OrgMode::OrgElement>(), parentUid);
-                if (parentHeadline) {
-                    parentElement = parentHeadline.staticCast<OrgMode::OrgElement>();
-                }
-            }
-            if (!parentElement) {
-                parentElement = orgFile.staticCast<OrgMode::OrgElement>();
-            }
-
-            m_fileManager->createNewHeadline(parentElement, incidence,
-                m_planningData.value(uid), m_roundtripData.value(uid), calendarId);
-        }
-
-        currentItem++;
-        emit writeProgressChanged(calendarId, currentItem, totalItems);
-    }
-
-    m_fileManager->saveOrgFile(calendarId, collectSiblingOrders());
-    emit writeFinished(calendarId, true);
-}
-
-void OrgBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
-                            const KCalendarCore::Incidence::Ptr &item,
-                            const QString &icalData,
-                            const TranscodingPlan& plan)
-{
-    Q_UNUSED(icalData)
-
-    if (!cal || !item) {
-        qWarning() << "OrgBackend::updateItem: Invalid calendar or incidence";
-        return;
-    }
-
-    const QString calendarId = cal->id();
-    if (calendarId.isEmpty()) {
-        qWarning() << "OrgBackend::updateItem: Empty calendar ID";
-        return;
-    }
-
-    // Apply transcoding plan (OrgBackend serializes from the incidence, not icalData)
-    auto result = executeTranscodingPlan(plan, item);
-    if (!result.warnings.isEmpty() && item) {
-        emit transcodingWarning(calendarId, item->uid(), result.warnings);
-    }
-    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
-
-    OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calendarId);
-    if (!orgFile) {
-        qWarning() << "OrgBackend::updateItem: Failed to load org file";
-        return;
-    }
-
-    const QString uid = finalItem->uid();
-    auto headline = m_fileManager->findHeadlineByUid(
-        orgFile.staticCast<OrgMode::OrgElement>(), uid);
-    if (!headline) {
-        qWarning() << "OrgBackend::updateItem: Headline not found for UID" << uid;
-        return;
-    }
-
-    // Check reparenting
-    QString newParentUid = finalItem->relatedTo(KCalendarCore::Incidence::RelTypeParent);
-    OrgMode::OrgElement *currentParent = headline->parent();
-    QString currentParentUid;
-    if (currentParent && currentParent != orgFile.data()) {
-        auto currentParentHeadline = dynamic_cast<OrgMode::Headline*>(currentParent);
-        if (currentParentHeadline) {
-            currentParentUid = m_fileManager->getUid(currentParentHeadline);
-        }
-    }
-
-    if (currentParentUid != newParentUid) {
-        reparentHeadline(orgFile, headline, newParentUid);
-    }
-
-    m_fileManager->updateHeadlineFromIncidence(headline, finalItem,
-        m_planningData.value(uid), m_roundtripData.value(uid));
-
-    m_fileManager->saveOrgFile(calendarId, collectSiblingOrders());
-}
 
 void OrgBackend::removeItem(const QString &calId, const QString &itemUid)
 {
@@ -446,14 +224,59 @@ void OrgBackend::startSync(const QString &collectionId,
         return;
     }
 
-    // Delegate to storeItems which applies the transcoding plan
+    const QString calendarId = calendar->id();
     QList<KCalendarCore::Incidence::Ptr> allChanges = stagedCreations + stagedUpdates;
+
     if (!allChanges.isEmpty()) {
-        storeItems(calendar, allChanges, plan);
+        OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(calendarId);
+        if (!orgFile) {
+            qWarning() << "OrgBackend::startSync: Failed to load org file for" << calendarId;
+        } else {
+            // Apply transcoding plan and write each incidence to the org file
+            for (const auto &original : allChanges) {
+                auto result = executeTranscodingPlan(plan, original);
+                if (!result.warnings.isEmpty() && original)
+                    emit transcodingWarning(calendarId, original->uid(), result.warnings);
+                const auto &incidence = result.incidence;
+                if (!incidence || incidence->uid().isEmpty())
+                    continue;
+
+                const QString uid = incidence->uid();
+                auto headline = m_fileManager->findHeadlineByUid(
+                    orgFile.staticCast<OrgMode::OrgElement>(), uid);
+
+                if (headline) {
+                    QString newParentUid = incidence->relatedTo(KCalendarCore::Incidence::RelTypeParent);
+                    OrgMode::OrgElement *currentParent = headline->parent();
+                    QString currentParentUid;
+                    if (currentParent && currentParent != orgFile.data()) {
+                        auto ph = dynamic_cast<OrgMode::Headline*>(currentParent);
+                        if (ph) currentParentUid = m_fileManager->getUid(ph);
+                    }
+                    if (currentParentUid != newParentUid)
+                        reparentHeadline(orgFile, headline, newParentUid);
+                    m_fileManager->updateHeadlineFromIncidence(headline, incidence,
+                        m_planningData.value(uid), m_roundtripData.value(uid));
+                } else {
+                    QString parentUid = incidence->relatedTo(KCalendarCore::Incidence::RelTypeParent);
+                    OrgMode::OrgElement::Pointer parentElement;
+                    if (!parentUid.isEmpty()) {
+                        auto ph = m_fileManager->findHeadlineByUid(
+                            orgFile.staticCast<OrgMode::OrgElement>(), parentUid);
+                        if (ph) parentElement = ph.staticCast<OrgMode::OrgElement>();
+                    }
+                    if (!parentElement)
+                        parentElement = orgFile.staticCast<OrgMode::OrgElement>();
+                    m_fileManager->createNewHeadline(parentElement, incidence,
+                        m_planningData.value(uid), m_roundtripData.value(uid), calendarId);
+                }
+            }
+            m_fileManager->saveOrgFile(calendarId, collectSiblingOrders());
+        }
     }
 
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
-        removeItem(calendar->id(), it.key());
+        removeItem(calendarId, it.key());
     }
 
     emit syncCompleted(collectionId);
@@ -464,7 +287,7 @@ void OrgBackend::storeCalendars(const QString &collectionId,
 {
     Q_UNUSED(collectionId)
     Q_UNUSED(calendars)
-    qWarning() << "OrgBackend::storeCalendars: Not implemented -- use storeItems() for individual items";
+    qWarning() << "OrgBackend::storeCalendars: Not implemented for OrgBackend";
 }
 
 // ============================================================================
@@ -641,7 +464,6 @@ PushOperation* OrgBackend::pushItems(const QString &calendarId,
         }
 
         m_fileManager->saveOrgFile(calendarId, collectSiblingOrders());
-        emit writeFinished(calendarId, true);
 
         op->setSucceededUids(succeededUids);
         op->setFailedUids(failedUids);
@@ -963,7 +785,7 @@ QString OrgBackend::createRecord(const QString &collectionId,
     if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
         return {};
 
-    // Parse the iCal back to an Incidence::Ptr, then store via storeItems.
+    // Parse the iCal back to an Incidence::Ptr, then write to the org file.
     auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
     QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
     if (!KCalendarCore::ICalFormat().fromRawString(tmpCalPtr, record.data)) {
@@ -976,13 +798,27 @@ QString OrgBackend::createRecord(const QString &collectionId,
         return {};
     }
 
-    // Create a MemoryCalendar with the correct ID for storeItems.
-    auto storeCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-    storeCal->setId(collectionId);
-    for (const auto &inc : incidences) storeCal->addIncidence(inc);
-
-    storeItems(storeCal, incidences, TranscodingPlan{});
-    delete storeCal;
+    OrgMode::OrgFile::Pointer orgFile = m_fileManager->loadOrgFile(collectionId);
+    if (!orgFile) {
+        qWarning() << "OrgBackend::createRecord: Failed to load org file for" << collectionId;
+        return {};
+    }
+    for (const auto &incidence : incidences) {
+        if (!incidence || incidence->uid().isEmpty()) continue;
+        const QString uid = incidence->uid();
+        QString parentUid = incidence->relatedTo(KCalendarCore::Incidence::RelTypeParent);
+        OrgMode::OrgElement::Pointer parentElement;
+        if (!parentUid.isEmpty()) {
+            auto ph = m_fileManager->findHeadlineByUid(
+                orgFile.staticCast<OrgMode::OrgElement>(), parentUid);
+            if (ph) parentElement = ph.staticCast<OrgMode::OrgElement>();
+        }
+        if (!parentElement)
+            parentElement = orgFile.staticCast<OrgMode::OrgElement>();
+        m_fileManager->createNewHeadline(parentElement, incidence,
+            m_planningData.value(uid), m_roundtripData.value(uid), collectionId);
+    }
+    m_fileManager->saveOrgFile(collectionId, collectSiblingOrders());
     return record.id;
 }
 
@@ -1017,15 +853,28 @@ bool OrgBackend::updateRecord(const BackendRecord &record)
             });
         if (!found) continue;
 
-        auto storeCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-        storeCal->setId(calId);
         for (const auto &inc : incidences) {
             inc->setReadOnly(false);
-            storeCal->addIncidence(inc);
+            const QString uid = inc->uid();
+            auto headline = m_fileManager->findHeadlineByUid(
+                orgFile.staticCast<OrgMode::OrgElement>(), uid);
+            if (!headline) {
+                qWarning() << "OrgBackend::updateRecord: Headline not found for UID" << uid;
+                continue;
+            }
+            QString newParentUid = inc->relatedTo(KCalendarCore::Incidence::RelTypeParent);
+            OrgMode::OrgElement *currentParent = headline->parent();
+            QString currentParentUid;
+            if (currentParent && currentParent != orgFile.data()) {
+                auto ph = dynamic_cast<OrgMode::Headline*>(currentParent);
+                if (ph) currentParentUid = m_fileManager->getUid(ph);
+            }
+            if (currentParentUid != newParentUid)
+                reparentHeadline(orgFile, headline, newParentUid);
+            m_fileManager->updateHeadlineFromIncidence(headline, inc,
+                m_planningData.value(uid), m_roundtripData.value(uid));
         }
-        const QString icalStr = QString::fromUtf8(record.data);
-        updateItem(storeCal, incidences.first(), icalStr, TranscodingPlan{});
-        delete storeCal;
+        m_fileManager->saveOrgFile(calId, collectSiblingOrders());
         return true;
     }
     return false;

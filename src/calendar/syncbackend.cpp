@@ -300,7 +300,6 @@ PushOperation* SyncBackend::pushItems(const QString &calendarId,
     // Default implementation: create a failed operation
     auto *op = new PushOperation(calendarId, items, this);
     op->fail(QStringLiteral("pushItems() not implemented by this backend"));
-    emit writeFinished(calendarId, false);
     return op;
 }
 
@@ -321,7 +320,6 @@ DeleteOperation* SyncBackend::deleteItems(const QString &calendarId,
     // Default implementation: create a failed operation
     auto *op = new DeleteOperation(calendarId, uids, this);
     op->fail(QStringLiteral("deleteItems() not implemented by this backend"));
-    emit writeFinished(calendarId, false);
     return op;
 }
 

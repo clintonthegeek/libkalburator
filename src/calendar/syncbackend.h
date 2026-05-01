@@ -144,29 +144,11 @@ public:
     /// Load calendar folders for a collection (emits calendarDiscovered for each)
     virtual void loadCalendars(const QString &collectionId) = 0;
 
-    /// Load all incidences for the given calendar
-    /// @param suppressSignals If true, don't emit itemLoaded/calendarLoaded signals
-    ///        (used during sync to avoid UI updates while loading records for comparison)
-    /// @deprecated Use fetchItems() instead for the new unified loading API
-    [[deprecated("Use fetchItems() instead - loadItems() will be removed in a future version")]]
-    virtual void loadItems(KCalendarCore::MemoryCalendar* cal, bool suppressSignals = false) = 0;
-
     // ========== Incidence CRUD Operations ==========
 
     /// Save calendar list (if applicable)
     virtual void storeCalendars(const QString &collectionId,
                                 const QList<KCalendarCore::MemoryCalendar*> &calendars) = 0;
-
-    /// Save multiple incidences into calendar
-    virtual void storeItems(KCalendarCore::MemoryCalendar* cal,
-                            const QList<KCalendarCore::Incidence::Ptr> &items,
-                            const TranscodingPlan& plan = TranscodingPlan{}) = 0;
-
-    /// Update single incidence item in calendar with given iCal data
-    virtual void updateItem(KCalendarCore::MemoryCalendar* cal,
-                            const KCalendarCore::Incidence::Ptr &item,
-                            const QString &icalData,
-                            const TranscodingPlan& plan = TranscodingPlan{}) = 0;
 
     /// Perform full sync with staged creations, updates, and deletions
     virtual void startSync(const QString &collectionId,
@@ -653,10 +635,6 @@ Q_SIGNALS:
 
     /// Emitted periodically during write to update progress UI
     void writeProgressChanged(const QString &calendarId, int current, int total);
-
-    /// Emitted when write operation completes (success or failure)
-    void writeFinished(const QString &calendarId, bool success,
-                       const QString &errorMessage = QString());
 
 protected:
     // ========== Operation Tracking Implementation ==========

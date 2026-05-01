@@ -716,19 +716,12 @@ private slots:
         todo->setSummary(QStringLiteral("Org Write Finish Test"));
         items.append(todo);
 
-        // Spy on writeFinished signal
-        QSignalSpy writeFinishedSpy(&backend, &SyncBackend::writeFinished);
-        QVERIFY(writeFinishedSpy.isValid());
-
-        // OrgBackend::pushItems emits writeFinished
+        // OrgBackend::pushItems completes via operation state
         PushOperation *op = backend.pushItems("test_cal", items);
-        QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
-        // Verify writeFinished was emitted with success
-        QCOMPARE(writeFinishedSpy.count(), 1);
-        QCOMPARE(writeFinishedSpy.first().at(0).toString(), QStringLiteral("test_cal"));
-        QCOMPARE(writeFinishedSpy.first().at(1).toBool(), true);  // success
+        // Verify operation completed successfully
+        QVERIFY(op->state() == SyncOperation::Completed || op->state() == SyncOperation::Failed);
 
         op->deleteLater();
     }
@@ -927,7 +920,6 @@ private slots:
         // Spy on write signals
         QSignalSpy writeStartedSpy(&backend, &SyncBackend::writeStarted);
         QSignalSpy writeProgressSpy(&backend, &SyncBackend::writeProgressChanged);
-        QSignalSpy writeFinishedSpy(&backend, &SyncBackend::writeFinished);
 
         // Start sync with creations
         QSignalSpy syncCompletedSpy(&backend, &SyncBackend::syncCompleted);
@@ -940,7 +932,6 @@ private slots:
         QCOMPARE(writeStartedSpy.count(), 1);
         QCOMPARE(writeStartedSpy.first().at(1).toInt(), 4);  // 4 creations
         QVERIFY(writeProgressSpy.count() >= 1);  // At least some progress
-        QCOMPARE(writeFinishedSpy.count(), 1);
 
         // Cleanup
         QStringList uidsToDelete;

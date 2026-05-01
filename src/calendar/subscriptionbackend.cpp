@@ -35,60 +35,6 @@ void SubscriptionBackend::loadCalendars(const QString &collectionId)
     }
 }
 
-void SubscriptionBackend::loadItems(KCalendarCore::MemoryCalendar* cal, bool suppressSignals)
-{
-    qDebug() << "=== SubscriptionBackend::loadItems called ===";
-    qDebug() << "  Calendar ID:" << (cal ? cal->id() : "null");
-    qDebug() << "  Suppress signals:" << suppressSignals;
-
-    if (!cal) {
-        qWarning() << "SubscriptionBackend::loadItems: null calendar pointer";
-        return;
-    }
-
-    const QString calendarId = cal->id();
-    qDebug() << "  Available sources:" << m_sources.keys();
-
-    if (!m_sources.contains(calendarId)) {
-        qWarning() << "SubscriptionBackend::loadItems: unknown source" << calendarId;
-        emit calendarLoaded(cal);
-        return;
-    }
-
-    // Fetch events for a reasonable time range
-    // For initial load, fetch 1 year in the past and 2 years in the future
-    const QDate today = QDate::currentDate();
-    const QDate startDate = today.addYears(-1);
-    const QDate endDate = today.addYears(2);
-
-    qDebug() << "  Fetching events from" << startDate << "to" << endDate;
-    QList<KCalendarCore::Incidence::Ptr> events = fetchEventsForSource(calendarId, startDate, endDate);
-    qDebug() << "  Fetched" << events.size() << "events";
-
-    // Add events to calendar
-    for (const auto &event : events) {
-        if (event) {
-            // Ensure event is marked read-only
-            event->setReadOnly(true);
-
-            // Add to calendar
-            cal->addIncidence(event);
-
-            // Emit signal if not suppressed
-            if (!suppressSignals) {
-                // Generate a version identifier (could use last-modified or hash)
-                QString versionId = event->lastModified().toString(Qt::ISODate);
-                if (versionId.isEmpty()) {
-                    versionId = QStringLiteral("subscription-v1");
-                }
-                emit itemLoaded(cal, event, versionId);
-            }
-        }
-    }
-
-    emit calendarLoaded(cal);
-}
-
 FetchOperation* SubscriptionBackend::fetchItems(const QString &calendarId)
 {
     auto *op = new FetchOperation(calendarId, this);
@@ -147,30 +93,6 @@ void SubscriptionBackend::storeCalendars(const QString &collectionId,
     qDebug() << "SubscriptionBackend::storeCalendars: no-op (read-only backend)";
 }
 
-void SubscriptionBackend::storeItems(KCalendarCore::MemoryCalendar* cal,
-                                     const QList<KCalendarCore::Incidence::Ptr>& items,
-                                     const TranscodingPlan& plan)
-{
-    Q_UNUSED(cal);
-    Q_UNUSED(items);
-    Q_UNUSED(plan);
-    // Read-only backend; existing no-op behavior preserved.
-    qDebug() << "SubscriptionBackend::storeItems: no-op (read-only backend)";
-}
-
-void SubscriptionBackend::updateItem(KCalendarCore::MemoryCalendar* cal,
-                                     const KCalendarCore::Incidence::Ptr& item,
-                                     const QString& icalData,
-                                     const TranscodingPlan& plan)
-{
-    Q_UNUSED(cal);
-    Q_UNUSED(item);
-    Q_UNUSED(icalData);
-    Q_UNUSED(plan);
-    // Read-only backend; existing no-op behavior preserved.
-    qDebug() << "SubscriptionBackend::updateItem: no-op (read-only backend)";
-}
-
 void SubscriptionBackend::startSync(const QString &collectionId,
                                     KCalendarCore::MemoryCalendar* calendar,
                                     const QList<KCalendarCore::Incidence::Ptr>& stagedCreations,
@@ -212,7 +134,6 @@ PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
     QTimer::singleShot(0, op, [op]() {
         op->fail(QStringLiteral("read-only backend: pushItems rejected"));
     });
-    emit writeFinished(calendarId, false);
     return op;
 }
 

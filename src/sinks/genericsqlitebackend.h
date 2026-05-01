@@ -48,16 +48,8 @@ public:
 
     // ---- SyncBackend calendar stubs ----
     void loadCalendars(const QString &collectionId) override;
-    void loadItems(KCalendarCore::MemoryCalendar *, bool) override {}
     void storeCalendars(const QString &,
                         const QList<KCalendarCore::MemoryCalendar *> &) override {}
-    void storeItems(KCalendarCore::MemoryCalendar *,
-                    const QList<KCalendarCore::Incidence::Ptr> &,
-                    const Kalburator::Sync::TranscodingPlan &) override {}
-    void updateItem(KCalendarCore::MemoryCalendar *,
-                    const KCalendarCore::Incidence::Ptr &,
-                    const QString &,
-                    const Kalburator::Sync::TranscodingPlan &) override {}
     void startSync(const QString &, KCalendarCore::MemoryCalendar *,
                    const QList<KCalendarCore::Incidence::Ptr> &,
                    const QList<KCalendarCore::Incidence::Ptr> &,

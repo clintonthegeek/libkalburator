@@ -219,50 +219,6 @@ void AkonadiBackend::loadCalendars(const QString &collectionId)
     });
 }
 
-void AkonadiBackend::loadItems(KCalendarCore::MemoryCalendar *cal, bool suppressSignals)
-{
-    // Determine which Akonadi collection to load from via the calendar's ID
-    // (set by CollectionController to the calendarId, e.g., "akonadi-57")
-    const QString calId = cal->id();
-    auto colIt = m_collections.find(calId);
-    if (colIt == m_collections.end()) {
-        qWarning() << "AkonadiBackend::loadItems: unknown calendar" << calId;
-        if (!suppressSignals)
-            emit calendarLoaded(cal);
-        return;
-    }
-
-    auto *job = new Akonadi::ItemFetchJob(*colIt, m_session);
-    job->fetchScope().fetchFullPayload(true);
-
-    connect(job, &Akonadi::ItemFetchJob::finished, this,
-            [this, cal, calId, suppressSignals, job]() {
-        if (job->error()) {
-            qWarning() << "AkonadiBackend: ItemFetchJob failed:" << job->errorString();
-            if (!suppressSignals)
-                emit calendarLoaded(cal);
-            return;
-        }
-
-        const auto items = job->items();
-        for (const auto &item : items) {
-            auto incidence = extractIncidence(item);
-            if (!incidence)
-                continue;
-
-            // Track the item for later modification/deletion
-            m_itemsByCalendar[calId][incidence->uid()] = item;
-
-            cal->addIncidence(incidence);
-            if (!suppressSignals)
-                emit itemLoaded(cal, incidence, QString::number(item.revision()));
-        }
-
-        if (!suppressSignals)
-            emit calendarLoaded(cal);
-    });
-}
-
 // ============================================================================
 // Incidence CRUD Operations
 // ============================================================================
@@ -274,118 +230,6 @@ void AkonadiBackend::storeCalendars(const QString &collectionId,
     Q_UNUSED(collectionId);
     Q_UNUSED(calendars);
     emit syncCompleted(collectionId);
-}
-
-void AkonadiBackend::storeItems(KCalendarCore::MemoryCalendar *cal,
-                                 const QList<KCalendarCore::Incidence::Ptr> &items,
-                                 const TranscodingPlan& plan)
-{
-    const QString calId = cal->id();
-    auto colIt = m_collections.find(calId);
-    if (colIt == m_collections.end()) {
-        qWarning() << "AkonadiBackend::storeItems: unknown calendar" << calId;
-        return;
-    }
-
-    // Apply transcoding plan
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    const Akonadi::Collection &col = *colIt;
-    int totalItems = finalItems.size();
-
-    emit writeStarted(calId, totalItems);
-
-    if (finalItems.isEmpty()) {
-        emit writeFinished(calId, true);
-        return;
-    }
-
-    auto completedCount = std::make_shared<int>(0);
-
-    for (const auto &incidence : finalItems) {
-        Akonadi::Item existing = findItemByUid(calId, incidence->uid());
-
-        if (existing.isValid()) {
-            // Update existing item
-            existing.setPayload<KCalendarCore::Incidence::Ptr>(incidence);
-            existing.setMimeType(incidence->mimeType());
-            auto *modJob = new Akonadi::ItemModifyJob(existing, m_session);
-            connect(modJob, &Akonadi::ItemModifyJob::finished, this,
-                    [this, calId, incidence, completedCount, totalItems, modJob]() {
-                if (modJob->error()) {
-                    qWarning() << "AkonadiBackend: ItemModifyJob failed for"
-                               << incidence->uid() << ":" << modJob->errorString();
-                }
-                int done = ++(*completedCount);
-                emit writeProgressChanged(calId, done, totalItems);
-                if (done >= totalItems)
-                    emit writeFinished(calId, true);
-            });
-        } else {
-            // Create new item
-            Akonadi::Item newItem;
-            newItem.setMimeType(incidence->mimeType());
-            newItem.setPayload<KCalendarCore::Incidence::Ptr>(incidence);
-            auto *createJob = new Akonadi::ItemCreateJob(newItem, col, m_session);
-            connect(createJob, &Akonadi::ItemCreateJob::finished, this,
-                    [this, calId, incidence, completedCount, totalItems, createJob]() {
-                if (createJob->error()) {
-                    qWarning() << "AkonadiBackend: ItemCreateJob failed for"
-                               << incidence->uid() << ":" << createJob->errorString();
-                } else {
-                    // Track the newly created item
-                    m_itemsByCalendar[calId][incidence->uid()] = createJob->item();
-                }
-                int done = ++(*completedCount);
-                emit writeProgressChanged(calId, done, totalItems);
-                if (done >= totalItems)
-                    emit writeFinished(calId, true);
-            });
-        }
-    }
-}
-
-void AkonadiBackend::updateItem(KCalendarCore::MemoryCalendar *cal,
-                                 const KCalendarCore::Incidence::Ptr &item,
-                                 const QString &icalData,
-                                 const TranscodingPlan& plan)
-{
-    Q_UNUSED(icalData);  // We use the Incidence::Ptr directly
-
-    const QString calId = cal->id();
-
-    // Apply transcoding plan (AkonadiBackend uses the incidence ptr directly)
-    auto result = executeTranscodingPlan(plan, item);
-    if (!result.warnings.isEmpty() && item) {
-        emit transcodingWarning(calId, item->uid(), result.warnings);
-    }
-    const KCalendarCore::Incidence::Ptr &finalItem = result.incidence;
-
-    Akonadi::Item existing = findItemByUid(calId, finalItem->uid());
-
-    if (!existing.isValid()) {
-        qWarning() << "AkonadiBackend::updateItem: item not found" << finalItem->uid();
-        return;
-    }
-
-    existing.setPayload<KCalendarCore::Incidence::Ptr>(finalItem);
-    auto *job = new Akonadi::ItemModifyJob(existing, m_session);
-    connect(job, &Akonadi::ItemModifyJob::finished, this,
-            [this, calId, finalItem, job]() {
-        if (job->error()) {
-            qWarning() << "AkonadiBackend: updateItem failed for"
-                       << finalItem->uid() << ":" << job->errorString();
-            emit calendarError(QString(), calId, job->errorString());
-        }
-    });
 }
 
 void AkonadiBackend::startSync(const QString &collectionId,
@@ -602,7 +446,6 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
     auto colIt = m_collections.find(calendarId);
     if (colIt == m_collections.end()) {
         op->fail(QStringLiteral("Unknown calendar: ") + calendarId);
-        emit writeFinished(calendarId, false);
         return op;
     }
 
@@ -612,7 +455,6 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
 
     if (finalItems.isEmpty()) {
         op->complete();
-        emit writeFinished(calendarId, true);
         return op;
     }
 
@@ -638,7 +480,6 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
                 emit writeProgressChanged(calendarId, done, total);
                 if (done >= total) {
                     op->complete();
-                    emit writeFinished(calendarId, true);
                 }
             });
         } else {
@@ -660,7 +501,6 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
                 emit writeProgressChanged(calendarId, done, total);
                 if (done >= total) {
                     op->complete();
-                    emit writeFinished(calendarId, true);
                 }
             });
         }
