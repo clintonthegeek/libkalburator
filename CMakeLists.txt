@@ -236,6 +236,11 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/transformationedge.h
     src/shape/pipeline.h
     src/shape/transformationregistry.h
+    src/shape/canonicalrecord.h
+    src/shape/irecorddiffer.h
+    src/shape/irecordmerger.h
+    src/shape/domainplugin.h
+    src/shape/domainregistry.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     src/shape/shape.cpp
@@ -244,6 +249,7 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/transformationedge.cpp
     src/shape/pipeline.cpp
     src/shape/transformationregistry.cpp
+    src/shape/domainregistry.cpp
 )
 
 # Aggregate
