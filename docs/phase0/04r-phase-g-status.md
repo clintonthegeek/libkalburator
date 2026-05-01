@@ -10,15 +10,15 @@
 - G.2 Calendar plugin — ✅ landed 2026-04-30
 - G.3 Backend interface migration — ✅ landed 2026-04-30
 - G.4 Mapping-keyed baselines — ✅ landed 2026-05-01
-- G.5 New domain plugins — ⬜ not started
+- G.5 New domain plugins — ✅ landed 2026-05-01
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ⬜ not started
 - G.7 WildPalms transformation — ⬜ not started
 - G.8 F1 facade deletion + universal sinks — ⬜ not started
 - G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
 - G.10 Loss profile UX + new stock backends — ⬜ not started
 
-**Last task completed:** Task 30 (G.4 verify-all gate)
-**Next task:** Task 32 (G.5 — Todo domain property catalogue)
+**Last task completed:** Task 40 (G.5 verify-all gate)
+**Next task:** Task 41 (G.6 — Wire BlobDomainAdapter for unified dispatch)
 
 ## What landed in G.1
 
