@@ -140,8 +140,8 @@ public:
     /// Default: nativeShapes().first(), or Shape::Any() if nativeShapes() is empty.
     virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
 
-    /// Return the data domain this backend belongs to. Default: Calendar.
     /// @deprecated Use nativeShapes() instead. Will be removed in G.3.
+    [[deprecated("Use nativeShapes() instead. Will be removed in G.3.")]]
     virtual DataDomain dataDomain() const { return DataDomain::Calendar; }
 
     // ========== Calendar Discovery & Loading ==========
