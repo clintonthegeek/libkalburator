@@ -28,6 +28,23 @@ public:
     /// subsequent calls are no-ops.
     void initialize(TransformationRegistry& r);
 
+    /// Register a plugin AFTER initialize() has been called and run
+    /// its registerEdges() against the process-wide
+    /// TransformationRegistry immediately. Permits third-party
+    /// backend plugins to introduce non-stock domains at plugin-load
+    /// time. Safe to call from any thread that is not concurrently
+    /// calling registerEdges/compile (typical: app startup, single
+    /// thread, before sync work begins).
+    ///
+    /// Constraints (asserted in debug, returns silently in release):
+    /// - The TransformationRegistry must not have frozen the affected
+    ///   domain yet (i.e. compile() has not been called for any shape
+    ///   in this domain). See TransformationRegistry::isFrozen.
+    /// - If a plugin for this domain already exists, the new plugin's
+    ///   peer shapes and edges are unioned in; canonical-shape
+    ///   conflicts error.
+    void registerPlugin(std::shared_ptr<DomainPlugin>);
+
     /// Test-only: drop registrations and reset initialised flag.
     void clear();
 

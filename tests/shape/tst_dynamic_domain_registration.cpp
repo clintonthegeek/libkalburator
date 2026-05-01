@@ -1,0 +1,76 @@
+#include <QTest>
+
+#include "domainplugin.h"
+#include "domainregistry.h"
+#include "irecorddiffer.h"
+#include "irecordmerger.h"
+#include "transformationregistry.h"
+
+using namespace Kalburator::Shape;
+
+namespace {
+
+// Minimal plugin that introduces a fictitious "office" domain with one
+// peer shape and one identity edge. Used to prove dynamic registration
+// works without requiring real domain implementations.
+class OfficeStubPlugin : public DomainPlugin {
+public:
+    DomainId domain() const override { return DomainId{"office"}; }
+    Shape canonicalShape() const override {
+        return { DomainId{"office"}, EncodingId{"canonical"} };
+    }
+    QList<Shape> peerShapes() const override {
+        return { { DomainId{"office"}, EncodingId{"docx"} } };
+    }
+    PropertyCatalogue canonicalCatalogue() const override { return {}; }
+    PropertyCatalogue catalogueFor(const Shape&) const override { return {}; }
+    std::unique_ptr<IRecordDiffer> createCanonicalDiffer() const override {
+        return nullptr;
+    }
+    std::unique_ptr<IRecordMerger> createCanonicalMerger() const override {
+        return nullptr;
+    }
+    void registerEdges(TransformationRegistry& r) override {
+        r.registerShape(canonicalShape(), {});
+        r.registerShape(peerShapes().first(), {});
+        r.declareCanonical(domain(), canonicalShape());
+        TransformationEdge edge;
+        edge.from = peerShapes().first();
+        edge.to   = canonicalShape();
+        edge.loss = LossProfile{};
+        edge.stage = std::make_shared<IdentityStage>();
+        r.registerEdge(edge);
+    }
+    int richnessRank(const Shape&) const override { return 0; }
+};
+
+}  // namespace
+
+class TestDynamicDomainRegistration : public QObject {
+    Q_OBJECT
+private slots:
+    void cleanup() {
+        TransformationRegistry::instance().clear();
+        DomainRegistry::instance().clear();
+    }
+
+    void registersPluginAfterInit_pipelineCompiles() {
+        // Stock initialise (as a process normally would).
+        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+
+        // Now, post-init, register a third-party plugin.
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<OfficeStubPlugin>());
+
+        // Compile a pipeline that uses the dynamically-registered shapes.
+        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
+        const auto pipeline =
+            TransformationRegistry::instance().compile(from, to);
+
+        QVERIFY(pipeline.has_value());
+    }
+};
+
+QTEST_GUILESS_MAIN(TestDynamicDomainRegistration)
+#include "tst_dynamic_domain_registration.moc"

@@ -1,6 +1,7 @@
 #include "domainregistry.h"
 
 #include "domainplugin.h"
+#include "transformationregistry.h"
 
 namespace Kalburator::Shape {
 
@@ -34,6 +35,23 @@ void DomainRegistry::initialize(TransformationRegistry& r) {
         p->registerEdges(r);
     }
     m_initialized = true;
+}
+
+void DomainRegistry::registerPlugin(std::shared_ptr<DomainPlugin> plugin)
+{
+    Q_ASSERT(plugin);
+    if (!plugin) return;
+
+    // Append to plugin list and (if new) index by domain.
+    const auto domain = plugin->domain();
+    if (!m_byDomain.contains(domain)) {
+        m_byDomain.insert(domain, plugin.get());
+    }
+    m_plugins.append(plugin);
+
+    // Drive its edges into the registry immediately. Subsequent calls
+    // are no-ops courtesy of the registry's idempotent register*().
+    plugin->registerEdges(TransformationRegistry::instance());
 }
 
 void DomainRegistry::clear() {
