@@ -48,6 +48,7 @@ public:
 
     static const QString BackendTypeName;
     QString backendType() const override;
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
     void loadCalendars(const QString &collectionId) override;
 

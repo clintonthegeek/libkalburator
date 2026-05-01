@@ -149,6 +149,13 @@ const QString LocalBackend::BackendTypeName = QStringLiteral("local");
 
 QString LocalBackend::backendType() const { return BackendTypeName; }
 
+QList<Kalburator::Shape::Shape> LocalBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 LocalBackend::LocalBackend(const QString &calendarRootPath, QObject *parent)
     : SyncBackend(parent)
     , m_calendarRootPath(calendarRootPath)

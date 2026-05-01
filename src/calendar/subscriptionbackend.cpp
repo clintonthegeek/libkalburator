@@ -13,6 +13,13 @@ const QString SubscriptionBackend::BackendTypeName = QStringLiteral("subscriptio
 
 QString SubscriptionBackend::backendType() const { return BackendTypeName; }
 
+QList<Kalburator::Shape::Shape> SubscriptionBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 SubscriptionBackend::SubscriptionBackend(QObject *parent)
     : SyncBackend(parent)
 {

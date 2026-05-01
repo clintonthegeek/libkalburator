@@ -19,6 +19,13 @@ const QString OrgBackend::BackendTypeName = QStringLiteral("orgmode");
 
 QString OrgBackend::backendType() const { return BackendTypeName; }
 
+QList<Kalburator::Shape::Shape> OrgBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 OrgBackend::OrgBackend(const QString &orgRootPath, QObject *parent)
     : SyncBackend(parent)
     , m_fileManager(new OrgFileManager(orgRootPath, this))

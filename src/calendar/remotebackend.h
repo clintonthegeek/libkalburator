@@ -226,6 +226,7 @@ public:
     QMap<QString, QString> currentEtags() const;
     static const QString BackendTypeName;
     QString backendType() const override;
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
     // Backend capabilities
     BackendCapabilities capabilities() const override;

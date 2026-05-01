@@ -50,6 +50,8 @@ public:
     explicit HolidaySubscriptionBackend(QObject *parent = nullptr);
     ~HolidaySubscriptionBackend() override;
 
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
+
     // ========== Holiday Region Management ==========
 
     /**

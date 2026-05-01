@@ -22,6 +22,13 @@ const QString DecSyncBackend::BackendTypeName = QStringLiteral("decsync");
 
 QString DecSyncBackend::backendType() const { return BackendTypeName; }
 
+QList<Kalburator::Shape::Shape> DecSyncBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 // ============================================================================
 // Construction
 // ============================================================================

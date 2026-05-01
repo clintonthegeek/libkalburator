@@ -537,6 +537,13 @@ QString RemoteBackend::backendType() const
     return BackendTypeName;
 }
 
+QList<Kalburator::Shape::Shape> RemoteBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 void RemoteBackend::registerCalendarUrl(const QString &calendarId, const QString &davUrl)
 {
     if (calendarId.isEmpty() || davUrl.isEmpty()) {

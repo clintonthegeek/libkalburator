@@ -92,6 +92,20 @@ SyncBackend::SyncBackend(QObject *parent)
 {
 }
 
+QString SyncBackend::resourceId() const
+{
+    return QStringLiteral("backend:") +
+        QString::number(reinterpret_cast<quintptr>(this), 16);
+}
+
+Kalburator::Shape::Shape SyncBackend::shapeFor(const QString &) const
+{
+    auto shapes = nativeShapes();
+    if (shapes.isEmpty())
+        return Kalburator::Shape::Shape::Any();
+    return shapes.first();
+}
+
 BackendCapabilities SyncBackend::capabilities() const
 {
     // Default implementation: full iCalendar support (LocalBackend-like)

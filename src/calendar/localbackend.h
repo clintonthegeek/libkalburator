@@ -52,6 +52,7 @@ public:
 
     static const QString BackendTypeName;
     QString backendType() const override;
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
     /**
      * @brief Set the DB file path so the private FingerprintStore can be

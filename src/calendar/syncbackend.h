@@ -18,6 +18,7 @@
 #include "datadomain.h"    // DataDomain enum
 #include "iblobbackend.h"  // IBlobBackend pure interface (Phase D Group 2)
 #include "transcodingplan.h"
+#include "shape.h"         // Kalburator::Shape::Shape (G.3)
 
 namespace Kalburator::Sync {
 
@@ -127,7 +128,20 @@ public:
     /// Return a unique backend type string, e.g. "local", "orgmode", "caldav"
     virtual QString backendType() const = 0;
 
+    /// Return the shapes this backend natively stores (G.3).
+    /// Every concrete backend must implement this.
+    virtual QList<Kalburator::Shape::Shape> nativeShapes() const = 0;
+
+    /// Return a stable identifier for the resource (device/store) this backend
+    /// is attached to (G.3). Default: "backend:<hex-address>".
+    virtual QString resourceId() const;
+
+    /// Return the best shape for a specific collection (G.3).
+    /// Default: nativeShapes().first(), or Shape::Any() if nativeShapes() is empty.
+    virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
+
     /// Return the data domain this backend belongs to. Default: Calendar.
+    /// @deprecated Use nativeShapes() instead. Will be removed in G.3.
     virtual DataDomain dataDomain() const { return DataDomain::Calendar; }
 
     // ========== Calendar Discovery & Loading ==========

@@ -39,6 +39,7 @@ public:
 
     static const QString BackendTypeName;
     QString backendType() const override;
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
     bool discoveredWritable(const QString &calendarId) const override;
 

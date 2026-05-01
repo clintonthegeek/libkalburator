@@ -55,6 +55,7 @@ public:
 
     static const QString BackendTypeName;
     QString backendType() const override;
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
     void loadCalendars(const QString &collectionId) override;
     void loadItems(KCalendarCore::MemoryCalendar* cal, bool suppressSignals = false) override;

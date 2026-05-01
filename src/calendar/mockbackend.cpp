@@ -13,6 +13,13 @@ const QString MockBackend::BackendTypeName = QStringLiteral("mock");
 
 QString MockBackend::backendType() const { return BackendTypeName; }
 
+QList<Kalburator::Shape::Shape> MockBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 MockBackend::MockBackend(QObject *parent)
     : MockBackend(BackendTypeName, parent)
 {

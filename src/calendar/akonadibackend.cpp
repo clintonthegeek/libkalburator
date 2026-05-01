@@ -71,6 +71,13 @@ QString AkonadiBackend::backendType() const
     return BackendTypeName;
 }
 
+QList<Kalburator::Shape::Shape> AkonadiBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 // ============================================================================
 // Monitor Setup
 // ============================================================================

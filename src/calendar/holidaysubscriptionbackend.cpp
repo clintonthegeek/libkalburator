@@ -12,6 +12,13 @@ HolidaySubscriptionBackend::HolidaySubscriptionBackend(QObject *parent)
 {
 }
 
+QList<Kalburator::Shape::Shape> HolidaySubscriptionBackend::nativeShapes() const
+{
+    return { Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")} } };
+}
+
 HolidaySubscriptionBackend::~HolidaySubscriptionBackend()
 {
     // Clean up cached HolidayRegion instances
