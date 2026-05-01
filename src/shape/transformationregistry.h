@@ -89,9 +89,16 @@ private:
     /// Find the single edge from `a` to `b`, or nullptr if absent.
     const TransformationEdge* findEdge(const Shape& a, const Shape& b) const;
 
+    /// Internal: like compile() but without the freeze side-effect.
+    /// compile() freezes the source domain; inspect() must not.
+    std::optional<Pipeline> compileImpl(Shape from, Shape to) const;
+
     /// Internal: mark a domain frozen. Called by compile() on its
-    /// successful non-identity branch. `const` because compile() is
-    /// const; m_frozenDomains is `mutable`.
+    /// successful non-identity branch. The frozen set is logically a
+    /// "has-been-queried" cache: once a compile() consults the edge
+    /// graph for a domain, that graph is fixed. Hence `freeze()` is
+    /// `const` and `m_frozenDomains` is `mutable`, in the standard
+    /// pattern of caching the result of a logically-pure query.
     void freeze(const DomainId& d) const;
 
     QHash<Shape, PropertyCatalogue> m_catalogues;

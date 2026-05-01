@@ -71,6 +71,43 @@ private slots:
         QVERIFY(pipeline.has_value());
     }
 
+    void inspectDoesNotFreeze() {
+        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<OfficeStubPlugin>());
+
+        // Probe loss via inspect() — should NOT freeze the domain.
+        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
+        (void)TransformationRegistry::instance().inspect(from, to);
+
+        QVERIFY(!TransformationRegistry::instance().isFrozen(DomainId{"office"}));
+
+        // Now register a second peer — this MUST succeed (not silently
+        // rejected) because inspect didn't freeze.
+        class SecondOfficePlugin : public OfficeStubPlugin {
+        public:
+            QList<Shape> peerShapes() const override {
+                return { { DomainId{"office"}, EncodingId{"odt"} } };
+            }
+            void registerEdges(TransformationRegistry& r) override {
+                r.registerShape(peerShapes().first(), {});
+                TransformationEdge edge;
+                edge.from = peerShapes().first();
+                edge.to   = canonicalShape();
+                edge.loss = LossProfile{};
+                edge.stage = std::make_shared<IdentityStage>();
+                r.registerEdge(edge);
+            }
+        };
+        DomainRegistry::instance().registerPlugin(std::make_shared<SecondOfficePlugin>());
+
+        const Shape odt { DomainId{"office"}, EncodingId{"odt"} };
+        const auto p = TransformationRegistry::instance().compile(odt, to);
+        QVERIFY(p.has_value());
+    }
+
     void registrationAfterCompile_isRejected() {
         DomainRegistry::instance().initialize(TransformationRegistry::instance());
 

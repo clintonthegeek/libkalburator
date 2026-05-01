@@ -18,6 +18,10 @@ void TransformationRegistry::registerShape(Shape shape, PropertyCatalogue catalo
 }
 
 void TransformationRegistry::declareCanonical(DomainId domain, Shape canonical) {
+    if (m_frozenDomains.contains(domain)) {
+        qWarning("TransformationRegistry::declareCanonical: domain is frozen — redeclaration ignored");
+        return;
+    }
     m_canonicalByDomain.insert(domain, canonical);
 }
 
@@ -38,6 +42,9 @@ void TransformationRegistry::freeze(const DomainId& d) const
 }
 
 void TransformationRegistry::registerEdge(TransformationEdge edge) {
+    // We freeze only the source domain in compile(), but defensively
+    // reject edges whose target domain is also frozen — preserves a
+    // clean contract should v2 add cross-domain edges.
     if (m_frozenDomains.contains(edge.from.domain)
         || m_frozenDomains.contains(edge.to.domain)) {
         qWarning("TransformationRegistry::registerEdge: edge endpoint domain is frozen — register before first compile()");
@@ -68,7 +75,7 @@ const PropertyCatalogue* TransformationRegistry::catalogueFor(const Shape& s) co
     return &(*it);
 }
 
-std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) const {
+std::optional<Pipeline> TransformationRegistry::compileImpl(Shape from, Shape to) const {
     if (to.isAny()) {
         // Universal sink: identity over the source shape so apply()
         // is a passthrough; backend stores bytes plus shape metadata.
@@ -94,10 +101,6 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     if (from == hub) {
         // Single-leg from canonical → to.
         if (const auto* e = findEdge(from, to)) {
-            // Freeze the source domain so subsequent edge/shape registration
-            // is rejected; later compile() calls for the same domain remain
-            // valid because the registry data is unchanged.
-            freeze(from.domain);
             return Pipeline{ {*e} };
         }
         return std::nullopt;
@@ -105,10 +108,6 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     if (to == hub) {
         // Single-leg from → canonical.
         if (const auto* e = findEdge(from, to)) {
-            // Freeze the source domain so subsequent edge/shape registration
-            // is rejected; later compile() calls for the same domain remain
-            // valid because the registry data is unchanged.
-            freeze(from.domain);
             return Pipeline{ {*e} };
         }
         return std::nullopt;
@@ -118,15 +117,24 @@ std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) co
     const auto* legA = findEdge(from, hub);
     const auto* legB = findEdge(hub, to);
     if (!legA || !legB) return std::nullopt;
-    // Freeze the source domain so subsequent edge/shape registration
-    // is rejected; later compile() calls for the same domain remain
-    // valid because the registry data is unchanged.
-    freeze(from.domain);
     return Pipeline{ {*legA, *legB} };
 }
 
+std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) const {
+    auto result = compileImpl(from, to);
+    // Only freeze on a non-identity successful Pipeline. Identity cases
+    // (from == to, to.isAny()) compile to a Pipeline whose result is
+    // logically a passthrough — those don't depend on the edge graph
+    // and shouldn't freeze the domain.
+    if (result.has_value() && from.domain == to.domain
+        && !(from == to) && !to.isAny() && !from.isAny()) {
+        freeze(from.domain);
+    }
+    return result;
+}
+
 LossProfile TransformationRegistry::inspect(Shape from, Shape to) const {
-    auto p = compile(from, to);
+    auto p = compileImpl(from, to);
     if (!p.has_value()) return LossProfile{};
     return p->composedLoss();
 }
