@@ -24,6 +24,13 @@ function(kalburator_add_calendar_test TEST_NAME)
     )
 endfunction()
 
+# G.9.b Task 73 — backend streaming signal tests (migrated from PlanStan).
+# OrgBackend tests are conditionally compiled via KALBURATOR_HAVE_ORG_IO.
+kalburator_add_calendar_test(tst_backend_signals)
+if(KALBURATOR_HAVE_ORG_IO)
+    target_compile_definitions(tst_backend_signals PRIVATE KALBURATOR_HAVE_ORG_IO)
+endif()
+
 kalburator_add_calendar_test(tst_icsfeedfetcher)
 kalburator_add_calendar_test(tst_calendar_baseline_store)
 kalburator_add_calendar_test(tst_calendar_domain_adapter)
