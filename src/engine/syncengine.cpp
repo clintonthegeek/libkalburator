@@ -1713,12 +1713,15 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
 
     emit syncStarted(request.mapping.id);
 
-    // G.6 Task 41: route blob-domain mappings through the blob pipeline.
+    // G.6 Task 41 / G.7: route non-calendar-domain mappings through the blob
+    // pipeline. "blob" domain is the original opaque path; any other non-
+    // calendar domain (contacts, memo, todo, …) also routes here — the
+    // BlobDomainAdapter compares records by content hash regardless of domain.
     if (m_controller) {
         SyncBackend *sb = m_controller->backendById(request.mapping.sourceBackend);
         if (sb && !sb->nativeShapes().isEmpty() &&
-            sb->nativeShapes().first().domain ==
-                Kalburator::Shape::DomainId{QStringLiteral("blob")}) {
+            sb->nativeShapes().first().domain !=
+                Kalburator::Shape::DomainId{QStringLiteral("calendar")}) {
             dispatchBlobSync(request);
             return;
         }
