@@ -49,6 +49,7 @@ if(KALBURATOR_HAVE_AKONADI)
     kalburator_add_calendar_test(tst_akonadibackend_blob_view)
 endif()
 
+kalburator_add_calendar_test(tst_decsyncbackend)
 kalburator_add_calendar_test(tst_decsyncbackend_blob_view)
 kalburator_add_calendar_test(tst_subscriptionbackend_blob_view)
 kalburator_add_calendar_test(tst_holidaysubscriptionbackend_blob_view)
