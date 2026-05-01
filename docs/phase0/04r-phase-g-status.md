@@ -8,7 +8,7 @@
 
 - G.1 Foundations — ✅ landed 2026-04-30
 - G.2 Calendar plugin — ✅ landed 2026-04-30
-- G.3 Backend interface migration — ⬜ not started
+- G.3 Backend interface migration — ✅ landed 2026-04-30
 - G.4 Mapping-keyed baselines — ⬜ not started
 - G.5 New domain plugins — ⬜ not started
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ⬜ not started
@@ -17,8 +17,8 @@
 - G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
 - G.10 Loss profile UX + new stock backends — ⬜ not started
 
-**Last task completed:** Task 18 (G.2 verify-all gate)
-**Next task:** Task 19 (add nativeShapes()/resourceId() to SyncBackend base, G.3)
+**Last task completed:** Task 26 (G.3 verify-all gate)
+**Next task:** Task 27 (G.4 — mapping-keyed baselines)
 
 ## What landed in G.1
 
@@ -74,3 +74,16 @@ Test counts: libkalburator 26 → 32 (six new test executables under
 - Task 17 (CalendarDomainAdapter wired: CustomMerge delegates to
   registry IRecordMergerICal; no behavior change to existing policies)
 - Task 18 (G.2 verify-all gate; libkalburator 32→35/35; baseline refreshed)
+- Task 19 (add nativeShapes(), resourceId(), shapeFor() to SyncBackend base)
+- Task 20 (override nativeShapes() in all 8 concrete backends; returns `{calendar, ical}`)
+- Task 21 (mark dataDomain() [[deprecated]])
+- Task 22 (migrate dataDomain() callsites — libkalburator: syncengine.cpp,
+  iincidencesource.h, iincidenceregistry.h, stubincidenceregistry.h/cpp)
+- Task 23 (migrate dataDomain() callsites — PlanStan: globalincidencemodel.h/cpp,
+  collectioncontroller.cpp, itemloadingcoordinator.cpp, forwardscheduler.cpp,
+  virtualprojectionmatcher.cpp, containerregistry.cpp)
+- Task 24 (migrate dataDomain() callsites — WildPalms: palmcalendarbackend.h/cpp,
+  tst_palmcalendarbackend.cpp; nativeShapes() returns `{calendar, palm-datebook}`)
+- Task 25 (delete dataDomain() virtual + DataDomain enum; delete datadomain.h;
+  remove stale includes from palmcalendarbackend.cpp and tst_planningengine_blockgraph.cpp)
+- Task 26 (G.3 verify-all gate; 35/35, 96/120, 73/73; no flips)
