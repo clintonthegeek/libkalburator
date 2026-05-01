@@ -9,7 +9,7 @@
 - G.1 Foundations — ✅ landed 2026-04-30
 - G.2 Calendar plugin — ✅ landed 2026-04-30
 - G.3 Backend interface migration — ✅ landed 2026-04-30
-- G.4 Mapping-keyed baselines — ⬜ not started
+- G.4 Mapping-keyed baselines — ✅ landed 2026-05-01
 - G.5 New domain plugins — ⬜ not started
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ⬜ not started
 - G.7 WildPalms transformation — ⬜ not started
@@ -17,8 +17,8 @@
 - G.9 ISyncHost narrowing + sync I/O retirement — ⬜ not started
 - G.10 Loss profile UX + new stock backends — ⬜ not started
 
-**Last task completed:** Task 26 (G.3 verify-all gate)
-**Next task:** Task 27 (G.4 — mapping-keyed baselines)
+**Last task completed:** Task 30 (G.4 verify-all gate)
+**Next task:** Task 32 (G.5 — Todo domain property catalogue)
 
 ## What landed in G.1
 
