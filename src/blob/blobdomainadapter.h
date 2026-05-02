@@ -71,7 +71,8 @@ public:
                     const BackendCapabilities& targetCaps) const override;
 
     EngineMerge merge(const EngineDiff& diff,
-                      ConflictResolution policy) const override;
+                      ConflictResolution policy,
+                      const ExecutionOverride& override = {}) const override;
 
     EngineApplyResult applyChanges(const EngineMerge& merge,
                                    SyncBackend* destination,

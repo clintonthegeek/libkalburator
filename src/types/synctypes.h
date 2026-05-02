@@ -386,6 +386,19 @@ inline QList<SyncMapping> syncMappingsFromJson(const QJsonArray &arr) {
     return mappings;
 }
 
+/// Per-call execution override for runSyncFuture(). Lets callers
+/// request mirror-direction semantics for a mapping that's
+/// otherwise configured for bidirectional sync. Used by WildPalms's
+/// Tools-menu Copy Palm→PC / Copy PC→Palm actions.
+struct ExecutionOverride {
+    enum class Direction {
+        Default,      ///< Use the mapping's stored direction (today: bidirectional).
+        MirrorAToB,   ///< One-way: source overwrites target; target-only records deleted.
+        MirrorBToA,   ///< One-way: target overwrites source; source-only records deleted.
+    };
+    Direction direction = Direction::Default;
+};
+
 // Declare metatypes for Qt signal/slot usage
 
 } // namespace Kalburator::Sync
@@ -397,5 +410,6 @@ Q_DECLARE_METATYPE(Kalburator::Sync::SyncStats)
 Q_DECLARE_METATYPE(Kalburator::Sync::SyncResult)
 Q_DECLARE_METATYPE(Kalburator::Sync::SyncMode)
 Q_DECLARE_METATYPE(Kalburator::Sync::SyncMapping)
+Q_DECLARE_METATYPE(Kalburator::Sync::ExecutionOverride)
 
 #endif // SYNCTYPES_H

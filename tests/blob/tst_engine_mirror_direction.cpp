@@ -1,0 +1,405 @@
+/// G-phase Task 8 — failing test for ExecutionOverride mirror-direction semantics
+///
+/// Pins the expected behavior of
+///   SyncEngine::runSyncFuture(mappingId, ExecutionOverride{Direction::MirrorAToB})
+///   SyncEngine::runSyncFuture(mappingId, ExecutionOverride{Direction::MirrorBToA})
+///
+/// The stub added in Task 7 ignores the override and runs a normal two-way (or
+/// first-sync mirror) sync, so these tests FAIL. Task 9 makes them pass by
+/// wiring the override into BlobDomainAdapter's dispatch path.
+///
+/// Setup note: dispatchBlobSync routes based on nativeShapes() domain — any
+/// non-calendar domain triggers the blob path. We define
+/// IdentifiedBlobSyncBackend here: a SyncBackend subclass that advertises the
+/// "memo" domain and delegates blob CRUD to an internal QHash store. This lets
+/// us register backends via BackendRegistry (which wants SyncBackend*) while
+/// still satisfying the IBlobBackend cast inside dispatchBlobSync.
+
+#include <QtTest/QtTest>
+#include <QHash>
+#include <QList>
+
+#include "backendregistry.h"
+#include "isynchost.h"
+#include "isyncconfigstore.h"
+#include "logicalcalendar.h"
+#include "collectioninfo.h"
+#include "syncbackend.h"
+#include "syncengine.h"
+#include "synctypes.h"
+#include "shape.h"
+
+using Kalburator::Sync::BackendRecord;
+using Kalburator::Sync::BackendRegistry;
+using Kalburator::Sync::CollectionInfo;
+using Kalburator::Sync::ConflictResolution;
+using Kalburator::Sync::ExecutionOverride;
+using Kalburator::Sync::ISyncHost;
+using Kalburator::Sync::SyncBackend;
+using Kalburator::Sync::SyncEngine;
+using Kalburator::Sync::SyncMapping;
+using Kalburator::Sync::SyncMode;
+using Kalburator::Sync::SyncResult;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+
+namespace {
+
+// ---- Null ISyncConfigStore --------------------------------------------------
+
+class NullConfigStore : public Kalburator::Sync::ISyncConfigStore
+{
+public:
+    void addLogicalCalendar(const Kalburator::Sync::LogicalCalendar &) override {}
+    void updateLogicalCalendar(const Kalburator::Sync::LogicalCalendar &) override {}
+    void removeLogicalCalendar(const QString &) override {}
+    Kalburator::Sync::LogicalCalendar logicalCalendar(const QString &) const override
+        { return {}; }
+    QVariantMap backendConfig(const QString &) const override { return {}; }
+    bool hasSyncMappings() const override { return false; }
+    QList<SyncMapping> syncMappings() const override { return {}; }
+    void save() override {}
+};
+
+// ---- IdentifiedBlobSyncBackend ---------------------------------------------
+//
+// A SyncBackend subclass that:
+//   - Returns DomainId{"memo"} in nativeShapes() so processSync routes to
+//     dispatchBlobSync (not the calendar pipeline).
+//   - Implements IBlobBackend using an internal QHash store.
+//   - Stubs the calendar-domain methods (not used in blob-only tests).
+
+class IdentifiedBlobSyncBackend : public SyncBackend
+{
+    Q_OBJECT
+public:
+    explicit IdentifiedBlobSyncBackend(const QString &id, QObject *p = nullptr)
+        : SyncBackend(p), m_id(id) {}
+
+    // ---- SyncBackend identity ----
+    QString backendType() const override { return QStringLiteral("memo"); }
+    QList<Kalburator::Shape::Shape> nativeShapes() const override
+    {
+        return { Kalburator::Shape::Shape{
+            DomainId{QStringLiteral("memo")},
+            EncodingId{QStringLiteral("raw")} } };
+    }
+    QString resourceId() const override
+        { return QStringLiteral("memo-test:") + m_id; }
+
+    // ---- IBlobBackend identity ----
+    QString backendId()  const override { return m_id; }
+    QString displayName() const override { return m_id; }
+    bool    isAvailable() const override { return true; }
+
+    // ---- IBlobBackend collections ----
+    QList<CollectionInfo> availableCollections() override
+        { return m_collections.values(); }
+    CollectionInfo collectionInfo(const QString &id) override
+        { return m_collections.value(id); }
+    QString createCollection(const CollectionInfo &info) override
+    {
+        m_collections.insert(info.id, info);
+        return info.id;
+    }
+
+    // ---- IBlobBackend records ----
+    QList<BackendRecord> loadRecords(const QString &colId) override
+        { return m_records.value(colId).values(); }
+    std::optional<BackendRecord> loadRecord(const QString &recId) override
+    {
+        for (const auto &col : m_records)
+            if (col.contains(recId)) return col.value(recId);
+        return std::nullopt;
+    }
+    QString createRecord(const QString &colId, const BackendRecord &rec) override
+    {
+        m_records[colId][rec.id] = rec;
+        m_recToCol[rec.id] = colId;
+        return rec.id;
+    }
+    bool updateRecord(const BackendRecord &rec) override
+    {
+        const QString colId = m_recToCol.value(rec.id);
+        if (colId.isEmpty()) return false;
+        m_records[colId][rec.id] = rec;
+        return true;
+    }
+    bool deleteRecord(const QString &recId) override
+    {
+        const QString colId = m_recToCol.value(recId);
+        if (colId.isEmpty()) return false;
+        m_records[colId].remove(recId);
+        m_recToCol.remove(recId);
+        return true;
+    }
+    QList<BackendRecord> modifiedSince(const QString &, const QDateTime &) override
+        { return {}; }
+    QStringList deletedSince(const QString &, const QDateTime &) override
+        { return {}; }
+    bool supportsDeleteTracking() const override { return false; }
+
+    // ---- Blob batch (no-ops) ----
+    void beginBatch() override {}
+    bool commitBatch() override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
+
+    // ---- Calendar-domain stubs (not used in blob tests) ----
+    void loadCalendars(const QString &) override {}
+    void storeCalendars(const QString &,
+                        const QList<KCalendarCore::MemoryCalendar *> &) override {}
+    void startSync(const QString &, KCalendarCore::MemoryCalendar *,
+                   const QList<KCalendarCore::Incidence::Ptr> &,
+                   const QList<KCalendarCore::Incidence::Ptr> &,
+                   const QMap<QString, QString> &,
+                   const Kalburator::Sync::TranscodingPlan &) override {}
+    void removeItem(const QString &, const QString &) override {}
+    Kalburator::Sync::PushOperation *pushItems(
+        const QString &,
+        const QList<KCalendarCore::Incidence::Ptr> &,
+        const Kalburator::Sync::TranscodingPlan &) override { return nullptr; }
+
+    // ---- Test helpers ----
+    QHash<QString, BackendRecord> recordsIn(const QString &colId) const
+        { return m_records.value(colId); }
+
+    void clear()
+    {
+        m_records.clear();
+        m_recToCol.clear();
+    }
+
+private:
+    QString m_id;
+    QHash<QString, CollectionInfo>                        m_collections;
+    QHash<QString /*colId*/, QHash<QString, BackendRecord>> m_records;
+    QHash<QString /*recId*/, QString /*colId*/>           m_recToCol;
+};
+
+// ---- MinimalSyncHost --------------------------------------------------------
+//
+// Routes backendById() through the BackendRegistry. All other ISyncHost
+// methods use the default no-op implementations from the base class.
+
+class MinimalSyncHost : public ISyncHost
+{
+public:
+    explicit MinimalSyncHost(BackendRegistry *reg)
+        : m_reg(reg) {}
+
+    SyncBackend *backendById(const QString &id) override
+        { return m_reg->backendInstance(id); }
+    QHash<QString, SyncBackend*> backends() override
+    {
+        QHash<QString, SyncBackend*> result;
+        for (const QString &id : m_reg->registeredInstanceIds())
+            result.insert(id, m_reg->backendInstance(id));
+        return result;
+    }
+    Kalburator::Sync::ISyncConfigStore *configStore() override
+        { return &m_config; }
+
+private:
+    BackendRegistry *m_reg; // not owned
+    NullConfigStore  m_config;
+};
+
+// ---- Record factory ---------------------------------------------------------
+
+BackendRecord makeRecord(const QString &id, const QString &data)
+{
+    BackendRecord r;
+    r.id = id;
+    r.type = QStringLiteral("memo");
+    r.displayName = id;
+    r.data = data.toUtf8();
+    r.contentHash = QStringLiteral("hash-of-%1").arg(data);
+    r.lastModified = QDateTime::currentDateTimeUtc();
+    return r;
+}
+
+CollectionInfo makeCollection(const QString &id)
+{
+    CollectionInfo c;
+    c.id = id;
+    c.name = id;
+    c.type = QStringLiteral("memos");
+    return c;
+}
+
+static constexpr int kTimeoutMs = 5000;
+
+} // namespace
+
+// ============================================================================
+
+class TstEngineMirrorDirection : public QObject
+{
+    Q_OBJECT
+private slots:
+    void init();
+    void cleanup();
+
+    // MirrorAToB: target becomes an exact copy of source (deletions applied)
+    void mirrorAToB_targetBecomesExactCopyOfSource();
+
+    // MirrorBToA: source becomes an exact copy of target (deletions applied)
+    void mirrorBToA_sourceBecomesExactCopyOfTarget();
+
+private:
+    static constexpr const char *kSrcId  = "blob-src";
+    static constexpr const char *kTgtId  = "blob-tgt";
+    static constexpr const char *kColId  = "col1";
+    static constexpr const char *kMapId  = "mirror-test";
+
+    std::unique_ptr<BackendRegistry>          m_registry;
+    std::unique_ptr<IdentifiedBlobSyncBackend> m_src;
+    std::unique_ptr<IdentifiedBlobSyncBackend> m_tgt;
+    std::unique_ptr<MinimalSyncHost>          m_host;
+    std::unique_ptr<SyncEngine>               m_engine;
+};
+
+void TstEngineMirrorDirection::init()
+{
+    m_registry = std::make_unique<BackendRegistry>();
+    m_src = std::make_unique<IdentifiedBlobSyncBackend>(QString::fromLatin1(kSrcId));
+    m_tgt = std::make_unique<IdentifiedBlobSyncBackend>(QString::fromLatin1(kTgtId));
+
+    m_registry->registerBackendInstance(QString::fromLatin1(kSrcId), m_src.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTgtId), m_tgt.get());
+
+    m_host = std::make_unique<MinimalSyncHost>(m_registry.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+
+    // Seed the collections so dispatchBlobSync's fetch finds them.
+    m_src->createCollection(makeCollection(QString::fromLatin1(kColId)));
+    m_tgt->createCollection(makeCollection(QString::fromLatin1(kColId)));
+
+    // Configure mapping (sourceCalendar / targetCalendar carry the collection ID
+    // for blob-domain mappings — same convention as existing blob tests).
+    SyncMapping mapping;
+    mapping.id             = QString::fromLatin1(kMapId);
+    mapping.sourceBackend  = QString::fromLatin1(kSrcId);
+    mapping.sourceCalendar = QString::fromLatin1(kColId);
+    mapping.targetBackend  = QString::fromLatin1(kTgtId);
+    mapping.targetCalendar = QString::fromLatin1(kColId);
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::SourceWins;
+    mapping.enabled        = true;
+
+    m_engine->setSyncMappings({ mapping });
+}
+
+void TstEngineMirrorDirection::cleanup()
+{
+    m_engine.reset();
+    m_host.reset();
+    m_tgt.reset();
+    m_src.reset();
+    m_registry.reset();
+}
+
+// ---- MirrorAToB -------------------------------------------------------------
+//
+// src = {a, b}   tgt = {b (different payload), c}
+//
+// Expected after MirrorAToB:
+//   tgt = {a, b}   (a added, b updated to src's version, c deleted)
+//
+// The Task-7 stub ignores the override and falls through to the normal
+// two-way path, which will leave tgt with {a, b, c} (all three records,
+// since neither side knows about each other's new records as baseline-less
+// two-way treats them as new-on-each-side).
+
+void TstEngineMirrorDirection::mirrorAToB_targetBecomesExactCopyOfSource()
+{
+    // Pre-populate
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("a"), QStringLiteral("payload-a")));
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("b"), QStringLiteral("src-payload-b")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("b"), QStringLiteral("tgt-payload-b")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("c"), QStringLiteral("payload-c")));
+
+    ExecutionOverride ov;
+    ov.direction = ExecutionOverride::Direction::MirrorAToB;
+
+    QFuture<SyncResult> future = m_engine->runSyncFuture(
+        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    const SyncResult result = future.resultAt(0);
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Target must now be an exact mirror of source: records {a, b}.
+    // Record "c" (target-only) must be deleted.
+    // Record "a" (source-only) must be created in target.
+    // Record "b" must have src's payload.
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 2);
+    QVERIFY2(tgtRecs.contains(QStringLiteral("a")),
+             "Target should contain record 'a' (added from source)");
+    QVERIFY2(tgtRecs.contains(QStringLiteral("b")),
+             "Target should contain record 'b'");
+    QVERIFY2(!tgtRecs.contains(QStringLiteral("c")),
+             "Target should NOT contain record 'c' (target-only; mirror deletes it)");
+    QCOMPARE(tgtRecs.value(QStringLiteral("b")).data,
+             QByteArrayLiteral("src-payload-b"));
+
+    // Source must be untouched.
+    const auto srcRecs = m_src->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(srcRecs.size(), 2);
+    QVERIFY(srcRecs.contains(QStringLiteral("a")));
+    QVERIFY(srcRecs.contains(QStringLiteral("b")));
+}
+
+// ---- MirrorBToA -------------------------------------------------------------
+//
+// src = {a}   tgt = {b}
+//
+// Expected after MirrorBToA:
+//   src = {b}   (a deleted, b created from target)
+//
+// The Task-7 stub leaves src with {a, b} (two-way propagation).
+
+void TstEngineMirrorDirection::mirrorBToA_sourceBecomesExactCopyOfTarget()
+{
+    // Pre-populate
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("a"), QStringLiteral("payload-a")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("b"), QStringLiteral("payload-b")));
+
+    ExecutionOverride ov;
+    ov.direction = ExecutionOverride::Direction::MirrorBToA;
+
+    QFuture<SyncResult> future = m_engine->runSyncFuture(
+        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    const SyncResult result = future.resultAt(0);
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Source must now be an exact mirror of target: record {b} only.
+    const auto srcRecs = m_src->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(srcRecs.size(), 1);
+    QVERIFY2(!srcRecs.contains(QStringLiteral("a")),
+             "Source should NOT contain record 'a' (source-only; mirror deletes it)");
+    QVERIFY2(srcRecs.contains(QStringLiteral("b")),
+             "Source should contain record 'b' (copied from target)");
+
+    // Target must be untouched.
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 1);
+    QVERIFY(tgtRecs.contains(QStringLiteral("b")));
+}
+
+QTEST_MAIN(TstEngineMirrorDirection)
+#include "tst_engine_mirror_direction.moc"

@@ -41,18 +41,8 @@ class ConflictManager;
 class DecSyncActiveController;
 class SyncEngine;
 
-/// Per-call execution override for runSyncFuture(). Lets callers
-/// request mirror-direction semantics for a mapping that's
-/// otherwise configured for bidirectional sync. Used by WildPalms's
-/// Tools-menu Copy Palm→PC / Copy PC→Palm actions.
-struct ExecutionOverride {
-    enum class Direction {
-        Default,      ///< Use the mapping's stored direction (today: bidirectional).
-        MirrorAToB,   ///< One-way: source overwrites target; target-only records deleted.
-        MirrorBToA,   ///< One-way: target overwrites source; source-only records deleted.
-    };
-    Direction direction = Direction::Default;
-};
+// ExecutionOverride lives in synctypes.h (moved Task 9 to avoid include
+// cycles between syncengine.h and idomainadapter.h).
 
 namespace QSyncCore {
     class ConflictStore;
@@ -103,6 +93,7 @@ public:
         Mode mode = Mode::Unmonitored;  ///< How to handle conflicts
         bool useQuickPath = false;  ///< Use fast 2-way diff (no baselines)
         QString collectionId;       ///< Collection ID for backend operations
+        ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
     };
 
     explicit SyncEngineWorker(const TranscodingRouter &router, QObject *parent = nullptr);
@@ -802,6 +793,13 @@ private:
     bool m_cancelled = false;
     int m_currentMappingIndex = -1;
     SyncResult m_lastResult;
+
+    // Task 9: per-call override set by runSyncFuture(mappingId, override, ...)
+    // and consumed + cleared by processSingleMapping before dispatching the
+    // worker Request. Cleared to Default after embedding in the Request so
+    // a subsequent no-override runSyncFuture(mappingId, ...) call does not
+    // inherit it.
+    ExecutionOverride m_pendingOverride;
 
     // F2 Task 21: which entry-path drove the current run. Read by
     // onWorkerSyncCompleted to decide whether to advance the queue

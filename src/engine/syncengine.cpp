@@ -380,6 +380,10 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
                 : SyncEngineWorker::Mode::Unmonitored;
             request.collectionId = m_collection ? m_collection->id() : QString();
             request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
+            // Task 9: embed the per-call override (if any) and clear it so the
+            // next no-override call doesn't accidentally inherit it.
+            request.override = m_pendingOverride;
+            m_pendingOverride = ExecutionOverride{};
 
             // Invoke worker in its thread
             QMetaObject::invokeMethod(m_worker, "processSync",
@@ -466,9 +470,11 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     const ExecutionOverride &override,
     SyncBehavior behavior)
 {
-    Q_UNUSED(override);
-    // Stub: ignore override, route through the existing overload.
-    // Mirror semantics land in Task 9.
+    // Store the override so processSingleMapping can embed it in the
+    // Request that gets marshalled to the worker. The override is a
+    // per-call value; it travels inside Request (no separate cross-thread
+    // setter needed — Request is already Q_ARG-marshalled as a value copy).
+    m_pendingOverride = override;
     return runSyncFuture(mappingId, behavior);
 }
 
@@ -2061,18 +2067,28 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
         sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
 
     const ConflictResolution policy = ConflictResolution::SourceWins;
-    const EngineMerge engineMerge = adapter.merge(engineDiff, policy);
+    // Task 9: pass the per-call override from the Request into merge().
+    // The override was embedded in the Request by processSingleMapping
+    // (on the engine thread) before the worker was dispatched.
+    const EngineMerge engineMerge = adapter.merge(engineDiff, policy, request.override);
 
     emit phaseChanged(mappingId, 4);
 
     // --- Apply to target (cross-thread) ---
+    // Load current target records first so we can distinguish create vs
+    // update (a record whose id is not already in the backend needs
+    // createRecord, not updateRecord — mirrors produce Creates for
+    // source-only records).
     if (!engineMerge.finalTarget.isEmpty()) {
         const QList<BackendRecord> toWrite = engineMerge.finalTarget;
         QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite]() {
+            QHash<QString, bool> existing;
+            for (const auto &r : tgtBlob->loadRecords(tgtColId))
+                existing.insert(r.id, true);
             for (const auto &rec : toWrite) {
                 if (rec.isDeleted) {
                     tgtBlob->deleteRecord(rec.id);
-                } else if (!rec.id.isEmpty()) {
+                } else if (existing.contains(rec.id)) {
                     tgtBlob->updateRecord(rec);
                 } else {
                     tgtBlob->createRecord(tgtColId, rec);
@@ -2082,13 +2098,17 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     }
 
     // --- Apply to source (cross-thread) ---
+    // Same existence-check pattern as the target apply above.
     if (!engineMerge.finalSource.isEmpty()) {
         const QList<BackendRecord> toWrite = engineMerge.finalSource;
         QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite]() {
+            QHash<QString, bool> existing;
+            for (const auto &r : srcBlob->loadRecords(srcColId))
+                existing.insert(r.id, true);
             for (const auto &rec : toWrite) {
                 if (rec.isDeleted) {
                     srcBlob->deleteRecord(rec.id);
-                } else if (!rec.id.isEmpty()) {
+                } else if (existing.contains(rec.id)) {
                     srcBlob->updateRecord(rec);
                 } else {
                     srcBlob->createRecord(srcColId, rec);

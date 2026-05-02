@@ -187,8 +187,126 @@ EngineDiff BlobDomainAdapter::diff(
 }
 
 EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
-                                     ConflictResolution policy) const
+                                     ConflictResolution policy,
+                                     const ExecutionOverride &override) const
 {
+    // Mirror-direction handling: MirrorAToB / MirrorBToA bypass the
+    // normal 3-way merge and instead produce a one-way copy. The diff's
+    // toTarget / toSource lists are not used here; we derive the writes
+    // directly from the raw diff by interpreting every record relative to
+    // the requested direction.
+    //
+    // MirrorAToB — source (A) is authoritative; target (B) becomes a
+    //   copy of source:
+    //   - Create / Update on source side → push to target.
+    //   - Target-only records → delete from target.
+    //   - Conflicts → source wins unconditionally.
+    //
+    // MirrorBToA — target (B) is authoritative; source (A) becomes a
+    //   copy of target:
+    //   - Create / Update on target side → push to source.
+    //   - Source-only records → delete from source.
+    //   - Conflicts → target wins unconditionally.
+    //
+    // The diff's toTarget list contains:
+    //   - Create / Update ops for records that originate on the source
+    //     (source-only or source-changed).
+    //   - Conflict ops for records changed on both sides.
+    // The diff's toSource list contains:
+    //   - Create / Update ops for records that originate on the target
+    //     (target-only or target-changed).
+    //   - Delete ops when source was deleted (was in baseline, now absent
+    //     from source).
+
+    using Direction = ExecutionOverride::Direction;
+
+    if (override.direction == Direction::MirrorAToB) {
+        // Push everything that originated on source to target; delete
+        // everything that is target-only (appears in toSource as Create).
+        EngineMerge m;
+
+        for (const auto &op : d.toTarget) {
+            if (op.kind == EngineDiffOp::Kind::Create
+                || op.kind == EngineDiffOp::Kind::Update) {
+                // Source record must be written to target.
+                m.finalTarget.append(op.record);
+                m.updatedBaselines.append(op.record);
+            } else if (op.kind == EngineDiffOp::Kind::Conflict) {
+                // Conflict: source wins — push source record to target.
+                m.finalTarget.append(op.record);
+                m.updatedBaselines.append(op.record);
+                ++m.conflictsResolved;
+            }
+            // Delete ops in toTarget mean "source deleted a record that
+            // was in baseline" — carry through to target.
+            else if (op.kind == EngineDiffOp::Kind::Delete) {
+                BackendRecord doomed = op.record;
+                doomed.isDeleted = true;
+                m.finalTarget.append(doomed);
+            }
+        }
+
+        // Target-only records appear in toSource as Create ops (no
+        // baseline, not in source). Mirror semantics: delete them from
+        // target.
+        for (const auto &op : d.toSource) {
+            if (op.kind == EngineDiffOp::Kind::Create) {
+                // Record exists only on target; delete it from target.
+                BackendRecord doomed = op.record;
+                doomed.isDeleted = true;
+                m.finalTarget.append(doomed);
+            }
+            // Update / Delete ops in toSource mean target-changed or
+            // target-deleted records. Mirror ignores target changes.
+        }
+
+        return m;
+    }
+
+    if (override.direction == Direction::MirrorBToA) {
+        // Symmetric: push everything from target to source; delete
+        // everything that is source-only.
+        EngineMerge m;
+
+        for (const auto &op : d.toSource) {
+            if (op.kind == EngineDiffOp::Kind::Create
+                || op.kind == EngineDiffOp::Kind::Update) {
+                // Target record must be written to source.
+                m.finalSource.append(op.record);
+                m.updatedBaselines.append(op.record);
+            } else if (op.kind == EngineDiffOp::Kind::Delete) {
+                // Target deleted a record that was in baseline — carry
+                // through to source.
+                BackendRecord doomed = op.record;
+                doomed.isDeleted = true;
+                m.finalSource.append(doomed);
+            }
+        }
+
+        // Conflict ops land in toTarget. For MirrorBToA target wins — push
+        // the target record (op.targetRecord) to source.
+        for (const auto &op : d.toTarget) {
+            if (op.kind == EngineDiffOp::Kind::Conflict) {
+                m.finalSource.append(op.targetRecord);
+                m.updatedBaselines.append(op.targetRecord);
+                ++m.conflictsResolved;
+            }
+            // Source-only records appear in toTarget as Create ops — delete
+            // them from source.
+            else if (op.kind == EngineDiffOp::Kind::Create) {
+                BackendRecord doomed = op.record;
+                doomed.isDeleted = true;
+                m.finalSource.append(doomed);
+            }
+            // Source-changed records (Update) are overridden by target —
+            // mirror ignores source changes; no finalSource write needed
+            // (target record hasn't changed, nothing to push).
+        }
+
+        return m;
+    }
+
+    // Default: bidirectional merge (unchanged behavior).
     EngineMerge m;
 
     auto routeOp = [&m](const EngineDiffOp &op, bool toTarget) {

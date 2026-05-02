@@ -62,9 +62,13 @@ public:
                             const BackendCapabilities& targetCaps) const = 0;
 
     /// Resolve conflicts in the diff according to policy and produce
-    /// the merged record set.
+    /// the merged record set. The optional override lets callers
+    /// request mirror-direction semantics (MirrorAToB / MirrorBToA)
+    /// without persisting that direction on the mapping. Defaults to
+    /// ExecutionOverride{} (Direction::Default = bidirectional merge).
     virtual EngineMerge merge(const EngineDiff& diff,
-                              ConflictResolution policy) const = 0;
+                              ConflictResolution policy,
+                              const ExecutionOverride& override = {}) const = 0;
 
     /// Apply the merged result to the destination backend. Returns
     /// the new baseline records (one per applied write) on success;
