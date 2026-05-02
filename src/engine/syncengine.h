@@ -4,7 +4,6 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "blobdomainadapter.h"
-#include "blobsyncresult.h"  // BlobSyncResult / BlobSyncStats — split out F1 Task 10
 #include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "mappingscheduler.h"

@@ -6,9 +6,6 @@
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
 #include "iblobbackend.h"
-#include "conflictpolicy.h"
-#include "conflictrecord.h"
-#include "conflictstore.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
 #include "backendregistry.h"
@@ -1658,14 +1655,17 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
 
     IBlobBackend *src = asBlob(srcBackend);
 
-    BlobSyncResult blobResult;
+    // Task 14: replaced BlobSyncResult/BlobSyncStats (now deleted) with a
+    // plain error counter — the struct's errorMessage was never populated
+    // so the failure branch logged an empty string regardless.
+    int mirrorErrors = 0;
 
     // Task 10: inline the runBlobMirror body directly so Task 13 can
     // delete the F1 facade without leaving a dangling internal caller.
     // Marshalled to the source backend's thread because we walk both
     // backends synchronously (same threading requirement as the old call).
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, &blobResult]() {
+        [src, tgt, colId, &mirrorErrors]() {
             const auto srcRecords = src->loadRecords(colId);
             const auto tgtRecords = tgt->loadRecords(colId);
             const auto tgtById    = indexBlobById(tgtRecords);
@@ -1674,21 +1674,13 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
             for (const auto &sr : srcRecords) {
                 const auto it = tgtById.constFind(sr.id);
                 if (it == tgtById.constEnd()) {
-                    if (tgt->createRecord(colId, sr).isEmpty()) {
-                        ++blobResult.targetStats.errors;
-                    } else {
-                        ++blobResult.targetStats.created;
-                    }
+                    if (tgt->createRecord(colId, sr).isEmpty())
+                        ++mirrorErrors;
                 } else if (it.value().contentHash != sr.contentHash) {
                     BackendRecord out = sr;
                     out.id = it.value().id;
-                    if (!tgt->updateRecord(out)) {
-                        ++blobResult.targetStats.errors;
-                    } else {
-                        ++blobResult.targetStats.updated;
-                    }
-                } else {
-                    ++blobResult.targetStats.unchanged;
+                    if (!tgt->updateRecord(out))
+                        ++mirrorErrors;
                 }
             }
 
@@ -1696,23 +1688,17 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
             const auto srcById = indexBlobById(srcRecords);
             for (const auto &tr : tgtRecords) {
                 if (!srcById.contains(tr.id)) {
-                    if (!tgt->deleteRecord(tr.id)) {
-                        ++blobResult.targetStats.errors;
-                    } else {
-                        ++blobResult.targetStats.deleted;
-                    }
+                    if (!tgt->deleteRecord(tr.id))
+                        ++mirrorErrors;
                 }
             }
-
-            blobResult.success = (blobResult.targetStats.errors == 0);
         }, Qt::BlockingQueuedConnection);
 
     SyncResult result;
-    if (!blobResult.success) {
+    if (mirrorErrors > 0) {
         result.success = false;
-        result.errorMessage = blobResult.errorMessage;
         qWarning() << "SyncEngineWorker::dispatchFirstSync - blob mirror failed:"
-                   << blobResult.errorMessage;
+                   << mirrorErrors << "error(s)";
         emit syncCompleted(request.mapping.id, result);
         return true;
     }
