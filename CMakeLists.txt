@@ -223,7 +223,6 @@ set(KALBURATOR_DISCOVERY_SOURCES
 set(KALBURATOR_BLOB_HEADERS
     src/blob/blobdomainadapter.h
     src/blob/blobdomainplugin.h
-    src/blob/blobsyncresult.h
     src/blob/iblobbackend.h
     src/blob/localblobbackend.h
     src/blob/mockblobbackend.h
