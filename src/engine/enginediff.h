@@ -28,7 +28,10 @@ struct EngineDiffOp
     BackendRecord record;          ///< Create/Update: new state.
                                    ///  Delete: id-shaped doomed record.
                                    ///  Conflict: source-side record.
-    BackendRecord targetRecord;    ///< populated only for Conflict
+    BackendRecord targetRecord;    ///< Conflict: target-side record.
+                                   ///  toTarget Update (sChanged && !tChanged):
+                                   ///  target's current (unchanged) record, used
+                                   ///  by MirrorBToA. Zero-initialized otherwise.
     BackendRecord baselineRecord;  ///< populated for Update/Delete/Conflict
 };
 
