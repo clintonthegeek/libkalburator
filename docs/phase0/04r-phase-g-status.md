@@ -13,15 +13,18 @@
 - G.5 New domain plugins — ✅ landed 2026-05-01
 - G.6 BlobDomainAdapter dispatch + MappingScheduler — ✅ landed 2026-05-01
 - G.7 WildPalms transformation — ⏳ partial (Tasks 48-54 landed; Task 55 SyncRunner deletion deferred — deep integration with DeviceSession/DeviceWorker makes it a separate migration step)
-- G.8 F1 facade deletion + universal sinks — ⏳ partial (Tasks 59-61 landed: RawFilesBackend, GenericSqliteBackend, 29 tests; Tasks 55/58 deferred — 40+ WildPalms callers of runBlobTwoWay/runBlobMirror use IBlobBackend* not SyncBackend*)
+- G.8 F1 facade deletion + universal sinks — ✅ landed (Tasks 59-61: RawFilesBackend, GenericSqliteBackend, 29 tests; Tasks 55/58 facade half landed 2026-05-01 via Palm rewrite M1 — `runBlobMirror`/`runBlobTwoWay` deleted; SyncRunner_wp deletion deferred to Palm rewrite Plan 2)
 - G.9 ISyncHost narrowing + sync I/O retirement — ✅ landed 2026-05-01
 - G.10 Loss profile UX + new stock backends — ✅ landed 2026-05-01
 
 **Last task completed:** Task 90 (G.10 — retire 2-arg pushItems virtual; verify-all green)
 **Next task:** User to authorize tag `v0.16-phase-g-shape-pipeline`
-**Deferred:** Tasks 55/58 (SyncRunner_wp + F1 facade deletion); Task 84-87 (Akonadi/CardDAV
-  stock backends — kf6pim not installed); Task 89 (WildPalms mapping UI — no topology editor
-  in WildPalms).
+**Deferred:** ~~Tasks 55/58 (SyncRunner_wp + F1 facade deletion)~~ — F1 facade
+  (`runBlobMirror`/`runBlobTwoWay`) deleted 2026-05-01 as M1 of the Palm runtime rewrite
+  (see `~/dev/refactor-engine-merger/2026-05-01-palm-runtime-rewrite-design.md` +
+  `plan-1-libkalburator.md`). SyncRunner_wp deletion deferred to Plan 2 (M6) of that
+  rewrite. Task 84-87 (Akonadi/CardDAV stock backends — kf6pim not installed); Task 89
+  (WildPalms mapping UI — no topology editor in WildPalms).
 
 ## What landed in G.1
 
