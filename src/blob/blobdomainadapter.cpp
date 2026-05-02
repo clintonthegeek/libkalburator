@@ -25,12 +25,18 @@ QHash<QString, BackendRecord> indexById(const QList<BackendRecord> &records)
 }
 
 EngineDiffOp makeUpdate(const BackendRecord &newState,
-                        const BackendRecord &baseline)
+                        const BackendRecord &baseline,
+                        const BackendRecord &otherSide = {})
 {
     EngineDiffOp op;
     op.kind = EngineDiffOp::Kind::Update;
     op.record = newState;
     op.baselineRecord = baseline;
+    op.targetRecord = otherSide;  // Carries the unchanged side's record.
+                                   // For toTarget Updates: the target's
+                                   // current (unchanged) state. Used by
+                                   // MirrorBToA to push target's version
+                                   // back to source.
     return op;
 }
 
@@ -157,7 +163,10 @@ EngineDiff BlobDomainAdapter::diff(
                 continue;
             }
             if (sChanged && !tChanged) {
-                result.toTarget.append(makeUpdate(sRec, bRec));
+                // Pass tRec as otherSide so MirrorBToA can push target's
+                // current (unchanged) version to source without a second
+                // lookup.
+                result.toTarget.append(makeUpdate(sRec, bRec, tRec));
             } else if (!sChanged && tChanged) {
                 result.toSource.append(makeUpdate(tRec, bRec));
             } else {
@@ -188,7 +197,7 @@ EngineDiff BlobDomainAdapter::diff(
 
 EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
                                      ConflictResolution policy,
-                                     const ExecutionOverride &override) const
+                                     const ExecutionOverride &executionOverride) const
 {
     // Mirror-direction handling: MirrorAToB / MirrorBToA bypass the
     // normal 3-way merge and instead produce a one-way copy. The diff's
@@ -220,7 +229,7 @@ EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
 
     using Direction = ExecutionOverride::Direction;
 
-    if (override.direction == Direction::MirrorAToB) {
+    if (executionOverride.direction == Direction::MirrorAToB) {
         // Push everything that originated on source to target; delete
         // everything that is target-only (appears in toSource as Create).
         EngineMerge m;
@@ -263,7 +272,7 @@ EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
         return m;
     }
 
-    if (override.direction == Direction::MirrorBToA) {
+    if (executionOverride.direction == Direction::MirrorBToA) {
         // Symmetric: push everything from target to source; delete
         // everything that is source-only.
         EngineMerge m;
@@ -298,9 +307,15 @@ EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
                 doomed.isDeleted = true;
                 m.finalSource.append(doomed);
             }
-            // Source-changed records (Update) are overridden by target —
-            // mirror ignores source changes; no finalSource write needed
-            // (target record hasn't changed, nothing to push).
+            else if (op.kind == EngineDiffOp::Kind::Update) {
+                // Source changed vs baseline; target unchanged.
+                // MirrorBToA semantics: target wins — push target's current
+                // (unchanged) version to source. op.targetRecord carries
+                // target's full record (set by diff() for the sChanged &&
+                // !tChanged case).
+                m.finalSource.append(op.targetRecord);
+                m.updatedBaselines.append(op.targetRecord);
+            }
         }
 
         return m;

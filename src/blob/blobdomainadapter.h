@@ -72,7 +72,7 @@ public:
 
     EngineMerge merge(const EngineDiff& diff,
                       ConflictResolution policy,
-                      const ExecutionOverride& override = {}) const override;
+                      const ExecutionOverride& executionOverride = {}) const override;
 
     EngineApplyResult applyChanges(const EngineMerge& merge,
                                    SyncBackend* destination,

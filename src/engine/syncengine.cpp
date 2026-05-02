@@ -467,14 +467,14 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
 
 QFuture<SyncResult> SyncEngine::runSyncFuture(
     const QString &mappingId,
-    const ExecutionOverride &override,
+    const ExecutionOverride &executionOverride,
     SyncBehavior behavior)
 {
-    // Store the override so processSingleMapping can embed it in the
-    // Request that gets marshalled to the worker. The override is a
-    // per-call value; it travels inside Request (no separate cross-thread
-    // setter needed — Request is already Q_ARG-marshalled as a value copy).
-    m_pendingOverride = override;
+    // Safe: the m_isSyncing guard in the no-override overload ensures only
+    // one runSyncFuture call is in flight at a time. m_pendingOverride is
+    // read synchronously by processSingleMapping on this same thread before
+    // returning, then cleared.
+    m_pendingOverride = executionOverride;
     return runSyncFuture(mappingId, behavior);
 }
 
@@ -2075,20 +2075,27 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     emit phaseChanged(mappingId, 4);
 
     // --- Apply to target (cross-thread) ---
-    // Load current target records first so we can distinguish create vs
-    // update (a record whose id is not already in the backend needs
-    // createRecord, not updateRecord — mirrors produce Creates for
-    // source-only records).
+    // Mirror paths may produce Creates for records that don't yet exist on
+    // the target; the existence-check loadRecords is needed only in that
+    // case. Bidirectional two-way diffs never produce novel-id Creates (each
+    // side's new records appear as Create ops pointing at *their own* backend,
+    // so the destination always already holds the record or it's truly new).
+    // Guard the extra loadRecords call behind the override check to avoid the
+    // round-trip on the common bidirectional path.
+    const bool isMirrorPath =
+        (request.override.direction != ExecutionOverride::Direction::Default);
     if (!engineMerge.finalTarget.isEmpty()) {
         const QList<BackendRecord> toWrite = engineMerge.finalTarget;
-        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite]() {
+        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite, isMirrorPath]() {
             QHash<QString, bool> existing;
-            for (const auto &r : tgtBlob->loadRecords(tgtColId))
-                existing.insert(r.id, true);
+            if (isMirrorPath) {
+                for (const auto &r : tgtBlob->loadRecords(tgtColId))
+                    existing.insert(r.id, true);
+            }
             for (const auto &rec : toWrite) {
                 if (rec.isDeleted) {
                     tgtBlob->deleteRecord(rec.id);
-                } else if (existing.contains(rec.id)) {
+                } else if (!isMirrorPath || existing.contains(rec.id)) {
                     tgtBlob->updateRecord(rec);
                 } else {
                     tgtBlob->createRecord(tgtColId, rec);
@@ -2098,17 +2105,19 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     }
 
     // --- Apply to source (cross-thread) ---
-    // Same existence-check pattern as the target apply above.
+    // Same mirror-guarded existence-check pattern as the target apply above.
     if (!engineMerge.finalSource.isEmpty()) {
         const QList<BackendRecord> toWrite = engineMerge.finalSource;
-        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite]() {
+        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite, isMirrorPath]() {
             QHash<QString, bool> existing;
-            for (const auto &r : srcBlob->loadRecords(srcColId))
-                existing.insert(r.id, true);
+            if (isMirrorPath) {
+                for (const auto &r : srcBlob->loadRecords(srcColId))
+                    existing.insert(r.id, true);
+            }
             for (const auto &rec : toWrite) {
                 if (rec.isDeleted) {
                     srcBlob->deleteRecord(rec.id);
-                } else if (existing.contains(rec.id)) {
+                } else if (!isMirrorPath || existing.contains(rec.id)) {
                     srcBlob->updateRecord(rec);
                 } else {
                     srcBlob->createRecord(srcColId, rec);

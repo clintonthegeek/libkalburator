@@ -260,15 +260,16 @@ EngineDiff CalendarDomainAdapter::diff(
 
 EngineMerge CalendarDomainAdapter::merge(const EngineDiff &d,
                                          ConflictResolution policy,
-                                         const ExecutionOverride &override) const
+                                         const ExecutionOverride &executionOverride) const
 {
-    Q_ASSERT_X(override.direction == ExecutionOverride::Direction::Default,
-               "CalendarDomainAdapter::merge",
-               "Non-Default ExecutionOverride::Direction is not implemented "
-               "for the calendar domain. Calendar mirror semantics are not "
-               "a current requirement; use a blob-domain mapping for mirror "
-               "operations (WildPalms Copy modes target blob mappings).");
-    Q_UNUSED(override);
+    if (executionOverride.direction != ExecutionOverride::Direction::Default) {
+        qWarning("CalendarDomainAdapter::merge: non-Default ExecutionOverride "
+                 "is not implemented; falling back to bidirectional merge. "
+                 "Use a blob-domain mapping for mirror operations.");
+        Q_ASSERT_X(false, "CalendarDomainAdapter::merge",
+                   "calendar adapter does not implement mirror direction");
+    }
+    Q_UNUSED(executionOverride);
 
 
     EngineMerge m;

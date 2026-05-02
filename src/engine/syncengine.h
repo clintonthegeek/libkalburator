@@ -531,7 +531,7 @@ public:
      */
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
-        const ExecutionOverride &override,
+        const ExecutionOverride &executionOverride,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
     /**

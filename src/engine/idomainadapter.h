@@ -68,7 +68,7 @@ public:
     /// ExecutionOverride{} (Direction::Default = bidirectional merge).
     virtual EngineMerge merge(const EngineDiff& diff,
                               ConflictResolution policy,
-                              const ExecutionOverride& override = {}) const = 0;
+                              const ExecutionOverride& executionOverride = {}) const = 0;
 
     /// Apply the merged result to the destination backend. Returns
     /// the new baseline records (one per applied write) on success;

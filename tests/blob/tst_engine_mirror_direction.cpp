@@ -18,8 +18,10 @@
 #include <QtTest/QtTest>
 #include <QHash>
 #include <QList>
+#include <QTemporaryDir>
 
 #include "backendregistry.h"
+#include "blobbaselinestore.h"
 #include "isynchost.h"
 #include "isyncconfigstore.h"
 #include "logicalcalendar.h"
@@ -230,6 +232,23 @@ CollectionInfo makeCollection(const QString &id)
 
 static constexpr int kTimeoutMs = 5000;
 
+/// Seed a baseline into a BlobBaselineStore using the v3 mapping-keyed API.
+/// contentHash is stored as the canonical blob data (same encoding as
+/// BlobDomainAdapter::saveBaselines uses).
+void seedBaseline(Kalburator::Sync::BlobBaselineStore &store,
+                  const QString &mappingId,
+                  const QString &recordId,
+                  const QString &contentHash)
+{
+    Kalburator::Shape::CanonicalRecord rec;
+    rec.recordId = recordId;
+    rec.shape    = Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("blob")},
+        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+    rec.data = contentHash.toUtf8();
+    store.setBaselineV3(mappingId, rec);
+}
+
 } // namespace
 
 // ============================================================================
@@ -246,6 +265,10 @@ private slots:
 
     // MirrorBToA: source becomes an exact copy of target (deletions applied)
     void mirrorBToA_sourceBecomesExactCopyOfTarget();
+
+    // Regression: MirrorBToA must overwrite source-changed records with
+    // target's (= baseline) version, not silently skip them.
+    void mirrorBToA_overwritesSourceChangedRecord();
 
 private:
     static constexpr const char *kSrcId  = "blob-src";
@@ -399,6 +422,96 @@ void TstEngineMirrorDirection::mirrorBToA_sourceBecomesExactCopyOfTarget()
     const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
     QCOMPARE(tgtRecs.size(), 1);
     QVERIFY(tgtRecs.contains(QStringLiteral("b")));
+}
+
+// ---- MirrorBToA overwrite regression ----------------------------------------
+//
+// Setup: both src and tgt originally held record "shared" with payload-v1
+// (baseline = v1). Source subsequently modified "shared" to payload-v2.
+// Target kept the original (v1). No other records exist.
+//
+// After MirrorBToA:
+//   src "shared" must have payload-v1  (target's version = baseline version)
+//   tgt must be untouched              (payload-v1, unchanged)
+//
+// Before the fix, the MirrorBToA Update arm was silently skipped, so src
+// retained its local payload-v2 modification.
+
+void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
+{
+    // Need a BlobBaselineStore to seed the baseline so the diff classifies
+    // src's modification as an Update (not a Create). Use a separate temp
+    // engine so the baseline store is attached correctly.
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const QString dbPath = tmpDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Sync::BlobBaselineStore blobBaselines(dbPath);
+    QVERIFY(blobBaselines.isOpen());
+
+    // Seed baseline: "shared" at v1 (the original shared state).
+    seedBaseline(blobBaselines, QString::fromLatin1(kMapId),
+                 QStringLiteral("shared"),
+                 QStringLiteral("hash-of-payload-v1"));
+
+    // Build a fresh registry / backends / engine with the baseline store.
+    BackendRegistry registry;
+    IdentifiedBlobSyncBackend src(QString::fromLatin1(kSrcId));
+    IdentifiedBlobSyncBackend tgt(QString::fromLatin1(kTgtId));
+    registry.registerBackendInstance(QString::fromLatin1(kSrcId), &src);
+    registry.registerBackendInstance(QString::fromLatin1(kTgtId), &tgt);
+
+    MinimalSyncHost host(&registry);
+    SyncEngine engine(&registry, &host);
+    engine.setBlobBaselineStore(&blobBaselines);
+
+    src.createCollection(makeCollection(QString::fromLatin1(kColId)));
+    tgt.createCollection(makeCollection(QString::fromLatin1(kColId)));
+
+    SyncMapping mapping;
+    mapping.id             = QString::fromLatin1(kMapId);
+    mapping.sourceBackend  = QString::fromLatin1(kSrcId);
+    mapping.sourceCalendar = QString::fromLatin1(kColId);
+    mapping.targetBackend  = QString::fromLatin1(kTgtId);
+    mapping.targetCalendar = QString::fromLatin1(kColId);
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::SourceWins;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    // Src has the locally-modified version (v2); tgt retains the original (v1).
+    src.createRecord(QString::fromLatin1(kColId),
+                     makeRecord(QStringLiteral("shared"),
+                                QStringLiteral("payload-v2")));
+    tgt.createRecord(QString::fromLatin1(kColId),
+                     makeRecord(QStringLiteral("shared"),
+                                QStringLiteral("payload-v1")));
+
+    ExecutionOverride ov;
+    ov.direction = ExecutionOverride::Direction::MirrorBToA;
+
+    QFuture<SyncResult> future = engine.runSyncFuture(
+        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    const SyncResult result = future.resultAt(0);
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Source must now hold target's (= baseline) version: payload-v1.
+    const auto srcRecs = src.recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(srcRecs.size(), 1);
+    QVERIFY2(srcRecs.contains(QStringLiteral("shared")),
+             "Source must still have 'shared' record");
+    QCOMPARE(srcRecs.value(QStringLiteral("shared")).data,
+             QByteArrayLiteral("payload-v1"));
+
+    // Target must be untouched: still payload-v1.
+    const auto tgtRecs = tgt.recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 1);
+    QCOMPARE(tgtRecs.value(QStringLiteral("shared")).data,
+             QByteArrayLiteral("payload-v1"));
 }
 
 QTEST_MAIN(TstEngineMirrorDirection)
