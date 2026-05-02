@@ -551,40 +551,6 @@ public:
         const QList<QString> &ids,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
-    // --- One-shot blob API (F1 Task 6) ---
-    //
-    // Synchronous blob-typed sync facade for ad-hoc callers (WildPalms's
-    // SyncRunner). Replaces the legacy BlobSyncEngine's twoWayWithBaseline
-    // / mirror, deleted in F1 Task 10. Behavior is byte-for-byte parity
-    // with the predecessor — only the call site changes. These run
-    // synchronously on the calling thread (no worker thread).
-
-    /// Three-way blob sync consulting a baseline store. Propagates
-    /// deletions correctly and dispatches conflicts to per-backend
-    /// handlers looked up via the registry. On success commits new
-    /// baselines reflecting the synced state.
-    /// @deprecated Use runSyncFuture() with a blob-domain SyncMapping instead.
-    ///             Will be deleted in G.8 after WildPalms migrates to HotSyncCoordinator.
-    [[deprecated("Use runSyncFuture() with a blob-domain SyncMapping; facade deleted in G.8")]]
-    BlobSyncResult runBlobTwoWay(IBlobBackend *a,
-                                 IBlobBackend *b,
-                                 const QString &collectionId,
-                                 const QString &mappingId,
-                                 BlobBaselineStore *baseline,
-                                 QSyncCore::ConflictHandlerRegistry *handlers,
-                                 QSyncCore::ConflictStore *conflicts,
-                                 const QSyncCore::ConflictPolicy &policy);
-
-    /// One-way mirror: source → target. Records present in target but
-    /// not in source are deleted; records present in both with
-    /// matching contentHash are left untouched.
-    /// @deprecated Use runSyncFuture() with a blob-domain SyncMapping instead.
-    ///             Will be deleted in G.8 after WildPalms migrates to HotSyncCoordinator.
-    [[deprecated("Use runSyncFuture() with a blob-domain SyncMapping; facade deleted in G.8")]]
-    BlobSyncResult runBlobMirror(IBlobBackend *source,
-                                 IBlobBackend *target,
-                                 const QString &collectionId);
-
     /**
      * @brief Resume sync after user resolves a conflict (monitored mode only).
      *
