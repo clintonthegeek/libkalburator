@@ -22,6 +22,16 @@ void TransformationRegistry::declareCanonical(DomainId domain, Shape canonical) 
         qWarning("TransformationRegistry::declareCanonical: domain is frozen — redeclaration ignored");
         return;
     }
+    if (m_canonicalByDomain.contains(domain)) {
+        const Shape existing = m_canonicalByDomain.value(domain);
+        if (existing != canonical) {
+            qCritical("TransformationRegistry::declareCanonical: "
+                      "conflicting canonical for same domain — "
+                      "second plugin must not redeclare; declaration ignored");
+            return;
+        }
+        return;  // idempotent same-value
+    }
     m_canonicalByDomain.insert(domain, canonical);
 }
 

@@ -308,9 +308,9 @@ private:
     BlobBaselineStore *m_blobBaselines = nullptr;
     ICalendarCollection *m_collection = nullptr;
     CalendarDomainAdapter *m_calendarAdapter = nullptr;
-    // F1 Task 10: back-pointer so dispatchFirstSync can drive the
-    // engine's own runBlobMirror facade, replacing the standalone
-    // BlobSyncEngine that was deleted alongside it.
+    // Back-pointer to the owning SyncEngine. dispatchBlobSync uses
+    // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
+    // access back to the engine thread.
     SyncEngine *m_engine = nullptr;
 
     Request m_currentRequest;

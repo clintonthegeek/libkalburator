@@ -1273,16 +1273,12 @@ void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,
 }
 
 // ---------------------------------------------------------------------------
-// One-shot blob API (F1 Task 6)
+// Blob sync helpers
 // ---------------------------------------------------------------------------
 //
-// Bodies lifted from the legacy BlobSyncEngine::twoWayWithBaseline / mirror
-// (deleted in F1 Task 10). Behavior parity is required for WildPalms's
-// migrated SyncRunner. Fetch is routed through
-// BlobDomainAdapter::fetchRecordsBlob; the rich ConflictHandlerRegistry /
-// ConflictStore / ConflictPolicy logic stays inline because the
-// IDomainAdapter::merge contract takes only ConflictResolution today
-// (de-singletonisation of the conflict registry is deferred to G).
+// Shared utilities used by dispatchBlobSync's two-way merge logic.
+// indexBlobById is called when building source/target lookup maps for
+// the diff step inside the blob sync worker path.
 namespace {
 
 QHash<QString, BackendRecord> indexBlobById(const QList<BackendRecord> &records)

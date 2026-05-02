@@ -151,6 +151,34 @@ private slots:
                  "post-freeze peer registration must not appear in compiled pipelines");
     }
 
+    void conflictingCanonicalDeclaration_isRejected() {
+        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<OfficeStubPlugin>());
+
+        // Second plugin redeclares canonical with a DIFFERENT shape.
+        // This must be rejected.
+        class ConflictingCanonicalPlugin : public OfficeStubPlugin {
+        public:
+            Shape canonicalShape() const override {
+                // Different from OfficeStubPlugin's {office, canonical}
+                return { DomainId{"office"}, EncodingId{"canonical-v2"} };
+            }
+            void registerEdges(TransformationRegistry& r) override {
+                r.registerShape(canonicalShape(), {});
+                r.declareCanonical(domain(), canonicalShape());
+            }
+        };
+        DomainRegistry::instance().registerPlugin(
+            std::make_shared<ConflictingCanonicalPlugin>());
+
+        // The original canonical must remain — the conflict was rejected.
+        const Shape originalCanonical { DomainId{"office"}, EncodingId{"canonical"} };
+        QCOMPARE(TransformationRegistry::instance().canonicalFor(DomainId{"office"}),
+                 originalCanonical);
+    }
+
     void multiplePluginsContributeToSameDomain_unionPeers() {
         DomainRegistry::instance().initialize(TransformationRegistry::instance());
 

@@ -83,14 +83,15 @@ public:
     bool                 saveBaselines(const QString& mappingId,
                                        const QList<BackendRecord>& baselines) override;
 
-    // --- IBlobBackend* helpers (one-shot path, used by SyncEngine::runBlob*) ---
+    // --- IBlobBackend* helpers (internal implementation helpers) ---
 
     /// IBlobBackend-typed equivalent of fetchRecords. Identical body.
+    /// Called internally by fetchRecords / applyChanges within this adapter.
     QList<BackendRecord> fetchRecordsBlob(IBlobBackend* backend,
                                           const QString& collectionId) const;
 
-    /// IBlobBackend-typed equivalent of applyChanges. Used by SyncEngine's
-    /// one-shot blob facade where the destination is plain IBlobBackend.
+    /// IBlobBackend-typed equivalent of applyChanges. Internal helper
+    /// called by applyChanges when the destination is a plain IBlobBackend.
     EngineApplyResult applyChangesBlob(const EngineMerge& merge,
                                        IBlobBackend* destination,
                                        const QString& collectionId);
