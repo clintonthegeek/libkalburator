@@ -1,27 +1,18 @@
 /// F1 Task 7 — engine boundary integration test
 ///
-/// Pins SyncEngine as the unified entry point for both calendar and
-/// blob domains. Three test methods:
+/// Pins SyncEngine as the unified entry point for the calendar domain.
+/// One test method remains after Task 12 pruning:
 ///
 ///  1. `runSync_calendarMapping_propagatesEvents` — drives a calendar
 ///     mapping through `SyncEngine::runSync()` (CalendarDomainAdapter
 ///     under the hood); confirms the per-mapping flow still works
 ///     after Tasks 4-5 collapsed `SyncCoordinator` and routed
 ///     through the adapter.
-///  2. `runBlobTwoWay_propagatesRecordsAndCommitsBaselines` — drives
-///     the blob one-shot facade (BlobDomainAdapter under the hood)
-///     directly on the same SyncEngine class; confirms the BlobDomain
-///     seam is reachable from the engine boundary.
-///  3. `mixedDomains_oneEngineDrivesBoth` — single SyncEngine
-///     instance runs a calendar sync and a blob mirror back-to-back
-///     without interference.
 ///
-/// The "registerAdapter() / synthetic SyncMapping with domain='blob'"
-/// path the design envisages for Phase G is intentionally out of
-/// scope here: F1's contract is that both domains reach the engine
-/// through clean entry points (calendar via `runSync`, blob via the
-/// one-shot facade). Phase G unifies these into a single
-/// `runSync` driven by mapping-domain dispatch.
+/// The blob-facade cases (`runBlobTwoWay_*`, `mixedDomains_*`) were
+/// removed in Task 12; their coverage moved to
+/// `tst_engine_mirror_direction` (Task 11). The facade methods they
+/// exercised are deleted in Task 13.
 
 #include <QtTest/QtTest>
 #include <QSignalSpy>
@@ -33,14 +24,9 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
 #include "calendarbaselinestore.h"
-#include "conflicthandlerregistry.h"
 #include "conflictmanager.h"
-#include "conflictpolicy.h"
-#include "conflictstore.h"
 #include "mockbackend.h"
-#include "mockblobbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
@@ -57,8 +43,6 @@ constexpr auto kTargetBackendId = "target-mock";
 constexpr auto kCollectionId    = "stub-collection";
 constexpr auto kCalendarId      = "calendar-1";
 constexpr auto kMappingId       = "mapping-cal";
-constexpr auto kBlobMappingId   = "mapping-blob";
-constexpr auto kBlobCollection  = "memos";
 
 constexpr int kSyncTimeoutMs = 5000;
 
@@ -85,27 +69,6 @@ SyncMapping makeCalendarMapping()
     return m;
 }
 
-BackendRecord makeBlobRecord(const QString &id, const QString &data)
-{
-    BackendRecord r;
-    r.id = id;
-    r.type = QStringLiteral("memo");
-    r.displayName = id;
-    r.data = data.toUtf8();
-    r.contentHash = QStringLiteral("hash-of-%1").arg(data);
-    r.lastModified = QDateTime::currentDateTimeUtc();
-    return r;
-}
-
-CollectionInfo makeBlobCollectionInfo(const QString &id)
-{
-    CollectionInfo c;
-    c.id = id;
-    c.name = id;
-    c.type = QStringLiteral("memos");
-    return c;
-}
-
 } // namespace
 
 class TestEngineUnifiedBoundary : public QObject
@@ -116,8 +79,6 @@ private slots:
     void cleanup();
 
     void runSync_calendarMapping_propagatesEvents();
-    void runBlobTwoWay_propagatesRecordsAndCommitsBaselines();
-    void mixedDomains_oneEngineDrivesBoth();
 
 private:
     bool runOneCalendarSync();
@@ -241,73 +202,6 @@ void TestEngineUnifiedBoundary::runSync_calendarMapping_propagatesEvents()
     QCOMPARE(m_calTarget->allUids(QString::fromLatin1(kCalendarId)).size(), 2);
 }
 
-void TestEngineUnifiedBoundary::runBlobTwoWay_propagatesRecordsAndCommitsBaselines()
-{
-    using namespace Kalburator::Sync::QSyncCore;
-
-    MockBlobBackend a, b;
-    a.createCollection(makeBlobCollectionInfo(QString::fromLatin1(kBlobCollection)));
-    b.createCollection(makeBlobCollectionInfo(QString::fromLatin1(kBlobCollection)));
-
-    a.createRecord(QString::fromLatin1(kBlobCollection),
-                   makeBlobRecord(QStringLiteral("blob-a"),
-                                   QStringLiteral("payload-a")));
-    b.createRecord(QString::fromLatin1(kBlobCollection),
-                   makeBlobRecord(QStringLiteral("blob-b"),
-                                   QStringLiteral("payload-b")));
-
-    BlobBaselineStore baseline(
-        m_tmpDir->filePath(QStringLiteral(".blob-baseline.db")));
-
-    ConflictHandlerRegistry handlers;
-    ConflictStore conflicts;
-    ConflictPolicy policy;
-
-    const auto r = m_engine->runBlobTwoWay(
-        &a, &b,
-        QString::fromLatin1(kBlobCollection),
-        QString::fromLatin1(kBlobMappingId),
-        &baseline, &handlers, &conflicts, policy);
-
-    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
-
-    // After two-way sync, both sides should hold both records.
-    QCOMPARE(a.loadRecords(QString::fromLatin1(kBlobCollection)).size(), 2);
-    QCOMPARE(b.loadRecords(QString::fromLatin1(kBlobCollection)).size(), 2);
-
-    // G.4: baselines now keyed by (mapping_id, record_id) in blob_baselines_v3.
-    const auto persisted = baseline.baselinesForMappingV3(
-        QString::fromLatin1(kBlobMappingId));
-    QCOMPARE(persisted.size(), 2);
-}
-
-void TestEngineUnifiedBoundary::mixedDomains_oneEngineDrivesBoth()
-{
-    // Drive the calendar path first.
-    m_calSource->addIncidence(QString::fromLatin1(kCalendarId),
-                              makeEvent(QStringLiteral("evt-cal"),
-                                        QStringLiteral("Calendar Event")));
-    QVERIFY(runOneCalendarSync());
-    QCOMPARE(m_calTarget->allUids(QString::fromLatin1(kCalendarId)).size(), 1);
-
-    // Then drive the blob path on the same engine instance.
-    MockBlobBackend src, tgt;
-    src.createCollection(makeBlobCollectionInfo(QString::fromLatin1(kBlobCollection)));
-    tgt.createCollection(makeBlobCollectionInfo(QString::fromLatin1(kBlobCollection)));
-    src.createRecord(QString::fromLatin1(kBlobCollection),
-                     makeBlobRecord(QStringLiteral("memo-1"),
-                                     QStringLiteral("note")));
-
-    const auto mirrorResult = m_engine->runBlobMirror(
-        &src, &tgt, QString::fromLatin1(kBlobCollection));
-
-    QVERIFY2(mirrorResult.success, qUtf8Printable(mirrorResult.errorMessage));
-    QCOMPARE(mirrorResult.targetStats.created, 1);
-    QCOMPARE(tgt.loadRecords(QString::fromLatin1(kBlobCollection)).size(), 1);
-
-    // The calendar side is undisturbed by the blob run.
-    QCOMPARE(m_calTarget->allUids(QString::fromLatin1(kCalendarId)).size(), 1);
-}
 
 QTEST_MAIN(TestEngineUnifiedBoundary)
 #include "tst_engine_unified_boundary.moc"
