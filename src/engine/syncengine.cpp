@@ -1840,9 +1840,10 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
 }
 
 // ----------------------------------------------------------------------------
-// First-sync dispatch via the engine's own blob mirror (Phase D Task 21;
-// originally routed through the standalone BlobSyncEngine, now routed
-// through SyncEngine::runBlobMirror per F1 Task 10).
+// First-sync dispatch via an inline blob mirror (Phase D Task 21;
+// originally routed through the standalone BlobSyncEngine, then through
+// SyncEngine::runBlobMirror (F1 Task 10); the self-call was inlined in
+// Task 10 ahead of runBlobMirror's deletion in Task 13).
 // ----------------------------------------------------------------------------
 
 bool SyncEngineWorker::dispatchFirstSync(const Request &request)
@@ -1876,43 +1877,65 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         return false;
     }
 
-    qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, routing via SyncEngine::runBlobMirror for"
+    qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, running inline blob mirror for"
              << request.mapping.id;
 
     IBlobBackend *src = asBlob(srcBackend);
 
-    // F1 Task 10: route via the engine's own one-shot blob facade
-    // (replaces the deleted standalone BlobSyncEngine). Marshalled to
-    // the source backend's main thread because runBlobMirror walks
-    // backends synchronously.
     BlobSyncResult blobResult;
-    SyncEngine *engine = m_engine;
 
-    if (!engine) {
-        SyncResult result;
-        result.success = false;
-        result.errorMessage = QStringLiteral(
-            "dispatchFirstSync: SyncEngineWorker has no engine pointer");
-        emit syncCompleted(request.mapping.id, result);
-        return true;
-    }
-
-    // Intentional use of deprecated facade — dispatchFirstSync is itself
-    // removed in G.8 when WildPalms migrates to HotSyncCoordinator.
-    QT_WARNING_PUSH
-    QT_WARNING_DISABLE_GCC("-Wdeprecated-declarations")
-    QT_WARNING_DISABLE_CLANG("-Wdeprecated-declarations")
+    // Task 10: inline the runBlobMirror body directly so Task 13 can
+    // delete the F1 facade without leaving a dangling internal caller.
+    // Marshalled to the source backend's thread because we walk both
+    // backends synchronously (same threading requirement as the old call).
     QMetaObject::invokeMethod(srcBackend,
-        [engine, src, tgt, colId, &blobResult]() {
-            blobResult = engine->runBlobMirror(src, tgt, colId);
+        [src, tgt, colId, &blobResult]() {
+            const auto srcRecords = src->loadRecords(colId);
+            const auto tgtRecords = tgt->loadRecords(colId);
+            const auto tgtById    = indexBlobById(tgtRecords);
+
+            // Copy source → target (create or update).
+            for (const auto &sr : srcRecords) {
+                const auto it = tgtById.constFind(sr.id);
+                if (it == tgtById.constEnd()) {
+                    if (tgt->createRecord(colId, sr).isEmpty()) {
+                        ++blobResult.targetStats.errors;
+                    } else {
+                        ++blobResult.targetStats.created;
+                    }
+                } else if (it.value().contentHash != sr.contentHash) {
+                    BackendRecord out = sr;
+                    out.id = it.value().id;
+                    if (!tgt->updateRecord(out)) {
+                        ++blobResult.targetStats.errors;
+                    } else {
+                        ++blobResult.targetStats.updated;
+                    }
+                } else {
+                    ++blobResult.targetStats.unchanged;
+                }
+            }
+
+            // Delete target records not in source.
+            const auto srcById = indexBlobById(srcRecords);
+            for (const auto &tr : tgtRecords) {
+                if (!srcById.contains(tr.id)) {
+                    if (!tgt->deleteRecord(tr.id)) {
+                        ++blobResult.targetStats.errors;
+                    } else {
+                        ++blobResult.targetStats.deleted;
+                    }
+                }
+            }
+
+            blobResult.success = (blobResult.targetStats.errors == 0);
         }, Qt::BlockingQueuedConnection);
-    QT_WARNING_POP
 
     SyncResult result;
     if (!blobResult.success) {
         result.success = false;
         result.errorMessage = blobResult.errorMessage;
-        qWarning() << "SyncEngineWorker::dispatchFirstSync - runBlobMirror failed:"
+        qWarning() << "SyncEngineWorker::dispatchFirstSync - blob mirror failed:"
                    << blobResult.errorMessage;
         emit syncCompleted(request.mapping.id, result);
         return true;
