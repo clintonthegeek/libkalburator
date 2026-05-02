@@ -263,6 +263,12 @@ private slots:
     // MirrorAToB: target becomes an exact copy of source (deletions applied)
     void mirrorAToB_targetBecomesExactCopyOfSource();
 
+    // MirrorAToB: target is empty to start — records created in target
+    void mirrorAToB_copiesSourceToEmptyTarget();
+
+    // MirrorAToB: records matching on both sides are left alone
+    void mirrorAToB_leavesMatchingRecordsAlone();
+
     // MirrorBToA: source becomes an exact copy of target (deletions applied)
     void mirrorBToA_sourceBecomesExactCopyOfTarget();
 
@@ -270,21 +276,57 @@ private slots:
     // target's (= baseline) version, not silently skip them.
     void mirrorBToA_overwritesSourceChangedRecord();
 
+    // TwoWay: no changes on either side — everything is unchanged
+    void twoWay_noChanges();
+
+    // TwoWay: record modified on source only — propagates to target
+    void twoWay_modifiedOnSourceOnly();
+
+    // TwoWay: record modified on target only — propagates to source
+    void twoWay_modifiedOnTargetOnly();
+
+    // TwoWay: record deleted on source — deletion propagates to target
+    void twoWay_deletedOnSource();
+
+    // TwoWay: record deleted on target — deletion propagates to source
+    void twoWay_deletedOnTarget();
+
+    // TwoWay: new record on source only — created on target
+    void twoWay_newOnSource();
+
+    // TwoWay: new record on target only — created on source
+    void twoWay_newOnTarget();
+
+    // TwoWay: both sides modified same record — source wins (SourceWins policy)
+    void twoWay_conflictSourceWins();
+
 private:
     static constexpr const char *kSrcId  = "blob-src";
     static constexpr const char *kTgtId  = "blob-tgt";
     static constexpr const char *kColId  = "col1";
     static constexpr const char *kMapId  = "mirror-test";
 
-    std::unique_ptr<BackendRegistry>          m_registry;
+    QTemporaryDir                              m_tmpDir;  ///< one dir per test
+    std::unique_ptr<Kalburator::Sync::BlobBaselineStore> m_baselines;
+    std::unique_ptr<BackendRegistry>           m_registry;
     std::unique_ptr<IdentifiedBlobSyncBackend> m_src;
     std::unique_ptr<IdentifiedBlobSyncBackend> m_tgt;
-    std::unique_ptr<MinimalSyncHost>          m_host;
-    std::unique_ptr<SyncEngine>               m_engine;
+    std::unique_ptr<MinimalSyncHost>           m_host;
+    std::unique_ptr<SyncEngine>                m_engine;
+    int                                        m_testCounter = 0;
 };
 
 void TstEngineMirrorDirection::init()
 {
+    QVERIFY(m_tmpDir.isValid());
+
+    // Use a unique db file per test run so that baseline state never leaks
+    // between test cases that share the same QTemporaryDir.
+    const QString dbPath = m_tmpDir.filePath(
+        QStringLiteral("sync-%1.db").arg(m_testCounter++));
+    m_baselines = std::make_unique<Kalburator::Sync::BlobBaselineStore>(dbPath);
+    QVERIFY(m_baselines->isOpen());
+
     m_registry = std::make_unique<BackendRegistry>();
     m_src = std::make_unique<IdentifiedBlobSyncBackend>(QString::fromLatin1(kSrcId));
     m_tgt = std::make_unique<IdentifiedBlobSyncBackend>(QString::fromLatin1(kTgtId));
@@ -294,6 +336,7 @@ void TstEngineMirrorDirection::init()
 
     m_host = std::make_unique<MinimalSyncHost>(m_registry.get());
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine->setBlobBaselineStore(m_baselines.get());
 
     // Seed the collections so dispatchBlobSync's fetch finds them.
     m_src->createCollection(makeCollection(QString::fromLatin1(kColId)));
@@ -321,6 +364,29 @@ void TstEngineMirrorDirection::cleanup()
     m_tgt.reset();
     m_src.reset();
     m_registry.reset();
+    m_baselines.reset();
+}
+
+// ---- helpers used by multiple tests -----------------------------------------
+
+/// Make a record with an explicit content hash (for baseline-aware two-way tests).
+static BackendRecord hashedRecord(const QString &id, const QString &data,
+                                  const QString &hash)
+{
+    BackendRecord r = makeRecord(id, data);
+    r.contentHash = hash;
+    return r;
+}
+
+/// Run the default (no-override) two-way sync on the shared engine/mapping and
+/// return the result. Asserts that the future completes without cancellation.
+static SyncResult runTwoWay(SyncEngine *engine, const QString &mappingId)
+{
+    QFuture<SyncResult> future = engine->runSyncFuture(
+        mappingId, SyncEngine::SyncBehavior::Unmonitored);
+    [&]() { QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs); }();
+    Q_ASSERT(!future.isCanceled());
+    return future.resultAt(0);
 }
 
 // ---- MirrorAToB -------------------------------------------------------------
@@ -512,6 +578,264 @@ void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
     QCOMPARE(tgtRecs.size(), 1);
     QCOMPARE(tgtRecs.value(QStringLiteral("shared")).data,
              QByteArrayLiteral("payload-v1"));
+}
+
+// ---- MirrorAToB: copies to empty target -------------------------------------
+//
+// src = {r1, r2}   tgt = {}
+//
+// After MirrorAToB: tgt = {r1, r2}   (two records created)
+
+void TstEngineMirrorDirection::mirrorAToB_copiesSourceToEmptyTarget()
+{
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("r1"), QStringLiteral("data-a")));
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        makeRecord(QStringLiteral("r2"), QStringLiteral("data-b")));
+
+    ExecutionOverride ov;
+    ov.direction = ExecutionOverride::Direction::MirrorAToB;
+
+    QFuture<SyncResult> future = m_engine->runSyncFuture(
+        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    const SyncResult result = future.resultAt(0);
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 2);
+    QVERIFY(tgtRecs.contains(QStringLiteral("r1")));
+    QVERIFY(tgtRecs.contains(QStringLiteral("r2")));
+
+    // Source is untouched.
+    QCOMPARE(m_src->recordsIn(QString::fromLatin1(kColId)).size(), 2);
+}
+
+// ---- MirrorAToB: matching records left alone --------------------------------
+//
+// src = {r1 payload-x}   tgt = {r1 payload-x}  (same hash)
+//
+// After MirrorAToB: tgt unchanged.  The record is not re-written.
+
+void TstEngineMirrorDirection::mirrorAToB_leavesMatchingRecordsAlone()
+{
+    const BackendRecord rec = hashedRecord(
+        QStringLiteral("r1"), QStringLiteral("same-payload"), QStringLiteral("h-same"));
+    m_src->createRecord(QString::fromLatin1(kColId), rec);
+    m_tgt->createRecord(QString::fromLatin1(kColId), rec);
+
+    ExecutionOverride ov;
+    ov.direction = ExecutionOverride::Direction::MirrorAToB;
+
+    QFuture<SyncResult> future = m_engine->runSyncFuture(
+        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    const SyncResult result = future.resultAt(0);
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Target still has exactly one record with the original hash.
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 1);
+    QCOMPARE(tgtRecs.value(QStringLiteral("r1")).contentHash,
+             QStringLiteral("h-same"));
+}
+
+// ---- TwoWay: no changes -----------------------------------------------------
+//
+// Both sides hold the same record at the baseline hash.
+// After sync: both sides are unchanged.
+
+void TstEngineMirrorDirection::twoWay_noChanges()
+{
+    const QString recId = QStringLiteral("r1");
+    const QString hash  = QStringLiteral("h1");
+
+    const BackendRecord rec = hashedRecord(recId, QStringLiteral("payload"), hash);
+    m_src->createRecord(QString::fromLatin1(kColId), rec);
+    m_tgt->createRecord(QString::fromLatin1(kColId), rec);
+
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId, hash);
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Neither side should have been modified.
+    QCOMPARE(m_src->recordsIn(QString::fromLatin1(kColId)).size(), 1);
+    QCOMPARE(m_tgt->recordsIn(QString::fromLatin1(kColId)).size(), 1);
+    // Note: dispatchBlobSync does not yet populate SyncResult.{source,target}Stats;
+    // we assert on backend state only.
+}
+
+// ---- TwoWay: modified on source only ----------------------------------------
+//
+// src = r1 @ v2   tgt = r1 @ v1   baseline = v1
+// After sync: tgt updated to v2.
+
+void TstEngineMirrorDirection::twoWay_modifiedOnSourceOnly()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v2"), QStringLiteral("h-v2")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId,
+                 QStringLiteral("h-v1"));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 1);
+    QCOMPARE(tgtRecs.value(recId).contentHash, QStringLiteral("h-v2"));
+}
+
+// ---- TwoWay: modified on target only ----------------------------------------
+//
+// src = r1 @ v1   tgt = r1 @ v2   baseline = v1
+// After sync: src updated to v2.
+
+void TstEngineMirrorDirection::twoWay_modifiedOnTargetOnly()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v2"), QStringLiteral("h-v2")));
+
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId,
+                 QStringLiteral("h-v1"));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    const auto srcRecs = m_src->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(srcRecs.size(), 1);
+    QCOMPARE(srcRecs.value(recId).contentHash, QStringLiteral("h-v2"));
+}
+
+// ---- TwoWay: deleted on source ----------------------------------------------
+//
+// src = {}   tgt = {r1 @ v1}   baseline = v1
+// After sync: tgt = {}
+
+void TstEngineMirrorDirection::twoWay_deletedOnSource()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId,
+                 QStringLiteral("h-v1"));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    QCOMPARE(m_tgt->recordsIn(QString::fromLatin1(kColId)).size(), 0);
+}
+
+// ---- TwoWay: deleted on target ----------------------------------------------
+//
+// src = {r1 @ v1}   tgt = {}   baseline = v1
+// After sync: src = {}
+
+void TstEngineMirrorDirection::twoWay_deletedOnTarget()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId,
+                 QStringLiteral("h-v1"));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    QCOMPARE(m_src->recordsIn(QString::fromLatin1(kColId)).size(), 0);
+}
+
+// ---- TwoWay: new record on source -------------------------------------------
+//
+// src = {r1}   tgt = {}   no baseline for r1 (first-sync)
+// After sync: tgt = {r1}
+
+void TstEngineMirrorDirection::twoWay_newOnSource()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    QCOMPARE(m_tgt->recordsIn(QString::fromLatin1(kColId)).size(), 1);
+    QVERIFY(m_tgt->recordsIn(QString::fromLatin1(kColId)).contains(recId));
+}
+
+// ---- TwoWay: new record on target -------------------------------------------
+//
+// src = {}   tgt = {r1}   no baseline for r1 (first-sync)
+// After sync: src = {r1}
+
+void TstEngineMirrorDirection::twoWay_newOnTarget()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("v1"), QStringLiteral("h-v1")));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    QCOMPARE(m_src->recordsIn(QString::fromLatin1(kColId)).size(), 1);
+    QVERIFY(m_src->recordsIn(QString::fromLatin1(kColId)).contains(recId));
+}
+
+// ---- TwoWay: conflict resolved by SourceWins policy -------------------------
+//
+// Both sides modified the same record since the shared baseline.
+// The mapping has conflictPolicy = SourceWins, so the source version must
+// win and be written to the target.
+//
+// Note: the blob path always uses SourceWins internally (policy hardcoded
+// in dispatchBlobSync); this test pins that behavior.
+
+void TstEngineMirrorDirection::twoWay_conflictSourceWins()
+{
+    const QString recId = QStringLiteral("r1");
+
+    m_src->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("src-v2"), QStringLiteral("h-src-v2")));
+    m_tgt->createRecord(QString::fromLatin1(kColId),
+                        hashedRecord(recId, QStringLiteral("tgt-v2"), QStringLiteral("h-tgt-v2")));
+
+    // Baseline = v1: both sides have since modified the record independently.
+    seedBaseline(*m_baselines, QString::fromLatin1(kMapId), recId,
+                 QStringLiteral("h-v1"));
+
+    const SyncResult result = runTwoWay(m_engine.get(), QString::fromLatin1(kMapId));
+    QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
+
+    // Source wins: target must hold the source version.
+    const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(tgtRecs.size(), 1);
+    QCOMPARE(tgtRecs.value(recId).contentHash, QStringLiteral("h-src-v2"));
+
+    // Source must be untouched.
+    const auto srcRecs = m_src->recordsIn(QString::fromLatin1(kColId));
+    QCOMPARE(srcRecs.size(), 1);
+    QCOMPARE(srcRecs.value(recId).contentHash, QStringLiteral("h-src-v2"));
 }
 
 QTEST_MAIN(TstEngineMirrorDirection)
