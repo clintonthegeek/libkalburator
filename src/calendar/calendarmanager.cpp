@@ -4,7 +4,6 @@
 #include "synctypes.h"
 #include "syncbackend.h"
 #include "remotebackend.h"
-#include "localbackend.h"
 #include "icalendarcollection.h"
 #include "syncengine.h"
 #include "transcodingregistry.h"
