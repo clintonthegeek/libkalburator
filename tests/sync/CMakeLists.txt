@@ -35,3 +35,23 @@ add_test(NAME tst_caldav_provider COMMAND tst_caldav_provider)
 set_tests_properties(tst_caldav_provider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase H Task 7 — CalDavConfigWidget UI tests. Reuses FakeCalDavServer
+# from Task 6 for the Test-Connection button workflow.
+add_executable(tst_caldav_config_widget
+    tst_caldav_config_widget.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_caldav_config_widget
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+        Qt6::Network
+        Qt6::Widgets
+        Kalburator::Sync
+)
+add_test(NAME tst_caldav_config_widget COMMAND tst_caldav_config_widget)
+set_tests_properties(tst_caldav_config_widget PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

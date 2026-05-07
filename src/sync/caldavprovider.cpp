@@ -1,5 +1,6 @@
 #include "caldavprovider.h"
 
+#include "caldavconfigwidget.h"
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "caldavcapabilitydiscovery.h"
@@ -43,9 +44,8 @@ BackendConfiguration CalDavProvider::save() const {
     return cfg;
 }
 
-QWidget *CalDavProvider::createConfigWidget(QWidget * /*parent*/) {
-    // Task 7 fills this in.
-    return nullptr;
+QWidget *CalDavProvider::createConfigWidget(QWidget *parent) {
+    return new CalDavConfigWidget(this, parent);
 }
 
 QFuture<bool> CalDavProvider::connect() {

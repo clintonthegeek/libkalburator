@@ -336,10 +336,12 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/iprovider.h
     src/sync/providermanager.h
     src/sync/caldavprovider.h
+    src/sync/caldavconfigwidget.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
     src/sync/caldavprovider.cpp
+    src/sync/caldavconfigwidget.cpp
 )
 
 # Aggregate
