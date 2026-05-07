@@ -18,12 +18,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Sql Xml Network Widgets)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Sql Xml Network Widgets Concurrent)
 find_package(KF6CalendarCore REQUIRED)
 find_package(KF6DAV REQUIRED)
 find_package(KF6KIO REQUIRED)
 find_package(KF6Holidays REQUIRED)
 find_package(KF6Contacts REQUIRED)
+find_package(KF6Config REQUIRED)
 
 # Optional org-io support for OrgBackend. When ON, host must provide the
 # planstan-org-io target via PUBLIC linkage from outside; standalone builds
@@ -333,9 +334,10 @@ set(KALBURATOR_SINKS_SOURCES
 # Phase H — provider abstraction
 set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/iprovider.h
+    src/sync/providermanager.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
-    # header-only this commit; Task 2 adds providermanager.{h,cpp}
+    src/sync/providermanager.cpp
 )
 
 # Aggregate
@@ -410,10 +412,12 @@ target_link_libraries(kalburator
         Qt6::Network
         Qt6::Xml
         Qt6::Widgets
+        Qt6::Concurrent
         KF6::DAV
         KF6::KIOCore
         KF6::Holidays
         KF6::Contacts
+        KF6::ConfigCore
 )
 
 if(KALBURATOR_HAVE_AKONADI)
