@@ -5,6 +5,7 @@
 #include "backendregistry.h"
 #include "syncbackend.h"
 #include "backendconfiguration.h"
+#include "caldavprovider.h"
 
 #include <KConfigGroup>
 
@@ -22,10 +23,13 @@ ProviderManager::ProviderManager(BackendRegistry *registry, QObject *parent)
 {
     Q_ASSERT(m_registry);
 
-    // Default factory: handles built-in provider kinds. CalDavProvider
-    // is wired in Phase H Task 4 — until then, the default factory
-    // returns nullptr for "caldav" and tests inject their own factory.
-    m_factory = [](const QString & /*kind*/) -> std::unique_ptr<IProvider> {
+    // Default factory: handles built-in provider kinds. Tests inject
+    // their own factory via setFactoryForTest() to avoid touching the
+    // network.
+    m_factory = [](const QString &kind) -> std::unique_ptr<IProvider> {
+        if (kind == QStringLiteral("caldav")) {
+            return std::make_unique<CalDavProvider>();
+        }
         return nullptr;
     };
 }
