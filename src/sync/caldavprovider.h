@@ -2,9 +2,16 @@
 #define KALBURATOR_SYNC_CALDAVPROVIDER_H
 
 #include "iprovider.h"
+
+#include <QMap>
+#include <QPromise>
 #include <QUrl>
 
+#include <memory>
+
 namespace Kalburator::Sync {
+
+class CalDavCapabilityDiscovery;
 
 /**
  * @brief CalDAV-speaking provider. Wraps CalDavCapabilityDiscovery
@@ -17,9 +24,6 @@ namespace Kalburator::Sync {
  *   - "url"      QString — server base URL
  *   - "username" QString
  *   - "password" QString — plaintext (Phase H baseline; KWallet later)
- *
- * This commit implements load()/save()/disconnect() and provides
- * skeleton stubs for connect()/createBackend(); Task 5 fills those in.
  */
 class CalDavProvider : public IProvider
 {
@@ -46,14 +50,21 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
+private slots:
+    void onDiscoveryFinished(bool success);
+
 private:
-    QString               m_id;             // UUID
-    QString               m_displayName;
-    QUrl                  m_serverUrl;
-    QString               m_username;
-    QString               m_password;
-    bool                  m_connected = false;
-    QList<CollectionInfo> m_collections;
+    QString                              m_id;             // UUID
+    QString                              m_displayName;
+    QUrl                                 m_serverUrl;
+    QString                              m_username;
+    QString                              m_password;
+    bool                                 m_connected = false;
+    QList<CollectionInfo>                m_collections;
+
+    CalDavCapabilityDiscovery           *m_discovery = nullptr;
+    QMap<QString, QString>               m_calendarUrls;   // collectionId -> href
+    std::unique_ptr<QPromise<bool>>      m_connectPromise;
 };
 
 } // namespace Kalburator::Sync

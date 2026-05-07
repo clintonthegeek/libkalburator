@@ -2,6 +2,8 @@
 
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
+#include "caldavcapabilitydiscovery.h"
+#include "remotebackend.h"
 
 #include <QFutureInterface>
 #include <QUuid>
@@ -47,26 +49,113 @@ QWidget *CalDavProvider::createConfigWidget(QWidget * /*parent*/) {
 }
 
 QFuture<bool> CalDavProvider::connect() {
-    // Task 5 fills this in. Skeleton: report failure synchronously.
-    QFutureInterface<bool> fi;
-    fi.reportStarted();
-    fi.reportResult(false);
-    fi.reportFinished();
-    emit error(QStringLiteral("CalDavProvider::connect not yet implemented (Task 5)"));
-    return fi.future();
+    if (m_connected) {
+        QFutureInterface<bool> fi;
+        fi.reportStarted();
+        fi.reportResult(true);
+        fi.reportFinished();
+        return fi.future();
+    }
+
+    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid()) {
+        QFutureInterface<bool> fi;
+        fi.reportStarted();
+        fi.reportResult(false);
+        fi.reportFinished();
+        emit error(QStringLiteral("CalDavProvider: server URL is empty or invalid"));
+        return fi.future();
+    }
+
+    // Drop any abandoned in-flight discovery before starting fresh.
+    if (m_discovery) {
+        m_discovery->disconnect(this);
+        m_discovery->deleteLater();
+        m_discovery = nullptr;
+    }
+    m_connectPromise.reset(new QPromise<bool>);
+    m_connectPromise->start();
+
+    m_discovery = new CalDavCapabilityDiscovery(m_serverUrl, m_username, m_password, this);
+    QObject::connect(m_discovery, &CalDavCapabilityDiscovery::finished,
+                     this, &CalDavProvider::onDiscoveryFinished);
+    m_discovery->start();
+
+    return m_connectPromise->future();
+}
+
+void CalDavProvider::onDiscoveryFinished(bool success) {
+    if (!m_discovery) {
+        return;
+    }
+
+    if (success) {
+        const auto caps = m_discovery->discoveredCapabilities();
+        m_calendarUrls = m_discovery->calendarUrls();
+        m_collections.clear();
+        for (auto it = caps.perCalendarCapabilities.constBegin();
+             it != caps.perCalendarCapabilities.constEnd(); ++it) {
+            CollectionInfo ci;
+            ci.id   = it.key();
+            ci.name = it.value().serverDisplayName.isEmpty() ? it.key()
+                                                              : it.value().serverDisplayName;
+            ci.type = QStringLiteral("calendar");
+            ci.isDefault = false;
+            m_collections.append(ci);
+        }
+        m_connected = true;
+        emit collectionsChanged();
+        emit connectionStateChanged(true);
+    } else {
+        const QString errMsg = m_discovery->errorMessage();
+        emit error(errMsg.isEmpty()
+                   ? QStringLiteral("CalDavProvider: discovery failed")
+                   : errMsg);
+    }
+
+    if (m_connectPromise) {
+        m_connectPromise->addResult(success);
+        m_connectPromise->finish();
+        m_connectPromise.reset();
+    }
+
+    m_discovery->disconnect(this);
+    m_discovery->deleteLater();
+    m_discovery = nullptr;
 }
 
 void CalDavProvider::disconnect() {
+    if (m_connectPromise) {
+        m_connectPromise->addResult(false);
+        m_connectPromise->finish();
+        m_connectPromise.reset();
+    }
+    if (m_discovery) {
+        m_discovery->disconnect(this);
+        m_discovery->deleteLater();
+        m_discovery = nullptr;
+    }
     if (!m_connected) return;
     m_connected = false;
     m_collections.clear();
+    m_calendarUrls.clear();
     emit connectionStateChanged(false);
 }
 
 std::unique_ptr<IBlobBackend>
-CalDavProvider::createBackend(const QString & /*collectionId*/) {
-    // Task 5 fills this in.
-    return nullptr;
+CalDavProvider::createBackend(const QString &collectionId) {
+    if (!m_connected) {
+        return nullptr;
+    }
+    const auto urlIt = m_calendarUrls.constFind(collectionId);
+    if (urlIt == m_calendarUrls.constEnd()) {
+        return nullptr;
+    }
+
+    // RemoteBackend inherits SyncBackend which inherits IBlobBackend, so
+    // the unique_ptr<IBlobBackend> upcast is implicit.
+    auto backend = std::make_unique<RemoteBackend>(m_serverUrl, m_username, m_password);
+    backend->registerCalendarUrl(collectionId, urlIt.value());
+    return backend;
 }
 
 } // namespace Kalburator::Sync

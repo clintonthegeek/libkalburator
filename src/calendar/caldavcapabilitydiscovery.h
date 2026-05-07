@@ -65,6 +65,15 @@ public:
     DiscoveredCapabilities discoveredCapabilities() const { return m_capabilities; }
 
     /**
+     * @brief Calendar URLs discovered alongside per-calendar caps.
+     *
+     * Maps the same calendarIds used in
+     * DiscoveredCapabilities::perCalendarCapabilities to the href
+     * extracted from the PROPFIND response. Empty until finished(true).
+     */
+    QMap<QString, QString> calendarUrls() const { return m_calendarUrls; }
+
+    /**
      * @brief Get any error message from the discovery process.
      */
     QString errorMessage() const { return m_errorMessage; }
@@ -130,6 +139,7 @@ private:
 
     // Results
     DiscoveredCapabilities m_capabilities;
+    QMap<QString, QString> m_calendarUrls;  // calendarId -> href
     QString m_errorMessage;
 };
 

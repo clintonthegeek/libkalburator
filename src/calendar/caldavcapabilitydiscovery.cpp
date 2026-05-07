@@ -39,6 +39,7 @@ void CalDavCapabilityDiscovery::start()
     m_running = true;
     m_errorMessage.clear();
     m_capabilities = DiscoveredCapabilities();
+    m_calendarUrls.clear();
     m_capabilities.discoveredAt = QDateTime::currentDateTimeUtc();
 
     emit progressMessage(tr("Discovering server capabilities..."));
@@ -344,6 +345,7 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
 
         // Store capabilities
         m_capabilities.perCalendarCapabilities[calendarId] = caps;
+        m_calendarUrls.insert(calendarId, href);
 
         // Track supported component types at server level
         if (caps.supportsVEvent && !m_capabilities.supportedComponentTypes.contains(QStringLiteral("VEVENT"))) {
