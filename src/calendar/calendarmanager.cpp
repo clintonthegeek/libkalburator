@@ -3,7 +3,6 @@
 #include "isyncconfigstore.h"
 #include "synctypes.h"
 #include "syncbackend.h"
-#include "remotebackend.h"
 #include "icalendarcollection.h"
 #include "syncengine.h"
 #include "transcodingregistry.h"
@@ -11,7 +10,6 @@
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimeZone>
-#include <QUrl>
 
 namespace Kalburator::Sync {
 
@@ -105,26 +103,6 @@ CreationResult CalendarManager::createCalendar(const LogicalCalendar &logCal)
                 for (auto &b : updatedCal.bindings) {
                     if (b.backendId == binding.backendId) {
                         b.needsCreation = false;
-
-                        // For CalDAV, construct and store the davUrl
-                        if (backend->backendType() == RemoteBackend::BackendTypeName) {
-                            QVariantMap backendConfig = m_configManager->backendConfig(binding.backendId);
-                            QString baseUrl = backendConfig.value(QStringLiteral("url")).toString();
-                            QString username = backendConfig.value(QStringLiteral("username")).toString();
-                            QString password = backendConfig.value(QStringLiteral("password")).toString();
-
-                            QUrl calUrl = QUrl::fromUserInput(baseUrl);
-                            QString path = calUrl.path();
-                            if ((path.isEmpty() || path == QLatin1String("/")) && !username.isEmpty()) {
-                                path = QLatin1Char('/') + username + QLatin1Char('/');
-                            }
-                            if (!path.endsWith('/')) path += '/';
-                            path += binding.calendarId + '/';
-                            calUrl.setPath(path);
-                            calUrl.setUserName(username);
-                            calUrl.setPassword(password);
-                            b.setDavUrl(calUrl.toString());
-                        }
                         break;
                     }
                 }
@@ -417,26 +395,6 @@ bool CalendarManager::addBinding(const QString &logicalCalendarId,
 
         if (success) {
             newBinding.needsCreation = false;
-
-            // For CalDAV, construct and store davUrl
-            if (backend->backendType() == RemoteBackend::BackendTypeName) {
-                QVariantMap backendConfig = m_configManager->backendConfig(newBinding.backendId);
-                QString baseUrl = backendConfig.value(QStringLiteral("url")).toString();
-                QString username = backendConfig.value(QStringLiteral("username")).toString();
-                QString password = backendConfig.value(QStringLiteral("password")).toString();
-
-                QUrl calUrl = QUrl::fromUserInput(baseUrl);
-                QString path = calUrl.path();
-                if ((path.isEmpty() || path == QLatin1String("/")) && !username.isEmpty()) {
-                    path = QLatin1Char('/') + username + QLatin1Char('/');
-                }
-                if (!path.endsWith('/')) path += '/';
-                path += newBinding.calendarId + '/';
-                calUrl.setPath(path);
-                calUrl.setUserName(username);
-                calUrl.setPassword(password);
-                newBinding.setDavUrl(calUrl.toString());
-            }
         } else {
             emit operationFailed(QStringLiteral("addBinding"),
                                 tr("Failed to create calendar on %1").arg(newBinding.backendId));
