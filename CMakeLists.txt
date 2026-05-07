@@ -330,6 +330,14 @@ set(KALBURATOR_SINKS_SOURCES
     src/sinks/genericsqlitebackend.cpp
 )
 
+# Phase H — provider abstraction
+set(KALBURATOR_PROVIDER_CORE_HEADERS
+    src/sync/iprovider.h
+)
+set(KALBURATOR_PROVIDER_CORE_SOURCES
+    # header-only this commit; Task 2 adds providermanager.{h,cpp}
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -344,6 +352,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CONTACTS_HEADERS}
     ${KALBURATOR_MEMO_HEADERS}
     ${KALBURATOR_SINKS_HEADERS}
+    ${KALBURATOR_PROVIDER_CORE_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -358,6 +367,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CONTACTS_SOURCES}
     ${KALBURATOR_MEMO_SOURCES}
     ${KALBURATOR_SINKS_SOURCES}
+    ${KALBURATOR_PROVIDER_CORE_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -390,6 +400,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/todo>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/contacts>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/memo>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
 )
 
 target_link_libraries(kalburator
