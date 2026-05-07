@@ -55,3 +55,25 @@ add_test(NAME tst_caldav_config_widget COMMAND tst_caldav_config_widget)
 set_tests_properties(tst_caldav_config_widget PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase H Task 8 — End-to-end integration test wiring KConfig persistence,
+# ProviderManager (default factory), CalDavProvider, FakeCalDavServer,
+# and BackendRegistry. Verifies the additive provider design's full
+# registration path. Reuses FakeCalDavServer from Task 6.
+add_executable(tst_caldav_integration
+    tst_caldav_integration.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_caldav_integration
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+        Qt6::Network
+        KF6::ConfigCore
+        Kalburator::Sync
+)
+add_test(NAME tst_caldav_integration COMMAND tst_caldav_integration)
+set_tests_properties(tst_caldav_integration PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
