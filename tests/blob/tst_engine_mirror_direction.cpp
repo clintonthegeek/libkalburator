@@ -6,7 +6,7 @@
 ///
 /// The stub added in Task 7 ignores the override and runs a normal two-way (or
 /// first-sync mirror) sync, so these tests FAIL. Task 9 makes them pass by
-/// wiring the override into BlobDomainAdapter's dispatch path.
+/// wiring the override into dispatchBlobSync's direction-selection path.
 ///
 /// Setup note: dispatchBlobSync routes based on nativeShapes() domain — any
 /// non-calendar domain triggers the blob path. We define
@@ -238,7 +238,8 @@ static constexpr int kTimeoutMs = 5000;
 
 /// Seed a baseline into a BlobBaselineStore using the v3 mapping-keyed API.
 /// contentHash is stored as the canonical blob data (same encoding as
-/// BlobDomainAdapter::saveBaselines uses).
+/// blobBatchDiff baseline persistence uses; BlobDomainAdapter::saveBaselines
+/// was folded into blobBatchDiff in Phase Ia.5 Task 16).
 void seedBaseline(Kalburator::Sync::BlobBaselineStore &store,
                   const QString &mappingId,
                   const QString &recordId,
