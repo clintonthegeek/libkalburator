@@ -1,12 +1,21 @@
 // Phase Ib Task 5 — RemoteContactsBackend read-side tests.
+// Phase Ib Task 6 — RemoteContactsBackend write-side tests.
 //
-// Tests:
+// Read-side (Task 5):
 //  1. availableCollections() after registerAddressbookUrl() → 1 collection.
 //  2. loadRecords() on an empty addressbook → empty list.
 //  3. loadRecords() with 3 seeded records → 3 BackendRecords, bytes match.
 //  4. vCard 3.0 from server → BackendRecord::type contains "vcard3".
 //  5. loadRecord() for a known recordId → single record.
 //  6. 401 from server → loadRecords() returns empty.
+//
+// Write-side (Task 6):
+//  7.  createRecord() → 201 from server, returns recordId with UID, bytes intact via loadRecords.
+//  8.  loadRecords() after createRecord() → 1 record, bytes match.
+//  9.  updateRecord() → server bytes updated, ETag rotates, subsequent load has new bytes.
+//  10. updateRecord() with stale ETag → 412, returns false, server unchanged.
+//  11. deleteRecord() → gone from server, subsequent loadRecords() empty.
+//  12. deleteRecord() with stale ETag → 412, returns false, server unchanged.
 
 #include <QtTest/QtTest>
 
@@ -60,12 +69,21 @@ class TstRemoteContactsBackend : public QObject
     Q_OBJECT
 
 private slots:
+    // --- Read-side (Task 5) -------------------------------------------------
     void availableCollections_after_register();
     void loadRecords_empty_addressbook();
     void loadRecords_three_records();
     void loadRecords_vcard3_shape();
     void loadRecord_known_recordId();
     void loadRecords_401_returns_empty();
+
+    // --- Write-side (Task 6) ------------------------------------------------
+    void createRecord_returns_recordId();
+    void loadRecords_after_create();
+    void updateRecord_updates_server_bytes();
+    void updateRecord_stale_etag_returns_false();
+    void deleteRecord_removes_from_server();
+    void deleteRecord_stale_etag_returns_false();
 };
 
 // ---------------------------------------------------------------------------
@@ -235,6 +253,219 @@ void TstRemoteContactsBackend::loadRecords_401_returns_empty()
 
     const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
     QVERIFY(records.isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// 7. createRecord() → server gets the data, returns a valid recordId
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::createRecord_returns_recordId()
+{
+    FakeCardDavServer server;
+    // No seed records — addressbook starts empty.
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    BackendRecord rec;
+    rec.data = makeVCard4("uid-new-eve", "Eve Adams");
+    rec.id   = QString(); // not yet assigned
+
+    const QString recordId = backend.createRecord(QStringLiteral("personal"), rec);
+    QVERIFY2(!recordId.isEmpty(),
+             "createRecord should return a non-empty recordId on success");
+    QVERIFY2(recordId.startsWith(QStringLiteral("personal:")),
+             qPrintable(QStringLiteral("recordId should be 'personal:<uid>', got: %1").arg(recordId)));
+    // The UID in the recordId should match the UID in the vCard.
+    QVERIFY2(recordId.contains(QStringLiteral("uid-new-eve")),
+             qPrintable(QStringLiteral("recordId should contain the vCard UID, got: %1").arg(recordId)));
+}
+
+// ---------------------------------------------------------------------------
+// 8. loadRecords() after createRecord() → 1 record, bytes match
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::loadRecords_after_create()
+{
+    FakeCardDavServer server;
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    const QByteArray originalData = makeVCard4("uid-frank", "Frank Stone");
+    BackendRecord rec;
+    rec.data = originalData;
+
+    const QString recordId = backend.createRecord(QStringLiteral("personal"), rec);
+    QVERIFY(!recordId.isEmpty());
+
+    // Now load all records — should see exactly the one we just created.
+    const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.at(0).data.contains("Frank Stone"),
+             "Loaded record should contain the originally uploaded vCard data");
+    QCOMPARE(records.at(0).id, recordId);
+}
+
+// ---------------------------------------------------------------------------
+// 9. updateRecord() → server bytes updated, subsequent load has new bytes
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::updateRecord_updates_server_bytes()
+{
+    FakeCardDavServer server;
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCard4("uid-grace", "Grace Old Name") });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    // Load so the backend caches the ETag in its handle.
+    const QList<BackendRecord> before = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(before.size(), 1);
+    QVERIFY(before.at(0).data.contains("Grace Old Name"));
+
+    // Build an updated record with the same id but new bytes.
+    BackendRecord updated = before.at(0);
+    updated.data = makeVCard4("uid-grace", "Grace New Name");
+
+    const bool ok = backend.updateRecord(updated);
+    QVERIFY2(ok, "updateRecord should return true on success");
+
+    // Reload from server — new bytes should be present.
+    const QList<BackendRecord> after = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(after.size(), 1);
+    QVERIFY2(after.at(0).data.contains("Grace New Name"),
+             "After update, server should have the new vCard bytes");
+    QVERIFY2(!after.at(0).data.contains("Grace Old Name"),
+             "After update, old bytes should be gone");
+}
+
+// ---------------------------------------------------------------------------
+// 10. updateRecord() with stale ETag → returns false, server unchanged
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::updateRecord_stale_etag_returns_false()
+{
+    FakeCardDavServer server;
+    const QByteArray originalData = makeVCard4("uid-henry", "Henry Unchanged");
+    server.setSeedRecords(QStringLiteral("personal"), { originalData });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    // Populate the backend's handle cache.
+    const QList<BackendRecord> loaded = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(loaded.size(), 1);
+
+    // Externally bump the server ETag so the backend's cached ETag goes stale.
+    QVERIFY(server.bumpEtag(QStringLiteral("personal"), QStringLiteral("uid-henry")));
+
+    // Try to update — should fail with 412.
+    BackendRecord staleRec = loaded.at(0);
+    staleRec.data = makeVCard4("uid-henry", "Henry Changed");
+    const bool ok = backend.updateRecord(staleRec);
+    QVERIFY2(!ok, "updateRecord with stale ETag should return false (412)");
+
+    // Server should still have the original data.
+    const QList<BackendRecord> after = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(after.size(), 1);
+    QVERIFY2(after.at(0).data.contains("Henry Unchanged"),
+             "Server data should be unchanged after a stale-ETag update failure");
+}
+
+// ---------------------------------------------------------------------------
+// 11. deleteRecord() → gone from server, subsequent loadRecords() empty
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::deleteRecord_removes_from_server()
+{
+    FakeCardDavServer server;
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCard4("uid-ivan", "Ivan Gone") });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    // Populate handle cache.
+    const QList<BackendRecord> before = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(before.size(), 1);
+
+    const bool ok = backend.deleteRecord(before.at(0).id);
+    QVERIFY2(ok, "deleteRecord should return true on success");
+
+    // Server should now report empty.
+    const QList<BackendRecord> after = backend.loadRecords(QStringLiteral("personal"));
+    QVERIFY2(after.isEmpty(),
+             "After deleteRecord the addressbook should be empty");
+}
+
+// ---------------------------------------------------------------------------
+// 12. deleteRecord() with stale ETag → returns false, server unchanged
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::deleteRecord_stale_etag_returns_false()
+{
+    FakeCardDavServer server;
+    const QByteArray originalData = makeVCard4("uid-julia", "Julia Stays");
+    server.setSeedRecords(QStringLiteral("personal"), { originalData });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    // Populate handle cache.
+    const QList<BackendRecord> loaded = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(loaded.size(), 1);
+    const QString recordId = loaded.at(0).id;
+
+    // Externally bump ETag so backend's cached one goes stale.
+    QVERIFY(server.bumpEtag(QStringLiteral("personal"), QStringLiteral("uid-julia")));
+
+    // Delete should fail (412).
+    const bool ok = backend.deleteRecord(recordId);
+    QVERIFY2(!ok, "deleteRecord with stale ETag should return false (412)");
+
+    // Server record should still be there.
+    const QList<BackendRecord> after = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(after.size(), 1);
+    QVERIFY2(after.at(0).data.contains("Julia Stays"),
+             "Server record should be unchanged after a stale-ETag delete failure");
 }
 
 QTEST_GUILESS_MAIN(TstRemoteContactsBackend)

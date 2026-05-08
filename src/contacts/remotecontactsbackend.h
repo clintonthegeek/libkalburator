@@ -81,17 +81,14 @@ public:
     QList<BackendRecord> loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
 
-    // --- IBlobBackend records (write-side stubs — filled in by Task 6) -----
+    // --- IBlobBackend records (write-side — Task 6) -------------------------
 
     QString createRecord(const QString &collectionId,
-                         const BackendRecord &record) override
-    { Q_UNUSED(collectionId); Q_UNUSED(record); return {}; }
+                         const BackendRecord &record) override;
 
-    bool updateRecord(const BackendRecord &record) override
-    { Q_UNUSED(record); return false; }
+    bool updateRecord(const BackendRecord &record) override;
 
-    bool deleteRecord(const QString &recordId) override
-    { Q_UNUSED(recordId); return false; }
+    bool deleteRecord(const QString &recordId) override;
 
     // --- Change detection (minimal) ----------------------------------------
 
@@ -165,6 +162,24 @@ private:
 
     /// Credentials embedded in a URL for QNetworkRequest basic-auth.
     QUrl credentialsUrl(const QUrl &base) const;
+
+    /// Perform a synchronous PUT for a vCard resource.
+    /// ifMatch / ifNoneMatch may be empty (header omitted) or a quoted ETag string.
+    /// Returns the HTTP status code; sets *outEtag to the server-returned ETag.
+    int putVCard(const QUrl &absoluteItemUrl,
+                 const QByteArray &vcardBytes,
+                 const QByteArray &ifMatch,
+                 const QByteArray &ifNoneMatch,
+                 QString *outEtag = nullptr);
+
+    /// Perform a synchronous DELETE for a vCard resource.
+    /// ifMatch is the ETag to require (may be empty to skip check).
+    /// Returns the HTTP status code.
+    int deleteVCard(const QUrl &absoluteItemUrl, const QByteArray &ifMatch);
+
+    /// Extract UID from raw vCard bytes (first "UID:" line).
+    /// Returns empty string if not found.
+    static QString extractUid(const QByteArray &vcardBytes);
 
     QUrl    m_serverRoot;
     QString m_username;

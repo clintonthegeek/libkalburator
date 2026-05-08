@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QUuid>
 #include <QXmlStreamReader>
 
 namespace Kalburator::Sync {
@@ -411,6 +412,246 @@ std::optional<BackendRecord> RemoteContactsBackend::loadRecord(const QString &re
     m_handles.insert(recordId, handle);
 
     return rec;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: extract UID from raw vCard bytes
+// ---------------------------------------------------------------------------
+
+// static
+QString RemoteContactsBackend::extractUid(const QByteArray &vcardBytes)
+{
+    const QList<QByteArray> lines = vcardBytes.split('\n');
+    for (const QByteArray &raw : lines) {
+        QByteArray line = raw;
+        if (line.endsWith('\r')) line.chop(1);
+        if (line.startsWith("UID:") || line.startsWith("UID;")) {
+            // UID: value (may have parameters like UID;VALUE=text:...)
+            const int colon = line.indexOf(':');
+            if (colon >= 0)
+                return QString::fromUtf8(line.mid(colon + 1).trimmed());
+        }
+    }
+    return QString();
+}
+
+// ---------------------------------------------------------------------------
+// Helper: PUT a vCard to the server
+//
+// Returns the HTTP status code. On success (200/201/204), *outEtag is set to
+// the ETag returned by the server (may be empty if the server omits it).
+// ---------------------------------------------------------------------------
+
+int RemoteContactsBackend::putVCard(const QUrl      &absoluteItemUrl,
+                                    const QByteArray &vcardBytes,
+                                    const QByteArray &ifMatch,
+                                    const QByteArray &ifNoneMatch,
+                                    QString          *outEtag)
+{
+    QUrl reqUrl = absoluteItemUrl;
+    reqUrl.setUserName(QString());
+    reqUrl.setPassword(QString());
+
+    QNetworkRequest request(reqUrl);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("text/vcard; charset=utf-8"));
+    if (!m_username.isEmpty() || !m_password.isEmpty()) {
+        const QByteArray creds =
+            (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64();
+        request.setRawHeader("Authorization", "Basic " + creds);
+    }
+    if (!ifMatch.isEmpty())
+        request.setRawHeader("If-Match", ifMatch);
+    if (!ifNoneMatch.isEmpty())
+        request.setRawHeader("If-None-Match", ifNoneMatch);
+
+    QNetworkAccessManager nam;
+    QEventLoop loop;
+    int statusCode = 0;
+    QString responseEtag;
+
+    QNetworkReply *reply = nam.put(request, vcardBytes);
+    QObject::connect(reply, &QNetworkReply::finished, &loop,
+                     [reply, &loop, &responseEtag, &statusCode]() {
+        statusCode = reply->attribute(
+            QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (statusCode == 201 || statusCode == 200 || statusCode == 204) {
+            responseEtag = QString::fromUtf8(reply->rawHeader("ETag"));
+        } else {
+            qWarning() << "RemoteContactsBackend::putVCard: HTTP" << statusCode
+                       << reply->errorString();
+        }
+        reply->deleteLater();
+        loop.quit();
+    });
+    loop.exec();
+
+    if (outEtag)
+        *outEtag = responseEtag;
+    return statusCode;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: DELETE a vCard from the server
+// ---------------------------------------------------------------------------
+
+int RemoteContactsBackend::deleteVCard(const QUrl      &absoluteItemUrl,
+                                       const QByteArray &ifMatch)
+{
+    QUrl reqUrl = absoluteItemUrl;
+    reqUrl.setUserName(QString());
+    reqUrl.setPassword(QString());
+
+    QNetworkRequest request(reqUrl);
+    if (!m_username.isEmpty() || !m_password.isEmpty()) {
+        const QByteArray creds =
+            (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64();
+        request.setRawHeader("Authorization", "Basic " + creds);
+    }
+    if (!ifMatch.isEmpty())
+        request.setRawHeader("If-Match", ifMatch);
+
+    QNetworkAccessManager nam;
+    QEventLoop loop;
+    int statusCode = 0;
+
+    QNetworkReply *reply = nam.deleteResource(request);
+    QObject::connect(reply, &QNetworkReply::finished, &loop,
+                     [reply, &loop, &statusCode]() {
+        statusCode = reply->attribute(
+            QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (statusCode != 204 && statusCode != 200) {
+            qWarning() << "RemoteContactsBackend::deleteVCard: HTTP" << statusCode
+                       << reply->errorString();
+        }
+        reply->deleteLater();
+        loop.quit();
+    });
+    loop.exec();
+    return statusCode;
+}
+
+// ---------------------------------------------------------------------------
+// createRecord — PUT to <collection>/<uid>.vcf with If-None-Match: *
+// ---------------------------------------------------------------------------
+
+QString RemoteContactsBackend::createRecord(const QString     &collectionId,
+                                             const BackendRecord &record)
+{
+    if (!m_addressbookUrls.contains(collectionId)) {
+        qWarning() << "RemoteContactsBackend::createRecord: unknown collection"
+                   << collectionId;
+        return {};
+    }
+    if (record.data.isEmpty()) {
+        qWarning() << "RemoteContactsBackend::createRecord: empty vCard bytes";
+        return {};
+    }
+
+    // Extract UID from vCard, or generate one.
+    QString uid = extractUid(record.data);
+    if (uid.isEmpty()) {
+        uid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        qDebug() << "RemoteContactsBackend::createRecord: generated UID" << uid;
+    }
+
+    // Build the item URL: <addressbook>/<uid>.vcf
+    QUrl itemUrl = m_addressbookUrls.value(collectionId);
+    QString path = itemUrl.path();
+    if (!path.endsWith(QLatin1Char('/')))
+        path += QLatin1Char('/');
+    path += uid + QStringLiteral(".vcf");
+    itemUrl.setPath(path);
+
+    QString newEtag;
+    const int status = putVCard(itemUrl, record.data,
+                                QByteArray()  /*ifMatch — none*/,
+                                QByteArray("*") /*ifNoneMatch — must not exist*/,
+                                &newEtag);
+
+    if (status != 201 && status != 200 && status != 204) {
+        qWarning() << "RemoteContactsBackend::createRecord: PUT failed HTTP" << status;
+        return {};
+    }
+
+    const QString recordId = collectionId + QLatin1Char(':') + uid;
+
+    // Cache the handle for subsequent updateRecord / deleteRecord calls.
+    RecordHandle handle;
+    handle.href = itemUrl;
+    handle.etag = newEtag;
+    m_handles.insert(recordId, handle);
+
+    return recordId;
+}
+
+// ---------------------------------------------------------------------------
+// updateRecord — PUT to existing href with If-Match: <stored-etag>
+// ---------------------------------------------------------------------------
+
+bool RemoteContactsBackend::updateRecord(const BackendRecord &record)
+{
+    if (record.id.isEmpty() || record.data.isEmpty()) {
+        qWarning() << "RemoteContactsBackend::updateRecord: empty id or data";
+        return false;
+    }
+
+    // We need a handle (href + etag) from a prior loadRecords / createRecord.
+    if (!m_handles.contains(record.id)) {
+        qWarning() << "RemoteContactsBackend::updateRecord: no handle for"
+                   << record.id << "— call loadRecords first";
+        return false;
+    }
+
+    const RecordHandle h = m_handles.value(record.id);
+
+    QString newEtag;
+    const int status = putVCard(h.href, record.data,
+                                h.etag.toUtf8() /*ifMatch*/,
+                                QByteArray()    /*ifNoneMatch — none*/,
+                                &newEtag);
+
+    if (status == 204 || status == 200 || status == 201) {
+        // Update cached ETag so the next updateRecord uses the fresh one.
+        RecordHandle updated = h;
+        updated.etag = newEtag;
+        m_handles.insert(record.id, updated);
+        return true;
+    }
+
+    qWarning() << "RemoteContactsBackend::updateRecord: PUT failed HTTP"
+               << status << "for" << record.id;
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// deleteRecord — DELETE with If-Match: <stored-etag>
+// ---------------------------------------------------------------------------
+
+bool RemoteContactsBackend::deleteRecord(const QString &recordId)
+{
+    if (recordId.isEmpty()) {
+        qWarning() << "RemoteContactsBackend::deleteRecord: empty recordId";
+        return false;
+    }
+
+    if (!m_handles.contains(recordId)) {
+        qWarning() << "RemoteContactsBackend::deleteRecord: no handle for"
+                   << recordId << "— call loadRecords first";
+        return false;
+    }
+
+    const RecordHandle h = m_handles.value(recordId);
+    const int status = deleteVCard(h.href, h.etag.toUtf8());
+
+    if (status == 204 || status == 200) {
+        m_handles.remove(recordId);
+        return true;
+    }
+
+    qWarning() << "RemoteContactsBackend::deleteRecord: DELETE failed HTTP"
+               << status << "for" << recordId;
+    return false;
 }
 
 // ---------------------------------------------------------------------------

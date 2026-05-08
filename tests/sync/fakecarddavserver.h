@@ -60,6 +60,11 @@ public:
     void setSeedRecords(const QString &collectionId,
                         const QList<QByteArray> &vcards);
 
+    /// Force-regenerate the ETag for an existing record without changing its data.
+    /// Used by stale-ETag tests to make the backend's cached ETag go stale.
+    /// Returns false if the record is not found.
+    bool bumpEtag(const QString &collectionId, const QString &uid);
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
@@ -84,7 +89,9 @@ private:
 
     void handleGet(QTcpSocket *socket, const QString &path);
     void handlePut(QTcpSocket *socket, const QString &path,
-                   const QByteArray &body);
+                   const QByteArray &body,
+                   const QByteArray &ifMatch = QByteArray(),
+                   const QByteArray &ifNoneMatch = QByteArray());
     void handleDelete(QTcpSocket *socket, const QString &path,
                       const QByteArray &ifMatch);
 

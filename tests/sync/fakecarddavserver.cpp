@@ -262,7 +262,9 @@ void FakeCardDavServer::handleRequest(QTcpSocket *socket,
         handleGet(socket, path);
 
     } else if (method == "PUT") {
-        handlePut(socket, path, body);
+        const QByteArray ifMatch    = extractHeader(rawHeaders, "If-Match");
+        const QByteArray ifNoneMatch = extractHeader(rawHeaders, "If-None-Match");
+        handlePut(socket, path, body, ifMatch, ifNoneMatch);
 
     } else if (method == "DELETE") {
         const QByteArray ifMatch = extractHeader(rawHeaders, "If-Match");
@@ -408,7 +410,9 @@ void FakeCardDavServer::handleGet(QTcpSocket *socket, const QString &path)
 
 void FakeCardDavServer::handlePut(QTcpSocket *socket,
                                   const QString &path,
-                                  const QByteArray &body)
+                                  const QByteArray &body,
+                                  const QByteArray &ifMatch,
+                                  const QByteArray &ifNoneMatch)
 {
     const QString uid = uidFromPath(path);
     if (uid.isEmpty()) {
@@ -426,9 +430,34 @@ void FakeCardDavServer::handlePut(QTcpSocket *socket,
     QHash<QString, VCardRecord> &col = m_store[collId];
     const bool isNew = !col.contains(uid);
 
+    // If-None-Match: * — only create if resource does not already exist.
+    if (!ifNoneMatch.isEmpty()) {
+        if (ifNoneMatch.trimmed() == "*" && !isNew) {
+            writeResponse(socket, 412, "Precondition Failed", QByteArray());
+            return;
+        }
+    }
+
+    // If-Match: <etag> — only update if current ETag matches.
+    if (!ifMatch.isEmpty()) {
+        if (isNew) {
+            writeResponse(socket, 412, "Precondition Failed", QByteArray());
+            return;
+        }
+        const QByteArray storedEtag = col.value(uid).etag.toUtf8();
+        if (ifMatch.trimmed() != storedEtag) {
+            writeResponse(socket, 412, "Precondition Failed", QByteArray());
+            return;
+        }
+    }
+
     VCardRecord rec;
     rec.data = body;
-    rec.etag = makeEtag(body);
+    // Generate a unique ETag by salting with a counter so each PUT produces
+    // a different ETag even for identical bodies.
+    static int s_counter = 0;
+    const QByteArray salted = body + QByteArray::number(++s_counter);
+    rec.etag = makeEtag(salted);
     col.insert(uid, rec);
 
     const QByteArray etagHeader =
@@ -438,6 +467,19 @@ void FakeCardDavServer::handlePut(QTcpSocket *socket,
     } else {
         writeResponse(socket, 204, "No Content", QByteArray(), etagHeader);
     }
+}
+
+bool FakeCardDavServer::bumpEtag(const QString &collectionId, const QString &uid)
+{
+    auto storeIt = m_store.find(collectionId);
+    if (storeIt == m_store.end()) return false;
+    auto recIt = storeIt->find(uid);
+    if (recIt == storeIt->end()) return false;
+    // Append a salt so the ETag changes without altering the data.
+    static int s_bumpCounter = 0;
+    const QByteArray salted = recIt->data + QByteArray("bump") + QByteArray::number(++s_bumpCounter);
+    recIt->etag = makeEtag(salted);
+    return true;
 }
 
 void FakeCardDavServer::handleDelete(QTcpSocket *socket,
