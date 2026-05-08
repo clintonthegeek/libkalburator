@@ -1,5 +1,6 @@
 // Phase Ib Task 5 — RemoteContactsBackend read-side tests.
 // Phase Ib Task 6 — RemoteContactsBackend write-side tests.
+// Phase Ib Task 7 — RemoteContactsBackend cancellation tests.
 //
 // Read-side (Task 5):
 //  1. availableCollections() after registerAddressbookUrl() → 1 collection.
@@ -16,6 +17,10 @@
 //  10. updateRecord() with stale ETag → 412, returns false, server unchanged.
 //  11. deleteRecord() → gone from server, subsequent loadRecords() empty.
 //  12. deleteRecord() with stale ETag → 412, returns false, server unchanged.
+//
+// Cancellation (Task 7):
+//  13. cancel() during loadRecords() → returns empty, isCancelled() true.
+//  14. cancel() during createRecord() → returns empty recordId, isCancelled() true.
 
 #include <QtTest/QtTest>
 
@@ -26,6 +31,7 @@
 #include <QHostAddress>
 #include <QList>
 #include <QPair>
+#include <QTimer>
 #include <QUrl>
 
 using namespace Kalburator::Sync;
@@ -84,6 +90,10 @@ private slots:
     void updateRecord_stale_etag_returns_false();
     void deleteRecord_removes_from_server();
     void deleteRecord_stale_etag_returns_false();
+
+    // --- Cancellation (Task 7) ----------------------------------------------
+    void cancel_during_loadRecords_returns_empty();
+    void cancel_during_createRecord_returns_empty_id();
 };
 
 // ---------------------------------------------------------------------------
@@ -466,6 +476,85 @@ void TstRemoteContactsBackend::deleteRecord_stale_etag_returns_false()
     QCOMPARE(after.size(), 1);
     QVERIFY2(after.at(0).data.contains("Julia Stays"),
              "Server record should be unchanged after a stale-ETag delete failure");
+}
+
+// ---------------------------------------------------------------------------
+// 13. cancel() during loadRecords() → empty result, isCancelled() true
+//
+// Strategy: configure the fake server with a 200ms response delay, schedule
+// cancel() to fire 50ms in (while the backend is blocked in QEventLoop::exec()
+// waiting for the server's PROPFIND reply). The abort() causes the reply's
+// finished signal to fire immediately, the helper returns an empty map, and
+// loadRecords() returns {}.
+//
+// Because loadRecords() blocks synchronously on the current thread, we use
+// QTimer::singleShot to inject the cancel() into the running event loop.
+// No QTRY_VERIFY_WITH_TIMEOUT is needed; once loadRecords() returns we can
+// check results directly.
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::cancel_during_loadRecords_returns_empty()
+{
+    FakeCardDavServer server;
+    // Seed one record so the server would normally return non-empty.
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCard4("uid-cancel-lr", "Cancel Load") });
+    server.setResponseDelayMs(200); // respond 200ms after receiving the request
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    // Fire cancel() 50ms after entering the blocking loadRecords() call.
+    // The timer fires inside the backend's inner QEventLoop::exec().
+    QTimer::singleShot(50, &backend, &RemoteContactsBackend::cancel);
+
+    const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
+
+    QVERIFY2(records.isEmpty(),
+             "loadRecords() after cancel() should return an empty list");
+    QVERIFY2(backend.isCancelled(),
+             "isCancelled() should be true after cancel() was called");
+}
+
+// ---------------------------------------------------------------------------
+// 14. cancel() during createRecord() → empty recordId, isCancelled() true
+//
+// Same strategy: 200ms server delay, 50ms cancel() timer. The PUT reply is
+// aborted, putVCard() returns status 0, createRecord() returns "".
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::cancel_during_createRecord_returns_empty_id()
+{
+    FakeCardDavServer server;
+    server.setResponseDelayMs(200);
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    BackendRecord rec;
+    rec.data = makeVCard4("uid-cancel-cr", "Cancel Create");
+
+    // Fire cancel() 50ms after entering the blocking createRecord() call.
+    QTimer::singleShot(50, &backend, &RemoteContactsBackend::cancel);
+
+    const QString recordId = backend.createRecord(QStringLiteral("personal"), rec);
+
+    QVERIFY2(recordId.isEmpty(),
+             "createRecord() after cancel() should return an empty recordId");
+    QVERIFY2(backend.isCancelled(),
+             "isCancelled() should be true after cancel() was called");
 }
 
 QTEST_GUILESS_MAIN(TstRemoteContactsBackend)

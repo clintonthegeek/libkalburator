@@ -50,6 +50,15 @@ public:
     void setReturn401(bool on) { m_return401 = on; }
     void setReturn500(bool on) { m_return500 = on; }
 
+    /**
+     * @brief Insert an artificial delay (ms) before sending any response.
+     *
+     * Used by cancellation tests: schedule cancel() to fire while the backend
+     * is blocked in QEventLoop::exec() waiting for this delayed response.
+     * A value of 0 (default) means respond immediately.
+     */
+    void setResponseDelayMs(int ms) { m_responseDelayMs = ms; }
+
     /// Each pair is (collectionId, displayName). Default is one addressbook
     /// "Personal" with id "personal".
     void setAddressbooks(const QList<QPair<QString, QString>> &books);
@@ -114,6 +123,7 @@ private:
 
     bool m_return401 = false;
     bool m_return500 = false;
+    int  m_responseDelayMs = 0; ///< Artificial response delay for cancellation tests.
 };
 
 #endif // KALBURATOR_TESTS_FAKECARDDAVSERVER_H

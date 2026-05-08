@@ -45,6 +45,27 @@ RemoteContactsBackend::create(const QVariantMap &config, QObject *parent)
 }
 
 // ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+void RemoteContactsBackend::cancel()
+{
+    m_cancelled = true;
+    // Abort the in-flight reply (if any) so the blocking QEventLoop in the
+    // active helper returns immediately. The helper will see an error from the
+    // aborted reply and return an empty result; the caller then checks
+    // isCancelled() to distinguish cancellation from a real error.
+    if (m_currentReply) {
+        m_currentReply->abort();
+    }
+}
+
+void RemoteContactsBackend::resetCancelled()
+{
+    m_cancelled = false;
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -204,6 +225,8 @@ QUrl RemoteContactsBackend::credentialsUrl(const QUrl &base) const
 
 QMap<QString, QString> RemoteContactsBackend::propfindDepth1(const QUrl &addressbookUrl)
 {
+    if (m_cancelled) return {};
+
     // Build request with credentials via Authorization header
     QUrl reqUrl = addressbookUrl;
     reqUrl.setUserName(QString());
@@ -232,11 +255,15 @@ QMap<QString, QString> RemoteContactsBackend::propfindDepth1(const QUrl &address
     QMap<QString, QString> result; // href -> etag
 
     QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, [reply, &loop, &result]() {
+    m_currentReply = reply;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, [this, reply, &loop, &result]() {
+        m_currentReply = nullptr;
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (reply->error() != QNetworkReply::NoError || status == 401 || status >= 500) {
-            qWarning() << "RemoteContactsBackend::propfindDepth1: HTTP"
-                       << status << reply->errorString();
+            if (reply->error() != QNetworkReply::OperationCanceledError) {
+                qWarning() << "RemoteContactsBackend::propfindDepth1: HTTP"
+                           << status << reply->errorString();
+            }
             reply->deleteLater();
             loop.quit();
             return;
@@ -275,6 +302,8 @@ QMap<QString, QString> RemoteContactsBackend::propfindDepth1(const QUrl &address
 
 QByteArray RemoteContactsBackend::getVCard(const QUrl &absoluteItemUrl)
 {
+    if (m_cancelled) return {};
+
     QUrl reqUrl = absoluteItemUrl;
     reqUrl.setUserName(QString());
     reqUrl.setPassword(QString());
@@ -292,11 +321,15 @@ QByteArray RemoteContactsBackend::getVCard(const QUrl &absoluteItemUrl)
     QByteArray vcardBytes;
 
     QNetworkReply *reply = nam.get(request);
-    QObject::connect(reply, &QNetworkReply::finished, &loop, [reply, &loop, &vcardBytes]() {
+    m_currentReply = reply;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, [this, reply, &loop, &vcardBytes]() {
+        m_currentReply = nullptr;
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (reply->error() != QNetworkReply::NoError || status == 401 || status >= 500) {
-            qWarning() << "RemoteContactsBackend::getVCard: HTTP"
-                       << status << reply->errorString();
+            if (reply->error() != QNetworkReply::OperationCanceledError) {
+                qWarning() << "RemoteContactsBackend::getVCard: HTTP"
+                           << status << reply->errorString();
+            }
         } else {
             vcardBytes = reply->readAll();
         }
@@ -313,6 +346,8 @@ QByteArray RemoteContactsBackend::getVCard(const QUrl &absoluteItemUrl)
 
 QList<BackendRecord> RemoteContactsBackend::loadRecords(const QString &collectionId)
 {
+    if (m_cancelled) return {};
+
     if (!m_addressbookUrls.contains(collectionId)) {
         qWarning() << "RemoteContactsBackend::loadRecords: unknown collection"
                    << collectionId;
@@ -323,7 +358,7 @@ QList<BackendRecord> RemoteContactsBackend::loadRecords(const QString &collectio
     const QMap<QString, QString> hrefEtags = propfindDepth1(addressbookUrl);
 
     if (hrefEtags.isEmpty()) {
-        // Either empty addressbook or error — both produce an empty list.
+        // Either empty addressbook, error, or cancelled — all produce an empty list.
         return {};
     }
 
@@ -331,6 +366,8 @@ QList<BackendRecord> RemoteContactsBackend::loadRecords(const QString &collectio
     result.reserve(hrefEtags.size());
 
     for (auto it = hrefEtags.constBegin(); it != hrefEtags.constEnd(); ++it) {
+        if (m_cancelled) return {};
+
         const QString &href = it.key();
         const QString &etag = it.value();
 
@@ -448,6 +485,8 @@ int RemoteContactsBackend::putVCard(const QUrl      &absoluteItemUrl,
                                     const QByteArray &ifNoneMatch,
                                     QString          *outEtag)
 {
+    if (m_cancelled) return 0;
+
     QUrl reqUrl = absoluteItemUrl;
     reqUrl.setUserName(QString());
     reqUrl.setPassword(QString());
@@ -471,13 +510,15 @@ int RemoteContactsBackend::putVCard(const QUrl      &absoluteItemUrl,
     QString responseEtag;
 
     QNetworkReply *reply = nam.put(request, vcardBytes);
+    m_currentReply = reply;
     QObject::connect(reply, &QNetworkReply::finished, &loop,
-                     [reply, &loop, &responseEtag, &statusCode]() {
+                     [this, reply, &loop, &responseEtag, &statusCode]() {
+        m_currentReply = nullptr;
         statusCode = reply->attribute(
             QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (statusCode == 201 || statusCode == 200 || statusCode == 204) {
             responseEtag = QString::fromUtf8(reply->rawHeader("ETag"));
-        } else {
+        } else if (reply->error() != QNetworkReply::OperationCanceledError) {
             qWarning() << "RemoteContactsBackend::putVCard: HTTP" << statusCode
                        << reply->errorString();
         }
@@ -538,6 +579,8 @@ int RemoteContactsBackend::deleteVCard(const QUrl      &absoluteItemUrl,
 QString RemoteContactsBackend::createRecord(const QString     &collectionId,
                                              const BackendRecord &record)
 {
+    if (m_cancelled) return {};
+
     if (!m_addressbookUrls.contains(collectionId)) {
         qWarning() << "RemoteContactsBackend::createRecord: unknown collection"
                    << collectionId;

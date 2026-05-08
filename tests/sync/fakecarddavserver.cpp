@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QString>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QVariant>
 
 namespace {
@@ -121,7 +122,17 @@ void FakeCardDavServer::incomingConnection(qintptr socketDescriptor)
         // Hand off only the first request.
         const QByteArray request = buf.left(total);
         socket->setProperty(kBufProperty, QByteArray());
-        handleRequest(socket, request);
+        if (m_responseDelayMs > 0) {
+            // Defer response to simulate a slow server. The delay lets the
+            // test thread (which is blocked in QEventLoop::exec()) process
+            // a cancel() call before the reply arrives.
+            QTimer::singleShot(m_responseDelayMs, this, [this, socket, request]() {
+                if (socket->isOpen())
+                    handleRequest(socket, request);
+            });
+        } else {
+            handleRequest(socket, request);
+        }
     });
 
     QObject::connect(socket, &QTcpSocket::disconnected,

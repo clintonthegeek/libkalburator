@@ -9,6 +9,8 @@
 #include <QHash>
 #include <QList>
 #include <QMap>
+#include <QNetworkReply>
+#include <QPointer>
 #include <QString>
 #include <QUrl>
 #include <QVariantMap>
@@ -115,6 +117,33 @@ public:
             Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} } };
     }
 
+    // --- Cancellation -------------------------------------------------------
+
+    /**
+     * @brief Cancel any in-flight network operation.
+     *
+     * Sets the cancelled flag and aborts the current QNetworkReply, which
+     * causes the blocking QEventLoop::exec() in the active helper to return
+     * early. Subsequent calls to loadRecords() / createRecord() / etc. return
+     * immediately with an empty / false result until reset() is called.
+     *
+     * Thread-safety: must be called from the same thread that owns the backend
+     * (the engine-worker thread in production; the test thread in unit tests).
+     */
+    void cancel();
+
+    /**
+     * @brief Reset the cancelled flag so the backend can be reused.
+     *
+     * Call this after handling a cancellation before issuing further requests.
+     */
+    void resetCancelled();
+
+    /**
+     * @brief Returns true if cancel() has been called since the last resetCancelled().
+     */
+    bool isCancelled() const { return m_cancelled; }
+
     // --- SyncBackend mandatory calendar-API stubs --------------------------
     // RemoteContactsBackend is contacts-only; the calendar-level API is unused.
 
@@ -190,6 +219,18 @@ private:
 
     /// Per-record handle cache (populated by loadRecords / loadRecord)
     QHash<QString /*recordId*/, RecordHandle> m_handles;
+
+    // --- Cancellation support -----------------------------------------------
+    /// Set by cancel(); cleared by resetCancelled(). Checked at the start of
+    /// every public method that does network I/O so that a cancelled backend
+    /// returns immediately without issuing further requests.
+    bool m_cancelled = false;
+
+    /// The QNetworkReply currently blocking in a helper (propfindDepth1,
+    /// getVCard, putVCard, deleteVCard). Stored so cancel() can abort() it.
+    /// Always nullptr between requests; set before loop.exec(), cleared
+    /// after loop returns.
+    QPointer<QNetworkReply> m_currentReply;
 };
 
 } // namespace Kalburator::Sync
