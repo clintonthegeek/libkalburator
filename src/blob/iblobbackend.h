@@ -49,6 +49,16 @@ public:
 
     // --- Records ---
     virtual QList<BackendRecord> loadRecords(const QString &collectionId) = 0;
+    // Error-reporting overload: returns false and sets `error` on failure.
+    // Default delegates to loadRecords() with no error reporting. Override
+    // in test fakes to simulate fetch failures without changing the interface.
+    virtual bool loadRecordsOrError(const QString &collectionId,
+                                    QList<BackendRecord> &records,
+                                    QString &error) {
+        records = loadRecords(collectionId);
+        error.clear();
+        return true;
+    }
     virtual std::optional<BackendRecord> loadRecord(const QString &recordId) = 0;
     virtual QString createRecord(const QString &collectionId,
                                  const BackendRecord &record) = 0;

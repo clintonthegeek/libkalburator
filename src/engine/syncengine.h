@@ -239,31 +239,6 @@ private:
         return op;
     }
 
-    // Property sync phases (run before incidence sync)
-    void fetchCalendarProperties();
-    void computePropertyDiff();
-    void applyPropertyChanges();
-    void updatePropertyBaselines();
-
-    /// Generic property-phase implementation. Calls
-    /// plugin->collectionProperties() for src and tgt, runs
-    /// computeMapDiff() against the supplied baseline, applies changes via
-    /// plugin->applyCollectionProperties().
-    ///
-    /// Phase Ia.5 Task 7: dead code; will be wired into dispatchSync by
-    /// Task 12. The four calendar-typed methods above remain in place
-    /// until Task 13 cuts the calendar path over.
-    ///
-    /// Design notes:
-    /// - `baseline` is passed in (rather than fetched from
-    ///   m_calendarBaselines internally) so persistence concerns can be
-    ///   resolved separately by Task 12. The on-disk schema today uses
-    ///   CalendarPropertyRecord JSON which is not directly readable as a
-    ///   QVariantMap; Task 13 owns the migration.
-    /// - Conflicts are resolved here as SourceWins regardless of
-    ///   mapping.conflictPolicy. Task 10 introduces full conflict-policy
-    ///   honoring (including AskUser pause/resume) and may refactor this
-    ///   path to surface conflicts through the proper mechanism.
     void runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
                           SyncBackend *src,
                           SyncBackend *tgt,
@@ -272,56 +247,17 @@ private:
                           const QVariantMap &baseline,
                           const SyncMapping &mapping);
 
-    // Sync phases
-    void fetchSourceRecords();
-    void fetchTargetRecords();
-    void computeDiff();
-    void handleConflicts();
-    void applyChanges();
-    void updateBaselines();
-
     // First-sync dispatch via the engine's blob mirror (Phase D Task 21)
     bool dispatchFirstSync(const Request &request);
     void harvestBaselinesAfterFirstSync(const Request &request);
 
-    // Unified domain dispatch (Phase Ia.5 Task 8: renamed from
-    // dispatchBlobSync). Compiles per-mapping shape pipelines and runs
-    // the diff/merge/apply path.
+    // Unified domain dispatch (Phase Ia.5 Task 8). Compiles per-mapping
+    // shape pipelines and runs the diff/merge/apply path.
     bool dispatchSync(const Request &request);
 
-    // Calendar legacy branch (Phase Ia.5 Task 13: split from processSync).
-    // Runs the calendar-typed first-sync, property sync, diff/conflicts/
-    // apply and monitored AskUser pause/resume. dispatchSync delegates
-    // here when canonical.domain == "calendar". Tasks 14/17 will fold this
-    // into dispatchSync.
-    void dispatchCalendarLegacy(const Request &request);
-
-    // Blob-view helpers (Phase D Task 19)
-    void fetchRecordsViaBlob(const QString &backendId,
-                             const QString &calendarId,
-                             QList<SyncRecord> &out);
-
-    // Conflict handling
-    void handleConflictUnmonitored(const SyncChange &change);
-    void applyMonitoredResolution(const SyncChange &change,
-                                   ConflictResolution resolution,
-                                   const QString &mergedIcal);
-    void resolveConflictAutomatically(const SyncChange &change,
-                                       ConflictResolution policy);
-
-    void continueAfterConflicts();
-
-    // Phase Ib.5 Task 3: unified-path AskUser pause/resume helpers.
-    // unifiedHandleConflicts walks m_unifiedDiff.toTarget and yields on
-    // Monitored AskUser conflicts. unifiedContinueAfterConflicts applies
-    // m_unifiedMerge to the backends once all conflicts are resolved.
+    // Unified-path AskUser pause/resume helpers.
     void unifiedHandleConflicts();
     void unifiedContinueAfterConflicts();
-
-    void applyChangesToBackend(const QString &backendId,
-                               const QString &calendarId,
-                               const QList<SyncChange> &changes,
-                               bool useTargetRecord = false);
 
     QMutex m_mutex;
 
@@ -331,23 +267,9 @@ private:
     // Upgraded from plain bool so concurrent observers see writes
     // without taking m_mutex.
     std::atomic<bool> m_cancelled{false};
-    bool m_fetchFailed = false;
-    QString m_fetchErrorMessage;
-    bool m_applyFailed = false;
-    QString m_applyErrorMessage;
-
-    enum class ConflictPhase { ToTarget, ToSource, Done };
-    ConflictPhase m_conflictPhase = ConflictPhase::Done;
-    int m_conflictIndex = 0;
     bool m_yieldedForConflict = false;
 
-    // Phase Ib.5 Task 3: which dispatch path is currently active, used to
-    // route resumeAfterConflict to the correct continuation.
-    enum class DispatchPath { Legacy, Unified };
-    DispatchPath m_dispatchPath = DispatchPath::Legacy;
-
-    // Unified-path pause/resume state (valid while m_dispatchPath == Unified
-    // and m_yieldedForConflict is true).
+    // Unified-path pause/resume state (valid while m_yieldedForConflict is true).
     EngineDiff m_unifiedDiff;
     EngineMerge m_unifiedMerge;
     int m_unifiedConflictIdx = 0;
@@ -357,12 +279,6 @@ private:
 
     QElapsedTimer m_totalTimer;
     QElapsedTimer m_phaseTimer;
-    qint64 m_propertyFetchMs = 0;
-    qint64 m_propertyDiffMs = 0;
-    qint64 m_propertyApplyMs = 0;
-    qint64 m_sourceFetchMs = 0;
-    qint64 m_targetFetchMs = 0;
-    qint64 m_diffMs = 0;
 
     const TranscodingRouter &m_router;
     ISyncHost *m_controller = nullptr;
@@ -376,17 +292,7 @@ private:
     SyncEngine *m_engine = nullptr;
 
     Request m_currentRequest;
-    QList<SyncRecord> m_sourceRecords;
-    QList<SyncRecord> m_targetRecords;
-    SyncDiff m_currentDiff;
     SyncResult m_currentResult;
-    QList<SyncChange> m_resolvedToTarget;
-    QList<SyncChange> m_resolvedToSource;
-    int m_resolvedToSourceConflictStart = 0;
-
-    CalendarPropertyRecord m_sourceProperties;
-    CalendarPropertyRecord m_targetProperties;
-    CalendarPropertyDiff m_propertyDiff;
 };
 
 /**

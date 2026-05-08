@@ -1,6 +1,7 @@
 #pragma once
 
 #include "irecordwriter.h"
+#include "transcodingplan.h"
 
 namespace Kalburator::Sync {
 class SyncBackend;
@@ -52,6 +53,7 @@ public:
     /// `calendardomainadapter.h:147`; the engine sets it before
     /// dispatch.)
     void setCollection(Kalburator::Sync::ICalendarCollection *collection);
+    void setTranscodingPlan(const Kalburator::Sync::TranscodingPlan &plan);
 
     bool apply(
         const QString &collectionId,
@@ -62,6 +64,7 @@ public:
 private:
     Kalburator::Sync::SyncBackend         *m_backend    = nullptr;
     Kalburator::Sync::ICalendarCollection *m_collection = nullptr;
+    Kalburator::Sync::TranscodingPlan      m_plan;
 };
 
 } // namespace Kalburator::Calendar

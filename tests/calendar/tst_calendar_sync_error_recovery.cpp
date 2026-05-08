@@ -22,12 +22,16 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
+#include "blobbaselinestore.h"
 #include "calendarbaselinestore.h"
+#include "canonicalrecord.h"
 #include "conflictmanager.h"
+#include "domainregistry.h"
 #include "mockbackend.h"
 #include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
+#include "transformationregistry.h"
 
 #include "stubs/stubsynchost.h"
 
@@ -138,9 +142,10 @@ private:
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
     std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
-    std::unique_ptr<SyncEngine>       m_coordinator;
+    std::unique_ptr<SyncEngine>            m_coordinator;
 
     SyncResult m_lastResult;
 };
@@ -175,7 +180,9 @@ void TestCalendarSyncErrorRecovery::init()
                                                  hostCal);
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
+    const QString blobDbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-blob.db"));
     m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_blobBaselines     = std::make_unique<BlobBaselineStore>(blobDbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
@@ -183,6 +190,7 @@ void TestCalendarSyncErrorRecovery::init()
 
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());
@@ -196,6 +204,7 @@ void TestCalendarSyncErrorRecovery::cleanup()
     m_coordinator.reset();
     m_conflictManager.reset();
     m_conflictStore.reset();
+    m_blobBaselines.reset();
     m_calendarBaselines.reset();
     m_host.reset();
     m_target.reset();
@@ -309,6 +318,21 @@ void TestCalendarSyncErrorRecovery::targetDeleteFailure_propagatesAsSyncResultFa
     m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
                                      stale->uid(),
                                      eventToIcal(stale));
+
+    // Seed the blob baseline so the unified path (BlobBaselineStore) knows
+    // the record previously existed — without it, the engine treats evt-stale
+    // as target-only-new and copies it to source instead of deleting it.
+    const auto targetRecords = m_target->loadRecords(QString::fromLatin1(kCalendarId));
+    for (const auto &rec : targetRecords) {
+        if (rec.id == stale->uid()) {
+            Kalburator::Shape::CanonicalRecord canonical;
+            canonical.recordId = rec.id;
+            canonical.shape    = { Kalburator::Shape::DomainId{QStringLiteral("blob")},
+                                   Kalburator::Shape::EncodingId{QStringLiteral("raw")} };
+            canonical.data     = rec.contentHash.toUtf8();
+            m_blobBaselines->setBaselineV3(QString::fromLatin1(kMappingId), canonical);
+        }
+    }
 
     m_target->setFailurePoint(MockBackend::FailurePoint::OnDelete);
 

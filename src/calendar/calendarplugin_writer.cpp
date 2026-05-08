@@ -2,6 +2,7 @@
 
 #include "createincidenceitem.h"
 #include "deleteincidenceitem.h"
+#include "iblobbackend.h"
 #include "icalendarcollection.h"
 #include "syncbackend.h"
 #include "synctransaction.h"
@@ -55,6 +56,11 @@ void CalendarPluginWriter::setCollection(ICalendarCollection *collection)
     m_collection = collection;
 }
 
+void CalendarPluginWriter::setTranscodingPlan(const TranscodingPlan &plan)
+{
+    m_plan = plan;
+}
+
 bool CalendarPluginWriter::apply(
     const QString &collectionId,
     const QList<BackendRecord> &creates,
@@ -84,10 +90,7 @@ bool CalendarPluginWriter::apply(
     SyncTransaction tx(txId);
     int itemCount = 0;
 
-    // v1: no per-record cancellation oracle. The unified engine's
-    // cancel channel will be wired in a later task; for now we commit
-    // the batch straight through.
-    const TranscodingPlan plan{};
+    const TranscodingPlan &plan = m_plan;
 
     for (const auto &r : creates) {
         auto inc = parseIncidence(r.data);
@@ -119,12 +122,27 @@ bool CalendarPluginWriter::apply(
         ++itemCount;
     }
 
+    // Load pre-delete incidences from the backend blob view on the backend
+    // thread. Required so DeleteIncidenceItem::rollback() can re-create the
+    // item after a partial transaction failure.
+    QHash<QString, KCalendarCore::Incidence::Ptr> oldIncs;
+    if (!deletes.isEmpty()) {
+        QMetaObject::invokeMethod(m_backend, [this, &deletes, &oldIncs]() {
+            auto *blob = dynamic_cast<Kalburator::Sync::IBlobBackend *>(m_backend);
+            if (!blob) return;
+            KCalendarCore::ICalFormat fmt;
+            for (const auto &id : deletes) {
+                auto rec = blob->loadRecord(id);
+                if (rec && !rec->data.isEmpty())
+                    if (auto inc = fmt.fromString(QString::fromUtf8(rec->data)); inc)
+                        oldIncs.insert(id, inc);
+            }
+        }, Qt::BlockingQueuedConnection);
+    }
+
     for (const auto &id : deletes) {
-        // Null deletedIncidence is acceptable: the legacy code path
-        // also passes null when the parsed incidence isn't available
-        // (used for rollback only).
         tx.addItem(new DeleteIncidenceItem(collectionId, id,
-                                           KCalendarCore::Incidence::Ptr{},
+                                           oldIncs.value(id),
                                            m_backend));
         ++itemCount;
     }

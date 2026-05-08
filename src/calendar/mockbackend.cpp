@@ -637,6 +637,21 @@ QList<BackendRecord> MockBackend::loadRecords(const QString &collectionId)
     return result;
 }
 
+bool MockBackend::loadRecordsOrError(const QString &collectionId,
+                                      QList<BackendRecord> &records,
+                                      QString &error)
+{
+    if (shouldFail(FailurePoint::OnFetch)) {
+        error = m_failureMessage.isEmpty()
+            ? QStringLiteral("Mock failure on fetch")
+            : m_failureMessage;
+        return false;
+    }
+    records = loadRecords(collectionId);
+    error.clear();
+    return true;
+}
+
 std::optional<BackendRecord> MockBackend::loadRecord(const QString &recordId)
 {
     // recordId == uid; search across all calendars

@@ -244,6 +244,9 @@ public:
 
     // Records
     QList<BackendRecord>          loadRecords(const QString &collectionId) override;
+    bool                          loadRecordsOrError(const QString &collectionId,
+                                                     QList<BackendRecord> &records,
+                                                     QString &error) override;
     std::optional<BackendRecord>  loadRecord(const QString &recordId) override;
     QString                       createRecord(const QString &collectionId,
                                                const BackendRecord &record) override;
