@@ -113,14 +113,9 @@ public:
 
     QList<Kalburator::Shape::Shape> nativeShapes() const override
     {
-        return {
-            Kalburator::Shape::Shape{
-                Kalburator::Shape::DomainId{QStringLiteral("contacts")},
-                Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} },
-            Kalburator::Shape::Shape{
-                Kalburator::Shape::DomainId{QStringLiteral("contacts")},
-                Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} }
-        };
+        return { Kalburator::Shape::Shape{
+            Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+            Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} } };
     }
 
     // --- SyncBackend mandatory calendar-API stubs --------------------------
