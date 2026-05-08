@@ -1,6 +1,6 @@
 # Phase Ib — CardDAV transport (status)
 
-**Status:** in flight (2026-05-08)
+**Status:** ✅ landed 2026-05-08 — tag `v0.28-phase-ib-carddav-transport`
 **Spec:** `~/dev/refactor-engine-merger/2026-05-08-phase-ib-carddav-transport-design.md`
 **Plan:** `~/dev/refactor-engine-merger/2026-05-08-phase-ib-carddav-transport-plan.md`
 
@@ -18,9 +18,35 @@ Phase Ib ships the CardDAV transport layer in libkalburator, mirroring Phase H's
 
 Out-of-scope items (KWallet, ETag, CTag, Nextcloud multi-protocol, RFC 6764 auto-discovery, consumer UX) are tracked in `libkalburator/docs/phase0/04w-deferred-work.md` §B and per-consumer todos.
 
+## What landed (all 18 tasks, 2026-05-08)
+
+- Task 1: Status doc + deferral cross-references.
+- Task 2: `RemoteBackend` → `RemoteCalendarBackend` rename (libkalburator + PlanStan).
+- Task 3: `FakeCardDavServer` test fixture with ETag, If-Match/If-None-Match, delay support.
+  19/19 fixture tests pass.
+- Task 4: `CardDavCapabilityDiscovery` — RFC 6352 PROPFIND walker + 6 tests.
+- Tasks 5–7: `RemoteContactsBackend` — read-side, write-side (ETag semantics), cancellation.
+  19/19 backend tests pass.
+- Task 8: `CardDavProvider` — mirrors CalDavProvider; `connect()` uses QFutureWatcher pattern.
+  20/20 provider tests pass.
+- Task 9: Engine integration test — 2 contacts round-trip via SyncEngine::dispatchSync.
+  4/4 integration tests pass.
+- Task 10: Optional Radicale real-device test (PLANSTAN_ENABLE_CARDDAV_REAL_TESTS, default OFF).
+- Task 11: `ProviderManager` factory wiring — one-liner in `providermanager.cpp` (not
+  `collectioncontroller.cpp` — library-level is the correct location).
+- Task 12: vCard version dialect pass — VERSION:2.1 / missing VERSION handling + CRLF/LF robustness.
+- Task 13: Code-review fixes — removed dead vars + placeholder error string in
+  `CardDavCapabilityDiscovery::parseAddressbookList`.
+- Task 14: FINDINGS.md — 5 Phase Ib discoveries appended.
+- Task 15: `verify-all.sh` exit 0; libkalburator baseline refreshed to 75/75.
+- Task 16: Doc updates (this file, CURRENT-STATUS.md, ROADMAP.md).
+- Task 17: Tag `v0.28-phase-ib-carddav-transport`.
+- Task 18: Close-out report.
+
 ## What remains
 
-(initial: all 18 tasks pending)
+Nothing — all 18 tasks complete. Next phase: Ib.5 (calendar-typed signal
+generalization) or Ic (WildPalms accounts UX), per ROADMAP.md.
 
 ## vCard version support matrix
 
@@ -35,10 +61,10 @@ Per Task 12 (dialect handling), RemoteContactsBackend shape-tagging:
 
 Detection is robust against CRLF (`\r\n`) and LF (`\n`) line endings. Empty vCard bytes are handled gracefully (logged warning, defaulting to vcard4). Covered by tests 4, 15, 16, 17 in `tst_remote_contacts_backend.cpp`.
 
-## Discovery
+## Discoveries (see FINDINGS.md for full entries)
 
-(none yet; Phase Ib is in flight)
-
-## How to update this file
-
-When tasks complete or discoveries surface, add them here. When the phase lands, flip Status to `✅ landed YYYY-MM-DD` and link the tag. Keep this file ≤ 150 lines.
+- QDomDocument::ParseResult requires `UseNamespaceProcessing` for CardDAV XML.
+- CardDavProvider `bool* errorSeen` in lambda: fragile but safe in practice; future fix = shared_ptr.
+- Integration test unique_ptr + BackendRegistry raw pointer: safe only when sync completes before unwind.
+- ProviderManager factory is library-level (not consumer collectioncontroller).
+- vCard version detection must scan raw bytes (KContacts parser strips VERSION field).
