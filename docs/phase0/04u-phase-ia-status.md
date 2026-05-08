@@ -1,7 +1,12 @@
 # Phase Ia — vCard 4.0 canonical + WP palm-shape pivot (status)
 
-**Status:** in progress (started 2026-05-07)
-**Tag (planned):** `v0.26-phase-ia-vcard4-canonical`
+**Status:** in progress (started 2026-05-07; Tasks 1–18 landed; Task 19 landed DONE_WITH_CONCERNS; close-out (Tasks 20–22) unblocked 2026-05-08 once Phase Ia.5 landed)
+**Tag (planned):** `v0.27-phase-ia-vcard4-canonical`
+
+**2026-05-08:** Phase Ia.5 landed (tag
+`v0.26-phase-ia.5-engine-unification`). Phase Ia close-out
+(Tasks 20–22 of `2026-05-07-phase-ia-vcard4-canonical-plan.md`)
+is now unblocked.
 **Spec:** `~/dev/refactor-engine-merger/2026-05-07-phase-i-vcard-pressure-test-design.md`
 **Plan:** `~/dev/refactor-engine-merger/2026-05-07-phase-ia-vcard4-canonical-plan.md`
 
