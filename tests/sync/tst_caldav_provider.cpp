@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QSignalSpy>
 #include <QString>
+#include <QTcpServer>
 #include <QUrl>
 
 #include "fakecaldavserver.h"
@@ -66,6 +67,12 @@ private slots:
     void connect_fails_on_500();
     void connect_fails_on_unreachable_server();
     void disconnect_clears_collections();
+    void connect_when_already_connected_is_noop();
+    void connect_with_empty_url_emits_error_immediately();
+    void connect_with_invalid_url_emits_error_immediately();
+    void disconnect_mid_flight_resolves_promise_false();
+    void createBackend_when_not_connected_returns_nullptr();
+    void createBackend_after_disconnect_returns_nullptr();
 };
 
 void TstCalDavProvider::connect_succeeds_against_fake_server()
@@ -241,6 +248,126 @@ void TstCalDavProvider::disconnect_clears_collections()
     QVERIFY(!provider.isConnected());
     QCOMPARE(stateSpy.count(), 1);
     QCOMPARE(stateSpy.first().at(0).toBool(), false);
+}
+
+void TstCalDavProvider::connect_when_already_connected_is_noop()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QVERIFY(waitForFutureBool(provider.connect()));
+    QVERIFY(provider.isConnected());
+
+    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy collSpy(&provider, &IProvider::collectionsChanged);
+
+    QFuture<bool> fut2 = provider.connect();
+    QVERIFY(waitForFutureBool(fut2));
+    QCOMPARE(fut2.result(), true);
+    QCOMPARE(stateSpy.count(), 0);
+    QCOMPARE(collSpy.count(), 0);
+    QVERIFY(provider.isConnected());
+}
+
+void TstCalDavProvider::connect_with_empty_url_emits_error_immediately()
+{
+    CalDavProvider provider;
+
+    QSignalSpy errSpy(&provider, &IProvider::error);
+    QFuture<bool> fut = provider.connect();
+
+    QVERIFY(fut.isFinished());
+    QCOMPARE(fut.result(), false);
+    QVERIFY(!provider.isConnected());
+    QCOMPARE(errSpy.count(), 1);
+    QVERIFY(!errSpy.first().at(0).toString().isEmpty());
+}
+
+void TstCalDavProvider::connect_with_invalid_url_emits_error_immediately()
+{
+    CalDavProvider provider;
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("test");
+    cfg.connectionParams.insert(QStringLiteral("url"),
+                                QStringLiteral("not-a-url"));
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("u"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("p"));
+    provider.load(cfg);
+
+    QSignalSpy errSpy(&provider, &IProvider::error);
+    QFuture<bool> fut = provider.connect();
+
+    // Bug: CalDavProvider does not validate the URL scheme/format before
+    // dispatching to QNAM. A relative/scheme-less string like "not-a-url"
+    // is passed to QNAM which treats it as a (broken) relative URL and
+    // starts an async network request instead of rejecting synchronously.
+    // Only a truly empty URL is caught early. See FINDINGS.md.
+    QEXPECT_FAIL("", "connect() with non-scheme URL is not synchronous (CalDavProvider does not pre-validate URL scheme)", Continue);
+    QVERIFY(fut.isFinished());
+    if (!fut.isFinished())
+        return; // future is in-flight; remaining assertions would block — skip them
+    QCOMPARE(fut.result(), false);
+    QVERIFY(!provider.isConnected());
+    QCOMPARE(errSpy.count(), 1);
+}
+
+void TstCalDavProvider::disconnect_mid_flight_resolves_promise_false()
+{
+    QTcpServer hungServer;
+    QVERIFY(hungServer.listen(QHostAddress::LocalHost, 0));
+    const QUrl hungUrl(
+        QStringLiteral("http://127.0.0.1:%1/").arg(hungServer.serverPort()));
+
+    CalDavProvider provider;
+    provider.load(makeConfig(hungUrl));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(!fut.isFinished());
+
+    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+
+    provider.disconnect();
+
+    QVERIFY(fut.isFinished());
+    QCOMPARE(fut.result(), false);
+    QVERIFY(!provider.isConnected());
+    QCOMPARE(stateSpy.count(), 0);
+}
+
+void TstCalDavProvider::createBackend_when_not_connected_returns_nullptr()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    auto backend = provider.createBackend(QStringLiteral("any-id"));
+    QVERIFY(backend == nullptr);
+}
+
+void TstCalDavProvider::createBackend_after_disconnect_returns_nullptr()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QVERIFY(provider.isConnected());
+    QVERIFY(!provider.collections().isEmpty());
+    const QString collId = provider.collections().first().id;
+
+    provider.disconnect();
+    QVERIFY(!provider.isConnected());
+
+    auto backend = provider.createBackend(collId);
+    QVERIFY(backend == nullptr);
 }
 
 QTEST_GUILESS_MAIN(TstCalDavProvider)
