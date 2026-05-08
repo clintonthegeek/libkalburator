@@ -278,3 +278,41 @@ to path (B) by formalizing a `DomainExtensionPlugin` interface
 that `DomainRegistry` understands as distinct from canonical-owner
 plugins. Today, with one extender (WP) and one extension point
 (`(contacts, palm)`), that's overkill.
+
+### Static-link visibility: libkalburator domain registrars don't reach .so plugins (Task 15, 2026-05-08)
+
+**Symptom:** When `wildpalms_contacts_v2.so` is loaded via `KPluginFactory`,
+calling `Kalburator::Shape::DomainRegistry::initialize(...)` from inside the
+`.so` finds an empty registry. The libkalburator contacts plugin's
+static-init registrar (`s_contactsPluginRegistrar` in
+`libkalburator/src/contacts/contactsdomainplugin.cpp:99`) is never linked
+into the `.so` because no symbol in `contactsdomainplugin.cpp` is
+referenced from the `.so`'s code, and ELF static-archive linking drops
+unreferenced TUs by default.
+
+**Workaround applied in Task 15:** `ContactsDomainExtension::registerWith`
+now defensively calls `registerShape(vcard4, {})` (empty placeholder
+catalogue) when `catalogueFor(vcard4)` is null, so the palm↔vcard4 edge
+registrations don't trip the "to-shape not registered" assert. When
+libkalburator's `registerEdges` does eventually run (in code paths that
+DO see the plugin), `registerShape` is idempotent and overwrites the
+placeholder with the real catalogue.
+
+**Why it matters:** The static-init registrar pattern silently fails
+inside any `.so` plugin module that links libkalburator as a static
+archive. This affects ALL four stock domain plugins (calendar, contacts,
+memo, todo), not just contacts. Memo and todo WP plugins likely have the
+same silent gap; nothing currently asserts on it because their backends
+emit `(blob, blob)` shapes (per Task 1's audit) and never trigger
+edge-routing through their domain plugin's edges.
+
+**Proper fix (deferred):** One of:
+- `target_link_libraries(wildpalms_contacts_v2 PRIVATE -Wl,--whole-archive Kalburator::Sync -Wl,--no-whole-archive)` — pulls the registrar into the `.so`. Cross-platform variant: use `LINK_INTERFACE_LIBRARIES_DIRECT` or wrap with `$<LINK_LIBRARY:WHOLE_ARCHIVE,...>`.
+- Move the static-init registrar's `registerDomain(...)` call into a referenced symbol path (e.g., a function the plugin's loader explicitly calls).
+- Build libkalburator's domain plugins as separate shared libraries that the WP `.so` depends on dynamically.
+
+**Action:** Defer to a post-Phase-Ia phase. Phase Ia's Task 19 integration
+test will route through `(contacts, palm) → (contacts, vcard4)` edges
+that ARE registered (because Task 15's placeholder makes vcard4 known),
+so Phase Ia's pressure-test still proves what it's supposed to prove.
+The finding gets a full FINDINGS.md entry in Task 21.
