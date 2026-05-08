@@ -23,6 +23,21 @@ public:
     /// before invoking `apply()`.
     std::unique_ptr<Kalburator::Shape::IRecordWriter> createWriter(
         Kalburator::Sync::SyncBackend *backend) const override;
+
+    /// Phase Ia.5 Task 6: read calendar color + description from the
+    /// backend. Returns a map with "color" (QColor) and/or
+    /// "description" (QString) when set; omits keys whose values are
+    /// unset (invalid color, empty description).
+    QVariantMap collectionProperties(
+        Kalburator::Sync::SyncBackend *backend,
+        const QString &collectionId) const override;
+
+    /// Phase Ia.5 Task 6: apply calendar color + description back to
+    /// the backend via SyncBackend::updateCalendar.
+    void applyCollectionProperties(
+        Kalburator::Sync::SyncBackend *backend,
+        const QString &collectionId,
+        const QVariantMap &props) const override;
 };
 
 } // namespace Kalburator::Calendar

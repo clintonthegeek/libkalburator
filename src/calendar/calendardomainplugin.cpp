@@ -1,6 +1,7 @@
 #include "calendardomainplugin.h"
 
 #include "calendarplugin_writer.h"
+#include "syncbackend.h"
 #include "domainregistry.h"
 #include "icalproperties.h"
 #include "icalrecorddiffer.h"
@@ -85,6 +86,32 @@ std::unique_ptr<Kalburator::Shape::IRecordWriter>
 KalburatorDomainCalendar::createWriter(Kalburator::Sync::SyncBackend *backend) const
 {
     return std::make_unique<Kalburator::Calendar::CalendarPluginWriter>(backend);
+}
+
+QVariantMap KalburatorDomainCalendar::collectionProperties(
+    Kalburator::Sync::SyncBackend *backend,
+    const QString &collectionId) const
+{
+    if (!backend) return {};
+    QVariantMap m;
+    // Note: SyncBackend::calendarColor/Description take only calendarId.
+    // For calendar, collectionId IS the calendarId (they're identical
+    // in the engine's mapping representation). Match the existing
+    // fetchCalendarProperties() pattern in syncengine.cpp.
+    const QColor c = backend->calendarColor(collectionId);
+    if (c.isValid()) m[QStringLiteral("color")] = c;
+    const QString d = backend->calendarDescription(collectionId);
+    if (!d.isEmpty()) m[QStringLiteral("description")] = d;
+    return m;
+}
+
+void KalburatorDomainCalendar::applyCollectionProperties(
+    Kalburator::Sync::SyncBackend *backend,
+    const QString &collectionId,
+    const QVariantMap &props) const
+{
+    if (!backend || props.isEmpty()) return;
+    backend->updateCalendar(collectionId, /*calendarId=*/collectionId, props);
 }
 
 } // namespace Kalburator::Calendar
