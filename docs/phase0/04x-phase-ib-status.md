@@ -22,6 +22,19 @@ Out-of-scope items (KWallet, ETag, CTag, Nextcloud multi-protocol, RFC 6764 auto
 
 (initial: all 18 tasks pending)
 
+## vCard version support matrix
+
+Per Task 12 (dialect handling), RemoteContactsBackend shape-tagging:
+
+| VERSION: | Shape        | Handling                                             |
+|----------|--------------|------------------------------------------------------|
+| 4.0      | vcard4       | native; no transcode needed                          |
+| 3.0      | vcard3       | transcoded by engine Pipeline                        |
+| 2.1      | vcard3       | best-effort (logged warning); transcoded by Pipeline |
+| (absent) | vcard4       | assumed latest (logged warning)                      |
+
+Detection is robust against CRLF (`\r\n`) and LF (`\n`) line endings. Empty vCard bytes are handled gracefully (logged warning, defaulting to vcard4). Covered by tests 4, 15, 16, 17 in `tst_remote_contacts_backend.cpp`.
+
 ## Discovery
 
 (none yet; Phase Ib is in flight)

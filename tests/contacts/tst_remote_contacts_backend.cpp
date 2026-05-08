@@ -64,6 +64,39 @@ QByteArray makeVCard3(const QByteArray &uid, const QByteArray &fn)
     return v;
 }
 
+QByteArray makeVCard21(const QByteArray &uid, const QByteArray &fn)
+{
+    QByteArray v;
+    v += "BEGIN:VCARD\r\n";
+    v += "VERSION:2.1\r\n";
+    v += "UID:" + uid + "\r\n";
+    v += "FN:" + fn + "\r\n";
+    v += "END:VCARD\r\n";
+    return v;
+}
+
+QByteArray makeVCardNoVersion(const QByteArray &uid, const QByteArray &fn)
+{
+    QByteArray v;
+    v += "BEGIN:VCARD\r\n";
+    // Intentionally missing VERSION: line
+    v += "UID:" + uid + "\r\n";
+    v += "FN:" + fn + "\r\n";
+    v += "END:VCARD\r\n";
+    return v;
+}
+
+QByteArray makeVCard4WithLF(const QByteArray &uid, const QByteArray &fn)
+{
+    QByteArray v;
+    v += "BEGIN:VCARD\n";  // LF only, not CRLF
+    v += "VERSION:4.0\n";
+    v += "UID:" + uid + "\n";
+    v += "FN:" + fn + "\n";
+    v += "END:VCARD\n";
+    return v;
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -94,6 +127,11 @@ private slots:
     // --- Cancellation (Task 7) ----------------------------------------------
     void cancel_during_loadRecords_returns_empty();
     void cancel_during_createRecord_returns_empty_id();
+
+    // --- vCard version handling (Task 12) -----------------------------------
+    void loadRecords_vcard21_tagged_as_vcard3();
+    void loadRecords_missing_version_tagged_as_vcard4();
+    void loadRecords_vcard4_with_lf_line_endings();
 };
 
 // ---------------------------------------------------------------------------
@@ -555,6 +593,95 @@ void TstRemoteContactsBackend::cancel_during_createRecord_returns_empty_id()
              "createRecord() after cancel() should return an empty recordId");
     QVERIFY2(backend.isCancelled(),
              "isCancelled() should be true after cancel() was called");
+}
+
+// ---------------------------------------------------------------------------
+// 15. vCard 2.1 → tagged as vcard3 (with log warning)
+//
+// Task 12: vCard 2.1 is detected and best-effort transcoded as vcard3.
+// The engine Pipeline transcodes vcard3 to vcard4 for the calendar domain.
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::loadRecords_vcard21_tagged_as_vcard3()
+{
+    FakeCardDavServer server;
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCard21("uid-v21", "vCard 2.1 Contact") });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.at(0).type.contains(QStringLiteral("vcard3")),
+             qPrintable(QStringLiteral("vCard 2.1 should be tagged as vcard3, got: %1")
+                        .arg(records.at(0).type)));
+}
+
+// ---------------------------------------------------------------------------
+// 16. Missing VERSION: line → tagged as vcard4 (assume latest)
+//
+// Task 12: vCard without explicit VERSION is assumed to be vcard4 (latest).
+// This follows the principle of assuming the most recent version when
+// unspecified.
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::loadRecords_missing_version_tagged_as_vcard4()
+{
+    FakeCardDavServer server;
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCardNoVersion("uid-no-ver", "No Version Contact") });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.at(0).type.contains(QStringLiteral("vcard4")),
+             qPrintable(QStringLiteral("Missing VERSION should default to vcard4, got: %1")
+                        .arg(records.at(0).type)));
+}
+
+// ---------------------------------------------------------------------------
+// 17. vCard 4.0 with LF line endings (not CRLF) → tagged as vcard4
+//
+// Task 12: Version detection is robust against both LF (\n) and CRLF (\r\n)
+// line endings. Some servers may send pure LF; the detection should work
+// either way.
+// ---------------------------------------------------------------------------
+
+void TstRemoteContactsBackend::loadRecords_vcard4_with_lf_line_endings()
+{
+    FakeCardDavServer server;
+    server.setSeedRecords(QStringLiteral("personal"),
+                          { makeVCard4WithLF("uid-lf", "LF Line Endings") });
+    QVERIFY(server.startListening());
+
+    const QUrl addressbookUrl = server.baseUrl().resolved(
+        QUrl(QStringLiteral("/addressbooks/testuser/personal/")));
+
+    RemoteContactsBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.registerAddressbookUrl(QStringLiteral("personal"), addressbookUrl);
+
+    const QList<BackendRecord> records = backend.loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.at(0).type.contains(QStringLiteral("vcard4")),
+             qPrintable(QStringLiteral("vCard 4.0 with LF line endings should be tagged as vcard4, got: %1")
+                        .arg(records.at(0).type)));
 }
 
 QTEST_GUILESS_MAIN(TstRemoteContactsBackend)

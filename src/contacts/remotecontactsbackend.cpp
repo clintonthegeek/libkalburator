@@ -137,11 +137,22 @@ CollectionInfo RemoteContactsBackend::collectionInfo(const QString &collectionId
 // static
 Kalburator::Shape::Shape RemoteContactsBackend::shapeFromVCard(const QByteArray &vcardBytes)
 {
+    // Handle empty bytes gracefully.
+    if (vcardBytes.isEmpty()) {
+        qWarning() << "RemoteContactsBackend::shapeFromVCard: empty vCard bytes, "
+                   << "defaulting to vcard4";
+        return Kalburator::Shape::Shape{
+            Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+            Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} };
+    }
+
     // Scan for BEGIN:VCARD then inspect the next VERSION: line.
+    // Robust against both LF (\n) and CRLF (\r\n) line endings.
     bool foundBegin = false;
     const QList<QByteArray> lines = vcardBytes.split('\n');
     for (const QByteArray &raw : lines) {
         QByteArray line = raw;
+        // Strip CRLF or LF line ending
         if (line.endsWith('\r')) line.chop(1);
         line = line.trimmed();
 
@@ -151,20 +162,39 @@ Kalburator::Shape::Shape RemoteContactsBackend::shapeFromVCard(const QByteArray 
             continue;
         }
 
-        // First line after BEGIN:VCARD
+        // First line after BEGIN:VCARD — check for VERSION:
         if (line.toUpper().startsWith("VERSION:")) {
             const QByteArray version = line.mid(8).trimmed();
+
+            // vCard 3.0 → transcoded by engine
             if (version == "3.0") {
                 return Kalburator::Shape::Shape{
                     Kalburator::Shape::DomainId{QStringLiteral("contacts")},
                     Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} };
             }
+
+            // vCard 2.1 → best-effort transcode as vcard3 (with warning)
+            if (version == "2.1") {
+                qWarning() << "RemoteContactsBackend::shapeFromVCard: vCard 2.1 detected, "
+                           << "tagging as vcard3 (best-effort transcode)";
+                return Kalburator::Shape::Shape{
+                    Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+                    Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} };
+            }
+
             // 4.0 or anything else → vcard4
-            break;
+            return Kalburator::Shape::Shape{
+                Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+                Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} };
         }
-        // VERSION: not the next line — stop scanning
+
+        // VERSION: not the next line — stop scanning (malformed but don't crash)
         break;
     }
+
+    // No VERSION: line found — assume latest (vcard4)
+    qWarning() << "RemoteContactsBackend::shapeFromVCard: no VERSION: line found, "
+               << "assuming vcard4";
     return Kalburator::Shape::Shape{
         Kalburator::Shape::DomainId{QStringLiteral("contacts")},
         Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} };
