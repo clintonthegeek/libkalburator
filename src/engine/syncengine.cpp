@@ -1833,57 +1833,43 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         return true;
     }
 
+    // Phase Ia.5 Task 9: lift plugin lookup out of the homogeneous /
+    // heterogeneous branches. Plugin registrars are pulled into the
+    // test binaries via $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+    // (Task 9 precursor) so DomainRegistry has them available at sync
+    // time. Compile(X, X) returns identity, so the same code path
+    // handles homogeneous and heterogeneous mappings uniformly.
+    auto *plugin = Kalburator::Shape::DomainRegistry::instance()
+                       .findByDomain(srcShape.domain);
+    if (!plugin) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: no plugin for domain '%1'")
+                .arg(srcShape.domain.toString());
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
+
+    const Kalburator::Shape::Shape canonical = plugin->canonicalShape();
+
     const auto &reg = Kalburator::Shape::TransformationRegistry::instance();
-    std::optional<Kalburator::Shape::Pipeline> srcToCanon;
-    std::optional<Kalburator::Shape::Pipeline> tgtToCanon;
-    std::optional<Kalburator::Shape::Pipeline> canonToTgt;
-    std::optional<Kalburator::Shape::Pipeline> canonToSrc;
+    std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);
+    std::optional<Kalburator::Shape::Pipeline> tgtToCanon = reg.compile(tgtShape, canonical);
+    std::optional<Kalburator::Shape::Pipeline> canonToTgt = reg.compile(canonical, tgtShape);
+    std::optional<Kalburator::Shape::Pipeline> canonToSrc = reg.compile(canonical, srcShape);
 
-    if (srcShape == tgtShape) {
-        // Homogeneous-shape short-circuit: source and target speak the
-        // same shape, so no canonical detour is needed. All four
-        // pipelines are identity. This avoids requiring a registered
-        // domain plugin for the homogeneous case (e.g. blob-on-blob,
-        // or test stubs that declare a custom shape).
-        srcToCanon = reg.compile(srcShape, srcShape);
-        tgtToCanon = reg.compile(tgtShape, tgtShape);
-        canonToTgt = reg.compile(tgtShape, tgtShape);
-        canonToSrc = reg.compile(srcShape, srcShape);
-    } else {
-        // Heterogeneous shapes: round-trip through the domain's
-        // canonical shape. Requires a registered plugin and an edge
-        // graph linking both shapes to canonical.
-        auto *plugin = Kalburator::Shape::DomainRegistry::instance()
-                           .findByDomain(srcShape.domain);
-        if (!plugin) {
-            m_currentResult.success = false;
-            m_currentResult.errorMessage = QStringLiteral(
-                "dispatchSync: no plugin for domain '%1'")
-                    .arg(srcShape.domain.toString());
-            m_currentResult.endTime = QDateTime::currentDateTime();
-            emit syncCompleted(mappingId, m_currentResult);
-            return true;
-        }
-
-        const Kalburator::Shape::Shape canonical = plugin->canonicalShape();
-
-        srcToCanon = reg.compile(srcShape, canonical);
-        tgtToCanon = reg.compile(tgtShape, canonical);
-        canonToTgt = reg.compile(canonical, tgtShape);
-        canonToSrc = reg.compile(canonical, srcShape);
-
-        if (!srcToCanon || !tgtToCanon || !canonToTgt || !canonToSrc) {
-            m_currentResult.success = false;
-            m_currentResult.errorMessage = QStringLiteral(
-                "dispatchSync: no edge path between shape and canonical "
-                "(srcShape=%1/%2, tgtShape=%3/%4, canonical=%5/%6)")
-                    .arg(srcShape.domain.toString(), srcShape.encoding.toString(),
-                         tgtShape.domain.toString(), tgtShape.encoding.toString(),
-                         canonical.domain.toString(), canonical.encoding.toString());
-            m_currentResult.endTime = QDateTime::currentDateTime();
-            emit syncCompleted(mappingId, m_currentResult);
-            return true;
-        }
+    if (!srcToCanon || !tgtToCanon || !canonToTgt || !canonToSrc) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: no edge path between shape and canonical "
+            "(srcShape=%1/%2, tgtShape=%3/%4, canonical=%5/%6)")
+                .arg(srcShape.domain.toString(), srcShape.encoding.toString(),
+                     tgtShape.domain.toString(), tgtShape.encoding.toString(),
+                     canonical.domain.toString(), canonical.encoding.toString());
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
     }
 
     emit phaseChanged(mappingId, 1);
