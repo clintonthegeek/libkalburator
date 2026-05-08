@@ -33,9 +33,6 @@ QList<Kalburator::Shape::Shape> KalburatorDomainContacts::peerShapes() const
 {
     return {
         { DomainId{"contacts"}, EncodingId{"vcard3"} },
-        // palm-address peer placeholder — Task 12 covers WP's
-        // dynamic registration of (contacts, palm).
-        { DomainId{"contacts"}, EncodingId{"palm-address"} },
     };
 }
 
@@ -94,10 +91,6 @@ void KalburatorDomainContacts::registerEdges(TransformationRegistry &registry)
         vcard4ToVcard3Loss(),
         std::make_shared<VCard4To3Stage>()
     });
-
-    // palm-address peer placeholder; Task 12 removes.
-    registry.registerShape(
-        { DomainId{"contacts"}, EncodingId{"palm-address"} }, {});
 }
 
 int KalburatorDomainContacts::richnessRank(

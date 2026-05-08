@@ -98,6 +98,16 @@ private slots:
                                            Kalburator::Shape::EncodingId{"vcard3"} };
         QVERIFY(peers.contains(v3));
     }
+
+    void peerShapesDoesNotIncludePalmAddress()
+    {
+        const KalburatorDomainContacts plugin;
+        const auto peers = plugin.peerShapes();
+        const Kalburator::Shape::Shape palmAddr{
+            Kalburator::Shape::DomainId{"contacts"},
+            Kalburator::Shape::EncodingId{"palm-address"} };
+        QVERIFY(!peers.contains(palmAddr));
+    }
 };
 
 QTEST_GUILESS_MAIN(TestVCardPlugin)
