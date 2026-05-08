@@ -102,6 +102,12 @@ kalburator_add_calendar_test(tst_incidencediff)
 kalburator_add_calendar_test(tst_syncstore)
 target_link_libraries(tst_syncstore PRIVATE Qt6::Sql)
 
+# Task 6 — SyncTransaction + ConflictManager tests (migrated from PlanStan)
+kalburator_add_calendar_test(tst_synctransaction)
+
+kalburator_add_calendar_test(tst_conflictmanager)
+target_link_libraries(tst_conflictmanager PRIVATE Qt6::Sql Qt6::Widgets)
+
 # Phase G.2 — calendar property catalogue, differ, merger, plugin
 add_subdirectory(differs)
 add_subdirectory(plugin)
