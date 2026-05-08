@@ -1882,6 +1882,19 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     const QString tgtColId  = request.mapping.targetCalendar;
     const QString mappingId = request.mapping.id;
 
+    // Phase Ib.5 Task 4: first-sync fast path, hoisted from dispatchCalendarLegacy.
+    // When there are no prior baselines and the mapping is upload-only, mirror
+    // source → target in bulk and skip the full diff/merge cycle.
+    // useQuickPath == true when CalendarBaselineStore has no entries for this
+    // mapping — for non-calendar domains this is always the case, so the fast
+    // path fires on every OneWayUpload sync where the target is still empty.
+    // dispatchFirstSync returns false if the target is not empty, in which case
+    // we fall through to the full diff path below.
+    if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
+        if (dispatchFirstSync(request))
+            return true;
+    }
+
     // --- Phase Ia.5 Task 8: compile pipelines for shape promotion ---
     // srcShape -> canonical: promote source records to canonical for diff.
     // tgtShape -> canonical: promote target records to canonical for diff.
