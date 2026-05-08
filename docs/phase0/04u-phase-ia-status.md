@@ -316,3 +316,105 @@ test will route through `(contacts, palm) → (contacts, vcard4)` edges
 that ARE registered (because Task 15's placeholder makes vcard4 known),
 so Phase Ia's pressure-test still proves what it's supposed to prove.
 The finding gets a full FINDINGS.md entry in Task 21.
+
+### Engine does not invoke registered TransformationStage at the edge (Task 19, 2026-05-08)
+
+**Symptom:** With both source and target backends declaring distinct
+shapes for the same domain (`(contacts, palm)` source,
+`(contacts, vcard4)` target) and a registered palm↔vcard4 edge in the
+process-wide `TransformationRegistry`, the bytes pushed to the target
+are byte-identical to the source bytes. The target receives PalmRecord
+wire-bytes — NOT the vCard 4.0 representation that
+`PalmToVCardStage::transform` would produce.
+
+**Root cause:** `SyncEngineWorker::dispatchBlobSync`
+(`src/engine/syncengine.cpp:1775-1926`) hard-wires the read→diff→write
+pipeline:
+
+```cpp
+sourceRecords = srcBlob->loadRecords(srcColId);   // raw bytes
+...
+const EngineDiff = adapter.diff(...);              // hash-equality diff
+const EngineMerge = adapter.merge(...);
+for each rec in toWrite:
+    tgtBlob->createRecord(tgtColId, rec);          // raw bytes, no transform
+```
+
+There is no call to `TransformationRegistry::compile(srcShape, tgtShape)`,
+no `Pipeline::run(bytes)`. The registry IS consulted — but only to compute
+the `LossProfile` passed to `ISyncHost::syncStarted` (see
+`syncengine.cpp:1441-1451`). Loss profile is observability metadata, not
+an actuator.
+
+**Diagnostic test (landed):** `WildPalms/tests/plugins/contacts/
+tst_contacts_palm_engine_sync.cpp` pins this gap. It:
+1. Builds two `SyncBackend` subclasses with declared
+   `(contacts, palm)` and `(contacts, vcard4)` `nativeShapes()`.
+2. Registers `ContactsDomainExtension` so the palm↔vcard4 edge exists.
+3. Drives `SyncEngine::runSyncFuture(OneWayUpload)`.
+4. Asserts:
+   - Host's `syncStarted` got a `Lossless` LossProfile (proves
+     registry consultation: `palmToVCardLoss()` returns Lossless;
+     the default for an unregistered path is also Lossless, but the
+     assertion still pins that the engine reached this path).
+   - Target's `createRecord` was called exactly once.
+   - Target bytes are byte-equal to source bytes (the gap).
+   - Target bytes do NOT contain `BEGIN:VCARD` or `VERSION:4.0` (the
+     gap, with teeth).
+   - Target bytes round-trip through `PalmRecord::fromWireBytes` —
+     proving they're palm bytes, not transformed vCard.
+
+When Phase Ib lands the engine-side fix (compile + run Pipeline at the
+edge), the diagnostic assertions in this test flip: `BEGIN:VCARD` and
+`VERSION:4.0` substrings WILL appear, and the round-trip-as-palm
+assertion will fail. That flip is the load-bearing "fix landed" signal.
+
+**Why this is the architectural finding the phase was designed to
+deliver:** Task 19 was framed as the pressure-test that would surface
+"any architectural assumption baked into the engine that hurts
+contacts." The finding is that the engine has no concept of "transform
+at the shape edge" at all — the assumption is that all sync is
+identity-bytes, with the `BlobDomainAdapter` doing hash-equality diff.
+This worked while every WP plugin emitted `(blob, blob)` (Task 1's
+audit), because identity-bytes IS the right behaviour when source and
+target shape are the same.
+
+The pivot to `(contacts, palm)` vs `(contacts, vcard4)` (Phase Ia's
+read-path pivot in Task 16) created the first cross-shape mapping in
+production, exposing the gap. Today's WP UX hides this because the PC
+side is also a blob-shaped mock; production users never see palm bytes
+arrive at a "PC" backend that's actually a vcard4 store, because no
+such store exists yet.
+
+**Decision:** Land the diagnostic test as DONE_WITH_CONCERNS for Phase
+Ia. The engine fix is the natural Phase Ib opening task. Forking it
+into Phase Ia would have:
+- Required substantial engine-thread work (`compile()` returns
+  `std::optional<Pipeline>`; per-record run; threading model around
+  the Pipeline's invocation; loss-policy enforcement
+  (`Abort` / `Warn` / `Proceed` on lossy transforms); baseline-keying
+  semantics (do we baseline source-shape bytes or canonical bytes?)).
+- Potentially destabilized libkalburator's calendar test contract
+  pinned by Phase D.0. The dispatchBlobSync path is shared with the
+  calendar adapter's blob fallback path; an in-place change risks
+  flipping calendar tests.
+
+**Concrete Phase Ib backlog (forked from this finding):**
+1. `SyncEngineWorker::dispatchBlobSync` — call
+   `TransformationRegistry::compile(srcShape, tgtShape)` and apply the
+   Pipeline to each `BackendRecord::data` before
+   `tgtBlob->createRecord`/`updateRecord`. Pipeline::run is
+   bytes-in-bytes-out, so this is a contained change.
+2. Loss-policy enforcement: when Pipeline's composed LossProfile is
+   non-Lossless and the mapping's `lossPolicy == Abort`, fail the
+   sync with the LossProfile in the error message. When `Warn`, emit
+   `transcodingWarning`. When `Proceed`, run silently.
+3. Baseline keying: stored baselines on the target side are the
+   transformed bytes (target shape). The diff at next sync compares
+   target-shape bytes against target-shape baseline; the source side
+   is independent. This requires a small `BlobBaselineStore`
+   contract sharpening.
+4. Bidirectional case (TwoWay): both directions need the inverse
+   pipeline. `compile(tgtShape, srcShape)` + apply on `finalSource`.
+5. Flip Task 19's diagnostic assertions and add a positive assertion
+   that target bytes are valid vCard 4.0 (parses via KContacts).
