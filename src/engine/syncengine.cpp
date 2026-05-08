@@ -9,6 +9,8 @@
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
 #include "irecordmerger.h"
+#include "irecordwriter.h"
+#include "calendarplugin_writer.h"
 #include "iblobbackend.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
@@ -1319,6 +1321,38 @@ QString syncRecordKey(const SyncRecord &rec)
 
 inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>(b); }
 
+// Phase Ia.5 Task 11: classification helper for the writer-based apply
+// path. Mirrors the inline classification the old direct-IBlobBackend
+// apply loop did — load the destination's existing record ids, then
+// route each post-merge record into creates / updates / deletes.
+// Must run on the backend's thread (loadRecords calls into the backend).
+struct WriterBatch {
+    QList<BackendRecord> creates;
+    QList<BackendRecord> updates;
+    QStringList          deletes;
+};
+
+WriterBatch classifyForWriter(
+    const QList<BackendRecord> &toWrite,
+    IBlobBackend *backend,
+    const QString &collectionId)
+{
+    WriterBatch batch;
+    QHash<QString, bool> existing;
+    for (const auto &r : backend->loadRecords(collectionId))
+        existing.insert(r.id, true);
+    for (const auto &rec : toWrite) {
+        if (rec.isDeleted) {
+            batch.deletes.append(rec.id);
+        } else if (existing.contains(rec.id)) {
+            batch.updates.append(rec);
+        } else {
+            batch.creates.append(rec);
+        }
+    }
+    return batch;
+}
+
 // Register metatypes for cross-thread signal/slot.
 const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<SyncEngineWorker::Request>("SyncEngineWorker::Request");
@@ -1977,6 +2011,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // can produce Create ops for records that don't yet exist on the
     // destination (e.g. first-sync of a new record). We always pre-load the
     // destination's current record set so we can distinguish create vs update.
+    // Phase Ia.5 Task 11: route apply through the plugin's IRecordWriter.
+    // Threading: classification + writer->apply() run on the backend's
+    // thread under BlockingQueuedConnection — DefaultBlobWriter's
+    // IBlobBackend create/update/delete calls expect to be on the
+    // backend thread (matches the prior inline apply loop). Calendar
+    // mappings still route through the legacy router above (deleted in
+    // Task 13); CalendarPluginWriter does its own inner BlockingQueued
+    // commit, so it must NOT run from inside this wrapper. We document
+    // and assert that contract here for forward-compat: when Task 13
+    // unifies routing, CalendarPluginWriter's apply must be called on
+    // the worker thread directly (not wrapped), which Task 13 will
+    // address along with its setCollection wiring.
     if (!engineMerge.finalTarget.isEmpty()) {
         QList<BackendRecord> toWrite = engineMerge.finalTarget;
         // Phase Ia.5 Task 8: demote outgoing records to target's native
@@ -1988,24 +2034,24 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
                 }
             }
         }
-        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite]() {
-            QHash<QString, bool> existing;
-            for (const auto &r : tgtBlob->loadRecords(tgtColId))
-                existing.insert(r.id, true);
-            for (const auto &rec : toWrite) {
-                if (rec.isDeleted) {
-                    tgtBlob->deleteRecord(rec.id);
-                } else if (existing.contains(rec.id)) {
-                    tgtBlob->updateRecord(rec);
-                } else {
-                    tgtBlob->createRecord(tgtColId, rec);
-                }
-            }
+        auto tgtWriter = plugin->createWriter(tgtBackend);
+        // Forward-compat (calendar router still routes calendar away
+        // from this code path in v1): if a future plugin returns a
+        // writer that needs the calendar collection, wire it now.
+        if (auto *cw = dynamic_cast<Kalburator::Calendar::CalendarPluginWriter*>(
+                tgtWriter.get())) {
+            cw->setCollection(m_collection);
+        }
+        Kalburator::Shape::IRecordWriter *writer = tgtWriter.get();
+        QMetaObject::invokeMethod(tgtBackend, [writer, tgtBlob, tgtColId, toWrite]() {
+            const WriterBatch batch =
+                classifyForWriter(toWrite, tgtBlob, tgtColId);
+            writer->apply(tgtColId, batch.creates, batch.updates, batch.deletes);
         }, Qt::BlockingQueuedConnection);
     }
 
     // --- Apply to source (cross-thread) ---
-    // Same create-vs-update dispatch as the target apply above.
+    // Same writer-based dispatch as the target apply above.
     if (!engineMerge.finalSource.isEmpty()) {
         QList<BackendRecord> toWrite = engineMerge.finalSource;
         // Phase Ia.5 Task 8: demote outgoing records to source's native
@@ -2017,19 +2063,16 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
                 }
             }
         }
-        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite]() {
-            QHash<QString, bool> existing;
-            for (const auto &r : srcBlob->loadRecords(srcColId))
-                existing.insert(r.id, true);
-            for (const auto &rec : toWrite) {
-                if (rec.isDeleted) {
-                    srcBlob->deleteRecord(rec.id);
-                } else if (existing.contains(rec.id)) {
-                    srcBlob->updateRecord(rec);
-                } else {
-                    srcBlob->createRecord(srcColId, rec);
-                }
-            }
+        auto srcWriter = plugin->createWriter(srcBackend);
+        if (auto *cw = dynamic_cast<Kalburator::Calendar::CalendarPluginWriter*>(
+                srcWriter.get())) {
+            cw->setCollection(m_collection);
+        }
+        Kalburator::Shape::IRecordWriter *writer = srcWriter.get();
+        QMetaObject::invokeMethod(srcBackend, [writer, srcBlob, srcColId, toWrite]() {
+            const WriterBatch batch =
+                classifyForWriter(toWrite, srcBlob, srcColId);
+            writer->apply(srcColId, batch.creates, batch.updates, batch.deletes);
         }, Qt::BlockingQueuedConnection);
     }
 
