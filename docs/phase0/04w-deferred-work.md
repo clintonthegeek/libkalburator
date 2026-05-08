@@ -166,6 +166,43 @@ restructure is purely a code-shape improvement.
 
 ---
 
+### A.5 Calendar property phase: baseline-aware diff in unified path
+
+**Status:** ⬜ deferred from Phase Ib.5 Task 5.
+**Target phase:** post-Ib.5; low priority — no integration test exercises
+this path.
+**Source:** Phase Ib.5 parity audit (04y).
+
+`dispatchCalendarLegacy` runs `fetchCalendarProperties` +
+`computePropertyDiff` + `applyPropertyChanges`, using
+`CalendarBaselineStore` to store typed `CalendarPropertyRecord` baselines
+and compute a property diff (displayName, color, timeZone, etc.).
+
+The unified `dispatchSync` calls `runPropertyPhase(plugin, ...,
+baseline=QVariantMap{})` with an *empty* baseline. This means the property
+phase always runs in "first-sync" mode — it sees no prior state and
+overwrites collection-level properties on every sync, but since most sources
+and targets agree on calendar metadata in practice, this is harmless.
+
+No `tests/calendar/` integration test verifies baseline-aware property diff
+(confirmed by Task 5 grep sweep). The acceptance bar is therefore met without
+a fix.
+
+**Why deferred:** `CalendarBaselineStore` stores `CalendarPropertyRecord`
+JSON; bridging to the `QVariantMap` interface that `runPropertyPhase` expects
+requires a schema migration or a parallel store entry. Not worth the
+complexity until a consumer reports a property regression.
+
+**Acceptance:**
+- `CalendarBaselineStore` property records converted to `QVariantMap` or
+  a new typed store added to `BlobBaselineStore` (v4 baseline schema).
+- `runPropertyPhase` called with the persisted baseline instead of `{}`.
+- `tests/calendar/` gains a test that seeds a property baseline, changes
+  displayName on one side, and asserts the change propagates without
+  overwriting the unchanged side.
+
+---
+
 ## B. Transport features (no phase yet)
 
 ### B.1 ETag-based optimistic concurrency at engine level
