@@ -299,12 +299,14 @@ set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/vcardproperties.h
     src/contacts/vcarddiffer.h
     src/contacts/vcardmerger.h
+    src/contacts/vcard3to4transformation.h
     src/contacts/contactsdomainplugin.h
 )
 set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcardproperties.cpp
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
+    src/contacts/vcard3to4transformation.cpp
     src/contacts/contactsdomainplugin.cpp
 )
 
