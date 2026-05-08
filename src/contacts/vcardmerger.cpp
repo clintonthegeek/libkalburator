@@ -105,6 +105,26 @@ CanonicalRecord IRecordMergerVCard::merge(
              tgt.nickName() != base.nickName(),
              [](KContacts::Addressee &a, const QString &v){ a.setNickName(v); },
              tgt.nickName());
+
+        pick(src.gender() != base.gender(),
+             tgt.gender() != base.gender(),
+             [](KContacts::Addressee &a, const KContacts::Gender &v){ a.setGender(v); },
+             tgt.gender());
+
+        pick(src.langs() != base.langs(),
+             tgt.langs() != base.langs(),
+             [](KContacts::Addressee &a, const KContacts::Lang::List &v){ a.setLangs(v); },
+             tgt.langs());
+
+        pick(src.anniversary() != base.anniversary(),
+             tgt.anniversary() != base.anniversary(),
+             [](KContacts::Addressee &a, const QDate &v){ a.setAnniversary(v); },
+             tgt.anniversary());
+
+        pick(src.kind() != base.kind(),
+             tgt.kind() != base.kind(),
+             [](KContacts::Addressee &a, const QString &v){ a.setKind(v); },
+             tgt.kind());
     } else if (!preferSrc) {
         merged.setFormattedName(tgt.formattedName());
         merged.setOrganization(tgt.organization());
@@ -112,6 +132,10 @@ CanonicalRecord IRecordMergerVCard::merge(
         merged.setRole(tgt.role());
         merged.setNote(tgt.note());
         merged.setNickName(tgt.nickName());
+        merged.setGender(tgt.gender());
+        merged.setLangs(tgt.langs());
+        merged.setAnniversary(tgt.anniversary());
+        merged.setKind(tgt.kind());
     }
 
     CanonicalRecord result;

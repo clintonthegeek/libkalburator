@@ -125,6 +125,82 @@ private slots:
         QVERIFY(changed.contains(PropertyId{"kind"}));
     }
 
+    // These tests exercise the merger property-pickers. The interesting case
+    // is target-only-changed: the merger starts from `src`, so it must copy
+    // tgt's v4 property into `merged`. Without a picker for the field, the
+    // change is silently dropped (regression we're guarding against).
+    void mergerResolvesGenderConflict()
+    {
+        CanonicalRecord base, src, tgt;
+        base.shape = src.shape = tgt.shape = kShape;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:M\r\nEND:VCARD\r\n";
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:M\r\nEND:VCARD\r\n"; // src unchanged
+        tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:F\r\nEND:VCARD\r\n"; // tgt changed
+
+        IRecordMergerVCard merger;
+        ConflictPolicy policy;
+        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
+
+        const auto out = merger.merge(src, tgt, base, policy);
+        QVERIFY2(out.data.contains("GENDER:F"),
+                 qPrintable("merger should have propagated target's GENDER:F; got:\n"
+                            + QString::fromUtf8(out.data)));
+    }
+
+    void mergerResolvesAnniversaryConflict()
+    {
+        CanonicalRecord base, src, tgt;
+        base.shape = src.shape = tgt.shape = kShape;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20100615\r\nEND:VCARD\r\n";
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20100615\r\nEND:VCARD\r\n"; // src unchanged
+        tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20200716\r\nEND:VCARD\r\n"; // tgt changed
+
+        IRecordMergerVCard merger;
+        ConflictPolicy policy;
+        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
+
+        const auto out = merger.merge(src, tgt, base, policy);
+        QVERIFY2(out.data.contains("20200716"),
+                 qPrintable("merger should have propagated target's anniversary; got:\n"
+                            + QString::fromUtf8(out.data)));
+    }
+
+    void mergerResolvesKindConflict()
+    {
+        CanonicalRecord base, src, tgt;
+        base.shape = src.shape = tgt.shape = kShape;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:individual\r\nEND:VCARD\r\n";
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:individual\r\nEND:VCARD\r\n"; // src unchanged
+        tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:org\r\nEND:VCARD\r\n";        // tgt changed
+
+        IRecordMergerVCard merger;
+        ConflictPolicy policy;
+        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
+
+        const auto out = merger.merge(src, tgt, base, policy);
+        QVERIFY2(out.data.contains("KIND:org"),
+                 qPrintable("merger should have propagated target's KIND:org; got:\n"
+                            + QString::fromUtf8(out.data)));
+    }
+
+    void mergerResolvesLangConflict()
+    {
+        CanonicalRecord base, src, tgt;
+        base.shape = src.shape = tgt.shape = kShape;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:en\r\nEND:VCARD\r\n";
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:en\r\nEND:VCARD\r\n"; // src unchanged
+        tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:fr\r\nEND:VCARD\r\n"; // tgt changed
+
+        IRecordMergerVCard merger;
+        ConflictPolicy policy;
+        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
+
+        const auto out = merger.merge(src, tgt, base, policy);
+        QVERIFY2(out.data.contains("LANG:fr"),
+                 qPrintable("merger should have propagated target's LANG:fr; got:\n"
+                            + QString::fromUtf8(out.data)));
+    }
+
     void mergerEmitsV4_0()
     {
         CanonicalRecord src;
