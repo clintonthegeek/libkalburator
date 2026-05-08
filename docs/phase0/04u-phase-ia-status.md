@@ -137,3 +137,37 @@ contract becomes "both sides exchange palm-native bytes" — which
 defeats the point of canonicalising on vCard 4.0. The wrapper
 extension (Option A or B) is therefore on the critical path for
 Task 17.
+
+### `PalmRecord` wire-bytes API (Task 11, 2026-05-07)
+
+`PalmRecord` (in
+`WildPalms/src/palm/sync/palmrecord.h`) had no serialization API
+when Task 11 began — only the POD struct + a defaulted
+`operator==`. The plan offered two choices: (a) add the wire-bytes
+pair in this task, or (b) defer to Task 13's audit. Path (a) was
+taken because `PalmRecord` is internally trivial (5 fields, all
+serializable as-is via QDataStream).
+
+**Format chosen:** `QDataStream` at `Qt_6_0` version, writing
+`recordId / category / attributes / data / lastModified` in that
+order. The methods are inline on the struct (`toWireBytes()` and
+static `fromWireBytes()`); no `palmrecord.cpp` was added. These
+bytes are an *internal* contract between WP's
+`ContactsBlobBackend` and the palm↔vcard4 `TransformationStage`
+pair — not an on-disk format. `fromWireBytes` returns a
+default-constructed record on truncated/garbage input rather than
+throwing.
+
+**Test coverage:** `WildPalms/tests/palmsync/tst_palmrecord_wirebytes.cpp`,
+8 sub-tests including default round-trip, populated round-trip,
+attribute flags (Dirty + Secret), empty data, empty input, and
+truncated-input safety. All green.
+
+**Implication for Tasks 16-17.** When `ContactsBlobBackend` is
+re-pointed to emit `(contacts, palm)` shape, the bytes it hands
+the transformation pipeline are `PalmRecord::toWireBytes()`. The
+PC-side consumer (after the transformation chain runs) gets vCard 4
+bytes. Symmetric on the inbound write path: the engine hands the
+backend `PalmRecord::toWireBytes()` (after vcard4→palm) and the
+backend reverses it via `fromWireBytes` before talking to the
+device.
