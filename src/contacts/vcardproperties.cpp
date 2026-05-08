@@ -38,6 +38,17 @@ PropertyCatalogue makeVCardCatalogue()
     // Extensibility
     cat.addProperty({ PropertyId{"x-custom"}, PropertyKind::Json,    QStringLiteral("Custom Properties") });
 
+    // vCard 4.0 additions (RFC 6350)
+    cat.addProperty({ PropertyId{"gender"},      PropertyKind::String,     QStringLiteral("Gender") });
+    cat.addProperty({ PropertyId{"lang"},        PropertyKind::StringList, QStringLiteral("Languages") });
+    cat.addProperty({ PropertyId{"kind"},        PropertyKind::String,     QStringLiteral("Kind") });
+    cat.addProperty({ PropertyId{"member"},      PropertyKind::Json,       QStringLiteral("Members") });
+    cat.addProperty({ PropertyId{"anniversary"}, PropertyKind::DateTime,   QStringLiteral("Anniversary") });
+    cat.addProperty({ PropertyId{"tz"},          PropertyKind::String,     QStringLiteral("Time Zone") });
+    cat.addProperty({ PropertyId{"geo"},         PropertyKind::Json,       QStringLiteral("Geo") });
+    cat.addProperty({ PropertyId{"related"},     PropertyKind::Json,       QStringLiteral("Related") });
+    cat.addProperty({ PropertyId{"clientpidmap"}, PropertyKind::Json,       QStringLiteral("Client PID Map") });
+
     return cat;
 }
 

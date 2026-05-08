@@ -43,6 +43,16 @@ private slots:
         QVERIFY(cat.hasProperty(PropertyId{"tel"}));
     }
 
+    void catalogueHasV4Properties()
+    {
+        const KalburatorDomainContacts plugin;
+        const auto cat = plugin.canonicalCatalogue();
+        QVERIFY(cat.hasProperty(PropertyId{"gender"}));
+        QVERIFY(cat.hasProperty(PropertyId{"lang"}));
+        QVERIFY(cat.hasProperty(PropertyId{"kind"}));
+        QVERIFY(cat.hasProperty(PropertyId{"anniversary"}));
+    }
+
     void registerEdgesDeclaresCanonical()
     {
         KalburatorDomainContacts plugin;
