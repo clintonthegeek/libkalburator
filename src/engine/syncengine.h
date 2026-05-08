@@ -48,6 +48,14 @@ namespace QSyncCore {
     struct ConflictPolicy;
 }
 
+} // namespace Kalburator::Sync
+
+namespace Kalburator::Shape {
+class DomainPlugin;
+}
+
+namespace Kalburator::Sync {
+
 /**
  * @brief Internal worker class — runs sync operations on a background thread.
  *
@@ -239,6 +247,33 @@ private:
     void computePropertyDiff();
     void applyPropertyChanges();
     void updatePropertyBaselines();
+
+    /// Generic property-phase implementation. Calls
+    /// plugin->collectionProperties() for src and tgt, runs
+    /// computeMapDiff() against the supplied baseline, applies changes via
+    /// plugin->applyCollectionProperties().
+    ///
+    /// Phase Ia.5 Task 7: dead code; will be wired into dispatchSync by
+    /// Task 12. The four calendar-typed methods above remain in place
+    /// until Task 13 cuts the calendar path over.
+    ///
+    /// Design notes:
+    /// - `baseline` is passed in (rather than fetched from
+    ///   m_calendarBaselines internally) so persistence concerns can be
+    ///   resolved separately by Task 12. The on-disk schema today uses
+    ///   CalendarPropertyRecord JSON which is not directly readable as a
+    ///   QVariantMap; Task 13 owns the migration.
+    /// - Conflicts are resolved here as SourceWins regardless of
+    ///   mapping.conflictPolicy. Task 10 introduces full conflict-policy
+    ///   honoring (including AskUser pause/resume) and may refactor this
+    ///   path to surface conflicts through the proper mechanism.
+    void runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
+                          SyncBackend *src,
+                          SyncBackend *tgt,
+                          const QString &srcCollectionId,
+                          const QString &tgtCollectionId,
+                          const QVariantMap &baseline,
+                          const SyncMapping &mapping);
 
     // Sync phases
     void fetchSourceRecords();

@@ -243,12 +243,14 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
     src/engine/idomainadapter.h
     src/engine/mappingscheduler.h
+    src/engine/propertydiff.h
     src/engine/syncengine.h
     src/engine/syncenginefuture.h
 )
 set(KALBURATOR_ENGINE_SOURCES
     src/engine/enginediff.cpp
     src/engine/mappingscheduler.cpp
+    src/engine/propertydiff.cpp
     src/engine/syncengine.cpp
     src/engine/syncenginefuture.cpp
 )

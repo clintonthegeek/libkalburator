@@ -31,3 +31,6 @@ kalburator_add_engine_test(tst_mapping_scheduler)
 
 # Task 46 — CancellationReason integration tests
 kalburator_add_engine_integration_test(tst_cancellation_reason)
+
+# Phase Ia.5 Task 7 — generic property-phase helper unit tests
+kalburator_add_engine_test(tst_property_phase)

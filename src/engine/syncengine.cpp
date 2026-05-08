@@ -1,4 +1,6 @@
 #include "syncengine.h"
+#include "propertydiff.h"
+#include "domainplugin.h"
 #include "transcodingregistry.h"
 #include "transformationregistry.h"
 #include "decsyncactivecontroller.h"
@@ -2904,6 +2906,56 @@ void SyncEngineWorker::updatePropertyBaselines()
     }, Qt::BlockingQueuedConnection);
 
     qDebug() << "  Property baseline updated";
+}
+
+// ----------------------------------------------------------------------------
+// Generic property-phase (Phase Ia.5 Task 7). DEAD CODE — wired by Task 12.
+// ----------------------------------------------------------------------------
+
+void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
+                                        SyncBackend *src,
+                                        SyncBackend *tgt,
+                                        const QString &srcCollectionId,
+                                        const QString &tgtCollectionId,
+                                        const QVariantMap &baseline,
+                                        const SyncMapping &mapping)
+{
+    if (!plugin || !src || !tgt) {
+        return;
+    }
+
+    const QVariantMap srcProps = plugin->collectionProperties(src, srcCollectionId);
+    const QVariantMap tgtProps = plugin->collectionProperties(tgt, tgtCollectionId);
+
+    if (srcProps.isEmpty() && tgtProps.isEmpty() && baseline.isEmpty()) {
+        return;  // nothing to do
+    }
+
+    const PropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
+
+    if (!diff.toApplyToTarget.isEmpty()) {
+        plugin->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+    }
+
+    if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
+        plugin->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+    }
+
+    // Conflict handling (v1, Task 7): resolve all conflicts as SourceWins.
+    // This matches the existing computePropertyDiff() default. Task 10 will
+    // honor mapping.conflictPolicy and may surface AskUser conflicts via the
+    // proper pause/resume mechanism.
+    if (!diff.conflicts.isEmpty()) {
+        QVariantMap fromSrc;
+        for (const QString &k : diff.conflicts) {
+            if (srcProps.contains(k)) {
+                fromSrc.insert(k, srcProps.value(k));
+            }
+        }
+        if (!fromSrc.isEmpty()) {
+            plugin->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+        }
+    }
 }
 
 } // namespace Kalburator::Sync
