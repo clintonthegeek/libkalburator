@@ -1488,20 +1488,28 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
         m_controller->syncStarted(request.mapping.id, loss);
     }
 
-    // G.6 Task 41 / G.7: route non-calendar-domain mappings through the blob
-    // pipeline. "blob" domain is the original opaque path; any other non-
-    // calendar domain (contacts, memo, todo, …) also routes here — the
-    // BlobDomainAdapter compares records by content hash regardless of domain.
-    if (m_controller) {
-        SyncBackend *sb = m_controller->backendById(request.mapping.sourceBackend);
-        if (sb && !sb->nativeShapes().isEmpty() &&
-            sb->nativeShapes().first().domain !=
-                Kalburator::Shape::DomainId{QStringLiteral("calendar")}) {
-            dispatchSync(request);
-            return;
-        }
-    }
+    // Phase Ia.5 Task 13: deleted calendar/blob router. processSync now
+    // ALWAYS dispatches through the unified dispatchSync. For the calendar
+    // domain, dispatchSync delegates to the legacy calendar branch
+    // (dispatchCalendarLegacy below) which runs the first-sync fast path,
+    // CalendarPropertyRecord-typed property sync, calendar-typed diff +
+    // monitored conflict pause/resume, and CalendarDomainAdapter::
+    // applyChangesToBackend. Other domains (blob, contacts, memo, todo)
+    // flow through the unified pipeline-based path. Tasks 14/17 will
+    // collapse the legacy branch into the unified one.
+    dispatchSync(request);
+}
 
+// ----------------------------------------------------------------------------
+// Calendar legacy branch (Phase Ia.5 Task 13): split out of processSync as
+// a dispatchSync sub-path while the unified pipeline catches up to calendar's
+// stricter contract (CalendarPluginWriter's inner BlockingQueuedConnection,
+// monitored AskUser conflict pause/resume, CalendarPropertyRecord-typed
+// property sync, calendar-typed itemReady signals). Task 14+ will fold this
+// into dispatchSync once those gaps are closed.
+// ----------------------------------------------------------------------------
+void SyncEngineWorker::dispatchCalendarLegacy(const Request &request)
+{
     // First-sync fast path (Phase D Task 21).
     if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload) {
         if (dispatchFirstSync(request))
@@ -1887,6 +1895,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     }
 
     const Kalburator::Shape::Shape canonical = plugin->canonicalShape();
+
+    // Phase Ia.5 Task 13: delegate calendar to the legacy branch (split from
+    // processSync). The unified pipeline path's writer wrapping
+    // (BlockingQueuedConnection around writer->apply) is incompatible with
+    // CalendarPluginWriter's own inner BlockingQueued commit; the calendar
+    // domain also needs property-record-typed property sync, monitored
+    // AskUser pause/resume, and itemReady signal emission. Tasks 14/17
+    // generalize those and remove this branch.
+    if (canonical.domain == Kalburator::Shape::DomainId{QStringLiteral("calendar")}) {
+        dispatchCalendarLegacy(request);
+        return true;
+    }
 
     const auto &reg = Kalburator::Shape::TransformationRegistry::instance();
     std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);

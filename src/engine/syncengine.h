@@ -292,6 +292,13 @@ private:
     // the diff/merge/apply path.
     bool dispatchSync(const Request &request);
 
+    // Calendar legacy branch (Phase Ia.5 Task 13: split from processSync).
+    // Runs the calendar-typed first-sync, property sync, diff/conflicts/
+    // apply and monitored AskUser pause/resume. dispatchSync delegates
+    // here when canonical.domain == "calendar". Tasks 14/17 will fold this
+    // into dispatchSync.
+    void dispatchCalendarLegacy(const Request &request);
+
     // Blob-view helpers (Phase D Task 19)
     void fetchRecordsViaBlob(const QString &backendId,
                              const QString &calendarId,
