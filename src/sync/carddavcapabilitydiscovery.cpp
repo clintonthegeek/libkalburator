@@ -239,13 +239,11 @@ void CardDavCapabilityDiscovery::onAddressbooksReplyFinished()
     const QByteArray xmlData = reply->readAll();
 
     QDomDocument doc;
-    QString parseError;
-    int parseErrorLine, parseErrorCol;
     QDomDocument::ParseResult result = doc.setContent(
         xmlData, QDomDocument::ParseOption::UseNamespaceProcessing);
     if (!result) {
         qWarning() << "CardDavCapabilityDiscovery: XML parse error:"
-                   << "error string from ParseResult";
+                   << result.errorMessage;
         resolveWithError(tr("Failed to parse addressbook list"));
         return;
     }
