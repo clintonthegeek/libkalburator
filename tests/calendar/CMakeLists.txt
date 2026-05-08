@@ -95,6 +95,13 @@ kalburator_add_calendar_integration_test(tst_engine_subset_dispatch)
 # setState, cancelRequested flag, isFinished predicate).
 kalburator_add_calendar_test(tst_syncoperation_contract)
 
+# Migrated from PlanStan (types defined in libkalburator)
+kalburator_add_calendar_test(tst_syncdiff)
+kalburator_add_calendar_test(tst_incidencediff)
+
+kalburator_add_calendar_test(tst_syncstore)
+target_link_libraries(tst_syncstore PRIVATE Qt6::Sql)
+
 # Phase G.2 — calendar property catalogue, differ, merger, plugin
 add_subdirectory(differs)
 add_subdirectory(plugin)
