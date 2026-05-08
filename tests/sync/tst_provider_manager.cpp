@@ -109,6 +109,10 @@ public:
     QVariantMap loadedParams() const { return m_loadedParams; }
     void setDisplayName(const QString &n) { m_displayName = n; }
     void setConnectionParams(const QVariantMap &p) { m_loadedParams = p; }
+    void setActiveCollections(QList<CollectionInfo> cols) {
+        m_collections = std::move(cols);
+        emit collectionsChanged();
+    }
 
 private:
     QString m_id;
@@ -144,6 +148,12 @@ private slots:
     void removeProvider_disconnects_first();
     void saveToProfile_round_trips_with_loadFromProfile();
     void provider_failure_does_not_block_others();
+    void connectAll_skips_already_connected_providers();
+    void onProviderCollectionsChanged_reregisters_backends();
+    void providerConnectionStateChanged_signal_carries_provider_id();
+    void removeProvider_with_unknown_id_is_noop();
+    void providersChanged_emitted_on_add_and_remove();
+    void connectAll_with_zero_providers_returns_finished_future();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -359,6 +369,103 @@ void TstProviderManager::provider_failure_does_not_block_others()
     QVERIFY(!badPtr->isConnected());
     QVERIFY(goodPtr->isConnected());
     QCOMPARE(errSpy.count(), 1);
+}
+
+void TstProviderManager::connectAll_skips_already_connected_providers()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p-skip"));
+    auto *pPtr = p.get();
+    mgr.addProvider(std::move(p));
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+    QVERIFY(pPtr->isConnected());
+
+    QSignalSpy stateSpy(pPtr, &IProvider::connectionStateChanged);
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+    QVERIFY(pPtr->isConnected());
+    QCOMPARE(stateSpy.count(), 0);
+}
+
+void TstProviderManager::onProviderCollectionsChanged_reregisters_backends()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p-reregister"));
+    CollectionInfo c1;
+    c1.id = QStringLiteral("cal-1");
+    p->seedCollections({c1});
+    auto *pPtr = p.get();
+    mgr.addProvider(std::move(p));
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+    QVERIFY(reg.registeredInstanceIds().contains(
+        QStringLiteral("p-reregister:cal-1")));
+
+    CollectionInfo c2;
+    c2.id = QStringLiteral("cal-2");
+    pPtr->setActiveCollections({c2});
+
+    const QStringList ids = reg.registeredInstanceIds();
+    QVERIFY(!ids.contains(QStringLiteral("p-reregister:cal-1")));
+    QVERIFY(ids.contains(QStringLiteral("p-reregister:cal-2")));
+}
+
+void TstProviderManager::providerConnectionStateChanged_signal_carries_provider_id()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("sig-test"));
+    mgr.addProvider(std::move(p));
+
+    QSignalSpy spy(&mgr, &ProviderManager::providerConnectionStateChanged);
+    QVERIFY(waitForFuture(mgr.connectAll()));
+
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.first().at(0).toString(), QStringLiteral("sig-test"));
+    QCOMPARE(spy.first().at(1).toBool(), true);
+}
+
+void TstProviderManager::removeProvider_with_unknown_id_is_noop()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("real-p"));
+    mgr.addProvider(std::move(p));
+
+    mgr.removeProvider(QStringLiteral("does-not-exist"));
+
+    QCOMPARE(mgr.providers().size(), 1);
+    QVERIFY(mgr.providerById(QStringLiteral("real-p")) != nullptr);
+}
+
+void TstProviderManager::providersChanged_emitted_on_add_and_remove()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    QSignalSpy spy(&mgr, &ProviderManager::providersChanged);
+
+    mgr.addProvider(std::make_unique<FakeProvider>(QStringLiteral("ev-p")));
+    QCOMPARE(spy.count(), 1);
+
+    mgr.removeProvider(QStringLiteral("ev-p"));
+    QCOMPARE(spy.count(), 2);
+}
+
+void TstProviderManager::connectAll_with_zero_providers_returns_finished_future()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    QFuture<void> f = mgr.connectAll();
+    QVERIFY(waitForFuture(f, 1000));
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)
