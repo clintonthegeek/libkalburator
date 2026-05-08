@@ -287,8 +287,10 @@ private:
     bool dispatchFirstSync(const Request &request);
     void harvestBaselinesAfterFirstSync(const Request &request);
 
-    // Blob-domain unified dispatch (G.6 Task 41)
-    bool dispatchBlobSync(const Request &request);
+    // Unified domain dispatch (Phase Ia.5 Task 8: renamed from
+    // dispatchBlobSync). Compiles per-mapping shape pipelines and runs
+    // the diff/merge/apply path.
+    bool dispatchSync(const Request &request);
 
     // Blob-view helpers (Phase D Task 19)
     void fetchRecordsViaBlob(const QString &backendId,
@@ -343,7 +345,7 @@ private:
     BlobBaselineStore *m_blobBaselines = nullptr;
     ICalendarCollection *m_collection = nullptr;
     CalendarDomainAdapter *m_calendarAdapter = nullptr;
-    // Back-pointer to the owning SyncEngine. dispatchBlobSync uses
+    // Back-pointer to the owning SyncEngine. dispatchSync uses
     // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
     // access back to the engine thread.
     SyncEngine *m_engine = nullptr;

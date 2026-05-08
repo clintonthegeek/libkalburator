@@ -3,6 +3,7 @@
 #include "domainplugin.h"
 #include "transcodingregistry.h"
 #include "transformationregistry.h"
+#include "domainregistry.h"
 #include "decsyncactivecontroller.h"
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
@@ -1278,7 +1279,7 @@ void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,
 // Blob sync helpers
 // ---------------------------------------------------------------------------
 //
-// Shared utilities used by dispatchBlobSync's two-way merge logic.
+// Shared utilities used by dispatchSync's two-way merge logic.
 // indexBlobById is called when building source/target lookup maps for
 // the diff step inside the blob sync worker path.
 namespace {
@@ -1461,7 +1462,7 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
         if (sb && !sb->nativeShapes().isEmpty() &&
             sb->nativeShapes().first().domain !=
                 Kalburator::Shape::DomainId{QStringLiteral("calendar")}) {
-            dispatchBlobSync(request);
+            dispatchSync(request);
             return;
         }
     }
@@ -1770,15 +1771,17 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 }
 
 // ----------------------------------------------------------------------------
-// Blob-domain unified dispatch (G.6 Task 41)
-// Routes blob-typed mappings through processSync without the calendar pipeline.
+// Unified domain dispatch (Phase Ia.5 Task 8: renamed from dispatchBlobSync;
+// originally G.6 Task 41). Compiles per-mapping shape pipelines so that
+// non-blob domains can be promoted to canonical for diff/merge and demoted
+// back to native shape for push.
 // ----------------------------------------------------------------------------
 
-bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request)
+bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 {
     if (!m_controller) {
         m_currentResult.success = false;
-        m_currentResult.errorMessage = QStringLiteral("dispatchBlobSync: no controller");
+        m_currentResult.errorMessage = QStringLiteral("dispatchSync: no controller");
         m_currentResult.endTime = QDateTime::currentDateTime();
         emit syncCompleted(request.mapping.id, m_currentResult);
         return true;
@@ -1788,7 +1791,7 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
     if (!srcBackend || !tgtBackend) {
         m_currentResult.success = false;
-        m_currentResult.errorMessage = QStringLiteral("dispatchBlobSync: backend not found");
+        m_currentResult.errorMessage = QStringLiteral("dispatchSync: backend not found");
         m_currentResult.endTime = QDateTime::currentDateTime();
         emit syncCompleted(request.mapping.id, m_currentResult);
         return true;
@@ -1800,6 +1803,89 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     const QString tgtColId  = request.mapping.targetCalendar;
     const QString mappingId = request.mapping.id;
 
+    // --- Phase Ia.5 Task 8: compile pipelines for shape promotion ---
+    // srcShape -> canonical: promote source records to canonical for diff.
+    // tgtShape -> canonical: promote target records to canonical for diff.
+    // canonical -> tgtShape: demote outgoing records to target's native shape.
+    // canonical -> srcShape: demote outgoing records to source's native shape
+    //   (TwoWay; the plan called for 3 pipelines but the existing
+    //    finalSource push needs the 4th to avoid breaking TwoWay).
+    // For blob domain (src=tgt=canonical), all four pipelines are identity.
+    if (srcBackend->nativeShapes().isEmpty() || tgtBackend->nativeShapes().isEmpty()) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: backend declares no native shapes");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
+
+    const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
+    const Kalburator::Shape::Shape tgtShape = tgtBackend->nativeShapes().first();
+
+    if (srcShape.domain != tgtShape.domain) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: cross-domain mappings not supported (src=%1 tgt=%2)")
+                .arg(srcShape.domain.toString(), tgtShape.domain.toString());
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
+
+    const auto &reg = Kalburator::Shape::TransformationRegistry::instance();
+    std::optional<Kalburator::Shape::Pipeline> srcToCanon;
+    std::optional<Kalburator::Shape::Pipeline> tgtToCanon;
+    std::optional<Kalburator::Shape::Pipeline> canonToTgt;
+    std::optional<Kalburator::Shape::Pipeline> canonToSrc;
+
+    if (srcShape == tgtShape) {
+        // Homogeneous-shape short-circuit: source and target speak the
+        // same shape, so no canonical detour is needed. All four
+        // pipelines are identity. This avoids requiring a registered
+        // domain plugin for the homogeneous case (e.g. blob-on-blob,
+        // or test stubs that declare a custom shape).
+        srcToCanon = reg.compile(srcShape, srcShape);
+        tgtToCanon = reg.compile(tgtShape, tgtShape);
+        canonToTgt = reg.compile(tgtShape, tgtShape);
+        canonToSrc = reg.compile(srcShape, srcShape);
+    } else {
+        // Heterogeneous shapes: round-trip through the domain's
+        // canonical shape. Requires a registered plugin and an edge
+        // graph linking both shapes to canonical.
+        auto *plugin = Kalburator::Shape::DomainRegistry::instance()
+                           .findByDomain(srcShape.domain);
+        if (!plugin) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral(
+                "dispatchSync: no plugin for domain '%1'")
+                    .arg(srcShape.domain.toString());
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+
+        const Kalburator::Shape::Shape canonical = plugin->canonicalShape();
+
+        srcToCanon = reg.compile(srcShape, canonical);
+        tgtToCanon = reg.compile(tgtShape, canonical);
+        canonToTgt = reg.compile(canonical, tgtShape);
+        canonToSrc = reg.compile(canonical, srcShape);
+
+        if (!srcToCanon || !tgtToCanon || !canonToTgt || !canonToSrc) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral(
+                "dispatchSync: no edge path between shape and canonical "
+                "(srcShape=%1/%2, tgtShape=%3/%4, canonical=%5/%6)")
+                    .arg(srcShape.domain.toString(), srcShape.encoding.toString(),
+                         tgtShape.domain.toString(), tgtShape.encoding.toString(),
+                         canonical.domain.toString(), canonical.encoding.toString());
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+    }
+
     emit phaseChanged(mappingId, 1);
 
     // --- Fetch source records (cross-thread) ---
@@ -1807,6 +1893,18 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &sourceRecords]() {
         sourceRecords = srcBlob->loadRecords(srcColId);
     }, Qt::BlockingQueuedConnection);
+
+    // Phase Ia.5 Task 8: promote source records to canonical shape.
+    // For blob domain (srcShape == canonical) this is identity and skipped.
+    // Note: r.contentHash may be stale after a non-identity apply.
+    // BlobDomainAdapter's diff (still in use until Task 9) recomputes
+    // equality from data, so blob is unaffected. Non-blob domains see
+    // intentional transient byte-equality misbehavior that Task 9 fixes.
+    if (!srcToCanon->isIdentity()) {
+        for (auto &r : sourceRecords) {
+            r.data = srcToCanon->apply(r.data);
+        }
+    }
 
     {
         QMutexLocker locker(&m_mutex);
@@ -1826,6 +1924,14 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &targetRecords]() {
         targetRecords = tgtBlob->loadRecords(tgtColId);
     }, Qt::BlockingQueuedConnection);
+
+    // Phase Ia.5 Task 8: promote target records to canonical shape (same
+    // caveat about contentHash staleness as for sourceRecords above).
+    if (!tgtToCanon->isIdentity()) {
+        for (auto &r : targetRecords) {
+            r.data = tgtToCanon->apply(r.data);
+        }
+    }
 
     emit phaseChanged(mappingId, 3);
 
@@ -1863,7 +1969,16 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     // destination (e.g. first-sync of a new record). We always pre-load the
     // destination's current record set so we can distinguish create vs update.
     if (!engineMerge.finalTarget.isEmpty()) {
-        const QList<BackendRecord> toWrite = engineMerge.finalTarget;
+        QList<BackendRecord> toWrite = engineMerge.finalTarget;
+        // Phase Ia.5 Task 8: demote outgoing records to target's native
+        // shape before push. Identity for blob domain (no-op).
+        if (!canonToTgt->isIdentity()) {
+            for (auto &rec : toWrite) {
+                if (!rec.isDeleted) {
+                    rec.data = canonToTgt->apply(rec.data);
+                }
+            }
+        }
         QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, toWrite]() {
             QHash<QString, bool> existing;
             for (const auto &r : tgtBlob->loadRecords(tgtColId))
@@ -1883,7 +1998,16 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
     // --- Apply to source (cross-thread) ---
     // Same create-vs-update dispatch as the target apply above.
     if (!engineMerge.finalSource.isEmpty()) {
-        const QList<BackendRecord> toWrite = engineMerge.finalSource;
+        QList<BackendRecord> toWrite = engineMerge.finalSource;
+        // Phase Ia.5 Task 8: demote outgoing records to source's native
+        // shape before push. Identity for blob domain (no-op).
+        if (!canonToSrc->isIdentity()) {
+            for (auto &rec : toWrite) {
+                if (!rec.isDeleted) {
+                    rec.data = canonToSrc->apply(rec.data);
+                }
+            }
+        }
         QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, toWrite]() {
             QHash<QString, bool> existing;
             for (const auto &r : srcBlob->loadRecords(srcColId))
@@ -1922,7 +2046,7 @@ bool SyncEngineWorker::dispatchBlobSync(const SyncEngineWorker::Request &request
 
     m_currentResult.success = true;
     m_currentResult.endTime = QDateTime::currentDateTime();
-    qDebug() << "SyncEngineWorker::dispatchBlobSync completed for" << mappingId;
+    qDebug() << "SyncEngineWorker::dispatchSync completed for" << mappingId;
     emit syncCompleted(mappingId, m_currentResult);
     return true;
 }
