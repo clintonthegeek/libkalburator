@@ -15,6 +15,8 @@ endfunction()
 kalburator_add_contacts_test(tst_vcard_plugin)
 kalburator_add_contacts_test(tst_vcard_differ)
 kalburator_add_contacts_test(tst_vcard3_vcard4_edge)
+# Phase Ib.5 Task 3 — AskUser pause/resume in unified dispatchSync (contacts domain)
+kalburator_add_contacts_test(tst_unified_askuser_pause)
 
 # Phase Ib Task 5 — RemoteContactsBackend read-side tests.
 # Needs FakeCardDavServer (from tests/sync/); include source files directly.

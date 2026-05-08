@@ -1437,6 +1437,10 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     m_yieldedForConflict = false;
     m_conflictPhase = ConflictPhase::Done;
     m_conflictIndex = 0;
+    m_dispatchPath = DispatchPath::Legacy;
+    m_unifiedConflictIdx = 0;
+    m_unifiedDiff = EngineDiff{};
+    m_unifiedMerge = EngineMerge{};
 
     m_currentRequest = request;
     m_sourceRecords.clear();
@@ -1612,6 +1616,60 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
         return;
     }
 
+    // Phase Ib.5 Task 3: route to the unified continuation when the paused
+    // sync went through dispatchSync (non-calendar domains).
+    if (m_dispatchPath == DispatchPath::Unified) {
+        if (m_unifiedConflictIdx < m_unifiedDiff.toTarget.size()) {
+            const EngineDiffOp &op = m_unifiedDiff.toTarget[m_unifiedConflictIdx];
+            switch (resolution) {
+                case ConflictResolution::SourceWins:
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                    ++m_unifiedMerge.conflictsResolved;
+                    break;
+                case ConflictResolution::TargetWins:
+                    m_unifiedMerge.finalSource.append(op.targetRecord);
+                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                    ++m_unifiedMerge.conflictsResolved;
+                    break;
+                case ConflictResolution::LastWriteWins: {
+                    const bool srcWins =
+                        op.record.lastModified >= op.targetRecord.lastModified;
+                    if (srcWins) {
+                        m_unifiedMerge.finalTarget.append(op.record);
+                        m_unifiedMerge.updatedBaselines.append(op.record);
+                    } else {
+                        m_unifiedMerge.finalSource.append(op.targetRecord);
+                        m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                    }
+                    ++m_unifiedMerge.conflictsResolved;
+                    break;
+                }
+                default: {
+                    // Skip / AskUser / unsupported → defer.
+                    ConflictInfo info;
+                    info.mappingId       = m_currentRequest.mapping.id;
+                    info.sourceId        = op.record.id;
+                    info.targetId        = op.targetRecord.id.isEmpty()
+                                               ? op.record.id
+                                               : op.targetRecord.id;
+                    info.calendarId      = m_currentRequest.mapping.sourceCalendar;
+                    info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
+                    info.targetBackendId = m_currentRequest.mapping.targetBackend;
+                    info.type            = ConflictType::BothModified;
+                    m_currentResult.unresolvedConflicts.append(info);
+                    ++m_unifiedMerge.conflictsDeferred;
+                    break;
+                }
+            }
+        }
+        m_unifiedConflictIdx++;
+        m_yieldedForConflict = false;
+        unifiedHandleConflicts();
+        return;
+    }
+
+    // Legacy path (calendar domain).
     const QList<SyncChange> &currentList =
         (m_conflictPhase == ConflictPhase::ToTarget) ? m_currentDiff.toTarget : m_currentDiff.toSource;
 
@@ -1996,112 +2054,251 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     const EngineDiff engineDiff = blobBatchDiff(
         sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
 
-    // Phase Ia.5 Task 9: merge consults the plugin's IRecordMerger for
-    // CustomMerge-policy conflicts (3-way per-property merge owned by
-    // the domain plugin). Diff stays as blobBatchDiff for v1 — its
-    // hash-equality semantics match KalburatorDomainBlob's IRecordDiffer
-    // (and the calendar / contacts / memo plugins' canonical-record
-    // differs operate on the same id+data shape after pipeline promotion).
-    // Phase Ib.5 may revisit moving the diff to a per-record IRecordDiffer
-    // too.
-    auto pluginMerger = plugin->createCanonicalMerger();
+    // Phase Ib.5 Task 3: unified-path AskUser pause/resume.
+    // Store state needed by unifiedHandleConflicts and
+    // unifiedContinueAfterConflicts (which re-derives backends/pipelines
+    // from m_currentRequest to avoid storing them as members).
+    m_unifiedDiff     = std::move(engineDiff);
+    m_unifiedMerge    = EngineMerge{};
+    m_unifiedConflictIdx = 0;
+    m_unifiedPolicy   = request.mapping.conflictPolicy;
+    m_unifiedOverride = request.override;
+    m_unifiedCanonical = canonical;
+    m_dispatchPath    = DispatchPath::Unified;
 
-    // Phase Ia.5 Task 10: honor the mapping's conflict policy.
-    // AskUser pause/resume in the unified path is deferred to Task 13
-    // (router deletion) — at that point ALL conflicts must flow through
-    // dispatchSync, so the calendar-typed pause/resume protocol
-    // (handleConflicts / applyMonitoredResolution) needs lifting onto
-    // EngineDiff/EngineMerge. Until then: AskUser conflicts in
-    // unified-path domains (blob/contacts/memo/todo) get treated as
-    // conflictsDeferred (next-sync resolution) per
-    // blobBatchMergeWithPlugin's existing behavior —
-    // dispatchCalendarLegacy routes calendar conflicts through the legacy
-    // handleConflicts pause/resume path.
-    const ConflictResolution policy = request.mapping.conflictPolicy;
-    // Task 9: pass the per-call override from the Request into merge().
-    // The override was embedded in the Request by processSingleMapping
-    // (on the engine thread) before the worker was dispatched.
-    const EngineMerge engineMerge = blobBatchMergeWithPlugin(
-        engineDiff, policy, request.override, pluginMerger.get(), canonical);
+    // Process all toSource ops upfront — blobBatchDiff never puts Conflict
+    // ops in toSource, so this is always non-conflict Non-conflict ops.
+    for (const auto &op : m_unifiedDiff.toSource) {
+        using Kind = EngineDiffOp::Kind;
+        if (op.kind == Kind::Conflict) continue; // guard
+        BackendRecord rec = op.record;
+        if (op.kind == Kind::Delete) rec.isDeleted = true;
+        m_unifiedMerge.finalSource.append(rec);
+        if (op.kind != Kind::Delete)
+            m_unifiedMerge.updatedBaselines.append(rec);
+    }
 
-    emit phaseChanged(mappingId, 4);
+    // Walk toTarget ops — may yield on AskUser conflicts.
+    unifiedHandleConflicts();
 
-    // --- Apply to target (cross-thread) ---
-    // Both mirror paths (explicit override) and bidirectional two-way sync
-    // can produce Create ops for records that don't yet exist on the
-    // destination (e.g. first-sync of a new record). We always pre-load the
-    // destination's current record set so we can distinguish create vs update.
-    // Phase Ia.5 Task 11: route apply through the plugin's IRecordWriter.
-    // Threading: classification + writer->apply() run on the backend's
-    // thread under BlockingQueuedConnection — DefaultBlobWriter's
-    // IBlobBackend create/update/delete calls expect to be on the
-    // backend thread (matches the prior inline apply loop). Calendar
-    // mappings still route through dispatchCalendarLegacy (not this wrapper);
-    // CalendarPluginWriter does its own inner BlockingQueued commit and must
-    // NOT be called from inside this wrapper. When a future task unifies
-    // routing, CalendarPluginWriter's apply must be called on the worker
-    // thread directly (not wrapped), and setCollection wiring must be
-    // accounted for.
-    if (!engineMerge.finalTarget.isEmpty()) {
-        QList<BackendRecord> toWrite = engineMerge.finalTarget;
-        // Phase Ia.5 Task 8: demote outgoing records to target's native
-        // shape before push. Identity for blob domain (no-op).
+    // If yielded: the future stays in-flight; resumeAfterConflict will
+    // re-enter unifiedHandleConflicts and eventually call
+    // unifiedContinueAfterConflicts. Do NOT fall through to syncCompleted.
+    if (m_yieldedForConflict)
+        return true;
+
+    // unifiedHandleConflicts called unifiedContinueAfterConflicts on
+    // completion — syncCompleted was already emitted.
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+// Phase Ib.5 Task 3: unified-path conflict handlers.
+// Mirror the legacy handleConflicts / continueAfterConflicts protocol,
+// operating on EngineDiffOp / EngineMerge instead of SyncChange / SyncDiff.
+// ----------------------------------------------------------------------------
+
+void SyncEngineWorker::unifiedHandleConflicts()
+{
+    // NOTE: do NOT apply the legacy useQuickPath→SourceWins downgrade here.
+    // The unified path uses blobBatchDiff whose baseline check already handles
+    // first-sync (BothCreated) vs subsequent-sync (BothModified) conflicts.
+    // useQuickPath is a CalendarBaselineStore sentinel; it is always true when
+    // the mapping has no calendar baselines, which is always the case for
+    // non-calendar domains (blob/contacts/memo/todo).
+    const ConflictResolution effectivePolicy = m_unifiedPolicy;
+
+    const auto &toTarget = m_unifiedDiff.toTarget;
+    for (int i = m_unifiedConflictIdx; i < toTarget.size(); ++i) {
+        {
+            QMutexLocker locker(&m_mutex);
+            if (m_cancelled) return;
+        }
+
+        const EngineDiffOp &op = toTarget[i];
+        using Kind = EngineDiffOp::Kind;
+
+        if (op.kind != Kind::Conflict) {
+            // Non-conflict: record goes straight to finalTarget.
+            BackendRecord rec = op.record;
+            if (op.kind == Kind::Delete)
+                rec.isDeleted = true;
+            m_unifiedMerge.finalTarget.append(rec);
+            if (op.kind != Kind::Delete)
+                m_unifiedMerge.updatedBaselines.append(rec);
+            continue;
+        }
+
+        // Conflict op.
+        if (effectivePolicy == ConflictResolution::AskUser) {
+            if (m_currentRequest.mode == Mode::Monitored) {
+                // Yield: store position, set flag, emit signal, return.
+                // resumeAfterConflict will re-enter this method from index i.
+                m_unifiedConflictIdx = i;
+                m_yieldedForConflict = true;
+
+                ConflictInfo info;
+                info.mappingId       = m_currentRequest.mapping.id;
+                info.sourceId        = op.record.id;
+                info.targetId        = op.targetRecord.id.isEmpty()
+                                           ? op.record.id
+                                           : op.targetRecord.id;
+                info.calendarId      = m_currentRequest.mapping.sourceCalendar;
+                info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
+                info.targetBackendId = m_currentRequest.mapping.targetBackend;
+                info.type            = ConflictType::BothModified;
+                info.detectedAt      = QDateTime::currentDateTimeUtc();
+                info.sourceModified  = op.record.lastModified;
+                info.targetModified  = op.targetRecord.lastModified;
+                info.sourceIcalData  = QString::fromUtf8(op.record.data);
+                info.targetIcalData  = QString::fromUtf8(op.targetRecord.data);
+
+                qDebug() << "SyncEngineWorker::unifiedHandleConflicts - yielding for:"
+                         << op.record.id;
+                emit conflictPauseRequested(info);
+                return;
+            } else {
+                // Unmonitored AskUser: defer to next sync.
+                ConflictInfo info;
+                info.mappingId       = m_currentRequest.mapping.id;
+                info.sourceId        = op.record.id;
+                info.targetId        = op.targetRecord.id.isEmpty()
+                                           ? op.record.id
+                                           : op.targetRecord.id;
+                info.calendarId      = m_currentRequest.mapping.sourceCalendar;
+                info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
+                info.targetBackendId = m_currentRequest.mapping.targetBackend;
+                info.type            = ConflictType::BothModified;
+                info.detectedAt      = QDateTime::currentDateTimeUtc();
+                emit conflictDetected(info);
+                m_currentResult.unresolvedConflicts.append(info);
+                ++m_unifiedMerge.conflictsDeferred;
+            }
+            continue;
+        }
+
+        // Auto-resolvable policy.
+        bool sourceWins = false;
+        bool resolved = false;
+        switch (effectivePolicy) {
+            case ConflictResolution::SourceWins:
+                sourceWins = true;  resolved = true; break;
+            case ConflictResolution::TargetWins:
+                sourceWins = false; resolved = true; break;
+            case ConflictResolution::LastWriteWins:
+                sourceWins = op.record.lastModified >= op.targetRecord.lastModified;
+                resolved = true; break;
+            case ConflictResolution::Skip:
+                ++m_unifiedMerge.conflictsDeferred; break;
+            default:
+                ++m_unifiedMerge.conflictsDeferred; break;
+        }
+        if (resolved) {
+            if (sourceWins) {
+                m_unifiedMerge.finalTarget.append(op.record);
+                m_unifiedMerge.updatedBaselines.append(op.record);
+            } else {
+                m_unifiedMerge.finalSource.append(op.targetRecord);
+                m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+            }
+            ++m_unifiedMerge.conflictsResolved;
+        }
+    }
+
+    // All toTarget ops consumed — proceed to apply.
+    unifiedContinueAfterConflicts();
+}
+
+void SyncEngineWorker::unifiedContinueAfterConflicts()
+{
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_cancelled) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
+            return;
+        }
+    }
+
+    const QString mappingId = m_currentRequest.mapping.id;
+    const QString srcColId  = m_currentRequest.mapping.sourceCalendar;
+    const QString tgtColId  = m_currentRequest.mapping.targetCalendar;
+
+    SyncBackend *srcBackend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
+    SyncBackend *tgtBackend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+    if (!srcBackend || !tgtBackend) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "unifiedContinueAfterConflicts: backend not found");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return;
+    }
+
+    IBlobBackend *srcBlob = asBlob(srcBackend);
+    IBlobBackend *tgtBlob = asBlob(tgtBackend);
+
+    // Re-derive pipelines from the stored canonical shape.
+    const auto &treg = Kalburator::Shape::TransformationRegistry::instance();
+    const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
+    const Kalburator::Shape::Shape tgtShape = tgtBackend->nativeShapes().first();
+    const auto canonToTgt = treg.compile(m_unifiedCanonical, tgtShape);
+    const auto canonToSrc = treg.compile(m_unifiedCanonical, srcShape);
+
+    auto *plugin = Kalburator::Shape::DomainRegistry::instance()
+                       .findByDomain(srcShape.domain);
+    if (!canonToTgt || !canonToSrc || !plugin) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "unifiedContinueAfterConflicts: pipeline or plugin unavailable");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return;
+    }
+
+    // Apply to target.
+    if (!m_unifiedMerge.finalTarget.isEmpty()) {
+        QList<BackendRecord> toWrite = m_unifiedMerge.finalTarget;
         if (!canonToTgt->isIdentity()) {
             for (auto &rec : toWrite) {
-                if (!rec.isDeleted) {
+                if (!rec.isDeleted)
                     rec.data = canonToTgt->apply(rec.data);
-                }
             }
         }
         auto tgtWriter = plugin->createWriter(tgtBackend);
-        // Forward-compat (calendar router still routes calendar away
-        // from this code path in v1): if a future plugin returns a
-        // writer that needs the calendar collection, wire it now.
-        if (auto *cw = dynamic_cast<Kalburator::Calendar::CalendarPluginWriter*>(
-                tgtWriter.get())) {
-            cw->setCollection(m_collection);
-        }
         Kalburator::Shape::IRecordWriter *writer = tgtWriter.get();
         QMetaObject::invokeMethod(tgtBackend, [writer, tgtBlob, tgtColId, toWrite]() {
-            const WriterBatch batch =
-                classifyForWriter(toWrite, tgtBlob, tgtColId);
+            const WriterBatch batch = classifyForWriter(toWrite, tgtBlob, tgtColId);
             writer->apply(tgtColId, batch.creates, batch.updates, batch.deletes);
         }, Qt::BlockingQueuedConnection);
     }
 
-    // --- Apply to source (cross-thread) ---
-    // Same writer-based dispatch as the target apply above.
-    if (!engineMerge.finalSource.isEmpty()) {
-        QList<BackendRecord> toWrite = engineMerge.finalSource;
-        // Phase Ia.5 Task 8: demote outgoing records to source's native
-        // shape before push. Identity for blob domain (no-op).
+    // Apply to source.
+    if (!m_unifiedMerge.finalSource.isEmpty()) {
+        QList<BackendRecord> toWrite = m_unifiedMerge.finalSource;
         if (!canonToSrc->isIdentity()) {
             for (auto &rec : toWrite) {
-                if (!rec.isDeleted) {
+                if (!rec.isDeleted)
                     rec.data = canonToSrc->apply(rec.data);
-                }
             }
         }
         auto srcWriter = plugin->createWriter(srcBackend);
-        if (auto *cw = dynamic_cast<Kalburator::Calendar::CalendarPluginWriter*>(
-                srcWriter.get())) {
-            cw->setCollection(m_collection);
-        }
         Kalburator::Shape::IRecordWriter *writer = srcWriter.get();
         QMetaObject::invokeMethod(srcBackend, [writer, srcBlob, srcColId, toWrite]() {
-            const WriterBatch batch =
-                classifyForWriter(toWrite, srcBlob, srcColId);
+            const WriterBatch batch = classifyForWriter(toWrite, srcBlob, srcColId);
             writer->apply(srcColId, batch.creates, batch.updates, batch.deletes);
         }, Qt::BlockingQueuedConnection);
     }
 
-    // --- Save baselines (run on engine thread — BlobBaselineStore is not thread-safe) ---
-    if (m_blobBaselines && m_engine && !engineMerge.updatedBaselines.isEmpty()) {
+    // Save baselines (run on engine thread — BlobBaselineStore is not thread-safe).
+    if (m_blobBaselines && m_engine && !m_unifiedMerge.updatedBaselines.isEmpty()) {
         BlobBaselineStore *bbs = m_blobBaselines;
         const Kalburator::Shape::Shape blobShape{
             Kalburator::Shape::DomainId{QStringLiteral("blob")},
             Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
-        const QList<BackendRecord> updated = engineMerge.updatedBaselines;
+        const QList<BackendRecord> updated = m_unifiedMerge.updatedBaselines;
         QMetaObject::invokeMethod(m_engine, [bbs, mappingId, blobShape, updated]() {
             for (const auto &rec : updated) {
                 if (rec.id.isEmpty() || rec.isDeleted)
@@ -2115,11 +2312,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }, Qt::BlockingQueuedConnection);
     }
 
-    m_currentResult.success = true;
+    m_currentResult.success = !m_currentResult.hasUnresolvedConflicts();
     m_currentResult.endTime = QDateTime::currentDateTime();
-    qDebug() << "SyncEngineWorker::dispatchSync completed for" << mappingId;
+    qDebug() << "SyncEngineWorker::unifiedContinueAfterConflicts completed for" << mappingId;
     emit syncCompleted(mappingId, m_currentResult);
-    return true;
 }
 
 // ----------------------------------------------------------------------------

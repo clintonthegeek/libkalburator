@@ -1,6 +1,7 @@
 #ifndef KALBURATOR_SYNCENGINE_H
 #define KALBURATOR_SYNCENGINE_H
 
+#include "enginediff.h"
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "calendardomainadapter.h"
@@ -310,6 +311,13 @@ private:
 
     void continueAfterConflicts();
 
+    // Phase Ib.5 Task 3: unified-path AskUser pause/resume helpers.
+    // unifiedHandleConflicts walks m_unifiedDiff.toTarget and yields on
+    // Monitored AskUser conflicts. unifiedContinueAfterConflicts applies
+    // m_unifiedMerge to the backends once all conflicts are resolved.
+    void unifiedHandleConflicts();
+    void unifiedContinueAfterConflicts();
+
     void applyChangesToBackend(const QString &backendId,
                                const QString &calendarId,
                                const QList<SyncChange> &changes,
@@ -332,6 +340,20 @@ private:
     ConflictPhase m_conflictPhase = ConflictPhase::Done;
     int m_conflictIndex = 0;
     bool m_yieldedForConflict = false;
+
+    // Phase Ib.5 Task 3: which dispatch path is currently active, used to
+    // route resumeAfterConflict to the correct continuation.
+    enum class DispatchPath { Legacy, Unified };
+    DispatchPath m_dispatchPath = DispatchPath::Legacy;
+
+    // Unified-path pause/resume state (valid while m_dispatchPath == Unified
+    // and m_yieldedForConflict is true).
+    EngineDiff m_unifiedDiff;
+    EngineMerge m_unifiedMerge;
+    int m_unifiedConflictIdx = 0;
+    ConflictResolution m_unifiedPolicy = ConflictResolution::SourceWins;
+    ExecutionOverride m_unifiedOverride;
+    Kalburator::Shape::Shape m_unifiedCanonical;
 
     QElapsedTimer m_totalTimer;
     QElapsedTimer m_phaseTimer;
