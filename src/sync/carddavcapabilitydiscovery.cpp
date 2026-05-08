@@ -241,12 +241,12 @@ void CardDavCapabilityDiscovery::onAddressbooksReplyFinished()
     QDomDocument doc;
     QString parseError;
     int parseErrorLine, parseErrorCol;
-    if (!doc.setContent(xmlData, /*namespaceProcessing=*/true,
-                        &parseError, &parseErrorLine, &parseErrorCol)) {
+    QDomDocument::ParseResult result = doc.setContent(
+        xmlData, QDomDocument::ParseOption::UseNamespaceProcessing);
+    if (!result) {
         qWarning() << "CardDavCapabilityDiscovery: XML parse error:"
-                   << parseError
-                   << "at line" << parseErrorLine << "col" << parseErrorCol;
-        resolveWithError(tr("Failed to parse addressbook list: %1").arg(parseError));
+                   << "error string from ParseResult";
+        resolveWithError(tr("Failed to parse addressbook list"));
         return;
     }
 
@@ -360,7 +360,9 @@ QString CardDavCapabilityDiscovery::extractHref(
     const QString &elementNamespaceUri) const
 {
     QDomDocument doc;
-    if (!doc.setContent(xmlData, /*namespaceProcessing=*/true))
+    QDomDocument::ParseResult result = doc.setContent(
+        xmlData, QDomDocument::ParseOption::UseNamespaceProcessing);
+    if (!result)
         return QString();
 
     // Find the target element in its namespace.
