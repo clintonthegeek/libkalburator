@@ -539,6 +539,8 @@ int RemoteContactsBackend::putVCard(const QUrl      &absoluteItemUrl,
 int RemoteContactsBackend::deleteVCard(const QUrl      &absoluteItemUrl,
                                        const QByteArray &ifMatch)
 {
+    if (m_cancelled) return 0;
+
     QUrl reqUrl = absoluteItemUrl;
     reqUrl.setUserName(QString());
     reqUrl.setPassword(QString());
@@ -557,13 +559,17 @@ int RemoteContactsBackend::deleteVCard(const QUrl      &absoluteItemUrl,
     int statusCode = 0;
 
     QNetworkReply *reply = nam.deleteResource(request);
+    m_currentReply = reply;
     QObject::connect(reply, &QNetworkReply::finished, &loop,
-                     [reply, &loop, &statusCode]() {
+                     [this, reply, &loop, &statusCode]() {
+        m_currentReply = nullptr;
         statusCode = reply->attribute(
             QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (statusCode != 204 && statusCode != 200) {
-            qWarning() << "RemoteContactsBackend::deleteVCard: HTTP" << statusCode
-                       << reply->errorString();
+            if (reply->error() != QNetworkReply::OperationCanceledError) {
+                qWarning() << "RemoteContactsBackend::deleteVCard: HTTP" << statusCode
+                           << reply->errorString();
+            }
         }
         reply->deleteLater();
         loop.quit();
@@ -634,6 +640,8 @@ QString RemoteContactsBackend::createRecord(const QString     &collectionId,
 
 bool RemoteContactsBackend::updateRecord(const BackendRecord &record)
 {
+    if (m_cancelled) return false;
+
     if (record.id.isEmpty() || record.data.isEmpty()) {
         qWarning() << "RemoteContactsBackend::updateRecord: empty id or data";
         return false;
@@ -673,6 +681,8 @@ bool RemoteContactsBackend::updateRecord(const BackendRecord &record)
 
 bool RemoteContactsBackend::deleteRecord(const QString &recordId)
 {
+    if (m_cancelled) return false;
+
     if (recordId.isEmpty()) {
         qWarning() << "RemoteContactsBackend::deleteRecord: empty recordId";
         return false;
