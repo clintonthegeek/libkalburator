@@ -1,0 +1,148 @@
+#include <QTest>
+
+#include "contactsdomainplugin.h"
+#include "domainregistry.h"
+#include "transformationregistry.h"
+#include "vcard3to4transformation.h"
+
+#include <KContacts/Addressee>
+#include <KContacts/VCardConverter>
+
+using namespace Kalburator::Contacts;
+using namespace Kalburator::Shape;
+
+namespace {
+
+KContacts::Addressee parseFirst(const QByteArray &bytes)
+{
+    KContacts::VCardConverter conv;
+    auto list = conv.parseVCards(bytes);
+    return list.isEmpty() ? KContacts::Addressee{} : list.first();
+}
+
+} // namespace
+
+class TestVCard3VCard4Edge : public QObject {
+    Q_OBJECT
+private slots:
+    void cleanup()
+    {
+        DomainRegistry::instance().clear();
+        TransformationRegistry::instance().clear();
+    }
+
+    void v3ToV4PreservesCoreProperties()
+    {
+        const QByteArray v3 =
+            "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+            "UID:abc\r\nFN:Alice\r\nORG:Acme\r\nEMAIL:a@x.y\r\n"
+            "END:VCARD\r\n";
+        VCard3To4Stage stage;
+        const auto out = stage.transform(v3);
+        const auto a = parseFirst(out);
+        QCOMPARE(a.formattedName(), QStringLiteral("Alice"));
+        QCOMPARE(a.organization(), QStringLiteral("Acme"));
+        QVERIFY(out.contains("VERSION:4.0"));
+    }
+
+    void v4ToV3DropsV4Properties()
+    {
+        const QByteArray v4 =
+            "BEGIN:VCARD\r\nVERSION:4.0\r\n"
+            "UID:abc\r\nFN:Bob\r\nGENDER:M\r\n"
+            "END:VCARD\r\n";
+        VCard4To3Stage stage;
+        const auto out = stage.transform(v4);
+        QVERIFY(out.contains("VERSION:3.0"));
+        // We don't pin the exact property-set here — the loss profile
+        // declares what's dropped. Verify v4's structural data made it
+        // through:
+        const auto a = parseFirst(out);
+        QCOMPARE(a.formattedName(), QStringLiteral("Bob"));
+    }
+
+    void lossProfileDeclaresIntraDomainLossy()
+    {
+        const auto loss = vcard4ToVcard3Loss();
+        QCOMPARE(loss.level, LossLevel::IntraDomainLossy);
+        QVERIFY(!loss.dropped.isEmpty());
+    }
+
+    void registryCompilesPipelineV3ToV4()
+    {
+        KalburatorDomainContacts plugin;
+        auto& reg = TransformationRegistry::instance();
+        plugin.registerEdges(reg);
+
+        const Shape v3{ DomainId{"contacts"}, EncodingId{"vcard3"} };
+        const Shape v4{ DomainId{"contacts"}, EncodingId{"vcard4"} };
+
+        const auto pipeline = reg.compile(v3, v4);
+        QVERIFY(pipeline.has_value());
+
+        // Round-trip through the compiled pipeline.
+        const QByteArray src =
+            "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+            "UID:x\r\nFN:Alice\r\nEND:VCARD\r\n";
+        const auto out = pipeline->apply(src);
+        QVERIFY(out.contains("VERSION:4.0"));
+    }
+
+    // Step 4: assert the actual KContacts v4→v3 drop behavior matches the
+    // declared loss profile. Constructs a v4 vCard with each
+    // declared-dropped property populated, runs VCard4To3Stage, parses
+    // the result back, and checks each property is in fact missing from
+    // the resulting Addressee. If KContacts keeps a property (e.g. via
+    // the X-Anniversary extension), this slot will fail and tell us to
+    // refine vcard4ToVcard3Loss().
+    void declaredDropsMatchKContactsReality()
+    {
+        const QByteArray v4 =
+            "BEGIN:VCARD\r\nVERSION:4.0\r\n"
+            "UID:lossy\r\nFN:Carol\r\n"
+            "GENDER:F\r\n"
+            "KIND:individual\r\n"
+            "ANNIVERSARY:20100615\r\n"
+            "LANG:en\r\n"
+            "MEMBER:urn:uuid:03a0e51f-d1aa-4385-8a53-e29025acd8af\r\n"
+            "END:VCARD\r\n";
+
+        VCard4To3Stage stage;
+        const QByteArray out = stage.transform(v4);
+        QVERIFY(out.contains("VERSION:3.0"));
+
+        const auto a = parseFirst(out);
+        QCOMPARE(a.formattedName(), QStringLiteral("Carol"));
+
+        // For each property the LossProfile declares dropped, verify
+        // KContacts actually dropped it on the v4→v3 serialize.
+        const auto loss = vcard4ToVcard3Loss();
+        for (const auto &p : loss.dropped) {
+            const auto name = p.toString();
+            if (name == QStringLiteral("gender")) {
+                QVERIFY2(a.gender().gender().isEmpty(),
+                         "gender survived v4->v3 unexpectedly");
+            } else if (name == QStringLiteral("kind")) {
+                QVERIFY2(a.kind().isEmpty(),
+                         "kind survived v4->v3 unexpectedly");
+            } else if (name == QStringLiteral("anniversary")) {
+                // KContacts stores anniversary as an X-Anniversary
+                // extension on v3 output. If this fails, the
+                // LossProfile should be updated to remove "anniversary"
+                // from the dropped set.
+                QVERIFY2(!a.anniversary().isValid(),
+                         "anniversary survived v4->v3 (likely via "
+                         "X-Anniversary) — update LossProfile");
+            } else if (name == QStringLiteral("lang")) {
+                QVERIFY2(a.langs().isEmpty(),
+                         "lang survived v4->v3 unexpectedly");
+            } else if (name == QStringLiteral("member")) {
+                QVERIFY2(a.members().isEmpty(),
+                         "member survived v4->v3 unexpectedly");
+            }
+        }
+    }
+};
+
+QTEST_GUILESS_MAIN(TestVCard3VCard4Edge)
+#include "tst_vcard3_vcard4_edge.moc"

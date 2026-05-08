@@ -14,3 +14,4 @@ endfunction()
 
 kalburator_add_contacts_test(tst_vcard_plugin)
 kalburator_add_contacts_test(tst_vcard_differ)
+kalburator_add_contacts_test(tst_vcard3_vcard4_edge)

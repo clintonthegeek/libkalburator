@@ -43,11 +43,17 @@ LossProfile vcard4ToVcard3Loss()
 {
     LossProfile p;
     p.level = LossLevel::IntraDomainLossy;
-    // Initial conservative list — refine after Task 9's test exercises
-    // KContacts round-trip behavior with a representative vCard.
+    // Refined against KContacts reality by Task 9's
+    // declaredDropsMatchKContactsReality test slot.
+    //
+    // NOTE: `anniversary` survives the v4→v3 round-trip via KContacts'
+    // X-Anniversary extension — confirmed by the Task 9 test and by
+    // KContacts source (Addressee::setAnniversary stores into a custom
+    // X-Anniversary field that's serialized in v3 output). It is
+    // therefore NOT in the dropped set, even though it's a v4-defined
+    // property.
     p.dropped.insert(PropertyId{QStringLiteral("gender")});
     p.dropped.insert(PropertyId{QStringLiteral("kind")});
-    p.dropped.insert(PropertyId{QStringLiteral("anniversary")});
     p.dropped.insert(PropertyId{QStringLiteral("lang")});
     p.dropped.insert(PropertyId{QStringLiteral("member")});
     return p;
