@@ -18,3 +18,5 @@ endfunction()
 
 kalburator_add_journal_test(tst_blob_baseline_store_per_record_keys)
 kalburator_add_journal_test(tst_blob_baseline_store_v3)
+kalburator_add_journal_test(tst_idmappingstore)
+kalburator_add_journal_test(tst_calendarjournal)
