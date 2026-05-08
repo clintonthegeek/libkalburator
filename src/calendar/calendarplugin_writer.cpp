@@ -16,6 +16,7 @@
 #include <QDebug>
 #include <QMetaObject>
 #include <QStringList>
+#include <QThread>
 
 namespace Kalburator::Calendar {
 
@@ -138,6 +139,9 @@ bool CalendarPluginWriter::apply(
     // BlockingQueuedConnection blocks the calling (worker) thread until
     // commitAll() returns. Same pattern as
     // CalendarDomainAdapter::applyChangesToBackend.
+    Q_ASSERT_X(QThread::currentThread() != m_backend->thread(),
+               "CalendarPluginWriter::apply",
+               "BlockingQueuedConnection requires a different thread than backend");
     bool txResult = false;
     QMetaObject::invokeMethod(m_backend, [&tx, &txResult]() {
         txResult = tx.commitAll();
