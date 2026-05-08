@@ -171,3 +171,110 @@ bytes. Symmetric on the inbound write path: the engine hands the
 backend `PalmRecord::toWireBytes()` (after vcard4→palm) and the
 backend reverses it via `fromWireBytes` before talking to the
 device.
+
+### Domain-extension mechanism (Task 13, 2026-05-07)
+
+**Question.** Per design §3.3, WP needs to register the
+`(contacts, palm)` peer shape + edges to/from the contacts canonical
+without owning the `contacts` domain (the stock `KalburatorDomainContacts`
+plugin owns that). Three paths were on the table:
+
+  (A) Direct registration with `TransformationRegistry::registerShape`
+      / `registerEdge` from a non-`DomainPlugin` TU.
+  (B) A new "domain-extension" plugin form — multi-plugin per domain
+      in `DomainRegistry`, edges merged at `initialize()`-time.
+  (C) A callback hook on `KalburatorDomainContacts`.
+
+**Path chosen: (A) — direct `TransformationRegistry` registration
+from a WP-side helper class.**
+
+**Rationale (verified against the .cpp, not just header comments):**
+
+1. **No ownership check on `TransformationRegistry`.**
+   `registerShape` (`libkalburator/src/shape/transformationregistry.cpp:12-18`)
+   and `registerEdge`
+   (`libkalburator/src/shape/transformationregistry.cpp:54-80`) accept
+   any `Shape`/`TransformationEdge` regardless of caller. Neither
+   references `DomainPlugin` or any owner identity. The only gate is
+   `m_frozenDomains` membership (transformationregistry.cpp:13, 58-59).
+
+2. **Idempotency confirmed in source.** `registerEdge` at
+   `transformationregistry.cpp:70-78` looks up an existing edge for
+   the `(from, to)` pair and, if found, asserts only on conflicting
+   `loss.level`/`loss.dropped`; identical re-registration returns
+   silently. `registerShape` at lines 17 unconditionally overwrites
+   the catalogue (last-write-wins idempotent, not conflict-detecting —
+   so two callers with different catalogues for the same shape would
+   silently disagree, but that's a non-issue here: only WP registers
+   `(contacts, palm)`'s catalogue). `declareCanonical` at lines 25-34
+   detects same-value vs. conflicting redeclaration and rejects the
+   conflict — but WP never declares contacts canonical, so this is
+   moot for path A.
+
+3. **Freeze timing is safe for WP's plugin-load sequence.**
+   `freeze()` (`transformationregistry.cpp:49-52`) is called only
+   from `compile()` (lines 139-142) on a non-identity successful
+   pipeline. WP plugins load via `KPluginFactory` at app startup,
+   long before any sync compiles a pipeline. The first compile for
+   the contacts domain happens when a sync actually runs against a
+   palm-contacts mapping — after WP's plugin TU has registered.
+   The freeze-after-first-compile gate is therefore satisfied
+   structurally, not by accident of timing.
+
+4. **`isFrozen()` is public** (`transformationregistry.h:44-49`),
+   so the WP helper can defensively assert / log if it ever runs
+   after freeze (defense in depth, not a workaround).
+
+5. **Path B's mechanism already exists in skeleton form, but A
+   subsumes it.** `DomainRegistry::registerPlugin`
+   (`libkalburator/src/shape/domainregistry.cpp:41-59`) already
+   supports post-`initialize()` plugin registration with
+   idempotent edge re-registration. So path B's "register a second
+   plugin for an existing domain" works today *if* the second
+   thing is a `DomainPlugin`. But that buys nothing path A doesn't
+   already get — and forces WP to construct a `DomainPlugin`
+   subclass with mostly stub methods (`canonicalShape()`,
+   `canonicalCatalogue()`, `createCanonicalDiffer()`,
+   `createCanonicalMerger()`) it doesn't actually own. Path A skips
+   the boilerplate.
+
+6. **The test suite confirms idempotency at the
+   `DomainRegistry::initialize` level too** —
+   `tst_domain_registry.cpp:65-80` verifies `initialize()` is a
+   no-op on second call. Path A doesn't depend on this, but it
+   means path B would have been workable too if needed.
+
+**Implication for Task 14.** The `ContactsDomainExtension` (or
+whatever it's named) is **NOT** a `DomainPlugin` subclass. It is a
+plain helper class with a static
+`registerWith(TransformationRegistry&)` method (or equivalent
+free function) that:
+
+  1. Calls `r.registerShape({DomainId{"contacts"}, EncodingId{"palm"}}, palmCatalogue)`.
+  2. Calls `r.registerEdge(...)` for `(contacts, palm) → (contacts, vcard4)` and the reverse.
+  3. Is invoked from WP's plugin TU at plugin-load time (probably
+     from the `IBackendPluginV2` factory's `init()` or equivalent
+     entry point), before any sync runs.
+
+It does **not** call `DomainRegistry::registerDomain` or
+`registerPlugin`. The contacts domain remains owned by the stock
+`KalburatorDomainContacts` plugin; WP only contributes a peer
+shape and its two transcoding edges to the canonical hub.
+
+**Naming note carried from Task 12.** The stale
+`WildPalms::PalmContacts::PalmContactsBackend` declares
+`(contacts, palm-address)` (with hyphen) at
+`palmcontactsbackend.cpp:35-39`. Task 14 should use `palm` (no
+hyphen) per the design doc, matching the EncodingId convention
+established by `(calendar, ical)`, `(contacts, vcard4)`, etc.
+The hyphenated dead code can be removed in a later cleanup task or
+left to die when its files are eventually deleted; it is not
+referenced by any build target (Task 1's audit confirmed this).
+
+**Revisit trigger.** If a future phase finds path (A) too loose —
+e.g., WP and a hypothetical second extender both want to add peer
+shapes for the same domain and register conflicting edges — lift
+to path (B) by formalizing a `DomainExtensionPlugin` interface
+that `DomainRegistry` understands as distinct from canonical-owner
+plugins. Today, with one extender (WP) and one extension point
+(`(contacts, palm)`), that's overkill.
