@@ -29,6 +29,8 @@ private slots:
     void castSucceeds();
     void identityMethods_returnNonEmpty();
     void availableCollections_emptyWithoutRegisteredCalendars();
+    void updateRecord_modifies_existing_record();
+    void updateRecord_nonexistent_id_returns_error();
 };
 
 void TestRemoteBackendBlobView::castSucceeds()
@@ -62,6 +64,22 @@ void TestRemoteBackendBlobView::availableCollections_emptyWithoutRegisteredCalen
 
     // No calendars discovered / registered yet — must return empty list.
     QVERIFY(blob->availableCollections().isEmpty());
+}
+
+void TestRemoteBackendBlobView::updateRecord_modifies_existing_record()
+{
+    // RemoteBackend::updateRecord issues a CalDAV PUT with conditional headers.
+    // This requires a live (or fake) CalDAV server responding to item-level
+    // verbs, which is not available in the default test profile.
+    // Full coverage is gated on KALBURATOR_ENABLE_CALDAV_TESTS=ON — see FINDINGS.md.
+    QSKIP("RemoteBackend updateRecord requires item-level CalDAV verbs not yet in FakeCalDavServer — see FINDINGS.md");
+}
+
+void TestRemoteBackendBlobView::updateRecord_nonexistent_id_returns_error()
+{
+    // Same constraint as updateRecord_modifies_existing_record: requires a
+    // live CalDAV server to exercise the 404-on-missing-item path.
+    QSKIP("RemoteBackend updateRecord requires item-level CalDAV verbs not yet in FakeCalDavServer — see FINDINGS.md");
 }
 
 QTEST_GUILESS_MAIN(TestRemoteBackendBlobView)

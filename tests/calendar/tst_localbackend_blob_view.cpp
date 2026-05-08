@@ -39,6 +39,22 @@ static BackendRecord makeRecord(const QString &uid, const QByteArray &data = QBy
     return r;
 }
 
+/// Build an ICS byte string with an explicit SUMMARY field.
+static QByteArray makeIcsBytesWithSummary(const QString &uid, const QString &summary)
+{
+    return QStringLiteral(
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//test//test//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:%1\r\n"
+        "SUMMARY:%2\r\n"
+        "DTSTART:20250101T120000Z\r\n"
+        "DTEND:20250101T130000Z\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n").arg(uid, summary).toUtf8();
+}
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -52,6 +68,8 @@ private slots:
     void deleteRecord_removesFile();
     void modifiedSince_returnsChangedFiles();
     void modifiedSince_shortCircuitsOnFingerprint();
+    void updateRecord_modifies_existing_record();
+    void updateRecord_nonexistent_id_returns_error();
 };
 
 // ---------------------------------------------------------------------------
@@ -269,6 +287,69 @@ void TestLocalBackendBlobView::modifiedSince_shortCircuitsOnFingerprint()
     // Second call: no files changed — fingerprint matches — should short-circuit to empty
     QList<BackendRecord> second = blob->modifiedSince(calendarId, veryOld);
     QVERIFY(second.isEmpty());
+}
+
+// ---------------------------------------------------------------------------
+// updateRecord_modifies_existing_record
+//
+// Create a record with an "original summary". Call updateRecord with the
+// same uid but "updated summary". Load and verify the summary changed.
+// ---------------------------------------------------------------------------
+
+void TestLocalBackendBlobView::updateRecord_modifies_existing_record()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+
+    const QString calendarId = QStringLiteral("cal-update");
+
+    // Create a record with the original summary
+    const QByteArray originalData =
+        makeIcsBytesWithSummary(QStringLiteral("uid-update-L"),
+                                QStringLiteral("original summary"));
+    const BackendRecord original = makeRecord(QStringLiteral("uid-update-L"), originalData);
+    blob->createRecord(calendarId, original);
+
+    // Update the record with a new summary
+    const QByteArray updatedData =
+        makeIcsBytesWithSummary(QStringLiteral("uid-update-L"),
+                                QStringLiteral("updated summary"));
+    const BackendRecord updated = makeRecord(QStringLiteral("uid-update-L"), updatedData);
+    bool ok = blob->updateRecord(updated);
+    QVERIFY(ok);
+
+    // Load and verify the new summary is present, old one is gone
+    auto loaded = blob->loadRecord(QStringLiteral("uid-update-L"));
+    QVERIFY(loaded.has_value());
+    const QString ical = QString::fromUtf8(loaded->data);
+    QVERIFY(ical.contains(QStringLiteral("updated summary")));
+    QVERIFY(!ical.contains(QStringLiteral("original summary")));
+}
+
+// ---------------------------------------------------------------------------
+// updateRecord_nonexistent_id_returns_error
+//
+// Do NOT call createRecord. updateRecord on an unknown uid must return false.
+// ---------------------------------------------------------------------------
+
+void TestLocalBackendBlobView::updateRecord_nonexistent_id_returns_error()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+
+    // This uid has never been created
+    const QByteArray ghostData =
+        makeIcsBytesWithSummary(QStringLiteral("uid-ghost-L"),
+                                QStringLiteral("ghost summary"));
+    const BackendRecord ghost = makeRecord(QStringLiteral("uid-ghost-L"), ghostData);
+    bool ok = blob->updateRecord(ghost);
+    QVERIFY(!ok);
 }
 
 // ---------------------------------------------------------------------------

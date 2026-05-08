@@ -51,6 +51,8 @@ private slots:
     void roundTrip_createLoadDelete();
     void modifiedSince_filtersByTimestamp();
     void loadRecord_missingId_returnsNullopt();
+    void updateRecord_modifies_existing_record();
+    void updateRecord_nonexistent_id_returns_error();
 };
 
 // ---------------------------------------------------------------------------
@@ -134,6 +136,50 @@ void TestMockBackendBlobView::loadRecord_missingId_returnsNullopt()
 
     auto result = blob->loadRecord(QStringLiteral("nope"));
     QVERIFY(!result.has_value());
+}
+
+// ---------------------------------------------------------------------------
+// Slot: updateRecord_modifies_existing_record
+// ---------------------------------------------------------------------------
+
+void TestMockBackendBlobView::updateRecord_modifies_existing_record()
+{
+    MockBackend mock(QStringLiteral("test-backend"));
+    auto *blob = static_cast<IBlobBackend *>(&mock);
+
+    // Create a record with the original summary
+    BackendRecord original = makeRecord(QStringLiteral("uid-update-1"),
+                                        QStringLiteral("original summary"));
+    blob->createRecord(QStringLiteral("cal-1"), original);
+
+    // Build an updated record with the same uid but a different summary
+    BackendRecord updated = makeRecord(QStringLiteral("uid-update-1"),
+                                       QStringLiteral("updated summary"));
+    bool ok = blob->updateRecord(updated);
+    QVERIFY(ok);
+
+    // Load and verify the summary changed
+    auto loaded = blob->loadRecord(QStringLiteral("uid-update-1"));
+    QVERIFY(loaded.has_value());
+    const QString ical = QString::fromUtf8(loaded->data);
+    QVERIFY(ical.contains(QStringLiteral("updated summary")));
+    QVERIFY(!ical.contains(QStringLiteral("original summary")));
+}
+
+// ---------------------------------------------------------------------------
+// Slot: updateRecord_nonexistent_id_returns_error
+// ---------------------------------------------------------------------------
+
+void TestMockBackendBlobView::updateRecord_nonexistent_id_returns_error()
+{
+    MockBackend mock(QStringLiteral("test-backend"));
+    auto *blob = static_cast<IBlobBackend *>(&mock);
+
+    // Do NOT call createRecord — this uid does not exist
+    BackendRecord ghost = makeRecord(QStringLiteral("uid-ghost"),
+                                     QStringLiteral("ghost summary"));
+    bool ok = blob->updateRecord(ghost);
+    QVERIFY(!ok);
 }
 
 // ---------------------------------------------------------------------------

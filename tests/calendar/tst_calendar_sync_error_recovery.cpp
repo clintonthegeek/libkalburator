@@ -211,12 +211,7 @@ bool TestCalendarSyncErrorRecovery::runOneSync()
     // the first (and only) entry is the truth.
     auto future = m_coordinator->runSyncFuture(
         SyncEngine::SyncBehavior::Unmonitored);
-    int waited = 0;
-    while (!future.isFinished() && waited < kSyncTimeoutMs) {
-        QTest::qWait(10);
-        waited += 10;
-    }
-    if (!future.isFinished()) {
+    if (!QTest::qWaitFor([&] { return future.isFinished(); }, kSyncTimeoutMs)) {
         qWarning() << "runSyncFuture did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
