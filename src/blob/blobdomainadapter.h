@@ -2,8 +2,11 @@
 #define KALBURATOR_BLOB_BLOBDOMAINADAPTER_H
 
 #include "idomainadapter.h"
+#include "shape.h"
 
 #include <QString>
+
+namespace Kalburator::Shape { class IRecordMerger; }
 
 namespace Kalburator::Sync {
 
@@ -73,6 +76,20 @@ public:
     EngineMerge merge(const EngineDiff& diff,
                       ConflictResolution policy,
                       const ExecutionOverride& executionOverride = {}) const override;
+
+    /// Phase Ia.5 Task 9: variant that consults the supplied per-record
+    /// merger to resolve conflicts when the conflict policy doesn't pick
+    /// a side outright (CustomMerge today, AskUser fallback in Task 10).
+    /// `customMerger` is the plugin's IRecordMerger
+    /// (DomainPlugin::createCanonicalMerger). When null, this falls back
+    /// to merge() exactly. Hash-equality diff in this adapter remains
+    /// the primary diff path because it matches IRecordDifferBlob's
+    /// semantics; the merger swap is the engine-unification step.
+    EngineMerge mergeWithPlugin(const EngineDiff& diff,
+                                ConflictResolution policy,
+                                const ExecutionOverride& executionOverride,
+                                Kalburator::Shape::IRecordMerger* customMerger,
+                                const Kalburator::Shape::Shape& canonical) const;
 
     EngineApplyResult applyChanges(const EngineMerge& merge,
                                    SyncBackend* destination,

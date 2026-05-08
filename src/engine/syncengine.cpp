@@ -8,6 +8,7 @@
 #include "calendarbaselinestore.h"
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
+#include "irecordmerger.h"
 #include "iblobbackend.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
@@ -1941,11 +1942,22 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     const EngineDiff engineDiff = adapter.diff(
         sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
 
+    // Phase Ia.5 Task 9: merge consults the plugin's IRecordMerger for
+    // CustomMerge-policy conflicts (3-way per-property merge owned by
+    // the domain plugin). Diff stays as BlobDomainAdapter::diff for v1
+    // — its hash-equality semantics match KalburatorDomainBlob's
+    // IRecordDiffer (and the calendar / contacts / memo plugins'
+    // canonical-record differs operate on the same id+data shape after
+    // pipeline promotion). Task 17 / Phase Ib.5 may revisit moving the
+    // diff to a per-record IRecordDiffer too.
+    auto pluginMerger = plugin->createCanonicalMerger();
+
     const ConflictResolution policy = ConflictResolution::SourceWins;
     // Task 9: pass the per-call override from the Request into merge().
     // The override was embedded in the Request by processSingleMapping
     // (on the engine thread) before the worker was dispatched.
-    const EngineMerge engineMerge = adapter.merge(engineDiff, policy, request.override);
+    const EngineMerge engineMerge = adapter.mergeWithPlugin(
+        engineDiff, policy, request.override, pluginMerger.get(), canonical);
 
     emit phaseChanged(mappingId, 4);
 

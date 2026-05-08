@@ -2,6 +2,8 @@
 
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
+#include "conflictpolicy.h"
+#include "irecordmerger.h"
 #include "syncbackend.h"  // SyncBackend definition for IBlobBackend dispatch
 #include "iblobbackend.h"
 #include "synctypes.h"
@@ -369,6 +371,132 @@ EngineMerge BlobDomainAdapter::merge(const EngineDiff &d,
                 resolved.record = op.targetRecord;
                 routeOp(resolved, /*toTarget=*/false);
             }
+            ++m.conflictsResolved;
+        } else {
+            ++m.conflictsDeferred;
+        }
+    }
+
+    return m;
+}
+
+EngineMerge BlobDomainAdapter::mergeWithPlugin(
+    const EngineDiff &d,
+    ConflictResolution policy,
+    const ExecutionOverride &executionOverride,
+    Kalburator::Shape::IRecordMerger *customMerger,
+    const Kalburator::Shape::Shape &canonical) const
+{
+    // Phase Ia.5 Task 9: variant of merge() that consults the plugin's
+    // IRecordMerger to resolve conflicts the policy can't auto-resolve.
+    // For mirror overrides and policies that pick a side outright
+    // (SourceWins / TargetWins / LastWriteWins), the existing merge()
+    // body handles everything. Custom resolution comes into play only
+    // when policy doesn't pick a side AND a merger was supplied.
+    using Direction = ExecutionOverride::Direction;
+    if (executionOverride.direction == Direction::MirrorAToB
+        || executionOverride.direction == Direction::MirrorBToA) {
+        return merge(d, policy, executionOverride);
+    }
+
+    // The default-direction body of merge() already routes Create /
+    // Update / Delete ops and resolves conflicts when resolvePolicy()
+    // returns true. We replicate that body inline here so we can hook
+    // the customMerger path into the otherwise-deferred conflict case.
+    EngineMerge m;
+
+    auto routeOp = [&m](const EngineDiffOp &op, bool toTarget) {
+        QList<BackendRecord> &bucket = toTarget ? m.finalTarget : m.finalSource;
+        switch (op.kind) {
+            case EngineDiffOp::Kind::Create:
+            case EngineDiffOp::Kind::Update:
+                bucket.append(op.record);
+                m.updatedBaselines.append(op.record);
+                return;
+            case EngineDiffOp::Kind::Delete: {
+                BackendRecord doomed = op.record;
+                doomed.isDeleted = true;
+                bucket.append(doomed);
+                return;
+            }
+            case EngineDiffOp::Kind::Conflict:
+                Q_UNREACHABLE();
+                return;
+        }
+    };
+
+    auto pickByPolicy = [](ConflictResolution p,
+                           const BackendRecord &src,
+                           const BackendRecord &tgt,
+                           bool *sourceWins) {
+        switch (p) {
+            case ConflictResolution::SourceWins:
+                *sourceWins = true;
+                return true;
+            case ConflictResolution::TargetWins:
+                *sourceWins = false;
+                return true;
+            case ConflictResolution::LastWriteWins:
+                *sourceWins = src.lastModified >= tgt.lastModified;
+                return true;
+            case ConflictResolution::Skip:
+            case ConflictResolution::AskUser:
+            case ConflictResolution::Duplicate:
+            case ConflictResolution::CustomMerge:
+                return false;
+        }
+        return false;
+    };
+
+    for (const auto &op : d.toSource) {
+        if (op.kind == EngineDiffOp::Kind::Conflict) {
+            continue;
+        }
+        routeOp(op, /*toTarget=*/false);
+    }
+
+    for (const auto &op : d.toTarget) {
+        if (op.kind != EngineDiffOp::Kind::Conflict) {
+            routeOp(op, /*toTarget=*/true);
+            continue;
+        }
+        bool sourceWins = false;
+        if (pickByPolicy(policy, op.record, op.targetRecord, &sourceWins)) {
+            EngineDiffOp resolved;
+            resolved.kind = EngineDiffOp::Kind::Update;
+            resolved.baselineRecord = op.baselineRecord;
+            if (sourceWins) {
+                resolved.record = op.record;
+                routeOp(resolved, /*toTarget=*/true);
+            } else {
+                resolved.record = op.targetRecord;
+                routeOp(resolved, /*toTarget=*/false);
+            }
+            ++m.conflictsResolved;
+        } else if (policy == ConflictResolution::CustomMerge && customMerger) {
+            // Delegate per-record 3-way merge to the domain plugin's
+            // IRecordMerger. Mirrors CalendarDomainAdapter's existing
+            // pattern; canonical-shape inputs because dispatchSync has
+            // already promoted source/target/baseline to canonical.
+            Kalburator::Shape::CanonicalRecord srcRec{
+                canonical, op.record.data,         op.record.id};
+            Kalburator::Shape::CanonicalRecord tgtRec{
+                canonical, op.targetRecord.data,   op.record.id};
+            Kalburator::Shape::CanonicalRecord baseRec{
+                canonical, op.baselineRecord.data, op.record.id};
+
+            const auto merged = customMerger->merge(
+                srcRec, tgtRec, baseRec,
+                Kalburator::Sync::QSyncCore::ConflictPolicy::deferAll());
+
+            BackendRecord mergedRecord = op.record;
+            mergedRecord.data = merged.data;
+
+            EngineDiffOp resolved;
+            resolved.kind           = EngineDiffOp::Kind::Update;
+            resolved.record         = mergedRecord;
+            resolved.baselineRecord = op.baselineRecord;
+            routeOp(resolved, /*toTarget=*/true);
             ++m.conflictsResolved;
         } else {
             ++m.conflictsDeferred;
