@@ -1,4 +1,4 @@
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: build-dev
   Remove:
     - -mno-direct-extern-access
