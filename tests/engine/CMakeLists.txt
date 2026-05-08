@@ -34,3 +34,9 @@ kalburator_add_engine_integration_test(tst_cancellation_reason)
 
 # Phase Ia.5 Task 7 — generic property-phase helper unit tests
 kalburator_add_engine_test(tst_property_phase)
+
+# Phase Ia.5 Task 20 — unified-path integration test
+# (contacts, vcard3) -> (contacts, vcard4) end-to-end through the
+# unified dispatchSync. Pins Pipeline compilation, byte
+# transformation at the edge, and LossProfile delivery to the host.
+kalburator_add_engine_test(tst_engine_unified_routing)
