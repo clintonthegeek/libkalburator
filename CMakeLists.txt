@@ -236,10 +236,8 @@ set(KALBURATOR_BLOB_SOURCES
     src/blob/mockblobbackend.cpp
 )
 
-# Phase F1 — unified engine + IDomainAdapter interface.
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
-    src/engine/idomainadapter.h
     src/engine/mappingscheduler.h
     src/engine/propertydiff.h
     src/engine/syncengine.h

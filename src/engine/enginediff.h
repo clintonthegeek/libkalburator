@@ -8,7 +8,7 @@
 
 namespace Kalburator::Sync {
 
-/// Single operation produced by IDomainAdapter::diff(). The
+/// Single operation produced by the engine's diff phase. The
 /// engine inspects DiffOp at the control-flow level (kind counts,
 /// conflict presence) but does not interpret payload bytes.
 ///
@@ -35,9 +35,9 @@ struct EngineDiffOp
     BackendRecord baselineRecord;  ///< populated for Update/Delete/Conflict
 };
 
-/// Result of IDomainAdapter::diff(). Lists of operations to apply
+/// Result of the engine's diff phase. Lists of operations to apply
 /// to source side and target side. Engine drives apply via
-/// IDomainAdapter::applyChanges() which consumes EngineMerge.
+/// unifiedContinueAfterConflicts which consumes EngineMerge.
 struct EngineDiff
 {
     QList<EngineDiffOp> toSource;  ///< operations to apply to source
@@ -47,7 +47,7 @@ struct EngineDiff
     int  totalOperations() const noexcept;
 };
 
-/// Result of IDomainAdapter::merge(). Conflicts have been resolved
+/// Result of the engine's merge phase. Conflicts have been resolved
 /// per ConflictResolution policy; what remains is what to write.
 struct EngineMerge
 {
@@ -58,7 +58,7 @@ struct EngineMerge
     int conflictsDeferred = 0;
 };
 
-/// Result of IDomainAdapter::applyChanges(). Reports outcome and the
+/// Result of the engine's apply phase. Reports outcome and the
 /// records actually written (for partial-failure recovery —
 /// appliedBaselines contains baseline-shaped records for everything
 /// that succeeded before any error).

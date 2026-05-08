@@ -41,8 +41,7 @@ class ConflictManager;
 class DecSyncActiveController;
 class SyncEngine;
 
-// ExecutionOverride lives in synctypes.h (moved Task 9 to avoid include
-// cycles between syncengine.h and idomainadapter.h).
+// ExecutionOverride lives in synctypes.h.
 
 namespace QSyncCore {
     class ConflictStore;
