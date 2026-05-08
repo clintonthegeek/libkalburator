@@ -166,7 +166,40 @@ restructure is purely a code-shape improvement.
 
 ---
 
-### A.5 Calendar property phase: baseline-aware diff in unified path
+### A.5 CustomMerge and Duplicate conflict policies in unified path
+
+**Status:** ⬜ deferred from Phase Ib.5 Task 6.
+**Target phase:** post-Ib.5; only needed when a consumer wires these policies.
+**Source:** Phase Ib.5 parity audit (04y); Task 6 grep sweep.
+
+`unifiedHandleConflicts` routes CustomMerge and Duplicate conflict ops to
+the `default: ++conflictsDeferred` branch (same as the legacy
+`blobBatchMergeWithPlugin` when no custom merger was available). No
+`tests/calendar/` or `tests/contacts/` integration test sets
+`conflictPolicy = CustomMerge` or `conflictPolicy = Duplicate` on a mapping
+(confirmed by Task 6 grep sweep). Acceptance bar met without a fix.
+
+**Why deferred:** CustomMerge in the unified path requires the domain
+plugin's `IRecordMerger::merge()` to be called at yield-resume time (when
+the ConflictManager returns `CustomMerge` resolution). Duplicate requires
+cloning the record with a new UUID and writing both copies. Neither use case
+has a test or a consumer wiring it today.
+
+**Acceptance (CustomMerge):**
+- In `resumeAfterConflict`, when `resolution == CustomMerge` and the
+  dispatch path is Unified, call `plugin->createCanonicalMerger()->merge()`
+  with the stored `op.record`, `op.targetRecord`, `op.baselineRecord`.
+- Result written to `finalTarget` and `updatedBaselines`.
+
+**Acceptance (Duplicate):**
+- In `unifiedHandleConflicts`, when policy == Duplicate, clone the record
+  with a new UUID (domain-agnostic: append "-dup-<uuid>" to the id) and
+  push both the original and clone to `finalTarget`.
+- Update `updatedBaselines` for both.
+
+---
+
+### A.6 Calendar property phase: baseline-aware diff in unified path
 
 **Status:** ⬜ deferred from Phase Ib.5 Task 5.
 **Target phase:** post-Ib.5; low priority — no integration test exercises
