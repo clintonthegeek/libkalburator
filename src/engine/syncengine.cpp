@@ -27,7 +27,6 @@
 #include "conflictmanager.h"
 #include "synctesthooks.h"
 
-#include <KCalendarCore/ICalFormat>
 #include <QDebug>
 #include <QHash>
 #include <QMap>
@@ -1646,7 +1645,6 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
             records = src->loadRecords(colId);
         }, Qt::BlockingQueuedConnection);
 
-    KCalendarCore::ICalFormat icalFormat;
     QHash<QString, QString> uidToIcal;
     const QString mappingId = request.mapping.id;
 

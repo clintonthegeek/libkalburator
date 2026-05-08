@@ -22,7 +22,6 @@
 #include <QFuture>
 #include <QFutureInterface>
 #include <QFutureWatcher>
-#include <KCalendarCore/Incidence>
 #include <atomic>
 #include <type_traits>
 
