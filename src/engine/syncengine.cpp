@@ -1952,7 +1952,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // diff to a per-record IRecordDiffer too.
     auto pluginMerger = plugin->createCanonicalMerger();
 
-    const ConflictResolution policy = ConflictResolution::SourceWins;
+    // Phase Ia.5 Task 10: honor the mapping's conflict policy.
+    // AskUser pause/resume in the unified path is deferred to Task 13
+    // (router deletion) — at that point ALL conflicts must flow through
+    // dispatchSync, so the calendar-typed pause/resume protocol
+    // (handleConflicts / applyMonitoredResolution) needs lifting onto
+    // EngineDiff/EngineMerge. Until then: AskUser conflicts in
+    // unified-path domains (blob/contacts/memo/todo) get treated as
+    // conflictsDeferred (next-sync resolution) per
+    // BlobDomainAdapter::mergeWithPlugin's existing behavior — the
+    // calendar router (above) still routes calendar conflicts through
+    // the legacy handleConflicts pause/resume path.
+    const ConflictResolution policy = request.mapping.conflictPolicy;
     // Task 9: pass the per-call override from the Request into merge().
     // The override was embedded in the Request by processSingleMapping
     // (on the engine thread) before the worker was dispatched.

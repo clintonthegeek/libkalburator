@@ -425,29 +425,6 @@ EngineMerge BlobDomainAdapter::mergeWithPlugin(
         }
     };
 
-    auto pickByPolicy = [](ConflictResolution p,
-                           const BackendRecord &src,
-                           const BackendRecord &tgt,
-                           bool *sourceWins) {
-        switch (p) {
-            case ConflictResolution::SourceWins:
-                *sourceWins = true;
-                return true;
-            case ConflictResolution::TargetWins:
-                *sourceWins = false;
-                return true;
-            case ConflictResolution::LastWriteWins:
-                *sourceWins = src.lastModified >= tgt.lastModified;
-                return true;
-            case ConflictResolution::Skip:
-            case ConflictResolution::AskUser:
-            case ConflictResolution::Duplicate:
-            case ConflictResolution::CustomMerge:
-                return false;
-        }
-        return false;
-    };
-
     for (const auto &op : d.toSource) {
         if (op.kind == EngineDiffOp::Kind::Conflict) {
             continue;
@@ -461,7 +438,7 @@ EngineMerge BlobDomainAdapter::mergeWithPlugin(
             continue;
         }
         bool sourceWins = false;
-        if (pickByPolicy(policy, op.record, op.targetRecord, &sourceWins)) {
+        if (resolvePolicy(policy, op.record, op.targetRecord, &sourceWins)) {
             EngineDiffOp resolved;
             resolved.kind = EngineDiffOp::Kind::Update;
             resolved.baselineRecord = op.baselineRecord;
