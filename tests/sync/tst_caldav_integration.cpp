@@ -7,7 +7,7 @@
 //           -> connectAll() against FakeCalDavServer
 //           -> backends registered with BackendRegistry under
 //              "<provider-id>:<collection-id>" ids
-//           -> dynamic_cast to RemoteBackend verifies the type
+//           -> dynamic_cast to RemoteCalendarBackend verifies the type
 //              contract relied on by SyncRouter / SyncEngine
 //           -> disconnectAll() unregisters cleanly
 //
@@ -39,7 +39,7 @@
 #include "collectioninfo.h"
 #include "iprovider.h"
 #include "providermanager.h"
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 #include "syncbackend.h"
 
 using namespace Kalburator::Sync;
@@ -178,7 +178,7 @@ void TstCalDavIntegration::connectAll_registers_provider_backends()
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// 3. registry-stored backend is a RemoteBackend (the type contract
+// 3. registry-stored backend is a RemoteCalendarBackend (the type contract
 //    SyncRouter / SyncEngine rely on)
 // ─────────────────────────────────────────────────────────────────────
 void TstCalDavIntegration::registered_backend_is_a_remote_backend()
@@ -216,9 +216,9 @@ void TstCalDavIntegration::registered_backend_is_a_remote_backend()
     QVERIFY2(sb != nullptr,
              qPrintable(QStringLiteral("registry has no backend for ") + backendId));
 
-    auto *remote = dynamic_cast<RemoteBackend*>(sb);
+    auto *remote = dynamic_cast<RemoteCalendarBackend*>(sb);
     QVERIFY2(remote != nullptr,
-             "registry-stored backend must be a RemoteBackend");
+             "registry-stored backend must be a RemoteCalendarBackend");
 }
 
 // ─────────────────────────────────────────────────────────────────────

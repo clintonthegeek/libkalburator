@@ -211,7 +211,7 @@ CalendarBackendBinding LogicalCalendarBuilder::createPendingBinding(
     binding.needsCreation = true;
 
     // Metadata will be populated by backend during creation
-    // (e.g., RemoteBackend::prepareCreationMetadata)
+    // (e.g., RemoteCalendarBackend::prepareCreationMetadata)
 
     return binding;
 }

@@ -21,7 +21,7 @@
 
 #include "localbackend.h"
 #include "mockbackend.h"
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 #include "syncbackend.h"
 #include "syncoperation.h"
 
@@ -729,10 +729,10 @@ private slots:
 #endif // KALBURATOR_HAVE_ORG_IO
 
     // ========================================================================
-    // RemoteBackend Signal Tests (requires CalDAV server)
+    // RemoteCalendarBackend Signal Tests (requires CalDAV server)
     // ========================================================================
 
-    void testRemoteBackend_fetchItems_emitsFetchSignals() {
+    void testRemoteCalendarBackend_fetchItems_emitsFetchSignals() {
         // Skip if CalDAV server not available
         if (!isCaldavServerAvailable()) {
             QSKIP("CalDAV server not available at 127.0.0.1:5232");
@@ -740,7 +740,7 @@ private slots:
 
         // Setup: Create backend connected to test server
         QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
 
         // First, discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);
@@ -811,7 +811,7 @@ private slots:
         deleteOp->deleteLater();
     }
 
-    void testRemoteBackend_pushItems_pushesItemsSuccessfully() {
+    void testRemoteCalendarBackend_pushItems_pushesItemsSuccessfully() {
         // Skip if CalDAV server not available
         if (!isCaldavServerAvailable()) {
             QSKIP("CalDAV server not available at 127.0.0.1:5232");
@@ -819,7 +819,7 @@ private slots:
 
         // Setup
         QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
 
         // Discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);
@@ -874,7 +874,7 @@ private slots:
         deleteOp->deleteLater();
     }
 
-    void testRemoteBackend_startSync_emitsWriteSignals() {
+    void testRemoteCalendarBackend_startSync_emitsWriteSignals() {
         // Skip if CalDAV server not available
         if (!isCaldavServerAvailable()) {
             QSKIP("CalDAV server not available at 127.0.0.1:5232");
@@ -882,7 +882,7 @@ private slots:
 
         // Setup
         QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
 
         // Discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);

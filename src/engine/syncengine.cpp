@@ -22,7 +22,7 @@
 #include "icalendarcollection.h"
 #include "backendconfiguration.h"
 #include "syncbackend.h"
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 #include "localbackend.h"
 #include "syncoperation.h"
 #include "conflictmanager.h"
@@ -627,13 +627,13 @@ void SyncEngine::prepareSyncFastPath()
 
     if (!m_registry) return;
 
-    // ----- Phase 1: gather fresh CTags from each RemoteBackend (one batched
+    // ----- Phase 1: gather fresh CTags from each RemoteCalendarBackend (one batched
     //                PROPFIND per parent URL) -----
-    QMap<RemoteBackend*, QStringList> remoteCalIdsByBackend;
-    QMap<RemoteBackend*, QString> remoteBackendIds;  // RemoteBackend* -> backendId string
+    QMap<RemoteCalendarBackend*, QStringList> remoteCalIdsByBackend;
+    QMap<RemoteCalendarBackend*, QString> remoteBackendIds;  // RemoteCalendarBackend* -> backendId string
     auto collectRemote = [&](const QString &backendId, const QString &calId) {
         SyncBackend *base = m_registry->backendInstance(backendId);
-        if (auto *r = qobject_cast<RemoteBackend*>(base)) {
+        if (auto *r = qobject_cast<RemoteCalendarBackend*>(base)) {
             remoteCalIdsByBackend[r].append(calId);
             remoteBackendIds[r] = backendId;
         }
@@ -691,7 +691,7 @@ void SyncEngine::prepareSyncFastPath()
 
         // Resolve source side.
         SyncBackend *srcBase = m_registry->backendInstance(mapping.sourceBackend);
-        if (auto *srcRemote = qobject_cast<RemoteBackend*>(srcBase)) {
+        if (auto *srcRemote = qobject_cast<RemoteCalendarBackend*>(srcBase)) {
             sourceCovered = true;
             fresh.sourceCtag = freshRemoteCtags.value(
                 qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
@@ -711,7 +711,7 @@ void SyncEngine::prepareSyncFastPath()
 
         // Resolve target side (mirror logic).
         SyncBackend *tgtBase = m_registry->backendInstance(mapping.targetBackend);
-        if (auto *tgtRemote = qobject_cast<RemoteBackend*>(tgtBase)) {
+        if (auto *tgtRemote = qobject_cast<RemoteCalendarBackend*>(tgtBase)) {
             targetCovered = true;
             fresh.targetCtag = freshRemoteCtags.value(
                 qMakePair(mapping.targetBackend, mapping.targetCalendar));
@@ -1146,12 +1146,12 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             }
             if (mapping) {
                 if (!fresh.sourceCtag.isEmpty()) {
-                    if (auto *r = qobject_cast<RemoteBackend*>(
+                    if (auto *r = qobject_cast<RemoteCalendarBackend*>(
                             m_registry->backendInstance(mapping->sourceBackend)))
                         r->setCtag(mapping->sourceCalendar, fresh.sourceCtag);
                 }
                 if (!fresh.targetCtag.isEmpty()) {
-                    if (auto *r = qobject_cast<RemoteBackend*>(
+                    if (auto *r = qobject_cast<RemoteCalendarBackend*>(
                             m_registry->backendInstance(mapping->targetBackend)))
                         r->setCtag(mapping->targetCalendar, fresh.targetCtag);
                 }

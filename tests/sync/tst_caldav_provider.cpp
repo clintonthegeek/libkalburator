@@ -19,7 +19,7 @@
 #include "caldavprovider.h"
 #include "collectioninfo.h"
 #include "iblobbackend.h"
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 
 using namespace Kalburator::Sync;
 
@@ -143,9 +143,9 @@ void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collectio
     QVERIFY(backend != nullptr);
 
     // The unique_ptr<IBlobBackend> upcast must yield an instance whose
-    // dynamic type is RemoteBackend (which inherits SyncBackend which
+    // dynamic type is RemoteCalendarBackend (which inherits SyncBackend which
     // inherits IBlobBackend).
-    auto *remote = dynamic_cast<RemoteBackend*>(backend.get());
+    auto *remote = dynamic_cast<RemoteCalendarBackend*>(backend.get());
     QVERIFY(remote != nullptr);
 }
 

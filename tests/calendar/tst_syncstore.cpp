@@ -7,7 +7,7 @@
  *   - SyncConflictStore     — SQLite sync_conflicts table
  *   - BlobBaselineStore     — triple-keyed (backendId, collectionId, recordId) version hashes
  *
- * CTags and local fingerprints are now private to RemoteBackend / LocalBackend
+ * CTags and local fingerprints are now private to RemoteCalendarBackend / LocalBackend
  * respectively and are not covered here.
  */
 

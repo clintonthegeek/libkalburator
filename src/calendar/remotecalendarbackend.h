@@ -1,5 +1,5 @@
-#ifndef REMOTEBACKEND_H
-#define REMOTEBACKEND_H
+#ifndef REMOTECALENDARBACKEND_H
+#define REMOTECALENDARBACKEND_H
 
 #include "syncbackend.h"
 #include "backendrecord.h"
@@ -22,16 +22,16 @@ namespace Kalburator::Sync {
 class CTagStore;
 struct BackendCapabilities;
 
-class RemoteBackend : public SyncBackend
+class RemoteCalendarBackend : public SyncBackend
 {
     Q_OBJECT
 
 public:
-    explicit RemoteBackend(const QUrl &url,
+    explicit RemoteCalendarBackend(const QUrl &url,
                            const QString &username,
                            const QString &password,
                            QObject *parent = nullptr);
-    ~RemoteBackend() override;
+    ~RemoteCalendarBackend() override;
 
     /**
      * @brief Factory method for BackendRegistry.
@@ -43,7 +43,7 @@ public:
      *
      * @param config Backend configuration map
      * @param parent Parent QObject
-     * @return New RemoteBackend instance
+     * @return New RemoteCalendarBackend instance
      */
     static SyncBackend* create(const QVariantMap &config, QObject *parent);
 
@@ -400,4 +400,4 @@ private:
 
 } // namespace Kalburator::Sync
 
-#endif // REMOTEBACKEND_H
+#endif // REMOTECALENDARBACKEND_H

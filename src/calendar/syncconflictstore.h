@@ -19,7 +19,7 @@ namespace Kalburator::Sync {
  * All other SyncStore concerns have already moved to:
  *   - CalendarBaselineStore  — iCal / property baselines + last-sync time
  *   - BlobBaselineStore      — per-record version hashes
- *   - RemoteBackend::CTagStore — CalDAV CTags (private to RemoteBackend)
+ *   - RemoteCalendarBackend::CTagStore — CalDAV CTags (private to RemoteCalendarBackend)
  *   - LocalBackend::FingerprintStore — directory fingerprints (private)
  *   - IDMappingStore         — journal / ID mappings
  */

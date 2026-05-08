@@ -111,7 +111,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/logicalcalendarbuilder.h
     src/calendar/mockbackend.h
     src/calendar/orgbackend.h
-    src/calendar/remotebackend.h
+    src/calendar/remotecalendarbackend.h
     src/calendar/subscriptionbackend.h
     src/calendar/syncbackend.h
     src/calendar/syncconflictstore.h
@@ -148,7 +148,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/logicalcalendarbuilder.cpp
     src/calendar/mockbackend.cpp
     src/calendar/orgbackend.cpp
-    src/calendar/remotebackend.cpp
+    src/calendar/remotecalendarbackend.cpp
     src/calendar/subscriptionbackend.cpp
     src/calendar/syncbackend.cpp
     src/calendar/syncconflictstore.cpp

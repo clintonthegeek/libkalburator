@@ -1,7 +1,7 @@
 // tests/calendar/tst_remotebackend.cpp
 // G.9.b Task 72 — migrated from PlanStan/tests/backends/tst_remotebackend.cpp
 //
-// Test suite for RemoteBackend (CalDAV).
+// Test suite for RemoteCalendarBackend (CalDAV).
 //
 // These tests require a running Radicale server with pre-configured test accounts.
 // See docs/RadicaleSetupForTesting.md for setup instructions.
@@ -22,7 +22,7 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/ICalFormat>
 
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 #include "syncoperation.h"
 #include "syncbackend.h"
 
@@ -104,7 +104,7 @@ KCalendarCore::Todo::Ptr createTestTodo(const QString &summary = QString())
 // Test class
 // ============================================================================
 
-class RemoteBackendTest : public QObject
+class RemoteCalendarBackendTest : public QObject
 {
     Q_OBJECT
 
@@ -151,15 +151,15 @@ private slots:
 private:
     QString generateTestCalendarName();
     void waitForSignal(QSignalSpy &spy, int timeout = 10000);
-    bool waitForCalendarDiscovery(RemoteBackend *backend, int timeout = 10000);
+    bool waitForCalendarDiscovery(RemoteCalendarBackend *backend, int timeout = 10000);
 
-    RemoteBackend *m_backend = nullptr;
+    RemoteCalendarBackend *m_backend = nullptr;
     KCalendarCore::MemoryCalendar *m_testCalendar = nullptr;
     QString m_testCalendarName;
     QStringList m_createdCalendars;
 };
 
-void RemoteBackendTest::initTestCase()
+void RemoteCalendarBackendTest::initTestCase()
 {
     if (!CalDavTestConfig::isServerAvailable()) {
         QSKIP("Radicale server not available at 127.0.0.1:5232. "
@@ -169,15 +169,15 @@ void RemoteBackendTest::initTestCase()
     qDebug() << "CalDAV test server available at" << CalDavTestConfig::SERVER_URL;
 }
 
-void RemoteBackendTest::cleanupTestCase()
+void RemoteCalendarBackendTest::cleanupTestCase()
 {
     // Note: Calendar cleanup happens in cleanup() per-test
 }
 
-void RemoteBackendTest::init()
+void RemoteCalendarBackendTest::init()
 {
     QUrl serverUrl = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1);
-    m_backend = new RemoteBackend(serverUrl,
+    m_backend = new RemoteCalendarBackend(serverUrl,
                                    CalDavTestConfig::USERNAME_1,
                                    CalDavTestConfig::PASSWORD_1,
                                    this);
@@ -197,7 +197,7 @@ void RemoteBackendTest::init()
     }
 }
 
-void RemoteBackendTest::cleanup()
+void RemoteCalendarBackendTest::cleanup()
 {
     // Delete any created incidences from test calendar
     if (m_testCalendar && m_backend) {
@@ -225,12 +225,12 @@ void RemoteBackendTest::cleanup()
     m_backend = nullptr;
 }
 
-QString RemoteBackendTest::generateTestCalendarName()
+QString RemoteCalendarBackendTest::generateTestCalendarName()
 {
     return QStringLiteral("test-calendar-") + QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
 }
 
-void RemoteBackendTest::waitForSignal(QSignalSpy &spy, int timeout)
+void RemoteCalendarBackendTest::waitForSignal(QSignalSpy &spy, int timeout)
 {
     if (spy.count() > 0) {
         return;
@@ -244,15 +244,15 @@ void RemoteBackendTest::waitForSignal(QSignalSpy &spy, int timeout)
     }
 }
 
-bool RemoteBackendTest::waitForCalendarDiscovery(RemoteBackend *backend, int timeout)
+bool RemoteCalendarBackendTest::waitForCalendarDiscovery(RemoteCalendarBackend *backend, int timeout)
 {
-    QSignalSpy spy(backend, &RemoteBackend::calendarDiscovered);
+    QSignalSpy spy(backend, &RemoteCalendarBackend::calendarDiscovered);
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
 
     bool received = false;
-    connect(backend, &RemoteBackend::calendarDiscovered, [&received, &loop]() {
+    connect(backend, &RemoteCalendarBackend::calendarDiscovered, [&received, &loop]() {
         received = true;
         // Don't quit yet - wait for all calendars
     });
@@ -277,28 +277,28 @@ bool RemoteBackendTest::waitForCalendarDiscovery(RemoteBackend *backend, int tim
 // Tests
 // ============================================================================
 
-void RemoteBackendTest::testBackendType()
+void RemoteCalendarBackendTest::testBackendType()
 {
     QCOMPARE(m_backend->backendType(), QStringLiteral("caldav"));
 }
 
-void RemoteBackendTest::testFactoryMethod()
+void RemoteCalendarBackendTest::testFactoryMethod()
 {
     QVariantMap config;
     config[QStringLiteral("url")] = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1).toString();
     config[QStringLiteral("username")] = CalDavTestConfig::USERNAME_1;
     config[QStringLiteral("password")] = CalDavTestConfig::PASSWORD_1;
 
-    SyncBackend *backend = RemoteBackend::create(config, this);
+    SyncBackend *backend = RemoteCalendarBackend::create(config, this);
     QVERIFY(backend != nullptr);
     QCOMPARE(backend->backendType(), QStringLiteral("caldav"));
 
     delete backend;
 }
 
-void RemoteBackendTest::testLoadCalendars()
+void RemoteCalendarBackendTest::testLoadCalendars()
 {
-    QSignalSpy spy(m_backend, &RemoteBackend::calendarDiscovered);
+    QSignalSpy spy(m_backend, &RemoteCalendarBackend::calendarDiscovered);
 
     m_backend->loadCalendars(QStringLiteral("test-collection"));
 
@@ -311,9 +311,9 @@ void RemoteBackendTest::testLoadCalendars()
     qDebug() << "Discovered" << spy.count() << "calendars";
 }
 
-void RemoteBackendTest::testCalendarDiscoverySignals()
+void RemoteCalendarBackendTest::testCalendarDiscoverySignals()
 {
-    QSignalSpy spy(m_backend, &RemoteBackend::calendarDiscovered);
+    QSignalSpy spy(m_backend, &RemoteCalendarBackend::calendarDiscovered);
 
     m_backend->loadCalendars(QStringLiteral("test-collection"));
 
@@ -326,7 +326,7 @@ void RemoteBackendTest::testCalendarDiscoverySignals()
     }
 }
 
-void RemoteBackendTest::testStoreEvent()
+void RemoteCalendarBackendTest::testStoreEvent()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -355,7 +355,7 @@ void RemoteBackendTest::testStoreEvent()
     }
 }
 
-void RemoteBackendTest::testStoreTodo()
+void RemoteCalendarBackendTest::testStoreTodo()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -382,7 +382,7 @@ void RemoteBackendTest::testStoreTodo()
     }
 }
 
-void RemoteBackendTest::testLoadItems()
+void RemoteCalendarBackendTest::testLoadItems()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -432,7 +432,7 @@ void RemoteBackendTest::testLoadItems()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testUpdateItem()
+void RemoteCalendarBackendTest::testUpdateItem()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -474,7 +474,7 @@ void RemoteBackendTest::testUpdateItem()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testRemoveItem()
+void RemoteCalendarBackendTest::testRemoveItem()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -495,7 +495,7 @@ void RemoteBackendTest::testRemoveItem()
     waitForSignal(pushSpy, 10000);
 
     // Remove it
-    QSignalSpy removeSpy(m_backend, &RemoteBackend::itemRemoved);
+    QSignalSpy removeSpy(m_backend, &RemoteCalendarBackend::itemRemoved);
     m_backend->removeItem(testCalId, event->uid());
     waitForSignal(removeSpy, 10000);
 
@@ -507,7 +507,7 @@ void RemoteBackendTest::testRemoveItem()
     }
 }
 
-void RemoteBackendTest::testStoreMultipleItems()
+void RemoteCalendarBackendTest::testStoreMultipleItems()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -550,7 +550,7 @@ void RemoteBackendTest::testStoreMultipleItems()
     QTest::qWait(1000);
 }
 
-void RemoteBackendTest::testEtagPopulatedOnCreate()
+void RemoteCalendarBackendTest::testEtagPopulatedOnCreate()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -573,7 +573,7 @@ void RemoteBackendTest::testEtagPopulatedOnCreate()
     if (pushOp->state() == SyncOperation::Succeeded) {
         qDebug() << "Event created, checking ETag via itemLoaded signal path";
         // ETag checking via the itemLoaded signal is not needed with operation API —
-        // the operation itself reports success. ETags are managed internally by RemoteBackend.
+        // the operation itself reports success. ETags are managed internally by RemoteCalendarBackend.
         // Note: Some servers may not expose ETags in the push response.
     }
 
@@ -582,7 +582,7 @@ void RemoteBackendTest::testEtagPopulatedOnCreate()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testEtagUpdatedOnModify()
+void RemoteCalendarBackendTest::testEtagUpdatedOnModify()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -616,7 +616,7 @@ void RemoteBackendTest::testEtagUpdatedOnModify()
     waitForSignal(updateSpy, 10000);
 
     if (updateOp->state() == SyncOperation::Succeeded) {
-        qDebug() << "Event modified — ETag update is managed internally by RemoteBackend";
+        qDebug() << "Event modified — ETag update is managed internally by RemoteCalendarBackend";
     }
 
     // Clean up
@@ -624,7 +624,7 @@ void RemoteBackendTest::testEtagUpdatedOnModify()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testStartSyncCreations()
+void RemoteCalendarBackendTest::testStartSyncCreations()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -645,7 +645,7 @@ void RemoteBackendTest::testStartSyncCreations()
     auto testCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
     testCal->setId(testCalId);
 
-    QSignalSpy syncSpy(m_backend, &RemoteBackend::syncCompleted);
+    QSignalSpy syncSpy(m_backend, &RemoteCalendarBackend::syncCompleted);
 
     m_backend->startSync(QStringLiteral("test-collection"), testCal, creations, updates, deletions);
 
@@ -662,7 +662,7 @@ void RemoteBackendTest::testStartSyncCreations()
     delete testCal;
 }
 
-void RemoteBackendTest::testStartSyncUpdates()
+void RemoteCalendarBackendTest::testStartSyncUpdates()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -695,7 +695,7 @@ void RemoteBackendTest::testStartSyncUpdates()
     QList<KCalendarCore::Incidence::Ptr> creations;
     QMap<QString, QString> deletions;
 
-    QSignalSpy syncSpy(m_backend, &RemoteBackend::syncCompleted);
+    QSignalSpy syncSpy(m_backend, &RemoteCalendarBackend::syncCompleted);
 
     m_backend->startSync(QStringLiteral("test-collection"), testCal, creations, updates, deletions);
 
@@ -712,7 +712,7 @@ void RemoteBackendTest::testStartSyncUpdates()
     delete testCal;
 }
 
-void RemoteBackendTest::testStartSyncDeletions()
+void RemoteCalendarBackendTest::testStartSyncDeletions()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -742,7 +742,7 @@ void RemoteBackendTest::testStartSyncDeletions()
     QList<KCalendarCore::Incidence::Ptr> creations;
     QList<KCalendarCore::Incidence::Ptr> updates;
 
-    QSignalSpy syncSpy(m_backend, &RemoteBackend::syncCompleted);
+    QSignalSpy syncSpy(m_backend, &RemoteCalendarBackend::syncCompleted);
 
     m_backend->startSync(QStringLiteral("test-collection"), testCal, creations, updates, deletions);
 
@@ -755,7 +755,7 @@ void RemoteBackendTest::testStartSyncDeletions()
     delete testCal;
 }
 
-void RemoteBackendTest::testStartSyncMixed()
+void RemoteCalendarBackendTest::testStartSyncMixed()
 {
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     bool discovered = waitForCalendarDiscovery(m_backend, 10000);
@@ -801,7 +801,7 @@ void RemoteBackendTest::testStartSyncMixed()
     QMap<QString, QString> deletions;
     deletions[eventToDelete->uid()] = QString();
 
-    QSignalSpy syncSpy(m_backend, &RemoteBackend::syncCompleted);
+    QSignalSpy syncSpy(m_backend, &RemoteCalendarBackend::syncCompleted);
 
     m_backend->startSync(QStringLiteral("test-collection"), testCal, creations, updates, deletions);
 
@@ -819,7 +819,7 @@ void RemoteBackendTest::testStartSyncMixed()
     delete testCal;
 }
 
-void RemoteBackendTest::testCtagCacheSkip()
+void RemoteCalendarBackendTest::testCtagCacheSkip()
 {
     // 1. Discover calendars (needed to populate DAV URLs)
     m_backend->loadCalendars(QStringLiteral("test-collection"));
@@ -836,7 +836,7 @@ void RemoteBackendTest::testCtagCacheSkip()
     QVERIFY(tmpDir.isValid());
     QString dbPath = tmpDir.path() + QStringLiteral("/test-sync.db");
 
-    // 3. Wire up the DB path to the backend (CTag store is internal to RemoteBackend)
+    // 3. Wire up the DB path to the backend (CTag store is internal to RemoteCalendarBackend)
     m_backend->setDbPath(dbPath);
 
     // 4. Push an event to the calendar so there's something to fetch
@@ -884,7 +884,7 @@ void RemoteBackendTest::testCtagCacheSkip()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testFetchAllCtagsBatched()
+void RemoteCalendarBackendTest::testFetchAllCtagsBatched()
 {
     // 1. Discover calendars (populates m_davUrls).
     m_backend->loadCalendars(QStringLiteral("test-collection"));
@@ -919,15 +919,15 @@ void RemoteBackendTest::testFetchAllCtagsBatched()
     QTest::qWait(500);
 }
 
-void RemoteBackendTest::testInvalidCredentials()
+void RemoteCalendarBackendTest::testInvalidCredentials()
 {
     QUrl serverUrl = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1);
-    auto badBackend = new RemoteBackend(serverUrl,
+    auto badBackend = new RemoteCalendarBackend(serverUrl,
                                          CalDavTestConfig::USERNAME_1,
                                          QStringLiteral("wrong-password"),
                                          this);
 
-    QSignalSpy spy(badBackend, &RemoteBackend::calendarDiscovered);
+    QSignalSpy spy(badBackend, &RemoteCalendarBackend::calendarDiscovered);
 
     badBackend->loadCalendars(QStringLiteral("test-collection"));
 
@@ -938,15 +938,15 @@ void RemoteBackendTest::testInvalidCredentials()
     delete badBackend;
 }
 
-void RemoteBackendTest::testInvalidUrl()
+void RemoteCalendarBackendTest::testInvalidUrl()
 {
     QUrl badUrl(QStringLiteral("http://nonexistent.invalid:9999/"));
-    auto badBackend = new RemoteBackend(badUrl,
+    auto badBackend = new RemoteCalendarBackend(badUrl,
                                          QStringLiteral("user"),
                                          QStringLiteral("pass"),
                                          this);
 
-    QSignalSpy spy(badBackend, &RemoteBackend::calendarDiscovered);
+    QSignalSpy spy(badBackend, &RemoteCalendarBackend::calendarDiscovered);
 
     badBackend->loadCalendars(QStringLiteral("test-collection"));
 
@@ -958,5 +958,5 @@ void RemoteBackendTest::testInvalidUrl()
     delete badBackend;
 }
 
-QTEST_GUILESS_MAIN(RemoteBackendTest)
-#include "tst_remotebackend.moc"
+QTEST_GUILESS_MAIN(RemoteCalendarBackendTest)
+#include "tst_remotecalendarbackend.moc"

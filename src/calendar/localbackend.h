@@ -49,7 +49,7 @@ public:
     /**
      * @brief Set the DB file path so the private FingerprintStore can be
      * initialised. Must be called before using fingerprint-based optimizations.
-     * Mirrors RemoteBackend::setDbPath().
+     * Mirrors RemoteCalendarBackend::setDbPath().
      */
     void setDbPath(const QString &dbPath);
 

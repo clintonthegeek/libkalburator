@@ -736,7 +736,7 @@ private:
 
     /**
      * @brief Phase-1 + Phase-2 pre-pass. Collects fresh CTags from
-     * RemoteBackends (one PROPFIND per parent URL) and fresh fingerprints
+     * RemoteCalendarBackends (one PROPFIND per parent URL) and fresh fingerprints
      * from LocalBackends. For each mapping, if both endpoints' fresh
      * state matches the stored baseline AND skipUnchangedMappings() is
      * true, the mapping ID is added to m_skippedMappingIds. Fresh state
@@ -752,9 +752,9 @@ private:
      * and consumed by onWorkerSyncCompleted to persist baselines on success.
      */
     struct FreshSyncState {
-        QString sourceCtag;        // empty if source is not RemoteBackend
+        QString sourceCtag;        // empty if source is not RemoteCalendarBackend
         QString sourceFingerprint; // empty if source is not LocalBackend
-        QString targetCtag;        // empty if target is not RemoteBackend
+        QString targetCtag;        // empty if target is not RemoteCalendarBackend
         QString targetFingerprint; // empty if target is not LocalBackend
     };
 

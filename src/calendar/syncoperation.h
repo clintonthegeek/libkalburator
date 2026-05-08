@@ -13,7 +13,7 @@ namespace Kalburator::Sync {
  * @brief Base class for trackable async sync operations.
  *
  * SyncOperation provides a uniform interface for tracking async operations
- * across different backends (LocalBackend, RemoteBackend, OrgBackend, etc.).
+ * across different backends (LocalBackend, RemoteCalendarBackend, OrgBackend, etc.).
  * Each backend wraps its native async mechanism (KJob, file I/O, etc.) in
  * a SyncOperation subclass.
  *

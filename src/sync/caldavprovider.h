@@ -15,7 +15,7 @@ class CalDavCapabilityDiscovery;
 
 /**
  * @brief CalDAV-speaking provider. Wraps CalDavCapabilityDiscovery
- *        (capability + collection enumeration) and RemoteBackend
+ *        (capability + collection enumeration) and RemoteCalendarBackend
  *        (per-collection sync) behind the IProvider interface.
  *
  * Phase H supports calendar collections only; CardDAV is Phase I.

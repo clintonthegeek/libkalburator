@@ -28,7 +28,7 @@ using BackendFactory = std::function<SyncBackend*(const QVariantMap &config, QOb
  *   BackendRegistry registry;
  *   registry.registerBackendType("local", &LocalBackend::create);
  *   registry.registerBackendType("orgmode", &OrgBackend::create);
- *   registry.registerBackendType("caldav", &RemoteBackend::create);
+ *   registry.registerBackendType("caldav", &RemoteCalendarBackend::create);
  *
  *   auto *backend = registry.createBackend("local", config, parent);
  */

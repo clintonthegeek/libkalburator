@@ -4,7 +4,7 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "caldavcapabilitydiscovery.h"
-#include "remotebackend.h"
+#include "remotecalendarbackend.h"
 
 #include <QFutureInterface>
 #include <QUuid>
@@ -20,7 +20,7 @@ CalDavProvider::CalDavProvider(QObject *parent)
 CalDavProvider::~CalDavProvider() = default;
 
 QString CalDavProvider::kind() const {
-    // Matches RemoteBackend::BackendTypeName ("caldav") so
+    // Matches RemoteCalendarBackend::BackendTypeName ("caldav") so
     // BackendRegistry / BackendConfiguration::friendlyTypeName agree.
     return QStringLiteral("caldav");
 }
@@ -151,9 +151,9 @@ CalDavProvider::createBackend(const QString &collectionId) {
         return nullptr;
     }
 
-    // RemoteBackend inherits SyncBackend which inherits IBlobBackend, so
+    // RemoteCalendarBackend inherits SyncBackend which inherits IBlobBackend, so
     // the unique_ptr<IBlobBackend> upcast is implicit.
-    auto backend = std::make_unique<RemoteBackend>(m_serverUrl, m_username, m_password);
+    auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
     backend->registerCalendarUrl(collectionId, urlIt.value());
     return backend;
 }
