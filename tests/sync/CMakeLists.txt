@@ -96,3 +96,23 @@ add_test(NAME tst_fake_carddav_server COMMAND tst_fake_carddav_server)
 set_tests_properties(tst_fake_carddav_server PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase Ib Task 4 — CardDavCapabilityDiscovery unit tests.
+# Exercises the RFC 6352 PROPFIND discovery chain against FakeCardDavServer
+# and two inline minimal server fixtures (empty home-set, mixed home-set).
+add_executable(tst_carddav_capability_discovery
+    tst_carddav_capability_discovery.cpp
+    fakecarddavserver.cpp
+    fakecarddavserver.h
+)
+target_link_libraries(tst_carddav_capability_discovery
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_carddav_capability_discovery COMMAND tst_carddav_capability_discovery)
+set_tests_properties(tst_carddav_capability_discovery PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
