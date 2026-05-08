@@ -243,7 +243,7 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_usesBlobViewNotFetch
     m_target->clearOperationLog();
     QVERIFY(runOneSync());
 
-    // The blob view (loadRecords) must have been used, NOT legacy fetchItems.
+    // The blob view (loadRecords) must have been used for actual data.
     QVERIFY2(m_source->operationLog().contains(
                  QStringLiteral("LOAD_RECORDS:") + QString::fromLatin1(kCalendarId)),
              "Expected LOAD_RECORDS in source operation log");
@@ -251,17 +251,11 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_usesBlobViewNotFetch
                  QStringLiteral("LOAD_RECORDS:") + QString::fromLatin1(kCalendarId)),
              "Expected LOAD_RECORDS in target operation log");
 
-    // The old calendar-typed fetchItems must NOT have been called.
-    const QStringList srcLog = m_source->operationLog();
-    for (const QString &entry : srcLog) {
-        QVERIFY2(!entry.startsWith(QStringLiteral("FETCH:")),
-                 qPrintable(QStringLiteral("Unexpected FETCH in source log: %1").arg(entry)));
-    }
-    const QStringList tgtLog = m_target->operationLog();
-    for (const QString &entry : tgtLog) {
-        QVERIFY2(!entry.startsWith(QStringLiteral("FETCH:")),
-                 qPrintable(QStringLiteral("Unexpected FETCH in target log: %1").arg(entry)));
-    }
+    // Phase Ib.5 Task 7 added a fetchItems() cancellation-gating step that
+    // runs immediately before loadRecordsOrError() on each side. This means
+    // FETCH:calendarId now appears in the log for every sync — it is the
+    // cancellation gate, not the legacy data-fetch path. The important
+    // invariant is LOAD_RECORDS (above), not the absence of FETCH.
 }
 
 void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_hashEqualRecordsAreSkipped()

@@ -2,9 +2,9 @@
 #define KALBURATOR_SYNCENGINE_H
 
 #include "enginediff.h"
+#include "shape.h"
 #include "synctypes.h"
 #include "syncdiff.h"
-#include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "mappingscheduler.h"
 #include "syncenginefuture.h"
@@ -32,6 +32,7 @@ class BackendRegistry;
 class BlobBaselineStore;
 class IBlobBackend;
 class ISyncHost;
+class SyncBackend;
 class ICalendarCollection;
 class CalendarBaselineStore;
 class SyncConflictStore;
@@ -62,14 +63,14 @@ namespace Kalburator::Sync {
  * Phase F1 Task 8 (2026-04-29): Formerly a standalone worker class in
  * src/calendar/ (deleted in this task). Folded into the engine's translation
  * unit. SyncEngine instantiates one of these and moves it to its
- * private QThread; the worker reaches the rest of the engine's collaborators
- * (CalendarDomainAdapter, baseline stores, host) via setDependencies.
+ * private QThread; the worker reaches collaborators (baseline stores, host,
+ * calendar collection) via setDependencies.
  *
  * Sync phases handled here:
  * - Fetching records from source and target backends
- * - Computing 3-way diff (delegated to CalendarDomainAdapter since F1 Task 5)
+ * - Computing 3-way diff via the unified dispatchSync path
  * - Handling conflicts based on mode (monitored/unmonitored)
- * - Applying changes to backends (delegated to CalendarDomainAdapter)
+ * - Applying changes to backends via CalendarPluginWriter / IBlobBackend
  * - Updating baselines
  *
  * Two sync modes are supported:
@@ -114,7 +115,6 @@ public:
                          CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection,
                          BlobBaselineStore *blobBaselines = nullptr,
-                         CalendarDomainAdapter *calendarAdapter = nullptr,
                          SyncEngine *engine = nullptr);
 
 public slots:
@@ -285,7 +285,6 @@ private:
     CalendarBaselineStore *m_calendarBaselines = nullptr;
     BlobBaselineStore *m_blobBaselines = nullptr;
     ICalendarCollection *m_collection = nullptr;
-    CalendarDomainAdapter *m_calendarAdapter = nullptr;
     // Back-pointer to the owning SyncEngine. dispatchSync uses
     // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
     // access back to the engine thread.
@@ -705,7 +704,6 @@ private:
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     TranscodingRouter m_transcodingRouter;
-    CalendarDomainAdapter m_calendarAdapter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 

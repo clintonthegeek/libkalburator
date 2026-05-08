@@ -49,21 +49,11 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     , m_registry(registry)
     , m_controller(host)
     , m_transcodingRouter(TranscodingRegistry::instance())
-    , m_calendarAdapter(m_transcodingRouter)
 {
     // Create worker but don't start thread yet
     m_worker = new SyncEngineWorker(m_transcodingRouter);
     setupWorkerConnections();
 
-    // F2 Task 19: install the cancel oracle on the calendar adapter.
-    // The lambda captures `this` (the engine), and reads m_worker at
-    // call-time so it remains valid across stopWorkerThread()/restart.
-    // The engine outlives the adapter (engine owns the adapter as a
-    // value member), so the lambda's captured `this` is always live
-    // while the adapter is alive.
-    m_calendarAdapter.setCancelOracle([this]() {
-        return m_worker && m_worker->isCancelled();
-    });
 }
 
 SyncEngine::~SyncEngine()
@@ -108,7 +98,7 @@ void SyncEngine::startWorkerThread()
 
     // Set dependencies before moving to thread
     m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
-                              m_blobBaselines, &m_calendarAdapter, this);
+                              m_blobBaselines, this);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -146,13 +136,11 @@ void SyncEngine::stopWorkerThread()
 void SyncEngine::setCalendarBaselineStore(CalendarBaselineStore *store)
 {
     m_calendarBaselines = store;
-    m_calendarAdapter.setBaselineStore(store);
 }
 
 void SyncEngine::setCollection(ICalendarCollection *collection)
 {
     m_collection = collection;
-    m_calendarAdapter.setCollection(collection);
 }
 
 void SyncEngine::setBlobBaselineStore(BlobBaselineStore *store)
@@ -1364,14 +1352,12 @@ void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         CalendarBaselineStore *calendarBaselines,
                                         ICalendarCollection *collection,
                                         BlobBaselineStore *blobBaselines,
-                                        CalendarDomainAdapter *calendarAdapter,
                                         SyncEngine *engine)
 {
     m_controller = host;
     m_calendarBaselines = calendarBaselines;
     m_blobBaselines = blobBaselines;
     m_collection = collection;
-    m_calendarAdapter = calendarAdapter;
     m_engine = engine;
 }
 

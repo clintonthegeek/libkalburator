@@ -11,7 +11,6 @@
 
 #include "backendregistry.h"
 #include "calendarbaselinestore.h"
-#include "calendardomainadapter.h"
 #include "mockbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
@@ -295,11 +294,9 @@ void TstEngineCancellation::cancelDuringApply()
     // the current production wiring, between fetch and apply).
     //
     // Production note: SyncEngine's apply path is synchronous (the
-    // domain adapter builds a SyncTransaction of the changes and
-    // commits via BlockingQueuedConnection to the main thread). The
-    // observable cancellation checkpoint that gates apply is the
-    // per-record CancelOracle in CalendarDomainAdapter::
-    // applyChangesToBackend (F2 Task 19) plus the post-target-fetch
+    // CalendarPluginWriter builds a SyncTransaction and commits via
+    // BlockingQueuedConnection to the main thread). The observable
+    // cancellation checkpoint that gates apply is the post-target-fetch
     // m_cancelled check in processSync.
     //
     // To get a deterministic "cancel before apply commits" test,
