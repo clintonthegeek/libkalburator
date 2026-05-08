@@ -266,6 +266,8 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/canonicalrecord.h
     src/shape/irecorddiffer.h
     src/shape/irecordmerger.h
+    src/shape/irecordwriter.h
+    src/shape/defaultblobwriter.h
     src/shape/domainplugin.h
     src/shape/domainregistry.h
 )
@@ -277,6 +279,7 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/pipeline.cpp
     src/shape/transformationregistry.cpp
     src/shape/domainregistry.cpp
+    src/shape/defaultblobwriter.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).
