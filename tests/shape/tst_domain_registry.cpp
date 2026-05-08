@@ -1,9 +1,13 @@
 #include <QTest>
 
+#include <KCalendarCore/MemoryCalendar>
+
 #include "domainplugin.h"
 #include "domainregistry.h"
 #include "irecorddiffer.h"
 #include "irecordmerger.h"
+#include "irecordwriter.h"
+#include "syncbackend.h"
 #include "transformationregistry.h"
 
 using namespace Kalburator::Shape;
@@ -33,6 +37,35 @@ private:
     DomainId m_domain;
     Shape m_canonical;
     int* m_counter;
+};
+
+/// Minimal SyncBackend stub — satisfies all pure virtuals with no-op bodies.
+/// Used to test DomainPlugin::createWriter() without pulling in a real backend.
+class StubSyncBackend : public Kalburator::Sync::SyncBackend {
+    Q_OBJECT
+public:
+    explicit StubSyncBackend(QObject *parent = nullptr)
+        : Kalburator::Sync::SyncBackend(parent) {}
+
+    // SyncBackend pure virtuals
+    QString backendType() const override { return QStringLiteral("stub"); }
+    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
+    void loadCalendars(const QString &) override {}
+    void storeCalendars(const QString &,
+                        const QList<KCalendarCore::MemoryCalendar*> &) override {}
+    void startSync(const QString &,
+                   KCalendarCore::MemoryCalendar *,
+                   const QList<KCalendarCore::Incidence::Ptr> &,
+                   const QList<KCalendarCore::Incidence::Ptr> &,
+                   const QMap<QString, QString> &,
+                   const Kalburator::Sync::TranscodingPlan &) override {}
+    void removeItem(const QString &, const QString &) override {}
+
+    // IBlobBackend overrides needed for test assertions
+    QString createRecord(const QString &, const Kalburator::Sync::BackendRecord &r) override
+        { return r.id; }  // Return the record id to signal success
+    bool updateRecord(const Kalburator::Sync::BackendRecord &) override { return true; }
+    bool deleteRecord(const QString &) override { return true; }
 };
 
 }  // namespace
@@ -88,6 +121,26 @@ private slots:
         r.registerDomain(second);
         QCOMPARE(r.all().size(), 1);
         QCOMPARE(r.findByDomain(DomainId{"calendar"}), first.get());
+    }
+
+    void defaultPluginCreatesBlobWriter() {
+        // Verify DomainPlugin::createWriter returns a non-null writer and
+        // that it delegates CRUD operations through the backend's IBlobBackend
+        // surface (via DefaultBlobWriter).
+        StubSyncBackend backend;
+        auto plugin = std::make_shared<StubPlugin>(
+            DomainId{"test"}, Shape{ DomainId{"test"}, EncodingId{"raw"} });
+
+        auto writer = plugin->createWriter(&backend);
+        QVERIFY(writer != nullptr);
+
+        // Stub backend has no records; createRecord will be called.
+        // DefaultBlobWriter::apply returns true when all operations succeed.
+        Kalburator::Sync::BackendRecord r;
+        r.id = QStringLiteral("rec1");
+        r.data = QByteArray("hello");
+        bool ok = writer->apply(QStringLiteral("col1"), {r}, {}, {});
+        QVERIFY(ok);
     }
 };
 

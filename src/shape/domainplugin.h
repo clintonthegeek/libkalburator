@@ -6,10 +6,13 @@
 #include "propertycatalogue.h"
 #include "shape.h"
 
+namespace Kalburator::Sync { class SyncBackend; }
+
 namespace Kalburator::Shape {
 
 class IRecordDiffer;     // defined in irecorddiffer.h (Task 11)
 class IRecordMerger;     // defined in irecordmerger.h (Task 11)
+class IRecordWriter;     // defined in irecordwriter.h
 class TransformationRegistry;
 
 /// Domain plugins own the canonical shape for a domain plus the
@@ -45,6 +48,12 @@ public:
     /// declare a partial order so first-sync `RicherSideWins` can
     /// pick the more expressive side. Higher = richer.
     virtual int richnessRank(const Shape&) const = 0;
+
+    /// Writer hook. Default: wraps the backend's IBlobBackend surface
+    /// via DefaultBlobWriter. Calendar plugin overrides to drive its
+    /// SyncTransaction machinery.
+    virtual std::unique_ptr<IRecordWriter> createWriter(
+        Kalburator::Sync::SyncBackend *backend) const;
 };
 
 }  // namespace Kalburator::Shape

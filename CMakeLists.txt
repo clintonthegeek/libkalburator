@@ -280,6 +280,7 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/transformationregistry.cpp
     src/shape/domainregistry.cpp
     src/shape/defaultblobwriter.cpp
+    src/shape/domainplugin.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).
