@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QVariantMap>
 #include <memory>
 
 #include "propertycatalogue.h"
@@ -54,6 +55,18 @@ public:
     /// SyncTransaction machinery.
     virtual std::unique_ptr<IRecordWriter> createWriter(
         Kalburator::Sync::SyncBackend *backend) const;
+
+    /// Collection-level metadata (calendar color/description, etc.).
+    /// Default: empty map. Calendar plugin overrides.
+    virtual QVariantMap collectionProperties(
+        Kalburator::Sync::SyncBackend *backend,
+        const QString &collectionId) const;
+
+    /// Apply collection-level metadata changes. Default: no-op.
+    virtual void applyCollectionProperties(
+        Kalburator::Sync::SyncBackend *backend,
+        const QString &collectionId,
+        const QVariantMap &props) const;
 };
 
 }  // namespace Kalburator::Shape

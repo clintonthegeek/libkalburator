@@ -13,4 +13,19 @@ std::unique_ptr<IRecordWriter> DomainPlugin::createWriter(
     return std::make_unique<DefaultBlobWriter>(backend);
 }
 
+QVariantMap DomainPlugin::collectionProperties(
+    Kalburator::Sync::SyncBackend * /*backend*/,
+    const QString & /*collectionId*/) const
+{
+    return {};
+}
+
+void DomainPlugin::applyCollectionProperties(
+    Kalburator::Sync::SyncBackend * /*backend*/,
+    const QString & /*collectionId*/,
+    const QVariantMap & /*props*/) const
+{
+    // no-op
+}
+
 } // namespace Kalburator::Shape

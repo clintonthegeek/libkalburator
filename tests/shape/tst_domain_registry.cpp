@@ -2,12 +2,16 @@
 
 #include <KCalendarCore/MemoryCalendar>
 
+#include "blobdomainplugin.h"
+#include "contactsdomainplugin.h"
 #include "domainplugin.h"
 #include "domainregistry.h"
 #include "irecorddiffer.h"
 #include "irecordmerger.h"
 #include "irecordwriter.h"
+#include "memodomainplugin.h"
 #include "syncbackend.h"
+#include "tododomainplugin.h"
 #include "transformationregistry.h"
 
 using namespace Kalburator::Shape;
@@ -141,6 +145,40 @@ private slots:
         r.data = QByteArray("hello");
         bool ok = writer->apply(QStringLiteral("col1"), {r}, {}, {});
         QVERIFY(ok);
+    }
+
+    void defaultPluginsReturnEmptyCollectionProperties() {
+        // Pins that the default DomainPlugin impls return empty / no-op for
+        // the collection-property hooks. Calendar plugin overrides in Task 6.
+        StubSyncBackend backend;
+        const QString col = QStringLiteral("col");
+        const QVariantMap someProps{ {QStringLiteral("color"), QStringLiteral("red")} };
+
+        {
+            auto plugin = std::make_shared<Kalburator::Blob::KalburatorDomainBlob>();
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+            plugin->applyCollectionProperties(&backend, col, someProps);
+            // apply is no-op: properties are still empty afterwards
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+        }
+        {
+            auto plugin = std::make_shared<Kalburator::Contacts::KalburatorDomainContacts>();
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+            plugin->applyCollectionProperties(&backend, col, someProps);
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+        }
+        {
+            auto plugin = std::make_shared<Kalburator::Memo::KalburatorDomainMemo>();
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+            plugin->applyCollectionProperties(&backend, col, someProps);
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+        }
+        {
+            auto plugin = std::make_shared<Kalburator::Todo::KalburatorDomainTodo>();
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+            plugin->applyCollectionProperties(&backend, col, someProps);
+            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
+        }
     }
 };
 
