@@ -1,7 +1,9 @@
 #include <QTest>
 
 #include "vcarddiffer.h"
+#include "vcardmerger.h"
 #include "canonicalrecord.h"
+#include "conflictpolicy.h"
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>
@@ -12,6 +14,9 @@ using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Contacts::IRecordDifferVCard;
+using Kalburator::Contacts::IRecordMergerVCard;
+using Kalburator::Sync::QSyncCore::ConflictPolicy;
+using Kalburator::Sync::QSyncCore::AutoResolveStrategy;
 
 namespace {
 
@@ -66,6 +71,25 @@ private slots:
         const auto a = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Bob"), QStringLiteral("Acme")));
         const auto b = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Bob"), QStringLiteral("BigCo")));
         QVERIFY(differ.diff(a, b).contains(PropertyId{"org"}));
+    }
+
+    void mergerEmitsV4_0()
+    {
+        CanonicalRecord src;
+        src.shape = kShape;
+        src.data  = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Alice\r\nEND:VCARD\r\n";
+        CanonicalRecord tgt = src;
+        CanonicalRecord base;
+        base.shape = src.shape;
+
+        IRecordMergerVCard merger;
+        ConflictPolicy policy;
+        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
+
+        const auto out = merger.merge(src, tgt, base, policy);
+        QVERIFY2(out.data.contains("VERSION:4.0"),
+                 qPrintable("Expected VERSION:4.0 in merger output, got:\n"
+                            + QString::fromUtf8(out.data)));
     }
 };
 

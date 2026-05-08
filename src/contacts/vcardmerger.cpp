@@ -24,7 +24,7 @@ QByteArray serializeVCard(const KContacts::Addressee &addr)
     if (addr.isEmpty())
         return {};
     KContacts::VCardConverter conv;
-    return conv.createVCard(addr, KContacts::VCardConverter::v3_0);
+    return conv.createVCard(addr, KContacts::VCardConverter::v4_0);
 }
 
 bool srcWins(const KContacts::Addressee &src,
