@@ -16,7 +16,7 @@ function(kalburator_add_calendar_test TEST_NAME)
             Qt6::Network
             Qt6::Test
             KF6::CalendarCore
-            Kalburator::Sync
+            $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
     )
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     set_tests_properties(${TEST_NAME} PROPERTIES

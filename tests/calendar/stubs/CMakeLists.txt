@@ -16,7 +16,7 @@ target_link_libraries(kalburator_calendar_test_stubs
     PUBLIC
         Qt6::Core
         KF6::CalendarCore
-        Kalburator::Sync
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
 )
 target_include_directories(kalburator_calendar_test_stubs
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

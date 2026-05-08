@@ -8,7 +8,7 @@ function(kalburator_add_journal_test TEST_NAME)
             Qt6::Core
             Qt6::Sql
             Qt6::Test
-            Kalburator::Sync
+            $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
     )
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     set_tests_properties(${TEST_NAME} PROPERTIES

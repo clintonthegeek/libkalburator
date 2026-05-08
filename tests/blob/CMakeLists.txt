@@ -7,7 +7,7 @@ function(kalburator_add_blob_test TEST_NAME)
         PRIVATE
             Qt6::Core
             Qt6::Test
-            Kalburator::Sync
+            $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
     )
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
     set_tests_properties(${TEST_NAME} PROPERTIES
