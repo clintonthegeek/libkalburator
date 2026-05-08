@@ -1907,6 +1907,26 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         return true;
     }
 
+    // Phase Ia.5 Task 12: run the generic property phase via the plugin's
+    // collectionProperties / applyCollectionProperties. For non-calendar
+    // plugins (blob, contacts, memo, todo), collectionProperties returns an
+    // empty map by default, so the early-return in runPropertyPhase fires and
+    // this is a no-op. For calendar, the OLD branch (still routed via the
+    // calendar router around line ~1497) drives property sync; Task 13 removes
+    // that router and lets the calendar plugin's collection-property hooks
+    // (added by Task 6) replace fetchCalendarProperties + computePropertyDiff
+    // + applyPropertyChanges.
+    //
+    // Baseline is passed as empty for v1: Task 7 deferred persistence wiring
+    // because the existing CalendarBaselineStore stores CalendarPropertyRecord
+    // JSON, not a generic QVariantMap. For first-sync runs the baseline is
+    // empty anyway. Subsequent syncs lose property-baseline diff fidelity
+    // until Task 13 bridges or migrates the store.
+    runPropertyPhase(plugin, srcBackend, tgtBackend,
+                     srcColId, tgtColId,
+                     /*baseline=*/QVariantMap{},
+                     request.mapping);
+
     emit phaseChanged(mappingId, 1);
 
     // --- Fetch source records (cross-thread) ---
