@@ -1,4 +1,5 @@
 #include "syncengine.h"
+#include "blobdomainadapter.h"
 #include "propertydiff.h"
 #include "domainplugin.h"
 #include "transcodingregistry.h"
@@ -1931,11 +1932,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // collectionProperties / applyCollectionProperties. For non-calendar
     // plugins (blob, contacts, memo, todo), collectionProperties returns an
     // empty map by default, so the early-return in runPropertyPhase fires and
-    // this is a no-op. For calendar, the OLD branch (still routed via the
-    // calendar router around line ~1497) drives property sync; Task 13 removes
-    // that router and lets the calendar plugin's collection-property hooks
-    // (added by Task 6) replace fetchCalendarProperties + computePropertyDiff
-    // + applyPropertyChanges.
+    // this is a no-op. For calendar, dispatchCalendarLegacy drives property
+    // sync; the calendar plugin's collection-property hooks (added by Task 6)
+    // replace fetchCalendarProperties + computePropertyDiff +
+    // applyPropertyChanges.
     //
     // Baseline is passed as empty for v1: Task 7 deferred persistence wiring
     // because the existing CalendarBaselineStore stores CalendarPropertyRecord
@@ -2034,9 +2034,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // EngineDiff/EngineMerge. Until then: AskUser conflicts in
     // unified-path domains (blob/contacts/memo/todo) get treated as
     // conflictsDeferred (next-sync resolution) per
-    // BlobDomainAdapter::mergeWithPlugin's existing behavior — the
-    // calendar router (above) still routes calendar conflicts through
-    // the legacy handleConflicts pause/resume path.
+    // BlobDomainAdapter::mergeWithPlugin's existing behavior —
+    // dispatchCalendarLegacy routes calendar conflicts through the legacy
+    // handleConflicts pause/resume path.
     const ConflictResolution policy = request.mapping.conflictPolicy;
     // Task 9: pass the per-call override from the Request into merge().
     // The override was embedded in the Request by processSingleMapping
@@ -2056,13 +2056,12 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // thread under BlockingQueuedConnection — DefaultBlobWriter's
     // IBlobBackend create/update/delete calls expect to be on the
     // backend thread (matches the prior inline apply loop). Calendar
-    // mappings still route through the legacy router above (deleted in
-    // Task 13); CalendarPluginWriter does its own inner BlockingQueued
-    // commit, so it must NOT run from inside this wrapper. We document
-    // and assert that contract here for forward-compat: when Task 13
-    // unifies routing, CalendarPluginWriter's apply must be called on
-    // the worker thread directly (not wrapped), which Task 13 will
-    // address along with its setCollection wiring.
+    // mappings still route through dispatchCalendarLegacy (not this wrapper);
+    // CalendarPluginWriter does its own inner BlockingQueued commit and must
+    // NOT be called from inside this wrapper. When a future task unifies
+    // routing, CalendarPluginWriter's apply must be called on the worker
+    // thread directly (not wrapped), and setCollection wiring must be
+    // accounted for.
     if (!engineMerge.finalTarget.isEmpty()) {
         QList<BackendRecord> toWrite = engineMerge.finalTarget;
         // Phase Ia.5 Task 8: demote outgoing records to target's native

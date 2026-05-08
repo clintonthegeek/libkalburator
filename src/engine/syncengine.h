@@ -3,7 +3,6 @@
 
 #include "synctypes.h"
 #include "syncdiff.h"
-#include "blobdomainadapter.h"
 #include "calendardomainadapter.h"
 #include "conflicthandlerregistry.h"
 #include "mappingscheduler.h"
@@ -794,7 +793,6 @@ private:
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
     TranscodingRouter m_transcodingRouter;
     CalendarDomainAdapter m_calendarAdapter;
-    BlobDomainAdapter m_blobAdapter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 
