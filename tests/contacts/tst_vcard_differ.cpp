@@ -73,6 +73,58 @@ private slots:
         QVERIFY(differ.diff(a, b).contains(PropertyId{"org"}));
     }
 
+    void diffDetectsGenderChange()
+    {
+        IRecordDifferVCard differ;
+        CanonicalRecord src;
+        src.shape = kShape;
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nGENDER:M\r\nEND:VCARD\r\n";
+        CanonicalRecord base = src;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nGENDER:F\r\nEND:VCARD\r\n";
+
+        const auto changed = differ.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{"gender"}));
+    }
+
+    void diffDetectsLangChange()
+    {
+        IRecordDifferVCard differ;
+        CanonicalRecord src;
+        src.shape = kShape;
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nLANG:en\r\nEND:VCARD\r\n";
+        CanonicalRecord base = src;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nLANG:fr\r\nEND:VCARD\r\n";
+
+        const auto changed = differ.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{"lang"}));
+    }
+
+    void diffDetectsAnniversaryChange()
+    {
+        IRecordDifferVCard differ;
+        CanonicalRecord src;
+        src.shape = kShape;
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nANNIVERSARY:20100615\r\nEND:VCARD\r\n";
+        CanonicalRecord base = src;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nANNIVERSARY:20200716\r\nEND:VCARD\r\n";
+
+        const auto changed = differ.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{"anniversary"}));
+    }
+
+    void diffDetectsKindChange()
+    {
+        IRecordDifferVCard differ;
+        CanonicalRecord src;
+        src.shape = kShape;
+        src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:org\r\nEND:VCARD\r\n";
+        CanonicalRecord base = src;
+        base.data = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:individual\r\nEND:VCARD\r\n";
+
+        const auto changed = differ.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{"kind"}));
+    }
+
     void mergerEmitsV4_0()
     {
         CanonicalRecord src;

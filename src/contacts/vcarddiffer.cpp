@@ -52,6 +52,17 @@ QSet<PropertyId> IRecordDifferVCard::diff(
     if (src.revision()         != base.revision())         changed.insert(PropertyId{"rev"});
     if (src.categories()       != base.categories())       changed.insert(PropertyId{"categories"});
 
+    // vCard 4.0 properties (RFC 6350).
+    // KContacts::Addressee API surface for these:
+    //   gender:      addr.gender() — KContacts::Gender (operator!= defined)
+    //   lang:        addr.langs()  — KContacts::Lang::List (preferred languages)
+    //   anniversary: addr.anniversary() — QDate (X-Anniversary extension)
+    //   kind:        addr.kind() — QString (RFC 6350 §6.1.4)
+    if (src.gender()           != base.gender())           changed.insert(PropertyId{"gender"});
+    if (src.langs()            != base.langs())            changed.insert(PropertyId{"lang"});
+    if (src.anniversary()      != base.anniversary())      changed.insert(PropertyId{"anniversary"});
+    if (src.kind()             != base.kind())             changed.insert(PropertyId{"kind"});
+
     // Multi-value fields: email, phone, address, url
     const auto srcEmails = src.emailList();
     const auto baseEmails = base.emailList();
