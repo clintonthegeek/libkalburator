@@ -91,6 +91,9 @@ kalburator_add_calendar_integration_test(tst_engine_cancellation)
 # Phase G.6 Task 43 — subset dispatch via runSyncFuture(QList<QString>)
 kalburator_add_calendar_integration_test(tst_engine_subset_dispatch)
 
+# Phase Ia.5 Task 5 — CalendarPluginWriter (IRecordWriter for calendar)
+kalburator_add_calendar_integration_test(tst_calendar_plugin_writer)
+
 # Phase F2 Task 4 — SyncOperation contract (State enum, idempotent
 # setState, cancelRequested flag, isFinished predicate).
 kalburator_add_calendar_test(tst_syncoperation_contract)

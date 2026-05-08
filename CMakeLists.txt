@@ -125,6 +125,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalrecorddiffer.h
     src/calendar/icalrecordmerger.h
     src/calendar/calendardomainplugin.h
+    src/calendar/calendarplugin_writer.h
 )
 set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
@@ -160,6 +161,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalrecorddiffer.cpp
     src/calendar/icalrecordmerger.cpp
     src/calendar/calendardomainplugin.cpp
+    src/calendar/calendarplugin_writer.cpp
 )
 
 set(KALBURATOR_CONFLICT_HEADERS

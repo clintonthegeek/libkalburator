@@ -15,6 +15,14 @@ public:
     std::unique_ptr<Kalburator::Shape::IRecordMerger> createCanonicalMerger() const override;
     void registerEdges(Kalburator::Shape::TransformationRegistry& registry) override;
     int richnessRank(const Kalburator::Shape::Shape&) const override;
+
+    /// Phase Ia.5 Task 5: calendar gets its own IRecordWriter that
+    /// drives the existing SyncTransaction machinery. The engine
+    /// (Task 13) is responsible for calling
+    /// `CalendarPluginWriter::setCollection()` on the returned writer
+    /// before invoking `apply()`.
+    std::unique_ptr<Kalburator::Shape::IRecordWriter> createWriter(
+        Kalburator::Sync::SyncBackend *backend) const override;
 };
 
 } // namespace Kalburator::Calendar

@@ -1,9 +1,11 @@
 #include "calendardomainplugin.h"
 
+#include "calendarplugin_writer.h"
 #include "domainregistry.h"
 #include "icalproperties.h"
 #include "icalrecorddiffer.h"
 #include "icalrecordmerger.h"
+#include "irecordwriter.h"
 #include "transformationregistry.h"
 
 // Bring non-conflicting names into scope. Note: we do NOT do
@@ -77,6 +79,12 @@ int KalburatorDomainCalendar::richnessRank(
     const Kalburator::Shape::Shape& s) const
 {
     return s == canonicalShape() ? 10 : 0;
+}
+
+std::unique_ptr<Kalburator::Shape::IRecordWriter>
+KalburatorDomainCalendar::createWriter(Kalburator::Sync::SyncBackend *backend) const
+{
+    return std::make_unique<Kalburator::Calendar::CalendarPluginWriter>(backend);
 }
 
 } // namespace Kalburator::Calendar
