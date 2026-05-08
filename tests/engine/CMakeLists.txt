@@ -40,3 +40,32 @@ kalburator_add_engine_test(tst_property_phase)
 # unified dispatchSync. Pins Pipeline compilation, byte
 # transformation at the edge, and LossProfile delivery to the host.
 kalburator_add_engine_test(tst_engine_unified_routing)
+
+# Phase Ib Task 9 — CardDAV engine integration test.
+# FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
+# → SyncEngine::runSyncFuture → ShapedTestBackend (peer, vcard4).
+# Pins 2-record round-trip and vCard 3.0 passthrough behavior.
+# Uses --whole-archive so the contacts domain plugin's static initializer
+# registers the vcard3↔vcard4 edges in TransformationRegistry.
+add_executable(tst_carddav_engine_integration
+    tst_carddav_engine_integration.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecarddavserver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecarddavserver.h
+)
+target_include_directories(tst_carddav_engine_integration
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_carddav_engine_integration
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        KF6::Contacts
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_carddav_engine_integration COMMAND tst_carddav_engine_integration)
+set_tests_properties(tst_carddav_engine_integration PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
