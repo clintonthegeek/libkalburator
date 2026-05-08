@@ -175,9 +175,6 @@ signals:
     void syncStarted(const QString &mappingId);
     void phaseChanged(const QString &mappingId, int phase);
     void fetchProgress(const QString &calendarId, int current, int total);
-    void itemReady(const QString &calendarId,
-                   const KCalendarCore::Incidence::Ptr &incidence,
-                   int changeType);
     void writeProgress(const QString &calendarId, int current, int total);
     void conflictDetected(const ConflictInfo &conflict);
     void conflictPauseRequested(const ConflictInfo &conflict);
@@ -659,15 +656,6 @@ signals:
     void phaseChanged(SyncPhase phase);
 
     /**
-     * @brief Emitted when an item is fetched during sync.
-     *
-     * This signal is forwarded from the backend's itemFetched signal
-     * to allow real-time UI updates as items are downloaded.
-     */
-    void itemFetched(const QString &calendarId,
-                     const KCalendarCore::Incidence::Ptr &incidence);
-
-    /**
      * @brief Emitted to report item-level fetch progress.
      */
     void fetchProgress(const QString &calendarId, int current, int total);
@@ -768,9 +756,6 @@ private slots:
     void onWorkerSyncStarted(const QString &mappingId);
     void onWorkerPhaseChanged(const QString &mappingId, int phase);
     void onWorkerFetchProgress(const QString &calendarId, int current, int total);
-    void onWorkerItemReady(const QString &calendarId,
-                           const KCalendarCore::Incidence::Ptr &incidence,
-                           int changeType);
     void onWorkerWriteProgress(const QString &calendarId, int current, int total);
     void onWorkerConflictDetected(const ConflictInfo &conflict);
     void onWorkerConflictPauseRequested(const ConflictInfo &conflict);

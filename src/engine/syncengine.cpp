@@ -89,8 +89,6 @@ void SyncEngine::setupWorkerConnections()
             this, &SyncEngine::onWorkerPhaseChanged, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::fetchProgress,
             this, &SyncEngine::onWorkerFetchProgress, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::itemReady,
-            this, &SyncEngine::onWorkerItemReady, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::writeProgress,
             this, &SyncEngine::onWorkerWriteProgress, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::conflictDetected,
@@ -1012,26 +1010,6 @@ void SyncEngine::onWorkerFetchProgress(const QString &calendarId, int current, i
     emit fetchProgress(calendarId, current, total);
 }
 
-void SyncEngine::onWorkerItemReady(const QString &calendarId,
-                                         const KCalendarCore::Incidence::Ptr &incidence,
-                                         int changeType)
-{
-    // Forward to itemFetched signal for backward compatibility
-    emit itemFetched(calendarId, incidence);
-
-    // Notify host via new generic interface (G.9.a Task 66)
-    if (m_controller && incidence && m_currentMappingIndex >= 0 &&
-        m_currentMappingIndex < m_syncMappings.size()) {
-        const QString &mappingId = m_syncMappings[m_currentMappingIndex].id;
-        SyncChangeType changeKind = static_cast<SyncChangeType>(changeType);
-        ISyncHost::ChangeKind kind = ISyncHost::ChangeKind::Updated;
-        if (changeKind == SyncChangeType::Created)  kind = ISyncHost::ChangeKind::Created;
-        if (changeKind == SyncChangeType::Deleted)  kind = ISyncHost::ChangeKind::Deleted;
-        m_controller->recordChanged(mappingId, incidence->uid(), kind);
-    }
-
-}
-
 void SyncEngine::onWorkerWriteProgress(const QString &calendarId, int current, int total)
 {
     emit writeProgress(calendarId, current, total);
@@ -1361,7 +1339,6 @@ const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<ConflictResolution>("ConflictResolution");
     qRegisterMetaType<ConflictInfo>("ConflictInfo");
     qRegisterMetaType<SyncResult>("SyncResult");
-    qRegisterMetaType<KCalendarCore::Incidence::Ptr>("KCalendarCore::Incidence::Ptr");
     return true;
 }();
 
@@ -2670,14 +2647,6 @@ void SyncEngineWorker::applyChanges()
 {
     emit phaseChanged(m_currentRequest.mapping.id, 3);
 
-    for (const auto &change : m_resolvedToTarget) {
-        KCalendarCore::Incidence::Ptr inc = change.sourceRecord.incidence;
-        if (inc) {
-            emit itemReady(m_currentRequest.mapping.targetCalendar, inc,
-                          static_cast<int>(change.type));
-        }
-    }
-
     if (!m_resolvedToTarget.isEmpty()) {
         qDebug().noquote() << QString("  Applying %1 changes to target")
             .arg(m_resolvedToTarget.size());
@@ -2700,14 +2669,6 @@ void SyncEngineWorker::applyChanges()
     }
 
     if (!sourceChangesToApply.isEmpty()) {
-        for (const auto &change : sourceChangesToApply) {
-            KCalendarCore::Incidence::Ptr inc = change.targetRecord.incidence;
-            if (inc) {
-                emit itemReady(m_currentRequest.mapping.sourceCalendar, inc,
-                              static_cast<int>(change.type));
-            }
-        }
-
         qDebug().noquote() << QString("  Applying %1 changes to source")
             .arg(sourceChangesToApply.size());
         SYNC_HOOK_CALL(onBackendPush, m_currentRequest.mapping.sourceBackend,
