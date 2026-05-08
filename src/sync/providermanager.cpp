@@ -6,6 +6,7 @@
 #include "syncbackend.h"
 #include "backendconfiguration.h"
 #include "caldavprovider.h"
+#include "carddavprovider.h"   // Phase Ib
 
 #include <KConfigGroup>
 
@@ -29,6 +30,9 @@ ProviderManager::ProviderManager(BackendRegistry *registry, QObject *parent)
     m_factory = [](const QString &kind) -> std::unique_ptr<IProvider> {
         if (kind == QStringLiteral("caldav")) {
             return std::make_unique<CalDavProvider>();
+        }
+        if (kind == QStringLiteral("carddav")) {
+            return std::make_unique<CardDavProvider>();
         }
         return nullptr;
     };

@@ -154,6 +154,8 @@ private slots:
     void removeProvider_with_unknown_id_is_noop();
     void providersChanged_emitted_on_add_and_remove();
     void connectAll_with_zero_providers_returns_finished_future();
+    void default_factory_creates_caldav_provider();
+    void default_factory_creates_carddav_provider();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -466,6 +468,50 @@ void TstProviderManager::connectAll_with_zero_providers_returns_finished_future(
 
     QFuture<void> f = mgr.connectAll();
     QVERIFY(waitForFuture(f, 1000));
+}
+
+void TstProviderManager::default_factory_creates_caldav_provider()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KConfig cfg(dir.path() + QStringLiteral("/test_caldav.conf"), KConfig::SimpleConfig);
+    KConfigGroup providers(&cfg, QStringLiteral("Providers"));
+    {
+        KConfigGroup p = providers.group(QStringLiteral("test-caldav"));
+        p.writeEntry("kind", "caldav");
+        p.writeEntry("displayName", "Test CalDAV");
+    }
+    providers.sync();
+
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    // Default factory should handle caldav (no custom factory set)
+    mgr.loadFromProfile(providers);
+    QCOMPARE(mgr.providers().size(), 1);
+    QCOMPARE(mgr.providers().first()->kind(), QStringLiteral("caldav"));
+}
+
+void TstProviderManager::default_factory_creates_carddav_provider()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    KConfig cfg(dir.path() + QStringLiteral("/test_carddav.conf"), KConfig::SimpleConfig);
+    KConfigGroup providers(&cfg, QStringLiteral("Providers"));
+    {
+        KConfigGroup p = providers.group(QStringLiteral("test-carddav"));
+        p.writeEntry("kind", "carddav");
+        p.writeEntry("displayName", "Test CardDAV");
+    }
+    providers.sync();
+
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    // Phase Ib: Default factory should now handle carddav (no custom factory set)
+    mgr.loadFromProfile(providers);
+    QCOMPARE(mgr.providers().size(), 1);
+    QCOMPARE(mgr.providers().first()->kind(), QStringLiteral("carddav"));
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)
