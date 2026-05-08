@@ -245,6 +245,13 @@ void FakeCardDavServer::handleRequest(QTcpSocket *socket,
                    && path.count('/') == 3) {
             // "/addressbooks/<user>/" — one trailing slash, 3 slashes total
             xml = xmlForAddressbooks();
+        } else if (path.startsWith(QStringLiteral("/addressbooks/"))
+                   && path.count('/') == 4) {
+            // "/addressbooks/<user>/<book>/" — Depth:1 listing of vCards
+            const QStringList segs = path.split('/', Qt::SkipEmptyParts);
+            // segs: ["addressbooks", "<user>", "<book>"]
+            const QString collId = (segs.size() >= 3) ? segs.at(2) : QString();
+            xml = xmlForCards(collId);
         } else {
             writeResponse(socket, 404, "Not Found", QByteArray());
             return;
@@ -331,6 +338,35 @@ QString FakeCardDavServer::xmlForAddressbooks() const
         xml += QStringLiteral("    </d:propstat>\n");
         xml += QStringLiteral("  </d:response>\n");
     }
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml;
+}
+
+QString FakeCardDavServer::xmlForCards(const QString &collectionId) const
+{
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\""
+                          " xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n");
+
+    auto storeIt = m_store.find(collectionId);
+    if (storeIt != m_store.end()) {
+        for (auto it = storeIt->constBegin(); it != storeIt->constEnd(); ++it) {
+            const QString href =
+                QStringLiteral("/addressbooks/testuser/%1/%2.vcf")
+                    .arg(collectionId, it.key());
+            xml += QStringLiteral("  <d:response>\n");
+            xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
+            xml += QStringLiteral("    <d:propstat>\n");
+            xml += QStringLiteral("      <d:prop>\n");
+            xml += QStringLiteral("        <d:getetag>%1</d:getetag>\n").arg(it.value().etag);
+            xml += QStringLiteral("      </d:prop>\n");
+            xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+            xml += QStringLiteral("    </d:propstat>\n");
+            xml += QStringLiteral("  </d:response>\n");
+        }
+    }
+
     xml += QStringLiteral("</d:multistatus>\n");
     return xml;
 }

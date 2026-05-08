@@ -15,3 +15,26 @@ endfunction()
 kalburator_add_contacts_test(tst_vcard_plugin)
 kalburator_add_contacts_test(tst_vcard_differ)
 kalburator_add_contacts_test(tst_vcard3_vcard4_edge)
+
+# Phase Ib Task 5 — RemoteContactsBackend read-side tests.
+# Needs FakeCardDavServer (from tests/sync/); include source files directly.
+add_executable(tst_remote_contacts_backend
+    tst_remote_contacts_backend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecarddavserver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecarddavserver.h
+)
+target_include_directories(tst_remote_contacts_backend
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_remote_contacts_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_remote_contacts_backend COMMAND tst_remote_contacts_backend)
+set_tests_properties(tst_remote_contacts_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

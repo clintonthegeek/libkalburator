@@ -80,6 +80,7 @@ private:
     QString xmlForPrincipal() const;
     QString xmlForHome() const;
     QString xmlForAddressbooks() const;
+    QString xmlForCards(const QString &collectionId) const;
 
     void handleGet(QTcpSocket *socket, const QString &path);
     void handlePut(QTcpSocket *socket, const QString &path,

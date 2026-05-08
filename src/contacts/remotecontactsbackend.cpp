@@ -1,0 +1,435 @@
+#include "remotecontactsbackend.h"
+
+#include <QCryptographicHash>
+#include <QDebug>
+#include <QEventLoop>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QXmlStreamReader>
+
+namespace Kalburator::Sync {
+
+// ---------------------------------------------------------------------------
+// Construction / destruction
+// ---------------------------------------------------------------------------
+
+RemoteContactsBackend::RemoteContactsBackend(const QUrl    &serverRoot,
+                                             const QString &username,
+                                             const QString &password,
+                                             QObject       *parent)
+    : SyncBackend(parent)
+    , m_serverRoot(serverRoot)
+    , m_username(username)
+    , m_password(password)
+{
+    // Ensure the server root has no trailing credentials baked in; we inject
+    // them per-request via the Authorization header.
+    m_serverRoot.setUserName(QString());
+    m_serverRoot.setPassword(QString());
+    qDebug() << "RemoteContactsBackend: server root" << m_serverRoot.toString();
+}
+
+RemoteContactsBackend::~RemoteContactsBackend() = default;
+
+// static
+std::unique_ptr<RemoteContactsBackend>
+RemoteContactsBackend::create(const QVariantMap &config, QObject *parent)
+{
+    const QUrl    serverRoot = QUrl::fromUserInput(
+        config.value(QStringLiteral("serverRoot")).toString());
+    const QString username = config.value(QStringLiteral("username")).toString();
+    const QString password = config.value(QStringLiteral("password")).toString();
+    return std::make_unique<RemoteContactsBackend>(serverRoot, username, password, parent);
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+void RemoteContactsBackend::registerAddressbookUrl(const QString &addressbookId,
+                                                   const QUrl    &absoluteUrl)
+{
+    m_addressbookUrls.insert(addressbookId, absoluteUrl);
+    qDebug() << "RemoteContactsBackend: registered addressbook"
+             << addressbookId << "->" << absoluteUrl.toString();
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+QString RemoteContactsBackend::backendId() const
+{
+    static const QString typeName = QStringLiteral("carddav-contacts");
+    const QByteArray h = QCryptographicHash::hash(
+        (typeName + QLatin1Char(':') + m_serverRoot.toString()).toUtf8(),
+        QCryptographicHash::Sha256);
+    return typeName + QLatin1Char(':') + QString::fromLatin1(h.toHex().left(16));
+}
+
+QString RemoteContactsBackend::displayName() const
+{
+    return QStringLiteral("RemoteContactsBackend(%1)").arg(m_serverRoot.toString());
+}
+
+bool RemoteContactsBackend::isAvailable() const
+{
+    return m_serverRoot.isValid() && !m_serverRoot.isEmpty();
+}
+
+// ---------------------------------------------------------------------------
+// Collections
+// ---------------------------------------------------------------------------
+
+QList<CollectionInfo> RemoteContactsBackend::availableCollections()
+{
+    QList<CollectionInfo> result;
+    for (auto it = m_addressbookUrls.constBegin(); it != m_addressbookUrls.constEnd(); ++it) {
+        CollectionInfo info;
+        info.id   = it.key();
+        info.name = it.key();
+        info.path = it.value().toString();
+        info.type = QStringLiteral("contacts");
+        result.append(info);
+    }
+    return result;
+}
+
+CollectionInfo RemoteContactsBackend::collectionInfo(const QString &collectionId)
+{
+    CollectionInfo info;
+    info.id   = collectionId;
+    info.name = collectionId;
+    info.type = QStringLiteral("contacts");
+    if (m_addressbookUrls.contains(collectionId)) {
+        info.path = m_addressbookUrls.value(collectionId).toString();
+    }
+    return info;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: shape detection from raw vCard bytes
+// ---------------------------------------------------------------------------
+
+// static
+Kalburator::Shape::Shape RemoteContactsBackend::shapeFromVCard(const QByteArray &vcardBytes)
+{
+    // Scan for BEGIN:VCARD then inspect the next VERSION: line.
+    bool foundBegin = false;
+    const QList<QByteArray> lines = vcardBytes.split('\n');
+    for (const QByteArray &raw : lines) {
+        QByteArray line = raw;
+        if (line.endsWith('\r')) line.chop(1);
+        line = line.trimmed();
+
+        if (!foundBegin) {
+            if (line.toUpper() == "BEGIN:VCARD")
+                foundBegin = true;
+            continue;
+        }
+
+        // First line after BEGIN:VCARD
+        if (line.toUpper().startsWith("VERSION:")) {
+            const QByteArray version = line.mid(8).trimmed();
+            if (version == "3.0") {
+                return Kalburator::Shape::Shape{
+                    Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+                    Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} };
+            }
+            // 4.0 or anything else → vcard4
+            break;
+        }
+        // VERSION: not the next line — stop scanning
+        break;
+    }
+    return Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+        Kalburator::Shape::EncodingId{QStringLiteral("vcard4")} };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: build BackendRecord from vCard bytes
+// ---------------------------------------------------------------------------
+
+// static
+BackendRecord RemoteContactsBackend::recordFromVCard(const QString    &recordId,
+                                                     const QByteArray &vcardBytes)
+{
+    BackendRecord rec;
+    rec.id   = recordId;
+    rec.type = QStringLiteral("contacts");
+    rec.data = vcardBytes;
+    rec.contentHash = QString::fromLatin1(
+        QCryptographicHash::hash(vcardBytes, QCryptographicHash::Sha256).toHex());
+    rec.lastModified = QDateTime::currentDateTimeUtc();
+    rec.isDeleted    = false;
+
+    // Shape is stored in BackendRecord::type as domain + encoding pair;
+    // the engine reads nativeShapes() on the backend.  We tag the "type"
+    // field with the encoding so the engine can inspect it if needed.
+    const auto shape = shapeFromVCard(vcardBytes);
+    rec.type = QStringLiteral("contacts/%1").arg(shape.encoding.toString());
+    return rec;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: URL construction
+// ---------------------------------------------------------------------------
+
+QUrl RemoteContactsBackend::absoluteUrl(const QString &href) const
+{
+    // href may be absolute (http://...) or server-relative (/path/to/item.vcf)
+    if (href.startsWith(QStringLiteral("http://")) ||
+        href.startsWith(QStringLiteral("https://"))) {
+        return QUrl(href);
+    }
+    QUrl base = m_serverRoot;
+    base.setPath(href);
+    return base;
+}
+
+QUrl RemoteContactsBackend::credentialsUrl(const QUrl &base) const
+{
+    QUrl u = base;
+    u.setUserName(m_username);
+    u.setPassword(m_password);
+    return u;
+}
+
+// ---------------------------------------------------------------------------
+// PROPFIND Depth:1 — list hrefs + ETags in an addressbook
+// ---------------------------------------------------------------------------
+
+QMap<QString, QString> RemoteContactsBackend::propfindDepth1(const QUrl &addressbookUrl)
+{
+    // Build request with credentials via Authorization header
+    QUrl reqUrl = addressbookUrl;
+    reqUrl.setUserName(QString());
+    reqUrl.setPassword(QString());
+
+    QNetworkRequest request(reqUrl);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/xml; charset=utf-8"));
+    request.setRawHeader("Depth", "1");
+    if (!m_username.isEmpty() || !m_password.isEmpty()) {
+        const QByteArray creds =
+            (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64();
+        request.setRawHeader("Authorization", "Basic " + creds);
+    }
+
+    const QByteArray body =
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        "<D:propfind xmlns:D=\"DAV:\">"
+        "  <D:prop>"
+        "    <D:getetag/>"
+        "  </D:prop>"
+        "</D:propfind>";
+
+    QNetworkAccessManager nam;
+    QEventLoop loop;
+    QMap<QString, QString> result; // href -> etag
+
+    QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, [reply, &loop, &result]() {
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (reply->error() != QNetworkReply::NoError || status == 401 || status >= 500) {
+            qWarning() << "RemoteContactsBackend::propfindDepth1: HTTP"
+                       << status << reply->errorString();
+            reply->deleteLater();
+            loop.quit();
+            return;
+        }
+
+        const QByteArray data = reply->readAll();
+        reply->deleteLater();
+
+        // Parse the multistatus XML for <D:href> / <D:getetag> pairs.
+        QXmlStreamReader xml(data);
+        QString currentHref;
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.isStartElement()) {
+                const QString localName = xml.name().toString();
+                if (localName == QStringLiteral("href")) {
+                    currentHref = xml.readElementText().trimmed();
+                } else if (localName == QStringLiteral("getetag")) {
+                    const QString etag = xml.readElementText().trimmed();
+                    if (!currentHref.isEmpty() && currentHref.endsWith(QStringLiteral(".vcf"))) {
+                        result.insert(currentHref, etag);
+                    }
+                    currentHref.clear();
+                }
+            }
+        }
+        loop.quit();
+    });
+    loop.exec();
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// GET a single vCard
+// ---------------------------------------------------------------------------
+
+QByteArray RemoteContactsBackend::getVCard(const QUrl &absoluteItemUrl)
+{
+    QUrl reqUrl = absoluteItemUrl;
+    reqUrl.setUserName(QString());
+    reqUrl.setPassword(QString());
+
+    QNetworkRequest request(reqUrl);
+    request.setRawHeader("Accept", "text/vcard; version=4.0");
+    if (!m_username.isEmpty() || !m_password.isEmpty()) {
+        const QByteArray creds =
+            (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64();
+        request.setRawHeader("Authorization", "Basic " + creds);
+    }
+
+    QNetworkAccessManager nam;
+    QEventLoop loop;
+    QByteArray vcardBytes;
+
+    QNetworkReply *reply = nam.get(request);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, [reply, &loop, &vcardBytes]() {
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (reply->error() != QNetworkReply::NoError || status == 401 || status >= 500) {
+            qWarning() << "RemoteContactsBackend::getVCard: HTTP"
+                       << status << reply->errorString();
+        } else {
+            vcardBytes = reply->readAll();
+        }
+        reply->deleteLater();
+        loop.quit();
+    });
+    loop.exec();
+    return vcardBytes;
+}
+
+// ---------------------------------------------------------------------------
+// loadRecords — PROPFIND Depth:1 + GET each .vcf
+// ---------------------------------------------------------------------------
+
+QList<BackendRecord> RemoteContactsBackend::loadRecords(const QString &collectionId)
+{
+    if (!m_addressbookUrls.contains(collectionId)) {
+        qWarning() << "RemoteContactsBackend::loadRecords: unknown collection"
+                   << collectionId;
+        return {};
+    }
+
+    const QUrl addressbookUrl = m_addressbookUrls.value(collectionId);
+    const QMap<QString, QString> hrefEtags = propfindDepth1(addressbookUrl);
+
+    if (hrefEtags.isEmpty()) {
+        // Either empty addressbook or error — both produce an empty list.
+        return {};
+    }
+
+    QList<BackendRecord> result;
+    result.reserve(hrefEtags.size());
+
+    for (auto it = hrefEtags.constBegin(); it != hrefEtags.constEnd(); ++it) {
+        const QString &href = it.key();
+        const QString &etag = it.value();
+
+        // Derive uid from href: basename without ".vcf"
+        const int lastSlash = href.lastIndexOf(QLatin1Char('/'));
+        QString filename = (lastSlash >= 0) ? href.mid(lastSlash + 1) : href;
+        if (filename.endsWith(QStringLiteral(".vcf")))
+            filename.chop(4);
+        const QString uid = filename;
+        const QString recordId = collectionId + QLatin1Char(':') + uid;
+
+        const QUrl itemUrl = absoluteUrl(href);
+        const QByteArray vcardBytes = getVCard(itemUrl);
+        if (vcardBytes.isEmpty()) {
+            qWarning() << "RemoteContactsBackend::loadRecords: empty body for" << href;
+            continue;
+        }
+
+        BackendRecord rec = recordFromVCard(recordId, vcardBytes);
+
+        // Store handle for loadRecord() re-use
+        RecordHandle handle;
+        handle.href = itemUrl;
+        handle.etag = etag;
+        m_handles.insert(recordId, handle);
+
+        result.append(rec);
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// loadRecord — single GET for a known record
+// ---------------------------------------------------------------------------
+
+std::optional<BackendRecord> RemoteContactsBackend::loadRecord(const QString &recordId)
+{
+    // Try cached handle first
+    if (m_handles.contains(recordId)) {
+        const RecordHandle &h = m_handles.value(recordId);
+        const QByteArray vcardBytes = getVCard(h.href);
+        if (!vcardBytes.isEmpty())
+            return recordFromVCard(recordId, vcardBytes);
+        return std::nullopt;
+    }
+
+    // No cached handle — derive URL from collectionId + uid
+    // recordId format: "<collectionId>:<uid>"
+    const int sep = recordId.indexOf(QLatin1Char(':'));
+    if (sep < 0) {
+        qWarning() << "RemoteContactsBackend::loadRecord: malformed recordId" << recordId;
+        return std::nullopt;
+    }
+    const QString collectionId = recordId.left(sep);
+    const QString uid          = recordId.mid(sep + 1);
+
+    if (!m_addressbookUrls.contains(collectionId)) {
+        qWarning() << "RemoteContactsBackend::loadRecord: unknown collection" << collectionId;
+        return std::nullopt;
+    }
+
+    QUrl itemUrl = m_addressbookUrls.value(collectionId);
+    QString path = itemUrl.path();
+    if (!path.endsWith(QLatin1Char('/')))
+        path += QLatin1Char('/');
+    path += uid + QStringLiteral(".vcf");
+    itemUrl.setPath(path);
+
+    const QByteArray vcardBytes = getVCard(itemUrl);
+    if (vcardBytes.isEmpty())
+        return std::nullopt;
+
+    BackendRecord rec = recordFromVCard(recordId, vcardBytes);
+
+    RecordHandle handle;
+    handle.href = itemUrl;
+    handle.etag = QString(); // not known without PROPFIND
+    m_handles.insert(recordId, handle);
+
+    return rec;
+}
+
+// ---------------------------------------------------------------------------
+// modifiedSince — full load + filter (no CTag optimisation in Task 5)
+// ---------------------------------------------------------------------------
+
+QList<BackendRecord> RemoteContactsBackend::modifiedSince(const QString  &collectionId,
+                                                          const QDateTime &since)
+{
+    const QList<BackendRecord> all = loadRecords(collectionId);
+    if (!since.isValid())
+        return all;
+
+    QList<BackendRecord> result;
+    for (const auto &rec : all) {
+        if (rec.lastModified > since)
+            result.append(rec);
+    }
+    return result;
+}
+
+} // namespace Kalburator::Sync
