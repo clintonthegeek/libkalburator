@@ -58,7 +58,7 @@ private slots:
         r.registerDomain(std::make_shared<StubPlugin>(
             DomainId{"calendar"}, Shape{ DomainId{"calendar"}, EncodingId{"ical"} }));
         r.registerDomain(std::make_shared<StubPlugin>(
-            DomainId{"contacts"}, Shape{ DomainId{"contacts"}, EncodingId{"vcard"} }));
+            DomainId{"contacts"}, Shape{ DomainId{"contacts"}, EncodingId{"vcard4"} }));
         QCOMPARE(r.all().size(), 2);
     }
 
@@ -69,7 +69,7 @@ private slots:
         r.registerDomain(std::make_shared<StubPlugin>(
             DomainId{"calendar"}, Shape{ DomainId{"calendar"}, EncodingId{"ical"} }, &callsA));
         r.registerDomain(std::make_shared<StubPlugin>(
-            DomainId{"contacts"}, Shape{ DomainId{"contacts"}, EncodingId{"vcard"} }, &callsB));
+            DomainId{"contacts"}, Shape{ DomainId{"contacts"}, EncodingId{"vcard4"} }, &callsB));
         r.initialize(tr);
         QCOMPARE(callsA, 1);
         QCOMPARE(callsB, 1);

@@ -23,7 +23,7 @@ private slots:
     void canonicalShapeIsContactsVCard()
     {
         const KalburatorDomainContacts plugin;
-        const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"vcard"} };
+        const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"vcard4"} };
         QCOMPARE(plugin.canonicalShape(), expected);
     }
 

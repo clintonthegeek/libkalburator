@@ -25,7 +25,7 @@ DomainId KalburatorDomainContacts::domain() const
 
 Kalburator::Shape::Shape KalburatorDomainContacts::canonicalShape() const
 {
-    return { DomainId{"contacts"}, EncodingId{"vcard"} };
+    return { DomainId{"contacts"}, EncodingId{"vcard4"} };
 }
 
 QList<Kalburator::Shape::Shape> KalburatorDomainContacts::peerShapes() const

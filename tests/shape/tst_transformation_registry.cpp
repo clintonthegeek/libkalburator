@@ -30,7 +30,7 @@ PropertyCatalogue makeStubCatalogue() {
 Shape calIcal()  { return { DomainId{"calendar"}, EncodingId{"ical"} }; }
 Shape calOrg()   { return { DomainId{"calendar"}, EncodingId{"org"} }; }
 Shape calPalm()  { return { DomainId{"calendar"}, EncodingId{"palm-datebook"} }; }
-Shape conVcard() { return { DomainId{"contacts"}, EncodingId{"vcard"} }; }
+Shape conVcard() { return { DomainId{"contacts"}, EncodingId{"vcard4"} }; }
 
 }  // namespace
 

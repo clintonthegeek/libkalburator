@@ -20,7 +20,7 @@ using Kalburator::Sync::QSyncCore::AutoResolveStrategy;
 
 namespace {
 
-const Shape kShape{ DomainId{"contacts"}, EncodingId{"vcard"} };
+const Shape kShape{ DomainId{"contacts"}, EncodingId{"vcard4"} };
 
 QByteArray makeVCard(const QString &uid, const QString &fullName,
                      const QString &org = {})

@@ -14,7 +14,7 @@ private slots:
         Shape b{ DomainId{QStringLiteral("calendar")},
                  EncodingId{QStringLiteral("ical")} };
         Shape c{ DomainId{QStringLiteral("contacts")},
-                 EncodingId{QStringLiteral("vcard")} };
+                 EncodingId{QStringLiteral("vcard4")} };
         QCOMPARE(a, b);
         QVERIFY(a != c);
     }
