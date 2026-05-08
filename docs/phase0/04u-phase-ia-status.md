@@ -1,6 +1,6 @@
 # Phase Ia — vCard 4.0 canonical + WP palm-shape pivot (status)
 
-**Status:** in progress (started 2026-05-07; Tasks 1–18 landed; Task 19 landed DONE_WITH_CONCERNS; close-out (Tasks 20–22) unblocked 2026-05-08 once Phase Ia.5 landed)
+**Status:** landed 2026-05-08 (Tasks 1–18 landed cleanly; Task 19 landed DONE_WITH_CONCERNS; Phase Ia.5 unblocked close-out; Tasks 20–22 completed 2026-05-08)
 **Tag (planned):** `v0.27-phase-ia-vcard4-canonical`
 
 **2026-05-08:** Phase Ia.5 landed (tag
@@ -10,9 +10,34 @@ is now unblocked.
 **Spec:** `~/dev/refactor-engine-merger/2026-05-07-phase-i-vcard-pressure-test-design.md`
 **Plan:** `~/dev/refactor-engine-merger/2026-05-07-phase-ia-vcard4-canonical-plan.md`
 
-## What exists
+## What landed
 
-(filled in as tasks land)
+- **Task 1:** Engine shape-resolution audit for `IBlobBackend`-only backends.
+  Confirmed `BlobBackendAdapter` owns all shape declarations; `IBlobBackend`
+  plays no part in shape resolution.
+- **Tasks 2–10:** `(contacts, vcard4)` `TransformationStage` pair (`PalmToVCardStage`,
+  `VCardToPalmStage`), `KContacts` serialization, round-trip tests, and
+  `tst_vcard3_vcard4_edge` (libkalburator) confirming the edge is in the registry.
+- **Task 11:** `PalmRecord::toWireBytes()` / `fromWireBytes()` (inline on struct,
+  `QDataStream`/`Qt_6_0`); 8-subtest round-trip suite.
+- **Tasks 12–14:** `ContactsDomainExtension::registerWith(TransformationRegistry&)` —
+  path A direct registration (no `DomainPlugin` subclass needed). `(contacts, palm)`
+  peer shape + two transcoding edges registered from WP plugin init.
+- **Task 15:** Static-link visibility workaround — `registerShape(vcard4, {})` placeholder
+  so palm↔vcard4 edge assertions don't trip on missing vcard4 catalogue when called
+  from inside a `.so`. Cross-cutting finding in FINDINGS.md.
+- **Tasks 16–18:** `ContactsBlobBackend` read-path pivot to `(contacts, palm)` shape;
+  `BlobBackendAdapter` shape override for contacts collection; `PalmRuntime` wiring.
+- **Task 19:** Diagnostic integration test (`tst_contacts_palm_engine_sync`) with
+  **negative assertions** pinning the engine routing gap: the engine never invoked
+  the registered `TransformationStage` — bytes passed through identity.
+  Landed DONE_WITH_CONCERNS; engine fix deferred to Phase Ia.5 / Phase Ib.
+- **Phase Ia.5 (interceding):** Engine routing gap fixed — `dispatchSync` now
+  compiles and applies the Pipeline at the shape edge. Task 19's negative
+  assertions flipped to positive in Phase Ia.5 Task 19.
+- **Tasks 20–22 (close-out):** `verify-all.sh` clean (70/70 + 82/106 + 78/78,
+  no flips); doc updates; tag `v0.27-phase-ia-vcard4-canonical` on libkalburator
+  + WildPalms.
 
 ## What remains
 
