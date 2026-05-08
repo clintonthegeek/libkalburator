@@ -77,3 +77,22 @@ add_test(NAME tst_caldav_integration COMMAND tst_caldav_integration)
 set_tests_properties(tst_caldav_integration PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase Ib Task 3 — FakeCardDavServer self-test.
+# Exercises every route and failure mode of the CardDAV server fixture.
+add_executable(tst_fake_carddav_server
+    tst_fake_carddav_server.cpp
+    fakecarddavserver.cpp
+    fakecarddavserver.h
+)
+target_link_libraries(tst_fake_carddav_server
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_fake_carddav_server COMMAND tst_fake_carddav_server)
+set_tests_properties(tst_fake_carddav_server PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
