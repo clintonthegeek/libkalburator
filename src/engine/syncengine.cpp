@@ -1,5 +1,5 @@
 #include "syncengine.h"
-#include "blobdomainadapter.h"
+#include "blobbatchdiff.h"
 #include "propertydiff.h"
 #include "domainplugin.h"
 #include "transcodingregistry.h"
@@ -1958,9 +1958,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // Phase Ia.5 Task 8: promote source records to canonical shape.
     // For blob domain (srcShape == canonical) this is identity and skipped.
     // Note: r.contentHash may be stale after a non-identity apply.
-    // BlobDomainAdapter's diff (still in use until Task 9) recomputes
-    // equality from data, so blob is unaffected. Non-blob domains see
-    // intentional transient byte-equality misbehavior that Task 9 fixes.
+    // blobBatchDiff (still in use until Phase Ib.5) recomputes equality
+    // from contentHash, so blob is unaffected. Non-blob domains see
+    // intentional transient byte-equality misbehavior that the per-record
+    // IRecordDiffer migration fixes.
     if (!srcToCanon->isIdentity()) {
         for (auto &r : sourceRecords) {
             r.data = srcToCanon->apply(r.data);
@@ -2011,19 +2012,21 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     }
 
     // --- Diff + merge (pure computation, worker thread) ---
-    BlobDomainAdapter adapter;
+    // Phase Ia.5 Task 16: BlobDomainAdapter folded into free-function
+    // batch helpers. Phase Ib.5 (or later) replaces these with a
+    // per-record IRecordDiffer/Merger walk owned by the domain plugin.
     const BackendCapabilities srcCaps, tgtCaps;
-    const EngineDiff engineDiff = adapter.diff(
+    const EngineDiff engineDiff = blobBatchDiff(
         sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
 
     // Phase Ia.5 Task 9: merge consults the plugin's IRecordMerger for
     // CustomMerge-policy conflicts (3-way per-property merge owned by
-    // the domain plugin). Diff stays as BlobDomainAdapter::diff for v1
-    // — its hash-equality semantics match KalburatorDomainBlob's
-    // IRecordDiffer (and the calendar / contacts / memo plugins'
-    // canonical-record differs operate on the same id+data shape after
-    // pipeline promotion). Task 17 / Phase Ib.5 may revisit moving the
-    // diff to a per-record IRecordDiffer too.
+    // the domain plugin). Diff stays as blobBatchDiff for v1 — its
+    // hash-equality semantics match KalburatorDomainBlob's IRecordDiffer
+    // (and the calendar / contacts / memo plugins' canonical-record
+    // differs operate on the same id+data shape after pipeline promotion).
+    // Phase Ib.5 may revisit moving the diff to a per-record IRecordDiffer
+    // too.
     auto pluginMerger = plugin->createCanonicalMerger();
 
     // Phase Ia.5 Task 10: honor the mapping's conflict policy.
@@ -2034,14 +2037,14 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // EngineDiff/EngineMerge. Until then: AskUser conflicts in
     // unified-path domains (blob/contacts/memo/todo) get treated as
     // conflictsDeferred (next-sync resolution) per
-    // BlobDomainAdapter::mergeWithPlugin's existing behavior —
+    // blobBatchMergeWithPlugin's existing behavior —
     // dispatchCalendarLegacy routes calendar conflicts through the legacy
     // handleConflicts pause/resume path.
     const ConflictResolution policy = request.mapping.conflictPolicy;
     // Task 9: pass the per-call override from the Request into merge().
     // The override was embedded in the Request by processSingleMapping
     // (on the engine thread) before the worker was dispatched.
-    const EngineMerge engineMerge = adapter.mergeWithPlugin(
+    const EngineMerge engineMerge = blobBatchMergeWithPlugin(
         engineDiff, policy, request.override, pluginMerger.get(), canonical);
 
     emit phaseChanged(mappingId, 4);

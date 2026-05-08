@@ -224,14 +224,14 @@ set(KALBURATOR_DISCOVERY_SOURCES
 )
 
 set(KALBURATOR_BLOB_HEADERS
-    src/blob/blobdomainadapter.h
+    src/blob/blobbatchdiff.h
     src/blob/blobdomainplugin.h
     src/blob/iblobbackend.h
     src/blob/localblobbackend.h
     src/blob/mockblobbackend.h
 )
 set(KALBURATOR_BLOB_SOURCES
-    src/blob/blobdomainadapter.cpp
+    src/blob/blobbatchdiff.cpp
     src/blob/blobdomainplugin.cpp
     src/blob/iblobbackend.cpp
     src/blob/localblobbackend.cpp
