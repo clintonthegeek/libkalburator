@@ -353,12 +353,14 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/caldavprovider.h
     src/sync/caldavconfigwidget.h
     src/sync/carddavcapabilitydiscovery.h
+    src/sync/carddavprovider.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
     src/sync/caldavprovider.cpp
     src/sync/caldavconfigwidget.cpp
     src/sync/carddavcapabilitydiscovery.cpp
+    src/sync/carddavprovider.cpp
 )
 
 # Aggregate

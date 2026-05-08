@@ -116,3 +116,21 @@ add_test(NAME tst_carddav_capability_discovery COMMAND tst_carddav_capability_di
 set_tests_properties(tst_carddav_capability_discovery PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase Ib Task 8 — CardDavProvider tests against a fake CardDAV server.
+add_executable(tst_carddav_provider
+    tst_carddav_provider.cpp
+    fakecarddavserver.cpp
+    fakecarddavserver.h
+)
+target_link_libraries(tst_carddav_provider
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_carddav_provider COMMAND tst_carddav_provider)
+set_tests_properties(tst_carddav_provider PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
