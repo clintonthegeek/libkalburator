@@ -18,6 +18,14 @@ kalburator_add_contacts_test(tst_vcard3_vcard4_edge)
 # Phase Ib.5 Task 3 — AskUser pause/resume in unified dispatchSync (contacts domain)
 kalburator_add_contacts_test(tst_unified_askuser_pause)
 
+# Phase K.3 — contacts engine witness.
+# Proves the full pipeline works (fetch/diff/conflict/write/cancel) using
+# KalburatorDomainContacts + vCard4 without calendar-domain code paths.
+# NOTE: The KCalendarCore-absence ldd check is aspirational until K.4 strips
+# calendar virtuals from SyncBackend. The five test cases exercise zero
+# calendar code.
+kalburator_add_contacts_test(tst_contacts_engine_witness)
+
 # Phase Ib Task 5 — RemoteContactsBackend read-side tests.
 # Needs FakeCardDavServer (from tests/sync/); include source files directly.
 add_executable(tst_remote_contacts_backend
