@@ -408,7 +408,7 @@ PlanStan still needs:
 
 ### D.2 WildPalms: accounts settings dialog
 
-**Status:** ⬜ deferred since Phase H (cross-cuts Phase Ic).
+**Status:** ✅ landed 2026-05-09 (tag `v0.29-phase-ic-wildpalms-contacts-ux`).
 **Target phase:** Phase Ic.
 **Source:** `ROADMAP.md` Phase Ic row.
 **Tracked:** `WildPalms/docs/TODO-contacts-account-ux.md`.
@@ -424,7 +424,7 @@ slots.
 
 ### D.3 WildPalms: ProviderManager wiring in PalmRuntime
 
-**Status:** ⬜ deferred since Phase H.
+**Status:** ✅ landed 2026-05-09 (tag `v0.29-phase-ic-wildpalms-contacts-ux`).
 **Target phase:** Phase Ic.
 **Source:** `ROADMAP.md` Phase Ic row.
 **Tracked:** `WildPalms/docs/TODO-contacts-account-ux.md`.
@@ -443,7 +443,7 @@ applied.
 
 ### D.4 Default-mapping logic
 
-**Status:** ⬜ deferred since Phase H.
+**Status:** ✅ landed 2026-05-09 (tag `v0.29-phase-ic-wildpalms-contacts-ux`).
 **Target phase:** Phase Ic.
 **Source:** `ROADMAP.md` Phase Ic row.
 
