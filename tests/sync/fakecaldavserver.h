@@ -2,6 +2,7 @@
 #define KALBURATOR_TESTS_FAKECALDAVSERVER_H
 
 #include <QByteArray>
+#include <QHash>
 #include <QHostAddress>
 #include <QList>
 #include <QPair>
@@ -15,23 +16,22 @@ class QTcpSocket;
  * @brief Minimal fake CalDAV server fixture for CalDavProvider tests.
  *
  * Listens on QHostAddress::LocalHost on a test-allocated random free port.
- * Handles the three PROPFIND requests CalDavCapabilityDiscovery walks:
+ * Handles the three PROPFIND requests CalDavCapabilityDiscovery walks,
+ * plus CalDAV CRUD operations needed for E2E sync tests:
  *
- *   - PROPFIND "/"                          -> current-user-principal href
- *   - PROPFIND "/principals/users/testuser/" -> calendar-home-set href
- *   - PROPFIND "/calendars/testuser/"       -> calendar list (Depth 1)
+ *   PROPFIND "/"                          -> current-user-principal href
+ *   PROPFIND "/principals/users/testuser/" -> calendar-home-set href
+ *   PROPFIND "/calendars/testuser/"       -> calendar list (Depth 1)
+ *   REPORT  "/calendars/testuser/<cal>/"  -> calendar-query (ETag list)
+ *                                            or calendar-multiget (full data)
+ *   PUT     "/calendars/testuser/<cal>/<uid>.ics" -> store event
+ *
+ * The default calendar is "Personal" at "/calendars/testuser/personal/".
  *
  * Configurable failure modes for negative tests:
  *   - setReturn401(true) : every request gets 401 Unauthorized
  *   - setReturn500(true) : every request gets 500 Internal Server Error
- *   - setCalendars(...)  : control which calendars are reported (an
- *                          empty list yields a multistatus with no
- *                          calendar responses)
- *
- * The server consumes the full HTTP request (parsing Content-Length to
- * detect end-of-body), then writes a single response and closes the
- * connection. PROPFIND request bodies are < 1KB so this is sufficient
- * for the discovery flow.
+ *   - setCalendars(...)  : control which calendars are reported
  */
 class FakeCalDavServer : public QTcpServer
 {
@@ -53,23 +53,58 @@ public:
     /// "Personal" at "/calendars/testuser/personal/".
     void setCalendars(const QList<QPair<QString, QString>> &cals);
 
+    /// Pre-populate a calendar collection with iCal event blobs.
+    /// Each blob must be a full VCALENDAR containing a UID property.
+    /// collectionHref must match one of the hrefs set via setCalendars()
+    /// (e.g. "/calendars/testuser/personal/").
+    void setSeedEvents(const QString &collectionHref,
+                       const QList<QByteArray> &events);
+
+    /// Returns true if an event with the given UID exists in the collection.
+    bool hasEvent(const QString &collectionHref, const QString &uid) const;
+
+    /// Returns the raw iCal blobs currently stored for a collection.
+    QList<QByteArray> storedEvents(const QString &collectionHref) const;
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
 private:
+    struct IcsRecord {
+        QByteArray data;
+        QString    etag;
+    };
+
     void handleRequest(QTcpSocket *socket, const QByteArray &fullRequest);
+    void handleReport(QTcpSocket *socket, const QString &path,
+                      const QByteArray &body);
+    void handlePut(QTcpSocket *socket, const QString &path,
+                   const QByteArray &body);
     void writeResponse(QTcpSocket *socket,
                        int statusCode,
                        const QByteArray &reasonPhrase,
-                       const QByteArray &body);
+                       const QByteArray &body,
+                       const QByteArray &extraHeaders = QByteArray());
 
     QString xmlForPrincipal() const;
     QString xmlForHome() const;
     QString xmlForCalendars() const;
+    QByteArray xmlForCalendarQuery(const QString &collectionHref) const;
+    QByteArray xmlForCalendarMultiget(const QString &collectionHref,
+                                      const QList<QString> &hrefs) const;
+
+    static QString uidFromIcs(const QByteArray &ics);
+    static QString uidFromPath(const QString &path);
+    static QString makeEtag(const QByteArray &data);
+    static QList<QString> parseHrefsFromBody(const QByteArray &body);
 
     bool m_return401 = false;
     bool m_return500 = false;
     QList<QPair<QString, QString>> m_calendars;
+
+    /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
+    /// then by UID.
+    QHash<QString, QHash<QString, IcsRecord>> m_store;
 };
 
 #endif // KALBURATOR_TESTS_FAKECALDAVSERVER_H

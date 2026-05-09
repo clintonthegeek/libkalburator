@@ -1,6 +1,7 @@
 #include "fakecaldavserver.h"
 
 #include <QByteArray>
+#include <QCryptographicHash>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -76,6 +77,40 @@ void FakeCalDavServer::setCalendars(const QList<QPair<QString, QString>> &cals)
     m_calendars = cals;
 }
 
+void FakeCalDavServer::setSeedEvents(const QString &collectionHref,
+                                     const QList<QByteArray> &events)
+{
+    QHash<QString, IcsRecord> &col = m_store[collectionHref];
+    for (const QByteArray &ics : events) {
+        const QString uid = uidFromIcs(ics);
+        if (uid.isEmpty()) continue;
+        IcsRecord rec;
+        rec.data = ics;
+        rec.etag = makeEtag(ics);
+        col.insert(uid, rec);
+    }
+}
+
+bool FakeCalDavServer::hasEvent(const QString &collectionHref,
+                                const QString &uid) const
+{
+    auto it = m_store.constFind(collectionHref);
+    if (it == m_store.constEnd()) return false;
+    return it->contains(uid);
+}
+
+QList<QByteArray> FakeCalDavServer::storedEvents(
+    const QString &collectionHref) const
+{
+    QList<QByteArray> result;
+    auto it = m_store.constFind(collectionHref);
+    if (it == m_store.constEnd()) return result;
+    for (const auto &rec : *it) {
+        result.append(rec.data);
+    }
+    return result;
+}
+
 void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
 {
     auto *socket = new QTcpSocket(this);
@@ -94,8 +129,6 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
             socket->setProperty(kBufProperty, buf);
             return;
         }
-        // Hand off only the first request — discovery uses one PROPFIND
-        // per TCP connection (Connection: close in our response).
         const QByteArray request = buf.left(total);
         socket->setProperty(kBufProperty, QByteArray());
         handleRequest(socket, request);
@@ -108,20 +141,26 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
 void FakeCalDavServer::writeResponse(QTcpSocket *socket,
                                      int statusCode,
                                      const QByteArray &reasonPhrase,
-                                     const QByteArray &body)
+                                     const QByteArray &body,
+                                     const QByteArray &extraHeaders)
 {
     QByteArray resp;
     resp += "HTTP/1.1 " + QByteArray::number(statusCode) + ' ' + reasonPhrase + "\r\n";
     if (statusCode == 401) {
-        // Discovery reads via QNetworkAccessManager, which only fires
-        // authenticationRequired if a WWW-Authenticate header is
-        // present. Discovery does NOT connect that signal, so 401 just
-        // propagates as AuthenticationRequiredError — which is what we
-        // want for the negative test.
         resp += "WWW-Authenticate: Basic realm=\"fake\"\r\n";
     }
-    resp += "Content-Type: application/xml; charset=utf-8\r\n";
-    resp += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
+    if (!extraHeaders.isEmpty()) {
+        resp += extraHeaders;
+    }
+    if (body.isEmpty()) {
+        resp += "Content-Length: 0\r\n";
+    } else {
+        const QByteArray contentType = (statusCode == 207)
+            ? "application/xml; charset=utf-8"
+            : "text/calendar; charset=utf-8";
+        resp += "Content-Type: " + contentType + "\r\n";
+        resp += "Content-Length: " + QByteArray::number(body.size()) + "\r\n";
+    }
     resp += "Connection: close\r\n\r\n";
     resp += body;
     socket->write(resp);
@@ -153,21 +192,113 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
         return;
     }
 
-    const QByteArray path = parts.at(1);
+    const QByteArray method = parts.at(0);
+    const QString path = QString::fromUtf8(parts.at(1));
 
-    QString xml;
-    if (path == "/" || path.isEmpty()) {
-        xml = xmlForPrincipal();
-    } else if (path == "/principals/users/testuser/") {
-        xml = xmlForHome();
-    } else if (path == "/calendars/testuser/") {
-        xml = xmlForCalendars();
+    const int headerEnd = fullRequest.indexOf("\r\n\r\n");
+    const QByteArray body = (headerEnd > 0)
+        ? fullRequest.mid(headerEnd + 4)
+        : QByteArray();
+
+    if (method == "PROPFIND") {
+        QString xml;
+        if (path == QStringLiteral("/") || path.isEmpty()) {
+            xml = xmlForPrincipal();
+        } else if (path == QStringLiteral("/principals/users/testuser/")) {
+            xml = xmlForHome();
+        } else if (path == QStringLiteral("/calendars/testuser/")) {
+            xml = xmlForCalendars();
+        } else {
+            // Depth:0 PROPFIND on a collection (e.g. for CTag) — return 404
+            // since our fake server does not implement CS:getctag. The backend
+            // skips the CTag optimisation when the PROPFIND fails, which is
+            // fine for tests that only need the first sync.
+            writeResponse(socket, 404, "Not Found", QByteArray());
+            return;
+        }
+        writeResponse(socket, 207, "Multi-Status", xml.toUtf8());
+
+    } else if (method == "REPORT") {
+        handleReport(socket, path, body);
+
+    } else if (method == "PUT") {
+        handlePut(socket, path, body);
+
     } else {
+        writeResponse(socket, 405, "Method Not Allowed", QByteArray());
+    }
+}
+
+void FakeCalDavServer::handleReport(QTcpSocket *socket,
+                                    const QString &path,
+                                    const QByteArray &body)
+{
+    // Find the collection href this REPORT targets.
+    // path must be one of the known collection hrefs.
+    QString collectionHref;
+    for (const auto &cal : m_calendars) {
+        if (path == cal.second) {
+            collectionHref = cal.second;
+            break;
+        }
+    }
+    if (collectionHref.isEmpty()) {
         writeResponse(socket, 404, "Not Found", QByteArray());
         return;
     }
 
-    writeResponse(socket, 207, "Multi-Status", xml.toUtf8());
+    // Distinguish calendar-query (ETag list) from calendar-multiget (full data)
+    // by looking for the report type string in the request body.
+    if (body.contains("calendar-multiget")) {
+        const QList<QString> hrefs = parseHrefsFromBody(body);
+        writeResponse(socket, 207, "Multi-Status",
+                      xmlForCalendarMultiget(collectionHref, hrefs));
+    } else {
+        // calendar-query or anything else — return ETag list for all events.
+        writeResponse(socket, 207, "Multi-Status",
+                      xmlForCalendarQuery(collectionHref));
+    }
+}
+
+void FakeCalDavServer::handlePut(QTcpSocket *socket,
+                                 const QString &path,
+                                 const QByteArray &body)
+{
+    if (!path.endsWith(QStringLiteral(".ics"))) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+
+    // Derive collection href by stripping the filename.
+    const int lastSlash = path.lastIndexOf('/');
+    if (lastSlash <= 0) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+    const QString collectionHref = path.left(lastSlash + 1);
+    const QString uid = uidFromPath(path);
+    if (uid.isEmpty()) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+
+    QHash<QString, IcsRecord> &col = m_store[collectionHref];
+    const bool isNew = !col.contains(uid);
+
+    IcsRecord rec;
+    rec.data = body;
+    // Salt with a counter so repeated PUTs produce distinct ETags.
+    static int s_counter = 0;
+    rec.etag = makeEtag(body + QByteArray::number(++s_counter));
+    col.insert(uid, rec);
+
+    const QByteArray etagHeader =
+        ("ETag: " + rec.etag.toUtf8() + "\r\n");
+    if (isNew) {
+        writeResponse(socket, 201, "Created", QByteArray(), etagHeader);
+    } else {
+        writeResponse(socket, 204, "No Content", QByteArray(), etagHeader);
+    }
 }
 
 QString FakeCalDavServer::xmlForPrincipal() const
@@ -234,4 +365,143 @@ QString FakeCalDavServer::xmlForCalendars() const
     }
     xml += QStringLiteral("</d:multistatus>\n");
     return xml;
+}
+
+QByteArray FakeCalDavServer::xmlForCalendarQuery(
+    const QString &collectionHref) const
+{
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\""
+                          " xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\n");
+
+    auto it = m_store.constFind(collectionHref);
+    if (it != m_store.constEnd()) {
+        for (auto recIt = it->constBegin(); recIt != it->constEnd(); ++recIt) {
+            const QString href =
+                collectionHref + recIt.key() + QStringLiteral(".ics");
+            xml += QStringLiteral("  <d:response>\n");
+            xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
+            xml += QStringLiteral("    <d:propstat>\n");
+            xml += QStringLiteral("      <d:prop>\n");
+            xml += QStringLiteral("        <d:getetag>%1</d:getetag>\n")
+                       .arg(recIt.value().etag);
+            xml += QStringLiteral("      </d:prop>\n");
+            xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+            xml += QStringLiteral("    </d:propstat>\n");
+            xml += QStringLiteral("  </d:response>\n");
+        }
+    }
+
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml.toUtf8();
+}
+
+QByteArray FakeCalDavServer::xmlForCalendarMultiget(
+    const QString &collectionHref,
+    const QList<QString> &hrefs) const
+{
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\""
+                          " xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\n");
+
+    auto storeIt = m_store.constFind(collectionHref);
+
+    for (const QString &href : hrefs) {
+        const QString uid = uidFromPath(href);
+        if (uid.isEmpty()) continue;
+
+        xml += QStringLiteral("  <d:response>\n");
+        xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
+        xml += QStringLiteral("    <d:propstat>\n");
+        xml += QStringLiteral("      <d:prop>\n");
+
+        if (storeIt != m_store.constEnd()) {
+            auto recIt = storeIt->constFind(uid);
+            if (recIt != storeIt->constEnd()) {
+                xml += QStringLiteral("        <d:getetag>%1</d:getetag>\n")
+                           .arg(recIt->etag);
+                xml += QStringLiteral("        <c:calendar-data>%1</c:calendar-data>\n")
+                           .arg(QString::fromUtf8(recIt->data));
+                xml += QStringLiteral("      </d:prop>\n");
+                xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+            } else {
+                xml += QStringLiteral("      </d:prop>\n");
+                xml += QStringLiteral("      <d:status>HTTP/1.1 404 Not Found</d:status>\n");
+            }
+        } else {
+            xml += QStringLiteral("      </d:prop>\n");
+            xml += QStringLiteral("      <d:status>HTTP/1.1 404 Not Found</d:status>\n");
+        }
+
+        xml += QStringLiteral("    </d:propstat>\n");
+        xml += QStringLiteral("  </d:response>\n");
+    }
+
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml.toUtf8();
+}
+
+// static
+QString FakeCalDavServer::uidFromIcs(const QByteArray &ics)
+{
+    const QList<QByteArray> lines = ics.split('\n');
+    for (const QByteArray &raw : lines) {
+        QByteArray line = raw;
+        if (line.endsWith('\r')) line.chop(1);
+        if (line.startsWith("UID:")) {
+            return QString::fromUtf8(line.mid(4).trimmed());
+        }
+    }
+    return QString();
+}
+
+// static
+QString FakeCalDavServer::uidFromPath(const QString &path)
+{
+    // Expect "/calendars/<user>/<cal>/<uid>.ics"
+    if (!path.endsWith(QStringLiteral(".ics")))
+        return QString();
+    const int lastSlash = path.lastIndexOf('/');
+    if (lastSlash < 0)
+        return QString();
+    QString filename = path.mid(lastSlash + 1);
+    filename.chop(4); // remove ".ics"
+    return filename;
+}
+
+// static
+QString FakeCalDavServer::makeEtag(const QByteArray &data)
+{
+    const QByteArray hash =
+        QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex().left(12);
+    return QStringLiteral("\"%1\"").arg(QString::fromLatin1(hash));
+}
+
+// static
+QList<QString> FakeCalDavServer::parseHrefsFromBody(const QByteArray &body)
+{
+    QList<QString> hrefs;
+    // Simple text scan for <D:href>...</D:href> or <d:href>...</d:href>.
+    // KDAV emits namespaced hrefs; we match any variant of the tag name.
+    QByteArray lower = body.toLower();
+    int pos = 0;
+    while (pos < body.size()) {
+        // Find opening href tag (any namespace prefix)
+        int tagStart = lower.indexOf(":href>", pos);
+        if (tagStart < 0) break;
+        const int valueStart = tagStart + 6; // length of ":href>"
+
+        int closeTag = lower.indexOf("</", valueStart);
+        if (closeTag < 0) break;
+
+        const QByteArray hrefBytes = body.mid(valueStart, closeTag - valueStart).trimmed();
+        const QString href = QString::fromUtf8(hrefBytes);
+        if (!href.isEmpty()) {
+            hrefs.append(href);
+        }
+        pos = closeTag + 2;
+    }
+    return hrefs;
 }

@@ -803,14 +803,25 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
 
 KDAV::DavUrl RemoteCalendarBackend::configuredDavUrl(const QString &rawUrl)
 {
-    QUrl url = QUrl::fromUserInput(rawUrl);
+    QUrl url(rawUrl);
+    // QUrl::fromUserInput() treats absolute paths like "/calendars/foo/" as
+    // "file:///calendars/foo/" — avoid it. If the URL has no scheme, resolve
+    // it against the base server URL so relative paths work correctly.
+    if (url.isRelative() || url.scheme().isEmpty()) {
+        QUrl base;
+        base.setScheme(m_url.scheme().isEmpty() ? QStringLiteral("http") : m_url.scheme());
+        base.setHost(m_url.host());
+        if (m_url.port() > 0)
+            base.setPort(m_url.port());
+        url = base.resolved(QUrl(rawUrl));
+    }
 
     url.setUserName(m_username);
     url.setPassword(m_password);
 
-    if (!url.path().endsWith('/')) {
-        url.setPath(url.path() + '/');
-    }
+    if (!url.path().endsWith(QLatin1Char('/')))
+        url.setPath(url.path() + QLatin1Char('/'));
+
     return KDAV::DavUrl(url, KDAV::CalDav);
 }
 
