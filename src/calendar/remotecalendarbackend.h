@@ -4,6 +4,7 @@
 #include "syncbackend.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "../backend/changedetection.h"
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
@@ -22,7 +23,8 @@ namespace Kalburator::Sync {
 class CTagStore;
 struct BackendCapabilities;
 
-class RemoteCalendarBackend : public SyncBackend
+class RemoteCalendarBackend : public SyncBackend,
+                              public Kalburator::Backend::ChangeDetection
 {
     Q_OBJECT
 
@@ -148,6 +150,29 @@ public:
      * @param ctags Map of calendarId -> fresh CTag (typically returned by fetchAllCtags).
      */
     void primeCtagCache(const QMap<QString, QString> &ctags);
+
+    // ---- Backend::ChangeDetection (Phase K.1) ----
+    // Thin delegations to the existing CTag surface above. The engine
+    // consumes these via dynamic_cast<Backend::ChangeDetection*> in K.2;
+    // the qobject_cast<RemoteCalendarBackend*> path retires there.
+    QString collectionRevision(const QString &collectionId) override
+    {
+        const auto map = fetchAllCtags({collectionId});
+        return map.value(collectionId);
+    }
+    QMap<QString, QString>
+    collectionRevisions(const QStringList &collectionIds) override
+    {
+        return fetchAllCtags(collectionIds);
+    }
+    QString cachedCollectionRevision(const QString &collectionId) const override
+    {
+        return ctag(collectionId);
+    }
+    void primeRevisionCache(const QMap<QString, QString> &cache) override
+    {
+        primeCtagCache(cache);
+    }
 
     /**
      * @brief Check if discovered calendar supports VEVENT components.

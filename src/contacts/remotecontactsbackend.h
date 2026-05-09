@@ -5,6 +5,7 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "shape.h"
+#include "../backend/changedetection.h"
 
 #include <QHash>
 #include <QList>
@@ -33,7 +34,8 @@ namespace Kalburator::Sync {
  * All network I/O blocks on a QEventLoop (acceptable for the blob-view /
  * engine-worker call site; Phase F revisits true async).
  */
-class RemoteContactsBackend : public SyncBackend
+class RemoteContactsBackend : public SyncBackend,
+                              public Kalburator::Backend::ChangeDetection
 {
     Q_OBJECT
 
@@ -163,6 +165,24 @@ public:
                    const TranscodingPlan &) override {}
 
     void removeItem(const QString &, const QString &) override {}
+
+    // ---- Backend::ChangeDetection (Phase K.1) ----
+    // CardDAV CTag is not yet wired through this backend; the
+    // PROPFIND for `cs:getctag` would mirror RemoteCalendarBackend's
+    // CalDAV CTag fetch but is its own work item (out of K.1 scope).
+    // For now, return empty (= "I cannot answer cheaply") which the
+    // engine treats as "always changed" — matches today's behavior
+    // for contacts mappings.
+    // TODO(phase-k.1.x or k.4): implement CardDAV getctag PROPFIND +
+    // per-collection CTag cache; replace these stubs with thin
+    // delegations to that surface.
+    QString collectionRevision(const QString &collectionId) override
+    { Q_UNUSED(collectionId); return {}; }
+    QString cachedCollectionRevision(const QString &collectionId) const override
+    { Q_UNUSED(collectionId); return {}; }
+    void primeRevisionCache(const QMap<QString, QString> &cache) override
+    { Q_UNUSED(cache); }
+    bool persistsCollectionRevisions() const override { return false; }
 
 private:
     // Internal record handle — not exposed through BackendRecord

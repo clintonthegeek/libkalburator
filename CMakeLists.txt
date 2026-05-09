@@ -236,6 +236,16 @@ set(KALBURATOR_BLOB_SOURCES
     src/blob/mockblobbackend.cpp
 )
 
+# Phase K.1 — backend capability interfaces.
+# Pure-virtual non-QObject side-interfaces opted into by concrete
+# backends. Engine consumes via dynamic_cast in K.2; backends declare
+# them now for forward compatibility (no behavior change in K.1).
+set(KALBURATOR_BACKEND_HEADERS
+    src/backend/changedetection.h
+    src/backend/resourcelinearization.h
+)
+# (No sources — headers-only interfaces.)
+
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
     src/engine/mappingscheduler.h
@@ -367,6 +377,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_JOURNAL_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
+    ${KALBURATOR_BACKEND_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
     ${KALBURATOR_SHAPE_HEADERS}
     ${KALBURATOR_TODO_HEADERS}

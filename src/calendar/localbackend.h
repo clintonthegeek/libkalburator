@@ -13,6 +13,7 @@
 #include "syncoperation.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "../backend/changedetection.h"
 
 namespace Kalburator::Sync {
 
@@ -20,7 +21,8 @@ struct BackendCapabilities;
 class AsyncFileWriter;
 class FingerprintStore;
 
-class LocalBackend : public SyncBackend
+class LocalBackend : public SyncBackend,
+                     public Kalburator::Backend::ChangeDetection
 {
     Q_OBJECT
 
@@ -63,6 +65,23 @@ public:
      * @brief Persist a fingerprint for a calendar.
      */
     void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
+
+    // ---- Backend::ChangeDetection (Phase K.1) ----
+    // Thin delegations to the existing fingerprint surface. Engine
+    // consumes these via dynamic_cast<Backend::ChangeDetection*> in K.2.
+    QString collectionRevision(const QString &collectionId) override
+    {
+        return calendarFingerprint(collectionId);
+    }
+    QString cachedCollectionRevision(const QString &collectionId) const override
+    {
+        return cachedFingerprint(collectionId);
+    }
+    void primeRevisionCache(const QMap<QString, QString> &cache) override
+    {
+        for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+            setCachedFingerprint(it.key(), it.value());
+    }
 
     /**
      * @brief Check if a calendar directory is writable.
