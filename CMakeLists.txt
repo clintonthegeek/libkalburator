@@ -433,6 +433,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/contacts>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/memo>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/backend>
 )
 
 target_link_libraries(kalburator

@@ -648,15 +648,13 @@ private:
     void advanceQueue();
 
     /**
-     * @brief Phase-1 + Phase-2 pre-pass. Collects fresh CTags from
-     * RemoteCalendarBackends (one PROPFIND per parent URL) and fresh fingerprints
-     * from LocalBackends. For each mapping, if both endpoints' fresh
-     * state matches the stored baseline AND skipUnchangedMappings() is
-     * true, the mapping ID is added to m_skippedMappingIds. Fresh state
-     * is also stashed in m_freshState for write-back on success.
+     * @brief Pre-pass: collect fresh revision tokens from every backend that
+     * implements Backend::ChangeDetection (one batched query per backend). For
+     * each mapping, if both endpoints' fresh revision matches the stored baseline
+     * AND skipUnchangedMappings() is true, the mapping is skipped. Fresh state
+     * is stashed in m_freshState for write-back via primeRevisionCache() on success.
      *
-     * Idempotent and best-effort. Network failures / missing baselines
-     * yield "no skip" (safe default).
+     * Idempotent and best-effort. Missing revisions or baselines yield "no skip".
      */
     void prepareSyncFastPath();
 
@@ -665,10 +663,8 @@ private:
      * and consumed by onWorkerSyncCompleted to persist baselines on success.
      */
     struct FreshSyncState {
-        QString sourceCtag;        // empty if source is not RemoteCalendarBackend
-        QString sourceFingerprint; // empty if source is not LocalBackend
-        QString targetCtag;        // empty if target is not RemoteCalendarBackend
-        QString targetFingerprint; // empty if target is not LocalBackend
+        QString sourceRevision; // empty if source has no Backend::ChangeDetection
+        QString targetRevision; // empty if target has no Backend::ChangeDetection
     };
 
     // Helper methods for sync algorithm

@@ -1,8 +1,26 @@
 # Phase K.1 — capability interfaces (plan)
 
-**Status:** in progress — 2026-05-09. Design doc:
-`04ab-phase-k-engine-generalization-design.md` §4 (K.1 row).
-Convention doc: `04ac-phase-k-semantic-cleansing-proposal.md`.
+**Status:** **landed 2026-05-09 — commit `017ac94`, tag
+`v0.30-phase-k1-capabilities` applied.** Build and test gates met.
+Design doc: `04ab-phase-k-engine-generalization-design.md` §4 (K.1
+row). Convention doc: `04ac-phase-k-semantic-cleansing-proposal.md`.
+
+**Outcome (post-landing):**
+- T1, T2: capability headers added at `src/backend/changedetection.h`
+  and `src/backend/resourcelinearization.h`. ✓
+- T3: CMake module `KALBURATOR_BACKEND_HEADERS` registered. ✓
+- T4: `RemoteCalendarBackend` implements `Backend::ChangeDetection`
+  via thin delegations to `fetchAllCtags` / `ctag` / `primeCtagCache`. ✓
+- T5: `LocalBackend` implements `Backend::ChangeDetection` via
+  `calendarFingerprint` / `cachedFingerprint` / `setCachedFingerprint`. ✓
+- T6: `RemoteContactsBackend` opts into `Backend::ChangeDetection`
+  with empty stubs (CardDAV CTag wiring deferred). ✓
+- T7: No backend implements `Backend::ResourceLinearization` yet
+  (interface exists; future Palm backend will adopt). ✓
+- T8: Build green; ctest matches baseline (same 2 flaky timing
+  failures: `tst_calendar_sync_full` #27, `tst_engine_subset_dispatch`
+  #36). No regression. ✓
+- T9: Commit `017ac94`; tag `v0.30-phase-k1-capabilities` applied. ✓
 
 **Goal:** Introduce the two capability interfaces the engine will
 consume in K.2 to retire its `qobject_cast<RemoteCalendarBackend*>`

@@ -171,7 +171,8 @@ public:
     }
     void primeRevisionCache(const QMap<QString, QString> &cache) override
     {
-        primeCtagCache(cache);
+        for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+            setCtag(it.key(), it.value());
     }
 
     /**

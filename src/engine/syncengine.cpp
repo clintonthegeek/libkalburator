@@ -21,8 +21,7 @@
 #include "icalendarcollection.h"
 #include "backendconfiguration.h"
 #include "syncbackend.h"
-#include "remotecalendarbackend.h"
-#include "localbackend.h"
+#include "changedetection.h"
 #include "syncoperation.h"
 #include "conflictmanager.h"
 #include "synctesthooks.h"
@@ -606,56 +605,33 @@ void SyncEngine::prepareSyncFastPath()
 
     if (!m_registry) return;
 
-    // ----- Phase 1: gather fresh CTags from each RemoteCalendarBackend (one batched
-    //                PROPFIND per parent URL) -----
-    QMap<RemoteCalendarBackend*, QStringList> remoteCalIdsByBackend;
-    QMap<RemoteCalendarBackend*, QString> remoteBackendIds;  // RemoteCalendarBackend* -> backendId string
-    auto collectRemote = [&](const QString &backendId, const QString &calId) {
+    // Collect collection IDs per backend that implements Backend::ChangeDetection.
+    QMap<QString, QStringList> colIdsByBackend;
+    auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
         SyncBackend *base = m_registry->backendInstance(backendId);
-        if (auto *r = qobject_cast<RemoteCalendarBackend*>(base)) {
-            remoteCalIdsByBackend[r].append(calId);
-            remoteBackendIds[r] = backendId;
-        }
+        if (dynamic_cast<Backend::ChangeDetection*>(base))
+            colIdsByBackend[backendId].append(colId);
     };
     for (const auto &mapping : m_syncMappings) {
         if (!mapping.enabled) continue;
-        collectRemote(mapping.sourceBackend, mapping.sourceCalendar);
-        collectRemote(mapping.targetBackend, mapping.targetCalendar);
+        collectChangeDetection(mapping.sourceBackend, mapping.sourceCalendar);
+        collectChangeDetection(mapping.targetBackend, mapping.targetCalendar);
     }
 
-    QMap<QPair<QString, QString>, QString> freshRemoteCtags;  // (backendId, calId) -> ctag
-    for (auto it = remoteCalIdsByBackend.constBegin(); it != remoteCalIdsByBackend.constEnd(); ++it) {
+    // Fetch fresh revisions per backend (batched where the backend supports it).
+    QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
+    for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
+        SyncBackend *base = m_registry->backendInstance(it.key());
+        auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
+        if (!cd) continue;
         QStringList ids = it.value();
         ids.removeDuplicates();
-        const QMap<QString, QString> ctags = it.key()->fetchAllCtags(ids);
-        if (!ctags.isEmpty()) {
-            it.key()->primeCtagCache(ctags);
-            const QString backendId = remoteBackendIds.value(it.key());
-            for (auto cit = ctags.constBegin(); cit != ctags.constEnd(); ++cit) {
-                freshRemoteCtags[qMakePair(backendId, cit.key())] = cit.value();
-            }
-        }
+        const QMap<QString, QString> revs = cd->collectionRevisions(ids);
+        for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
+            freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
     }
 
-    // ----- Phase 2: gather fresh fingerprints from each LocalBackend -----
-    QMap<QPair<QString, QString>, QString> freshLocalFingerprints;
-    auto collectLocal = [&](const QString &backendId, const QString &calId) {
-        SyncBackend *base = m_registry->backendInstance(backendId);
-        if (auto *l = qobject_cast<LocalBackend*>(base)) {
-            const QString fp = l->calendarFingerprint(calId);
-            if (!fp.isEmpty()) {
-                freshLocalFingerprints[qMakePair(backendId, calId)] = fp;
-            }
-        }
-    };
-    for (const auto &mapping : m_syncMappings) {
-        if (!mapping.enabled) continue;
-        collectLocal(mapping.sourceBackend, mapping.sourceCalendar);
-        collectLocal(mapping.targetBackend, mapping.targetCalendar);
-    }
-
-    // ----- Decide skip per mapping. -----
-    if (!m_calendarBaselines) return;  // can't compare without baselines
+    if (!m_calendarBaselines) return;
 
     int wouldSkipCount = 0;
     int actualSkipCount = 0;
@@ -668,45 +644,22 @@ void SyncEngine::prepareSyncFastPath()
         bool sourceUnchanged = false;
         bool targetUnchanged = false;
 
-        // Resolve source side.
-        SyncBackend *srcBase = m_registry->backendInstance(mapping.sourceBackend);
-        if (auto *srcRemote = qobject_cast<RemoteCalendarBackend*>(srcBase)) {
-            sourceCovered = true;
-            fresh.sourceCtag = freshRemoteCtags.value(
-                qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
-            const QString stored = srcRemote->ctag(mapping.sourceCalendar);
-            sourceUnchanged = !fresh.sourceCtag.isEmpty()
-                              && !stored.isEmpty()
-                              && fresh.sourceCtag == stored;
-        } else if (auto *srcLocal = qobject_cast<LocalBackend*>(srcBase)) {
-            sourceCovered = true;
-            fresh.sourceFingerprint = freshLocalFingerprints.value(
-                qMakePair(mapping.sourceBackend, mapping.sourceCalendar));
-            const QString stored = srcLocal->cachedFingerprint(mapping.sourceCalendar);
-            sourceUnchanged = !fresh.sourceFingerprint.isEmpty()
-                              && !stored.isEmpty()
-                              && fresh.sourceFingerprint == stored;
-        }
+        auto checkSide = [&](const QString &backendId, const QString &colId,
+                              QString &outRevision, bool &covered, bool &unchanged) {
+            SyncBackend *base = m_registry->backendInstance(backendId);
+            auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
+            if (!cd) return;
+            covered = true;
+            outRevision = freshRevisions.value(qMakePair(backendId, colId));
+            const QString stored = cd->cachedCollectionRevision(colId);
+            unchanged = !outRevision.isEmpty() && !stored.isEmpty()
+                        && outRevision == stored;
+        };
 
-        // Resolve target side (mirror logic).
-        SyncBackend *tgtBase = m_registry->backendInstance(mapping.targetBackend);
-        if (auto *tgtRemote = qobject_cast<RemoteCalendarBackend*>(tgtBase)) {
-            targetCovered = true;
-            fresh.targetCtag = freshRemoteCtags.value(
-                qMakePair(mapping.targetBackend, mapping.targetCalendar));
-            const QString stored = tgtRemote->ctag(mapping.targetCalendar);
-            targetUnchanged = !fresh.targetCtag.isEmpty()
-                              && !stored.isEmpty()
-                              && fresh.targetCtag == stored;
-        } else if (auto *tgtLocal = qobject_cast<LocalBackend*>(tgtBase)) {
-            targetCovered = true;
-            fresh.targetFingerprint = freshLocalFingerprints.value(
-                qMakePair(mapping.targetBackend, mapping.targetCalendar));
-            const QString stored = tgtLocal->cachedFingerprint(mapping.targetCalendar);
-            targetUnchanged = !fresh.targetFingerprint.isEmpty()
-                              && !stored.isEmpty()
-                              && fresh.targetFingerprint == stored;
-        }
+        checkSide(mapping.sourceBackend, mapping.sourceCalendar,
+                  fresh.sourceRevision, sourceCovered, sourceUnchanged);
+        checkSide(mapping.targetBackend, mapping.targetCalendar,
+                  fresh.targetRevision, targetCovered, targetUnchanged);
 
         m_freshState[mapping.id] = fresh;
 
@@ -1093,8 +1046,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             m_lastResult.errorMessage = result.errorMessage;
     }
 
-    // Phase-2: persist fresh CTags / fingerprints so the next sync's
-    // pre-pass has up-to-date baselines.
+    // Persist fresh revisions so the next sync's pre-pass has up-to-date baselines.
     if (result.success && m_calendarBaselines) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
@@ -1104,28 +1056,18 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                 if (m.id == mappingId) { mapping = &m; break; }
             }
             if (mapping) {
-                if (!fresh.sourceCtag.isEmpty()) {
-                    if (auto *r = qobject_cast<RemoteCalendarBackend*>(
-                            m_registry->backendInstance(mapping->sourceBackend)))
-                        r->setCtag(mapping->sourceCalendar, fresh.sourceCtag);
-                }
-                if (!fresh.targetCtag.isEmpty()) {
-                    if (auto *r = qobject_cast<RemoteCalendarBackend*>(
-                            m_registry->backendInstance(mapping->targetBackend)))
-                        r->setCtag(mapping->targetCalendar, fresh.targetCtag);
-                }
-                if (!fresh.sourceFingerprint.isEmpty()) {
-                    if (auto *l = qobject_cast<LocalBackend*>(
-                            m_registry->backendInstance(mapping->sourceBackend)))
-                        l->setCachedFingerprint(mapping->sourceCalendar,
-                                                fresh.sourceFingerprint);
-                }
-                if (!fresh.targetFingerprint.isEmpty()) {
-                    if (auto *l = qobject_cast<LocalBackend*>(
-                            m_registry->backendInstance(mapping->targetBackend)))
-                        l->setCachedFingerprint(mapping->targetCalendar,
-                                                fresh.targetFingerprint);
-                }
+                auto persistRevision = [&](const QString &backendId,
+                                           const QString &colId,
+                                           const QString &revision) {
+                    if (revision.isEmpty()) return;
+                    SyncBackend *base = m_registry->backendInstance(backendId);
+                    if (auto *cd = dynamic_cast<Backend::ChangeDetection*>(base))
+                        cd->primeRevisionCache({{colId, revision}});
+                };
+                persistRevision(mapping->sourceBackend, mapping->sourceCalendar,
+                                fresh.sourceRevision);
+                persistRevision(mapping->targetBackend, mapping->targetCalendar,
+                                fresh.targetRevision);
             }
         }
     }
