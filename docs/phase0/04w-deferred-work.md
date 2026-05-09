@@ -50,88 +50,30 @@ your memory; don't trust the coordination folder.
 
 ### A.1 Calendar-typed signals → domain-generic
 
-**Status:** ⬜ deferred from Phase Ia.5 (2026-05-08).
-**Target phase:** Phase Ib.5 — calendar-typed signal generalization.
-**Source:** `~/dev/refactor-engine-merger/2026-05-08-phase-ia.5-engine-unification-design.md` §3 "Out of scope".
-
-`SyncEngine`'s public signals still emit `KCalendarCore::Incidence::Ptr`:
-
-- `itemReady(calendarId, KCalendarCore::Incidence::Ptr, type)`
-- `itemFetched(calendarId, KCalendarCore::Incidence::Ptr)`
-- `ConflictInfo` (in `synctypes.h`) carries `Incidence::Ptr` payloads.
-
-These shapes are a contract with PlanStan and WildPalms calendar
-consumers. Generalizing them is what makes the engine truly
-domain-agnostic; until then, anything that #includes
-`syncengine.h` pulls KCalendarCore into its TU.
-
-**Why deferred:** the contract change requires migrating consumer
-slot handlers in PlanStan and WildPalms in lockstep with the
-engine change. Phase Ia.5's audit estimated ~2 weeks of consumer
-migration on top of the engine work; that scope inflation would
-have blocked Ia close-out and Ib.
-
-**Acceptance:**
-- Signal payloads are `BackendRecord` (or a typed envelope over it)
-  rather than `Incidence::Ptr`.
-- `synctypes.h` no longer includes any KCalendarCore header.
-- All consumer slot handlers updated; `verify-all.sh` clean.
-- Phase G's verbatim success criterion ("engine deals only in
-  `BackendRecord`") is now achieved.
+**Status:** ✅ landed 2026-05-08 (`v0.28.5-phase-ib.5-engine-generalization`).
+**Outcome:** `itemReady` and `itemFetched` signals deleted outright
+(zero subscribers anywhere in the tree; generalization became
+deletion). `ConflictInfo` was already domain-generic — no change
+needed. `synctypes.h` did not include any KCalendarCore header even
+before Ib.5. Phase G's verbatim success criterion is now delivered.
 
 ---
 
 ### A.2 Remove KCalendarCore from engine TU
 
-**Status:** ⬜ deferred from Phase Ia.5.
-**Target phase:** Phase Ib.5.
-**Depends on:** A.1 (the public signal generalization).
-**Source:** Phase G success criterion in `ROADMAP.md`; Phase Ia.5
-design §3.
-
-`syncengine.cpp` currently `#include`s KCalendarCore in two places:
-
-1. The transitional `dispatchCalendarLegacy` helper that preserves
-   calendar-typed signal emission inside the unified file.
-2. The signal slot bodies that construct `Incidence::Ptr` payloads.
-
-Both go away once A.1 lands.
-
-**Acceptance:**
-- `grep -r KCalendarCore libkalburator/src/engine/` returns zero
-  hits.
-- The unified `dispatchSync` is the only path; no
-  `dispatchCalendarLegacy` helper remains.
-- `tests/calendar/tst_calendar_sync_*` continue to pass on the
-  fully-generalized path.
+**Status:** ✅ landed 2026-05-08 (`v0.28.5-phase-ib.5-engine-generalization`).
+**Outcome:** `grep -r KCalendarCore libkalburator/src/engine/` returns
+zero hits. `dispatchCalendarLegacy` deleted; no remaining includes.
 
 ---
 
 ### A.3 Delete `IDomainAdapter` and `CalendarDomainAdapter`
 
-**Status:** ⬜ deferred from Phase Ia.5.
-**Target phase:** Phase Ib.5.
-**Depends on:** A.1, A.2.
-**Source:** Phase Ia.5 plan Tasks 15 + 17 (re-scoped 2026-05-08).
-
-Phase Ia.5 deleted `BlobDomainAdapter`. The two calendar-typed
-adapters survived because their last callers are inside
-`dispatchCalendarLegacy` (the calendar-typed signal emission path).
-
-- `libkalburator/src/engine/idomainadapter.h` — Phase F1 leftover;
-  superseded conceptually by `DomainPlugin`.
-- `libkalburator/src/calendar/calendardomainadapter.{h,cpp}` —
-  calendar-typed convenience helpers (`diffCalendarRecords`,
-  `applyChangesToBackend(SyncBackend*, …, SyncChange…)`) that
-  pre-date the plugin/writer machinery.
-
-**Acceptance:**
-- Both files removed from the tree.
-- `m_calendarAdapter` member and ctor wiring removed from
-  `SyncEngineWorker`.
-- `IRecordDifferICal` / `IRecordMergerICal` and the calendar
-  plugin's `CalendarPluginWriter` cover everything the adapters
-  did.
+**Status:** ✅ landed 2026-05-08 (`v0.28.5-phase-ib.5-engine-generalization`).
+**Outcome:** `idomainadapter.h`, `calendardomainadapter.h/.cpp` removed.
+`m_calendarAdapter` member and ctor wiring removed from
+`SyncEngineWorker`. `IRecordDifferICal` / `IRecordMergerICal` and
+`CalendarPluginWriter` cover everything the adapters did.
 
 ---
 
