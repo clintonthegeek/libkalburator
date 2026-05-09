@@ -19,7 +19,10 @@ namespace Kalburator::Sync {
 /// will treat it as a change-to-invalid; whether the consumer interprets
 /// that as "remove" is a downstream concern. Task 13's integration work
 /// will revisit this when the calendar-typed path is deleted.
-struct PropertyDiff {
+///
+/// Note: named MapPropertyDiff (not PropertyDiff) to avoid ODR conflict with
+/// the unrelated Kalburator::Sync::PropertyDiff in transcoding/incidencediff.h.
+struct MapPropertyDiff {
     QVariantMap toApplyToTarget;  ///< Changes that should propagate to target.
     QVariantMap toApplyToSource;  ///< Changes that should propagate to source (TwoWay only).
     QStringList conflicts;        ///< Keys where both src and tgt diverged from baseline differently.
@@ -38,7 +41,7 @@ struct PropertyDiff {
 /// - Both changed, same   -> agree; no diff entry (already converged)
 /// - Both changed, differ -> append key to conflicts; caller resolves
 /// - Neither changed      -> skip
-PropertyDiff computeMapDiff(
+MapPropertyDiff computeMapDiff(
     const QVariantMap &src,
     const QVariantMap &tgt,
     const QVariantMap &base);

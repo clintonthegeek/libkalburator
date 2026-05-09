@@ -16,6 +16,8 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QDateTime>
+#include <QRegularExpression>
 #include <QTimer>
 #include <QCoreApplication>
 
@@ -1032,6 +1034,25 @@ bool LocalBackend::setRawIcs(const QString &calendarId, const QString &uid,
 
 namespace {
 
+// Extract iCal LAST-MODIFIED datetime from raw iCal bytes.
+// Returns an invalid QDateTime if the property is absent or unparseable.
+// Prefers iCal LAST-MODIFIED over file mtime for LWW comparison so that
+// tests (and real-world scenarios) where iCal metadata is authoritative
+// behave correctly regardless of file system timestamp granularity.
+static QDateTime extractICalLastModified(const QByteArray &data)
+{
+    static const QRegularExpression re(
+        QStringLiteral("LAST-MODIFIED:(\\d{8}T\\d{6}Z)"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto match = re.match(QString::fromUtf8(data));
+    if (!match.hasMatch()) return {};
+    QDateTime dt = QDateTime::fromString(match.captured(1),
+                                         QStringLiteral("yyyyMMdd'T'HHmmss'Z'"));
+    if (dt.isValid())
+        dt.setTimeZone(QTimeZone::utc());
+    return dt;
+}
+
 // Build a BackendRecord from a file on disk.
 // Returns a null-opt if the file cannot be opened.
 static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
@@ -1048,12 +1069,25 @@ static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
 
     const QByteArray hashBytes = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 
+    const QDateTime icalLastMod = extractICalLastModified(bytes);
+    const QDateTime fileMtime   = QFileInfo(filePath).lastModified();
+    // Use the maximum of iCal LAST-MODIFIED and file mtime:
+    // - iCal LAST-MODIFIED captures explicit timestamps from calendar apps
+    //   (may be seconds-precision but can be far in the past/future).
+    // - File mtime has sub-second precision and correctly orders rapid
+    //   writes (e.g., two test writes 50ms apart in the same second).
+    // Taking the max preserves both: explicit iCal stamps dominate when
+    // they're genuinely newer; file mtime's sub-second precision wins
+    // when both timestamps are in the same second.
+    const QDateTime bestMod = (icalLastMod.isValid() && icalLastMod > fileMtime)
+                              ? icalLastMod : fileMtime;
+
     Kalburator::Sync::BackendRecord rec;
     rec.id          = uid;
     rec.type        = QStringLiteral("calendar");
     rec.data        = bytes;
     rec.contentHash = QString::fromLatin1(hashBytes.toHex());
-    rec.lastModified = QFileInfo(filePath).lastModified();
+    rec.lastModified = bestMod;
     rec.isDeleted   = false;
     return rec;
 }

@@ -230,9 +230,15 @@ EngineDiff blobBatchDiff(const QList<BackendRecord> &source,
                 result.toTarget.append(makeConflict(sRec, tRec, bRec));
             }
         } else if (!hasS && hasT && hasB) {
-            result.toTarget.append(makeDelete(bRec, bRec));
+            if (tRec.contentHash != bRec.contentHash)
+                result.toTarget.append(makeConflict(BackendRecord{}, tRec, bRec));
+            else
+                result.toTarget.append(makeDelete(bRec, bRec));
         } else if (hasS && !hasT && hasB) {
-            result.toSource.append(makeDelete(bRec, bRec));
+            if (sRec.contentHash != bRec.contentHash)
+                result.toTarget.append(makeConflict(sRec, BackendRecord{}, bRec));
+            else
+                result.toSource.append(makeDelete(bRec, bRec));
         } else if (hasS && !hasT && !hasB) {
             result.toTarget.append(makeCreate(sRec));
         } else if (!hasS && hasT && !hasB) {

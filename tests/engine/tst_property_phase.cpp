@@ -43,7 +43,7 @@ private slots:
 
 void TestPropertyPhase::computeMapDiff_emptyAllReturnsNothing()
 {
-    const PropertyDiff diff = computeMapDiff({}, {}, {});
+    const MapPropertyDiff diff = computeMapDiff({}, {}, {});
     QVERIFY(diff.toApplyToTarget.isEmpty());
     QVERIFY(diff.toApplyToSource.isEmpty());
     QVERIFY(diff.conflicts.isEmpty());
@@ -57,7 +57,7 @@ void TestPropertyPhase::computeMapDiff_srcAddedKey_propagatesToTarget()
     const QVariantMap tgt;
     const QVariantMap base;
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     QCOMPARE(diff.toApplyToTarget.size(), 1);
     QCOMPARE(diff.toApplyToTarget.value(QStringLiteral("color")).toString(),
@@ -74,7 +74,7 @@ void TestPropertyPhase::computeMapDiff_tgtAddedKey_propagatesToSource()
     tgt.insert(QStringLiteral("description"), QStringLiteral("Project plan"));
     const QVariantMap base;
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     QVERIFY(diff.toApplyToTarget.isEmpty());
     QCOMPARE(diff.toApplyToSource.size(), 1);
@@ -93,7 +93,7 @@ void TestPropertyPhase::computeMapDiff_bothChangedSameValue_noConflict()
     QVariantMap base;
     base.insert(QStringLiteral("color"), QStringLiteral("#0000ff"));
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     // Already converged: no apply needed in either direction.
     QVERIFY(diff.toApplyToTarget.isEmpty());
@@ -111,7 +111,7 @@ void TestPropertyPhase::computeMapDiff_bothChangedDifferently_yieldsConflict()
     QVariantMap base;
     base.insert(QStringLiteral("color"), QStringLiteral("#00ff00"));
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     QVERIFY(diff.toApplyToTarget.isEmpty());
     QVERIFY(diff.toApplyToSource.isEmpty());
@@ -127,7 +127,7 @@ void TestPropertyPhase::computeMapDiff_neitherChanged_noDiff()
     const QVariantMap tgt = src;
     const QVariantMap base = src;
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     QVERIFY(diff.toApplyToTarget.isEmpty());
     QVERIFY(diff.toApplyToSource.isEmpty());
@@ -144,7 +144,7 @@ void TestPropertyPhase::computeMapDiff_srcModifiedKey_propagatesToTarget()
     QVariantMap base;
     base.insert(QStringLiteral("description"), QStringLiteral("Original"));
 
-    const PropertyDiff diff = computeMapDiff(src, tgt, base);
+    const MapPropertyDiff diff = computeMapDiff(src, tgt, base);
 
     QCOMPARE(diff.toApplyToTarget.size(), 1);
     QCOMPARE(diff.toApplyToTarget.value(QStringLiteral("description")).toString(),

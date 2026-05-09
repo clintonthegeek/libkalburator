@@ -4,11 +4,11 @@
 
 namespace Kalburator::Sync {
 
-PropertyDiff computeMapDiff(const QVariantMap &src,
-                            const QVariantMap &tgt,
-                            const QVariantMap &base)
+MapPropertyDiff computeMapDiff(const QVariantMap &src,
+                               const QVariantMap &tgt,
+                               const QVariantMap &base)
 {
-    PropertyDiff diff;
+    MapPropertyDiff diff;
 
     // Union of keys across all three maps.
     QSet<QString> keys;

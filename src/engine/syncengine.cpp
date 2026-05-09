@@ -37,6 +37,7 @@
 #include <QMetaObject>
 #include <QTimer>
 #include <QMutexLocker>
+#include <QUuid>
 #include <memory>
 
 namespace Kalburator::Sync {
@@ -1499,6 +1500,34 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
                 ++m_unifiedMerge.conflictsResolved;
                 break;
             }
+            case ConflictResolution::Duplicate: {
+                const bool srcDeleted = op.record.id.isEmpty();
+                const bool tgtDeleted = op.targetRecord.id.isEmpty();
+                if (srcDeleted) {
+                    m_unifiedMerge.finalSource.append(op.targetRecord);
+                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                } else if (tgtDeleted) {
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                } else {
+                    BackendRecord clone = op.targetRecord;
+                    clone.id = op.targetRecord.id
+                               + QStringLiteral("-dup-")
+                               + QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    if (!op.targetRecord.id.isEmpty() && !clone.data.isEmpty()) {
+                        clone.data.replace(
+                            QByteArrayLiteral("UID:") + op.targetRecord.id.toUtf8(),
+                            QByteArrayLiteral("UID:") + clone.id.toUtf8());
+                    }
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.finalTarget.append(clone);
+                    m_unifiedMerge.finalSource.append(clone);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(clone);
+                }
+                ++m_unifiedMerge.conflictsResolved;
+                break;
+            }
             default: {
                 // Skip / AskUser / unsupported → defer.
                 ConflictInfo info;
@@ -1558,6 +1587,23 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         qDebug() << "SyncEngineWorker::dispatchFirstSync - target non-empty, deferring to quick-path for"
                  << request.mapping.id;
         return false;
+    }
+
+    // Even if target is empty, blob baselines from a prior sync mean this
+    // is NOT a true first sync — the target may be empty due to a deletion
+    // or conflict resolution. Run the normal diff path instead of mirroring.
+    if (m_blobBaselines && m_engine) {
+        bool hasExistingBaselines = false;
+        BlobBaselineStore *bbs = m_blobBaselines;
+        const QString mappingId = request.mapping.id;
+        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &hasExistingBaselines]() {
+            hasExistingBaselines = !bbs->baselinesForMappingV3(mappingId).isEmpty();
+        }, Qt::BlockingQueuedConnection);
+        if (hasExistingBaselines) {
+            qDebug() << "SyncEngineWorker::dispatchFirstSync - blob baselines exist, skipping fast path for"
+                     << request.mapping.id;
+            return false;
+        }
     }
 
     qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, running inline blob mirror for"
@@ -2076,12 +2122,8 @@ void SyncEngineWorker::unifiedHandleConflicts()
     // non-calendar domains (blob/contacts/memo/todo).
     const ConflictResolution effectivePolicy = m_unifiedPolicy;
 
-    // OneWayDownload: target is authoritative; source-only changes must NOT
-    // flow to target (blobBatchDiff is mode-agnostic, so we filter here).
-    if (m_currentRequest.mapping.mode == SyncMode::OneWayDownload) {
-        unifiedContinueAfterConflicts();
-        return;
-    }
+    const bool filterNonConflictToTarget =
+        (m_currentRequest.mapping.mode == SyncMode::OneWayDownload);
 
     const auto &toTarget = m_unifiedDiff.toTarget;
     for (int i = m_unifiedConflictIdx; i < toTarget.size(); ++i) {
@@ -2094,13 +2136,16 @@ void SyncEngineWorker::unifiedHandleConflicts()
         using Kind = EngineDiffOp::Kind;
 
         if (op.kind != Kind::Conflict) {
-            // Non-conflict: record goes straight to finalTarget.
-            BackendRecord rec = op.record;
-            if (op.kind == Kind::Delete)
-                rec.isDeleted = true;
-            m_unifiedMerge.finalTarget.append(rec);
-            if (op.kind != Kind::Delete)
-                m_unifiedMerge.updatedBaselines.append(rec);
+            // Non-conflict: skip in OneWayDownload (source changes must not
+            // flow to target — blobBatchDiff is mode-agnostic, so filter here).
+            if (!filterNonConflictToTarget) {
+                BackendRecord rec = op.record;
+                if (op.kind == Kind::Delete)
+                    rec.isDeleted = true;
+                m_unifiedMerge.finalTarget.append(rec);
+                if (op.kind != Kind::Delete)
+                    m_unifiedMerge.updatedBaselines.append(rec);
+            }
             continue;
         }
 
@@ -2121,7 +2166,9 @@ void SyncEngineWorker::unifiedHandleConflicts()
                 info.calendarId      = m_currentRequest.mapping.sourceCalendar;
                 info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
                 info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                info.type            = ConflictType::BothModified;
+                info.type            = (op.record.id.isEmpty() || op.targetRecord.id.isEmpty())
+                                           ? ConflictType::ModifyDelete
+                                           : ConflictType::BothModified;
                 info.detectedAt      = QDateTime::currentDateTimeUtc();
                 info.sourceModified  = op.record.lastModified;
                 info.targetModified  = op.targetRecord.lastModified;
@@ -2143,7 +2190,9 @@ void SyncEngineWorker::unifiedHandleConflicts()
                 info.calendarId      = m_currentRequest.mapping.sourceCalendar;
                 info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
                 info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                info.type            = ConflictType::BothModified;
+                info.type            = (op.record.id.isEmpty() || op.targetRecord.id.isEmpty())
+                                           ? ConflictType::ModifyDelete
+                                           : ConflictType::BothModified;
                 info.detectedAt      = QDateTime::currentDateTimeUtc();
                 emit conflictDetected(info);
                 m_currentResult.unresolvedConflicts.append(info);
@@ -2161,8 +2210,47 @@ void SyncEngineWorker::unifiedHandleConflicts()
             case ConflictResolution::TargetWins:
                 sourceWins = false; resolved = true; break;
             case ConflictResolution::LastWriteWins:
+                // For modify-delete, the deleted side has a null/invalid
+                // lastModified, so the modifier always wins via >= comparison.
                 sourceWins = op.record.lastModified >= op.targetRecord.lastModified;
                 resolved = true; break;
+            case ConflictResolution::Duplicate: {
+                const bool srcDeleted = op.record.id.isEmpty();
+                const bool tgtDeleted = op.targetRecord.id.isEmpty();
+                if (srcDeleted) {
+                    // Source deleted, target modified: keep modified version.
+                    m_unifiedMerge.finalSource.append(op.targetRecord);
+                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                } else if (tgtDeleted) {
+                    // Target deleted, source modified: keep modified version.
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                } else {
+                    // Both modified: clone target record under a new UUID;
+                    // push source version to target (original UID) and clone
+                    // to both sides.
+                    BackendRecord clone = op.targetRecord;
+                    clone.id = op.targetRecord.id
+                               + QStringLiteral("-dup-")
+                               + QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    // For calendar backends, BackendRecord.id == iCal UID.
+                    // Rewrite the UID line in the iCal data so CalendarPluginWriter
+                    // writes the clone to the correct file (new UID, not the
+                    // original — which would overwrite the source record).
+                    if (!op.targetRecord.id.isEmpty() && !clone.data.isEmpty()) {
+                        clone.data.replace(
+                            QByteArrayLiteral("UID:") + op.targetRecord.id.toUtf8(),
+                            QByteArrayLiteral("UID:") + clone.id.toUtf8());
+                    }
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.finalTarget.append(clone);
+                    m_unifiedMerge.finalSource.append(clone);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(clone);
+                }
+                ++m_unifiedMerge.conflictsResolved;
+                break;
+            }
             case ConflictResolution::Skip:
                 ++m_unifiedMerge.conflictsDeferred; break;
             default:
@@ -2170,11 +2258,25 @@ void SyncEngineWorker::unifiedHandleConflicts()
         }
         if (resolved) {
             if (sourceWins) {
-                m_unifiedMerge.finalTarget.append(op.record);
-                m_unifiedMerge.updatedBaselines.append(op.record);
+                if (op.record.id.isEmpty()) {
+                    // Source was deleted — propagate deletion to target.
+                    BackendRecord doomed = op.baselineRecord;
+                    doomed.isDeleted = true;
+                    m_unifiedMerge.finalTarget.append(doomed);
+                } else {
+                    m_unifiedMerge.finalTarget.append(op.record);
+                    m_unifiedMerge.updatedBaselines.append(op.record);
+                }
             } else {
-                m_unifiedMerge.finalSource.append(op.targetRecord);
-                m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                if (op.targetRecord.id.isEmpty()) {
+                    // Target was deleted — propagate deletion to source.
+                    BackendRecord doomed = op.baselineRecord;
+                    doomed.isDeleted = true;
+                    m_unifiedMerge.finalSource.append(doomed);
+                } else {
+                    m_unifiedMerge.finalSource.append(op.targetRecord);
+                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                }
             }
             ++m_unifiedMerge.conflictsResolved;
         }
@@ -2372,7 +2474,7 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
         return;  // nothing to do
     }
 
-    const PropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
+    const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
     if (!diff.toApplyToTarget.isEmpty()) {
         plugin->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
