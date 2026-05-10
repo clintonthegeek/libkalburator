@@ -11,7 +11,17 @@
 
 namespace Kalburator::Shape { class RecordMerger; }
 
+namespace Kalburator::Engine {
+struct EngineDiff;
+struct EngineMerge;
+struct EngineDiffOp;
+} // namespace Kalburator::Engine
+
 namespace Kalburator::Sync {
+
+using Kalburator::Engine::EngineDiff;
+using Kalburator::Engine::EngineMerge;
+using Kalburator::Engine::EngineDiffOp;
 
 /// Phase Ia.5 Task 16: free-function home for the batch-shaped blob
 /// diff/merge logic that previously lived on `BlobDomainAdapter`.

@@ -4,7 +4,7 @@
 #include <QStringList>
 #include <QVariantMap>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 /// Result of a 3-way QVariantMap diff over (source, target, baseline).
 /// Used by SyncEngineWorker's generic property phase (Phase Ia.5 Task 7).
@@ -46,4 +46,4 @@ MapPropertyDiff computeMapDiff(
     const QVariantMap &tgt,
     const QVariantMap &base);
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

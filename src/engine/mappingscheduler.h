@@ -8,7 +8,7 @@
 #include <QStringList>
 #include <functional>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 /// Resource-aware FIFO scheduler for sync mappings. Tracks which backend
 /// resources each mapping uses so that resource-based cancellation
@@ -67,6 +67,6 @@ private:
     QHash<QString, QSet<QString>> m_resources; // mapping id → resource set
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine
 
 #endif // KALBURATOR_MAPPINGSCHEDULER_H

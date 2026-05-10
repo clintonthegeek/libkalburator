@@ -1,6 +1,6 @@
 #include "syncenginefuture.h"
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 SyncEngineFuture::SyncEngineFuture(QFuture<QList<SyncResult>> future)
     : m_future(std::move(future))
@@ -44,4 +44,4 @@ QString SyncEngineFuture::lostResourceId() const
     return m_state->resourceId;
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

@@ -66,11 +66,11 @@ public:
                    const Kalburator::Sync::TranscodingPlan &) override {}
     void removeItem(const QString &, const QString &) override {}
 
-    Kalburator::Sync::FetchOperation  *fetchItems(const QString &) override { return nullptr; }
-    Kalburator::Sync::PushOperation   *pushItems(const QString &,
+    Kalburator::Engine::FetchOperation  *fetchItems(const QString &) override { return nullptr; }
+    Kalburator::Engine::PushOperation   *pushItems(const QString &,
                                                   const QList<KCalendarCore::Incidence::Ptr> &,
                                                   const Kalburator::Sync::TranscodingPlan &) override { return nullptr; }
-    Kalburator::Sync::DeleteOperation *deleteItems(const QString &, const QStringList &) override { return nullptr; }
+    Kalburator::Engine::DeleteOperation *deleteItems(const QString &, const QStringList &) override { return nullptr; }
 
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
 

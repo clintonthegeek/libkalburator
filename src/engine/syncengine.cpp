@@ -20,6 +20,7 @@
 // collection.h removed — using icalendarcollection.h only
 #include "isyncconfigstore.h"
 #include "icalendarcollection.h"
+#include "backendcapabilities.h"
 #include "backendconfiguration.h"
 #include "syncbackend.h"
 #include "changedetection.h"
@@ -40,7 +41,7 @@
 #include <QUuid>
 #include <memory>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 SyncEngine::SyncEngine(BackendRegistry *registry,
                                    ISyncHost *host,
@@ -968,9 +969,9 @@ static void resolveConflictDisplayNames(ConflictInfo &conflict, BackendRegistry 
         if (backendId.isEmpty()) return {};
         SyncBackend *backend = registry ? registry->backendInstance(backendId) : nullptr;
         if (backend) {
-            return BackendConfiguration::friendlyTypeName(backend->backendType());
+            return Sync::BackendConfiguration::friendlyTypeName(backend->backendType());
         }
-        return BackendConfiguration::friendlyTypeName(backendId);
+        return Sync::BackendConfiguration::friendlyTypeName(backendId);
     };
 
     if (conflict.sourceBackendDisplayName.isEmpty())
@@ -1963,7 +1964,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // Phase Ia.5 Task 16: BlobDomainAdapter folded into free-function
     // batch helpers. Phase Ib.5 (or later) replaces these with a
     // per-record IRecordDiffer/Merger walk owned by the domain plugin.
-    const BackendCapabilities srcCaps, tgtCaps;
+    const Sync::BackendCapabilities srcCaps, tgtCaps;
     const EngineDiff engineDiff = blobBatchDiff(
         sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
 
@@ -2499,4 +2500,4 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
     }
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

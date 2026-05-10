@@ -1,6 +1,6 @@
 #include "enginediff.h"
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 bool EngineDiff::hasConflicts() const noexcept
 {
@@ -22,4 +22,4 @@ int EngineDiff::totalOperations() const noexcept
     return toSource.size() + toTarget.size();
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

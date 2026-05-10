@@ -34,7 +34,6 @@ class ConflictHandlerRegistry;
 } // namespace Kalburator::Conflict
 
 namespace Kalburator::Sync {
-
 class BackendRegistry;
 class IBlobBackend;
 class ISyncHost;
@@ -44,17 +43,56 @@ class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
 class DecSyncActiveController;
+class TranscodingRouter;
+} // namespace Kalburator::Sync
+
+namespace Kalburator::Engine {
+
+// Forward declarations
 class SyncEngine;
+
+// Using declarations for value types from Kalburator::Sync
+using Kalburator::Sync::SyncMapping;
+using Kalburator::Sync::ExecutionOverride;
+using Kalburator::Sync::ConflictResolution;
+using Kalburator::Sync::ConflictInfo;
+using Kalburator::Sync::SyncDiff;
+using Kalburator::Sync::SyncChange;
+using Kalburator::Sync::SyncResult;
+using Kalburator::Sync::SyncOperation;  // base class for FetchOperation, etc.
+using Kalburator::Sync::FetchOperation;
+using Kalburator::Sync::PushOperation;
+using Kalburator::Sync::DeleteOperation;
+
+// Using declarations for pointer/reference types from Kalburator::Sync
+using Kalburator::Sync::BackendRegistry;
+using Kalburator::Sync::IBlobBackend;
+using Kalburator::Sync::ISyncHost;
+using Kalburator::Sync::SyncBackend;
+using Kalburator::Sync::ICalendarCollection;
+using Kalburator::Sync::SyncConflictStore;
+using Kalburator::Sync::ISyncConfigStore;
+using Kalburator::Sync::ConflictManager;
+using Kalburator::Sync::DecSyncActiveController;
+using Kalburator::Sync::TranscodingRouter;
+
+// Using declarations for other types from Kalburator::Sync
+using Kalburator::Sync::TranscodingRegistry;
+using Kalburator::Sync::SyncChangeType;
+using Kalburator::Sync::SyncRecord;
+using Kalburator::Sync::SyncMode;
+using Kalburator::Sync::ConflictType;
+using Kalburator::Sync::TranscodingPlan;
 
 // ExecutionOverride lives in synctypes.h.
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine
 
 namespace Kalburator::Shape {
 class DomainPlugin;
 }
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 /**
  * @brief Internal worker class — runs sync operations on a background thread.
@@ -769,9 +807,9 @@ private:
     void startWorkerThread();
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine
 
-Q_DECLARE_METATYPE(Kalburator::Sync::SyncEngineWorker::Request)
-Q_DECLARE_METATYPE(Kalburator::Sync::SyncEngineWorker::Mode)
+Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Request)
+Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Mode)
 
 #endif // KALBURATOR_SYNCENGINE_H

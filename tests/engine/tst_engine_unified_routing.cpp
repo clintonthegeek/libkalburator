@@ -60,7 +60,7 @@ using Kalburator::Sync::IBlobBackend;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
-using Kalburator::Sync::SyncEngine;
+using Kalburator::Engine::SyncEngine;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;

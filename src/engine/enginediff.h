@@ -6,7 +6,9 @@
 #include <QList>
 #include <QString>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
+
+using Kalburator::Sync::BackendRecord;
 
 /// Single operation produced by the engine's diff phase. The
 /// engine inspects DiffOp at the control-flow level (kind counts,
@@ -72,6 +74,6 @@ struct EngineApplyResult
     QList<BackendRecord> appliedBaselines;
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine
 
 #endif // KALBURATOR_ENGINE_ENGINEDIFF_H

@@ -6,7 +6,9 @@
 #include <QString>
 #include <memory>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
+
+using Kalburator::Sync::SyncResult;
 
 /// Reason a SyncEngineFuture was cancelled. Attached as a side-channel
 /// because Qt6's QFuture does not carry cancellation reasons natively.
@@ -65,6 +67,6 @@ private:
     std::shared_ptr<State>     m_state;
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine
 
 #endif // KALBURATOR_SYNCENGINEFUTURE_H

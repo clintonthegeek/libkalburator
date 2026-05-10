@@ -1,6 +1,6 @@
 #include "mappingscheduler.h"
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 void MappingScheduler::enqueue(const QStringList &mappingIds,
                                 const QHash<QString, QSet<QString>> &resourceMap,
@@ -57,4 +57,4 @@ void MappingScheduler::tryDispatch()
         m_dispatch(m_active);
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

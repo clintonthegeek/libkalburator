@@ -10,8 +10,8 @@ using Kalburator::Sync::BackendCapabilities;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::blobBatchDiff;
 using Kalburator::Sync::ConflictResolution;
-using Kalburator::Sync::EngineDiff;
-using Kalburator::Sync::EngineDiffOp;
+using Kalburator::Engine::EngineDiff;
+using Kalburator::Engine::EngineDiffOp;
 
 namespace {
 

@@ -6,7 +6,7 @@
 #include <QSignalSpy>
 #include <QtTest>
 
-using Kalburator::Sync::SyncOperation;
+using Kalburator::Engine::SyncOperation;
 
 class TstSyncOperationContract : public QObject
 {

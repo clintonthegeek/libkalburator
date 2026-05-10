@@ -2,7 +2,7 @@
 
 #include <QSet>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Engine {
 
 MapPropertyDiff computeMapDiff(const QVariantMap &src,
                                const QVariantMap &tgt,
@@ -57,4 +57,4 @@ MapPropertyDiff computeMapDiff(const QVariantMap &src,
     return diff;
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Engine

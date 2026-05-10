@@ -38,7 +38,7 @@ using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::ExecutionOverride;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
-using Kalburator::Sync::SyncEngine;
+using Kalburator::Engine::SyncEngine;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -161,7 +161,7 @@ public:
                    const QMap<QString, QString> &,
                    const Kalburator::Sync::TranscodingPlan &) override {}
     void removeItem(const QString &, const QString &) override {}
-    Kalburator::Sync::PushOperation *pushItems(
+    Kalburator::Engine::PushOperation *pushItems(
         const QString &,
         const QList<KCalendarCore::Incidence::Ptr> &,
         const Kalburator::Sync::TranscodingPlan &) override { return nullptr; }
