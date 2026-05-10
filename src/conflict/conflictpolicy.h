@@ -62,10 +62,8 @@ enum class FallbackBehavior
 };
 
 // NOTE: ConnectionBehavior was stripped when lifting qsynccore into
-// libkalburator (Phase B, 2026-04-20). HotSync session-keep-alive is
-// Palm-specific; Wild Palms re-adds it on a Palm-backend config
-// subclass. See docs/phase0/02-inventory-wildpalms.md
-// §"Conflict-policy audit".
+// libkalburator (Phase B, 2026-04-20). Session-keep-alive is device-specific;
+// applications re-add it on a device-backend config subclass as needed.
 
 /**
  * @brief Complete conflict resolution policy
