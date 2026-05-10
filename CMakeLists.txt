@@ -440,8 +440,8 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transcoding>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sinks>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
