@@ -1658,24 +1658,6 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
     for (const BackendRecord &r : records) {
         const QString ical = QString::fromUtf8(r.data);
         uidToIcal.insert(r.id, ical);
-
-        if (m_baselineStore && m_engine) {
-            Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-            const QString rId = r.id;
-            const QByteArray hashBytes = r.contentHash.toUtf8();
-            // G.4: store via mapping-keyed v3 API. Marshal to engine thread —
-            // BaselineStore (SQLite) is not thread-safe.
-            QMetaObject::invokeMethod(m_engine,
-                [bbs, mappingId, rId, hashBytes]() {
-                    Kalburator::Shape::CanonicalRecord rec;
-                    rec.recordId = rId;
-                    rec.shape    = Kalburator::Shape::Shape{
-                        Kalburator::Shape::DomainId{QStringLiteral("blob")},
-                        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
-                    rec.data = hashBytes;
-                    bbs->setBaselineV3(mappingId, rec);
-                }, Qt::BlockingQueuedConnection);
-        }
     }
     const QDateTime now = QDateTime::currentDateTime();
     if (m_baselineStore && m_engine) {
