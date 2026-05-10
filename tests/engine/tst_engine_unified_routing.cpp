@@ -346,7 +346,7 @@ void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
     // silently no-op. Cleaned by tmpDir.
     BlobBaselineStore baselines(
         tmpDir.filePath(QStringLiteral("blob-baselines.db")));
-    engine.setBlobBaselineStore(&baselines);
+    engine.setBaselineStore(&baselines);
 
     SyncMapping mapping;
     mapping.id              = mappingId;

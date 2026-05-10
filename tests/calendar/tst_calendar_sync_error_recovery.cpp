@@ -190,7 +190,7 @@ void TestCalendarSyncErrorRecovery::init()
 
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setBaselineStore(m_calendarBaselines.get());
-    m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
+    m_coordinator->setBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());

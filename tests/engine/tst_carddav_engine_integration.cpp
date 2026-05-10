@@ -380,7 +380,7 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
     BlobBaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines.db")));
-    engine.setBlobBaselineStore(&baselines);
+    engine.setBaselineStore(&baselines);
 
     SyncMapping mapping;
     mapping.id             = QStringLiteral("ib-task9-a");
@@ -511,7 +511,7 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
     BlobBaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines-v3.db")));
-    engine.setBlobBaselineStore(&baselines);
+    engine.setBaselineStore(&baselines);
 
     SyncMapping mapping;
     mapping.id             = QStringLiteral("ib-task9-b");
