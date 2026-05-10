@@ -36,8 +36,8 @@ class IBlobBackend;
  *   3. connect() — async; auth + capability discovery + collection
  *      enumeration. Emits connectionStateChanged(true) on success.
  *   4. createBackend(collectionId) — produce an IBlobBackend for one
- *      collection. Caller takes ownership; backend self-marshals if
- *      needed (see WildPalms's PalmDeviceAccess pattern).
+ *      collection. Caller takes ownership; backend self-marshals async
+ *      operations if needed.
  *   5. disconnect() — tears down backends, closes connection.
  *
  * Multiple instances of the same provider kind are allowed (e.g., two

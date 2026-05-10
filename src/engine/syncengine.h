@@ -514,11 +514,10 @@ public:
     /**
      * @brief Run a single mapping with a per-call execution override.
      *
-     * Used by WildPalms's Copy Palm→PC / Copy PC→Palm modes to run
-     * a mapping as a one-way mirror without persisting that direction
-     * on the mapping itself. The full implementation honoring the
-     * override lands in Task 9; this declaration with a stub body
-     * (Task 7) lets Task 8 write failing tests against the API.
+     * Runs a mapping as a one-way mirror (per the ExecutionOverride)
+     * without persisting that direction on the mapping itself. Lets
+     * callers run temporary direction overrides without modifying
+     * persistent sync configuration.
      */
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
