@@ -12,7 +12,7 @@
 
 #include "propertydiff.h"
 
-using namespace Kalburator::Sync;
+using namespace Kalburator::Engine;
 
 class TestPropertyPhase : public QObject
 {

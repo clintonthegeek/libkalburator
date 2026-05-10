@@ -20,6 +20,7 @@
 
 #include "stubsynchost.h"
 
+using namespace Kalburator::Engine;
 using namespace Kalburator::Sync;
 using namespace Kalburator::Sync::Test;
 
