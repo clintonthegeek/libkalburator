@@ -363,7 +363,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
                 ? SyncEngineWorker::Mode::Monitored
                 : SyncEngineWorker::Mode::Unmonitored;
             request.collectionId = m_collection ? m_collection->id() : QString();
-            request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
+            request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
             // Task 9: embed the per-call override (if any) and clear it so the
             // next no-override call doesn't accidentally inherit it.
             request.override = m_pendingOverride;
@@ -633,7 +633,7 @@ void SyncEngine::prepareSyncFastPath()
             freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
     }
 
-    if (!m_calendarBaselines) return;
+    if (!m_baselineStore) return;
 
     int wouldSkipCount = 0;
     int actualSkipCount = 0;
@@ -824,7 +824,7 @@ void SyncEngine::advanceQueue()
     request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
         ? SyncEngineWorker::Mode::Monitored : SyncEngineWorker::Mode::Unmonitored;
     request.collectionId = m_collection ? m_collection->id() : QString();
-    request.useQuickPath = !m_calendarBaselines || !m_calendarBaselines->hasBaselines(mapping.id);
+    request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
 
     QMetaObject::invokeMethod(m_worker, "processSync",
                               Qt::QueuedConnection,
@@ -839,12 +839,31 @@ void SyncEngine::advanceQueue()
 // Helper Methods
 // ============================================================================
 
+namespace {
+
+// Build a CanonicalRecord for calendar iCal text (calendar/ical shape).
+// Used by updateSyncMetadata and harvestBaselinesAfterFirstSync when routing
+// through Storage::BaselineStore::setBaselineV3.
+Kalburator::Shape::CanonicalRecord makeCalendarRec(const QString &uid,
+                                                    const QString &icalText)
+{
+    Kalburator::Shape::CanonicalRecord rec;
+    rec.recordId = uid;
+    rec.shape    = Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")}};
+    rec.data     = icalText.toUtf8();
+    return rec;
+}
+
+} // namespace
+
 void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
                                           const QList<SyncChange> &resolvedToTarget,
                                           const QList<SyncChange> &resolvedToSource)
 {
-    if (!m_calendarBaselines) {
-        qDebug() << "SyncEngine::updateSyncMetadata - no CalendarBaselineStore, skipping baseline update";
+    if (!m_baselineStore) {
+        qDebug() << "SyncEngine::updateSyncMetadata - no BaselineStore, skipping baseline update";
         return;
     }
 
@@ -859,10 +878,10 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
 
         if (change.type == SyncChangeType::Deleted) {
             // Remove baseline for deleted items
-            m_calendarBaselines->removeBaseline(mapping.id, change.uid);
+            m_baselineStore->removeBaselineV3(mapping.id, change.uid);
         } else if (change.sourceRecord.isValid()) {
             // Update baseline to current source state
-            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
+            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.sourceRecord.icalData));
         }
     }
 
@@ -873,9 +892,9 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
         }
 
         if (change.type == SyncChangeType::Deleted) {
-            m_calendarBaselines->removeBaseline(mapping.id, change.uid);
+            m_baselineStore->removeBaselineV3(mapping.id, change.uid);
         } else if (change.targetRecord.isValid()) {
-            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
+            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.targetRecord.icalData));
         }
     }
 
@@ -893,7 +912,7 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
         if (change.sourceRecord.isValid()) {
             qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(source wins/merged)";
-            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.sourceRecord.icalData);
+            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.sourceRecord.icalData));
         }
     }
 
@@ -906,22 +925,20 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
         if (change.targetRecord.isValid()) {
             qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
                      << change.uid << "(target wins)";
-            m_calendarBaselines->setBaseline(mapping.id, change.uid, change.targetRecord.icalData);
+            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.targetRecord.icalData));
         }
     }
 
     // For unchanged items, ensure baseline exists
     for (const QString &uid : diff.unchangedUids) {
-        if (!m_calendarBaselines->baseline(mapping.id, uid).isEmpty()) {
-            continue;  // Already has baseline
+        if (!m_baselineStore->baselineV3(mapping.id, uid).has_value()) {
+            // This shouldn't happen in normal operation, but handle gracefully
+            qDebug() << "SyncEngine::updateSyncMetadata - unchanged item has no baseline:" << uid;
         }
-
-        // This shouldn't happen in normal operation, but handle gracefully
-        qDebug() << "SyncEngine::updateSyncMetadata - unchanged item has no baseline:" << uid;
     }
 
     // Update last sync time
-    m_calendarBaselines->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
+    m_baselineStore->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
 }
 
 // ============================================================================
@@ -1049,7 +1066,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     }
 
     // Persist fresh revisions so the next sync's pre-pass has up-to-date baselines.
-    if (result.success && m_calendarBaselines) {
+    if (result.success && m_baselineStore) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
             const FreshSyncState &fresh = stateIt.value();
@@ -1614,8 +1631,8 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
 
 void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 {
-    if (!m_calendarBaselines) {
-        qDebug() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - no CalendarBaselineStore, skipping";
+    if (!m_baselineStore) {
+        qDebug() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - no BaselineStore, skipping";
         return;
     }
 
@@ -1642,12 +1659,13 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         const QString ical = QString::fromUtf8(r.data);
         uidToIcal.insert(r.id, ical);
 
-        if (m_baselineStore) {
+        if (m_baselineStore && m_engine) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             const QString rId = r.id;
             const QByteArray hashBytes = r.contentHash.toUtf8();
-            // G.4: store via mapping-keyed v3 API.
-            QMetaObject::invokeMethod(m_calendarBaselines,
+            // G.4: store via mapping-keyed v3 API. Marshal to engine thread —
+            // BaselineStore (SQLite) is not thread-safe.
+            QMetaObject::invokeMethod(m_engine,
                 [bbs, mappingId, rId, hashBytes]() {
                     Kalburator::Shape::CanonicalRecord rec;
                     rec.recordId = rId;
@@ -1660,11 +1678,17 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         }
     }
     const QDateTime now = QDateTime::currentDateTime();
-    QMetaObject::invokeMethod(m_calendarBaselines,
-        [this, mappingId, uidToIcal, now]() {
-            m_calendarBaselines->setBaselines(mappingId, uidToIcal);
-            m_calendarBaselines->setLastSyncTime(mappingId, now);
-        }, Qt::BlockingQueuedConnection);
+    if (m_baselineStore && m_engine) {
+        Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
+        // Marshal to engine thread — BaselineStore (SQLite) is not thread-safe.
+        QMetaObject::invokeMethod(m_engine,
+            [bbs, mappingId, uidToIcal, now]() {
+                for (auto it = uidToIcal.constBegin(); it != uidToIcal.constEnd(); ++it) {
+                    bbs->setBaselineV3(mappingId, makeCalendarRec(it.key(), it.value()));
+                }
+                bbs->setLastSyncTime(mappingId, now);
+            }, Qt::BlockingQueuedConnection);
+    }
 
     qDebug().noquote() << QString("SyncEngineWorker::harvestBaselinesAfterFirstSync - seeded %1 baselines for %2")
         .arg(uidToIcal.size()).arg(mappingId);
