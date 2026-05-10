@@ -1,26 +1,23 @@
-// src/calendar/calendarbaselinestore.h
 #ifndef KALBURATOR_CALENDARBASELINESTORE_H
 #define KALBURATOR_CALENDARBASELINESTORE_H
 
 #include <QHash>
 #include <QObject>
-#include <QSqlDatabase>
 #include <QString>
 #include <QDateTime>
+
+#include <memory>
+
+namespace Kalburator::Storage { class BaselineStore; }
 
 namespace Kalburator::Sync {
 
 /**
- * @brief 3-way merge baseline for calendar-typed sync.
+ * @brief Phase K.5 facade over Storage::BaselineStore.
  *
- * Owns:
- *   - per-(mappingId, uid) iCal text baselines for incidence merge
- *   - per-(mappingId, calendarId) JSON property baselines for calendar
- *     property merge
- *   - per-mappingId last-sync timestamps
- *
- * Carved out of the dissolving `SyncStore` during Phase D. SQLite-backed,
- * lives in the same `.kalburator-sync.db` file as the blob stores.
+ * Preserves the legacy iCal-text + property-JSON + last-sync-time
+ * surface used by the engine and tests during the migration window.
+ * Deleted in Task 13 once all callers move to Storage::BaselineStore.
  */
 class CalendarBaselineStore : public QObject
 {
@@ -36,13 +33,12 @@ public:
     bool    setBaseline(const QString &mappingId, const QString &uid,
                         const QString &icalText);
     bool    setBaselines(const QString &mappingId,
-                         const QHash<QString, QString> &uidToIcal);   // bulk
+                         const QHash<QString, QString> &uidToIcal);
     bool    removeBaseline(const QString &mappingId, const QString &uid);
-    bool    removeBaselines(const QString &mappingId);                // per-mapping
+    bool    removeBaselines(const QString &mappingId);
     QHash<QString, QString> allBaselines(const QString &mappingId) const;
     bool    clearBaselines();
-
-    bool hasBaselines(const QString &mappingId) const;
+    bool    hasBaselines(const QString &mappingId) const;
 
     // ---- property-JSON baselines ----
     QString propertyBaseline(const QString &mappingId, const QString &calendarId) const;
@@ -56,9 +52,7 @@ public:
     bool      setLastSyncTime(const QString &mappingId, const QDateTime &when);
 
 private:
-    bool ensureSchema();
-    QSqlDatabase m_db;
-    QString m_connectionName;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_store;
 };
 
 } // namespace Kalburator::Sync

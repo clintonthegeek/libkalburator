@@ -181,6 +181,12 @@ bool BaselineStore::ensureSchemaAndVersion()
         return false;
     }
 
+    // K.5 T7: ensure calendar_ical_baselines table exists (facade migration
+    // window table; deleted alongside CalendarBaselineStore in Task 13).
+    if (!ensureCalendarIcalSchema()) {
+        return false;
+    }
+
     // Single final user_version stamp for the full migration arc.
     // Both ensureSchemaV3 and ensureSchemaV5 only create tables; they do not
     // stamp user_version. This stamp covers all tables up to kSchemaVersion.
@@ -273,6 +279,153 @@ bool BaselineStore::ensureSchemaV5()
         return false;
     }
 
+    return true;
+}
+
+bool BaselineStore::ensureCalendarIcalSchema()
+{
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS calendar_ical_baselines ("
+            "  mapping_id TEXT NOT NULL,"
+            "  uid        TEXT NOT NULL,"
+            "  ical_text  TEXT NOT NULL,"
+            "  PRIMARY KEY (mapping_id, uid)"
+            ")"))) {
+        setError(QStringLiteral("CREATE TABLE calendar_ical_baselines failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_calendar_ical_baselines_mapping "
+        "ON calendar_ical_baselines (mapping_id)"));
+
+    return true;
+}
+
+// ===========================================================================
+// Calendar iCal-text baseline API (K.5 T7 facade migration window)
+// ===========================================================================
+
+bool BaselineStore::setCalendarIcalBaseline(const QString &mappingId, const QString &uid,
+                                            const QString &icalText)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setCalendarIcalBaseline: store not open"));
+        return false;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO calendar_ical_baselines (mapping_id, uid, ical_text) "
+        "VALUES (?, ?, ?)"));
+    q.addBindValue(mappingId);
+    q.addBindValue(uid);
+    q.addBindValue(icalText);
+    if (!q.exec()) {
+        setError(QStringLiteral("setCalendarIcalBaseline: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+QString BaselineStore::calendarIcalBaseline(const QString &mappingId, const QString &uid) const
+{
+    if (!m_isOpen) return {};
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT ical_text FROM calendar_ical_baselines "
+        "WHERE mapping_id = ? AND uid = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(uid);
+    if (q.exec() && q.next())
+        return q.value(0).toString();
+    return {};
+}
+
+QHash<QString, QString> BaselineStore::calendarIcalBaselinesForMapping(
+    const QString &mappingId) const
+{
+    QHash<QString, QString> out;
+    if (!m_isOpen) return out;
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT uid, ical_text FROM calendar_ical_baselines WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (q.exec()) {
+        while (q.next())
+            out.insert(q.value(0).toString(), q.value(1).toString());
+    }
+    return out;
+}
+
+bool BaselineStore::removeCalendarIcalBaseline(const QString &mappingId, const QString &uid)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("removeCalendarIcalBaseline: store not open"));
+        return false;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "DELETE FROM calendar_ical_baselines WHERE mapping_id = ? AND uid = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(uid);
+    if (!q.exec()) {
+        setError(QStringLiteral("removeCalendarIcalBaseline: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+bool BaselineStore::clearCalendarIcalBaselinesForMapping(const QString &mappingId)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearCalendarIcalBaselinesForMapping: store not open"));
+        return false;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "DELETE FROM calendar_ical_baselines WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec()) {
+        setError(QStringLiteral("clearCalendarIcalBaselinesForMapping: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+bool BaselineStore::hasCalendarIcalBaselines(const QString &mappingId) const
+{
+    if (!m_isOpen) return false;
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT COUNT(*) FROM calendar_ical_baselines WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (q.exec() && q.next())
+        return q.value(0).toInt() > 0;
+    return false;
+}
+
+bool BaselineStore::clearAllCalendarIcalBaselines()
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearAllCalendarIcalBaselines: store not open"));
+        return false;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("DELETE FROM calendar_ical_baselines"))) {
+        setError(QStringLiteral("clearAllCalendarIcalBaselines: %1").arg(q.lastError().text()));
+        return false;
+    }
     return true;
 }
 
