@@ -110,6 +110,9 @@ kalburator_add_calendar_test(tst_synctransaction)
 kalburator_add_calendar_test(tst_conflictmanager)
 target_link_libraries(tst_conflictmanager PRIVATE Qt6::Sql Qt6::Widgets)
 
+# Phase K.5 Task 6 — DomainPlugin::baselineProperties() virtual
+kalburator_add_calendar_test(tst_calendardomain_baseline_properties)
+
 # Phase G.2 — calendar property catalogue, differ, merger, plugin
 add_subdirectory(differs)
 add_subdirectory(plugin)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QList>
+#include <QStringList>
 #include <QVariantMap>
 #include <memory>
 
@@ -67,6 +68,14 @@ public:
         Kalburator::Sync::SyncBackend *backend,
         const QString &collectionId,
         const QVariantMap &props) const;
+
+    /// Property keys whose collection-level snapshots the engine should
+    /// persist via Storage::BaselineStore::setCollectionBaseline. The
+    /// engine queries collectionProperties() at sync time and stores
+    /// the subset corresponding to these keys. Default: empty list
+    /// (no property baselines kept). Calendar plugin overrides to
+    /// declare {"color", "description"}.
+    virtual QStringList baselineProperties() const { return {}; }
 };
 
 }  // namespace Kalburator::Shape

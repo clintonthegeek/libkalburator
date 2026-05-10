@@ -52,6 +52,10 @@ public:
         Kalburator::Sync::SyncBackend *backend,
         const QString &collectionId,
         const QVariantMap &props) const override;
+
+    /// Phase K.5 Task 6: keys the engine should persist via
+    /// Storage::BaselineStore::setCollectionBaseline.
+    QStringList baselineProperties() const override;
 };
 
 } // namespace Kalburator::Calendar

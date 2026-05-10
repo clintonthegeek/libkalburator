@@ -1,5 +1,7 @@
 #include "calendardomainplugin.h"
 
+#include <QStringList>
+
 #include "calendarplugin_writer.h"
 #include "syncbackend.h"
 #include "domainregistry.h"
@@ -117,6 +119,11 @@ void KalburatorDomainCalendar::applyCollectionProperties(
 {
     if (!backend || props.isEmpty()) return;
     backend->updateCalendar(collectionId, /*calendarId=*/collectionId, props);
+}
+
+QStringList KalburatorDomainCalendar::baselineProperties() const
+{
+    return { QStringLiteral("color"), QStringLiteral("description") };
 }
 
 } // namespace Kalburator::Calendar
