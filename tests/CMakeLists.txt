@@ -5,6 +5,7 @@
 add_subdirectory(blob)
 add_subdirectory(engine)
 add_subdirectory(journal)
+add_subdirectory(storage)
 add_subdirectory(calendar)
 add_subdirectory(transcoding)
 add_subdirectory(shape)

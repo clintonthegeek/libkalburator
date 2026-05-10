@@ -7,8 +7,8 @@
 
 #include "idmappingstore.h"
 
-namespace Kalburator::Sync {}
-using namespace Kalburator::Sync;
+namespace Kalburator::Storage {}
+using namespace Kalburator::Storage;
 
 class TestIDMappingStore : public QObject
 {

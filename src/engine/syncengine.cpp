@@ -99,7 +99,7 @@ void SyncEngine::startWorkerThread()
 
     // Set dependencies before moving to thread
     m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
-                              m_blobBaselines, this);
+                              m_baselineStore, this);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -144,9 +144,9 @@ void SyncEngine::setCollection(ICalendarCollection *collection)
     m_collection = collection;
 }
 
-void SyncEngine::setBlobBaselineStore(BlobBaselineStore *store)
+void SyncEngine::setBaselineStore(Kalburator::Storage::BaselineStore *store)
 {
-    m_blobBaselines = store;
+    m_baselineStore = store;
 }
 
 void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
@@ -1295,12 +1295,12 @@ SyncEngineWorker::~SyncEngineWorker()
 void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         CalendarBaselineStore *calendarBaselines,
                                         ICalendarCollection *collection,
-                                        BlobBaselineStore *blobBaselines,
+                                        Kalburator::Storage::BaselineStore *baselineStore,
                                         SyncEngine *engine)
 {
     m_controller = host;
     m_calendarBaselines = calendarBaselines;
-    m_blobBaselines = blobBaselines;
+    m_baselineStore = baselineStore;
     m_collection = collection;
     m_engine = engine;
 }
@@ -1536,9 +1536,9 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // Even if target is empty, blob baselines from a prior sync mean this
     // is NOT a true first sync — the target may be empty due to a deletion
     // or conflict resolution. Run the normal diff path instead of mirroring.
-    if (m_blobBaselines && m_engine) {
+    if (m_baselineStore && m_engine) {
         bool hasExistingBaselines = false;
-        BlobBaselineStore *bbs = m_blobBaselines;
+        Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         const QString mappingId = request.mapping.id;
         QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &hasExistingBaselines]() {
             hasExistingBaselines = !bbs->baselinesForMappingV3(mappingId).isEmpty();
@@ -1642,8 +1642,8 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         const QString ical = QString::fromUtf8(r.data);
         uidToIcal.insert(r.id, ical);
 
-        if (m_blobBaselines) {
-            BlobBaselineStore *bbs = m_blobBaselines;
+        if (m_baselineStore) {
+            Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             const QString rId = r.id;
             const QByteArray hashBytes = r.contentHash.toUtf8();
             // G.4: store via mapping-keyed v3 API.
@@ -1940,10 +1940,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     emit phaseChanged(mappingId, 3);
 
-    // --- Load baselines (run on engine thread — BlobBaselineStore is not thread-safe) ---
+    // --- Load baselines (run on engine thread — BaselineStore is not thread-safe) ---
     QList<BackendRecord> baselineRecords;
-    if (m_blobBaselines && m_engine) {
-        BlobBaselineStore *bbs = m_blobBaselines;
+    if (m_baselineStore && m_engine) {
+        Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
                 BackendRecord rec;
@@ -1967,8 +1967,8 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // cannot distinguish "source deleted this record" from "target has a
     // new record the source never knew about". The CalendarBaselineStore
     // path saved every known record after each successful sync; we replicate
-    // that guarantee here for BlobBaselineStore-backed paths.
-    if (m_blobBaselines && m_engine) {
+    // that guarantee here for BaselineStore-backed paths.
+    if (m_baselineStore && m_engine) {
         QHash<QString, BackendRecord> srcById;
         for (const auto &r : sourceRecords) srcById.insert(r.id, r);
         QHash<QString, BackendRecord> baselineById;
@@ -1989,7 +1989,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             implicitBaselines.append(c);
         }
         if (!implicitBaselines.isEmpty()) {
-            BlobBaselineStore *bbs = m_blobBaselines;
+            Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             QMetaObject::invokeMethod(m_engine, [bbs, mappingId, implicitBaselines]() {
                 for (const auto &c : implicitBaselines)
                     bbs->setBaselineV3(mappingId, c);
@@ -2399,8 +2399,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // partial write failure would cause "phantom deletions" on retry: the
         // next sync sees the baseline + no target record → wrongly tells source
         // to delete the record the target never actually committed.
-        if (m_blobBaselines && m_engine && !m_unifiedMerge.updatedBaselines.isEmpty()) {
-            BlobBaselineStore *bbs = m_blobBaselines;
+        if (m_baselineStore && m_engine && !m_unifiedMerge.updatedBaselines.isEmpty()) {
+            Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             const Kalburator::Shape::Shape blobShape{
                 Kalburator::Shape::DomainId{QStringLiteral("blob")},
                 Kalburator::Shape::EncodingId{QStringLiteral("raw")}};

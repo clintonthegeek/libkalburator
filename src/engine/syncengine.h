@@ -119,7 +119,7 @@ public:
     void setDependencies(ISyncHost *host,
                          CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection,
-                         BlobBaselineStore *blobBaselines = nullptr,
+                         Kalburator::Storage::BaselineStore *baselineStore = nullptr,
                          SyncEngine *engine = nullptr);
 
 public slots:
@@ -288,7 +288,7 @@ private:
     const TranscodingRouter &m_router;
     ISyncHost *m_controller = nullptr;
     CalendarBaselineStore *m_calendarBaselines = nullptr;
-    BlobBaselineStore *m_blobBaselines = nullptr;
+    Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
     ICalendarCollection *m_collection = nullptr;
     // Back-pointer to the owning SyncEngine. dispatchSync uses
     // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
@@ -365,14 +365,21 @@ public:
     CalendarBaselineStore *calendarBaselineStore() const { return m_calendarBaselines; }
 
     /**
-     * @brief Set the BlobBaselineStore for per-record hash-skip (Phase D Task 20).
+     * @brief Set the BaselineStore for per-record hash-skip (Phase D Task 20).
      *
      * When set, the engine's subsequent-sync blob fetch skips records whose
      * contentHash matches the stored baseline — avoiding unnecessary merge work
      * for unchanged records.
      */
-    void setBlobBaselineStore(BlobBaselineStore *store);
-    BlobBaselineStore *blobBaselineStore() const { return m_blobBaselines; }
+    void setBaselineStore(Kalburator::Storage::BaselineStore *store);
+    Kalburator::Storage::BaselineStore *baselineStore() const { return m_baselineStore; }
+
+    /// Phase K.5: deprecated alias for setBaselineStore(); retained until
+    /// PlanStan + WildPalms cut over in Tasks 11/12. Removed in Task 13.
+    [[deprecated("Phase K.5: use setBaselineStore()")]]
+    void setBlobBaselineStore(Kalburator::Storage::BaselineStore *store) {
+        setBaselineStore(store);
+    }
 
     /**
      * @brief Set the SyncConflictStore for persistent conflict records.
@@ -700,7 +707,7 @@ private:
     BackendRegistry *m_registry;
     ISyncHost *m_controller;
     CalendarBaselineStore *m_calendarBaselines = nullptr;
-    BlobBaselineStore *m_blobBaselines = nullptr;  // Phase D Task 20
+    Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;  // Phase D Task 20
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;

@@ -3,7 +3,7 @@
 
 #include "blobbaselinestore.h"
 
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 
 class TestBlobBaselineStorePerRecordKeys : public QObject
 {
@@ -23,7 +23,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_isolatesByBackend()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
     QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
 
     const QString coll   = QStringLiteral("coll1");
@@ -45,7 +45,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_isolatesByCollection()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
     QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
 
     const QString backend = QStringLiteral("backend1");
@@ -67,7 +67,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_bulkCommit_returnsAll()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
     QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
 
     const QString backend = QStringLiteral("backend-bulk");
@@ -102,7 +102,7 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_clearCollection_isolated()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("test.kalburator-sync.db")));
     QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
 
     const QString backend = QStringLiteral("backend-clear");
@@ -130,4 +130,4 @@ void TestBlobBaselineStorePerRecordKeys::tripleKey_clearCollection_isolated()
 }
 
 QTEST_GUILESS_MAIN(TestBlobBaselineStorePerRecordKeys)
-#include "tst_blob_baseline_store_per_record_keys.moc"
+#include "tst_baseline_store_per_record_keys.moc"

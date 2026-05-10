@@ -6,7 +6,7 @@
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
 
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
@@ -54,7 +54,7 @@ void TestBlobBaselineStoreV3::freshDb_hasV3Table()
     const QString dbPath = dir.filePath(QStringLiteral("test.db"));
 
     {
-        BlobBaselineStore store(dbPath);
+        BaselineStore store(dbPath);
         QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
     }
 
@@ -87,7 +87,7 @@ void TestBlobBaselineStoreV3::setAndGet_roundtrip()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("t.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("t.db")));
     QVERIFY(store.isOpen());
 
     const QString mid = QStringLiteral("mapping-1");
@@ -110,7 +110,7 @@ void TestBlobBaselineStoreV3::multipleRecordsPerMapping()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("t.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("t.db")));
     QVERIFY(store.isOpen());
 
     const QString mid = QStringLiteral("mapping-bulk");
@@ -134,7 +134,7 @@ void TestBlobBaselineStoreV3::remove_byRecord()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("t.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("t.db")));
     QVERIFY(store.isOpen());
 
     const QString mid = QStringLiteral("m");
@@ -153,7 +153,7 @@ void TestBlobBaselineStoreV3::clearMapping_removesAll()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("t.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("t.db")));
     QVERIFY(store.isOpen());
 
     const QString mid = QStringLiteral("m");
@@ -171,7 +171,7 @@ void TestBlobBaselineStoreV3::differentMappings_isolated()
 {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
-    BlobBaselineStore store(dir.filePath(QStringLiteral("t.db")));
+    BaselineStore store(dir.filePath(QStringLiteral("t.db")));
     QVERIFY(store.isOpen());
 
     QVERIFY(store.setBaselineV3(QStringLiteral("m1"),
@@ -222,7 +222,7 @@ void TestBlobBaselineStoreV3::migrate_fromV2_withResolver()
     QSqlDatabase::removeDatabase(QStringLiteral("setup_v2"));
 
     // Open with a resolver that maps (b1, c1) → mapping-A.
-    BlobBaselineStore store(dbPath);
+    BaselineStore store(dbPath);
     QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
 
     store.setMappingResolver([](const QString &bId, const QString &cId) {
@@ -270,7 +270,7 @@ void TestBlobBaselineStoreV3::migrate_fromV2_noResolver_dropsData()
     }
     QSqlDatabase::removeDatabase(QStringLiteral("setup_v2b"));
 
-    BlobBaselineStore store(dbPath);
+    BaselineStore store(dbPath);
     QVERIFY(store.isOpen());
     // No resolver set — migrateV3 must succeed (graceful degradation).
     QVERIFY(store.migrateV3());
@@ -291,7 +291,7 @@ void TestBlobBaselineStoreV3::migrate_idempotent_reopenSafe()
 
     // First open — fresh, user_version → 4.
     {
-        BlobBaselineStore store(dbPath);
+        BaselineStore store(dbPath);
         QVERIFY(store.isOpen());
         QVERIFY(store.setBaselineV3(QStringLiteral("m"),
                                      makeRecord(QStringLiteral("r1"), "v1")));
@@ -299,7 +299,7 @@ void TestBlobBaselineStoreV3::migrate_idempotent_reopenSafe()
 
     // Second open — should not migrate or alter data.
     {
-        BlobBaselineStore store(dbPath);
+        BaselineStore store(dbPath);
         QVERIFY2(store.isOpen(), qUtf8Printable(store.lastError()));
         const auto got = store.baselineV3(QStringLiteral("m"), QStringLiteral("r1"));
         QVERIFY(got.has_value());
@@ -340,7 +340,7 @@ void TestBlobBaselineStoreV3::migrate_orphanRow_skipped()
     }
     QSqlDatabase::removeDatabase(QStringLiteral("setup_orphan"));
 
-    BlobBaselineStore store(dbPath);
+    BaselineStore store(dbPath);
     QVERIFY(store.isOpen());
     store.setMappingResolver([](const QString &bId, const QString &) {
         if (bId == QLatin1String("b1")) return QStringList{QStringLiteral("m")};
@@ -354,4 +354,4 @@ void TestBlobBaselineStoreV3::migrate_orphanRow_skipped()
 }
 
 QTEST_MAIN(TestBlobBaselineStoreV3)
-#include "tst_blob_baseline_store_v3.moc"
+#include "tst_baseline_store_v3.moc"

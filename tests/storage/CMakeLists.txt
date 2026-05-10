@@ -1,9 +1,7 @@
-# Phase B3 — journal-layer tests.
-# Phase K.5.T2: tst_blob_baseline_store_* and tst_idmappingstore moved to
-# tests/storage/. Only tst_calendarjournal remains here (calendarjournal.{h,cpp}
-# is not moving in K.5).
+# Phase K.5 — storage-layer tests (moved from tests/journal/ in K.5.T2).
+# Each test is a QTEST_MAIN executable linking Kalburator::Sync.
 
-function(kalburator_add_journal_test TEST_NAME)
+function(kalburator_add_storage_test TEST_NAME)
     add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
     target_link_libraries(${TEST_NAME}
         PRIVATE
@@ -18,4 +16,6 @@ function(kalburator_add_journal_test TEST_NAME)
     )
 endfunction()
 
-kalburator_add_journal_test(tst_calendarjournal)
+kalburator_add_storage_test(tst_baseline_store_per_record_keys)
+kalburator_add_storage_test(tst_baseline_store_v3)
+kalburator_add_storage_test(tst_idmappingstore)
