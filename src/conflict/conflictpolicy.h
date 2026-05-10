@@ -236,4 +236,9 @@ FallbackBehavior fallbackBehaviorFromString(const QString &str);
 
 } // namespace Kalburator::Conflict
 
+// Compatibility alias for consumers still using Kalburator::Sync::QSyncCore
+namespace Kalburator::Sync {
+namespace QSyncCore = Kalburator::Conflict;
+} // namespace Kalburator::Sync
+
 #endif // QSYNCCORE_CONFLICTPOLICY_H
