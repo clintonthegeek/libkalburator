@@ -1776,7 +1776,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // fast-path, property-phase deferral, CustomMerge/Duplicate deferral.
     // CalendarPluginWriter::apply is called on the worker thread (not wrapped
     // in the outer BlockingQueuedConnection) by unifiedContinueAfterConflicts'
-    // applyBatch helper, which detects the writer type via dynamic_cast.
+    // applyBatch helper, which dispatches via IRecordWriter::threading().
 
     const auto &reg = Kalburator::Shape::TransformationRegistry::instance();
     std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);
