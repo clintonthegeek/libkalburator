@@ -12,8 +12,8 @@
  *
  * Schema evolution: this class creates the sync_id_mappings table and
  * stamps PRAGMA user_version = 3 on fresh DBs.
- * Extends via idempotent ALTER TABLE ADD COLUMN on open for the four
- * WildPalms-specific columns (last_synced, source_category,
+ * Extends via idempotent ALTER TABLE ADD COLUMN on open for optional
+ * application-specific columns (last_synced, source_category,
  * target_categories, archived).
  *
  * Not thread-safe. Callers must serialize access to a given instance.
@@ -35,8 +35,8 @@ struct IDMapping {
     QString     targetId;          ///< required, non-empty
     QString     calendarId;        ///< optional
     QDateTime   lastSynced;
-    QString     sourceCategory;    ///< optional; Palm-shaped backends only
-    QStringList targetCategories;  ///< optional
+    QString     sourceCategory;    ///< optional; application-specific annotation
+    QStringList targetCategories;  ///< optional; application-specific annotation
     bool        archived = false;
 
     bool isValid() const

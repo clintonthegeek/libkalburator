@@ -387,9 +387,8 @@ inline QList<SyncMapping> syncMappingsFromJson(const QJsonArray &arr) {
 }
 
 /// Per-call execution override for runSyncFuture(). Lets callers
-/// request mirror-direction semantics for a mapping that's
-/// otherwise configured for bidirectional sync. Used by WildPalms's
-/// Tools-menu Copy Palm→PC / Copy PC→Palm actions.
+/// request one-way mirror semantics for a mapping that's
+/// otherwise configured for bidirectional sync.
 struct ExecutionOverride {
     enum class Direction {
         Default,      ///< Use the mapping's stored direction (today: bidirectional).

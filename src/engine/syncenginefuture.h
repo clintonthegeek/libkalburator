@@ -14,7 +14,7 @@ using Kalburator::Sync::SyncResult;
 /// because Qt6's QFuture does not carry cancellation reasons natively.
 enum class CancellationReason {
     UserRequested,      ///< Caller explicitly cancelled (default)
-    ResourceLost,       ///< A backend resource became unavailable (e.g., Palm cradle disconnect)
+    ResourceLost,       ///< A sync resource became unavailable
     Timeout,            ///< Overall sync exceeded time limit
     UnrecoverableError, ///< Engine-internal failure with no recovery path
 };
