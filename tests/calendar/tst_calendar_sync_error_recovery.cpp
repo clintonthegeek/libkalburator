@@ -23,7 +23,7 @@
 
 #include "backendregistry.h"
 #include "blobbaselinestore.h"
-#include "calendarbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "canonicalrecord.h"
 #include "conflictmanager.h"
 #include "domainregistry.h"
@@ -141,7 +141,7 @@ private:
     std::unique_ptr<MockBackend>           m_source;
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
@@ -181,7 +181,7 @@ void TestCalendarSyncErrorRecovery::init()
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
     const QString blobDbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-blob.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     m_blobBaselines     = std::make_unique<BlobBaselineStore>(blobDbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
@@ -189,7 +189,7 @@ void TestCalendarSyncErrorRecovery::init()
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setBaselineStore(m_calendarBaselines.get());
     m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -295,9 +295,8 @@ void TestCalendarSyncErrorRecovery::targetUpdateItemFailure_propagatesAsSyncResu
     // Seed the baseline as the "agreed-upon prior state" (same content
     // as eventB so target is unmodified-relative-to-baseline; source is
     // modified). Real iCal text is required — the diff logic parses it.
-    m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
-                                     eventB->uid(),
-                                     eventToIcal(eventB));
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(eventB->uid(), eventToIcal(eventB)));
 
     m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems);
 
@@ -315,9 +314,8 @@ void TestCalendarSyncErrorRecovery::targetDeleteFailure_propagatesAsSyncResultFa
                            QStringLiteral("To Be Deleted"));
     m_target->addIncidence(QString::fromLatin1(kCalendarId), stale);
 
-    m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
-                                     stale->uid(),
-                                     eventToIcal(stale));
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(stale->uid(), eventToIcal(stale)));
 
     // Seed the blob baseline so the unified path (BlobBaselineStore) knows
     // the record previously existed — without it, the engine treats evt-stale

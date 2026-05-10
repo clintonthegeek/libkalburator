@@ -27,7 +27,7 @@
 
 #include "backendregistry.h"
 #include "blobbaselinestore.h"
-#include "calendarbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "syncengine.h"
@@ -126,7 +126,7 @@ private:
     std::unique_ptr<MockBackend>           m_source;
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
@@ -160,7 +160,7 @@ void TestCalendarSubsequentSyncUsesBlobView::init()
     m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId), hostCal);
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     m_blobBaselines     = std::make_unique<BlobBaselineStore>(dbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
@@ -185,7 +185,7 @@ void TestCalendarSubsequentSyncUsesBlobView::cleanup()
 void TestCalendarSubsequentSyncUsesBlobView::setupCoordinator()
 {
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setBaselineStore(m_calendarBaselines.get());
     m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -229,14 +229,14 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_usesBlobViewNotFetch
 {
     // Pre-seed baselines so useQuickPath = false (subsequent sync path).
     auto evt1 = makeEvent(QStringLiteral("evt-1"), QStringLiteral("Alpha"));
-    m_calendarBaselines->setBaselines(QString::fromLatin1(kMappingId),
-                                      {{ QStringLiteral("evt-1"), icalFor(evt1) }});
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QStringLiteral("evt-1"), icalFor(evt1)));
 
     m_source->addIncidence(QString::fromLatin1(kCalendarId), evt1);
     m_target->addIncidence(QString::fromLatin1(kCalendarId), evt1);
 
     // Pre-condition: baselines exist → useQuickPath will be false.
-    QVERIFY(m_calendarBaselines->hasBaselines(QString::fromLatin1(kMappingId)));
+    QVERIFY(!m_calendarBaselines->baselinesForMappingV3(QString::fromLatin1(kMappingId)).isEmpty());
 
     setupCoordinator();
     m_source->clearOperationLog();
@@ -264,11 +264,11 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_hashEqualRecordsAreS
     auto evt1 = makeEvent(QStringLiteral("evt-1"), QStringLiteral("Unchanged One"));
     auto evt2 = makeEvent(QStringLiteral("evt-2"), QStringLiteral("Unchanged Two"));
 
-    // Seed CalendarBaselineStore so hasBaselines() returns true.
-    m_calendarBaselines->setBaselines(QString::fromLatin1(kMappingId), {
-        { QStringLiteral("evt-1"), icalFor(evt1) },
-        { QStringLiteral("evt-2"), icalFor(evt2) },
-    });
+    // Seed BaselineStore so baselinesForMappingV3() returns non-empty.
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QStringLiteral("evt-1"), icalFor(evt1)));
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QStringLiteral("evt-2"), icalFor(evt2)));
 
     // Seed BlobBaselineStore with matching hashes so the hash skip fires.
     const QString hash1 = hashFor(evt1);
@@ -314,11 +314,11 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_modifiedRecordPropag
     auto evt2 = makeEvent(QStringLiteral("evt-2"), QStringLiteral("Unchanged Two"));
     auto evt3 = makeEvent(QStringLiteral("evt-3"), QStringLiteral("New Record"));
 
-    // CalendarBaselineStore: seed baselines for evt-1 and evt-2 only (not evt-3).
-    m_calendarBaselines->setBaselines(QString::fromLatin1(kMappingId), {
-        { QStringLiteral("evt-1"), icalFor(evt1) },
-        { QStringLiteral("evt-2"), icalFor(evt2) },
-    });
+    // BaselineStore: seed baselines for evt-1 and evt-2 only (not evt-3).
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QStringLiteral("evt-1"), icalFor(evt1)));
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QStringLiteral("evt-2"), icalFor(evt2)));
 
     // BlobBaselineStore: matching hashes for evt-1 and evt-2 so they are skipped.
     const QString hash1 = hashFor(evt1);

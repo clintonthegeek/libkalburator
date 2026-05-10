@@ -20,7 +20,8 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
-#include "calendarbaselinestore.h"
+#include "blobbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "syncengine.h"
@@ -103,7 +104,7 @@ private:
     std::unique_ptr<MockBackend>           m_source;
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>       m_coordinator;
@@ -137,7 +138,7 @@ void TestCalendarConflict::init()
                                                  hostCal);
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
@@ -149,7 +150,7 @@ void TestCalendarConflict::init()
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());
@@ -180,9 +181,8 @@ void TestCalendarConflict::seedDivergentConflictState()
     auto baselineEvent = makeEvent(QString::fromLatin1(kConflictUid),
                                    QStringLiteral("Baseline"));
     const QString baselineIcal = eventToIcal(baselineEvent);
-    m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
-                                     QString::fromLatin1(kConflictUid),
-                                     baselineIcal);
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QString::fromLatin1(kConflictUid), baselineIcal));
 
     m_source->addIncidence(QString::fromLatin1(kCalendarId),
                            makeEvent(QString::fromLatin1(kConflictUid),

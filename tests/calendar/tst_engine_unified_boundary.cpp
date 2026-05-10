@@ -24,7 +24,8 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
-#include "calendarbaselinestore.h"
+#include "blobbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "syncconflictstore.h"
@@ -89,7 +90,7 @@ private:
     std::unique_ptr<MockBackend>           m_calSource;
     std::unique_ptr<MockBackend>           m_calTarget;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>            m_engine;
@@ -127,14 +128,14 @@ void TestEngineUnifiedBoundary::init()
     seedCalendarFixtures();
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_engine->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_engine->setBaselineStore(m_calendarBaselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
     m_engine->setCollection(m_host->stubCollection());

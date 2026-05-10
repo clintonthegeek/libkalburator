@@ -20,7 +20,7 @@
 
 #include "backendregistry.h"
 #include "blobbaselinestore.h"
-#include "calendarbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
 #include "syncengine.h"
@@ -114,7 +114,7 @@ private:
     std::unique_ptr<MockBackend>           m_source;
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
@@ -150,7 +150,7 @@ void TestCalendarFirstSyncViaBlobEngine::init()
     m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId), hostCal);
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     m_blobBaselines     = std::make_unique<BlobBaselineStore>(dbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
@@ -175,7 +175,7 @@ void TestCalendarFirstSyncViaBlobEngine::cleanup()
 void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMapping> &mappings)
 {
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_coordinator->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_coordinator->setBaselineStore(m_calendarBaselines.get());
     m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
@@ -217,7 +217,7 @@ QStringList TestCalendarFirstSyncViaBlobEngine::targetUids() const
 void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlobEngine_andHarvestsBaselines()
 {
     // Pre-condition: no baselines for this mapping.
-    QVERIFY(!m_calendarBaselines->hasBaselines(QString::fromLatin1(kMappingId)));
+    QVERIFY(m_calendarBaselines->baselinesForMappingV3(QString::fromLatin1(kMappingId)).isEmpty());
 
     // Source has 3 events, target is empty.
     m_source->addIncidence(QString::fromLatin1(kCalendarId),
@@ -241,9 +241,8 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlo
     QVERIFY(targetUids().contains(QStringLiteral("evt-2")));
     QVERIFY(targetUids().contains(QStringLiteral("evt-3")));
 
-    // CalendarBaselineStore was seeded: hasBaselines returns true and 3 entries.
-    QVERIFY(m_calendarBaselines->hasBaselines(QString::fromLatin1(kMappingId)));
-    QCOMPARE(m_calendarBaselines->allBaselines(QString::fromLatin1(kMappingId)).size(), 3);
+    // BaselineStore was seeded: baselinesForMappingV3 returns 3 entries.
+    QCOMPARE(m_calendarBaselines->baselinesForMappingV3(QString::fromLatin1(kMappingId)).size(), 3);
 
     // BlobBaselineStore was seeded via mapping-keyed v3 API (G.4).
     const QString mid = QString::fromLatin1(kMappingId);

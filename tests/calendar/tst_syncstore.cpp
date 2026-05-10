@@ -3,9 +3,10 @@
  * @brief Tests for the three stores that replaced SyncStore (Phase D Task 9).
  *
  * SyncStore was dissolved into:
- *   - CalendarBaselineStore — iCal text baselines, property baselines, lastSyncTime
- *   - SyncConflictStore     — SQLite sync_conflicts table
- *   - BlobBaselineStore     — triple-keyed (backendId, collectionId, recordId) version hashes
+ *   - Storage::BaselineStore  — iCal text baselines (v3 API), collection baselines,
+ *                               last-sync-time (Phase K.5: unified store)
+ *   - SyncConflictStore       — SQLite sync_conflicts table
+ *   - Storage::BaselineStore  — triple-keyed (backendId, collectionId, recordId) version hashes
  *
  * CTags and local fingerprints are now private to RemoteCalendarBackend / LocalBackend
  * respectively and are not covered here.
@@ -16,9 +17,9 @@
 #include <QSignalSpy>
 #include <QFile>
 
-#include "calendarbaselinestore.h"
-#include "syncconflictstore.h"
 #include "blobbaselinestore.h"
+#include "calendar_test_helpers.h"
+#include "syncconflictstore.h"
 #include "synctypes.h"
 
 namespace Kalburator::Sync {}
@@ -47,13 +48,13 @@ private slots:
     void testClearVersionHashes();
     void testClearVersionHashesForBackend();
 
-    // Baseline tests (now in CalendarBaselineStore)
+    // Baseline tests (now in Storage::BaselineStore v3 API)
     void testSetAndGetBaseline();
     void testRemoveBaseline();
     void testAllBaselines();
     void testClearBaselines();
 
-    // Last sync time tests (now in CalendarBaselineStore)
+    // Last sync time tests (now in Storage::BaselineStore)
     void testLastSyncTime();
     void testLastSyncTimeNotSet();
 
@@ -77,9 +78,9 @@ private slots:
 
 private:
     QTemporaryDir *m_tempDir = nullptr;
-    CalendarBaselineStore *m_calBaselines = nullptr;
+    Kalburator::Storage::BaselineStore *m_calBaselines = nullptr;
     SyncConflictStore     *m_conflictStore = nullptr;
-    BlobBaselineStore     *m_blobStore = nullptr;
+    Kalburator::Storage::BaselineStore *m_blobStore = nullptr;
     QString dbPath() const;
 };
 
@@ -98,11 +99,11 @@ void TestSyncStore::init()
     QVERIFY(m_tempDir->isValid());
 
     const QString path = dbPath();
-    m_calBaselines  = new CalendarBaselineStore(path, this);
+    m_calBaselines  = new Kalburator::Storage::BaselineStore(path);
     m_conflictStore = new SyncConflictStore(path, this);
-    m_blobStore     = new BlobBaselineStore(path);
+    m_blobStore     = new Kalburator::Storage::BaselineStore(path);
 
-    QVERIFY2(m_calBaselines->isValid(),  qUtf8Printable(m_calBaselines->property("lastError").toString()));
+    QVERIFY2(m_calBaselines->isOpen(),   qUtf8Printable(m_calBaselines->lastError()));
     QVERIFY2(m_conflictStore->isOpen(),  qUtf8Printable(m_conflictStore->lastError()));
     QVERIFY2(m_blobStore->isOpen(),      qUtf8Printable(m_blobStore->lastError()));
 }
@@ -130,7 +131,7 @@ QString TestSyncStore::dbPath() const
 
 void TestSyncStore::testDatabaseCreation()
 {
-    QVERIFY(m_calBaselines->isValid());
+    QVERIFY(m_calBaselines->isOpen());
     QVERIFY(m_conflictStore->isOpen());
     QVERIFY(m_blobStore->isOpen());
     QVERIFY(QFile::exists(dbPath()));
@@ -145,7 +146,7 @@ void TestSyncStore::testDatabaseReopen()
 
     // Close and reopen
     delete m_blobStore;
-    m_blobStore = new BlobBaselineStore(dbPath());
+    m_blobStore = new Kalburator::Storage::BaselineStore(dbPath());
     QVERIFY(m_blobStore->isOpen());
 
     // Verify data persisted
@@ -163,7 +164,7 @@ void TestSyncStore::testInvalidPath()
 }
 
 // ============================================================================
-// Version hash tests — now in BlobBaselineStore (triple API)
+// Version hash tests — now in Storage::BaselineStore (triple API)
 // ============================================================================
 
 void TestSyncStore::testSetAndGetVersionHash()
@@ -259,7 +260,7 @@ void TestSyncStore::testClearVersionHashesForBackend()
 }
 
 // ============================================================================
-// Baseline tests — now in CalendarBaselineStore
+// Baseline tests — now in Storage::BaselineStore v3 API
 // ============================================================================
 
 void TestSyncStore::testSetAndGetBaseline()
@@ -273,39 +274,45 @@ void TestSyncStore::testSetAndGetBaseline()
         "END:VCALENDAR\n"
     );
 
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("test-uid"), icalData));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("test-uid"), icalData)));
 
-    QString retrieved = m_calBaselines->baseline(QStringLiteral("mapping1"),
-                                                  QStringLiteral("test-uid"));
+    QString retrieved = QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), QStringLiteral("test-uid"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data);
     QCOMPARE(retrieved, icalData);
 
     // Non-existent returns empty
-    QVERIFY(m_calBaselines->baseline(QStringLiteral("mapping1"),
-                                      QStringLiteral("nonexistent")).isEmpty());
+    QVERIFY(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), QStringLiteral("nonexistent"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data).isEmpty());
 }
 
 void TestSyncStore::testRemoveBaseline()
 {
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid1"), QStringLiteral("ical-data")));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid1"), QStringLiteral("ical-data"))));
 
-    QVERIFY(m_calBaselines->removeBaseline(QStringLiteral("mapping1"), QStringLiteral("uid1")));
+    QVERIFY(m_calBaselines->removeBaselineV3(QStringLiteral("mapping1"), QStringLiteral("uid1")));
 
-    QVERIFY(m_calBaselines->baseline(QStringLiteral("mapping1"),
-                                      QStringLiteral("uid1")).isEmpty());
+    QVERIFY(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), QStringLiteral("uid1"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data).isEmpty());
 }
 
 void TestSyncStore::testAllBaselines()
 {
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid1"), QStringLiteral("ical1")));
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid2"), QStringLiteral("ical2")));
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping2"),
-                                         QStringLiteral("uid3"), QStringLiteral("ical3")));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid1"), QStringLiteral("ical1"))));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid2"), QStringLiteral("ical2"))));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping2"),
+                                           calendarTestRec(QStringLiteral("uid3"), QStringLiteral("ical3"))));
 
-    QHash<QString, QString> baselines = m_calBaselines->allBaselines(QStringLiteral("mapping1"));
+    QHash<QString, QString> baselines;
+    for (const auto &rec : m_calBaselines->baselinesForMappingV3(QStringLiteral("mapping1"))) {
+        baselines.insert(rec.recordId, QString::fromUtf8(rec.data));
+    }
     QCOMPARE(baselines.size(), 2);
     QCOMPARE(baselines.value(QStringLiteral("uid1")), QStringLiteral("ical1"));
     QCOMPARE(baselines.value(QStringLiteral("uid2")), QStringLiteral("ical2"));
@@ -313,21 +320,21 @@ void TestSyncStore::testAllBaselines()
 
 void TestSyncStore::testClearBaselines()
 {
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid1"), QStringLiteral("ical1")));
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid2"), QStringLiteral("ical2")));
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping2"),
-                                         QStringLiteral("uid3"), QStringLiteral("ical3")));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid1"), QStringLiteral("ical1"))));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid2"), QStringLiteral("ical2"))));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping2"),
+                                           calendarTestRec(QStringLiteral("uid3"), QStringLiteral("ical3"))));
 
-    QVERIFY(m_calBaselines->removeBaselines(QStringLiteral("mapping1")));
+    QVERIFY(m_calBaselines->clearMappingV3(QStringLiteral("mapping1")));
 
-    QVERIFY(m_calBaselines->allBaselines(QStringLiteral("mapping1")).isEmpty());
-    QCOMPARE(m_calBaselines->allBaselines(QStringLiteral("mapping2")).size(), 1);
+    QVERIFY(m_calBaselines->baselinesForMappingV3(QStringLiteral("mapping1")).isEmpty());
+    QCOMPARE(m_calBaselines->baselinesForMappingV3(QStringLiteral("mapping2")).size(), 1);
 }
 
 // ============================================================================
-// Last sync time tests — now in CalendarBaselineStore
+// Last sync time tests — now in Storage::BaselineStore
 // ============================================================================
 
 void TestSyncStore::testLastSyncTime()
@@ -479,23 +486,25 @@ void TestSyncStore::testVacuum()
 {
     // Add and remove data to create fragmentation
     for (int i = 0; i < 100; ++i) {
-        m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                    QStringLiteral("uid%1").arg(i),
-                                    QStringLiteral("ical-data-%1").arg(i));
+        m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                      calendarTestRec(QStringLiteral("uid%1").arg(i),
+                                                      QStringLiteral("ical-data-%1").arg(i)));
     }
     for (int i = 0; i < 100; ++i) {
-        m_calBaselines->removeBaseline(QStringLiteral("mapping1"),
-                                       QStringLiteral("uid%1").arg(i));
+        m_calBaselines->removeBaselineV3(QStringLiteral("mapping1"),
+                                         QStringLiteral("uid%1").arg(i));
     }
 
     // Vacuum should not crash
     m_conflictStore->vacuum();
 
     // Database should still work
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"), QStringLiteral("new-uid"),
-                                         QStringLiteral("new-ical")));
-    QCOMPARE(m_calBaselines->baseline(QStringLiteral("mapping1"), QStringLiteral("new-uid")),
-             QStringLiteral("new-ical"));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("new-uid"), QStringLiteral("new-ical"))));
+    QCOMPARE(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), QStringLiteral("new-uid"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        QStringLiteral("new-ical"));
 }
 
 void TestSyncStore::testClearBackendData()
@@ -533,23 +542,25 @@ void TestSyncStore::testClearBackendData()
 void TestSyncStore::testClearMappingData()
 {
     // Add baselines and lastSyncTime for two mappings
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("uid1"), QStringLiteral("ical1")));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("uid1"), QStringLiteral("ical1"))));
     QVERIFY(m_calBaselines->setLastSyncTime(QStringLiteral("mapping1"),
                                              QDateTime::currentDateTimeUtc()));
 
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping2"),
-                                         QStringLiteral("uid2"), QStringLiteral("ical2")));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping2"),
+                                           calendarTestRec(QStringLiteral("uid2"), QStringLiteral("ical2"))));
 
     // Clear mapping1
-    QVERIFY(m_calBaselines->removeBaselines(QStringLiteral("mapping1")));
+    QVERIFY(m_calBaselines->clearMappingV3(QStringLiteral("mapping1")));
 
     // mapping1 baselines should be gone
-    QVERIFY(m_calBaselines->allBaselines(QStringLiteral("mapping1")).isEmpty());
+    QVERIFY(m_calBaselines->baselinesForMappingV3(QStringLiteral("mapping1")).isEmpty());
 
     // mapping2 data should remain
-    QCOMPARE(m_calBaselines->baseline(QStringLiteral("mapping2"), QStringLiteral("uid2")),
-             QStringLiteral("ical2"));
+    QCOMPARE(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping2"), QStringLiteral("uid2"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        QStringLiteral("ical2"));
 }
 
 // ============================================================================
@@ -565,8 +576,8 @@ void TestSyncStore::testEmptyStrings()
                               QStringLiteral("uid"), QStringLiteral("hash"));
     m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("cal"),
                               QString(), QStringLiteral("hash"));
-    m_calBaselines->setBaseline(QString(), QStringLiteral("uid"), QStringLiteral("ical"));
-    m_calBaselines->setBaseline(QStringLiteral("mapping"), QString(), QStringLiteral("ical"));
+    m_calBaselines->setBaselineV3(QString(), calendarTestRec(QStringLiteral("uid"), QStringLiteral("ical")));
+    m_calBaselines->setBaselineV3(QStringLiteral("mapping"), calendarTestRec(QString(), QStringLiteral("ical")));
 }
 
 void TestSyncStore::testSpecialCharacters()
@@ -575,14 +586,22 @@ void TestSyncStore::testSpecialCharacters()
     QString specialIcal = QStringLiteral(
         "BEGIN:VCALENDAR\nDESCRIPTION:value with 'quotes' & \"doubles\"\nEND:VCALENDAR\n");
 
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"), specialUid, specialIcal));
-    QCOMPARE(m_calBaselines->baseline(QStringLiteral("mapping1"), specialUid), specialIcal);
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(specialUid, specialIcal)));
+    QCOMPARE(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), specialUid)
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        specialIcal);
 
     // Unicode characters
     QString unicodeUid = QStringLiteral("uid-with-日本語-and-émojis-\U0001f389");
     QString unicodeIcal = QStringLiteral("BEGIN:VCALENDAR\nSUMMARY:日本語 event\nEND:VCALENDAR\n");
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"), unicodeUid, unicodeIcal));
-    QCOMPARE(m_calBaselines->baseline(QStringLiteral("mapping1"), unicodeUid), unicodeIcal);
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(unicodeUid, unicodeIcal)));
+    QCOMPARE(QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), unicodeUid)
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        unicodeIcal);
 }
 
 void TestSyncStore::testLargeData()
@@ -600,11 +619,12 @@ void TestSyncStore::testLargeData()
     }
     largeIcal += QStringLiteral("END:VCALENDAR\n");
 
-    QVERIFY(m_calBaselines->setBaseline(QStringLiteral("mapping1"),
-                                         QStringLiteral("large-uid"), largeIcal));
+    QVERIFY(m_calBaselines->setBaselineV3(QStringLiteral("mapping1"),
+                                           calendarTestRec(QStringLiteral("large-uid"), largeIcal)));
 
-    QString retrieved = m_calBaselines->baseline(QStringLiteral("mapping1"),
-                                                  QStringLiteral("large-uid"));
+    QString retrieved = QString::fromUtf8(
+        m_calBaselines->baselineV3(QStringLiteral("mapping1"), QStringLiteral("large-uid"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data);
     QCOMPARE(retrieved, largeIcal);
 }
 

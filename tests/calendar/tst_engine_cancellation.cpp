@@ -10,7 +10,8 @@
 #include "stubs/stubsynchost.h"
 
 #include "backendregistry.h"
-#include "calendarbaselinestore.h"
+#include "blobbaselinestore.h"
+#include "calendar_test_helpers.h"
 #include "mockbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
@@ -99,7 +100,7 @@ private:
     std::unique_ptr<MockBackend>           m_src;
     std::unique_ptr<MockBackend>           m_dst;
     std::unique_ptr<StubSyncHost>          m_host;
-    std::unique_ptr<CalendarBaselineStore> m_calendarBaselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncEngine>            m_engine;
 };
 
@@ -135,10 +136,10 @@ void TstEngineCancellation::init()
                                                  hostCal);
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
-    m_calendarBaselines = std::make_unique<CalendarBaselineStore>(dbPath);
+    m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
 
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_engine->setCalendarBaselineStore(m_calendarBaselines.get());
+    m_engine->setBaselineStore(m_calendarBaselines.get());
     m_engine->setCollection(m_host->stubCollection());
     m_engine->setSyncMappings({ makeCalendarMapping() });
 }
@@ -388,9 +389,8 @@ void TstEngineCancellation::cancelDuringConflictPause()
                                    QStringLiteral("Baseline"));
     KCalendarCore::ICalFormat fmt;
     const QString baselineIcal = fmt.toICalString(baselineEvent);
-    m_calendarBaselines->setBaseline(QString::fromLatin1(kMappingId),
-                                     QString::fromLatin1(kConflictUid),
-                                     baselineIcal);
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       calendarTestRec(QString::fromLatin1(kConflictUid), baselineIcal));
 
     m_src->addIncidence(QString::fromLatin1(kCalendarId),
                         makeEvent(QString::fromLatin1(kConflictUid),
