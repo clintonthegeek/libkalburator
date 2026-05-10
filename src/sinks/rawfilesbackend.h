@@ -12,6 +12,12 @@ namespace Kalburator::Sinks {
 ///   <rootPath>/<sanitized-record-id>.<encoding>.<domain>
 /// A manifest at <rootPath>/_shapes.json lists the shapes for which
 /// createCollection() has been called, enabling fast re-discovery.
+///
+/// Phase K.4: still inherits `SyncBackend` (so that BackendRegistry
+/// can store it alongside calendar backends), but no longer overrides
+/// any of the calendar-typed virtuals. Those are now non-pure on
+/// SyncBackend with empty default implementations, so this class
+/// inherits the no-op behaviour automatically.
 class RawFilesBackend : public Kalburator::Sync::SyncBackend {
     Q_OBJECT
 public:
@@ -39,17 +45,6 @@ public:
                          const Kalburator::Sync::BackendRecord &record) override;
     bool updateRecord(const Kalburator::Sync::BackendRecord &record) override;
     bool deleteRecord(const QString &recordId) override;
-
-    // ---- SyncBackend calendar stubs (not a calendar backend) ----
-    void loadCalendars(const QString &collectionId) override;
-    void storeCalendars(const QString &,
-                        const QList<KCalendarCore::MemoryCalendar *> &) override {}
-    void startSync(const QString &, KCalendarCore::MemoryCalendar *,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QMap<QString, QString> &,
-                   const Kalburator::Sync::TranscodingPlan &) override {}
-    void removeItem(const QString &, const QString &) override {}
 
 private:
     QString filePathFor(const QString &collectionId, const QString &recordId) const;

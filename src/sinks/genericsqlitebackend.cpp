@@ -204,14 +204,6 @@ bool GenericSqliteBackend::deleteRecord(const QString &recordId)
     return q.exec();
 }
 
-// ---- Calendar stub ----
-
-void GenericSqliteBackend::loadCalendars(const QString &collectionId)
-{
-    emit loadCalendarsFinished(collectionId, false,
-        QStringLiteral("GenericSqliteBackend: not a calendar backend"));
-}
-
 // ---- Private helpers ----
 
 bool GenericSqliteBackend::ensureOpen()

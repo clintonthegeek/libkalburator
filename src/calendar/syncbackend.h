@@ -127,15 +127,25 @@ public:
     virtual ~SyncBackend() = default;
 
     // ========== Calendar Discovery & Loading ==========
+    //
+    // Phase K.4 (2026-05-09): these used to be pure virtuals; now they
+    // have empty default implementations on SyncBackend so that
+    // backends inheriting from this class but with no calendar surface
+    // (e.g. RemoteContactsBackend) don't have to define no-op stubs.
+    // Real calendar backends still override.
 
     /// Load calendar folders for a collection (emits calendarDiscovered for each)
-    virtual void loadCalendars(const QString &collectionId) = 0;
+    virtual void loadCalendars(const QString &collectionId) {
+        Q_UNUSED(collectionId);
+    }
 
     // ========== Incidence CRUD Operations ==========
 
     /// Save calendar list (if applicable)
     virtual void storeCalendars(const QString &collectionId,
-                                const QList<KCalendarCore::MemoryCalendar*> &calendars) = 0;
+                                const QList<KCalendarCore::MemoryCalendar*> &calendars) {
+        Q_UNUSED(collectionId); Q_UNUSED(calendars);
+    }
 
     /// Perform full sync with staged creations, updates, and deletions
     virtual void startSync(const QString &collectionId,
@@ -143,14 +153,21 @@ public:
                            const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
                            const QMap<QString, QString> &stagedDeletions,
-                           const TranscodingPlan& plan = TranscodingPlan{}) = 0;
+                           const TranscodingPlan& plan = TranscodingPlan{}) {
+        Q_UNUSED(collectionId); Q_UNUSED(calendar);
+        Q_UNUSED(stagedCreations); Q_UNUSED(stagedUpdates); Q_UNUSED(stagedDeletions);
+        Q_UNUSED(plan);
+    }
 
     /// Remove an item by calendar ID and item UID
-    virtual void removeItem(const QString &calId, const QString &itemUid) = 0;
+    virtual void removeItem(const QString &calId, const QString &itemUid) {
+        Q_UNUSED(calId); Q_UNUSED(itemUid);
+    }
 
-    // ========== Operation-Based API ==========
-
-    virtual FetchOperation* fetchItems(const QString &calendarId);
+    // ========== Operation-Based API (calendar-typed pushItems) ==========
+    // `fetchItems` and `deleteItems` are inherited from SyncBackendBase.
+    // Only the Incidence::Ptr-typed pushItems overloads live here,
+    // since they require KCalendarCore.
 
     /// Convenience overload: omit the plan -> empty TranscodingPlan.
     PushOperation* pushItems(const QString &calendarId,
@@ -160,9 +177,6 @@ public:
     virtual PushOperation* pushItems(const QString &calendarId,
                                      const QList<KCalendarCore::Incidence::Ptr> &items,
                                      const TranscodingPlan &plan);
-
-    virtual DeleteOperation* deleteItems(const QString &calendarId,
-                                         const QStringList &uids);
 
     // ========== Calendar-Level CRUD Operations ==========
 

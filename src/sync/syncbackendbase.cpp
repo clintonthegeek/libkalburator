@@ -30,6 +30,27 @@ Kalburator::Shape::Shape SyncBackendBase::shapeFor(const QString &) const
 }
 
 // ============================================================================
+// Operation-Based API (default implementations)
+// ============================================================================
+
+FetchOperation* SyncBackendBase::fetchItems(const QString &calendarId)
+{
+    auto *op = new FetchOperation(calendarId, this);
+    QString errorMsg = QStringLiteral("fetchItems() not implemented by this backend");
+    op->fail(errorMsg);
+    emit fetchFinished(calendarId, false, errorMsg);
+    return op;
+}
+
+DeleteOperation* SyncBackendBase::deleteItems(const QString &calendarId,
+                                              const QStringList &uids)
+{
+    auto *op = new DeleteOperation(calendarId, uids, this);
+    op->fail(QStringLiteral("deleteItems() not implemented by this backend"));
+    return op;
+}
+
+// ============================================================================
 // Operation Tracking
 // ============================================================================
 

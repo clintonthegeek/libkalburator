@@ -250,17 +250,8 @@ void SyncBackend::prepareCreationMetadata(
 }
 
 // ============================================================================
-// Operation-Based API (default implementations)
+// Calendar-typed pushItems (default implementation)
 // ============================================================================
-
-FetchOperation* SyncBackend::fetchItems(const QString &calendarId)
-{
-    auto *op = new FetchOperation(calendarId, this);
-    QString errorMsg = QStringLiteral("fetchItems() not implemented by this backend");
-    op->fail(errorMsg);
-    emit fetchFinished(calendarId, false, errorMsg);
-    return op;
-}
 
 PushOperation* SyncBackend::pushItems(const QString &calendarId,
                                       const QList<KCalendarCore::Incidence::Ptr> &items,
@@ -269,14 +260,6 @@ PushOperation* SyncBackend::pushItems(const QString &calendarId,
     Q_UNUSED(plan);
     auto *op = new PushOperation(calendarId, items, this);
     op->fail(QStringLiteral("pushItems() not implemented by this backend"));
-    return op;
-}
-
-DeleteOperation* SyncBackend::deleteItems(const QString &calendarId,
-                                          const QStringList &uids)
-{
-    auto *op = new DeleteOperation(calendarId, uids, this);
-    op->fail(QStringLiteral("deleteItems() not implemented by this backend"));
     return op;
 }
 

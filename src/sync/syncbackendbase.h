@@ -26,6 +26,10 @@
 namespace Kalburator::Sync {
 
 class SyncOperation;
+class FetchOperation;
+class PushOperation;
+class DeleteOperation;
+struct TranscodingPlan;
 
 /**
  * @brief Domain-neutral abstract sync-backend base.
@@ -72,10 +76,23 @@ public:
     /// `nativeShapes().first()` or `Shape::Any()` if empty.
     virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
 
+    // ========== Operation-Based API ==========
+    // BackendRecord-id-typed CRUD; the operation HANDLE types
+    // (`FetchOperation`, `PushOperation`, `DeleteOperation`) are
+    // forward-declared here — their headers include KCalendarCore but
+    // their use-points (engine, calendar plugin) include them
+    // explicitly. The base API exposes:
+    //   - fetchItems(colId)               -> FetchOperation*
+    //   - deleteItems(colId, uids)        -> DeleteOperation*
+    // The Incidence::Ptr-typed `pushItems(...)` overload lives on the
+    // calendar-typed `SyncBackend` subclass (would require pulling
+    // KCalendarCore::Incidence into the base header).
+
+    virtual FetchOperation* fetchItems(const QString &calendarId);
+    virtual DeleteOperation* deleteItems(const QString &calendarId,
+                                         const QStringList &uids);
+
     // ========== Operation Tracking ==========
-    // Tracking is generic; operation HANDLES (`FetchOperation`,
-    // `PushOperation`, `DeleteOperation`) are calendar-typed and live on
-    // `SyncBackend`. The base just tracks the abstract `SyncOperation*`.
 
     virtual bool hasPendingOperations() const;
     virtual bool hasPendingOperationsFor(const QString &calendarId) const;

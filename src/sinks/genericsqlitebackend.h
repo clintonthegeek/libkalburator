@@ -17,6 +17,11 @@ namespace Kalburator::Sinks {
 ///   last_modified TEXT NOT NULL
 /// A _shapes table tracks which shapes have been seen.
 /// PropertyCatalogue-derived columns are a G.10 enhancement.
+///
+/// Phase K.4: still inherits `SyncBackend` (for BackendRegistry
+/// interoperability), but no longer overrides any of the
+/// calendar-typed virtuals. Those are now non-pure on SyncBackend
+/// with empty default implementations.
 class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {
     Q_OBJECT
 public:
@@ -45,17 +50,6 @@ public:
                          const Kalburator::Sync::BackendRecord &record) override;
     bool updateRecord(const Kalburator::Sync::BackendRecord &record) override;
     bool deleteRecord(const QString &recordId) override;
-
-    // ---- SyncBackend calendar stubs ----
-    void loadCalendars(const QString &collectionId) override;
-    void storeCalendars(const QString &,
-                        const QList<KCalendarCore::MemoryCalendar *> &) override {}
-    void startSync(const QString &, KCalendarCore::MemoryCalendar *,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QMap<QString, QString> &,
-                   const Kalburator::Sync::TranscodingPlan &) override {}
-    void removeItem(const QString &, const QString &) override {}
 
 private:
     bool ensureOpen();

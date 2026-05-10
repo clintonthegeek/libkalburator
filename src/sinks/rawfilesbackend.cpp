@@ -128,14 +128,6 @@ bool RawFilesBackend::deleteRecord(const QString &recordId)
     return QFile::remove(recordId);
 }
 
-// ---- Calendar stub ----
-
-void RawFilesBackend::loadCalendars(const QString &collectionId)
-{
-    emit loadCalendarsFinished(collectionId, false,
-        QStringLiteral("RawFilesBackend: not a calendar backend"));
-}
-
 // ---- Helpers ----
 
 BackendRecord RawFilesBackend::readFile(const QString &absPath) const

@@ -146,25 +146,10 @@ public:
      */
     bool isCancelled() const { return m_cancelled; }
 
-    // --- SyncBackend mandatory calendar-API stubs --------------------------
-    // RemoteContactsBackend is contacts-only; the calendar-level API is unused.
+    // --- Backend identity ---------------------------------------------------
 
     QString backendType() const override
     { return QStringLiteral("carddav-contacts"); }
-
-    void loadCalendars(const QString &) override {}
-
-    void storeCalendars(const QString &,
-                        const QList<KCalendarCore::MemoryCalendar *> &) override {}
-
-    void startSync(const QString &,
-                   KCalendarCore::MemoryCalendar *,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QMap<QString, QString> &,
-                   const TranscodingPlan &) override {}
-
-    void removeItem(const QString &, const QString &) override {}
 
     // ---- Backend::ChangeDetection (Phase K.1) ----
     // CardDAV CTag is not yet wired through this backend; the
