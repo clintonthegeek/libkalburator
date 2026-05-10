@@ -3,7 +3,6 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -26,8 +25,6 @@ BaselineStore::BaselineStore(const QString &dbPath)
     , m_connName(QStringLiteral("KalburatorBaselineStore_%1")
                      .arg(++s_connectionCounter))
 {
-    const bool dbFileExistedBefore = QFile::exists(m_dbPath);
-
     QFileInfo fi(m_dbPath);
     QDir parent = fi.dir();
     if (!parent.exists() && !parent.mkpath(QStringLiteral("."))) {
@@ -49,7 +46,7 @@ BaselineStore::BaselineStore(const QString &dbPath)
     pragma.exec(QStringLiteral("PRAGMA foreign_keys = ON"));
     pragma.exec(QStringLiteral("PRAGMA journal_mode = WAL"));
 
-    if (!ensureSchemaAndVersion(dbFileExistedBefore)) {
+    if (!ensureSchemaAndVersion()) {
         return;
     }
 
@@ -73,7 +70,7 @@ void BaselineStore::setError(const QString &message) const
     m_lastError = message;
 }
 
-bool BaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
+bool BaselineStore::ensureSchemaAndVersion()
 {
     QSqlDatabase db = QSqlDatabase::database(m_connName);
     QSqlQuery q(db);
@@ -174,19 +171,27 @@ bool BaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
         "CREATE INDEX IF NOT EXISTS idx_blob_baselines_collection "
         "ON blob_baselines(backend_id, collection_id)"));
 
-    if (!dbFileExistedBefore) {
-        q.exec(QStringLiteral("PRAGMA user_version = %1")
-                   .arg(kSchemaVersion));
-    }
-
     // G.4: ensure v3 mapping-keyed table exists and flag if data migration is needed.
     if (!ensureSchemaV3()) {
         return false;
     }
 
-    // K.5: ensure collection_baselines table exists.
+    // K.5: ensure collection_baselines + mapping_metadata tables exist.
     if (!ensureSchemaV5()) {
         return false;
+    }
+
+    // Single final user_version stamp for the full migration arc.
+    // Both ensureSchemaV3 and ensureSchemaV5 only create tables; they do not
+    // stamp user_version. This stamp covers all tables up to kSchemaVersion.
+    {
+        QSqlQuery sq(db);
+        sq.exec(QStringLiteral("PRAGMA user_version"));
+        const int userVersion = sq.next() ? sq.value(0).toInt() : 0;
+        if (userVersion < kSchemaVersion) {
+            QSqlQuery stampQ(db);
+            stampQ.exec(QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion));
+        }
     }
 
     return true;
@@ -229,10 +234,9 @@ bool BaselineStore::ensureSchemaV3()
     static constexpr int kSchemaV3Introduced = 4;
     if (userVersion < kSchemaV3Introduced) {
         // Flag for deferred data migration (requires mapping resolver from engine).
+        // The final user_version stamp happens in ensureSchemaAndVersion() after
+        // all helper functions complete — it covers all tables up to kSchemaVersion.
         m_needsV3Migration = true;
-        // Stamp the G.4 schema version so re-opens skip this branch.
-        q.exec(QStringLiteral("PRAGMA user_version = %1")
-                   .arg(kSchemaV3Introduced));
     }
 
     return true;
@@ -258,6 +262,16 @@ bool BaselineStore::ensureSchemaV5()
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_collection_baselines_mapping "
         "ON collection_baselines (mapping_id)"));
+
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS mapping_metadata ("
+            "  mapping_id      TEXT NOT NULL PRIMARY KEY,"
+            "  last_sync_at    INTEGER"
+            ")"))) {
+        setError(QStringLiteral("CREATE TABLE mapping_metadata failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
 
     return true;
 }
@@ -331,6 +345,42 @@ bool BaselineStore::removeCollectionBaseline(const QString &mappingId,
         return false;
     }
     return true;
+}
+
+// ===========================================================================
+// Mapping-metadata API (K.5, schema v5)
+// ===========================================================================
+
+bool BaselineStore::setLastSyncTime(const QString &mappingId, const QDateTime &when) {
+    if (!m_isOpen) {
+        setError(QStringLiteral("setLastSyncTime: store not open"));
+        return false;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO mapping_metadata (mapping_id, last_sync_at) "
+        "VALUES (?, ?)"));
+    q.addBindValue(mappingId);
+    q.addBindValue(when.toSecsSinceEpoch());
+    if (!q.exec()) {
+        setError(QStringLiteral("setLastSyncTime: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+QDateTime BaselineStore::lastSyncTime(const QString &mappingId) const {
+    if (!m_isOpen) return {};
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT last_sync_at FROM mapping_metadata WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec() || !q.next()) return {};
+    const QVariant v = q.value(0);
+    if (v.isNull()) return {};
+    return QDateTime::fromSecsSinceEpoch(v.toLongLong());
 }
 
 // ===========================================================================

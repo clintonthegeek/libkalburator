@@ -24,6 +24,7 @@
 #include <functional>
 #include <optional>
 
+#include <QDateTime>
 #include <QList>
 #include <QMap>
 #include <QString>
@@ -105,6 +106,14 @@ public:
                                   const QString &collectionId);
 
     // -----------------------------------------------------------------------
+    // Mapping-metadata API (K.5, schema v5). Per-mappingId scalars.
+    // Currently: last-sync timestamp.
+    // -----------------------------------------------------------------------
+
+    bool      setLastSyncTime(const QString &mappingId, const QDateTime &when);
+    QDateTime lastSyncTime(const QString &mappingId) const;
+
+    // -----------------------------------------------------------------------
     // Triple-keyed API — keyed by (backendId, collectionId, recordId).
     // Stored in blob_baselines.
     // @deprecated Use the v3 mapping-keyed API instead.
@@ -144,7 +153,7 @@ private:
     mutable QString m_lastError;
     MappingResolver m_mappingResolver;
 
-    bool ensureSchemaAndVersion(bool dbFileExistedBefore);
+    bool ensureSchemaAndVersion();
     bool ensureSchemaV3();
     bool ensureSchemaV5();
     void setError(const QString &message) const;
