@@ -9,7 +9,7 @@
 #include "conflictpolicy.h"
 
 using namespace Kalburator::Calendar;
-using namespace Kalburator::Sync::QSyncCore;
+using namespace Kalburator::Conflict;
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

@@ -1,7 +1,7 @@
 #include "conflictpolicy.h"
 #include "conflictstore.h"
 
-namespace Kalburator::Sync::QSyncCore {
+namespace Kalburator::Conflict {
 
 // ========== ConflictPolicy ==========
 

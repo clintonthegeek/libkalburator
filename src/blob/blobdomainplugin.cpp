@@ -45,7 +45,7 @@ public:
         const CanonicalRecord& source,
         const CanonicalRecord& target,
         const CanonicalRecord& baseline,
-        const Kalburator::Sync::QSyncCore::ConflictPolicy& policy) const override
+        const Kalburator::Conflict::ConflictPolicy& policy) const override
     {
         const bool sChanged = (source.data != baseline.data);
         const bool tChanged = (target.data != baseline.data);
@@ -56,7 +56,7 @@ public:
         if (!sChanged && tChanged)
             return target;
         // Both changed — conflict; resolve by policy
-        using AR = Kalburator::Sync::QSyncCore::AutoResolveStrategy;
+        using AR = Kalburator::Conflict::AutoResolveStrategy;
         if (policy.autoResolve == AR::TargetAlwaysWins)
             return target;
         return source; // SourceAlwaysWins or any other auto-resolve strategy

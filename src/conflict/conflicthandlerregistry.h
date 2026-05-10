@@ -1,10 +1,10 @@
-#ifndef KALBURATOR_SYNC_CONFLICTHANDLERREGISTRY_H
-#define KALBURATOR_SYNC_CONFLICTHANDLERREGISTRY_H
+#ifndef KALBURATOR_CONFLICT_CONFLICTHANDLERREGISTRY_H
+#define KALBURATOR_CONFLICT_CONFLICTHANDLERREGISTRY_H
 
 #include <QHash>
 #include <QString>
 
-namespace Kalburator::Sync::QSyncCore {
+namespace Kalburator::Conflict {
 
 class ConflictHandler;
 
@@ -52,6 +52,6 @@ private:
     ConflictHandler *m_default = nullptr;
 };
 
-} // namespace Kalburator::Sync::QSyncCore
+} // namespace Kalburator::Conflict
 
-#endif // KALBURATOR_SYNC_CONFLICTHANDLERREGISTRY_H
+#endif // KALBURATOR_CONFLICT_CONFLICTHANDLERREGISTRY_H

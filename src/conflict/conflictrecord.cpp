@@ -3,7 +3,7 @@
 #include <QUuid>
 #include <QJsonArray>
 
-namespace Kalburator::Sync::QSyncCore {
+namespace Kalburator::Conflict {
 
 // ========== RecordSnapshot ==========
 

@@ -29,6 +29,10 @@ namespace Kalburator::Storage {
 class BaselineStore;
 } // namespace Kalburator::Storage
 
+namespace Kalburator::Conflict {
+class ConflictHandlerRegistry;
+} // namespace Kalburator::Conflict
+
 namespace Kalburator::Sync {
 
 class BackendRegistry;
@@ -43,11 +47,6 @@ class DecSyncActiveController;
 class SyncEngine;
 
 // ExecutionOverride lives in synctypes.h.
-
-namespace QSyncCore {
-    class ConflictStore;
-    struct ConflictPolicy;
-}
 
 } // namespace Kalburator::Sync
 
@@ -383,11 +382,11 @@ public:
      * The registry is owned by the coordinator and lives for its
      * lifetime. Register handlers before starting sync operations.
      */
-    Kalburator::Sync::QSyncCore::ConflictHandlerRegistry *conflictRegistry()
+    Kalburator::Conflict::ConflictHandlerRegistry *conflictRegistry()
     {
         return &m_conflictRegistry;
     }
-    const Kalburator::Sync::QSyncCore::ConflictHandlerRegistry *conflictRegistry() const
+    const Kalburator::Conflict::ConflictHandlerRegistry *conflictRegistry() const
     {
         return &m_conflictRegistry;
     }
@@ -685,7 +684,7 @@ private:
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;  // Phase D Task 20
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
-    Kalburator::Sync::QSyncCore::ConflictHandlerRegistry m_conflictRegistry;
+    Kalburator::Conflict::ConflictHandlerRegistry m_conflictRegistry;
     TranscodingRouter m_transcodingRouter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;

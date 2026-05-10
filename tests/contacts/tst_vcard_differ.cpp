@@ -15,8 +15,8 @@ using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Contacts::RecordDifferVCard;
 using Kalburator::Contacts::RecordMergerVCard;
-using Kalburator::Sync::QSyncCore::ConflictPolicy;
-using Kalburator::Sync::QSyncCore::AutoResolveStrategy;
+using Kalburator::Conflict::ConflictPolicy;
+using Kalburator::Conflict::AutoResolveStrategy;
 
 namespace {
 

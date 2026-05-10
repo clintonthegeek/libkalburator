@@ -6,7 +6,7 @@
 #include <KContacts/Addressee>
 
 using namespace Kalburator::Shape;
-using namespace Kalburator::Sync::QSyncCore;
+using namespace Kalburator::Conflict;
 
 namespace {
 

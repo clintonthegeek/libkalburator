@@ -27,7 +27,7 @@ public:
         const CanonicalRecord& source,
         const CanonicalRecord& target,
         const CanonicalRecord& baseline,
-        const Kalburator::Sync::QSyncCore::ConflictPolicy& policy) const = 0;
+        const Kalburator::Conflict::ConflictPolicy& policy) const = 0;
 };
 
 }  // namespace Kalburator::Shape

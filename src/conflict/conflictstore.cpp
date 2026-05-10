@@ -2,7 +2,7 @@
 
 #include <QJsonArray>
 
-namespace Kalburator::Sync::QSyncCore {
+namespace Kalburator::Conflict {
 
 ConflictStore::ConflictStore(QObject *parent)
     : QObject(parent)

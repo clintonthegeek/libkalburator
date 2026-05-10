@@ -342,7 +342,7 @@ EngineMerge blobBatchMergeWithPlugin(
 
             const auto merged = customMerger->merge(
                 srcRec, tgtRec, baseRec,
-                Kalburator::Sync::QSyncCore::ConflictPolicy::deferAll());
+                Kalburator::Conflict::ConflictPolicy::deferAll());
 
             BackendRecord mergedRecord = op.record;
             mergedRecord.data = merged.data;

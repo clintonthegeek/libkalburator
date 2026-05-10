@@ -197,14 +197,11 @@ set(KALBURATOR_TRANSCODING_SOURCES
 
 set(KALBURATOR_JOURNAL_HEADERS
     src/journal/asyncfilewriter.h
-    src/journal/baselinestore.h
-    # blobbaselinestore.h and idmappingstore.h are forwarding shims (Phase K.5);
-    # the real files live in src/storage/. Shims removed in Task 13.
+    # baselinestore.h moved to src/storage/ in K.5; old file is stale/unused
     src/journal/calendarjournal.h
 )
 set(KALBURATOR_JOURNAL_SOURCES
     src/journal/asyncfilewriter.cpp
-    src/journal/baselinestore.cpp
     src/journal/calendarjournal.cpp
 )
 

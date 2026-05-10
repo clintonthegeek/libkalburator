@@ -12,7 +12,7 @@ public:
         const Kalburator::Shape::CanonicalRecord& source,
         const Kalburator::Shape::CanonicalRecord& target,
         const Kalburator::Shape::CanonicalRecord& baseline,
-        const Kalburator::Sync::QSyncCore::ConflictPolicy& policy) const override;
+        const Kalburator::Conflict::ConflictPolicy& policy) const override;
 };
 
 } // namespace Kalburator::Memo
