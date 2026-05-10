@@ -56,7 +56,7 @@ using Kalburator::Shape::Shape;
 using Kalburator::Shape::TransformationRegistry;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictManager;
 using Kalburator::Sync::ConflictResolution;
@@ -328,8 +328,8 @@ void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()
     StubHost host(&registry);
     SyncEngine engine(&registry, &host);
 
-    BlobBaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
-    engine.setBlobBaselineStore(&baselines);
+    BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
+    engine.setBaselineStore(&baselines);
     engine.setSyncMappings({ makeTwoWayMapping(
         QStringLiteral("src"), QStringLiteral("col"),
         QStringLiteral("tgt"), QStringLiteral("col"),
@@ -377,8 +377,8 @@ void TstContactsEngineWitness::contentHashSkip_secondSyncProducesNoWrites()
     StubHost host(&registry);
     SyncEngine engine(&registry, &host);
 
-    BlobBaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
-    engine.setBlobBaselineStore(&baselines);
+    BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
+    engine.setBaselineStore(&baselines);
     engine.setSyncMappings({ makeTwoWayMapping(
         QStringLiteral("src"), QStringLiteral("col"),
         QStringLiteral("tgt"), QStringLiteral("col"),
@@ -425,7 +425,7 @@ void TstContactsEngineWitness::conflict_askUserAutoResolves_sourceWins()
     const BackendRecord baseline =
         makeVCard4Record(QStringLiteral("alice"), QStringLiteral("Alice Original"));
     {
-        BlobBaselineStore bl(dbPath);
+        BaselineStore bl(dbPath);
         CanonicalRecord cr;
         cr.shape    = kV4Shape;
         cr.recordId = baseline.id;
@@ -441,7 +441,7 @@ void TstContactsEngineWitness::conflict_askUserAutoResolves_sourceWins()
     registry.registerBackendInstance(QStringLiteral("tgt"), tgt.get());
 
     StubHost host(&registry);
-    BlobBaselineStore baselines(dbPath);
+    BaselineStore baselines(dbPath);
     SyncConflictStore conflictStore(dbPath);
 
     ConflictManager mgr;
@@ -450,7 +450,7 @@ void TstContactsEngineWitness::conflict_askUserAutoResolves_sourceWins()
     mgr.setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
     SyncEngine engine(&registry, &host);
-    engine.setBlobBaselineStore(&baselines);
+    engine.setBaselineStore(&baselines);
     engine.setSyncConflictStore(&conflictStore);
     engine.setConflictManager(&mgr);
     engine.setSyncMappings({ makeTwoWayMapping(
@@ -486,8 +486,8 @@ void TstContactsEngineWitness::cancelBeforeSync_futureCompletesCleanly()
     StubHost host(&registry);
     SyncEngine engine(&registry, &host);
 
-    BlobBaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
-    engine.setBlobBaselineStore(&baselines);
+    BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
+    engine.setBaselineStore(&baselines);
     engine.setSyncMappings({ makeTwoWayMapping(
         QStringLiteral("src"), QStringLiteral("col"),
         QStringLiteral("tgt"), QStringLiteral("col"),
@@ -523,8 +523,8 @@ void TstContactsEngineWitness::vcard3To4Transform_targetBytesContainVersion4()
     StubHost host(&registry);
     SyncEngine engine(&registry, &host);
 
-    BlobBaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
-    engine.setBlobBaselineStore(&baselines);
+    BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
+    engine.setBaselineStore(&baselines);
 
     SyncMapping mapping = makeTwoWayMapping(
         QStringLiteral("src"), QStringLiteral("col"),

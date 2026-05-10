@@ -68,7 +68,7 @@
 using Kalburator::Sync::BackendConfiguration;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 using Kalburator::Sync::CardDavProvider;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
@@ -379,7 +379,7 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
 
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
-    BlobBaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines.db")));
+    BaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines.db")));
     engine.setBaselineStore(&baselines);
 
     SyncMapping mapping;
@@ -510,7 +510,7 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
 
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
-    BlobBaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines-v3.db")));
+    BaselineStore baselines(tmpDir.filePath(QStringLiteral("blob-baselines-v3.db")));
     engine.setBaselineStore(&baselines);
 
     SyncMapping mapping;

@@ -236,11 +236,11 @@ CollectionInfo makeCollection(const QString &id)
 
 static constexpr int kTimeoutMs = 5000;
 
-/// Seed a baseline into a BlobBaselineStore using the v3 mapping-keyed API.
+/// Seed a baseline into a BaselineStore using the v3 mapping-keyed API.
 /// contentHash is stored as the canonical blob data (same encoding as
 /// blobBatchDiff baseline persistence uses; BlobDomainAdapter::saveBaselines
 /// was folded into blobBatchDiff in Phase Ia.5 Task 16).
-void seedBaseline(Kalburator::Sync::BlobBaselineStore &store,
+void seedBaseline(Kalburator::Storage::BaselineStore &store,
                   const QString &mappingId,
                   const QString &recordId,
                   const QString &contentHash)
@@ -312,7 +312,7 @@ private:
     static constexpr const char *kMapId  = "mirror-test";
 
     QTemporaryDir                              m_tmpDir;  ///< one dir per test
-    std::unique_ptr<Kalburator::Sync::BlobBaselineStore> m_baselines;
+    std::unique_ptr<Kalburator::Storage::BaselineStore> m_baselines;
     std::unique_ptr<BackendRegistry>           m_registry;
     std::unique_ptr<IdentifiedBlobSyncBackend> m_src;
     std::unique_ptr<IdentifiedBlobSyncBackend> m_tgt;
@@ -329,7 +329,7 @@ void TstEngineMirrorDirection::init()
     // between test cases that share the same QTemporaryDir.
     const QString dbPath = m_tmpDir.filePath(
         QStringLiteral("sync-%1.db").arg(m_testCounter++));
-    m_baselines = std::make_unique<Kalburator::Sync::BlobBaselineStore>(dbPath);
+    m_baselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
     QVERIFY(m_baselines->isOpen());
 
     m_registry = std::make_unique<BackendRegistry>();
@@ -341,7 +341,7 @@ void TstEngineMirrorDirection::init()
 
     m_host = std::make_unique<MinimalSyncHost>(m_registry.get());
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_engine->setBlobBaselineStore(m_baselines.get());
+    m_engine->setBaselineStore(m_baselines.get());
 
     // Seed the collections so dispatchBlobSync's fetch finds them.
     m_src->createCollection(makeCollection(QString::fromLatin1(kColId)));
@@ -510,14 +510,14 @@ void TstEngineMirrorDirection::mirrorBToA_sourceBecomesExactCopyOfTarget()
 
 void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
 {
-    // Need a BlobBaselineStore to seed the baseline so the diff classifies
+    // Need a BaselineStore to seed the baseline so the diff classifies
     // src's modification as an Update (not a Create). Use a separate temp
     // engine so the baseline store is attached correctly.
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
 
     const QString dbPath = tmpDir.filePath(QStringLiteral(".kalburator-sync.db"));
-    Kalburator::Sync::BlobBaselineStore blobBaselines(dbPath);
+    Kalburator::Storage::BaselineStore blobBaselines(dbPath);
     QVERIFY(blobBaselines.isOpen());
 
     // Seed baseline: "shared" at v1 (the original shared state).
@@ -534,7 +534,7 @@ void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
 
     MinimalSyncHost host(&registry);
     SyncEngine engine(&registry, &host);
-    engine.setBlobBaselineStore(&blobBaselines);
+    engine.setBaselineStore(&blobBaselines);
 
     src.createCollection(makeCollection(QString::fromLatin1(kColId)));
     tgt.createCollection(makeCollection(QString::fromLatin1(kColId)));

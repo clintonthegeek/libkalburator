@@ -53,7 +53,7 @@
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::IBlobBackend;
@@ -341,10 +341,10 @@ void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
 
     SyncEngine engine(&registry, &host);
 
-    // The unified dispatchSync path uses BlobBaselineStore for the
+    // The unified dispatchSync path uses BaselineStore for the
     // contacts domain; provide one so first-sync baseline writes don't
     // silently no-op. Cleaned by tmpDir.
-    BlobBaselineStore baselines(
+    BaselineStore baselines(
         tmpDir.filePath(QStringLiteral("blob-baselines.db")));
     engine.setBaselineStore(&baselines);
 

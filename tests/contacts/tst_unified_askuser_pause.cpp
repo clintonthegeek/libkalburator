@@ -43,7 +43,7 @@
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
-using Kalburator::Sync::BlobBaselineStore;
+using Kalburator::Storage::BaselineStore;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::ConflictManager;
@@ -255,7 +255,7 @@ private:
     std::unique_ptr<RawBlobBackend>    m_source;
     std::unique_ptr<RawBlobBackend>    m_target;
     std::unique_ptr<StubSyncHost>      m_host;
-    std::unique_ptr<BlobBaselineStore> m_baselines;
+    std::unique_ptr<BaselineStore> m_baselines;
     std::unique_ptr<SyncConflictStore> m_conflictStore;
     std::unique_ptr<ConflictManager>   m_conflictManager;
     std::unique_ptr<SyncEngine>        m_engine;
@@ -285,7 +285,7 @@ void TestUnifiedAskUserPause::init()
 
     m_host = std::make_unique<StubSyncHost>(m_registry.get());
 
-    m_baselines     = std::make_unique<BlobBaselineStore>(dbPath);
+    m_baselines     = std::make_unique<BaselineStore>(dbPath);
     m_conflictStore = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
@@ -294,7 +294,7 @@ void TestUnifiedAskUserPause::init()
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
-    m_engine->setBlobBaselineStore(m_baselines.get());
+    m_engine->setBaselineStore(m_baselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
     m_engine->setSyncMappings({ makeTwoWayMapping() });
