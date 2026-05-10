@@ -26,6 +26,11 @@ using Kalburator::Shape::IdentityStage;
 
 namespace Kalburator::Calendar {
 
+KalburatorDomainCalendar::KalburatorDomainCalendar(QObject *parent)
+    : QObject(parent)
+{
+}
+
 DomainId KalburatorDomainCalendar::domain() const
 {
     return DomainId{"calendar"};
