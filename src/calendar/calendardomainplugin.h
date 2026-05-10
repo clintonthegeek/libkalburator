@@ -6,19 +6,19 @@
 
 namespace Kalburator::Calendar {
 
-/// Phase K.4: KalburatorDomainCalendar gains a QObject base (in
+/// Phase K.4: CalendarDomainPlugin gains a QObject base (in
 /// addition to the abstract DomainPlugin) so that K.5+ can route
 /// calendar-typed signals through the plugin instead of through the
 /// SyncBackend. No K.4 user yet — this just establishes the
 /// foundation. The plugin is still stored as
 /// `std::shared_ptr<DomainPlugin>` in the DomainRegistry; the QObject
 /// half is dormant until K.5 wires it up.
-class KalburatorDomainCalendar : public QObject,
+class CalendarDomainPlugin : public QObject,
                                  public Kalburator::Shape::DomainPlugin {
     Q_OBJECT
 
 public:
-    explicit KalburatorDomainCalendar(QObject *parent = nullptr);
+    explicit CalendarDomainPlugin(QObject *parent = nullptr);
 
     Kalburator::Shape::DomainId domain() const override;
     Kalburator::Shape::Shape canonicalShape() const override;

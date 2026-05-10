@@ -4,7 +4,7 @@
 
 namespace Kalburator::Memo {
 
-class KalburatorDomainMemo : public Kalburator::Shape::DomainPlugin {
+class MemoDomainPlugin : public Kalburator::Shape::DomainPlugin {
 public:
     Kalburator::Shape::DomainId domain() const override;
     Kalburator::Shape::Shape canonicalShape() const override;

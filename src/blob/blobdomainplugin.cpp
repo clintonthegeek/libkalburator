@@ -75,44 +75,44 @@ PropertyCatalogue makeBlobCatalogue()
 
 namespace Kalburator::Blob {
 
-DomainId KalburatorDomainBlob::domain() const
+DomainId BlobDomainPlugin::domain() const
 {
     return DomainId{"blob"};
 }
 
-Kalburator::Shape::Shape KalburatorDomainBlob::canonicalShape() const
+Kalburator::Shape::Shape BlobDomainPlugin::canonicalShape() const
 {
     return { DomainId{"blob"}, EncodingId{"raw"} };
 }
 
-QList<Kalburator::Shape::Shape> KalburatorDomainBlob::peerShapes() const
+QList<Kalburator::Shape::Shape> BlobDomainPlugin::peerShapes() const
 {
     return {};
 }
 
-PropertyCatalogue KalburatorDomainBlob::canonicalCatalogue() const
+PropertyCatalogue BlobDomainPlugin::canonicalCatalogue() const
 {
     return makeBlobCatalogue();
 }
 
-PropertyCatalogue KalburatorDomainBlob::catalogueFor(const Kalburator::Shape::Shape& s) const
+PropertyCatalogue BlobDomainPlugin::catalogueFor(const Kalburator::Shape::Shape& s) const
 {
     if (s == canonicalShape())
         return makeBlobCatalogue();
     return {};
 }
 
-std::unique_ptr<RecordDiffer> KalburatorDomainBlob::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> BlobDomainPlugin::createCanonicalDiffer() const
 {
     return std::make_unique<RecordDifferBlob>();
 }
 
-std::unique_ptr<RecordMerger> KalburatorDomainBlob::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> BlobDomainPlugin::createCanonicalMerger() const
 {
     return std::make_unique<RecordMergerBlob>();
 }
 
-void KalburatorDomainBlob::registerEdges(TransformationRegistry& registry)
+void BlobDomainPlugin::registerEdges(TransformationRegistry& registry)
 {
     const auto canonical = canonicalShape();
     registry.registerShape(canonical, canonicalCatalogue());
@@ -124,7 +124,7 @@ void KalburatorDomainBlob::registerEdges(TransformationRegistry& registry)
     });
 }
 
-int KalburatorDomainBlob::richnessRank(const Kalburator::Shape::Shape& s) const
+int BlobDomainPlugin::richnessRank(const Kalburator::Shape::Shape& s) const
 {
     return s == canonicalShape() ? 10 : 0;
 }
@@ -136,7 +136,7 @@ namespace {
 struct BlobPluginRegistrar {
     BlobPluginRegistrar() {
         Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Blob::KalburatorDomainBlob>());
+            std::make_shared<Kalburator::Blob::BlobDomainPlugin>());
     }
 };
 

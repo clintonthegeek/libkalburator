@@ -4,7 +4,7 @@
 
 namespace Kalburator::Todo {
 
-class KalburatorDomainTodo : public Kalburator::Shape::DomainPlugin {
+class TodoDomainPlugin : public Kalburator::Shape::DomainPlugin {
 public:
     Kalburator::Shape::DomainId domain() const override;
     Kalburator::Shape::Shape canonicalShape() const override;

@@ -19,29 +19,29 @@ using Kalburator::Shape::IdentityStage;
 
 namespace Kalburator::Todo {
 
-DomainId KalburatorDomainTodo::domain() const
+DomainId TodoDomainPlugin::domain() const
 {
     return DomainId{"todo"};
 }
 
-Kalburator::Shape::Shape KalburatorDomainTodo::canonicalShape() const
+Kalburator::Shape::Shape TodoDomainPlugin::canonicalShape() const
 {
     return { DomainId{"todo"}, EncodingId{"ical-vtodo"} };
 }
 
-QList<Kalburator::Shape::Shape> KalburatorDomainTodo::peerShapes() const
+QList<Kalburator::Shape::Shape> TodoDomainPlugin::peerShapes() const
 {
     return {
         { DomainId{"todo"}, EncodingId{"todotxt"} },
     };
 }
 
-PropertyCatalogue KalburatorDomainTodo::canonicalCatalogue() const
+PropertyCatalogue TodoDomainPlugin::canonicalCatalogue() const
 {
     return makeVTodoCatalogue();
 }
 
-PropertyCatalogue KalburatorDomainTodo::catalogueFor(
+PropertyCatalogue TodoDomainPlugin::catalogueFor(
     const Kalburator::Shape::Shape &s) const
 {
     if (s == canonicalShape())
@@ -49,17 +49,17 @@ PropertyCatalogue KalburatorDomainTodo::catalogueFor(
     return {};
 }
 
-std::unique_ptr<RecordDiffer> KalburatorDomainTodo::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> TodoDomainPlugin::createCanonicalDiffer() const
 {
     return std::make_unique<RecordDifferVTodo>();
 }
 
-std::unique_ptr<RecordMerger> KalburatorDomainTodo::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> TodoDomainPlugin::createCanonicalMerger() const
 {
     return std::make_unique<RecordMergerVTodo>();
 }
 
-void KalburatorDomainTodo::registerEdges(TransformationRegistry &registry)
+void TodoDomainPlugin::registerEdges(TransformationRegistry &registry)
 {
     const auto canonical = canonicalShape();
     const auto todotxt   = Kalburator::Shape::Shape{ DomainId{"todo"}, EncodingId{"todotxt"} };
@@ -91,7 +91,7 @@ void KalburatorDomainTodo::registerEdges(TransformationRegistry &registry)
     });
 }
 
-int KalburatorDomainTodo::richnessRank(
+int TodoDomainPlugin::richnessRank(
     const Kalburator::Shape::Shape &s) const
 {
     if (s == canonicalShape())
@@ -108,7 +108,7 @@ namespace {
 struct TodoPluginRegistrar {
     TodoPluginRegistrar() {
         Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Todo::KalburatorDomainTodo>());
+            std::make_shared<Kalburator::Todo::TodoDomainPlugin>());
     }
 };
 

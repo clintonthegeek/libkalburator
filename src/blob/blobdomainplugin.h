@@ -13,7 +13,7 @@ namespace Kalburator::Blob {
 /// No peer shapes and no transformation edges for now; the canonical
 /// shape is the only registered form. The identity edge is the only
 /// edge in the transformation registry for this domain.
-class KalburatorDomainBlob : public Kalburator::Shape::DomainPlugin {
+class BlobDomainPlugin : public Kalburator::Shape::DomainPlugin {
 public:
     Kalburator::Shape::DomainId domain() const override;
     Kalburator::Shape::Shape canonicalShape() const override;

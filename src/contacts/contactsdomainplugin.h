@@ -4,7 +4,7 @@
 
 namespace Kalburator::Contacts {
 
-class KalburatorDomainContacts : public Kalburator::Shape::DomainPlugin {
+class ContactsDomainPlugin : public Kalburator::Shape::DomainPlugin {
 public:
     Kalburator::Shape::DomainId domain() const override;
     Kalburator::Shape::Shape canonicalShape() const override;

@@ -18,27 +18,27 @@ using Kalburator::Shape::IdentityStage;
 
 namespace Kalburator::Memo {
 
-DomainId KalburatorDomainMemo::domain() const
+DomainId MemoDomainPlugin::domain() const
 {
     return DomainId{"memo"};
 }
 
-Kalburator::Shape::Shape KalburatorDomainMemo::canonicalShape() const
+Kalburator::Shape::Shape MemoDomainPlugin::canonicalShape() const
 {
     return { DomainId{"memo"}, EncodingId{"text"} };
 }
 
-QList<Kalburator::Shape::Shape> KalburatorDomainMemo::peerShapes() const
+QList<Kalburator::Shape::Shape> MemoDomainPlugin::peerShapes() const
 {
     return {};
 }
 
-PropertyCatalogue KalburatorDomainMemo::canonicalCatalogue() const
+PropertyCatalogue MemoDomainPlugin::canonicalCatalogue() const
 {
     return makeMemoCatalogue();
 }
 
-PropertyCatalogue KalburatorDomainMemo::catalogueFor(
+PropertyCatalogue MemoDomainPlugin::catalogueFor(
     const Kalburator::Shape::Shape &s) const
 {
     if (s == canonicalShape())
@@ -46,17 +46,17 @@ PropertyCatalogue KalburatorDomainMemo::catalogueFor(
     return {};
 }
 
-std::unique_ptr<RecordDiffer> KalburatorDomainMemo::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> MemoDomainPlugin::createCanonicalDiffer() const
 {
     return std::make_unique<TextDiffer>();
 }
 
-std::unique_ptr<RecordMerger> KalburatorDomainMemo::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> MemoDomainPlugin::createCanonicalMerger() const
 {
     return std::make_unique<TextMerger>();
 }
 
-void KalburatorDomainMemo::registerEdges(TransformationRegistry &registry)
+void MemoDomainPlugin::registerEdges(TransformationRegistry &registry)
 {
     const auto canonical = canonicalShape();
 
@@ -70,7 +70,7 @@ void KalburatorDomainMemo::registerEdges(TransformationRegistry &registry)
     });
 }
 
-int KalburatorDomainMemo::richnessRank(
+int MemoDomainPlugin::richnessRank(
     const Kalburator::Shape::Shape &s) const
 {
     return s == canonicalShape() ? 10 : 0;
@@ -83,7 +83,7 @@ namespace {
 struct MemoPluginRegistrar {
     MemoPluginRegistrar() {
         Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Memo::KalburatorDomainMemo>());
+            std::make_shared<Kalburator::Memo::MemoDomainPlugin>());
     }
 };
 

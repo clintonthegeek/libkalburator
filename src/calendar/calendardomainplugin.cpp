@@ -28,32 +28,32 @@ using Kalburator::Shape::IdentityStage;
 
 namespace Kalburator::Calendar {
 
-KalburatorDomainCalendar::KalburatorDomainCalendar(QObject *parent)
+CalendarDomainPlugin::CalendarDomainPlugin(QObject *parent)
     : QObject(parent)
 {
 }
 
-DomainId KalburatorDomainCalendar::domain() const
+DomainId CalendarDomainPlugin::domain() const
 {
     return DomainId{"calendar"};
 }
 
-Kalburator::Shape::Shape KalburatorDomainCalendar::canonicalShape() const
+Kalburator::Shape::Shape CalendarDomainPlugin::canonicalShape() const
 {
     return { DomainId{"calendar"}, EncodingId{"ical"} };
 }
 
-QList<Kalburator::Shape::Shape> KalburatorDomainCalendar::peerShapes() const
+QList<Kalburator::Shape::Shape> CalendarDomainPlugin::peerShapes() const
 {
     return {};
 }
 
-PropertyCatalogue KalburatorDomainCalendar::canonicalCatalogue() const
+PropertyCatalogue CalendarDomainPlugin::canonicalCatalogue() const
 {
     return makeICalCatalogue();
 }
 
-PropertyCatalogue KalburatorDomainCalendar::catalogueFor(
+PropertyCatalogue CalendarDomainPlugin::catalogueFor(
     const Kalburator::Shape::Shape& s) const
 {
     if (s == canonicalShape())
@@ -61,17 +61,17 @@ PropertyCatalogue KalburatorDomainCalendar::catalogueFor(
     return {};
 }
 
-std::unique_ptr<RecordDiffer> KalburatorDomainCalendar::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> CalendarDomainPlugin::createCanonicalDiffer() const
 {
     return std::make_unique<RecordDifferICal>();
 }
 
-std::unique_ptr<RecordMerger> KalburatorDomainCalendar::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> CalendarDomainPlugin::createCanonicalMerger() const
 {
     return std::make_unique<RecordMergerICal>();
 }
 
-void KalburatorDomainCalendar::registerEdges(TransformationRegistry& registry)
+void CalendarDomainPlugin::registerEdges(TransformationRegistry& registry)
 {
     const auto canonical = canonicalShape();
     registry.registerShape(canonical, canonicalCatalogue());
@@ -83,19 +83,19 @@ void KalburatorDomainCalendar::registerEdges(TransformationRegistry& registry)
     });
 }
 
-int KalburatorDomainCalendar::richnessRank(
+int CalendarDomainPlugin::richnessRank(
     const Kalburator::Shape::Shape& s) const
 {
     return s == canonicalShape() ? 10 : 0;
 }
 
 std::unique_ptr<Kalburator::Shape::RecordWriter>
-KalburatorDomainCalendar::createWriter(Kalburator::Sync::SyncBackend *backend) const
+CalendarDomainPlugin::createWriter(Kalburator::Sync::SyncBackend *backend) const
 {
     return std::make_unique<Kalburator::Calendar::CalendarPluginWriter>(backend);
 }
 
-QVariantMap KalburatorDomainCalendar::collectionProperties(
+QVariantMap CalendarDomainPlugin::collectionProperties(
     Kalburator::Sync::SyncBackend *backend,
     const QString &collectionId) const
 {
@@ -112,7 +112,7 @@ QVariantMap KalburatorDomainCalendar::collectionProperties(
     return m;
 }
 
-void KalburatorDomainCalendar::applyCollectionProperties(
+void CalendarDomainPlugin::applyCollectionProperties(
     Kalburator::Sync::SyncBackend *backend,
     const QString &collectionId,
     const QVariantMap &props) const
@@ -121,7 +121,7 @@ void KalburatorDomainCalendar::applyCollectionProperties(
     backend->updateCalendar(collectionId, /*calendarId=*/collectionId, props);
 }
 
-QStringList KalburatorDomainCalendar::baselineProperties() const
+QStringList CalendarDomainPlugin::baselineProperties() const
 {
     return { QStringLiteral("color"), QStringLiteral("description") };
 }
@@ -133,7 +133,7 @@ namespace {
 struct CalendarPluginRegistrar {
     CalendarPluginRegistrar() {
         Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Calendar::KalburatorDomainCalendar>());
+            std::make_shared<Kalburator::Calendar::CalendarDomainPlugin>());
     }
 };
 

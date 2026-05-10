@@ -12,7 +12,7 @@ namespace Kalburator::Engine {
 /// Convention: "key absent from a map" is treated as "not set" — represented
 /// internally as an invalid QVariant. The caller is responsible for using
 /// the omit-if-unset convention when constructing the input maps (see
-/// KalburatorDomainCalendar::collectionProperties for the canonical usage).
+/// CalendarDomainPlugin::collectionProperties for the canonical usage).
 ///
 /// Limitation (v1, Task 7): removal of a previously-set property is NOT
 /// modelled. If a key was in `base` but absent from `src`, computeMapDiff

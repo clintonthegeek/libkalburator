@@ -19,29 +19,29 @@ using Kalburator::Shape::IdentityStage;
 
 namespace Kalburator::Contacts {
 
-DomainId KalburatorDomainContacts::domain() const
+DomainId ContactsDomainPlugin::domain() const
 {
     return DomainId{"contacts"};
 }
 
-Kalburator::Shape::Shape KalburatorDomainContacts::canonicalShape() const
+Kalburator::Shape::Shape ContactsDomainPlugin::canonicalShape() const
 {
     return { DomainId{"contacts"}, EncodingId{"vcard4"} };
 }
 
-QList<Kalburator::Shape::Shape> KalburatorDomainContacts::peerShapes() const
+QList<Kalburator::Shape::Shape> ContactsDomainPlugin::peerShapes() const
 {
     return {
         { DomainId{"contacts"}, EncodingId{"vcard3"} },
     };
 }
 
-PropertyCatalogue KalburatorDomainContacts::canonicalCatalogue() const
+PropertyCatalogue ContactsDomainPlugin::canonicalCatalogue() const
 {
     return makeVCardCatalogue();
 }
 
-PropertyCatalogue KalburatorDomainContacts::catalogueFor(
+PropertyCatalogue ContactsDomainPlugin::catalogueFor(
     const Kalburator::Shape::Shape &s) const
 {
     if (s == canonicalShape())
@@ -51,17 +51,17 @@ PropertyCatalogue KalburatorDomainContacts::catalogueFor(
     return {};
 }
 
-std::unique_ptr<RecordDiffer> KalburatorDomainContacts::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> ContactsDomainPlugin::createCanonicalDiffer() const
 {
     return std::make_unique<RecordDifferVCard>();
 }
 
-std::unique_ptr<RecordMerger> KalburatorDomainContacts::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> ContactsDomainPlugin::createCanonicalMerger() const
 {
     return std::make_unique<RecordMergerVCard>();
 }
 
-void KalburatorDomainContacts::registerEdges(TransformationRegistry &registry)
+void ContactsDomainPlugin::registerEdges(TransformationRegistry &registry)
 {
     const auto canonical = canonicalShape();
     const auto vcard3    = Kalburator::Shape::Shape{ DomainId{"contacts"},
@@ -93,7 +93,7 @@ void KalburatorDomainContacts::registerEdges(TransformationRegistry &registry)
     });
 }
 
-int KalburatorDomainContacts::richnessRank(
+int ContactsDomainPlugin::richnessRank(
     const Kalburator::Shape::Shape &s) const
 {
     if (s == canonicalShape()) return 10;
@@ -108,7 +108,7 @@ namespace {
 struct ContactsPluginRegistrar {
     ContactsPluginRegistrar() {
         Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Contacts::KalburatorDomainContacts>());
+            std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>());
     }
 };
 
