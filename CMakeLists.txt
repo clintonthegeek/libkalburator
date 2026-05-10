@@ -360,6 +360,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/caldavconfigwidget.h
     src/sync/carddavcapabilitydiscovery.h
     src/sync/carddavprovider.h
+    # Phase K.4: domain-neutral sync-backend base
+    src/sync/syncbackendbase.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -367,6 +369,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/caldavconfigwidget.cpp
     src/sync/carddavcapabilitydiscovery.cpp
     src/sync/carddavprovider.cpp
+    # Phase K.4: domain-neutral sync-backend base
+    src/sync/syncbackendbase.cpp
 )
 
 # Aggregate

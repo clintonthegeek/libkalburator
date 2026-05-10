@@ -1,7 +1,34 @@
 #ifndef SYNCBACKEND_H
 #define SYNCBACKEND_H
 
-#include <QObject>
+// Phase K.4: this header is now a calendar-typed extension of the
+// domain-neutral `SyncBackendBase` (see `src/sync/syncbackendbase.h`).
+//
+// `SyncBackendBase` carries:
+//   - identity (backendType, nativeShapes, resourceId, shapeFor)
+//   - operation tracking (cancellation, pending-operation queries)
+//   - default IBlobBackend implementations
+//   - domain-neutral telemetry signals (transcodingWarning,
+//     fetch/write started/finished, syncCompleted)
+//
+// This file (`SyncBackend`) layers on top:
+//   - calendar-typed pure virtuals (loadCalendars, storeCalendars,
+//     startSync, removeItem)
+//   - calendar-typed operation factory methods (fetchItems, pushItems,
+//     deleteItems) returning Fetch/Push/DeleteOperation handles
+//   - calendar-CRUD virtuals with default returns (createCalendar,
+//     updateCalendar, renameCalendar, deleteCalendar, etc.)
+//   - calendar-typed signals (calendarDiscovered, calendarLoaded,
+//     itemLoaded, itemRemoved, calendarCreated, ...)
+//   - getRawIcs/setRawIcs, capabilities, RecurrenceCapabilities
+//
+// Non-calendar backends (RawFilesBackend, GenericSqliteBackend,
+// RemoteContactsBackend, blob-only adapters) inherit `SyncBackendBase`
+// directly and do NOT carry calendar stubs. Calendar backends
+// (LocalBackend, OrgBackend, RemoteCalendarBackend, AkonadiBackend,
+// SubscriptionBackend, DecSyncBackend, MockBackend) inherit
+// `SyncBackend`.
+
 #include <QList>
 #include <QMap>
 #include <QHash>
@@ -15,32 +42,23 @@
 #include <KCalendarCore/Recurrence>
 
 #include "calendartype.h"   // CalendarType enum
-#include "iblobbackend.h"  // IBlobBackend pure interface (Phase D Group 2)
+#include "syncbackendbase.h" // domain-neutral base (Phase K.4)
 #include "transcodingplan.h"
-#include "shape.h"         // Kalburator::Shape::Shape (G.3)
 
 namespace Kalburator::Sync {
 
 struct BackendCapabilities;
 struct CalendarBackendBinding;
 struct DiscoveredCalendar;
-class SyncOperation;
 class FetchOperation;
 class PushOperation;
 class DeleteOperation;
 
 /**
  * @brief Describes what recurrence features a backend supports.
- *
- * This allows the UI to detect potential data loss when syncing incidences
- * with complex recurrence patterns to backends with limited recurrence support.
- *
- * Example: org-mode only supports simple repeaters (+1d, +1w, +1m, +1y),
- * so a weekly RRULE with BYDAY=MO,WE,FR would lose the specific days.
  */
 struct RecurrenceCapabilities
 {
-    // ========== Frequency Support ==========
     bool supportsDaily = true;
     bool supportsWeekly = true;
     bool supportsMonthly = true;
@@ -49,95 +67,64 @@ struct RecurrenceCapabilities
     bool supportsMinutely = false;
     bool supportsSecondly = false;
 
-    // ========== By-Rule Support ==========
-    // Most backends don't support these advanced patterns
-    bool supportsByDay = false;      // BYDAY (e.g., MO,WE,FR)
-    bool supportsByMonthDay = false; // BYMONTHDAY (e.g., 15,-1)
-    bool supportsByYearDay = false;  // BYYEARDAY
-    bool supportsByWeekNo = false;   // BYWEEKNO
-    bool supportsByMonth = false;    // BYMONTH (e.g., 1,6,12)
-    bool supportsBySetPos = false;   // BYSETPOS (e.g., -1 for "last")
+    bool supportsByDay = false;
+    bool supportsByMonthDay = false;
+    bool supportsByYearDay = false;
+    bool supportsByWeekNo = false;
+    bool supportsByMonth = false;
+    bool supportsBySetPos = false;
 
-    // ========== Rule Limits ==========
-    bool supportsCount = false;      // RRULE COUNT= (repeat N times)
-    bool supportsUntil = false;      // RRULE UNTIL= (repeat until date)
-    int maxInterval = 0;             // 0 = unlimited, >0 = max interval value
+    bool supportsCount = false;
+    bool supportsUntil = false;
+    int maxInterval = 0;
 
-    // ========== Multiple Rules & Exceptions ==========
-    bool supportsMultipleRRules = false;  // Multiple RRULE per incidence
-    bool supportsExRules = false;         // EXRULE (exclusion rules)
-    bool supportsRDates = false;          // RDATE (additional dates)
-    bool supportsExDates = false;         // EXDATE (exception dates)
+    bool supportsMultipleRRules = false;
+    bool supportsExRules = false;
+    bool supportsRDates = false;
+    bool supportsExDates = false;
 
-    // ========== Backend-Specific Metadata ==========
-    QString backendType;             // E.g., "orgmode", "local", "caldav"
-    QString displayName;             // Human-readable name for UI
+    QString backendType;
+    QString displayName;
 
-    /**
-     * @brief Check if this backend supports a specific frequency.
-     */
     bool supportsFrequency(KCalendarCore::RecurrenceRule::PeriodType type) const;
-
-    /**
-     * @brief Get a human-readable description of limitations.
-     */
     QString limitationsDescription() const;
 };
 
 /**
  * @brief Describes what would be lost when saving an incidence to a backend.
- *
- * This struct is populated by analyzeRecurrenceLoss() and used by the UI
- * to inform users about potential data loss before syncing.
  */
 struct RecurrenceLossInfo
 {
-    bool hasLoss = false;            // True if any information would be lost
-    bool frequencyLost = false;      // Unsupported frequency (e.g., hourly)
-    bool byRulesLost = false;        // By-rules not supported (BYDAY, etc.)
-    bool countUntilLost = false;     // COUNT/UNTIL not supported
-    bool multipleRulesLost = false;  // Multiple RRULEs collapsed to one
-    bool exceptionsLost = false;     // EXRULE/EXDATE lost
+    bool hasLoss = false;
+    bool frequencyLost = false;
+    bool byRulesLost = false;
+    bool countUntilLost = false;
+    bool multipleRulesLost = false;
+    bool exceptionsLost = false;
 
-    QStringList lostDetails;         // Human-readable descriptions of losses
+    QStringList lostDetails;
 
-    /**
-     * @brief Get a summary suitable for display in a dialog.
-     */
     QString summary() const;
 };
 
 /**
- * @brief Abstract base class for all sync backends.
+ * @brief Calendar-typed sync-backend base.
  *
- * Backends handle storage and retrieval of calendar data from different
- * sources (local files, org-mode, CalDAV, etc.). The interface is designed
- * to support the future SyncRouter and qsynccore integration.
+ * Inherits the domain-neutral `SyncBackendBase` and adds calendar-typed
+ * pure virtuals, calendar-CRUD virtuals with default no-op returns, and
+ * calendar-typed signals.
+ *
+ * Calendar backends (LocalBackend, OrgBackend, RemoteCalendarBackend,
+ * etc.) inherit this class. Non-calendar backends inherit
+ * `SyncBackendBase` directly and do not carry these calendar APIs.
  */
-class SyncBackend : public QObject, public IBlobBackend
+class SyncBackend : public SyncBackendBase
 {
     Q_OBJECT
 
 public:
     explicit SyncBackend(QObject *parent = nullptr);
     virtual ~SyncBackend() = default;
-
-    // ========== Core Backend Identity ==========
-
-    /// Return a unique backend type string, e.g. "local", "orgmode", "caldav"
-    virtual QString backendType() const = 0;
-
-    /// Return the shapes this backend natively stores (G.3).
-    /// Every concrete backend must implement this.
-    virtual QList<Kalburator::Shape::Shape> nativeShapes() const = 0;
-
-    /// Return a stable identifier for the resource (device/store) this backend
-    /// is attached to (G.3). Default: "backend:<hex-address>".
-    virtual QString resourceId() const;
-
-    /// Return the best shape for a specific collection (G.3).
-    /// Default: nativeShapes().first(), or Shape::Any() if nativeShapes() is empty.
-    virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
 
     // ========== Calendar Discovery & Loading ==========
 
@@ -161,146 +148,46 @@ public:
     /// Remove an item by calendar ID and item UID
     virtual void removeItem(const QString &calId, const QString &itemUid) = 0;
 
-    // Phase E note (2026-04-29): the operation-based API does not yet
-    // carry a TranscodingPlan parameter. If this API survives Phase F's
-    // threading-API redesign, it inherits the same plan-passing pattern
-    // used by storeItems/updateItem/startSync.
+    // ========== Operation-Based API ==========
 
-    // ========== Operation-Based API (Preferred) ==========
-    // These methods return trackable SyncOperation handles and work with
-    // calendar IDs instead of raw pointers. This allows proper async lifecycle
-    // management and prevents crashes from deleted calendars.
-
-    /**
-     * @brief Fetch all items from a calendar.
-     *
-     * Returns a FetchOperation that tracks the async fetch. When complete,
-     * call fetchedItems() on the operation to get the results.
-     *
-     * Callers are responsible for:
-     * - Connecting to finished() signal
-     * - Looking up the calendar by ID when applying results
-     * - Deleting the operation when done (or using deleteLater())
-     *
-     * @param calendarId The calendar ID to fetch from
-     * @return FetchOperation* tracking the operation (caller owns)
-     */
     virtual FetchOperation* fetchItems(const QString &calendarId);
 
-    /**
-     * @brief Push items to a calendar.
-     *
-     * Returns a PushOperation that tracks which items succeeded/failed.
-     *
-     * @param calendarId The calendar ID to push to
-     * @param items The incidences to push
-     * @return PushOperation* tracking the operation (caller owns)
-     */
-    // Non-virtual convenience wrapper: callers that omit the plan get
-    // an empty TranscodingPlan forwarded to the 3-arg virtual.
+    /// Convenience overload: omit the plan -> empty TranscodingPlan.
     PushOperation* pushItems(const QString &calendarId,
                              const QList<KCalendarCore::Incidence::Ptr> &items)
     { return pushItems(calendarId, items, TranscodingPlan{}); }
 
-    /**
-     * @brief Push items to a calendar, with a transcoding plan.
-     *
-     * Pure virtual; all backends must implement this. The base class
-     * provides a default that fails with "not implemented".
-     *
-     * @param calendarId The calendar ID to push to
-     * @param items The incidences to push
-     * @param plan Transcoding plan to honour for the push
-     * @return PushOperation* tracking the operation (caller owns)
-     */
     virtual PushOperation* pushItems(const QString &calendarId,
                                      const QList<KCalendarCore::Incidence::Ptr> &items,
                                      const TranscodingPlan &plan);
 
-    /**
-     * @brief Delete items from a calendar.
-     *
-     * @param calendarId The calendar ID to delete from
-     * @param uids The UIDs of incidences to delete
-     * @return DeleteOperation* tracking the operation (caller owns)
-     */
     virtual DeleteOperation* deleteItems(const QString &calendarId,
                                          const QStringList &uids);
 
-    // ========== Operation Tracking ==========
-
-    /**
-     * @brief Check if any operations are pending for this backend.
-     */
-    virtual bool hasPendingOperations() const;
-
-    /**
-     * @brief Check if operations are pending for a specific calendar.
-     */
-    virtual bool hasPendingOperationsFor(const QString &calendarId) const;
-
-    /**
-     * @brief Get all pending operations.
-     */
-    virtual QList<SyncOperation*> pendingOperations() const;
-
-    /**
-     * @brief Get pending operations for a specific calendar.
-     */
-    virtual QList<SyncOperation*> pendingOperationsFor(const QString &calendarId) const;
-
-    /**
-     * @brief Cancel all pending operations for a calendar.
-     *
-     * Waits for cancellation to complete before returning.
-     */
-    virtual void cancelOperationsFor(const QString &calendarId);
-
-    /**
-     * @brief Cancel all pending operations.
-     */
-    virtual void cancelAllOperations();
-
     // ========== Calendar-Level CRUD Operations ==========
-    // These are required for SyncRouter to manage calendars across backends
 
-    /// Returns true if backend supports calendar creation/modification
     virtual bool supportsCalendarCreation() const { return false; }
 
-    /// Get the discovered CalendarType for a calendar (from server discovery)
-    /// Returns Hybrid by default if not discovered or unknown
     virtual CalendarType discoveredCalendarType(const QString &calendarId) const {
         Q_UNUSED(calendarId);
         return CalendarType::Hybrid;
     }
 
-    /// Get the discovered color for a calendar (from server discovery)
-    /// Returns invalid color if not discovered
     virtual QColor discoveredColor(const QString &calendarId) const {
         Q_UNUSED(calendarId);
         return QColor();
     }
 
-    /// Get the discovered display name for a calendar (from server discovery)
-    /// Returns empty string if not discovered
     virtual QString discoveredDisplayName(const QString &calendarId) const {
         Q_UNUSED(calendarId);
         return QString();
     }
 
-    /// Get whether the discovered calendar is writable (from server discovery)
-    /// Returns true by default if not discovered or unknown
     virtual bool discoveredWritable(const QString &calendarId) const {
         Q_UNUSED(calendarId);
         return true;
     }
 
-    /// Create a new calendar with the given ID and name
-    /// @param collectionId The collection to add the calendar to
-    /// @param calendarId The unique identifier for the new calendar
-    /// @param name Display name for the calendar
-    /// @param type Calendar type (Event, Todo, or Hybrid) - used for CalDAV component restrictions
-    /// Returns true on success, false on failure
     virtual bool createCalendar(const QString &collectionId,
                                 const QString &calendarId,
                                 const QString &name,
@@ -309,9 +196,6 @@ public:
         return false;
     }
 
-    /// Update calendar properties (color, description, etc.)
-    /// Properties passed as QVariantMap with keys like "color", "description", "accessMode"
-    /// Returns true on success, false on failure
     virtual bool updateCalendar(const QString &collectionId,
                                 const QString &calendarId,
                                 const QVariantMap &properties) {
@@ -319,8 +203,6 @@ public:
         return false;
     }
 
-    /// Rename a calendar (change its ID)
-    /// Returns true on success, false on failure
     virtual bool renameCalendar(const QString &collectionId,
                                 const QString &oldCalendarId,
                                 const QString &newCalendarId) {
@@ -328,103 +210,37 @@ public:
         return false;
     }
 
-    /// Delete a calendar by ID
-    /// Returns true on success, false on failure
     virtual bool deleteCalendar(const QString &collectionId, const QString &calendarId) {
         Q_UNUSED(collectionId); Q_UNUSED(calendarId);
         return false;
     }
 
     // ========== Calendar Property Getters ==========
-    // These methods retrieve current calendar properties (color, description)
-    // for use during property sync. Unlike discoveredXxx() methods which only
-    // return values from initial discovery, these fetch the actual current state.
 
-    /**
-     * @brief Get the current color of a calendar.
-     *
-     * Returns the calendar's current color property, fetching from the backend
-     * if necessary. This may involve reading metadata files, PROPFIND requests,
-     * or parsing file headers depending on the backend type.
-     *
-     * @param calendarId The calendar ID
-     * @return Current calendar color, or invalid QColor if not set or not supported
-     */
     virtual QColor calendarColor(const QString &calendarId) const {
         Q_UNUSED(calendarId);
-        return QColor();  // Invalid color = not set/supported
+        return QColor();
     }
 
-    /**
-     * @brief Get the current description of a calendar.
-     *
-     * Returns the calendar's current description property.
-     *
-     * @param calendarId The calendar ID
-     * @return Current calendar description, or empty string if not set or not supported
-     */
     virtual QString calendarDescription(const QString &calendarId) const {
         Q_UNUSED(calendarId);
-        return QString();  // Empty = not set/supported
+        return QString();
     }
 
     // ========== Binding Metadata Support ==========
-    // These methods support LogicalCalendarBuilder's metadata handling
 
-    /**
-     * @brief Get the metadata keys this backend expects in bindings.
-     *
-     * Used by LogicalCalendarBuilder to prepare binding metadata.
-     *
-     * Example returns:
-     * - CalDAV: {"davUrl", "etag"}
-     * - OrgMode: {"filePath", "headline"}
-     * - Local: {"directory"}
-     *
-     * @return List of metadata key names
-     */
     virtual QStringList bindingMetadataKeys() const { return {}; }
 
-    /**
-     * @brief Populate binding metadata from a discovered calendar.
-     *
-     * Called by LogicalCalendarBuilder when creating binding from discovery.
-     * Backend can copy/transform metadata as needed.
-     *
-     * Default implementation copies the metadata map directly.
-     *
-     * @param discovered Source discovered calendar
-     * @param binding Target binding (modify metadata in place)
-     */
     virtual void populateBindingMetadata(
         const DiscoveredCalendar &discovered,
         CalendarBackendBinding &binding) const;
 
-    /**
-     * @brief Prepare metadata for a pending calendar creation.
-     *
-     * Called when needsCreation=true. Backend can set default values
-     * or compute derived values (e.g., URL from base + calendarId).
-     *
-     * @param calendarId The calendar ID to create
-     * @param binding Target binding (modify metadata in place)
-     */
     virtual void prepareCreationMetadata(
         const QString &calendarId,
         CalendarBackendBinding &binding) const;
 
     // ========== Source File Access ==========
 
-    /**
-     * @brief Get the on-disk file path for a calendar, if file-based.
-     *
-     * Returns the source file path for backends that store data as files
-     * (e.g., org-mode .org files, local .ics files). Returns empty string
-     * for network-based backends (CalDAV, etc.).
-     *
-     * @param calendarId The calendar ID
-     * @return File path or empty string if not file-based
-     */
     virtual QString sourceFilePath(const QString &calendarId) const {
         Q_UNUSED(calendarId);
         return {};
@@ -432,33 +248,11 @@ public:
 
     // ========== Debug/Raw ICS Access ==========
 
-    /**
-     * @brief Get the raw .ics content for an incidence.
-     *
-     * Used by debug features to allow direct editing of the underlying
-     * iCalendar data. Returns empty string if not supported or not found.
-     *
-     * @param calendarId The calendar containing the incidence
-     * @param uid The UID of the incidence
-     * @return Raw .ics file content, or empty string on failure
-     */
     virtual QString getRawIcs(const QString &calendarId, const QString &uid) const {
         Q_UNUSED(calendarId); Q_UNUSED(uid);
         return QString();
     }
 
-    /**
-     * @brief Set the raw .ics content for an incidence.
-     *
-     * Used by debug features to allow direct editing of the underlying
-     * iCalendar data. This bypasses normal validation and should only
-     * be used for testing/debugging.
-     *
-     * @param calendarId The calendar containing the incidence
-     * @param uid The UID of the incidence
-     * @param icsContent The new raw .ics content
-     * @return true if successfully written, false on failure
-     */
     virtual bool setRawIcs(const QString &calendarId, const QString &uid,
                            const QString &icsContent) {
         Q_UNUSED(calendarId); Q_UNUSED(uid); Q_UNUSED(icsContent);
@@ -467,192 +261,52 @@ public:
 
     // ========== Backend Capabilities ==========
 
-    /**
-     * @brief Get comprehensive capabilities of this backend.
-     *
-     * Returns a BackendCapabilities struct describing all capabilities:
-     * incidence types, recurrence, properties, structural features,
-     * calendar CRUD, and sync characteristics.
-     *
-     * Subclasses should override this to describe their capabilities.
-     * The default implementation returns full iCalendar capability.
-     *
-     * @return BackendCapabilities describing this backend
-     */
     virtual BackendCapabilities capabilities() const;
 
-    /**
-     * @brief Get the recurrence capabilities of this backend.
-     *
-     * @deprecated Use capabilities().recurrence instead.
-     * This method is kept for backwards compatibility.
-     */
     [[deprecated("Use capabilities().recurrence instead")]]
     virtual RecurrenceCapabilities recurrenceCapabilities() const;
 
-    /**
-     * @brief Analyze what recurrence information would be lost when saving to this backend.
-     *
-     * This checks the incidence's recurrence against the backend's capabilities
-     * and returns a description of what would be lost.
-     *
-     * @param incidence The incidence to analyze
-     * @return RecurrenceLossInfo describing what would be lost (empty if no loss)
-     */
     RecurrenceLossInfo analyzeRecurrenceLoss(const KCalendarCore::Incidence::Ptr &incidence) const;
-
-    // ========== Factory Support for BackendRegistry ==========
-
-    /// Static factory method - subclasses should implement this pattern:
-    /// static SyncBackend* create(const QVariantMap &config, QObject *parent);
-    ///
-    /// Config keys vary by backend type:
-    ///   local:   { "rootPath": "/path/to/storage" }
-    ///   orgmode: { "rootPath": "/path/to/org/files" }
-    ///   caldav:  { "url": "https://...", "username": "...", "password": "..." }
-
-    // ========== IBlobBackend default implementations ==========
-    // These are default bodies that emit a qWarning if called before a
-    // concrete backend overrides them (Tasks 11-18). They keep the build
-    // green across the Group 2 migration window.
-    //
-    // Identity/capability — sensible fallbacks:
-    QString backendId() const override;
-    QString displayName() const override;
-    bool    isAvailable() const override;
-    bool    supportsBatch() const override;
-    bool    supportsDeleteTracking() const override;
-
-    // Collections:
-    QList<CollectionInfo> availableCollections() override;
-    CollectionInfo collectionInfo(const QString &collectionId) override;
-    QString createCollection(const CollectionInfo &info) override;
-
-    // Records:
-    QList<BackendRecord> loadRecords(const QString &collectionId) override;
-    std::optional<BackendRecord> loadRecord(const QString &recordId) override;
-    QString createRecord(const QString &collectionId, const BackendRecord &record) override;
-    bool    updateRecord(const BackendRecord &record) override;
-    bool    deleteRecord(const QString &recordId) override;
-
-    // Change detection:
-    QList<BackendRecord> modifiedSince(const QString &collectionId,
-                                       const QDateTime &since) override;
-    QStringList deletedSince(const QString &collectionId,
-                             const QDateTime &since) override;
-
-    // Batch — no-op defaults (IBlobBackend already has inline defaults,
-    // but re-declare here so the QObject/IBlobBackend vtable is unambiguous):
-    void beginBatch() override;
-    bool commitBatch() override;
-    void rollbackBatch() override;
 
 Q_SIGNALS:
     // ========== Calendar Discovery & Loading Events ==========
 
-    /// New calendar discovered during loadCalendars
     void calendarDiscovered(const QString &collectionId, const QString &calendarId);
 
-    /// Incidence loaded into calendar
     void itemLoaded(KCalendarCore::MemoryCalendar* cal,
                     KCalendarCore::Incidence::Ptr incidence,
                     const QString &versionIdentifier);
 
-    /// Calendar loading complete
     void calendarLoaded(KCalendarCore::MemoryCalendar* cal);
 
-    /// Sync operation finished for collection
-    void syncCompleted(const QString &collectionId);
-
-    /// Incidence removed from backend
     void itemRemoved(const QString &calId, const QString &itemUid);
 
-    /// Emitted when loadCalendars() completes (success or failure)
     void loadCalendarsFinished(const QString &collectionId, bool success,
                                const QString &errorMessage = QString());
 
     // ========== Calendar CRUD Events ==========
 
-    /// Calendar was successfully created
     void calendarCreated(const QString &collectionId, const QString &calendarId);
-
-    /// Calendar properties were updated
     void calendarUpdated(const QString &collectionId, const QString &calendarId);
-
-    /// Calendar was renamed
     void calendarRenamed(const QString &collectionId,
                          const QString &oldCalendarId,
                          const QString &newCalendarId);
-
-    /// Calendar was deleted
     void calendarDeleted(const QString &collectionId, const QString &calendarId);
-
-    /// Error occurred during calendar operation
     void calendarError(const QString &collectionId,
                        const QString &calendarId,
                        const QString &errorMessage);
 
-    /// Emitted when a write operation invokes a non-lossless transcoder.
-    /// Carries calendar id, incidence uid, and the warning descriptions
-    /// from each transcoder that contributed to the loss.
-    void transcodingWarning(const QString& calendarId,
-                            const QString& uid,
-                            const QStringList& warnings);
-
     /// A loaded item's type does not match the collection's expected type.
-    /// Emitted when e.g. a VTODO is found in a VEVENT-only collection.
-    /// The item is still loaded (data preservation), but callers should
-    /// not propagate it to type-restricted backends.
     void typeViolationDetected(const QString &calendarId,
                                const QString &itemUid,
                                CalendarType expectedType,
                                CalendarType actualType);
 
-    // ========== Streaming Fetch Events (for real-time UI updates) ==========
+    // ========== Streaming Fetch Events (calendar-typed) ==========
 
-    /// Emitted when a fetch operation begins, with the expected total item count
-    /// (totalItems may be -1 if count is unknown until fetch completes)
-    void fetchStarted(const QString &calendarId, int totalItems);
-
-    /// Emitted for EACH item as it is fetched - allows real-time view updates
+    /// Per-item streaming fetch — calendar-typed (Incidence::Ptr).
     void itemFetched(const QString &calendarId,
                      const KCalendarCore::Incidence::Ptr &incidence);
-
-    /// Emitted periodically during fetch to update progress UI
-    void fetchProgressChanged(const QString &calendarId, int current, int total);
-
-    /// Emitted when fetch operation completes (success or failure)
-    void fetchFinished(const QString &calendarId, bool success,
-                       const QString &errorMessage = QString());
-
-    // ========== Streaming Write Events (for real-time UI updates) ==========
-
-    /// Emitted when a write operation begins, with the expected total item count
-    void writeStarted(const QString &calendarId, int totalItems);
-
-    /// Emitted periodically during write to update progress UI
-    void writeProgressChanged(const QString &calendarId, int current, int total);
-
-protected:
-    // ========== Operation Tracking Implementation ==========
-
-    /**
-     * @brief Register an operation as pending.
-     *
-     * Subclasses should call this when starting an operation.
-     * The operation will be automatically removed when it emits finished().
-     */
-    void registerOperation(SyncOperation *op);
-
-    /**
-     * @brief Remove an operation from tracking.
-     *
-     * Called automatically when operation emits finished().
-     */
-    void unregisterOperation(SyncOperation *op);
-
-    /// Pending operations indexed by calendar ID
-    QHash<QString, QList<SyncOperation*>> m_pendingOperations;
 };
 
 } // namespace Kalburator::Sync
