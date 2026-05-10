@@ -2,9 +2,23 @@
 // Use relative path to avoid resolving to src/journal/baselinestore.h
 // (src/journal appears before src/storage in the include path ordering).
 #include "../storage/baselinestore.h"
+#include "../shape/canonicalrecord.h"
+#include "../shape/shape.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
+
+namespace {
+Kalburator::Shape::CanonicalRecord makeCalRec(const QString &uid, const QString &ical) {
+    Kalburator::Shape::CanonicalRecord rec;
+    rec.recordId = uid;
+    rec.shape    = Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("ical")}};
+    rec.data     = ical.toUtf8();
+    return rec;
+}
+} // namespace
 
 namespace Kalburator::Sync {
 
@@ -20,41 +34,54 @@ bool CalendarBaselineStore::isValid() const { return m_store->isOpen(); }
 // ---- iCal-text baselines ----
 
 QString CalendarBaselineStore::baseline(const QString &mappingId, const QString &uid) const {
-    return m_store->calendarIcalBaseline(mappingId, uid);
+    auto rec = m_store->baselineV3(mappingId, uid);
+    if (!rec) return {};
+    return QString::fromUtf8(rec->data);
 }
 
 bool CalendarBaselineStore::setBaseline(const QString &mappingId, const QString &uid,
                                         const QString &icalText) {
-    return m_store->setCalendarIcalBaseline(mappingId, uid, icalText);
+    m_seenMappings.insert(mappingId);
+    return m_store->setBaselineV3(mappingId, makeCalRec(uid, icalText));
 }
 
 bool CalendarBaselineStore::setBaselines(const QString &mappingId,
                                          const QHash<QString, QString> &uidToIcal) {
+    m_seenMappings.insert(mappingId);
     bool ok = true;
     for (auto it = uidToIcal.begin(); it != uidToIcal.end(); ++it) {
-        ok = m_store->setCalendarIcalBaseline(mappingId, it.key(), it.value()) && ok;
+        ok = m_store->setBaselineV3(mappingId, makeCalRec(it.key(), it.value())) && ok;
     }
     return ok;
 }
 
 bool CalendarBaselineStore::removeBaseline(const QString &mappingId, const QString &uid) {
-    return m_store->removeCalendarIcalBaseline(mappingId, uid);
+    return m_store->removeBaselineV3(mappingId, uid);
 }
 
 bool CalendarBaselineStore::removeBaselines(const QString &mappingId) {
-    return m_store->clearCalendarIcalBaselinesForMapping(mappingId);
+    return m_store->clearMappingV3(mappingId);
 }
 
 QHash<QString, QString> CalendarBaselineStore::allBaselines(const QString &mappingId) const {
-    return m_store->calendarIcalBaselinesForMapping(mappingId);
+    QHash<QString, QString> out;
+    for (const auto &rec : m_store->baselinesForMappingV3(mappingId)) {
+        out.insert(rec.recordId, QString::fromUtf8(rec.data));
+    }
+    return out;
 }
 
 bool CalendarBaselineStore::clearBaselines() {
-    return m_store->clearAllCalendarIcalBaselines();
+    bool ok = true;
+    for (const auto &m : m_seenMappings) {
+        ok = m_store->clearMappingV3(m) && ok;
+    }
+    m_seenMappings.clear();
+    return ok;
 }
 
 bool CalendarBaselineStore::hasBaselines(const QString &mappingId) const {
-    return m_store->hasCalendarIcalBaselines(mappingId);
+    return !m_store->baselinesForMappingV3(mappingId).isEmpty();
 }
 
 // ---- property-JSON baselines ----

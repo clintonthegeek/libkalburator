@@ -3,6 +3,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QDateTime>
 
@@ -53,6 +54,7 @@ public:
 
 private:
     std::unique_ptr<Kalburator::Storage::BaselineStore> m_store;
+    mutable QSet<QString>                               m_seenMappings;
 };
 
 } // namespace Kalburator::Sync

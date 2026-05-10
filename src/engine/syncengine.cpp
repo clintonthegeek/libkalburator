@@ -1946,6 +1946,13 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
+                // Only blob/raw records carry content-hash data usable by
+                // blobBatchDiff.  Calendar iCal records (domain="calendar",
+                // encoding="ical") store ical text, not hashes — including
+                // them here would corrupt the hash-skip logic.
+                if (canonical.shape.domain.toString() != QLatin1String("blob")) {
+                    continue;
+                }
                 BackendRecord rec;
                 rec.id          = canonical.recordId;
                 rec.contentHash = QString::fromUtf8(canonical.data);

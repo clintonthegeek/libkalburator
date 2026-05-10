@@ -89,32 +89,6 @@ public:
     bool clearMappingV3(const QString &mappingId);
 
     // -----------------------------------------------------------------------
-    // Calendar iCal-text baseline API (K.5, schema v5).
-    //
-    // Per (mappingId, uid) → iCal text snapshot. Stored in a dedicated
-    // calendar_ical_baselines table so these records never collide with the
-    // blob/raw hash records in blob_baselines_v3.
-    // Used exclusively by the CalendarBaselineStore facade; deleted in
-    // Task 13 when the facade is removed.
-    // -----------------------------------------------------------------------
-
-    bool    setCalendarIcalBaseline(const QString &mappingId, const QString &uid,
-                                    const QString &icalText);
-
-    QString calendarIcalBaseline(const QString &mappingId, const QString &uid) const;
-
-    QHash<QString, QString> calendarIcalBaselinesForMapping(
-                                    const QString &mappingId) const;
-
-    bool    removeCalendarIcalBaseline(const QString &mappingId, const QString &uid);
-
-    bool    clearCalendarIcalBaselinesForMapping(const QString &mappingId);
-
-    bool    hasCalendarIcalBaselines(const QString &mappingId) const;
-
-    bool    clearAllCalendarIcalBaselines();
-
-    // -----------------------------------------------------------------------
     // Collection-baseline API (K.5, schema v5).
     //
     // Per (mappingId, collectionId) → QVariantMap of
@@ -183,7 +157,6 @@ private:
     bool ensureSchemaAndVersion();
     bool ensureSchemaV3();
     bool ensureSchemaV5();
-    bool ensureCalendarIcalSchema();
     void setError(const QString &message) const;
 };
 
