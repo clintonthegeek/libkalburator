@@ -937,30 +937,6 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
         }
     }
 
-    // Property baselines: snapshot the plugin-declared keys from collectionProperties.
-    if (m_baselineStore && m_controller) {
-        SyncBackend *srcBackend = m_controller->backendById(mapping.sourceBackend);
-        if (srcBackend && !srcBackend->nativeShapes().isEmpty()) {
-            const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
-            auto *plugin = Kalburator::Shape::DomainRegistry::instance()
-                               .findByDomain(srcShape.domain);
-            if (plugin) {
-                const QStringList keys = plugin->baselineProperties();
-                if (!keys.isEmpty()) {
-                    const QVariantMap collProps =
-                        plugin->collectionProperties(srcBackend, mapping.sourceCalendar);
-                    QVariantMap snapshot;
-                    for (const auto &k : keys) {
-                        if (collProps.contains(k))
-                            snapshot.insert(k, collProps.value(k));
-                    }
-                    m_baselineStore->setCollectionBaseline(
-                        mapping.id, mapping.sourceCalendar, snapshot);
-                }
-            }
-        }
-    }
-
     // Update last sync time
     m_baselineStore->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
 }
@@ -1837,8 +1813,8 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // Baseline is passed as empty for v1: Task 7 deferred persistence wiring
     // because the existing CalendarBaselineStore stores CalendarPropertyRecord
     // JSON, not a generic QVariantMap. For first-sync runs the baseline is
-    // empty anyway. Subsequent syncs lose property-baseline diff fidelity
-    // until Task 13 bridges or migrates the store.
+    // empty anyway. Subsequent syncs now persist property-baseline snapshots
+    // via T9 (unifiedContinueAfterConflicts after successful writes).
     runPropertyPhase(plugin, srcBackend, tgtBackend,
                      srcColId, tgtColId,
                      /*baseline=*/QVariantMap{},
@@ -2453,6 +2429,26 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     bbs->setBaselineV3(mappingId, canonical);
                 }
             }, Qt::BlockingQueuedConnection);
+        }
+        // T9: persist property-baseline snapshot after successful write.
+        if (m_baselineStore && m_engine && plugin) {
+            const QStringList keys = plugin->baselineProperties();
+            if (!keys.isEmpty()) {
+                const QVariantMap collProps =
+                    plugin->collectionProperties(srcBackend, srcColId);
+                QVariantMap snapshot;
+                for (const auto &k : keys) {
+                    if (collProps.contains(k))
+                        snapshot.insert(k, collProps.value(k));
+                }
+                if (!snapshot.isEmpty()) {
+                    Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
+                    QMetaObject::invokeMethod(m_engine,
+                        [bbs, mappingId, srcColId, snapshot]() {
+                            bbs->setCollectionBaseline(mappingId, srcColId, snapshot);
+                        }, Qt::BlockingQueuedConnection);
+                }
+            }
         }
         m_currentResult.success = !m_currentResult.hasUnresolvedConflicts();
     }
