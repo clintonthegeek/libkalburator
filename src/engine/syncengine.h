@@ -809,6 +809,12 @@ private:
 
 } // namespace Kalburator::Engine
 
+// K.5.5 compatibility: consumers use Sync::SyncEngine
+namespace Kalburator::Sync {
+using SyncEngine = Kalburator::Engine::SyncEngine;
+using SyncEngineWorker = Kalburator::Engine::SyncEngineWorker;
+} // namespace Kalburator::Sync
+
 Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Request)
 Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Mode)
 

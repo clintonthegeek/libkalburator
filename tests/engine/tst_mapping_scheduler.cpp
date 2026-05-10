@@ -8,7 +8,7 @@
 
 #include "mappingscheduler.h"
 
-using namespace Kalburator::Sync;
+using namespace Kalburator::Engine;
 
 class TstMappingScheduler : public QObject
 {

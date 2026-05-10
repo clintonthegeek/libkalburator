@@ -3,7 +3,7 @@
 // Mirrors WP-side tst_contacts_palm_engine_sync.cpp (Task 19) using
 // libkalburator-internal shapes only: source declares (contacts, vcard3),
 // target declares (contacts, vcard4). The vcard3<->vcard4 edge is
-// statically registered by KalburatorDomainContacts::registerEdges.
+// statically registered by ContactsDomainPlugin::registerEdges.
 //
 // What this pins (positive end-to-end behavior of the unified path):
 //
@@ -293,7 +293,7 @@ private slots:
 
 void TestEngineUnifiedRouting::initTestCase()
 {
-    // KalburatorDomainContacts is registered via static initializer
+    // ContactsDomainPlugin is registered via static initializer
     // pulled in by --whole-archive. Run initialize() so the contacts
     // plugin's registerEdges() populates the TransformationRegistry
     // with vcard3<->vcard4 edges (and the canonical identity edge).

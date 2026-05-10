@@ -66,11 +66,11 @@ public:
                    const Kalburator::Sync::TranscodingPlan &) override {}
     void removeItem(const QString &, const QString &) override {}
 
-    Kalburator::Engine::FetchOperation  *fetchItems(const QString &) override { return nullptr; }
-    Kalburator::Engine::PushOperation   *pushItems(const QString &,
+    Kalburator::Sync::FetchOperation  *fetchItems(const QString &) override { return nullptr; }
+    Kalburator::Sync::PushOperation   *pushItems(const QString &,
                                                   const QList<KCalendarCore::Incidence::Ptr> &,
                                                   const Kalburator::Sync::TranscodingPlan &) override { return nullptr; }
-    Kalburator::Engine::DeleteOperation *deleteItems(const QString &, const QStringList &) override { return nullptr; }
+    Kalburator::Sync::DeleteOperation *deleteItems(const QString &, const QStringList &) override { return nullptr; }
 
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
 
@@ -105,34 +105,34 @@ private slots:
 
     void canonicalShapeIsCalendarIcal()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         const Kalburator::Shape::Shape expected{ DomainId{"calendar"}, EncodingId{"ical"} };
         QCOMPARE(plugin.canonicalShape(), expected);
     }
 
     void domainIsCalendar()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         QCOMPARE(plugin.domain().toString(), QString{"calendar"});
     }
 
     void canonicalCatalogueHasUid()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
     }
 
     void canonicalCatalogueHasSummary()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"summary"}));
     }
 
     void registerEdgesPopulatesRegistry()
     {
-        KalburatorDomainCalendar plugin;
+        CalendarDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
 
@@ -149,13 +149,13 @@ private slots:
 
     void richnessRankCanonical()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
     }
 
     void peerShapesEmpty()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         QVERIFY(plugin.peerShapes().isEmpty());
     }
 
@@ -165,7 +165,7 @@ private slots:
 
     void collectionPropertiesReadsColorAndDescription()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         MinimalBackend backend;
         backend.setCalendarColor(QStringLiteral("cal-1"), QColor(Qt::blue));
         backend.setCalendarDescription(QStringLiteral("cal-1"), QStringLiteral("My calendar"));
@@ -182,7 +182,7 @@ private slots:
     void collectionPropertiesOmitsUnsetKeys()
     {
         // Backend returns invalid color and empty description for unknown ids
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         MinimalBackend backend;
 
         const QVariantMap props = plugin.collectionProperties(&backend, QStringLiteral("cal-none"));
@@ -193,14 +193,14 @@ private slots:
 
     void collectionPropertiesHandlesNullBackend()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         const QVariantMap props = plugin.collectionProperties(nullptr, QStringLiteral("cal-1"));
         QVERIFY(props.isEmpty());
     }
 
     void applyCollectionPropertiesCallsUpdateCalendar()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         MinimalBackend backend;
 
         const QVariantMap props{
@@ -219,7 +219,7 @@ private slots:
     void applyCollectionPropertiesSkipsNullBackend()
     {
         // Should not crash; no-op
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         plugin.applyCollectionProperties(nullptr, QStringLiteral("cal-1"),
                                          {{QStringLiteral("color"), QColor(Qt::red)}});
         // If we reach here without crash, test passes
@@ -228,7 +228,7 @@ private slots:
 
     void applyCollectionPropertiesSkipsEmptyProps()
     {
-        const KalburatorDomainCalendar plugin;
+        const CalendarDomainPlugin plugin;
         MinimalBackend backend;
         plugin.applyCollectionProperties(&backend, QStringLiteral("cal-1"), {});
         QCOMPARE(backend.updateCalendarCalls().size(), 0);

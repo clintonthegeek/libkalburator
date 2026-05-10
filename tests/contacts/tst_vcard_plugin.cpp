@@ -22,20 +22,20 @@ private slots:
 
     void canonicalShapeIsContactsVCard()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"vcard4"} };
         QCOMPARE(plugin.canonicalShape(), expected);
     }
 
     void domainIsContacts()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         QCOMPARE(plugin.domain().toString(), QStringLiteral("contacts"));
     }
 
     void catalogueHasRequiredProperties()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
         QVERIFY(cat.hasProperty(PropertyId{"fn"}));
@@ -45,7 +45,7 @@ private slots:
 
     void catalogueHasV4Properties()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"gender"}));
         QVERIFY(cat.hasProperty(PropertyId{"lang"}));
@@ -55,7 +55,7 @@ private slots:
 
     void registerEdgesDeclaresCanonical()
     {
-        KalburatorDomainContacts plugin;
+        ContactsDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
         QCOMPARE(reg.canonicalFor(DomainId{"contacts"}), plugin.canonicalShape());
@@ -63,14 +63,14 @@ private slots:
 
     void richnessRankCanonical()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
     }
 
     void registersVcard3PeerAndEdges()
     {
         using namespace Kalburator::Shape;
-        KalburatorDomainContacts plugin;
+        ContactsDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
 
@@ -92,7 +92,7 @@ private slots:
 
     void peerShapesIncludesVcard3()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         const auto peers = plugin.peerShapes();
         const Kalburator::Shape::Shape v3{ Kalburator::Shape::DomainId{"contacts"},
                                            Kalburator::Shape::EncodingId{"vcard3"} };
@@ -101,7 +101,7 @@ private slots:
 
     void peerShapesDoesNotIncludePalmAddress()
     {
-        const KalburatorDomainContacts plugin;
+        const ContactsDomainPlugin plugin;
         const auto peers = plugin.peerShapes();
         const Kalburator::Shape::Shape palmAddr{
             Kalburator::Shape::DomainId{"contacts"},

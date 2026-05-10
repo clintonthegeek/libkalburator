@@ -22,20 +22,20 @@ private slots:
 
     void canonicalShapeIsMemoText()
     {
-        const KalburatorDomainMemo plugin;
+        const MemoDomainPlugin plugin;
         const Kalburator::Shape::Shape expected{ DomainId{"memo"}, EncodingId{"text"} };
         QCOMPARE(plugin.canonicalShape(), expected);
     }
 
     void domainIsMemo()
     {
-        const KalburatorDomainMemo plugin;
+        const MemoDomainPlugin plugin;
         QCOMPARE(plugin.domain().toString(), QStringLiteral("memo"));
     }
 
     void catalogueHasBodyAndCategories()
     {
-        const KalburatorDomainMemo plugin;
+        const MemoDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"body"}));
         QVERIFY(cat.hasProperty(PropertyId{"categories"}));
@@ -44,13 +44,13 @@ private slots:
 
     void peerShapesEmpty()
     {
-        const KalburatorDomainMemo plugin;
+        const MemoDomainPlugin plugin;
         QVERIFY(plugin.peerShapes().isEmpty());
     }
 
     void registerEdgesDeclaresCanonical()
     {
-        KalburatorDomainMemo plugin;
+        MemoDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
         QCOMPARE(reg.canonicalFor(DomainId{"memo"}), plugin.canonicalShape());
@@ -58,7 +58,7 @@ private slots:
 
     void richnessRankCanonical()
     {
-        const KalburatorDomainMemo plugin;
+        const MemoDomainPlugin plugin;
         QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
     }
 };

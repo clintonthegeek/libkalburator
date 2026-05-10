@@ -14,7 +14,7 @@
 //
 //   3. vCard 3.0 transcode — a vCard 3.0 record seeded on the server
 //      is stored on the peer as vcard4 (VERSION:4.0) because the
-//      vcard3→vcard4 Pipeline registered by KalburatorDomainContacts
+//      vcard3→vcard4 Pipeline registered by ContactsDomainPlugin
 //      is compiled by the engine for the (contacts,vcard3)→(contacts,vcard4)
 //      edge. If the pipeline is not available (registration failure),
 //      the vCard 3.0 scenario assertion is weakened to a warning so

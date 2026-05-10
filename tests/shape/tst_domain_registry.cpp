@@ -155,26 +155,26 @@ private slots:
         const QVariantMap someProps{ {QStringLiteral("color"), QStringLiteral("red")} };
 
         {
-            auto plugin = std::make_shared<Kalburator::Blob::KalburatorDomainBlob>();
+            auto plugin = std::make_shared<Kalburator::Blob::BlobDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             // apply is no-op: properties are still empty afterwards
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
         }
         {
-            auto plugin = std::make_shared<Kalburator::Contacts::KalburatorDomainContacts>();
+            auto plugin = std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
         }
         {
-            auto plugin = std::make_shared<Kalburator::Memo::KalburatorDomainMemo>();
+            auto plugin = std::make_shared<Kalburator::Memo::MemoDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
         }
         {
-            auto plugin = std::make_shared<Kalburator::Todo::KalburatorDomainTodo>();
+            auto plugin = std::make_shared<Kalburator::Todo::TodoDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());

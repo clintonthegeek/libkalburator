@@ -1,7 +1,7 @@
 // Phase K.3 — contacts engine witness.
 //
 // Proves the full engine pipeline (fetch → diff → conflict → write → cancel)
-// works end-to-end using KalburatorDomainContacts + contacts-shaped backends +
+// works end-to-end using ContactsDomainPlugin + contacts-shaped backends +
 // vCard4 transform, without exercising any calendar-domain code paths.
 //
 // The five cases in §5 of 04ab-phase-k-engine-generalization-design.md:

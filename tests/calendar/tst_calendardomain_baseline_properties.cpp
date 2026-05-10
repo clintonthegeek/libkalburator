@@ -4,7 +4,7 @@
 
 #include "calendardomainplugin.h"
 
-using Kalburator::Calendar::KalburatorDomainCalendar;
+using Kalburator::Calendar::CalendarDomainPlugin;
 
 class TstCalendarDomainBaselineProperties : public QObject {
     Q_OBJECT
@@ -13,7 +13,7 @@ private slots:
 };
 
 void TstCalendarDomainBaselineProperties::declaresColorAndDescription() {
-    KalburatorDomainCalendar plugin;
+    CalendarDomainPlugin plugin;
     const QStringList keys = plugin.baselineProperties();
     QVERIFY(keys.contains(QStringLiteral("color")));
     QVERIFY(keys.contains(QStringLiteral("description")));

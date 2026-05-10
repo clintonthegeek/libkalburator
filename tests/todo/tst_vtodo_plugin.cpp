@@ -22,20 +22,20 @@ private slots:
 
     void canonicalShapeIsTodoIcalVTodo()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         const Kalburator::Shape::Shape expected{ DomainId{"todo"}, EncodingId{"ical-vtodo"} };
         QCOMPARE(plugin.canonicalShape(), expected);
     }
 
     void domainIsTodo()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         QCOMPARE(plugin.domain().toString(), QStringLiteral("todo"));
     }
 
     void catalogueHasRequiredProperties()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         const auto cat = plugin.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
         QVERIFY(cat.hasProperty(PropertyId{"summary"}));
@@ -45,14 +45,14 @@ private slots:
 
     void peerShapesContainsTodoTxt()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         const Kalburator::Shape::Shape todotxt{ DomainId{"todo"}, EncodingId{"todotxt"} };
         QVERIFY(plugin.peerShapes().contains(todotxt));
     }
 
     void registerEdgesPopulatesRegistry()
     {
-        KalburatorDomainTodo plugin;
+        TodoDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
 
@@ -67,13 +67,13 @@ private slots:
 
     void richnessRankCanonical()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
     }
 
     void richnessRankTodoTxtLower()
     {
-        const KalburatorDomainTodo plugin;
+        const TodoDomainPlugin plugin;
         const Kalburator::Shape::Shape todotxt{ DomainId{"todo"}, EncodingId{"todotxt"} };
         QVERIFY(plugin.richnessRank(todotxt) < 10);
     }

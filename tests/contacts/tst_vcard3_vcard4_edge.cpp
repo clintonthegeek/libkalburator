@@ -70,7 +70,7 @@ private slots:
 
     void registryCompilesPipelineV3ToV4()
     {
-        KalburatorDomainContacts plugin;
+        ContactsDomainPlugin plugin;
         auto& reg = TransformationRegistry::instance();
         plugin.registerEdges(reg);
 
