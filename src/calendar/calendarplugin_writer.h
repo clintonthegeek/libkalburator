@@ -18,40 +18,36 @@ namespace Kalburator::Calendar {
 /// `CalendarDomainAdapter::applyChangesToBackend`, which this lifts
 /// from for Phase Ia.5).
 ///
-/// **Required setup contract (Task 13 / engine wiring).** The writer
-/// needs an `ICalendarCollection*` to translate `calendarId` ->
-/// `MemoryCalendar*` for the SyncTransaction items. The engine is
-/// responsible for calling `setCollection()` after constructing the
-/// writer (via `DomainPlugin::createWriter()`) and before invoking
-/// `apply()`. Without a collection set, `apply()` returns false.
+/// **Phase K.4 (threading + setup contract)**:
 ///
-/// **Skipped for v1 (revisit when wired into the engine).**
-/// 1. **Cancellation oracle.** The existing `applyChangesToBackend`
-///    threads `m_cancelOracle()` through the per-record loop to
-///    short-circuit on cancellation. The unified engine's cancel path
-///    will reach the writer differently; v1 commits straight through.
-/// 2. **`useTargetRecord` / `mappingId` parameters.** With
-///    `BackendRecord`-typed creates/updates the engine has already
-///    picked the side; the writer just applies what it's given. The
-///    transaction id is therefore a simpler
-///    `"calendar-writer-<collectionId>"`.
-/// 3. **`TranscodingPlan`.** Defaulted to `TranscodingPlan{}` for v1.
-///    The engine context that holds the real plan can flow through
-///    later (or via a setter analogous to `setCollection`).
-/// 4. **`transcodingWarning` connect/disconnect dance.** That belongs
-///    at the call site (engine), not in the writer body — same as
-///    documented on `CalendarDomainAdapter::applyChangesToBackend`
-///    (header comment). Engine is responsible.
+/// - `threading()` returns `WorkerThread`: the engine MUST call
+///   `apply()` from a thread that is NOT the backend's thread, because
+///   the writer uses `Qt::BlockingQueuedConnection` to the backend
+///   thread internally for the transaction commit.
+///
+/// - `prepareForApply(ctx)` injects the host `MemoryCalendar*` (when
+///   the engine has one) and the per-write `TranscodingPlan`.
+///   Replaces the K.3-and-earlier `dynamic_cast<CalendarPluginWriter>`
+///   + `setCollection()` / `setTranscodingPlan()` engine-side dance.
+///
+/// - When `ctx.calendarCollection` is null (e.g. for
+///   RemoteCalendarBackend used purely via the blob path), `apply()`
+///   degrades gracefully: it parses the incidence from the raw iCal
+///   bytes in `BackendRecord::data` and pushes through the backend's
+///   IBlobBackend surface (createRecord / updateRecord / deleteRecord)
+///   on the backend thread.
 class CalendarPluginWriter : public Kalburator::Shape::IRecordWriter {
 public:
     explicit CalendarPluginWriter(Kalburator::Sync::SyncBackend *backend);
     ~CalendarPluginWriter() override;
 
-    /// Set the calendar collection lookup. The writer needs this to
-    /// resolve calendarId -> MemoryCalendar* for the SyncTransaction
-    /// items. (CalendarDomainAdapter has the same dependency at
-    /// `calendardomainadapter.h:147`; the engine sets it before
-    /// dispatch.)
+    // ---- IRecordWriter threading + setup ------------------------------------
+    Threading threading() const override
+        { return Threading::WorkerThread; }
+
+    void prepareForApply(const ApplyContext &ctx) override;
+
+    // ---- Legacy direct setters (kept for tests; engine no longer uses) ------
     void setCollection(Kalburator::Sync::ICalendarCollection *collection);
     void setTranscodingPlan(const Kalburator::Sync::TranscodingPlan &plan);
 
@@ -63,8 +59,19 @@ public:
 
 private:
     Kalburator::Sync::SyncBackend         *m_backend    = nullptr;
+    /// Optional ICalendarCollection set via setCollection() — used
+    /// only when prepareForApply() did NOT supply a calendarCollection.
     Kalburator::Sync::ICalendarCollection *m_collection = nullptr;
     Kalburator::Sync::TranscodingPlan      m_plan;
+    /// Direct per-call MemoryCalendar from prepareForApply(); takes
+    /// precedence over `m_collection->calendar()` when set. May be
+    /// null (legitimate: blob-only target).
+    KCalendarCore::MemoryCalendar         *m_directCalendar = nullptr;
+    /// True after prepareForApply() has been called at least once.
+    /// Used to distinguish "engine deliberately said: no host
+    /// MemoryCalendar, use blob path" (allow blob fallback) from
+    /// "legacy caller forgot to call setCollection()" (return false).
+    bool                                   m_prepared = false;
 };
 
 } // namespace Kalburator::Calendar

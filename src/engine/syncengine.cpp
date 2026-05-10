@@ -10,7 +10,9 @@
 #include "blobbaselinestore.h"
 #include "canonicalrecord.h"
 #include "irecordwriter.h"
-#include "calendarplugin_writer.h"
+// Phase K.4: the engine no longer dynamic_casts to CalendarPluginWriter;
+// writer-specific behaviour is mediated by IRecordWriter::threading()
+// and IRecordWriter::prepareForApply().
 #include "iblobbackend.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
@@ -2288,11 +2290,22 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     bool writeFailed = false;
     QString writeError;
 
-    // Helper: apply a batch to a backend. Routing depends on writer type:
-    // - DefaultBlobWriter: classify + apply both run on the backend thread.
-    // - CalendarPluginWriter: classify on backend thread; apply on worker
-    //   thread (writer uses BlockingQueuedConnection internally and asserts
-    //   it is NOT called from the backend thread — see calendarplugin_writer.cpp).
+    // Helper: apply a batch to a backend.
+    //
+    // Phase K.4: writer dispatch is driven by `IRecordWriter::threading()`
+    // and per-call setup happens via `prepareForApply(ctx)`. The previous
+    // `dynamic_cast<CalendarPluginWriter*>` is gone — the engine no
+    // longer special-cases the calendar writer.
+    //
+    // Threading values:
+    //   - BackendThread (default): classify + apply both run on the
+    //     backend's own thread, wrapped in a single
+    //     BlockingQueuedConnection.
+    //   - WorkerThread (CalendarPluginWriter): classify runs on the
+    //     backend thread; apply runs on the worker thread (the writer
+    //     uses BlockingQueuedConnection internally for the
+    //     SyncTransaction commit and asserts it is NOT called from the
+    //     backend thread).
     auto applyBatch = [this, &writeFailed, &writeError](
         Kalburator::Shape::IRecordWriter *writer,
         SyncBackend *backend,
@@ -2302,16 +2315,34 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         const TranscodingPlan &plan)
     {
         bool ok = false;
-        auto *cw = dynamic_cast<Kalburator::Calendar::CalendarPluginWriter*>(writer);
-        if (cw) {
-            cw->setCollection(m_collection);
-            cw->setTranscodingPlan(plan);
+
+        // Build the per-apply context and let the writer prepare. For
+        // calendar-domain writers, this injects the host MemoryCalendar
+        // (when one exists) and the transcoding plan — replacing the
+        // K.3-and-earlier engine-side `setCollection`/`setTranscodingPlan`
+        // dance. May supply a null calendarCollection: the writer must
+        // degrade gracefully (CalendarPluginWriter does, via the
+        // IBlobBackend fallback path).
+        Kalburator::Shape::IRecordWriter::ApplyContext ctx;
+        ctx.collectionId = colId;
+        ctx.transcodingPlan = plan;
+        ctx.calendarCollection = m_collection
+            ? m_collection->calendar(colId)
+            : nullptr;
+        writer->prepareForApply(ctx);
+
+        if (writer->threading() ==
+            Kalburator::Shape::IRecordWriter::Threading::WorkerThread) {
+            // Writer manages its own backend-thread marshalling
+            // (CalendarPluginWriter uses BlockingQueuedConnection
+            // internally inside apply()).
             WriterBatch batch;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, toWrite]() {
                 batch = classifyForWriter(toWrite, blobBackend, colId);
             }, Qt::BlockingQueuedConnection);
             ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
         } else {
+            // BackendThread: engine marshals classify + apply together.
             QMetaObject::invokeMethod(backend, [writer, blobBackend, colId, toWrite, &ok]() {
                 const WriterBatch batch = classifyForWriter(toWrite, blobBackend, colId);
                 ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);

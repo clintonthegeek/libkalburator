@@ -24,9 +24,7 @@ namespace Kalburator::Calendar {
 namespace {
 
 /// Parse an iCal blob (UTF-8 bytes from `BackendRecord::data`) into
-/// an Incidence::Ptr. Returns null on parse failure. Mirrors the
-/// pattern used by `CalendarDomainAdapter::backendRecordToSyncRecord`
-/// (calendardomainadapter.cpp:47-61).
+/// an Incidence::Ptr. Returns null on parse failure.
 KCalendarCore::Incidence::Ptr parseIncidence(const QByteArray &data)
 {
     if (data.isEmpty()) return {};
@@ -39,6 +37,7 @@ KCalendarCore::Incidence::Ptr parseIncidence(const QByteArray &data)
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CreateIncidenceItem;
 using Kalburator::Sync::DeleteIncidenceItem;
+using Kalburator::Sync::IBlobBackend;
 using Kalburator::Sync::ICalendarCollection;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncTransaction;
@@ -50,6 +49,16 @@ CalendarPluginWriter::CalendarPluginWriter(SyncBackend *backend)
 {}
 
 CalendarPluginWriter::~CalendarPluginWriter() = default;
+
+void CalendarPluginWriter::prepareForApply(const ApplyContext &ctx)
+{
+    // Phase K.4 setup hook. Replaces the engine-side
+    // `dynamic_cast<CalendarPluginWriter*>` + setCollection() +
+    // setTranscodingPlan() dance.
+    m_directCalendar = ctx.calendarCollection;
+    m_plan = ctx.transcodingPlan;
+    m_prepared = true;
+}
 
 void CalendarPluginWriter::setCollection(ICalendarCollection *collection)
 {
@@ -71,19 +80,110 @@ bool CalendarPluginWriter::apply(
         qWarning() << "CalendarPluginWriter::apply - backend is null";
         return false;
     }
-    if (!m_collection) {
+
+    // Resolve the host MemoryCalendar.
+    // - If the engine handed one in via prepareForApply(), use it.
+    // - Else fall back to ICalendarCollection lookup (legacy path).
+    // - If neither is set at all, the caller forgot to wire us up —
+    //   return false (preserves the pre-K.4 contract for direct
+    //   callers / unit tests that construct the writer outside the
+    //   engine).
+    // - If prepareForApply() WAS called and the engine deliberately
+    //   passed a null calendarCollection (e.g. RemoteCalendarBackend
+    //   with no host MemoryCalendar), take the blob-only fallback
+    //   path. This is what unblocks Phase J Task 9 (palm -> caldav).
+    KCalendarCore::MemoryCalendar *cal = m_directCalendar;
+    if (!cal && m_collection) {
+        cal = m_collection->calendar(collectionId);
+    }
+
+    if (!cal && !m_prepared && !m_collection) {
+        // Legacy caller path: no setCollection() AND no prepareForApply().
+        // Preserve the pre-K.4 behaviour for tests that exercise this
+        // explicitly (`apply_returnsFalse_whenNoCollection`).
         qWarning() << "CalendarPluginWriter::apply - no collection set"
-                   << "(engine must call setCollection() before apply())";
+                   << "(engine must call prepareForApply() or "
+                   << "setCollection() before apply())";
         return false;
     }
 
-    KCalendarCore::MemoryCalendar *cal = m_collection->calendar(collectionId);
-    if (!cal) {
+    if (!cal && m_collection) {
+        // setCollection() was called but the lookup failed: the
+        // collection lacks an entry for this id. Pre-K.4 behaviour:
+        // return false. (Don't enter blob fallback — that's reserved
+        // for the engine path where prepareForApply explicitly opts
+        // in by passing a null calendarCollection.)
         qWarning() << "CalendarPluginWriter::apply - calendar not found:"
                    << collectionId;
         return false;
     }
 
+    if (!cal) {
+        // ---- Blob-only fallback (Phase K.4 / Phase J Task 9) ----------------
+        // No host MemoryCalendar available. The backend MUST still be
+        // a SyncBackend (so we have its IBlobBackend surface) — drive
+        // create/update/delete through that, on the backend thread.
+        auto *blob = dynamic_cast<IBlobBackend *>(m_backend);
+        if (!blob) {
+            qWarning() << "CalendarPluginWriter::apply - no MemoryCalendar"
+                       << "and backend does not expose IBlobBackend ("
+                       << collectionId << ")";
+            return false;
+        }
+
+        // Validate that the records parse — fail fast on garbage iCal
+        // before we hop threads.
+        for (const auto &r : creates) {
+            if (!parseIncidence(r.data)) {
+                qWarning() << "CalendarPluginWriter::apply (blob path)"
+                           << "- skipping create, iCal parse failed (id:"
+                           << r.id << ")";
+            }
+        }
+        for (const auto &r : updates) {
+            if (!parseIncidence(r.data)) {
+                qWarning() << "CalendarPluginWriter::apply (blob path)"
+                           << "- skipping update, iCal parse failed (id:"
+                           << r.id << ")";
+            }
+        }
+
+        bool ok = true;
+        QMetaObject::invokeMethod(m_backend, [this, &creates, &updates, &deletes,
+                                              &collectionId, blob, &ok]() {
+            for (const auto &r : creates) {
+                if (!parseIncidence(r.data)) continue;
+                BackendRecord rec = r;
+                if (blob->createRecord(collectionId, rec).isEmpty()) {
+                    // Mirror the legacy behavior: log and continue rather
+                    // than abort the batch; an empty createRecord() result
+                    // means the backend rejected the record.
+                    qWarning() << "CalendarPluginWriter::apply (blob path)"
+                               << "- createRecord returned empty for"
+                               << r.id;
+                    ok = false;
+                }
+            }
+            for (const auto &r : updates) {
+                if (!parseIncidence(r.data)) continue;
+                if (!blob->updateRecord(r)) {
+                    qWarning() << "CalendarPluginWriter::apply (blob path)"
+                               << "- updateRecord failed for" << r.id;
+                    ok = false;
+                }
+            }
+            for (const auto &id : deletes) {
+                if (!blob->deleteRecord(id)) {
+                    qWarning() << "CalendarPluginWriter::apply (blob path)"
+                               << "- deleteRecord failed for" << id;
+                    ok = false;
+                }
+            }
+        }, Qt::BlockingQueuedConnection);
+        return ok;
+    }
+
+    // ---- Standard SyncTransaction path -------------------------------------
     const QString txId =
         QStringLiteral("calendar-writer-%1").arg(collectionId);
 
@@ -111,20 +211,12 @@ bool CalendarPluginWriter::apply(
                        << "iCal parse failed (id:" << r.id << ")";
             continue;
         }
-        // The IRecordWriter contract gives us the new record only.
-        // The legacy `applyChangesToBackend` had `oldInc` from the
-        // SyncChange's other side; the unified engine merges before
-        // dispatch and feeds us the post-merge value. UpdateIncidenceItem
-        // tolerates a null oldIncidence (it's used for rollback only).
         KCalendarCore::Incidence::Ptr oldInc;
         tx.addItem(new UpdateIncidenceItem(collectionId, oldInc, newInc,
                                            cal, m_backend, plan));
         ++itemCount;
     }
 
-    // Load pre-delete incidences from the backend blob view on the backend
-    // thread. Required so DeleteIncidenceItem::rollback() can re-create the
-    // item after a partial transaction failure.
     QHash<QString, KCalendarCore::Incidence::Ptr> oldIncs;
     if (!deletes.isEmpty()) {
         QMetaObject::invokeMethod(m_backend, [this, &deletes, &oldIncs]() {
@@ -153,10 +245,6 @@ bool CalendarPluginWriter::apply(
              << "items:" << itemCount
              << "txId:" << txId;
 
-    // Backends are main-thread objects; commit must run there.
-    // BlockingQueuedConnection blocks the calling (worker) thread until
-    // commitAll() returns. Same pattern as
-    // CalendarDomainAdapter::applyChangesToBackend.
     Q_ASSERT_X(QThread::currentThread() != m_backend->thread(),
                "CalendarPluginWriter::apply",
                "BlockingQueuedConnection requires a different thread than backend");
