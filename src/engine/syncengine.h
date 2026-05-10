@@ -33,7 +33,8 @@ namespace Kalburator::Sync {
 
 class BackendRegistry;
 // Phase K.5: BlobBaselineStore moved to Kalburator::Storage::BaselineStore.
-// Alias preserved here for the cutover window; removed in Task 2.
+// Alias preserved in Sync namespace for the cutover window (shim file removed in Task 13);
+// internal engine code cuts over to Storage::BaselineStore in Task 2.
 using BlobBaselineStore = ::Kalburator::Storage::BaselineStore;
 class IBlobBackend;
 class ISyncHost;
