@@ -674,6 +674,8 @@ deferral).
 
 **Tag:** `v0.34-phase-k5-unified-baseline`
 
+**Status:** landed 2026-05-10; tag `v0.34-phase-k5-unified-baseline`
+
 ### K.6 — Documentation cleanup + consumer-named-type docstring rewrite
 
 **Files changed:**
