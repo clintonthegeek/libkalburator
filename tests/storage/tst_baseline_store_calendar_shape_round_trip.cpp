@@ -10,7 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "canonicalrecord.h"
 #include "shape.h"
 

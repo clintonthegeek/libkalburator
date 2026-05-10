@@ -21,7 +21,7 @@
 #include <QTemporaryDir>
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "isynchost.h"
 #include "isyncconfigstore.h"
 #include "logicalcalendar.h"

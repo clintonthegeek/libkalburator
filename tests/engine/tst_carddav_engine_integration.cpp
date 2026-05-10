@@ -50,7 +50,7 @@
 #include "backendconfiguration.h"
 #include "backendrecord.h"
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "carddavprovider.h"
 #include "collectioninfo.h"
 #include "domainregistry.h"

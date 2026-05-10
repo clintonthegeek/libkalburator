@@ -1,4 +1,5 @@
 #include "syncengine.h"
+#include "baselinestore.h"
 #include "blobbatchdiff.h"
 #include "propertydiff.h"
 #include "domainplugin.h"
@@ -6,8 +7,6 @@
 #include "transformationregistry.h"
 #include "domainregistry.h"
 #include "decsyncactivecontroller.h"
-#include "calendarbaselinestore.h"
-#include "blobbaselinestore.h"
 #include "canonicalrecord.h"
 #include "irecordwriter.h"
 // Phase K.4: the engine no longer dynamic_casts to CalendarPluginWriter;
@@ -98,7 +97,7 @@ void SyncEngine::startWorkerThread()
     }
 
     // Set dependencies before moving to thread
-    m_worker->setDependencies(m_controller, m_calendarBaselines, m_collection,
+    m_worker->setDependencies(m_controller, m_collection,
                               m_baselineStore, this);
 
     // Move worker to thread
@@ -132,11 +131,6 @@ void SyncEngine::stopWorkerThread()
         delete m_worker;
         m_worker = nullptr;
     }
-}
-
-void SyncEngine::setCalendarBaselineStore(CalendarBaselineStore *store)
-{
-    m_calendarBaselines = store;
 }
 
 void SyncEngine::setCollection(ICalendarCollection *collection)
@@ -1310,13 +1304,11 @@ SyncEngineWorker::~SyncEngineWorker()
 }
 
 void SyncEngineWorker::setDependencies(ISyncHost *host,
-                                        CalendarBaselineStore *calendarBaselines,
                                         ICalendarCollection *collection,
                                         Kalburator::Storage::BaselineStore *baselineStore,
                                         SyncEngine *engine)
 {
     m_controller = host;
-    m_calendarBaselines = calendarBaselines;
     m_baselineStore = baselineStore;
     m_collection = collection;
     m_engine = engine;
@@ -1811,10 +1803,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // handle color and description sync.
     //
     // Baseline is passed as empty for v1: Task 7 deferred persistence wiring
-    // because the existing CalendarBaselineStore stores CalendarPropertyRecord
-    // JSON, not a generic QVariantMap. For first-sync runs the baseline is
-    // empty anyway. Subsequent syncs now persist property-baseline snapshots
-    // via T9 (unifiedContinueAfterConflicts after successful writes).
+    // because the old store used CalendarPropertyRecord JSON rather than a
+    // generic QVariantMap. For first-sync runs the baseline is empty anyway.
+    // Subsequent syncs now persist property-baseline snapshots via T9
+    // (unifiedContinueAfterConflicts after successful writes).
     runPropertyPhase(plugin, srcBackend, tgtBackend,
                      srcColId, tgtColId,
                      /*baseline=*/QVariantMap{},
@@ -1978,9 +1970,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // Seed baselines for records that are already in sync (same ID, same hash
     // on both sides, no existing baseline). Without this, a subsequent sync
     // cannot distinguish "source deleted this record" from "target has a
-    // new record the source never knew about". The CalendarBaselineStore
-    // path saved every known record after each successful sync; we replicate
-    // that guarantee here for BaselineStore-backed paths.
+    // new record the source never knew about". The legacy calendar path saved
+    // every known record after each successful sync; we replicate that
+    // guarantee here for BaselineStore-backed paths.
     if (m_baselineStore && m_engine) {
         QHash<QString, BackendRecord> srcById;
         for (const auto &r : sourceRecords) srcById.insert(r.id, r);
@@ -2074,9 +2066,9 @@ void SyncEngineWorker::unifiedHandleConflicts()
     // NOTE: do NOT apply the legacy useQuickPath→SourceWins downgrade here.
     // The unified path uses blobBatchDiff whose baseline check already handles
     // first-sync (BothCreated) vs subsequent-sync (BothModified) conflicts.
-    // useQuickPath is a CalendarBaselineStore sentinel; it is always true when
-    // the mapping has no calendar baselines, which is always the case for
-    // non-calendar domains (blob/contacts/memo/todo).
+    // useQuickPath was a CalendarBaselineStore sentinel that was always true
+    // for non-calendar domains (blob/contacts/memo/todo); the whole concept
+    // is gone now that CalendarBaselineStore is deleted.
     const ConflictResolution effectivePolicy = m_unifiedPolicy;
 
     const bool filterNonConflictToTarget =

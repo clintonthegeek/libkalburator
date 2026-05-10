@@ -3,7 +3,7 @@
 #include <QTemporaryDir>
 #include <QDateTime>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 
 using Kalburator::Storage::BaselineStore;
 

@@ -1,7 +1,7 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 
 using Kalburator::Storage::BaselineStore;
 

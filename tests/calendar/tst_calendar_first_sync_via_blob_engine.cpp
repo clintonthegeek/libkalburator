@@ -19,7 +19,7 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
@@ -115,7 +115,6 @@ private:
     std::unique_ptr<MockBackend>           m_target;
     std::unique_ptr<StubSyncHost>          m_host;
     std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
-    std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>       m_coordinator;
@@ -151,7 +150,6 @@ void TestCalendarFirstSyncViaBlobEngine::init()
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
     m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
-    m_blobBaselines     = std::make_unique<BlobBaselineStore>(dbPath);
     m_conflictStore     = std::make_unique<SyncConflictStore>(dbPath);
 
     m_conflictManager = std::make_unique<ConflictManager>();
@@ -163,7 +161,6 @@ void TestCalendarFirstSyncViaBlobEngine::cleanup()
     m_coordinator.reset();
     m_conflictManager.reset();
     m_conflictStore.reset();
-    m_blobBaselines.reset();
     m_calendarBaselines.reset();
     m_host.reset();
     m_target.reset();
@@ -176,7 +173,6 @@ void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMappin
 {
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setBaselineStore(m_calendarBaselines.get());
-    m_coordinator->setBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());
@@ -246,9 +242,9 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_dispatchesViaBlo
 
     // BlobBaselineStore was seeded via mapping-keyed v3 API (G.4).
     const QString mid = QString::fromLatin1(kMappingId);
-    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-1")).has_value());
-    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-2")).has_value());
-    QVERIFY(m_blobBaselines->baselineV3(mid, QStringLiteral("evt-3")).has_value());
+    QVERIFY(m_calendarBaselines->baselineV3(mid, QStringLiteral("evt-1")).has_value());
+    QVERIFY(m_calendarBaselines->baselineV3(mid, QStringLiteral("evt-2")).has_value());
+    QVERIFY(m_calendarBaselines->baselineV3(mid, QStringLiteral("evt-3")).has_value());
 }
 
 void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_mirrorsSourceToTarget()

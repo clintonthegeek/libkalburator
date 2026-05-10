@@ -17,7 +17,7 @@
 #include <QSignalSpy>
 #include <QFile>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"

@@ -27,7 +27,7 @@
 
 #include "backendrecord.h"
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "collectioninfo.h"
 #include "conflictmanager.h"
 #include "domainregistry.h"

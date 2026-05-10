@@ -3,7 +3,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "canonicalrecord.h"
 
 using Kalburator::Storage::BaselineStore;

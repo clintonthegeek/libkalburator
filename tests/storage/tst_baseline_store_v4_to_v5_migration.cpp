@@ -5,7 +5,7 @@
 #include <QSqlQuery>
 #include <QSqlError>
 
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 
 using Kalburator::Storage::BaselineStore;
 

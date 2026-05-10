@@ -32,15 +32,10 @@ class BaselineStore;
 namespace Kalburator::Sync {
 
 class BackendRegistry;
-// Phase K.5: BlobBaselineStore moved to Kalburator::Storage::BaselineStore.
-// Alias preserved in Sync namespace for the cutover window (shim file removed in Task 13);
-// internal engine code cuts over to Storage::BaselineStore in Task 2.
-using BlobBaselineStore = ::Kalburator::Storage::BaselineStore;
 class IBlobBackend;
 class ISyncHost;
 class SyncBackend;
 class ICalendarCollection;
-class CalendarBaselineStore;
 class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
@@ -117,7 +112,6 @@ public:
      * Must be called before moveToThread().
      */
     void setDependencies(ISyncHost *host,
-                         CalendarBaselineStore *calendarBaselines,
                          ICalendarCollection *collection,
                          Kalburator::Storage::BaselineStore *baselineStore = nullptr,
                          SyncEngine *engine = nullptr);
@@ -287,7 +281,6 @@ private:
 
     const TranscodingRouter &m_router;
     ISyncHost *m_controller = nullptr;
-    CalendarBaselineStore *m_calendarBaselines = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
     ICalendarCollection *m_collection = nullptr;
     // Back-pointer to the owning SyncEngine. dispatchSync uses
@@ -308,13 +301,13 @@ private:
  * 2. For each enabled mapping:
  *    a. Load records from source backend
  *    b. Load records from target backend
- *    c. Load baselines from CalendarBaselineStore
+ *    c. Load baselines from Storage::BaselineStore
  *    d. Compute 3-way diff
  *    e. Apply changes based on sync mode
  *    f. Handle conflicts according to policy
- *    g. Update baselines in CalendarBaselineStore
+ *    g. Update baselines in Storage::BaselineStore
  *
- * Persistent storage is split across CalendarBaselineStore (baselines,
+ * Persistent storage is split across Storage::BaselineStore (record baselines,
  * last-sync time, property baselines) and SyncConflictStore (conflict records).
  */
 class SyncEngine : public QObject
@@ -355,16 +348,6 @@ public:
     ~SyncEngine() override;
 
     /**
-     * @brief Set the CalendarBaselineStore for iCal/property baselines.
-     *
-     * Must be called before runSync() to enable baseline tracking.
-     * If not set, sync operations still work but every sync is treated
-     * as a first sync (no 3-way merge).
-     */
-    void setCalendarBaselineStore(CalendarBaselineStore *store);
-    CalendarBaselineStore *calendarBaselineStore() const { return m_calendarBaselines; }
-
-    /**
      * @brief Set the BaselineStore for per-record hash-skip (Phase D Task 20).
      *
      * When set, the engine's subsequent-sync blob fetch skips records whose
@@ -373,13 +356,6 @@ public:
      */
     void setBaselineStore(Kalburator::Storage::BaselineStore *store);
     Kalburator::Storage::BaselineStore *baselineStore() const { return m_baselineStore; }
-
-    /// Phase K.5: deprecated alias for setBaselineStore(); retained until
-    /// PlanStan + WildPalms cut over in Tasks 11/12. Removed in Task 13.
-    [[deprecated("Phase K.5: use setBaselineStore()")]]
-    void setBlobBaselineStore(Kalburator::Storage::BaselineStore *store) {
-        setBaselineStore(store);
-    }
 
     /**
      * @brief Set the SyncConflictStore for persistent conflict records.
@@ -706,7 +682,6 @@ private slots:
 private:
     BackendRegistry *m_registry;
     ISyncHost *m_controller;
-    CalendarBaselineStore *m_calendarBaselines = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;  // Phase D Task 20
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;

@@ -39,7 +39,7 @@
 
 #include "backendrecord.h"
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "collectioninfo.h"
 #include "domainregistry.h"
 #include "iblobbackend.h"

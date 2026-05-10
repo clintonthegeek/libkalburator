@@ -10,7 +10,7 @@
 #include "stubs/stubsynchost.h"
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "mockbackend.h"
 #include "syncconflictstore.h"

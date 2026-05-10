@@ -16,7 +16,7 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"

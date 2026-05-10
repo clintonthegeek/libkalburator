@@ -17,11 +17,9 @@ namespace Kalburator::Sync {
  * Carved out of the dissolving `SyncStore` during Phase D Task 9.
  * Owns the `sync_conflicts` table in the `.kalburator-sync.db` file.
  * All other SyncStore concerns have already moved to:
- *   - CalendarBaselineStore  — iCal / property baselines + last-sync time
- *   - Storage::BaselineStore — per-record version hashes
+ *   - Storage::BaselineStore  — record/property baselines + last-sync time
  *   - RemoteCalendarBackend::CTagStore — CalDAV CTags (private to RemoteCalendarBackend)
  *   - LocalBackend::FingerprintStore — directory fingerprints (private)
- *   - IDMappingStore         — journal / ID mappings
  */
 class SyncConflictStore : public QObject
 {

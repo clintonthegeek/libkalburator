@@ -8,7 +8,7 @@
 #include <QTimeZone>
 
 #include "backendregistry.h"
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
 #include "mockbackend.h"
@@ -69,7 +69,6 @@ private:
     std::unique_ptr<MockBackend>           m_src3, m_tgt3;
     std::unique_ptr<StubSyncHost>          m_host;
     std::unique_ptr<Kalburator::Storage::BaselineStore> m_calBaselines;
-    std::unique_ptr<BlobBaselineStore>     m_blobBaselines;
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>            m_engine;
@@ -103,14 +102,12 @@ void TestEngineSubsetDispatch::init()
 
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
     m_calBaselines    = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
-    m_blobBaselines   = std::make_unique<BlobBaselineStore>(dbPath);
     m_conflictStore   = std::make_unique<SyncConflictStore>(dbPath);
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_engine->setBaselineStore(m_calBaselines.get());
-    m_engine->setBaselineStore(m_blobBaselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
     m_engine->setCollection(m_host->stubCollection());
@@ -126,7 +123,6 @@ void TestEngineSubsetDispatch::cleanup()
     m_engine.reset();
     m_conflictManager.reset();
     m_conflictStore.reset();
-    m_blobBaselines.reset();
     m_calBaselines.reset();
     m_host.reset();
     m_tgt3.reset(); m_src3.reset();
