@@ -1,4 +1,4 @@
-#include "blobbaselinestore.h"
+#include "baselinestore.h"
 
 #include <QDateTime>
 #include <QDebug>
@@ -10,17 +10,17 @@
 #include <QSqlQuery>
 #include <QVariant>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Storage {
 
 namespace {
 constexpr int kSchemaVersion = 4;  // G.4: mapping-keyed blob_baselines_v3 table.
 } // namespace
 
-int BlobBaselineStore::s_connectionCounter = 0;
+int BaselineStore::s_connectionCounter = 0;
 
-BlobBaselineStore::BlobBaselineStore(const QString &dbPath)
+BaselineStore::BaselineStore(const QString &dbPath)
     : m_dbPath(dbPath)
-    , m_connName(QStringLiteral("BlobBaselineStore_%1")
+    , m_connName(QStringLiteral("KalburatorBaselineStore_%1")
                      .arg(++s_connectionCounter))
 {
     const bool dbFileExistedBefore = QFile::exists(m_dbPath);
@@ -53,7 +53,7 @@ BlobBaselineStore::BlobBaselineStore(const QString &dbPath)
     m_isOpen = true;
 }
 
-BlobBaselineStore::~BlobBaselineStore()
+BaselineStore::~BaselineStore()
 {
     if (QSqlDatabase::contains(m_connName)) {
         QSqlDatabase::database(m_connName).close();
@@ -61,16 +61,16 @@ BlobBaselineStore::~BlobBaselineStore()
     }
 }
 
-bool BlobBaselineStore::isOpen() const { return m_isOpen; }
-QString BlobBaselineStore::lastError() const { return m_lastError; }
-QString BlobBaselineStore::databasePath() const { return m_dbPath; }
+bool BaselineStore::isOpen() const { return m_isOpen; }
+QString BaselineStore::lastError() const { return m_lastError; }
+QString BaselineStore::databasePath() const { return m_dbPath; }
 
-void BlobBaselineStore::setError(const QString &message) const
+void BaselineStore::setError(const QString &message) const
 {
     m_lastError = message;
 }
 
-bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
+bool BaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
 {
     QSqlDatabase db = QSqlDatabase::database(m_connName);
     QSqlQuery q(db);
@@ -184,7 +184,7 @@ bool BlobBaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
     return true;
 }
 
-bool BlobBaselineStore::ensureSchemaV3()
+bool BaselineStore::ensureSchemaV3()
 {
     // Migration discipline (per FINDINGS): gate on PRAGMA user_version.
     // v2 DBs (stamped 3 in F1) need data migration; fresh v4 DBs skip it.
@@ -230,7 +230,7 @@ bool BlobBaselineStore::ensureSchemaV3()
 // Triple-keyed API — stored in the canonical blob_baselines table.
 // ===========================================================================
 
-bool BlobBaselineStore::setBaseline(const QString &backendId,
+bool BaselineStore::setBaseline(const QString &backendId,
                                     const QString &collectionId,
                                     const QString &recordId,
                                     const QString &contentHash)
@@ -259,7 +259,7 @@ bool BlobBaselineStore::setBaseline(const QString &backendId,
     return true;
 }
 
-QString BlobBaselineStore::baselineHash(const QString &backendId,
+QString BaselineStore::baselineHash(const QString &backendId,
                                         const QString &collectionId,
                                         const QString &recordId) const
 {
@@ -281,7 +281,7 @@ QString BlobBaselineStore::baselineHash(const QString &backendId,
     return q.value(0).toString();
 }
 
-bool BlobBaselineStore::commitBaselines(
+bool BaselineStore::commitBaselines(
     const QString &backendId,
     const QString &collectionId,
     const QMap<QString, QString> &recordIdToHash)
@@ -332,7 +332,7 @@ bool BlobBaselineStore::commitBaselines(
     return true;
 }
 
-QStringList BlobBaselineStore::baselineRecordIds(
+QStringList BaselineStore::baselineRecordIds(
     const QString &backendId,
     const QString &collectionId) const
 {
@@ -360,7 +360,7 @@ QStringList BlobBaselineStore::baselineRecordIds(
     return out;
 }
 
-bool BlobBaselineStore::clearCollection(const QString &backendId,
+bool BaselineStore::clearCollection(const QString &backendId,
                                         const QString &collectionId)
 {
     if (!m_isOpen) {
@@ -388,12 +388,12 @@ bool BlobBaselineStore::clearCollection(const QString &backendId,
 // Mapping resolver and v2→v3 data migration
 // ===========================================================================
 
-void BlobBaselineStore::setMappingResolver(MappingResolver fn)
+void BaselineStore::setMappingResolver(MappingResolver fn)
 {
     m_mappingResolver = std::move(fn);
 }
 
-bool BlobBaselineStore::migrateV3()
+bool BaselineStore::migrateV3()
 {
     if (!m_isOpen) {
         return false;
@@ -465,7 +465,7 @@ bool BlobBaselineStore::migrateV3()
         }
         // Rows with no mapping are orphaned — skip (logged below).
         if (mappingIds.isEmpty()) {
-            qDebug("BlobBaselineStore::migrateV3: orphan row "
+            qDebug("BaselineStore::migrateV3: orphan row "
                    "(backendId=%s collectionId=%s recordId=%s) — skipped",
                    qUtf8Printable(row.backendId),
                    qUtf8Printable(row.collectionId),
@@ -487,7 +487,7 @@ bool BlobBaselineStore::migrateV3()
 // v3 mapping-keyed API
 // ===========================================================================
 
-bool BlobBaselineStore::setBaselineV3(const QString &mappingId,
+bool BaselineStore::setBaselineV3(const QString &mappingId,
                                        const Kalburator::Shape::CanonicalRecord &rec)
 {
     if (!m_isOpen) {
@@ -515,7 +515,7 @@ bool BlobBaselineStore::setBaselineV3(const QString &mappingId,
 }
 
 std::optional<Kalburator::Shape::CanonicalRecord>
-BlobBaselineStore::baselineV3(const QString &mappingId,
+BaselineStore::baselineV3(const QString &mappingId,
                                const QString &recordId) const
 {
     if (!m_isOpen) {
@@ -542,7 +542,7 @@ BlobBaselineStore::baselineV3(const QString &mappingId,
 }
 
 QList<Kalburator::Shape::CanonicalRecord>
-BlobBaselineStore::baselinesForMappingV3(const QString &mappingId) const
+BaselineStore::baselinesForMappingV3(const QString &mappingId) const
 {
     if (!m_isOpen) {
         return {};
@@ -571,7 +571,7 @@ BlobBaselineStore::baselinesForMappingV3(const QString &mappingId) const
     return out;
 }
 
-bool BlobBaselineStore::removeBaselineV3(const QString &mappingId,
+bool BaselineStore::removeBaselineV3(const QString &mappingId,
                                           const QString &recordId)
 {
     if (!m_isOpen) {
@@ -591,7 +591,7 @@ bool BlobBaselineStore::removeBaselineV3(const QString &mappingId,
     return true;
 }
 
-bool BlobBaselineStore::clearMappingV3(const QString &mappingId)
+bool BaselineStore::clearMappingV3(const QString &mappingId)
 {
     if (!m_isOpen) {
         setError(QStringLiteral("clearMappingV3: store not open"));
@@ -609,4 +609,4 @@ bool BlobBaselineStore::clearMappingV3(const QString &mappingId)
     return true;
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Storage

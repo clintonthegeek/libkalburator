@@ -25,10 +25,16 @@
 #include <atomic>
 #include <type_traits>
 
+namespace Kalburator::Storage {
+class BaselineStore;
+} // namespace Kalburator::Storage
+
 namespace Kalburator::Sync {
 
 class BackendRegistry;
-class BlobBaselineStore;
+// Phase K.5: BlobBaselineStore moved to Kalburator::Storage::BaselineStore.
+// Alias preserved here for the cutover window; removed in Task 2.
+using BlobBaselineStore = ::Kalburator::Storage::BaselineStore;
 class IBlobBackend;
 class ISyncHost;
 class SyncBackend;

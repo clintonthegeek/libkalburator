@@ -12,7 +12,7 @@
 #include <QSqlRecord>
 #include <QVariant>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Storage {
 
 namespace {
 
@@ -448,4 +448,4 @@ void IDMappingStore::setArchived(const QString &backendId,
     }
 }
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Storage

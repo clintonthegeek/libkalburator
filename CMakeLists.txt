@@ -200,16 +200,27 @@ set(KALBURATOR_TRANSCODING_SOURCES
 set(KALBURATOR_JOURNAL_HEADERS
     src/journal/asyncfilewriter.h
     src/journal/baselinestore.h
-    src/journal/blobbaselinestore.h
+    # blobbaselinestore.h and idmappingstore.h are forwarding shims (Phase K.5);
+    # the real files live in src/storage/. Shims removed in Task 13.
     src/journal/calendarjournal.h
-    src/journal/idmappingstore.h
 )
 set(KALBURATOR_JOURNAL_SOURCES
     src/journal/asyncfilewriter.cpp
     src/journal/baselinestore.cpp
-    src/journal/blobbaselinestore.cpp
     src/journal/calendarjournal.cpp
-    src/journal/idmappingstore.cpp
+)
+
+# Phase K.5 — domain-neutral storage layer.
+# BlobBaselineStore (renamed BaselineStore) and IDMappingStore moved here
+# from src/journal/. Forwarding shims at old journal/ locations stay until
+# Task 13 (PlanStan + WildPalms fully cut over).
+set(KALBURATOR_STORAGE_HEADERS
+    src/storage/baselinestore.h
+    src/storage/idmappingstore.h
+)
+set(KALBURATOR_STORAGE_SOURCES
+    src/storage/baselinestore.cpp
+    src/storage/idmappingstore.cpp
 )
 
 set(KALBURATOR_DISCOVERY_HEADERS
@@ -379,6 +390,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CONFLICT_HEADERS}
     ${KALBURATOR_TRANSCODING_HEADERS}
     ${KALBURATOR_JOURNAL_HEADERS}
+    ${KALBURATOR_STORAGE_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
     ${KALBURATOR_BACKEND_HEADERS}
@@ -395,6 +407,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CONFLICT_SOURCES}
     ${KALBURATOR_TRANSCODING_SOURCES}
     ${KALBURATOR_JOURNAL_SOURCES}
+    ${KALBURATOR_STORAGE_SOURCES}
     ${KALBURATOR_DISCOVERY_SOURCES}
     ${KALBURATOR_BLOB_SOURCES}
     ${KALBURATOR_ENGINE_SOURCES}
@@ -428,6 +441,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transcoding>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sinks>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
