@@ -315,7 +315,10 @@ QVariantMap BaselineStore::collectionBaseline(const QString &mappingId,
 bool BaselineStore::removeCollectionBaseline(const QString &mappingId,
                                              const QString &collectionId)
 {
-    if (!m_isOpen) return false;
+    if (!m_isOpen) {
+        setError(QStringLiteral("removeCollectionBaseline: store not open"));
+        return false;
+    }
     QSqlDatabase db = QSqlDatabase::database(m_connName);
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
