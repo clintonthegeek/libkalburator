@@ -937,6 +937,30 @@ void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &
         }
     }
 
+    // Property baselines: snapshot the plugin-declared keys from collectionProperties.
+    if (m_baselineStore && m_controller) {
+        SyncBackend *srcBackend = m_controller->backendById(mapping.sourceBackend);
+        if (srcBackend && !srcBackend->nativeShapes().isEmpty()) {
+            const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
+            auto *plugin = Kalburator::Shape::DomainRegistry::instance()
+                               .findByDomain(srcShape.domain);
+            if (plugin) {
+                const QStringList keys = plugin->baselineProperties();
+                if (!keys.isEmpty()) {
+                    const QVariantMap collProps =
+                        plugin->collectionProperties(srcBackend, mapping.sourceCalendar);
+                    QVariantMap snapshot;
+                    for (const auto &k : keys) {
+                        if (collProps.contains(k))
+                            snapshot.insert(k, collProps.value(k));
+                    }
+                    m_baselineStore->setCollectionBaseline(
+                        mapping.id, mapping.sourceCalendar, snapshot);
+                }
+            }
+        }
+    }
+
     // Update last sync time
     m_baselineStore->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
 }
