@@ -28,6 +28,7 @@
 #include <QMap>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 
 #include "canonicalrecord.h"
 
@@ -86,6 +87,24 @@ public:
     bool clearMappingV3(const QString &mappingId);
 
     // -----------------------------------------------------------------------
+    // Collection-baseline API (K.5, schema v5).
+    //
+    // Per (mappingId, collectionId) → QVariantMap of
+    // domain-plugin-declared property snapshots (e.g. color, description
+    // for calendars). Stored in collection_baselines.
+    // -----------------------------------------------------------------------
+
+    bool setCollectionBaseline(const QString &mappingId,
+                               const QString &collectionId,
+                               const QVariantMap &props);
+
+    QVariantMap collectionBaseline(const QString &mappingId,
+                                   const QString &collectionId) const;
+
+    bool removeCollectionBaseline(const QString &mappingId,
+                                  const QString &collectionId);
+
+    // -----------------------------------------------------------------------
     // Triple-keyed API — keyed by (backendId, collectionId, recordId).
     // Stored in blob_baselines.
     // @deprecated Use the v3 mapping-keyed API instead.
@@ -127,6 +146,7 @@ private:
 
     bool ensureSchemaAndVersion(bool dbFileExistedBefore);
     bool ensureSchemaV3();
+    bool ensureSchemaV5();
     void setError(const QString &message) const;
 };
 

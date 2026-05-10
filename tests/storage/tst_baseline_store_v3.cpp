@@ -45,7 +45,7 @@ private slots:
 };
 
 // ───────────────────────────────────────────────────────────────────────────
-// 1. Fresh DB: blob_baselines_v3 table exists and user_version == 4.
+// 1. Fresh DB: blob_baselines_v3 table exists and user_version == 5.
 // ───────────────────────────────────────────────────────────────────────────
 void TestBlobBaselineStoreV3::freshDb_hasV3Table()
 {
@@ -68,7 +68,7 @@ void TestBlobBaselineStoreV3::freshDb_hasV3Table()
             QSqlQuery q(db);
             q.exec(QStringLiteral("PRAGMA user_version"));
             QVERIFY(q.next());
-            QCOMPARE(q.value(0).toInt(), 4);
+            QCOMPARE(q.value(0).toInt(), 5);  // K.5: schema v5 (collection_baselines added)
 
             q.exec(QStringLiteral(
                 "SELECT name FROM sqlite_master WHERE type='table' "
@@ -289,7 +289,7 @@ void TestBlobBaselineStoreV3::migrate_idempotent_reopenSafe()
     QVERIFY(dir.isValid());
     const QString dbPath = dir.filePath(QStringLiteral("t.db"));
 
-    // First open — fresh, user_version → 4.
+    // First open — fresh, user_version → 5 (K.5 schema).
     {
         BaselineStore store(dbPath);
         QVERIFY(store.isOpen());

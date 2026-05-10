@@ -5,6 +5,9 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -13,7 +16,7 @@
 namespace Kalburator::Storage {
 
 namespace {
-constexpr int kSchemaVersion = 4;  // G.4: mapping-keyed blob_baselines_v3 table.
+constexpr int kSchemaVersion = 5;  // K.5: collection_baselines table.
 } // namespace
 
 int BaselineStore::s_connectionCounter = 0;
@@ -181,6 +184,11 @@ bool BaselineStore::ensureSchemaAndVersion(bool dbFileExistedBefore)
         return false;
     }
 
+    // K.5: ensure collection_baselines table exists.
+    if (!ensureSchemaV5()) {
+        return false;
+    }
+
     return true;
 }
 
@@ -212,17 +220,113 @@ bool BaselineStore::ensureSchemaV3()
         "ON blob_baselines_v3 (mapping_id)"));
 
     // Check whether a v2→v3 data migration is still needed.
+    // Gate on the G.4 schema stamp (version 4 specifically), not the current
+    // kSchemaVersion, so that bumping kSchemaVersion for later table additions
+    // does not re-trigger this migration on already-migrated databases.
     QSqlQuery vq(db);
     vq.exec(QStringLiteral("PRAGMA user_version"));
     const int userVersion = vq.next() ? vq.value(0).toInt() : 0;
-    if (userVersion < kSchemaVersion) {
+    static constexpr int kSchemaV3Introduced = 4;
+    if (userVersion < kSchemaV3Introduced) {
         // Flag for deferred data migration (requires mapping resolver from engine).
         m_needsV3Migration = true;
-        // Stamp the new schema version immediately so re-opens skip this branch.
+        // Stamp the G.4 schema version so re-opens skip this branch.
         q.exec(QStringLiteral("PRAGMA user_version = %1")
-                   .arg(kSchemaVersion));
+                   .arg(kSchemaV3Introduced));
     }
 
+    return true;
+}
+
+bool BaselineStore::ensureSchemaV5()
+{
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS collection_baselines ("
+            "  mapping_id      TEXT NOT NULL,"
+            "  collection_id   TEXT NOT NULL,"
+            "  properties_json BLOB NOT NULL,"
+            "  updated_at      INTEGER NOT NULL,"
+            "  PRIMARY KEY (mapping_id, collection_id)"
+            ")"))) {
+        setError(QStringLiteral("CREATE TABLE collection_baselines failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    q.exec(QStringLiteral(
+        "CREATE INDEX IF NOT EXISTS idx_collection_baselines_mapping "
+        "ON collection_baselines (mapping_id)"));
+
+    return true;
+}
+
+// ===========================================================================
+// Collection-baseline API (K.5, schema v5)
+// ===========================================================================
+
+bool BaselineStore::setCollectionBaseline(const QString &mappingId,
+                                          const QString &collectionId,
+                                          const QVariantMap &props)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setCollectionBaseline: store not open"));
+        return false;
+    }
+    QJsonDocument doc(QJsonObject::fromVariantMap(props));
+    const QByteArray bytes = doc.toJson(QJsonDocument::Compact);
+
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO collection_baselines "
+        "(mapping_id, collection_id, properties_json, updated_at) "
+        "VALUES (?, ?, ?, strftime('%s','now'))"));
+    q.addBindValue(mappingId);
+    q.addBindValue(collectionId);
+    q.addBindValue(bytes);
+    if (!q.exec()) {
+        setError(QStringLiteral("setCollectionBaseline: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+QVariantMap BaselineStore::collectionBaseline(const QString &mappingId,
+                                              const QString &collectionId) const
+{
+    if (!m_isOpen) return {};
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT properties_json FROM collection_baselines "
+        "WHERE mapping_id = ? AND collection_id = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(collectionId);
+    if (!q.exec() || !q.next()) return {};
+    const QByteArray bytes = q.value(0).toByteArray();
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject()) return {};
+    return doc.object().toVariantMap();
+}
+
+bool BaselineStore::removeCollectionBaseline(const QString &mappingId,
+                                             const QString &collectionId)
+{
+    if (!m_isOpen) return false;
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "DELETE FROM collection_baselines "
+        "WHERE mapping_id = ? AND collection_id = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(collectionId);
+    if (!q.exec()) {
+        setError(QStringLiteral("removeCollectionBaseline: %1").arg(q.lastError().text()));
+        return false;
+    }
     return true;
 }
 
