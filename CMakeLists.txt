@@ -349,12 +349,12 @@ set(KALBURATOR_MEMO_SOURCES
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
 set(KALBURATOR_SINKS_HEADERS
-    src/sinks/rawfilesbackend.h
-    src/sinks/genericsqlitebackend.h
+    src/universal/rawfilesbackend.h
+    src/universal/genericsqlitebackend.h
 )
 set(KALBURATOR_SINKS_SOURCES
-    src/sinks/rawfilesbackend.cpp
-    src/sinks/genericsqlitebackend.cpp
+    src/universal/rawfilesbackend.cpp
+    src/universal/genericsqlitebackend.cpp
 )
 
 # Phase H — provider abstraction
@@ -438,7 +438,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sinks>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/universal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
