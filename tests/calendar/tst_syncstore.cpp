@@ -25,6 +25,24 @@
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;
 
+// Helper: build a mapping ID from backend+collection (V1→V3 migration shim).
+static QString blobMappingId(const QString &backendId, const QString &collectionId)
+{
+    return backendId + QLatin1Char('/') + collectionId;
+}
+
+// Helper: build a blob/raw CanonicalRecord (V1→V3 migration shim).
+static Kalburator::Shape::CanonicalRecord makeBlobRec(const QString &uid, const QString &hash)
+{
+    Kalburator::Shape::CanonicalRecord rec;
+    rec.recordId = uid;
+    rec.shape    = Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("blob")},
+        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+    rec.data     = hash.toUtf8();
+    return rec;
+}
+
 
 class TestSyncStore : public QObject
 {
@@ -141,8 +159,8 @@ void TestSyncStore::testDatabaseCreation()
 void TestSyncStore::testDatabaseReopen()
 {
     // Add some data via the blob store
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("cal"),
-                                      QStringLiteral("uid1"), QStringLiteral("hash1")));
+    const QString mid = blobMappingId(QStringLiteral("caldav"), QStringLiteral("cal"));
+    QVERIFY(m_blobStore->setBaselineV3(mid, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("hash1"))));
 
     // Close and reopen
     delete m_blobStore;
@@ -150,9 +168,9 @@ void TestSyncStore::testDatabaseReopen()
     QVERIFY(m_blobStore->isOpen());
 
     // Verify data persisted
-    QString hash = m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                              QStringLiteral("cal"),
-                                              QStringLiteral("uid1"));
+    QString hash = QString::fromUtf8(
+        m_blobStore->baselineV3(mid, QStringLiteral("uid1"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data);
     QCOMPARE(hash, QStringLiteral("hash1"));
 }
 
@@ -169,94 +187,89 @@ void TestSyncStore::testInvalidPath()
 
 void TestSyncStore::testSetAndGetVersionHash()
 {
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid1"), QStringLiteral("etag-12345")));
+    const QString mid = blobMappingId(QStringLiteral("caldav"), QStringLiteral("personal"));
+    QVERIFY(m_blobStore->setBaselineV3(mid, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("etag-12345"))));
 
-    QString hash = m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                              QStringLiteral("personal"),
-                                              QStringLiteral("uid1"));
+    QString hash = QString::fromUtf8(
+        m_blobStore->baselineV3(mid, QStringLiteral("uid1"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data);
     QCOMPARE(hash, QStringLiteral("etag-12345"));
 
     // Non-existent returns empty
-    QVERIFY(m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                       QStringLiteral("personal"),
-                                       QStringLiteral("nonexistent")).isEmpty());
+    QVERIFY(QString::fromUtf8(
+        m_blobStore->baselineV3(mid, QStringLiteral("nonexistent"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data).isEmpty());
 }
 
 void TestSyncStore::testRemoveVersionHash()
 {
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid1"), QStringLiteral("etag-12345")));
+    const QString mid = blobMappingId(QStringLiteral("caldav"), QStringLiteral("personal"));
+    QVERIFY(m_blobStore->setBaselineV3(mid, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("etag-12345"))));
 
-    // clearCollection removes all for (backend, collection)
-    QVERIFY(m_blobStore->clearCollection(QStringLiteral("caldav"), QStringLiteral("personal")));
+    // clearMappingV3 removes all for this mapping
+    QVERIFY(m_blobStore->clearMappingV3(mid));
 
-    QVERIFY(m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                       QStringLiteral("personal"),
-                                       QStringLiteral("uid1")).isEmpty());
+    QVERIFY(QString::fromUtf8(
+        m_blobStore->baselineV3(mid, QStringLiteral("uid1"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data).isEmpty());
 }
 
 void TestSyncStore::testAllVersionHashes()
 {
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid1"), QStringLiteral("etag1")));
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid2"), QStringLiteral("etag2")));
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("work"),
-                                      QStringLiteral("uid3"), QStringLiteral("etag3")));
+    const QString midPersonal = blobMappingId(QStringLiteral("caldav"), QStringLiteral("personal"));
+    const QString midWork     = blobMappingId(QStringLiteral("caldav"), QStringLiteral("work"));
+    QVERIFY(m_blobStore->setBaselineV3(midPersonal, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("etag1"))));
+    QVERIFY(m_blobStore->setBaselineV3(midPersonal, makeBlobRec(QStringLiteral("uid2"), QStringLiteral("etag2"))));
+    QVERIFY(m_blobStore->setBaselineV3(midWork,     makeBlobRec(QStringLiteral("uid3"), QStringLiteral("etag3"))));
 
-    QStringList personalIds = m_blobStore->baselineRecordIds(QStringLiteral("caldav"),
-                                                              QStringLiteral("personal"));
-    QCOMPARE(personalIds.size(), 2);
+    const auto personalRecs = m_blobStore->baselinesForMappingV3(midPersonal);
+    QCOMPARE(personalRecs.size(), 2);
+    QStringList personalIds;
+    for (const auto &r : personalRecs)
+        personalIds << r.recordId;
     QVERIFY(personalIds.contains(QStringLiteral("uid1")));
     QVERIFY(personalIds.contains(QStringLiteral("uid2")));
-    QCOMPARE(m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                        QStringLiteral("personal"),
-                                        QStringLiteral("uid1")),
-             QStringLiteral("etag1"));
-    QCOMPARE(m_blobStore->baselineHash(QStringLiteral("caldav"),
-                                        QStringLiteral("personal"),
-                                        QStringLiteral("uid2")),
-             QStringLiteral("etag2"));
+    QCOMPARE(QString::fromUtf8(
+        m_blobStore->baselineV3(midPersonal, QStringLiteral("uid1"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        QStringLiteral("etag1"));
+    QCOMPARE(QString::fromUtf8(
+        m_blobStore->baselineV3(midPersonal, QStringLiteral("uid2"))
+            .value_or(Kalburator::Shape::CanonicalRecord{}).data),
+        QStringLiteral("etag2"));
 }
 
 void TestSyncStore::testClearVersionHashes()
 {
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid1"), QStringLiteral("etag1")));
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("work"),
-                                      QStringLiteral("uid2"), QStringLiteral("etag2")));
+    const QString midPersonal = blobMappingId(QStringLiteral("caldav"), QStringLiteral("personal"));
+    const QString midWork     = blobMappingId(QStringLiteral("caldav"), QStringLiteral("work"));
+    QVERIFY(m_blobStore->setBaselineV3(midPersonal, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("etag1"))));
+    QVERIFY(m_blobStore->setBaselineV3(midWork,     makeBlobRec(QStringLiteral("uid2"), QStringLiteral("etag2"))));
 
-    QVERIFY(m_blobStore->clearCollection(QStringLiteral("caldav"), QStringLiteral("personal")));
+    QVERIFY(m_blobStore->clearMappingV3(midPersonal));
 
-    QVERIFY(m_blobStore->baselineRecordIds(QStringLiteral("caldav"),
-                                            QStringLiteral("personal")).isEmpty());
-
-    QCOMPARE(m_blobStore->baselineRecordIds(QStringLiteral("caldav"),
-                                             QStringLiteral("work")).size(), 1);
+    QVERIFY(m_blobStore->baselinesForMappingV3(midPersonal).isEmpty());
+    QCOMPARE(m_blobStore->baselinesForMappingV3(midWork).size(), 1);
 }
 
 void TestSyncStore::testClearVersionHashesForBackend()
 {
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("personal"),
-                                      QStringLiteral("uid1"), QStringLiteral("etag1")));
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("work"),
-                                      QStringLiteral("uid2"), QStringLiteral("etag2")));
-    QVERIFY(m_blobStore->setBaseline(QStringLiteral("local"), QStringLiteral("cal"),
-                                      QStringLiteral("uid3"), QStringLiteral("hash3")));
+    const QString midPersonal = blobMappingId(QStringLiteral("caldav"), QStringLiteral("personal"));
+    const QString midWork     = blobMappingId(QStringLiteral("caldav"), QStringLiteral("work"));
+    const QString midLocal    = blobMappingId(QStringLiteral("local"),  QStringLiteral("cal"));
+    QVERIFY(m_blobStore->setBaselineV3(midPersonal, makeBlobRec(QStringLiteral("uid1"), QStringLiteral("etag1"))));
+    QVERIFY(m_blobStore->setBaselineV3(midWork,     makeBlobRec(QStringLiteral("uid2"), QStringLiteral("etag2"))));
+    QVERIFY(m_blobStore->setBaselineV3(midLocal,    makeBlobRec(QStringLiteral("uid3"), QStringLiteral("hash3"))));
 
-    // Clear all caldav collections
-    QVERIFY(m_blobStore->clearCollection(QStringLiteral("caldav"), QStringLiteral("personal")));
-    QVERIFY(m_blobStore->clearCollection(QStringLiteral("caldav"), QStringLiteral("work")));
+    // Clear all caldav mappings
+    QVERIFY(m_blobStore->clearMappingV3(midPersonal));
+    QVERIFY(m_blobStore->clearMappingV3(midWork));
 
-    QVERIFY(m_blobStore->baselineRecordIds(QStringLiteral("caldav"),
-                                            QStringLiteral("personal")).isEmpty());
-    QVERIFY(m_blobStore->baselineRecordIds(QStringLiteral("caldav"),
-                                            QStringLiteral("work")).isEmpty());
+    QVERIFY(m_blobStore->baselinesForMappingV3(midPersonal).isEmpty());
+    QVERIFY(m_blobStore->baselinesForMappingV3(midWork).isEmpty());
 
     // local backend should remain
-    QCOMPARE(m_blobStore->baselineRecordIds(QStringLiteral("local"),
-                                             QStringLiteral("cal")).size(), 1);
+    QCOMPARE(m_blobStore->baselinesForMappingV3(midLocal).size(), 1);
 }
 
 // ============================================================================
@@ -570,12 +583,12 @@ void TestSyncStore::testClearMappingData()
 void TestSyncStore::testEmptyStrings()
 {
     // Empty args should not crash
-    m_blobStore->setBaseline(QString(), QStringLiteral("cal"),
-                              QStringLiteral("uid"), QStringLiteral("hash"));
-    m_blobStore->setBaseline(QStringLiteral("caldav"), QString(),
-                              QStringLiteral("uid"), QStringLiteral("hash"));
-    m_blobStore->setBaseline(QStringLiteral("caldav"), QStringLiteral("cal"),
-                              QString(), QStringLiteral("hash"));
+    m_blobStore->setBaselineV3(blobMappingId(QString(), QStringLiteral("cal")),
+                               makeBlobRec(QStringLiteral("uid"), QStringLiteral("hash")));
+    m_blobStore->setBaselineV3(blobMappingId(QStringLiteral("caldav"), QString()),
+                               makeBlobRec(QStringLiteral("uid"), QStringLiteral("hash")));
+    m_blobStore->setBaselineV3(blobMappingId(QStringLiteral("caldav"), QStringLiteral("cal")),
+                               makeBlobRec(QString(), QStringLiteral("hash")));
     m_calBaselines->setBaselineV3(QString(), calendarTestRec(QStringLiteral("uid"), QStringLiteral("ical")));
     m_calBaselines->setBaselineV3(QStringLiteral("mapping"), calendarTestRec(QString(), QStringLiteral("ical")));
 }

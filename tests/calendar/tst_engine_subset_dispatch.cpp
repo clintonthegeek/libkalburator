@@ -110,7 +110,7 @@ void TestEngineSubsetDispatch::init()
 
     m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_engine->setBaselineStore(m_calBaselines.get());
-    m_engine->setBlobBaselineStore(m_blobBaselines.get());
+    m_engine->setBaselineStore(m_blobBaselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
     m_engine->setCollection(m_host->stubCollection());

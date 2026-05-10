@@ -92,6 +92,18 @@ SyncMapping makeTwoWayMapping()
     return m;
 }
 
+// Helper: build a blob/raw CanonicalRecord for BlobBaselineStore V3 API.
+inline Kalburator::Shape::CanonicalRecord makeBlobRec(const QString &uid, const QString &hash)
+{
+    Kalburator::Shape::CanonicalRecord rec;
+    rec.recordId = uid;
+    rec.shape    = Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("blob")},
+        Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+    rec.data     = hash.toUtf8();
+    return rec;
+}
+
 } // namespace
 
 class TestCalendarSubsequentSyncUsesBlobView : public QObject
@@ -186,7 +198,7 @@ void TestCalendarSubsequentSyncUsesBlobView::setupCoordinator()
 {
     m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
     m_coordinator->setBaselineStore(m_calendarBaselines.get());
-    m_coordinator->setBlobBaselineStore(m_blobBaselines.get());
+    m_coordinator->setBaselineStore(m_blobBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());
     m_coordinator->setCollection(m_host->stubCollection());
@@ -273,18 +285,8 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_hashEqualRecordsAreS
     // Seed BlobBaselineStore with matching hashes so the hash skip fires.
     const QString hash1 = hashFor(evt1);
     const QString hash2 = hashFor(evt2);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kSourceBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-1"), hash1);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kSourceBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-2"), hash2);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kTargetBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-1"), hash1);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kTargetBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-2"), hash2);
+    m_blobBaselines->setBaselineV3(QString::fromLatin1(kMappingId), makeBlobRec(QStringLiteral("evt-1"), hash1));
+    m_blobBaselines->setBaselineV3(QString::fromLatin1(kMappingId), makeBlobRec(QStringLiteral("evt-2"), hash2));
 
     m_source->addIncidence(QString::fromLatin1(kCalendarId), evt1);
     m_source->addIncidence(QString::fromLatin1(kCalendarId), evt2);
@@ -323,18 +325,8 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_modifiedRecordPropag
     // BlobBaselineStore: matching hashes for evt-1 and evt-2 so they are skipped.
     const QString hash1 = hashFor(evt1);
     const QString hash2 = hashFor(evt2);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kSourceBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-1"), hash1);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kSourceBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-2"), hash2);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kTargetBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-1"), hash1);
-    m_blobBaselines->setBaseline(QString::fromLatin1(kTargetBackendId),
-                                  QString::fromLatin1(kCalendarId),
-                                  QStringLiteral("evt-2"), hash2);
+    m_blobBaselines->setBaselineV3(QString::fromLatin1(kMappingId), makeBlobRec(QStringLiteral("evt-1"), hash1));
+    m_blobBaselines->setBaselineV3(QString::fromLatin1(kMappingId), makeBlobRec(QStringLiteral("evt-2"), hash2));
     // No BlobBaseline for evt-3 → it is NOT skipped → goes through merge.
 
     // Source: all three events. Target: only evt-1 and evt-2.
