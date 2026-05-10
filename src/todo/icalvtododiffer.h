@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecorddiffer.h"
+#include "recorddiffer.h"
 
 namespace Kalburator::Todo {
 
 /// IRecordDiffer for (todo, ical-vtodo). Uses KCalendarCore::Todo
 /// to compute per-property differences between two VTODO records.
-class IRecordDifferVTodo : public Kalburator::Shape::IRecordDiffer {
+class RecordDifferVTodo : public Kalburator::Shape::RecordDiffer {
 public:
     QSet<Kalburator::Shape::PropertyId> diff(
         const Kalburator::Shape::CanonicalRecord& source,

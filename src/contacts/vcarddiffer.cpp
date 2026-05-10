@@ -20,7 +20,7 @@ KContacts::Addressee parseVCard(const QByteArray &data)
 
 namespace Kalburator::Contacts {
 
-QSet<PropertyId> IRecordDifferVCard::diff(
+QSet<PropertyId> RecordDifferVCard::diff(
     const CanonicalRecord &source,
     const CanonicalRecord &baseline) const
 {
@@ -93,7 +93,7 @@ QSet<PropertyId> IRecordDifferVCard::diff(
     return changed;
 }
 
-bool IRecordDifferVCard::equal(
+bool RecordDifferVCard::equal(
     const CanonicalRecord &a,
     const CanonicalRecord &b) const
 {

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecordmerger.h"
+#include "recordmerger.h"
 
 namespace Kalburator::Todo {
 
 /// IRecordMerger for (todo, ical-vtodo). Performs 3-way property-level
 /// merge between VTODO canonical records.
-class IRecordMergerVTodo : public Kalburator::Shape::IRecordMerger {
+class RecordMergerVTodo : public Kalburator::Shape::RecordMerger {
 public:
     Kalburator::Shape::CanonicalRecord merge(
         const Kalburator::Shape::CanonicalRecord& source,

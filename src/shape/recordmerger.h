@@ -8,9 +8,9 @@ namespace Kalburator::Shape {
 /// 3-way merge over canonical records. One implementation per
 /// canonical shape, owned by the domain plugin. The engine consults
 /// the merger during the merge stage of the worker pipeline.
-class IRecordMerger {
+class RecordMerger {
 public:
-    virtual ~IRecordMerger() = default;
+    virtual ~RecordMerger() = default;
 
     /// Per-property choice for explanation / instrumentation.
     enum class FieldChoice {

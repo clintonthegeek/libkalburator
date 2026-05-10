@@ -23,7 +23,7 @@ KCalendarCore::Incidence::Ptr parseIcal(const QByteArray& data)
 
 namespace Kalburator::Calendar {
 
-QSet<PropertyId> IRecordDifferICal::diff(
+QSet<PropertyId> RecordDifferICal::diff(
     const CanonicalRecord& source,
     const CanonicalRecord& baseline) const
 {
@@ -51,7 +51,7 @@ QSet<PropertyId> IRecordDifferICal::diff(
     return changed;
 }
 
-bool IRecordDifferICal::equal(const CanonicalRecord& a,
+bool RecordDifferICal::equal(const CanonicalRecord& a,
                                const CanonicalRecord& b) const
 {
     if (a.data == b.data)

@@ -11,9 +11,9 @@ namespace Kalburator::Shape {
 /// One implementation per canonical shape, owned by the domain
 /// plugin. The engine consults the differ during the diff stage of
 /// the worker pipeline.
-class IRecordDiffer {
+class RecordDiffer {
 public:
-    virtual ~IRecordDiffer() = default;
+    virtual ~RecordDiffer() = default;
 
     /// Set of properties whose values differ between source and
     /// baseline. Empty result means "no change since baseline".

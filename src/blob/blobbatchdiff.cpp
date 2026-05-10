@@ -2,7 +2,7 @@
 
 #include "canonicalrecord.h"
 #include "conflictpolicy.h"
-#include "irecordmerger.h"
+#include "recordmerger.h"
 
 #include <QHash>
 #include <QSet>
@@ -262,7 +262,7 @@ EngineMerge blobBatchMergeWithPlugin(
     const EngineDiff &d,
     ConflictResolution policy,
     const ExecutionOverride &executionOverride,
-    Kalburator::Shape::IRecordMerger *customMerger,
+    Kalburator::Shape::RecordMerger *customMerger,
     const Kalburator::Shape::Shape &canonical)
 {
     // Phase Ia.5 Task 9 / Task 16: variant of the default 3-way merge that

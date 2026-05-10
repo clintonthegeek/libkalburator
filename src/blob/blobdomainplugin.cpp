@@ -1,8 +1,8 @@
 #include "blobdomainplugin.h"
 
 #include "domainregistry.h"
-#include "irecorddiffer.h"
-#include "irecordmerger.h"
+#include "recorddiffer.h"
+#include "recordmerger.h"
 #include "propertycatalogue.h"
 #include "transformationregistry.h"
 #include "conflictpolicy.h"
@@ -13,8 +13,8 @@ using Kalburator::Shape::PropertyCatalogue;
 using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::PropertyKind;
 using Kalburator::Shape::CanonicalRecord;
-using Kalburator::Shape::IRecordDiffer;
-using Kalburator::Shape::IRecordMerger;
+using Kalburator::Shape::RecordDiffer;
+using Kalburator::Shape::RecordMerger;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::TransformationEdge;
 using Kalburator::Shape::TransformationRegistry;
@@ -24,7 +24,7 @@ namespace {
 
 // --- Hash-equality differ for the blob domain ---
 // Two blob records are equal iff their payload bytes are identical.
-class IRecordDifferBlob final : public IRecordDiffer {
+class RecordDifferBlob final : public RecordDiffer {
 public:
     QSet<PropertyId> diff(const CanonicalRecord& source,
                            const CanonicalRecord& baseline) const override
@@ -39,7 +39,7 @@ public:
 };
 
 // --- Whole-record-replace merger for the blob domain ---
-class IRecordMergerBlob final : public IRecordMerger {
+class RecordMergerBlob final : public RecordMerger {
 public:
     CanonicalRecord merge(
         const CanonicalRecord& source,
@@ -102,14 +102,14 @@ PropertyCatalogue KalburatorDomainBlob::catalogueFor(const Kalburator::Shape::Sh
     return {};
 }
 
-std::unique_ptr<IRecordDiffer> KalburatorDomainBlob::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> KalburatorDomainBlob::createCanonicalDiffer() const
 {
-    return std::make_unique<IRecordDifferBlob>();
+    return std::make_unique<RecordDifferBlob>();
 }
 
-std::unique_ptr<IRecordMerger> KalburatorDomainBlob::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> KalburatorDomainBlob::createCanonicalMerger() const
 {
-    return std::make_unique<IRecordMergerBlob>();
+    return std::make_unique<RecordMergerBlob>();
 }
 
 void KalburatorDomainBlob::registerEdges(TransformationRegistry& registry)

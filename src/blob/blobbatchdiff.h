@@ -9,7 +9,7 @@
 
 #include <QList>
 
-namespace Kalburator::Shape { class IRecordMerger; }
+namespace Kalburator::Shape { class RecordMerger; }
 
 namespace Kalburator::Sync {
 
@@ -47,7 +47,7 @@ EngineDiff blobBatchDiff(const QList<BackendRecord>& source,
 EngineMerge blobBatchMergeWithPlugin(const EngineDiff& diff,
                                      ConflictResolution policy,
                                      const ExecutionOverride& executionOverride,
-                                     Kalburator::Shape::IRecordMerger* customMerger,
+                                     Kalburator::Shape::RecordMerger* customMerger,
                                      const Kalburator::Shape::Shape& canonical);
 
 } // namespace Kalburator::Sync

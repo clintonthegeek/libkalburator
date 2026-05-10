@@ -31,7 +31,7 @@ QByteArray serializeIcal(const KCalendarCore::Incidence::Ptr& incidence)
 
 namespace Kalburator::Calendar {
 
-CanonicalRecord IRecordMergerICal::merge(
+CanonicalRecord RecordMergerICal::merge(
     const CanonicalRecord& source,
     const CanonicalRecord& target,
     const CanonicalRecord& baseline,

@@ -283,9 +283,9 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/pipeline.h
     src/shape/transformationregistry.h
     src/shape/canonicalrecord.h
-    src/shape/irecorddiffer.h
-    src/shape/irecordmerger.h
-    src/shape/irecordwriter.h
+    src/shape/recorddiffer.h
+    src/shape/recordmerger.h
+    src/shape/recordwriter.h
     src/shape/defaultblobwriter.h
     src/shape/domainplugin.h
     src/shape/domainregistry.h

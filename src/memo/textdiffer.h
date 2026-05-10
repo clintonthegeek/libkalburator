@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecorddiffer.h"
+#include "recorddiffer.h"
 
 namespace Kalburator::Memo {
 
 /// IRecordDiffer for (memo, text). Compares body text, categories,
 /// and last-modified timestamp stored as JSON in CanonicalRecord.data.
-class TextDiffer : public Kalburator::Shape::IRecordDiffer {
+class TextDiffer : public Kalburator::Shape::RecordDiffer {
 public:
     QSet<Kalburator::Shape::PropertyId> diff(
         const Kalburator::Shape::CanonicalRecord& source,

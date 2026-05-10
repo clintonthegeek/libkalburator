@@ -10,8 +10,8 @@
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyCatalogue;
-using Kalburator::Shape::IRecordDiffer;
-using Kalburator::Shape::IRecordMerger;
+using Kalburator::Shape::RecordDiffer;
+using Kalburator::Shape::RecordMerger;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::TransformationEdge;
 using Kalburator::Shape::TransformationRegistry;
@@ -49,14 +49,14 @@ PropertyCatalogue KalburatorDomainTodo::catalogueFor(
     return {};
 }
 
-std::unique_ptr<IRecordDiffer> KalburatorDomainTodo::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> KalburatorDomainTodo::createCanonicalDiffer() const
 {
-    return std::make_unique<IRecordDifferVTodo>();
+    return std::make_unique<RecordDifferVTodo>();
 }
 
-std::unique_ptr<IRecordMerger> KalburatorDomainTodo::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> KalburatorDomainTodo::createCanonicalMerger() const
 {
-    return std::make_unique<IRecordMergerVTodo>();
+    return std::make_unique<RecordMergerVTodo>();
 }
 
 void KalburatorDomainTodo::registerEdges(TransformationRegistry &registry)

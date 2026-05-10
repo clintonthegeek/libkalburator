@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecordwriter.h"
+#include "recordwriter.h"
 
 namespace Kalburator::Sync { class IBlobBackend; }
 
 namespace Kalburator::Shape {
 
-class DefaultBlobWriter : public IRecordWriter {
+class DefaultBlobWriter : public RecordWriter {
 public:
     explicit DefaultBlobWriter(Kalburator::Sync::IBlobBackend *backend)
         : m_backend(backend) {}

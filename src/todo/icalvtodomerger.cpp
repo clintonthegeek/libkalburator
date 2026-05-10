@@ -49,7 +49,7 @@ bool srcWinsOnPolicy(const KCalendarCore::Todo::Ptr &src,
 
 namespace Kalburator::Todo {
 
-CanonicalRecord IRecordMergerVTodo::merge(
+CanonicalRecord RecordMergerVTodo::merge(
     const CanonicalRecord &source,
     const CanonicalRecord &target,
     const CanonicalRecord &baseline,

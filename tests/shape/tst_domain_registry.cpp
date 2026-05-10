@@ -6,9 +6,9 @@
 #include "contactsdomainplugin.h"
 #include "domainplugin.h"
 #include "domainregistry.h"
-#include "irecorddiffer.h"
-#include "irecordmerger.h"
-#include "irecordwriter.h"
+#include "recorddiffer.h"
+#include "recordmerger.h"
+#include "recordwriter.h"
 #include "memodomainplugin.h"
 #include "syncbackend.h"
 #include "tododomainplugin.h"
@@ -28,8 +28,8 @@ public:
     QList<Shape> peerShapes() const override { return {}; }
     PropertyCatalogue canonicalCatalogue() const override { return {}; }
     PropertyCatalogue catalogueFor(const Shape&) const override { return {}; }
-    std::unique_ptr<IRecordDiffer> createCanonicalDiffer() const override { return nullptr; }
-    std::unique_ptr<IRecordMerger> createCanonicalMerger() const override { return nullptr; }
+    std::unique_ptr<RecordDiffer> createCanonicalDiffer() const override { return nullptr; }
+    std::unique_ptr<RecordMerger> createCanonicalMerger() const override { return nullptr; }
     void registerEdges(TransformationRegistry& r) override {
         r.registerShape(m_canonical, PropertyCatalogue{});
         r.declareCanonical(m_domain, m_canonical);

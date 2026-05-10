@@ -61,7 +61,7 @@ private slots:
         const auto src    = makeRecord(uid, QStringLiteral("Meeting"));
         const auto tgt    = makeRecord(uid, QStringLiteral("Meeting"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
 
         const auto inc = parseResult(result);
@@ -77,7 +77,7 @@ private slots:
         const auto src    = makeRecord(uid, QStringLiteral("Source Updated"));
         const auto tgt    = makeRecord(uid, QStringLiteral("Original"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
 
         const auto inc = parseResult(result);
@@ -93,7 +93,7 @@ private slots:
         const auto src    = makeRecord(uid, QStringLiteral("Original"));
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Updated"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
 
         const auto inc = parseResult(result);
@@ -109,7 +109,7 @@ private slots:
         const auto src    = makeRecord(uid, QStringLiteral("Source Version"));
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Version"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
 
         const auto inc = parseResult(result);
@@ -125,7 +125,7 @@ private slots:
         const auto src    = makeRecord(uid, QStringLiteral("Source Version"));
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Version"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoTargetWins());
 
         const auto inc = parseResult(result);
@@ -141,7 +141,7 @@ private slots:
         const auto src     = makeRecord(uid, QStringLiteral("New Summary"), QStringLiteral("Base desc"));
         const auto tgt     = makeRecord(uid, QStringLiteral("Original"),   QStringLiteral("New desc"));
 
-        IRecordMergerICal merger;
+        RecordMergerICal merger;
         const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
 
         const auto inc = parseResult(result);

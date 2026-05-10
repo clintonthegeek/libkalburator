@@ -26,7 +26,7 @@ bool dtEqual(const QDateTime &a, const QDateTime &b)
 
 namespace Kalburator::Todo {
 
-QSet<PropertyId> IRecordDifferVTodo::diff(
+QSet<PropertyId> RecordDifferVTodo::diff(
     const CanonicalRecord &source,
     const CanonicalRecord &baseline) const
 {
@@ -63,7 +63,7 @@ QSet<PropertyId> IRecordDifferVTodo::diff(
     return changed;
 }
 
-bool IRecordDifferVTodo::equal(
+bool RecordDifferVTodo::equal(
     const CanonicalRecord &a,
     const CanonicalRecord &b) const
 {

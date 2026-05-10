@@ -65,7 +65,7 @@ private slots:
         const auto source = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Meeting"));
         const auto baseline = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Meeting"));
 
-        IRecordDifferICal differ;
+        RecordDifferICal differ;
         const QSet<PropertyId> changed = differ.diff(source, baseline);
         QVERIFY(changed.isEmpty());
         QVERIFY(differ.equal(source, baseline));
@@ -77,7 +77,7 @@ private slots:
         const auto source = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Meeting"));
         const auto baseline = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Old"));
 
-        IRecordDifferICal differ;
+        RecordDifferICal differ;
         const QSet<PropertyId> changed = differ.diff(source, baseline);
         QVERIFY(!changed.isEmpty());
         QVERIFY(changed.contains(PropertyId{"summary"}));
@@ -90,7 +90,7 @@ private slots:
         const auto source = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Meeting"), 5);
         const auto baseline = makeRecord(QStringLiteral("uid-1"), QStringLiteral("Meeting"), 1);
 
-        IRecordDifferICal differ;
+        RecordDifferICal differ;
         const QSet<PropertyId> changed = differ.diff(source, baseline);
         QVERIFY(!changed.isEmpty());
         QVERIFY(changed.contains(PropertyId{"priority"}));
@@ -111,7 +111,7 @@ private slots:
             0,
             QStringLiteral("Old description"));
 
-        IRecordDifferICal differ;
+        RecordDifferICal differ;
         const QSet<PropertyId> changed = differ.diff(source, baseline);
         QVERIFY(!changed.isEmpty());
         QVERIFY(changed.contains(PropertyId{"summary"}));
@@ -133,7 +133,7 @@ private slots:
             QStringLiteral("uid-1"),
             QStringLiteral("Meeting"));
 
-        IRecordDifferICal differ;
+        RecordDifferICal differ;
         const QSet<PropertyId> changed = differ.diff(source, baseline);
         QVERIFY(!changed.isEmpty());
         QVERIFY(changed.contains(PropertyId{"categories"}));

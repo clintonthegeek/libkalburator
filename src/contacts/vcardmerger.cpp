@@ -45,7 +45,7 @@ bool srcWins(const KContacts::Addressee &src,
 
 namespace Kalburator::Contacts {
 
-CanonicalRecord IRecordMergerVCard::merge(
+CanonicalRecord RecordMergerVCard::merge(
     const CanonicalRecord &source,
     const CanonicalRecord &target,
     const CanonicalRecord &baseline,

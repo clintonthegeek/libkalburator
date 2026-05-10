@@ -9,8 +9,8 @@
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyCatalogue;
-using Kalburator::Shape::IRecordDiffer;
-using Kalburator::Shape::IRecordMerger;
+using Kalburator::Shape::RecordDiffer;
+using Kalburator::Shape::RecordMerger;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::TransformationEdge;
 using Kalburator::Shape::TransformationRegistry;
@@ -46,12 +46,12 @@ PropertyCatalogue KalburatorDomainMemo::catalogueFor(
     return {};
 }
 
-std::unique_ptr<IRecordDiffer> KalburatorDomainMemo::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> KalburatorDomainMemo::createCanonicalDiffer() const
 {
     return std::make_unique<TextDiffer>();
 }
 
-std::unique_ptr<IRecordMerger> KalburatorDomainMemo::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> KalburatorDomainMemo::createCanonicalMerger() const
 {
     return std::make_unique<TextMerger>();
 }

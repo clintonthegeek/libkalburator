@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecorddiffer.h"
+#include "recorddiffer.h"
 
 namespace Kalburator::Contacts {
 
 /// IRecordDiffer for (contacts, vcard). Uses KContacts::VCardConverter
 /// to compute per-property differences between two vCard records.
-class IRecordDifferVCard : public Kalburator::Shape::IRecordDiffer {
+class RecordDifferVCard : public Kalburator::Shape::RecordDiffer {
 public:
     QSet<Kalburator::Shape::PropertyId> diff(
         const Kalburator::Shape::CanonicalRecord& source,

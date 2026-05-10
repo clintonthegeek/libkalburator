@@ -13,8 +13,8 @@ using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
-using Kalburator::Contacts::IRecordDifferVCard;
-using Kalburator::Contacts::IRecordMergerVCard;
+using Kalburator::Contacts::RecordDifferVCard;
+using Kalburator::Contacts::RecordMergerVCard;
 using Kalburator::Sync::QSyncCore::ConflictPolicy;
 using Kalburator::Sync::QSyncCore::AutoResolveStrategy;
 
@@ -50,7 +50,7 @@ class TestVCardDiffer : public QObject {
 private slots:
     void equalRecordsEmptyDiff()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         const auto data = makeVCard(QStringLiteral("u1"), QStringLiteral("Alice"));
         QVERIFY(differ.diff(makeRecord(data), makeRecord(data)).isEmpty());
         QVERIFY(differ.equal(makeRecord(data), makeRecord(data)));
@@ -58,7 +58,7 @@ private slots:
 
     void changedNameIsDetected()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         const auto a = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Alice")));
         const auto b = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Alice Smith")));
         QVERIFY(differ.diff(a, b).contains(PropertyId{"fn"}));
@@ -67,7 +67,7 @@ private slots:
 
     void changedOrgIsDetected()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         const auto a = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Bob"), QStringLiteral("Acme")));
         const auto b = makeRecord(makeVCard(QStringLiteral("u1"), QStringLiteral("Bob"), QStringLiteral("BigCo")));
         QVERIFY(differ.diff(a, b).contains(PropertyId{"org"}));
@@ -75,7 +75,7 @@ private slots:
 
     void diffDetectsGenderChange()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         CanonicalRecord src;
         src.shape = kShape;
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nGENDER:M\r\nEND:VCARD\r\n";
@@ -88,7 +88,7 @@ private slots:
 
     void diffDetectsLangChange()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         CanonicalRecord src;
         src.shape = kShape;
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nLANG:en\r\nEND:VCARD\r\n";
@@ -101,7 +101,7 @@ private slots:
 
     void diffDetectsAnniversaryChange()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         CanonicalRecord src;
         src.shape = kShape;
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Bob\r\nANNIVERSARY:20100615\r\nEND:VCARD\r\n";
@@ -114,7 +114,7 @@ private slots:
 
     void diffDetectsKindChange()
     {
-        IRecordDifferVCard differ;
+        RecordDifferVCard differ;
         CanonicalRecord src;
         src.shape = kShape;
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:org\r\nEND:VCARD\r\n";
@@ -137,7 +137,7 @@ private slots:
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:M\r\nEND:VCARD\r\n"; // src unchanged
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:F\r\nEND:VCARD\r\n"; // tgt changed
 
-        IRecordMergerVCard merger;
+        RecordMergerVCard merger;
         ConflictPolicy policy;
         policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
@@ -155,7 +155,7 @@ private slots:
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20100615\r\nEND:VCARD\r\n"; // src unchanged
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20200716\r\nEND:VCARD\r\n"; // tgt changed
 
-        IRecordMergerVCard merger;
+        RecordMergerVCard merger;
         ConflictPolicy policy;
         policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
@@ -173,7 +173,7 @@ private slots:
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:individual\r\nEND:VCARD\r\n"; // src unchanged
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:org\r\nEND:VCARD\r\n";        // tgt changed
 
-        IRecordMergerVCard merger;
+        RecordMergerVCard merger;
         ConflictPolicy policy;
         policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
@@ -191,7 +191,7 @@ private slots:
         src.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:en\r\nEND:VCARD\r\n"; // src unchanged
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:fr\r\nEND:VCARD\r\n"; // tgt changed
 
-        IRecordMergerVCard merger;
+        RecordMergerVCard merger;
         ConflictPolicy policy;
         policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
@@ -210,7 +210,7 @@ private slots:
         CanonicalRecord base;
         base.shape = src.shape;
 
-        IRecordMergerVCard merger;
+        RecordMergerVCard merger;
         ConflictPolicy policy;
         policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 

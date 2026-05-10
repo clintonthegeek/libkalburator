@@ -8,7 +8,7 @@
 #include "icalproperties.h"
 #include "icalrecorddiffer.h"
 #include "icalrecordmerger.h"
-#include "irecordwriter.h"
+#include "recordwriter.h"
 #include "transformationregistry.h"
 
 // Bring non-conflicting names into scope. Note: we do NOT do
@@ -19,8 +19,8 @@
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyCatalogue;
-using Kalburator::Shape::IRecordDiffer;
-using Kalburator::Shape::IRecordMerger;
+using Kalburator::Shape::RecordDiffer;
+using Kalburator::Shape::RecordMerger;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::TransformationEdge;
 using Kalburator::Shape::TransformationRegistry;
@@ -61,14 +61,14 @@ PropertyCatalogue KalburatorDomainCalendar::catalogueFor(
     return {};
 }
 
-std::unique_ptr<IRecordDiffer> KalburatorDomainCalendar::createCanonicalDiffer() const
+std::unique_ptr<RecordDiffer> KalburatorDomainCalendar::createCanonicalDiffer() const
 {
-    return std::make_unique<IRecordDifferICal>();
+    return std::make_unique<RecordDifferICal>();
 }
 
-std::unique_ptr<IRecordMerger> KalburatorDomainCalendar::createCanonicalMerger() const
+std::unique_ptr<RecordMerger> KalburatorDomainCalendar::createCanonicalMerger() const
 {
-    return std::make_unique<IRecordMergerICal>();
+    return std::make_unique<RecordMergerICal>();
 }
 
 void KalburatorDomainCalendar::registerEdges(TransformationRegistry& registry)
@@ -89,7 +89,7 @@ int KalburatorDomainCalendar::richnessRank(
     return s == canonicalShape() ? 10 : 0;
 }
 
-std::unique_ptr<Kalburator::Shape::IRecordWriter>
+std::unique_ptr<Kalburator::Shape::RecordWriter>
 KalburatorDomainCalendar::createWriter(Kalburator::Sync::SyncBackend *backend) const
 {
     return std::make_unique<Kalburator::Calendar::CalendarPluginWriter>(backend);

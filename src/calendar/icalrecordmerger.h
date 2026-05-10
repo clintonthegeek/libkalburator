@@ -1,13 +1,13 @@
 #pragma once
 
-#include "irecordmerger.h"
+#include "recordmerger.h"
 
 namespace Kalburator::Calendar {
 
 /// IRecordMerger implementation for the (calendar, ical) canonical shape.
 /// Wraps IncidenceMerge to compute 3-way merges between iCal-encoded
 /// CanonicalRecords.
-class IRecordMergerICal : public Kalburator::Shape::IRecordMerger {
+class RecordMergerICal : public Kalburator::Shape::RecordMerger {
 public:
     Kalburator::Shape::CanonicalRecord merge(
         const Kalburator::Shape::CanonicalRecord& source,

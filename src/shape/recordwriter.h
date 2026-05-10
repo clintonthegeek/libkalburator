@@ -20,9 +20,9 @@ namespace Kalburator::Shape {
 /// hook is used to inject any per-call setup (replacing the previous
 /// `dynamic_cast<CalendarPluginWriter*>` + `setCollection()` /
 /// `setTranscodingPlan()` engine-side dance).
-class IRecordWriter {
+class RecordWriter {
 public:
-    virtual ~IRecordWriter() = default;
+    virtual ~RecordWriter() = default;
 
     /// Threading contract that controls how the engine dispatches
     /// `apply()`. The default is `BackendThread` — the engine wraps
@@ -55,7 +55,7 @@ public:
 
     /// Apply a batch of operations. Implementations may run them
     /// inside a transaction (calendar plugin does), or as
-    /// independent calls (default IBlobBackend writer).
+    /// independent calls (default SyncBackend writer).
     virtual bool apply(
         const QString &collectionId,
         const QList<Kalburator::Sync::BackendRecord> &creates,

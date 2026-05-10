@@ -25,8 +25,8 @@ public:
     QList<Kalburator::Shape::Shape> peerShapes() const override;
     Kalburator::Shape::PropertyCatalogue canonicalCatalogue() const override;
     Kalburator::Shape::PropertyCatalogue catalogueFor(const Kalburator::Shape::Shape&) const override;
-    std::unique_ptr<Kalburator::Shape::IRecordDiffer> createCanonicalDiffer() const override;
-    std::unique_ptr<Kalburator::Shape::IRecordMerger> createCanonicalMerger() const override;
+    std::unique_ptr<Kalburator::Shape::RecordDiffer> createCanonicalDiffer() const override;
+    std::unique_ptr<Kalburator::Shape::RecordMerger> createCanonicalMerger() const override;
     void registerEdges(Kalburator::Shape::TransformationRegistry& registry) override;
     int richnessRank(const Kalburator::Shape::Shape&) const override;
 
@@ -35,7 +35,7 @@ public:
     /// (Task 13) is responsible for calling
     /// `CalendarPluginWriter::setCollection()` on the returned writer
     /// before invoking `apply()`.
-    std::unique_ptr<Kalburator::Shape::IRecordWriter> createWriter(
+    std::unique_ptr<Kalburator::Shape::RecordWriter> createWriter(
         Kalburator::Sync::SyncBackend *backend) const override;
 
     /// Phase Ia.5 Task 6: read calendar color + description from the

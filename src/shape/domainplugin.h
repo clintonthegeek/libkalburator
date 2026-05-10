@@ -12,9 +12,9 @@ namespace Kalburator::Sync { class SyncBackend; }
 
 namespace Kalburator::Shape {
 
-class IRecordDiffer;     // defined in irecorddiffer.h (Task 11)
-class IRecordMerger;     // defined in irecordmerger.h (Task 11)
-class IRecordWriter;     // defined in irecordwriter.h
+class RecordDiffer;     // defined in recorddiffer.h (Task 11)
+class RecordMerger;     // defined in recordmerger.h (Task 11)
+class RecordWriter;     // defined in recordwriter.h
 class TransformationRegistry;
 
 /// Domain plugins own the canonical shape for a domain plus the
@@ -38,8 +38,8 @@ public:
 
     /// Differ / merger over the canonical shape. The engine uses
     /// these on records that have been promoted to canonical.
-    virtual std::unique_ptr<IRecordDiffer> createCanonicalDiffer() const = 0;
-    virtual std::unique_ptr<IRecordMerger> createCanonicalMerger() const = 0;
+    virtual std::unique_ptr<RecordDiffer> createCanonicalDiffer() const = 0;
+    virtual std::unique_ptr<RecordMerger> createCanonicalMerger() const = 0;
 
     /// Populate the TransformationRegistry with this plugin's
     /// shapes, canonical declaration, and edges. Called once per
@@ -51,10 +51,10 @@ public:
     /// pick the more expressive side. Higher = richer.
     virtual int richnessRank(const Shape&) const = 0;
 
-    /// Writer hook. Default: wraps the backend's IBlobBackend surface
+    /// Writer hook. Default: wraps the backend's SyncBackend surface
     /// via DefaultBlobWriter. Calendar plugin overrides to drive its
     /// SyncTransaction machinery.
-    virtual std::unique_ptr<IRecordWriter> createWriter(
+    virtual std::unique_ptr<RecordWriter> createWriter(
         Kalburator::Sync::SyncBackend *backend) const;
 
     /// Collection-level metadata (calendar color/description, etc.).

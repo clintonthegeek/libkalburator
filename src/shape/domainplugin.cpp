@@ -5,7 +5,7 @@
 
 namespace Kalburator::Shape {
 
-std::unique_ptr<IRecordWriter> DomainPlugin::createWriter(
+std::unique_ptr<RecordWriter> DomainPlugin::createWriter(
     Kalburator::Sync::SyncBackend *backend) const
 {
     // SyncBackend inherits IBlobBackend (src/calendar/syncbackend.h:117).

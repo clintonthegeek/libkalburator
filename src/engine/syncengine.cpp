@@ -8,7 +8,7 @@
 #include "domainregistry.h"
 #include "decsyncactivecontroller.h"
 #include "canonicalrecord.h"
-#include "irecordwriter.h"
+#include "recordwriter.h"
 // Phase K.4: the engine no longer dynamic_casts to CalendarPluginWriter;
 // writer-specific behaviour is mediated by IRecordWriter::threading()
 // and IRecordWriter::prepareForApply().
@@ -2312,7 +2312,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     //     SyncTransaction commit and asserts it is NOT called from the
     //     backend thread).
     auto applyBatch = [this, &writeFailed, &writeError](
-        Kalburator::Shape::IRecordWriter *writer,
+        Kalburator::Shape::RecordWriter *writer,
         SyncBackend *backend,
         IBlobBackend *blobBackend,
         const QString &colId,
@@ -2328,7 +2328,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // dance. May supply a null calendarCollection: the writer must
         // degrade gracefully (CalendarPluginWriter does, via the
         // IBlobBackend fallback path).
-        Kalburator::Shape::IRecordWriter::ApplyContext ctx;
+        Kalburator::Shape::RecordWriter::ApplyContext ctx;
         ctx.collectionId = colId;
         ctx.transcodingPlan = plan;
         ctx.calendarCollection = m_collection
@@ -2337,7 +2337,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         writer->prepareForApply(ctx);
 
         if (writer->threading() ==
-            Kalburator::Shape::IRecordWriter::Threading::WorkerThread) {
+            Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
             // Writer manages its own backend-thread marshalling
             // (CalendarPluginWriter uses BlockingQueuedConnection
             // internally inside apply()).

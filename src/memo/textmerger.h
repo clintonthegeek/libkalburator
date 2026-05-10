@@ -1,12 +1,12 @@
 #pragma once
 
-#include "irecordmerger.h"
+#include "recordmerger.h"
 
 namespace Kalburator::Memo {
 
 /// IRecordMerger for (memo, text). Performs 3-way merge by line
 /// for body text; falls through to conflict policy when lines diverge.
-class TextMerger : public Kalburator::Shape::IRecordMerger {
+class TextMerger : public Kalburator::Shape::RecordMerger {
 public:
     Kalburator::Shape::CanonicalRecord merge(
         const Kalburator::Shape::CanonicalRecord& source,

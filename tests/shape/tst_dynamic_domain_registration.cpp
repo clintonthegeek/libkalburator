@@ -2,8 +2,8 @@
 
 #include "domainplugin.h"
 #include "domainregistry.h"
-#include "irecorddiffer.h"
-#include "irecordmerger.h"
+#include "recorddiffer.h"
+#include "recordmerger.h"
 #include "transformationregistry.h"
 
 using namespace Kalburator::Shape;
@@ -24,10 +24,10 @@ public:
     }
     PropertyCatalogue canonicalCatalogue() const override { return {}; }
     PropertyCatalogue catalogueFor(const Shape&) const override { return {}; }
-    std::unique_ptr<IRecordDiffer> createCanonicalDiffer() const override {
+    std::unique_ptr<RecordDiffer> createCanonicalDiffer() const override {
         return nullptr;
     }
-    std::unique_ptr<IRecordMerger> createCanonicalMerger() const override {
+    std::unique_ptr<RecordMerger> createCanonicalMerger() const override {
         return nullptr;
     }
     void registerEdges(TransformationRegistry& r) override {

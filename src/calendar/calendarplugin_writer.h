@@ -1,6 +1,6 @@
 #pragma once
 
-#include "irecordwriter.h"
+#include "recordwriter.h"
 #include "transcodingplan.h"
 
 namespace Kalburator::Sync {
@@ -36,7 +36,7 @@ namespace Kalburator::Calendar {
 ///   bytes in `BackendRecord::data` and pushes through the backend's
 ///   IBlobBackend surface (createRecord / updateRecord / deleteRecord)
 ///   on the backend thread.
-class CalendarPluginWriter : public Kalburator::Shape::IRecordWriter {
+class CalendarPluginWriter : public Kalburator::Shape::RecordWriter {
 public:
     explicit CalendarPluginWriter(Kalburator::Sync::SyncBackend *backend);
     ~CalendarPluginWriter() override;

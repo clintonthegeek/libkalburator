@@ -11,7 +11,7 @@ using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
-using Kalburator::Todo::IRecordDifferVTodo;
+using Kalburator::Todo::RecordDifferVTodo;
 
 namespace {
 
@@ -45,7 +45,7 @@ class TestVTodoDiffer : public QObject {
 private slots:
     void equalRecordsProduceEmptyDiff()
     {
-        IRecordDifferVTodo differ;
+        RecordDifferVTodo differ;
         const auto data = makeTodo(QStringLiteral("uid-1"), QStringLiteral("Buy milk"));
         QVERIFY(differ.diff(makeRecord(data), makeRecord(data)).isEmpty());
         QVERIFY(differ.equal(makeRecord(data), makeRecord(data)));
@@ -53,7 +53,7 @@ private slots:
 
     void changedSummaryIsDetected()
     {
-        IRecordDifferVTodo differ;
+        RecordDifferVTodo differ;
         const auto a = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("Old")));
         const auto b = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("New")));
         const auto changed = differ.diff(a, b);
@@ -63,7 +63,7 @@ private slots:
 
     void changedPriorityIsDetected()
     {
-        IRecordDifferVTodo differ;
+        RecordDifferVTodo differ;
         const auto a = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("T"), 3, 0));
         const auto b = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("T"), 5, 0));
         QVERIFY(differ.diff(a, b).contains(PropertyId{"priority"}));
@@ -71,7 +71,7 @@ private slots:
 
     void changedPercentIsDetected()
     {
-        IRecordDifferVTodo differ;
+        RecordDifferVTodo differ;
         const auto a = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("T"), 0, 0));
         const auto b = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("T"), 0, 50));
         QVERIFY(differ.diff(a, b).contains(PropertyId{"percentcomplete"}));
@@ -79,7 +79,7 @@ private slots:
 
     void emptyVsNonEmptyTreatsAllChanged()
     {
-        IRecordDifferVTodo differ;
+        RecordDifferVTodo differ;
         const auto a = makeRecord(makeTodo(QStringLiteral("uid-1"), QStringLiteral("T")));
         CanonicalRecord empty;
         empty.shape    = kShape;
