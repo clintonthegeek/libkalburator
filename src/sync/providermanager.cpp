@@ -178,8 +178,8 @@ void ProviderManager::disconnectAll()
     for (const auto &p : m_providers) {
         if (p->isConnected()) {
             unregisterProviderBackends(p.get());
-            p->disconnect();
         }
+        p->disconnect();
     }
 }
 
