@@ -10,8 +10,6 @@
 
 namespace Kalburator {
 
-class Plugin;
-
 class PluginManager {
 public:
     PluginManager() = default;
