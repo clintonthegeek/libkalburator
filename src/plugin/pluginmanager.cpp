@@ -1,5 +1,14 @@
 // src/plugin/pluginmanager.cpp
 #include "pluginmanager.h"
+#include "plugin.h"
+#include "domaindefinition.h"
+#include "shapecontribution.h"
+#include "domainoperations.h"
+#include "domainoperationsregistry.h"
+#include "domainregistry.h"
+#include "transformationregistry.h"
+#include "backendcontribution.h"
+#include "backendregistry.h"
 #include <QHash>
 #include <QSet>
 
@@ -82,6 +91,151 @@ QList<PluginManifest> PluginManager::resolve(const QList<PluginManifest> &manife
         return {};
     }
     return out;
+}
+
+void PluginManager::reset() { m_loaded.clear(); m_rejected.clear(); }
+QList<PluginManager::LoadedPlugin>   PluginManager::loaded()   const { return m_loaded; }
+QList<PluginManager::RejectedPlugin> PluginManager::rejected() const { return m_rejected; }
+
+// ── applyPlugin ──────────────────────────────────────────────────────────────
+
+namespace {
+struct PendingRegistrations {
+    QList<Shape::DomainId>                     domainsAdded;
+    QList<Shape::Shape>                        shapesAdded;
+    QList<QPair<Shape::Shape, Shape::Shape>>   edgesAdded;
+    QList<Shape::DomainId>                     operationsAdded;
+    QStringList                                backendTypesAdded;
+};
+} // anonymous namespace
+
+std::optional<PluginLoadError>
+PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
+    PendingRegistrations pending;
+    auto fail = [&](PluginLoadErrorCode c, const QString &detail) -> PluginLoadError {
+        for (const auto &b : pending.backendTypesAdded)
+            Sync::BackendRegistry::instance().unregisterContribution(b);
+        for (const auto &d : pending.operationsAdded)
+            Shape::DomainOperationsRegistry::instance().unregister(d);
+        Shape::TransformationRegistry::instance().unregisterEdges(pending.edgesAdded);
+        Shape::TransformationRegistry::instance().unregisterShapes(pending.shapesAdded);
+        for (const auto &d : pending.domainsAdded)
+            Shape::DomainRegistry::instance().unregisterDefinition(d);
+        return PluginLoadError{ c, m.id, detail };
+    };
+
+    const QSet<QString> definesSet(m.definesDomains.begin(), m.definesDomains.end());
+    const QSet<QString> definesOrRequires = definesSet
+        + QSet<QString>(m.requiresDomains.begin(), m.requiresDomains.end());
+
+    // 1. DomainDefinitions
+    for (const auto &def : plugin->domainDefinitions()) {
+        const QString d = def->domain().toString();
+        if (!definesSet.contains(d))
+            return fail(PluginLoadErrorCode::ManifestMismatch,
+                QStringLiteral("plugin defines domain '%1' not in manifest definesDomains").arg(d));
+        if (!Shape::DomainRegistry::instance().registerDefinition(def))
+            return fail(PluginLoadErrorCode::CanonicalConflict,
+                QStringLiteral("domain '%1' already defined by another plugin").arg(d));
+        pending.domainsAdded.append(def->domain());
+        if (Shape::TransformationRegistry::instance().isFrozen(def->domain()))
+            return fail(PluginLoadErrorCode::FreezeViolation,
+                QStringLiteral("transformation registry already frozen for '%1'").arg(d));
+        Shape::TransformationRegistry::instance().registerShape(def->canonicalShape(), def->canonicalCatalogue());
+        Shape::TransformationRegistry::instance().declareCanonical(def->domain(), def->canonicalShape());
+        pending.shapesAdded.append(def->canonicalShape());
+    }
+
+    // 2. ShapeContributions
+    for (const auto &sc : plugin->shapeContributions()) {
+        const QString td = sc->targetDomain().toString();
+        if (!definesOrRequires.contains(td))
+            return fail(PluginLoadErrorCode::ManifestMismatch,
+                QStringLiteral("shape contribution targets '%1' not in manifest").arg(td));
+        if (Shape::TransformationRegistry::instance().isFrozen(sc->targetDomain()))
+            return fail(PluginLoadErrorCode::FreezeViolation,
+                QStringLiteral("transformation registry frozen for '%1'").arg(td));
+        QSet<Shape::Shape> knownInThisContribution;
+        for (const auto &pair : sc->peerShapes()) {
+            Shape::TransformationRegistry::instance().registerShape(pair.first, pair.second);
+            pending.shapesAdded.append(pair.first);
+            knownInThisContribution.insert(pair.first);
+        }
+        for (const auto &edge : sc->edges()) {
+            auto endpointRegistered = [&](const Shape::Shape &s) {
+                return knownInThisContribution.contains(s)
+                    || Shape::TransformationRegistry::instance().catalogueFor(s) != nullptr;
+            };
+            if (!endpointRegistered(edge.from) || !endpointRegistered(edge.to))
+                return fail(PluginLoadErrorCode::EdgeEndpointUnregistered,
+                    QStringLiteral("edge endpoint not registered"));
+            Shape::TransformationRegistry::instance().registerEdge(edge);
+            pending.edgesAdded.append({edge.from, edge.to});
+        }
+    }
+
+    // 3. DomainOperations
+    for (const auto &ops : plugin->domainOperations()) {
+        if (!Shape::DomainOperationsRegistry::instance().registerOperations(ops))
+            return fail(PluginLoadErrorCode::DoubleBinding,
+                QStringLiteral("domain operations for '%1' already bound").arg(ops->targetDomain().toString()));
+        pending.operationsAdded.append(ops->targetDomain());
+    }
+
+    // 4. BackendContributions
+    for (const auto &bc : plugin->backendContributions()) {
+        if (!Sync::BackendRegistry::instance().registerContribution(bc))
+            return fail(PluginLoadErrorCode::BackendTypeCollision,
+                QStringLiteral("backend type '%1' already registered").arg(bc->backendType()));
+        pending.backendTypesAdded.append(bc->backendType());
+    }
+
+    return std::nullopt;
+}
+
+// ── loadInProcess ────────────────────────────────────────────────────────────
+
+bool PluginManager::loadInProcess(const QList<QPair<Plugin*, PluginManifest>> &items) {
+    reset();
+    QList<PluginManifest> manifests;
+    for (const auto &p : items) manifests.append(p.second);
+
+    QList<PluginLoadError> resolveErrors;
+    const auto order = resolve(manifests, &resolveErrors);
+    for (const auto &e : resolveErrors) {
+        for (const auto &p : items) if (p.second.id == e.pluginId) {
+            m_rejected.append({p.second, e}); break;
+        }
+    }
+    if (order.isEmpty() && !resolveErrors.isEmpty()) return false;
+
+    QHash<QString, Plugin*> byId;
+    for (const auto &p : items) byId.insert(p.second.id, p.first);
+
+    QSet<QString> failedDomains;
+    for (const auto &manifest : order) {
+        bool skip = false;
+        for (const auto &req : manifest.requiresDomains) {
+            if (failedDomains.contains(req)) {
+                m_rejected.append({manifest, {PluginLoadErrorCode::MissingDependency, manifest.id,
+                    QStringLiteral("dependency '%1' failed to load").arg(req)}});
+                skip = true; break;
+            }
+        }
+        if (skip) {
+            for (const auto &d : manifest.definesDomains) failedDomains.insert(d);
+            continue;
+        }
+        Plugin *p = byId.value(manifest.id);
+        auto err = applyPlugin(p, manifest);
+        if (err) {
+            m_rejected.append({manifest, *err});
+            for (const auto &d : manifest.definesDomains) failedDomains.insert(d);
+        } else {
+            m_loaded.append({manifest.id, manifest, p});
+        }
+    }
+    return m_rejected.isEmpty();
 }
 
 } // namespace Kalburator

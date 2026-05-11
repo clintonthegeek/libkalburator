@@ -9,6 +9,7 @@
 namespace Kalburator::Shape {
 
 class DomainPlugin;
+class DomainDefinition;
 class TransformationRegistry;
 
 /// Process-wide registry of DomainPlugin instances. Stock plugins
@@ -48,6 +49,20 @@ public:
     /// Test-only: drop registrations and reset initialised flag.
     void clear();
 
+    // ── DomainDefinition API (K.7) ────────────────────────────────────
+
+    /// Register a DomainDefinition contributed by a plugin.
+    /// Returns false if a definition for that domain is already registered
+    /// via this method (first registration wins per domain).
+    bool registerDefinition(std::shared_ptr<DomainDefinition> def);
+
+    /// Remove a DomainDefinition registered via registerDefinition().
+    /// No-op if the domain was not registered via this method.
+    void unregisterDefinition(const DomainId &domain);
+
+    /// Look up a DomainDefinition by domain id. Returns nullptr if not found.
+    DomainDefinition* definitionFor(const DomainId &domain) const;
+
 private:
     DomainRegistry() = default;
 
@@ -55,6 +70,8 @@ private:
     QHash<DomainId, DomainPlugin*> m_byDomain;
     bool m_initialized = false;
     TransformationRegistry* m_registry = nullptr;
+
+    QHash<DomainId, std::shared_ptr<DomainDefinition>> m_definitions;
 };
 
 }  // namespace Kalburator::Shape

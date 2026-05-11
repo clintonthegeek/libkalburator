@@ -30,4 +30,9 @@ void DomainOperationsRegistry::clear()
     m_byDomain.clear();
 }
 
+void DomainOperationsRegistry::unregister(const DomainId &domain)
+{
+    m_byDomain.remove(domain);
+}
+
 } // namespace Kalburator::Shape

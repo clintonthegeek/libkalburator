@@ -164,6 +164,30 @@ void TransformationRegistry::clear() {
     m_frozenDomains.clear();
 }
 
+void TransformationRegistry::unregisterShapes(const QList<Shape> &shapes) {
+    for (const auto &s : shapes) {
+        m_catalogues.remove(s);
+        // If this shape is declared canonical for its domain, remove that too.
+        auto it = m_canonicalByDomain.find(s.domain);
+        if (it != m_canonicalByDomain.end() && it.value() == s) {
+            m_canonicalByDomain.erase(it);
+        }
+    }
+}
+
+void TransformationRegistry::unregisterEdges(const QList<QPair<Shape, Shape>> &edges) {
+    for (const auto &pair : edges) {
+        auto range = m_edgesFrom.equal_range(pair.first);
+        for (auto it = range.first; it != range.second; ) {
+            if (it.value().to == pair.second) {
+                it = m_edgesFrom.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
 const TransformationEdge*
 TransformationRegistry::findEdge(const Shape& a, const Shape& b) const {
     auto range = m_edgesFrom.equal_range(a);

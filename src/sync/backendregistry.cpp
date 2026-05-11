@@ -90,6 +90,11 @@ QList<BackendRegistry::BackendTypeInfo> BackendRegistry::availableBackendTypes()
 }
 
 
+BackendRegistry& BackendRegistry::instance() {
+    static BackendRegistry s_instance;
+    return s_instance;
+}
+
 bool BackendRegistry::registerContribution(std::shared_ptr<BackendContribution> contrib) {
     if (!contrib) return false;
     const QString type = contrib->backendType();
@@ -108,6 +113,16 @@ QList<BackendContribution*> BackendRegistry::contributions() const {
     out.reserve(m_contributions.size());
     for (const auto &c : m_contributions) out.append(c.get());
     return out;
+}
+
+void BackendRegistry::unregisterContribution(const QString &typeName) {
+    m_contributions.remove(typeName);
+}
+
+void BackendRegistry::clear() {
+    m_factories.clear();
+    m_instances.clear();
+    m_contributions.clear();
 }
 
 } // namespace Kalburator::Sync

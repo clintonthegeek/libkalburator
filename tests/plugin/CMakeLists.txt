@@ -5,3 +5,11 @@ add_test(NAME tst_manifest_parser COMMAND tst_manifest_parser)
 add_executable(tst_pluginmanager_resolve tst_pluginmanager_resolve.cpp)
 target_link_libraries(tst_pluginmanager_resolve PRIVATE kalburator Qt6::Test)
 add_test(NAME tst_pluginmanager_resolve COMMAND tst_pluginmanager_resolve)
+
+add_library(kalburator_plugin_test_fakes STATIC fakes/fake_plugin.cpp)
+target_link_libraries(kalburator_plugin_test_fakes PUBLIC kalburator Qt6::Core)
+target_include_directories(kalburator_plugin_test_fakes PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(tst_pluginmanager_load tst_pluginmanager_load.cpp)
+target_link_libraries(tst_pluginmanager_load PRIVATE kalburator kalburator_plugin_test_fakes Qt6::Test)
+add_test(NAME tst_pluginmanager_load COMMAND tst_pluginmanager_load)

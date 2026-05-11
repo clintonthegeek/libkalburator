@@ -116,6 +116,11 @@ public:
 
     // ── BackendContribution API (K.7) ─────────────────────────────────
     /**
+     * @brief Process-wide singleton instance.
+     */
+    static BackendRegistry& instance();
+
+    /**
      * @brief Register a BackendContribution.
      * @return true on success, false if a contribution with the same
      *         backendType() is already registered.
@@ -133,6 +138,17 @@ public:
      * @brief All registered contributions (order unspecified).
      */
     QList<BackendContribution*> contributions() const;
+
+    /**
+     * @brief Remove a contribution by backendType. No-op if not found.
+     */
+    void unregisterContribution(const QString &typeName);
+
+    /**
+     * @brief Clear all state: factories, instances, contributions.
+     *        Intended for test teardown only.
+     */
+    void clear();
 
 signals:
     /**

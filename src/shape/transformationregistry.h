@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QList>
 #include <QMultiHash>
+#include <QPair>
 #include <QSet>
 #include <optional>
 
@@ -82,6 +83,14 @@ public:
     /// Test-only escape hatch: drop everything. Use in test cleanup
     /// to avoid singleton leakage between cases.
     void clear();
+
+    /// Remove the given shapes from the catalogues map and from the
+    /// canonical-by-domain map if this shape is the canonical for its domain.
+    void unregisterShapes(const QList<Shape> &shapes);
+
+    /// Remove edges from the edge graph. For each (from, to) pair,
+    /// remove all edges in m_edgesFrom[from] where edge.to == to.
+    void unregisterEdges(const QList<QPair<Shape, Shape>> &edges);
 
 private:
     TransformationRegistry() = default;

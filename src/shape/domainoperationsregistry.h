@@ -33,6 +33,9 @@ public:
     /// Remove all registrations. Intended for test teardown only.
     void clear();
 
+    /// Remove the registration for @p domain. No-op if not registered.
+    void unregister(const DomainId &domain);
+
 private:
     DomainOperationsRegistry() = default;
     QHash<DomainId, std::shared_ptr<DomainOperations>> m_byDomain;
