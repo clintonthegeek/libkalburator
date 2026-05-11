@@ -35,10 +35,19 @@ public:
     QList<LoadedPlugin>   loaded()   const;
     QList<RejectedPlugin> rejected() const;
 
+    void addSearchPath(const QString &path);
+    void discover();
+    bool loadAll();
+
     /// Clear loaded/rejected lists (but does NOT unwind registry state).
     void reset();
 
 private:
+    struct Discovered { PluginManifest manifest; QString modulePath; };
+    QStringList       m_searchPaths;
+    QList<Discovered> m_discovered;
+    QList<QObject*>   m_instances;   // plugin objects from QPluginLoader, kept alive
+
     QList<LoadedPlugin>   m_loaded;
     QList<RejectedPlugin> m_rejected;
 

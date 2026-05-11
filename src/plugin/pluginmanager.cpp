@@ -9,7 +9,9 @@
 #include "transformationregistry.h"
 #include "backendcontribution.h"
 #include "backendregistry.h"
+#include <QDir>
 #include <QHash>
+#include <QPluginLoader>
 #include <QSet>
 
 namespace Kalburator {
@@ -236,6 +238,66 @@ bool PluginManager::loadInProcess(const QList<QPair<Plugin*, PluginManifest>> &i
         }
     }
     return m_rejected.isEmpty();
+}
+
+// ── discover / loadAll ───────────────────────────────────────────────────────
+
+void PluginManager::addSearchPath(const QString &p) { m_searchPaths.append(p); }
+
+void PluginManager::discover() {
+    m_discovered.clear();
+    for (const auto &dir : m_searchPaths) {
+        const QDir d(dir);
+        const auto files = d.entryList(
+            {QStringLiteral("*.so"), QStringLiteral("*.dll"), QStringLiteral("*.dylib")},
+            QDir::Files);
+        for (const auto &f : files) {
+            const QString full = d.absoluteFilePath(f);
+            QPluginLoader loader(full);
+            const auto meta = loader.metaData().value(QStringLiteral("MetaData")).toObject();
+            QString err;
+            const auto m = PluginManifest::fromJson(meta, &err);
+            if (!m.has_value()) {
+                m_rejected.append({PluginManifest{}, {
+                    PluginLoadErrorCode::ManifestParseFailed, full, err
+                }});
+                continue;
+            }
+            m_discovered.append({*m, full});
+        }
+    }
+}
+
+bool PluginManager::loadAll() {
+    if (m_discovered.isEmpty()) discover();
+
+    // Collect instantiation failures separately — loadInProcess() calls reset()
+    // which would wipe them if we added them to m_rejected first.
+    QList<RejectedPlugin> instantiationFailures;
+    QList<QPair<Plugin*, PluginManifest>> items;
+
+    for (const auto &d : m_discovered) {
+        auto *loader = new QPluginLoader(d.modulePath);
+        QObject *obj = loader->instance();
+        Plugin *p = qobject_cast<Plugin*>(obj);
+        if (!p) {
+            instantiationFailures.append({d.manifest, {
+                PluginLoadErrorCode::InstantiationFailed, d.manifest.id, loader->errorString()
+            }});
+            delete loader;
+            continue;
+        }
+        m_instances.append(obj);
+        // Keep loader alive so the .so stays mapped for the process lifetime.
+        loader->setParent(nullptr);
+        // (loader is intentionally leaked here — it must outlive the plugin object)
+        items.append({p, d.manifest});
+    }
+
+    const bool ok = loadInProcess(items);
+    // loadInProcess called reset(), so now re-add the instantiation failures.
+    m_rejected.append(instantiationFailures);
+    return ok && instantiationFailures.isEmpty();
 }
 
 } // namespace Kalburator

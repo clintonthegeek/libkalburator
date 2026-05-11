@@ -13,3 +13,12 @@ target_include_directories(kalburator_plugin_test_fakes PUBLIC ${CMAKE_CURRENT_S
 add_executable(tst_pluginmanager_load tst_pluginmanager_load.cpp)
 target_link_libraries(tst_pluginmanager_load PRIVATE kalburator kalburator_plugin_test_fakes Qt6::Test)
 add_test(NAME tst_pluginmanager_load COMMAND tst_pluginmanager_load)
+
+add_subdirectory(smoke)
+
+add_executable(tst_pluginmanager_smoke tst_pluginmanager_smoke.cpp)
+target_link_libraries(tst_pluginmanager_smoke PRIVATE kalburator Qt6::Test)
+add_dependencies(tst_pluginmanager_smoke tinyplugin)
+target_compile_definitions(tst_pluginmanager_smoke PRIVATE
+    TINY_PLUGIN_DIR="$<TARGET_FILE_DIR:tinyplugin>")
+add_test(NAME tst_pluginmanager_smoke COMMAND tst_pluginmanager_smoke)
