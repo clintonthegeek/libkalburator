@@ -365,12 +365,16 @@ set(KALBURATOR_SINKS_SOURCES
 )
 
 # Phase K.7.1 — Qt plugin entry-point interface + manifest parser.
+# Phase K.7.2 — PluginManager dependency DAG resolver.
 set(KALBURATOR_PLUGIN_HEADERS
     src/plugin/plugin.h
     src/plugin/manifest.h
+    src/plugin/pluginloaderror.h
+    src/plugin/pluginmanager.h
 )
 set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/manifest.cpp
+    src/plugin/pluginmanager.cpp
 )
 
 # Phase H — provider abstraction
