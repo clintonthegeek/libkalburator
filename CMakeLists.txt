@@ -355,26 +355,32 @@ set(KALBURATOR_MEMO_SOURCES
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
+# Phase K.7.3 — UniversalStoragePlugin wrapping those backends.
 set(KALBURATOR_SINKS_HEADERS
     src/universal/rawfilesbackend.h
     src/universal/genericsqlitebackend.h
+    src/universal/universalstorageplugin.h
 )
 set(KALBURATOR_SINKS_SOURCES
     src/universal/rawfilesbackend.cpp
     src/universal/genericsqlitebackend.cpp
+    src/universal/universalstorageplugin.cpp
 )
 
 # Phase K.7.1 — Qt plugin entry-point interface + manifest parser.
 # Phase K.7.2 — PluginManager dependency DAG resolver.
+# Phase K.7.3 — Bootstrap registerStockPlugins().
 set(KALBURATOR_PLUGIN_HEADERS
     src/plugin/plugin.h
     src/plugin/manifest.h
     src/plugin/pluginloaderror.h
     src/plugin/pluginmanager.h
+    src/plugin/stock_plugins.h
 )
 set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/manifest.cpp
     src/plugin/pluginmanager.cpp
+    src/plugin/stock_plugins.cpp
 )
 
 # Phase H — provider abstraction
