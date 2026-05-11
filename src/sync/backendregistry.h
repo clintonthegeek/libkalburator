@@ -1,5 +1,5 @@
-#ifndef BACKENDREGISTRY_H
-#define BACKENDREGISTRY_H
+#ifndef KALBURATOR_SYNC_BACKENDREGISTRY_H
+#define KALBURATOR_SYNC_BACKENDREGISTRY_H
 
 #include <QObject>
 #include <QMap>
@@ -135,4 +135,4 @@ private:
 
 } // namespace Kalburator::Sync
 
-#endif // BACKENDREGISTRY_H
+#endif // KALBURATOR_SYNC_BACKENDREGISTRY_H

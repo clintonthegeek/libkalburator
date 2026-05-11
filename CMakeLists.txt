@@ -87,7 +87,7 @@ set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/akonadibackend.h
     src/calendar/backendcapabilities.h
-    src/calendar/backendregistry.h
+    src/sync/backendregistry.h
     src/calendar/caldavcapabilitydiscovery.h
     src/calendar/calendarmanager.h
     src/calendar/createincidenceitem.h
@@ -128,7 +128,7 @@ set(KALBURATOR_CALENDAR_HEADERS
 set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
     src/calendar/backendcapabilities.cpp
-    src/calendar/backendregistry.cpp
+    src/sync/backendregistry.cpp
     src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/createincidenceitem.cpp
