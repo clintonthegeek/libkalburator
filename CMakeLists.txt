@@ -385,6 +385,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/carddavprovider.h
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.h
+    # Phase K.7.1: account-neutral IProvider adapter
+    src/sync/neutralprovider.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -394,6 +396,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/carddavprovider.cpp
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.cpp
+    # Phase K.7.1: account-neutral IProvider adapter
+    src/sync/neutralprovider.cpp
 )
 
 # Aggregate
