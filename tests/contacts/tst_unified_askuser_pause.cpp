@@ -30,11 +30,14 @@
 #include "baselinestore.h"
 #include "collectioninfo.h"
 #include "conflictmanager.h"
+#include "domainoperationsregistry.h"
 #include "domainregistry.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
 #include "lossprofile.h"
+#include "pluginmanager.h"
 #include "shape.h"
+#include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
@@ -263,13 +266,16 @@ private:
 
 void TestUnifiedAskUserPause::initTestCase()
 {
-    DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    Kalburator::PluginManager pm;
+    Kalburator::registerStockPlugins(pm);
 }
 
 void TestUnifiedAskUserPause::cleanupTestCase()
 {
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
+    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestUnifiedAskUserPause::init()

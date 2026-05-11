@@ -6,7 +6,7 @@
 #include "memoplugin.h"
 #include "todoplugin.h"
 #include "contactsplugin.h"
-// Future migrations append: calendar
+#include "calendarplugin.h"
 
 namespace Kalburator {
 
@@ -29,12 +29,14 @@ void registerStockPlugins(PluginManager &pm) {
     static Memo::MemoPlugin s_memo;
     static Todo::TodoPlugin s_todo;
     static Contacts::ContactsPlugin s_contacts;
+    static Calendar::CalendarPlugin s_calendar;
     QList<QPair<Plugin*, PluginManifest>> items{
         {&s_universal, mkManifest(QStringLiteral("kalburator.universal-storage"))},
         {&s_blob, mkManifest(QStringLiteral("kalburator.blob"), {QStringLiteral("blob")})},
         {&s_memo, mkManifest(QStringLiteral("kalburator.memo"), {QStringLiteral("memo")})},
         {&s_todo, mkManifest(QStringLiteral("kalburator.todo"), {QStringLiteral("todo")})},
         {&s_contacts, mkManifest(QStringLiteral("kalburator.contacts"), {QStringLiteral("contacts")})},
+        {&s_calendar, mkManifest(QStringLiteral("kalburator.calendar"), {QStringLiteral("calendar")})},
     };
     pm.loadInProcess(items);
 }

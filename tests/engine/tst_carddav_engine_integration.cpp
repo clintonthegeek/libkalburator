@@ -53,13 +53,16 @@
 #include "baselinestore.h"
 #include "carddavprovider.h"
 #include "collectioninfo.h"
+#include "domainoperationsregistry.h"
 #include "domainregistry.h"
 #include "fakecarddavserver.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
 #include "lossprofile.h"
+#include "pluginmanager.h"
 #include "remotecontactsbackend.h"
 #include "shape.h"
+#include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
@@ -305,14 +308,18 @@ private slots:
 
 void TestCardDavEngineIntegration::initTestCase()
 {
-    // Pull in the contacts-domain plugin's vcard3<->vcard4 edges.
-    DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    // Register stock plugins so the contacts vcard3<->vcard4 edges
+    // (and all other stock-domain shapes) are available.
+    Kalburator::PluginManager pm;
+    Kalburator::registerStockPlugins(pm);
 }
 
 void TestCardDavEngineIntegration::cleanupTestCase()
 {
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
+    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

@@ -2,7 +2,9 @@
 #include "baselinestore.h"
 #include "blobbatchdiff.h"
 #include "propertydiff.h"
-#include "domainplugin.h"
+#include "domainoperationsregistry.h"
+#include "domaindefinition.h"
+#include "defaultblobwriter.h"
 #include "transcodingregistry.h"
 #include "transformationregistry.h"
 #include "domainregistry.h"
@@ -1755,19 +1757,21 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // (Task 9 precursor) so DomainRegistry has them available at sync
     // time. Compile(X, X) returns identity, so the same code path
     // handles homogeneous and heterogeneous mappings uniformly.
-    auto *plugin = Kalburator::Shape::DomainRegistry::instance()
-                       .findByDomain(srcShape.domain);
-    if (!plugin) {
+    auto *dd = Kalburator::Shape::DomainRegistry::instance()
+                   .definitionFor(srcShape.domain);
+    if (!dd) {
         m_currentResult.success = false;
         m_currentResult.errorMessage = QStringLiteral(
-            "dispatchSync: no plugin for domain '%1'")
+            "dispatchSync: no definition for domain '%1'")
                 .arg(srcShape.domain.toString());
         m_currentResult.endTime = QDateTime::currentDateTime();
         emit syncCompleted(mappingId, m_currentResult);
         return true;
     }
 
-    const Kalburator::Shape::Shape canonical = plugin->canonicalShape();
+    const Kalburator::Shape::Shape canonical = dd->canonicalShape();
+    auto *ops = Kalburator::Shape::DomainOperationsRegistry::instance()
+                    .operationsFor(srcShape.domain);
 
     // Phase Ib.5 Task 7: if-calendar guard removed. Calendar now routes
     // through the same unified dispatchSync path as all other domains.
@@ -1808,7 +1812,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // generic QVariantMap. For first-sync runs the baseline is empty anyway.
     // Subsequent syncs now persist property-baseline snapshots via T9
     // (unifiedContinueAfterConflicts after successful writes).
-    runPropertyPhase(plugin, srcBackend, tgtBackend,
+    runPropertyPhase(ops, srcBackend, tgtBackend,
                      srcColId, tgtColId,
                      /*baseline=*/QVariantMap{},
                      request.mapping);
@@ -1833,11 +1837,19 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         QPointer<FetchOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
+            // Connect BEFORE re-checking state: op may complete between the
+            // BlockingQueuedConnection above and the loop.exec() call below.
+            // Making the connection first guarantees we see the finished()
+            // signal even if it fires in that window (the queued event stays
+            // in the worker thread's queue until loop.exec() drains it).
             connect(fetchOp.data(), &SyncOperation::finished,
                     &loop, &QEventLoop::quit, Qt::QueuedConnection);
             connect(this, &SyncEngineWorker::cancellationObserved,
                     &loop, &QEventLoop::quit, Qt::DirectConnection);
-            loop.exec();
+            // Re-check: if already completed between the BlockingQueuedConnection
+            // call and the connect() above, skip loop.exec() to avoid hanging.
+            if (fetchOp->state() == SyncOperation::Running)
+                loop.exec();
         }
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
@@ -1899,11 +1911,15 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         QPointer<FetchOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
+            // Same race-fix as source fetch: connect before re-check so a
+            // completed op in this window still wakes the loop via the
+            // already-queued finished() event.
             connect(fetchOp.data(), &SyncOperation::finished,
                     &loop, &QEventLoop::quit, Qt::QueuedConnection);
             connect(this, &SyncEngineWorker::cancellationObserved,
                     &loop, &QEventLoop::quit, Qt::DirectConnection);
-            loop.exec();
+            if (fetchOp->state() == SyncOperation::Running)
+                loop.exec();
         }
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
@@ -2274,12 +2290,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     const auto canonToTgt = treg.compile(m_unifiedCanonical, tgtShape);
     const auto canonToSrc = treg.compile(m_unifiedCanonical, srcShape);
 
-    auto *plugin = Kalburator::Shape::DomainRegistry::instance()
-                       .findByDomain(srcShape.domain);
-    if (!canonToTgt || !canonToSrc || !plugin) {
+    auto *opsUCC = Kalburator::Shape::DomainOperationsRegistry::instance()
+                       .operationsFor(srcShape.domain);
+    if (!canonToTgt || !canonToSrc) {
         m_currentResult.success = false;
         m_currentResult.errorMessage = QStringLiteral(
-            "unifiedContinueAfterConflicts: pipeline or plugin unavailable");
+            "unifiedContinueAfterConflicts: pipeline unavailable");
         m_currentResult.endTime = QDateTime::currentDateTime();
         emit syncCompleted(mappingId, m_currentResult);
         return;
@@ -2369,7 +2385,9 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     rec.data = canonToTgt->apply(rec.data);
             }
         }
-        auto tgtWriter = plugin->createWriter(tgtBackend);
+        auto tgtWriter = opsUCC
+            ? opsUCC->createWriter(tgtBackend)
+            : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         QMetaObject::Connection tgtWarningConn = connect(
             tgtBackend, &SyncBackend::transcodingWarning,
             this, &SyncEngineWorker::transcodingWarning,
@@ -2387,7 +2405,9 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     rec.data = canonToSrc->apply(rec.data);
             }
         }
-        auto srcWriter = plugin->createWriter(srcBackend);
+        auto srcWriter = opsUCC
+            ? opsUCC->createWriter(srcBackend)
+            : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         QMetaObject::Connection srcWarningConn = connect(
             srcBackend, &SyncBackend::transcodingWarning,
             this, &SyncEngineWorker::transcodingWarning,
@@ -2424,11 +2444,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             }, Qt::BlockingQueuedConnection);
         }
         // T9: persist property-baseline snapshot after successful write.
-        if (m_baselineStore && m_engine && plugin) {
-            const QStringList keys = plugin->baselineProperties();
+        if (m_baselineStore && m_engine && opsUCC) {
+            // baselineProperties is on DomainDefinition, not DomainOperations.
+            // Re-look up via DomainRegistry using the same domain the ops cover.
+            auto *ddUCC = Kalburator::Shape::DomainRegistry::instance()
+                              .definitionFor(opsUCC->targetDomain());
+            const QStringList keys = ddUCC ? ddUCC->baselineProperties() : QStringList{};
             if (!keys.isEmpty()) {
                 const QVariantMap collProps =
-                    plugin->collectionProperties(srcBackend, srcColId);
+                    opsUCC->collectionProperties(srcBackend, srcColId);
                 QVariantMap snapshot;
                 for (const auto &k : keys) {
                     if (collProps.contains(k))
@@ -2454,7 +2478,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
 // Generic property-phase (Phase Ia.5 Task 7).
 // ----------------------------------------------------------------------------
 
-void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
+void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                                         SyncBackend *src,
                                         SyncBackend *tgt,
                                         const QString &srcCollectionId,
@@ -2462,12 +2486,12 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
                                         const QVariantMap &baseline,
                                         const SyncMapping &mapping)
 {
-    if (!plugin || !src || !tgt) {
+    if (!ops || !src || !tgt) {
         return;
     }
 
-    const QVariantMap srcProps = plugin->collectionProperties(src, srcCollectionId);
-    const QVariantMap tgtProps = plugin->collectionProperties(tgt, tgtCollectionId);
+    const QVariantMap srcProps = ops->collectionProperties(src, srcCollectionId);
+    const QVariantMap tgtProps = ops->collectionProperties(tgt, tgtCollectionId);
 
     if (srcProps.isEmpty() && tgtProps.isEmpty() && baseline.isEmpty()) {
         return;  // nothing to do
@@ -2476,11 +2500,11 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
     const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
     if (!diff.toApplyToTarget.isEmpty()) {
-        plugin->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
     }
 
     if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
-        plugin->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
     }
 
     // Conflict handling (v1, Task 7): resolve all conflicts as SourceWins.
@@ -2495,7 +2519,7 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
             }
         }
         if (!fromSrc.isEmpty()) {
-            plugin->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+            ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
         }
     }
 }

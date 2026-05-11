@@ -122,7 +122,10 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalproperties.h
     src/calendar/icalrecorddiffer.h
     src/calendar/icalrecordmerger.h
-    src/calendar/calendardomainplugin.h
+    src/calendar/calendardomaindefinition.h
+    src/calendar/calendarstockshapes.h
+    src/calendar/calendardomainoperations.h
+    src/calendar/calendarplugin.h
     src/calendar/calendarplugin_writer.h
 )
 set(KALBURATOR_CALENDAR_SOURCES
@@ -156,7 +159,10 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalproperties.cpp
     src/calendar/icalrecorddiffer.cpp
     src/calendar/icalrecordmerger.cpp
-    src/calendar/calendardomainplugin.cpp
+    src/calendar/calendardomaindefinition.cpp
+    src/calendar/calendarstockshapes.cpp
+    src/calendar/calendardomainoperations.cpp
+    src/calendar/calendarplugin.cpp
     src/calendar/calendarplugin_writer.cpp
 )
 
@@ -288,7 +294,6 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/recordmerger.h
     src/shape/recordwriter.h
     src/shape/defaultblobwriter.h
-    src/shape/domainplugin.h
     src/shape/domainregistry.h
     # K.7.1 — split plugin interface
     src/shape/domaindefinition.h
@@ -305,7 +310,6 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/transformationregistry.cpp
     src/shape/domainregistry.cpp
     src/shape/defaultblobwriter.cpp
-    src/shape/domainplugin.cpp
     # K.7.1 — split plugin interface
     src/shape/domainoperationsregistry.cpp
 )

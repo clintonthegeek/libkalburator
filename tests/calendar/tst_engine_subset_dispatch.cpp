@@ -11,10 +11,15 @@
 #include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
+#include "domainoperationsregistry.h"
+#include "domainregistry.h"
 #include "mockbackend.h"
+#include "pluginmanager.h"
+#include "stock_plugins.h"
 #include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
+#include "transformationregistry.h"
 
 #include "stubs/stubsynchost.h"
 
@@ -47,6 +52,16 @@ class TestEngineSubsetDispatch : public QObject
 {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+    }
+    void cleanupTestCase() {
+        Kalburator::Shape::TransformationRegistry::instance().clear();
+        Kalburator::Shape::DomainRegistry::instance().clear();
+        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+        Kalburator::Sync::BackendRegistry::instance().clear();
+    }
     void init();
     void cleanup();
 

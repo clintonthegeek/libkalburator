@@ -38,10 +38,13 @@
 #include "canonicalrecord.h"
 #include "collectioninfo.h"
 #include "conflictmanager.h"
+#include "domainoperationsregistry.h"
 #include "domainregistry.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
+#include "pluginmanager.h"
 #include "shape.h"
+#include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
@@ -299,13 +302,16 @@ private slots:
 
 void TstContactsEngineWitness::initTestCase()
 {
-    DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    Kalburator::PluginManager pm;
+    Kalburator::registerStockPlugins(pm);
 }
 
 void TstContactsEngineWitness::cleanupTestCase()
 {
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
+    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()

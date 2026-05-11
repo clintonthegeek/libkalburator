@@ -1,6 +1,5 @@
 #include <QTest>
 
-#include "domainplugin.h"
 #include "domainregistry.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
@@ -10,39 +9,30 @@ using namespace Kalburator::Shape;
 
 namespace {
 
-// Minimal plugin that introduces a fictitious "office" domain with one
-// peer shape and one identity edge. Used to prove dynamic registration
-// works without requiring real domain implementations.
-class OfficeStubPlugin : public DomainPlugin {
-public:
-    DomainId domain() const override { return DomainId{"office"}; }
-    Shape canonicalShape() const override {
-        return { DomainId{"office"}, EncodingId{"canonical"} };
-    }
-    QList<Shape> peerShapes() const override {
-        return { { DomainId{"office"}, EncodingId{"docx"} } };
-    }
-    PropertyCatalogue canonicalCatalogue() const override { return {}; }
-    PropertyCatalogue catalogueFor(const Shape&) const override { return {}; }
-    std::unique_ptr<RecordDiffer> createCanonicalDiffer() const override {
-        return nullptr;
-    }
-    std::unique_ptr<RecordMerger> createCanonicalMerger() const override {
-        return nullptr;
-    }
-    void registerEdges(TransformationRegistry& r) override {
-        r.registerShape(canonicalShape(), {});
-        r.registerShape(peerShapes().first(), {});
-        r.declareCanonical(domain(), canonicalShape());
-        TransformationEdge edge;
-        edge.from = peerShapes().first();
-        edge.to   = canonicalShape();
-        edge.loss = LossProfile{};
-        edge.stage = std::make_shared<IdentityStage>();
-        r.registerEdge(edge);
-    }
-    int richnessRank(const Shape&) const override { return 0; }
-};
+/// Register shapes and edges for a fictitious "office" domain directly into
+/// the TransformationRegistry — mirrors what PluginManager::loadInProcess()
+/// does when it calls ShapeContribution::edges() on each contribution.
+void setupOfficeDomain(TransformationRegistry &reg)
+{
+    const Shape canonical{ DomainId{"office"}, EncodingId{"canonical"} };
+    const Shape docx{ DomainId{"office"}, EncodingId{"docx"} };
+    reg.registerShape(canonical, {});
+    reg.registerShape(docx, {});
+    reg.declareCanonical(DomainId{"office"}, canonical);
+    TransformationEdge e;
+    e.from  = docx;
+    e.to    = canonical;
+    e.loss  = LossProfile{};
+    e.stage = std::make_shared<IdentityStage>();
+    reg.registerEdge(e);
+    // Identity edge for canonical→canonical
+    TransformationEdge id;
+    id.from  = canonical;
+    id.to    = canonical;
+    id.loss  = LossProfile{};
+    id.stage = std::make_shared<IdentityStage>();
+    reg.registerEdge(id);
+}
 
 }  // namespace
 
@@ -54,161 +44,96 @@ private slots:
         DomainRegistry::instance().clear();
     }
 
-    void registersPluginAfterInit_pipelineCompiles() {
-        // Stock initialise (as a process normally would).
-        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    void registersShapesDirectly_pipelineCompiles() {
+        // Register shapes directly — as PluginManager::loadInProcess() does.
+        setupOfficeDomain(TransformationRegistry::instance());
 
-        // Now, post-init, register a third-party plugin.
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<OfficeStubPlugin>());
-
-        // Compile a pipeline that uses the dynamically-registered shapes.
-        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
-        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
-        const auto pipeline =
-            TransformationRegistry::instance().compile(from, to);
-
+        // Compile a pipeline that uses the registered shapes.
+        const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
+        const auto pipeline = TransformationRegistry::instance().compile(from, to);
         QVERIFY(pipeline.has_value());
     }
 
     void inspectDoesNotFreeze() {
-        DomainRegistry::instance().initialize(TransformationRegistry::instance());
-
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<OfficeStubPlugin>());
+        setupOfficeDomain(TransformationRegistry::instance());
 
         // Probe loss via inspect() — should NOT freeze the domain.
-        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
-        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
+        const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
         (void)TransformationRegistry::instance().inspect(from, to);
 
         QVERIFY(!TransformationRegistry::instance().isFrozen(DomainId{"office"}));
 
-        // Now register a second peer — this MUST succeed (not silently
-        // rejected) because inspect didn't freeze.
-        class SecondOfficePlugin : public OfficeStubPlugin {
-        public:
-            QList<Shape> peerShapes() const override {
-                return { { DomainId{"office"}, EncodingId{"odt"} } };
-            }
-            void registerEdges(TransformationRegistry& r) override {
-                r.registerShape(peerShapes().first(), {});
-                TransformationEdge edge;
-                edge.from = peerShapes().first();
-                edge.to   = canonicalShape();
-                edge.loss = LossProfile{};
-                edge.stage = std::make_shared<IdentityStage>();
-                r.registerEdge(edge);
-            }
-        };
-        DomainRegistry::instance().registerPlugin(std::make_shared<SecondOfficePlugin>());
+        // Now register a second peer — must succeed because inspect didn't freeze.
+        const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
+        TransformationRegistry::instance().registerShape(odt, {});
+        TransformationEdge e;
+        e.from  = odt;
+        e.to    = { DomainId{"office"}, EncodingId{"canonical"} };
+        e.loss  = LossProfile{};
+        e.stage = std::make_shared<IdentityStage>();
+        TransformationRegistry::instance().registerEdge(e);
 
-        const Shape odt { DomainId{"office"}, EncodingId{"odt"} };
         const auto p = TransformationRegistry::instance().compile(odt, to);
         QVERIFY(p.has_value());
     }
 
     void registrationAfterCompile_isRejected() {
-        DomainRegistry::instance().initialize(TransformationRegistry::instance());
-
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<OfficeStubPlugin>());
+        setupOfficeDomain(TransformationRegistry::instance());
 
         // Compile something in the office domain — this freezes it.
-        const Shape from { DomainId{"office"}, EncodingId{"docx"} };
-        const Shape to   { DomainId{"office"}, EncodingId{"canonical"} };
+        const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
+        const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
         QVERIFY(TransformationRegistry::instance().compile(from, to).has_value());
 
-        // Now try to add another peer shape via a second plugin.
-        // In debug the registerEdge() asserts; in release it returns
-        // silently and the shape doesn't appear. Test the release path
-        // (silent rejection) by asking compile() afterward.
-        class SecondOfficePlugin : public OfficeStubPlugin {
-        public:
-            QList<Shape> peerShapes() const override {
-                return { { DomainId{"office"}, EncodingId{"odt"} } };
-            }
-            void registerEdges(TransformationRegistry& r) override {
-                r.registerShape(peerShapes().first(), {});
-                TransformationEdge edge;
-                edge.from = peerShapes().first();
-                edge.to   = canonicalShape();
-                edge.loss = LossProfile{};
-                edge.stage = std::make_shared<IdentityStage>();
-                r.registerEdge(edge);
-            }
-        };
+        // Now try to add another peer shape — must be silently rejected
+        // because the domain is frozen.
+        const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
+        TransformationRegistry::instance().registerShape(odt, {});
+        TransformationEdge e;
+        e.from  = odt;
+        e.to    = to;
+        e.loss  = LossProfile{};
+        e.stage = std::make_shared<IdentityStage>();
+        TransformationRegistry::instance().registerEdge(e);
 
-        // We expect this to be rejected (silently in release; the
-        // attempt should not panic, but the new shape's pipeline
-        // should not compile).
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<SecondOfficePlugin>());
-
-        const Shape odt { DomainId{"office"}, EncodingId{"odt"} };
+        // The new shape's pipeline should not compile.
         const auto p = TransformationRegistry::instance().compile(odt, to);
         QVERIFY2(!p.has_value(),
                  "post-freeze peer registration must not appear in compiled pipelines");
     }
 
     void conflictingCanonicalDeclaration_isRejected() {
-        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+        setupOfficeDomain(TransformationRegistry::instance());
 
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<OfficeStubPlugin>());
+        // Try to redeclare canonical with a DIFFERENT shape — must be rejected.
+        const Shape originalCanonical{ DomainId{"office"}, EncodingId{"canonical"} };
+        const Shape altCanonical{ DomainId{"office"}, EncodingId{"canonical-v2"} };
+        TransformationRegistry::instance().registerShape(altCanonical, {});
+        TransformationRegistry::instance().declareCanonical(DomainId{"office"}, altCanonical);
 
-        // Second plugin redeclares canonical with a DIFFERENT shape.
-        // This must be rejected.
-        class ConflictingCanonicalPlugin : public OfficeStubPlugin {
-        public:
-            Shape canonicalShape() const override {
-                // Different from OfficeStubPlugin's {office, canonical}
-                return { DomainId{"office"}, EncodingId{"canonical-v2"} };
-            }
-            void registerEdges(TransformationRegistry& r) override {
-                r.registerShape(canonicalShape(), {});
-                r.declareCanonical(domain(), canonicalShape());
-            }
-        };
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<ConflictingCanonicalPlugin>());
-
-        // The original canonical must remain — the conflict was rejected.
-        const Shape originalCanonical { DomainId{"office"}, EncodingId{"canonical"} };
+        // The original canonical must remain.
         QCOMPARE(TransformationRegistry::instance().canonicalFor(DomainId{"office"}),
                  originalCanonical);
     }
 
-    void multiplePluginsContributeToSameDomain_unionPeers() {
-        DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    void multipleContributionsToSameDomain_unionPeers() {
+        setupOfficeDomain(TransformationRegistry::instance());
 
-        DomainRegistry::instance().registerPlugin(
-            std::make_shared<OfficeStubPlugin>());
-
-        // Second plugin for same domain, different peer.
-        // Note: doesn't redeclare canonical (idempotent same-value
-        // is allowed; conflicting would error).
-        class SecondPlugin : public OfficeStubPlugin {
-        public:
-            QList<Shape> peerShapes() const override {
-                return { { DomainId{"office"}, EncodingId{"odt"} } };
-            }
-            void registerEdges(TransformationRegistry& r) override {
-                r.registerShape(peerShapes().first(), {});
-                TransformationEdge edge;
-                edge.from = peerShapes().first();
-                edge.to   = canonicalShape();
-                edge.loss = LossProfile{};
-                edge.stage = std::make_shared<IdentityStage>();
-                r.registerEdge(edge);
-            }
-        };
-        DomainRegistry::instance().registerPlugin(std::make_shared<SecondPlugin>());
+        // Second contribution for same domain, different peer.
+        const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
+        TransformationRegistry::instance().registerShape(odt, {});
+        TransformationEdge e;
+        e.from  = odt;
+        e.to    = { DomainId{"office"}, EncodingId{"canonical"} };
+        e.loss  = LossProfile{};
+        e.stage = std::make_shared<IdentityStage>();
+        TransformationRegistry::instance().registerEdge(e);
 
         // Both peers should now be reachable.
-        const Shape canonical { DomainId{"office"}, EncodingId{"canonical"} };
-        const Shape docx      { DomainId{"office"}, EncodingId{"docx"} };
-        const Shape odt       { DomainId{"office"}, EncodingId{"odt"} };
+        const Shape canonical{ DomainId{"office"}, EncodingId{"canonical"} };
+        const Shape docx    { DomainId{"office"}, EncodingId{"docx"} };
         QVERIFY(TransformationRegistry::instance().compile(docx, canonical).has_value());
         QVERIFY(TransformationRegistry::instance().compile(odt,  canonical).has_value());
     }

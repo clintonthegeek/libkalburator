@@ -89,7 +89,7 @@ using Kalburator::Sync::TranscodingPlan;
 } // namespace Kalburator::Engine
 
 namespace Kalburator::Shape {
-class DomainPlugin;
+class DomainOperations;
 }
 
 namespace Kalburator::Engine {
@@ -275,7 +275,7 @@ private:
         return op;
     }
 
-    void runPropertyPhase(Kalburator::Shape::DomainPlugin *plugin,
+    void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                           SyncBackend *src,
                           SyncBackend *tgt,
                           const QString &srcCollectionId,

@@ -12,10 +12,15 @@
 #include "backendregistry.h"
 #include "baselinestore.h"
 #include "calendar_test_helpers.h"
+#include "domainoperationsregistry.h"
+#include "domainregistry.h"
 #include "mockbackend.h"
+#include "pluginmanager.h"
+#include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
+#include "transformationregistry.h"
 
 #include <KCalendarCore/ICalFormat>
 
@@ -104,8 +109,16 @@ private:
     std::unique_ptr<SyncEngine>            m_engine;
 };
 
-void TstEngineCancellation::initTestCase() {}
-void TstEngineCancellation::cleanupTestCase() {}
+void TstEngineCancellation::initTestCase() {
+    Kalburator::PluginManager pm;
+    Kalburator::registerStockPlugins(pm);
+}
+void TstEngineCancellation::cleanupTestCase() {
+    Kalburator::Shape::TransformationRegistry::instance().clear();
+    Kalburator::Shape::DomainRegistry::instance().clear();
+    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+    Kalburator::Sync::BackendRegistry::instance().clear();
+}
 
 void TstEngineCancellation::init()
 {

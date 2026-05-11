@@ -42,10 +42,13 @@
 #include "baselinestore.h"
 #include "collectioninfo.h"
 #include "domainregistry.h"
+#include "domainoperationsregistry.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
 #include "lossprofile.h"
+#include "pluginmanager.h"
 #include "shape.h"
+#include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
@@ -293,11 +296,11 @@ private slots:
 
 void TestEngineUnifiedRouting::initTestCase()
 {
-    // ContactsDomainPlugin is registered via static initializer
-    // pulled in by --whole-archive. Run initialize() so the contacts
-    // plugin's registerEdges() populates the TransformationRegistry
-    // with vcard3<->vcard4 edges (and the canonical identity edge).
-    DomainRegistry::instance().initialize(TransformationRegistry::instance());
+    // Register stock plugins so the contacts vcard3<->vcard4 edges
+    // (and all other stock-domain shapes) are available in
+    // TransformationRegistry and DomainRegistry.
+    Kalburator::PluginManager pm;
+    Kalburator::registerStockPlugins(pm);
 }
 
 void TestEngineUnifiedRouting::cleanupTestCase()
@@ -307,6 +310,8 @@ void TestEngineUnifiedRouting::cleanupTestCase()
     // exist here today, but this matches the FINDINGS guidance.)
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
+    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()

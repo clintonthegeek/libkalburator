@@ -2,9 +2,9 @@
 #include <QtTest/QtTest>
 #include <QStringList>
 
-#include "calendardomainplugin.h"
+#include "calendardomaindefinition.h"
 
-using Kalburator::Calendar::CalendarDomainPlugin;
+using Kalburator::Calendar::CalendarDomainDefinition;
 
 class TstCalendarDomainBaselineProperties : public QObject {
     Q_OBJECT
@@ -13,8 +13,8 @@ private slots:
 };
 
 void TstCalendarDomainBaselineProperties::declaresColorAndDescription() {
-    CalendarDomainPlugin plugin;
-    const QStringList keys = plugin.baselineProperties();
+    CalendarDomainDefinition def;
+    const QStringList keys = def.baselineProperties();
     QVERIFY(keys.contains(QStringLiteral("color")));
     QVERIFY(keys.contains(QStringLiteral("description")));
 }

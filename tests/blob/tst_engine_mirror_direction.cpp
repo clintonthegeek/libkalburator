@@ -22,14 +22,19 @@
 
 #include "backendregistry.h"
 #include "baselinestore.h"
+#include "domainoperationsregistry.h"
+#include "domainregistry.h"
 #include "isynchost.h"
 #include "isyncconfigstore.h"
 #include "logicalcalendar.h"
 #include "collectioninfo.h"
+#include "pluginmanager.h"
+#include "shape.h"
+#include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "shape.h"
+#include "transformationregistry.h"
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -262,6 +267,16 @@ class TstEngineMirrorDirection : public QObject
 {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+    }
+    void cleanupTestCase() {
+        Kalburator::Shape::TransformationRegistry::instance().clear();
+        Kalburator::Shape::DomainRegistry::instance().clear();
+        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
+        Kalburator::Sync::BackendRegistry::instance().clear();
+    }
     void init();
     void cleanup();
 

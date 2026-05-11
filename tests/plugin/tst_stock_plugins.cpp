@@ -3,6 +3,7 @@
 #include "stock_plugins.h"
 #include "backendregistry.h"
 #include "domainregistry.h"
+#include "domainoperationsregistry.h"
 #include "transformationregistry.h"
 
 class TestStockPlugins : public QObject {
@@ -12,6 +13,7 @@ private slots:
         Kalburator::Shape::DomainRegistry::instance().clear();
         Kalburator::Shape::TransformationRegistry::instance().clear();
         Kalburator::Sync::BackendRegistry::instance().clear();
+        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
 
     void universalStorageRegistersBothBackendTypes() {
@@ -57,6 +59,16 @@ private slots:
                 Kalburator::Shape::DomainId{QStringLiteral("contacts")},
                 Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} });
         QVERIFY(!edges.isEmpty());
+    }
+
+    void calendarDomainAndOperationsRegistered() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+            Kalburator::Shape::DomainId{QStringLiteral("calendar")}) != nullptr);
+        auto *ops = Kalburator::Shape::DomainOperationsRegistry::instance().operationsFor(
+            Kalburator::Shape::DomainId{QStringLiteral("calendar")});
+        QVERIFY(ops != nullptr);
     }
 };
 
