@@ -16,6 +16,9 @@ endfunction()
 
 kalburator_add_sync_test(tst_provider_manager)
 
+# K.7.1 Task 2 — BackendContribution interface + BackendRegistry extension.
+kalburator_add_sync_test(tst_backend_contribution)
+
 # tst_caldav_provider has multiple sources (the QTcpServer-based fake
 # server fixture plus the test driver), so we can't use the
 # single-source helper.

@@ -1,4 +1,5 @@
 #include "backendregistry.h"
+#include "backendcontribution.h"
 #include "syncbackend.h"
 
 namespace Kalburator::Sync {
@@ -88,5 +89,25 @@ QList<BackendRegistry::BackendTypeInfo> BackendRegistry::availableBackendTypes()
     return types;
 }
 
+
+bool BackendRegistry::registerContribution(std::shared_ptr<BackendContribution> contrib) {
+    if (!contrib) return false;
+    const QString type = contrib->backendType();
+    if (m_contributions.contains(type)) return false;
+    m_contributions.insert(type, std::move(contrib));
+    return true;
+}
+
+BackendContribution* BackendRegistry::contributionFor(const QString &type) const {
+    auto it = m_contributions.find(type);
+    return (it == m_contributions.end()) ? nullptr : it.value().get();
+}
+
+QList<BackendContribution*> BackendRegistry::contributions() const {
+    QList<BackendContribution*> out;
+    out.reserve(m_contributions.size());
+    for (const auto &c : m_contributions) out.append(c.get());
+    return out;
+}
 
 } // namespace Kalburator::Sync

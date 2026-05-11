@@ -5,6 +5,8 @@
 #include <QMap>
 #include <QString>
 #include <functional>
+#include <memory>
+#include "backendcontribution.h"
 
 namespace Kalburator::Sync {
 
@@ -112,6 +114,26 @@ public:
     };
     QList<BackendTypeInfo> availableBackendTypes() const;
 
+    // ── BackendContribution API (K.7) ─────────────────────────────────
+    /**
+     * @brief Register a BackendContribution.
+     * @return true on success, false if a contribution with the same
+     *         backendType() is already registered.
+     */
+    bool registerContribution(std::shared_ptr<BackendContribution> contribution);
+
+    /**
+     * @brief Look up a contribution by backendType.
+     * @return Pointer to the contribution, or nullptr if not found.
+     *         Ownership remains with the registry.
+     */
+    BackendContribution* contributionFor(const QString &backendType) const;
+
+    /**
+     * @brief All registered contributions (order unspecified).
+     */
+    QList<BackendContribution*> contributions() const;
+
 signals:
     /**
      * @brief Emitted when a backend type is registered.
@@ -131,6 +153,7 @@ signals:
 private:
     QMap<QString, BackendFactory> m_factories;
     QMap<QString, SyncBackend*> m_instances;
+    QMap<QString, std::shared_ptr<BackendContribution>> m_contributions;
 };
 
 } // namespace Kalburator::Sync
