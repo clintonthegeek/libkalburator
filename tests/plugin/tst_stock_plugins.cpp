@@ -46,6 +46,18 @@ private slots:
                 Kalburator::Shape::EncodingId{QStringLiteral("todotxt")} });
         QVERIFY(!edges.isEmpty());
     }
+
+    void contactsDomainAndVcard3PeerRegistered() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+            Kalburator::Shape::DomainId{QStringLiteral("contacts")}) != nullptr);
+        const auto edges = Kalburator::Shape::TransformationRegistry::instance().edgesFrom(
+            Kalburator::Shape::Shape{
+                Kalburator::Shape::DomainId{QStringLiteral("contacts")},
+                Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} });
+        QVERIFY(!edges.isEmpty());
+    }
 };
 
 QTEST_MAIN(TestStockPlugins)

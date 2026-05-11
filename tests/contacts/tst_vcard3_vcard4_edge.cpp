@@ -1,6 +1,7 @@
 #include <QTest>
 
-#include "contactsdomainplugin.h"
+#include "contactsdomaindefinition.h"
+#include "contactsstockshapes.h"
 #include "domainregistry.h"
 #include "transformationregistry.h"
 #include "vcard3to4transformation.h"
@@ -8,8 +9,16 @@
 #include <KContacts/Addressee>
 #include <KContacts/VCardConverter>
 
-using namespace Kalburator::Contacts;
-using namespace Kalburator::Shape;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
+using Kalburator::Shape::LossProfile;
+using Kalburator::Shape::LossLevel;
+using Kalburator::Shape::DomainRegistry;
+using Kalburator::Shape::TransformationRegistry;
+using Kalburator::Contacts::VCard3To4Stage;
+using Kalburator::Contacts::VCard4To3Stage;
+using Kalburator::Contacts::vcard4ToVcard3Loss;
 
 namespace {
 
@@ -70,9 +79,19 @@ private slots:
 
     void registryCompilesPipelineV3ToV4()
     {
-        ContactsDomainPlugin plugin;
+        // Set up via ContactsStockShapes (replaces the old plugin.registerEdges() call).
+        // The canonical shape must be declared first (as DomainDefinition would do),
+        // then stock shapes populate the peer + edges.
         auto& reg = TransformationRegistry::instance();
-        plugin.registerEdges(reg);
+        const Shape canonical{ DomainId{"contacts"}, EncodingId{"vcard4"} };
+        reg.registerShape(canonical, {});
+        reg.declareCanonical(DomainId{"contacts"}, canonical);
+
+        Kalburator::Contacts::ContactsStockShapes shapes;
+        for (const auto &[shape, cat] : shapes.peerShapes())
+            reg.registerShape(shape, cat);
+        for (const auto &edge : shapes.edges())
+            reg.registerEdge(edge);
 
         const Shape v3{ DomainId{"contacts"}, EncodingId{"vcard3"} };
         const Shape v4{ DomainId{"contacts"}, EncodingId{"vcard4"} };

@@ -1,6 +1,7 @@
 #include <QTest>
 
-#include "contactsdomainplugin.h"
+#include "contactsdomaindefinition.h"
+#include "contactsstockshapes.h"
 #include "domainregistry.h"
 #include "transformationregistry.h"
 
@@ -22,21 +23,21 @@ private slots:
 
     void canonicalShapeIsContactsVCard()
     {
-        const ContactsDomainPlugin plugin;
+        const ContactsDomainDefinition def;
         const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"vcard4"} };
-        QCOMPARE(plugin.canonicalShape(), expected);
+        QCOMPARE(def.canonicalShape(), expected);
     }
 
     void domainIsContacts()
     {
-        const ContactsDomainPlugin plugin;
-        QCOMPARE(plugin.domain().toString(), QStringLiteral("contacts"));
+        const ContactsDomainDefinition def;
+        QCOMPARE(def.domain().toString(), QStringLiteral("contacts"));
     }
 
     void catalogueHasRequiredProperties()
     {
-        const ContactsDomainPlugin plugin;
-        const auto cat = plugin.canonicalCatalogue();
+        const ContactsDomainDefinition def;
+        const auto cat = def.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
         QVERIFY(cat.hasProperty(PropertyId{"fn"}));
         QVERIFY(cat.hasProperty(PropertyId{"email"}));
@@ -45,68 +46,45 @@ private slots:
 
     void catalogueHasV4Properties()
     {
-        const ContactsDomainPlugin plugin;
-        const auto cat = plugin.canonicalCatalogue();
+        const ContactsDomainDefinition def;
+        const auto cat = def.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"gender"}));
         QVERIFY(cat.hasProperty(PropertyId{"lang"}));
         QVERIFY(cat.hasProperty(PropertyId{"kind"}));
         QVERIFY(cat.hasProperty(PropertyId{"anniversary"}));
     }
 
-    void registerEdgesDeclaresCanonical()
-    {
-        ContactsDomainPlugin plugin;
-        auto& reg = TransformationRegistry::instance();
-        plugin.registerEdges(reg);
-        QCOMPARE(reg.canonicalFor(DomainId{"contacts"}), plugin.canonicalShape());
-    }
-
     void richnessRankCanonical()
     {
-        const ContactsDomainPlugin plugin;
-        QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
+        const ContactsDomainDefinition def;
+        QCOMPARE(def.richnessRank(def.canonicalShape()), 10);
     }
 
-    void registersVcard3PeerAndEdges()
+    void stockShapesHasThreeEdges()
     {
-        using namespace Kalburator::Shape;
-        ContactsDomainPlugin plugin;
-        auto& reg = TransformationRegistry::instance();
-        plugin.registerEdges(reg);
-
-        const Shape v3{ DomainId{"contacts"}, EncodingId{"vcard3"} };
-        const Shape v4{ DomainId{"contacts"}, EncodingId{"vcard4"} };
-
-        QVERIFY(reg.catalogueFor(v3) != nullptr);
-
-        const auto edgesFromV3 = reg.edgesFrom(v3);
-        QVERIFY2(std::any_of(edgesFromV3.begin(), edgesFromV3.end(),
-            [&](const auto &e) { return e.to == v4; }),
-            "expected edge vcard3 -> vcard4");
-
-        const auto edgesFromV4 = reg.edgesFrom(v4);
-        QVERIFY2(std::any_of(edgesFromV4.begin(), edgesFromV4.end(),
-            [&](const auto &e) { return e.to == v3; }),
-            "expected edge vcard4 -> vcard3");
+        const ContactsStockShapes shapes;
+        // identity + vcard3→vcard4 + vcard4→vcard3
+        QCOMPARE(shapes.edges().size(), 3);
     }
 
-    void peerShapesIncludesVcard3()
+    void stockShapesPeerContainsVcard3()
     {
-        const ContactsDomainPlugin plugin;
-        const auto peers = plugin.peerShapes();
-        const Kalburator::Shape::Shape v3{ Kalburator::Shape::DomainId{"contacts"},
-                                           Kalburator::Shape::EncodingId{"vcard3"} };
-        QVERIFY(peers.contains(v3));
+        const ContactsStockShapes shapes;
+        const Kalburator::Shape::Shape v3{ DomainId{"contacts"}, EncodingId{"vcard3"} };
+        const auto peers = shapes.peerShapes();
+        QVERIFY(std::any_of(peers.begin(), peers.end(),
+            [&](const auto &p) { return p.first == v3; }));
     }
 
-    void peerShapesDoesNotIncludePalmAddress()
+    void stockShapesDoesNotIncludePalmAddress()
     {
-        const ContactsDomainPlugin plugin;
-        const auto peers = plugin.peerShapes();
+        const ContactsStockShapes shapes;
         const Kalburator::Shape::Shape palmAddr{
             Kalburator::Shape::DomainId{"contacts"},
             Kalburator::Shape::EncodingId{"palm-address"} };
-        QVERIFY(!peers.contains(palmAddr));
+        const auto peers = shapes.peerShapes();
+        QVERIFY(!std::any_of(peers.begin(), peers.end(),
+            [&](const auto &p) { return p.first == palmAddr; }));
     }
 };
 

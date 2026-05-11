@@ -335,7 +335,9 @@ set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/vcarddiffer.h
     src/contacts/vcardmerger.h
     src/contacts/vcard3to4transformation.h
-    src/contacts/contactsdomainplugin.h
+    src/contacts/contactsdomaindefinition.h
+    src/contacts/contactsstockshapes.h
+    src/contacts/contactsplugin.h
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.h
 )
@@ -344,7 +346,9 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
     src/contacts/vcard3to4transformation.cpp
-    src/contacts/contactsdomainplugin.cpp
+    src/contacts/contactsdomaindefinition.cpp
+    src/contacts/contactsstockshapes.cpp
+    src/contacts/contactsplugin.cpp
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.cpp
 )

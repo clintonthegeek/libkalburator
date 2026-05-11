@@ -2,7 +2,6 @@
 
 #include <KCalendarCore/MemoryCalendar>
 
-#include "contactsdomainplugin.h"
 #include "domainplugin.h"
 #include "domainregistry.h"
 #include "recorddiffer.h"
@@ -144,20 +143,6 @@ private slots:
         QVERIFY(ok);
     }
 
-    void defaultPluginsReturnEmptyCollectionProperties() {
-        // Pins that the default DomainPlugin impls return empty / no-op for
-        // the collection-property hooks. Calendar plugin overrides in Task 6.
-        StubSyncBackend backend;
-        const QString col = QStringLiteral("col");
-        const QVariantMap someProps{ {QStringLiteral("color"), QStringLiteral("red")} };
-
-        {
-            auto plugin = std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>();
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-            plugin->applyCollectionProperties(&backend, col, someProps);
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-        }
-    }
 };
 
 QTEST_GUILESS_MAIN(TestDomainRegistry)
