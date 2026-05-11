@@ -6,7 +6,6 @@
 #include <QString>
 #include <QFuture>
 #include <memory>
-#include <functional>
 #include <map>
 #include <vector>
 
@@ -26,21 +25,17 @@ class IBlobBackend;
  * the list to the app's settings UI. Apps own one ProviderManager per
  * loaded profile.
  *
- * Provider construction is delegated to a factory function so test
- * code can inject mock providers without registering them in the
- * production factory map.
+ * Provider construction is delegated to BackendContribution objects
+ * registered in the BackendRegistry. Register contributions before
+ * calling loadFromProfile().
  */
 class ProviderManager : public QObject
 {
     Q_OBJECT
 public:
-    using Factory = std::function<std::unique_ptr<IProvider>(const QString &kind)>;
-
     explicit ProviderManager(BackendRegistry *registry,
                              QObject *parent = nullptr);
     ~ProviderManager() override;
-
-    void setFactoryForTest(Factory factory);
 
     void loadFromProfile(const KConfigGroup &providersGroup);
     void saveToProfile(KConfigGroup &providersGroup) const;
@@ -68,7 +63,6 @@ private:
     void wireProviderSignals(IProvider *provider);
 
     BackendRegistry                              *m_registry;  // borrowed
-    Factory                                       m_factory;
     // std::vector instead of QList: QList copies on detach, which fails
     // for move-only unique_ptr.
     std::vector<std::unique_ptr<IProvider>>       m_providers;

@@ -3,6 +3,7 @@
 #include "iprovider.h"
 #include "iblobbackend.h"
 #include "backendregistry.h"
+#include "backendcontribution.h"
 #include "syncbackend.h"
 #include "backendconfiguration.h"
 #include "caldavprovider.h"
@@ -16,6 +17,34 @@
 
 #include <algorithm>
 
+namespace {
+
+// Built-in contributions for the two production provider kinds.
+// Registered into the BackendRegistry by ProviderManager's constructor
+// when no contribution for those kinds already exists.
+
+class CalDavBackendContribution : public Kalburator::Sync::BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("caldav"); }
+    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<Kalburator::Sync::IProvider>
+    createProvider(QObject *parent) const override {
+        return std::make_unique<Kalburator::Sync::CalDavProvider>(parent);
+    }
+};
+
+class CardDavBackendContribution : public Kalburator::Sync::BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("carddav"); }
+    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<Kalburator::Sync::IProvider>
+    createProvider(QObject *parent) const override {
+        return std::make_unique<Kalburator::Sync::CardDavProvider>(parent);
+    }
+};
+
+} // anon namespace
+
 namespace Kalburator::Sync {
 
 ProviderManager::ProviderManager(BackendRegistry *registry, QObject *parent)
@@ -24,28 +53,22 @@ ProviderManager::ProviderManager(BackendRegistry *registry, QObject *parent)
 {
     Q_ASSERT(m_registry);
 
-    // Default factory: handles built-in provider kinds. Tests inject
-    // their own factory via setFactoryForTest() to avoid touching the
-    // network.
-    m_factory = [](const QString &kind) -> std::unique_ptr<IProvider> {
-        if (kind == QStringLiteral("caldav")) {
-            return std::make_unique<CalDavProvider>();
-        }
-        if (kind == QStringLiteral("carddav")) {
-            return std::make_unique<CardDavProvider>();
-        }
-        return nullptr;
-    };
+    // Register built-in contributions for caldav and carddav if not already
+    // present. A plugin or test can pre-register its own contribution for
+    // these kinds before constructing ProviderManager to override these.
+    if (!m_registry->contributionFor(QStringLiteral("caldav"))) {
+        m_registry->registerContribution(
+            std::make_shared<CalDavBackendContribution>());
+    }
+    if (!m_registry->contributionFor(QStringLiteral("carddav"))) {
+        m_registry->registerContribution(
+            std::make_shared<CardDavBackendContribution>());
+    }
 }
 
 ProviderManager::~ProviderManager()
 {
     disconnectAll();
-}
-
-void ProviderManager::setFactoryForTest(Factory factory)
-{
-    m_factory = std::move(factory);
 }
 
 void ProviderManager::wireProviderSignals(IProvider *provider)
@@ -67,10 +90,14 @@ void ProviderManager::loadFromProfile(const KConfigGroup &providersGroup)
                        << "— missing 'kind' key";
             continue;
         }
-        auto provider = m_factory(kind);
+        auto *contribution = m_registry->contributionFor(kind);
+        if (!contribution) {
+            qWarning() << "[ProviderManager] no contribution for kind" << kind;
+            continue;
+        }
+        auto provider = contribution->createProvider();
         if (!provider) {
-            qWarning() << "[ProviderManager] no factory for kind"
-                       << kind << "— skipping" << id;
+            qWarning() << "[ProviderManager] contribution returned null provider for kind" << kind;
             continue;
         }
 

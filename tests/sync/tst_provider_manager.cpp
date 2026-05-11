@@ -12,6 +12,7 @@
 #include "iprovider.h"
 #include "iblobbackend.h"
 #include "backendregistry.h"
+#include "backendcontribution.h"
 #include "syncbackend.h"
 #include "backendconfiguration.h"
 #include "collectioninfo.h"
@@ -125,6 +126,17 @@ private:
     QList<CollectionInfo> m_collectionsSeed;
 };
 
+// Minimal BackendContribution that produces FakeProvider instances.
+// Used in tests that previously called setFactoryForTest().
+class FakeBC : public BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("fake"); }
+    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override {
+        return std::make_unique<FakeProvider>(QString());
+    }
+};
+
 // Wait for QFuture<void> to finish, spinning the event loop.
 bool waitForFuture(QFuture<void> f, int timeoutMs = 5000)
 {
@@ -179,15 +191,9 @@ void TstProviderManager::load_constructs_provider_via_factory()
     providers.sync();
 
     BackendRegistry reg;
+    reg.registerContribution(std::make_shared<FakeBC>());
     ProviderManager mgr(&reg);
-    mgr.setFactoryForTest([](const QString &kind) -> std::unique_ptr<IProvider> {
-        if (kind == QLatin1String("fake")) {
-            return std::make_unique<FakeProvider>(QString());
-        }
-        return nullptr;
-    });
 
-    // Inject id by constructing in factory by reading sub-group name? No —
     // ProviderManager assigns id via cfg.id during load(). Verify by
     // checking displayName instead, since FakeProvider has no id setter.
     mgr.loadFromProfile(providers);
@@ -214,13 +220,8 @@ void TstProviderManager::load_skips_unknown_kind()
     providers.sync();
 
     BackendRegistry reg;
+    reg.registerContribution(std::make_shared<FakeBC>());
     ProviderManager mgr(&reg);
-    mgr.setFactoryForTest([](const QString &kind) -> std::unique_ptr<IProvider> {
-        if (kind == QLatin1String("fake")) {
-            return std::make_unique<FakeProvider>(QStringLiteral("ignored"));
-        }
-        return nullptr;
-    });
 
     mgr.loadFromProfile(providers);
     QVERIFY(mgr.providers().isEmpty());
@@ -330,13 +331,8 @@ void TstProviderManager::saveToProfile_round_trips_with_loadFromProfile()
         KConfigGroup providers(&cfg, QStringLiteral("Providers"));
 
         BackendRegistry reg;
+        reg.registerContribution(std::make_shared<FakeBC>());
         ProviderManager mgr(&reg);
-        mgr.setFactoryForTest([](const QString &kind) -> std::unique_ptr<IProvider> {
-            if (kind == QLatin1String("fake")) {
-                return std::make_unique<FakeProvider>(QStringLiteral("p-rt"));
-            }
-            return nullptr;
-        });
         mgr.loadFromProfile(providers);
 
         QCOMPARE(mgr.providers().size(), 1);
