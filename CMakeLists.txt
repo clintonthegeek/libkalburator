@@ -288,6 +288,7 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/domainregistry.h
     # K.7.1 — split plugin interface
     src/shape/domaindefinition.h
+    src/shape/shapecontribution.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     # shape.cpp lives in kalburator-types (exposed via KALBURATOR_SHAPE_CORE_SOURCES)
