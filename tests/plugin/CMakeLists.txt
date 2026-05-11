@@ -15,6 +15,7 @@ target_link_libraries(tst_pluginmanager_load PRIVATE kalburator kalburator_plugi
 add_test(NAME tst_pluginmanager_load COMMAND tst_pluginmanager_load)
 
 add_subdirectory(smoke)
+add_subdirectory(scenarios)
 
 add_executable(tst_pluginmanager_smoke tst_pluginmanager_smoke.cpp)
 target_link_libraries(tst_pluginmanager_smoke PRIVATE kalburator Qt6::Test)
