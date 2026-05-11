@@ -364,6 +364,12 @@ set(KALBURATOR_SINKS_SOURCES
     src/universal/genericsqlitebackend.cpp
 )
 
+# Phase K.7.1 — Qt plugin entry-point interface (header only).
+set(KALBURATOR_PLUGIN_HEADERS
+    src/plugin/plugin.h
+)
+# (No sources — header-only interface.)
+
 # Phase H — provider abstraction
 # Phase Ib — CardDAV transport (carddavcapabilitydiscovery)
 set(KALBURATOR_PROVIDER_CORE_HEADERS
@@ -404,6 +410,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_MEMO_HEADERS}
     ${KALBURATOR_SINKS_HEADERS}
     ${KALBURATOR_PROVIDER_CORE_HEADERS}
+    ${KALBURATOR_PLUGIN_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -455,6 +462,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/memo>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/backend>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/plugin>
 )
 
 target_link_libraries(kalburator
