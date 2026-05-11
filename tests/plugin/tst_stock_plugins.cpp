@@ -27,6 +27,13 @@ private slots:
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("memo")}) != nullptr);
     }
+
+    void blobDomainRegistered() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+            Kalburator::Shape::DomainId{QStringLiteral("blob")}) != nullptr);
+    }
 };
 
 QTEST_MAIN(TestStockPlugins)

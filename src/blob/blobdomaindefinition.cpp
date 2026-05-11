@@ -1,10 +1,8 @@
-#include "blobdomainplugin.h"
+#include "blobdomaindefinition.h"
 
-#include "domainregistry.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "propertycatalogue.h"
-#include "transformationregistry.h"
 #include "conflictpolicy.h"
 
 using Kalburator::Shape::DomainId;
@@ -15,10 +13,6 @@ using Kalburator::Shape::PropertyKind;
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::RecordDiffer;
 using Kalburator::Shape::RecordMerger;
-using Kalburator::Shape::LossProfile;
-using Kalburator::Shape::TransformationEdge;
-using Kalburator::Shape::TransformationRegistry;
-using Kalburator::Shape::IdentityStage;
 
 namespace {
 
@@ -75,71 +69,34 @@ PropertyCatalogue makeBlobCatalogue()
 
 namespace Kalburator::Blob {
 
-DomainId BlobDomainPlugin::domain() const
+Shape::DomainId BlobDomainDefinition::domain() const
 {
     return DomainId{"blob"};
 }
 
-Kalburator::Shape::Shape BlobDomainPlugin::canonicalShape() const
+Shape::Shape BlobDomainDefinition::canonicalShape() const
 {
     return { DomainId{"blob"}, EncodingId{"raw"} };
 }
 
-QList<Kalburator::Shape::Shape> BlobDomainPlugin::peerShapes() const
-{
-    return {};
-}
-
-PropertyCatalogue BlobDomainPlugin::canonicalCatalogue() const
+Shape::PropertyCatalogue BlobDomainDefinition::canonicalCatalogue() const
 {
     return makeBlobCatalogue();
 }
 
-PropertyCatalogue BlobDomainPlugin::catalogueFor(const Kalburator::Shape::Shape& s) const
-{
-    if (s == canonicalShape())
-        return makeBlobCatalogue();
-    return {};
-}
-
-std::unique_ptr<RecordDiffer> BlobDomainPlugin::createCanonicalDiffer() const
+std::unique_ptr<Shape::RecordDiffer> BlobDomainDefinition::createCanonicalDiffer() const
 {
     return std::make_unique<RecordDifferBlob>();
 }
 
-std::unique_ptr<RecordMerger> BlobDomainPlugin::createCanonicalMerger() const
+std::unique_ptr<Shape::RecordMerger> BlobDomainDefinition::createCanonicalMerger() const
 {
     return std::make_unique<RecordMergerBlob>();
 }
 
-void BlobDomainPlugin::registerEdges(TransformationRegistry& registry)
-{
-    const auto canonical = canonicalShape();
-    registry.registerShape(canonical, canonicalCatalogue());
-    registry.declareCanonical(domain(), canonical);
-    registry.registerEdge(TransformationEdge{
-        canonical, canonical,
-        LossProfile{},
-        std::make_shared<IdentityStage>()
-    });
-}
-
-int BlobDomainPlugin::richnessRank(const Kalburator::Shape::Shape& s) const
+int BlobDomainDefinition::richnessRank(const Shape::Shape& s) const
 {
     return s == canonicalShape() ? 10 : 0;
 }
 
 } // namespace Kalburator::Blob
-
-namespace {
-
-struct BlobPluginRegistrar {
-    BlobPluginRegistrar() {
-        Kalburator::Shape::DomainRegistry::instance().registerDomain(
-            std::make_shared<Kalburator::Blob::BlobDomainPlugin>());
-    }
-};
-
-static BlobPluginRegistrar s_blobPluginRegistrar;
-
-} // namespace

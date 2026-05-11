@@ -2,7 +2,6 @@
 
 #include <KCalendarCore/MemoryCalendar>
 
-#include "blobdomainplugin.h"
 #include "contactsdomainplugin.h"
 #include "domainplugin.h"
 #include "domainregistry.h"
@@ -153,13 +152,6 @@ private slots:
         const QString col = QStringLiteral("col");
         const QVariantMap someProps{ {QStringLiteral("color"), QStringLiteral("red")} };
 
-        {
-            auto plugin = std::make_shared<Kalburator::Blob::BlobDomainPlugin>();
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-            plugin->applyCollectionProperties(&backend, col, someProps);
-            // apply is no-op: properties are still empty afterwards
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-        }
         {
             auto plugin = std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
