@@ -23,3 +23,5 @@ kalburator_add_shape_test(tst_transformation_registry)
 kalburator_add_shape_test(tst_domain_registry)
 kalburator_add_shape_test(tst_dynamic_domain_registration)
 kalburator_add_shape_test(tst_default_blob_writer)
+# K.7.1 — DomainOperations + registry
+kalburator_add_shape_test(tst_domain_operations_registry)

@@ -289,6 +289,8 @@ set(KALBURATOR_SHAPE_HEADERS
     # K.7.1 — split plugin interface
     src/shape/domaindefinition.h
     src/shape/shapecontribution.h
+    src/shape/domainoperations.h
+    src/shape/domainoperationsregistry.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     # shape.cpp lives in kalburator-types (exposed via KALBURATOR_SHAPE_CORE_SOURCES)
@@ -300,6 +302,8 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/domainregistry.cpp
     src/shape/defaultblobwriter.cpp
     src/shape/domainplugin.cpp
+    # K.7.1 — split plugin interface
+    src/shape/domainoperationsregistry.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).
