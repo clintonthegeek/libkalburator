@@ -9,7 +9,6 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "recordwriter.h"
-#include "memodomainplugin.h"
 #include "syncbackend.h"
 #include "tododomainplugin.h"
 #include "transformationregistry.h"
@@ -163,12 +162,6 @@ private slots:
         }
         {
             auto plugin = std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>();
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-            plugin->applyCollectionProperties(&backend, col, someProps);
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-        }
-        {
-            auto plugin = std::make_shared<Kalburator::Memo::MemoDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());

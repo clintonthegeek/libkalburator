@@ -2,11 +2,15 @@
 #include "pluginmanager.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
+#include "domainregistry.h"
+#include "transformationregistry.h"
 
 class TestStockPlugins : public QObject {
     Q_OBJECT
 private slots:
     void cleanup() {
+        Kalburator::Shape::DomainRegistry::instance().clear();
+        Kalburator::Shape::TransformationRegistry::instance().clear();
         Kalburator::Sync::BackendRegistry::instance().clear();
     }
 
@@ -15,6 +19,13 @@ private slots:
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Sync::BackendRegistry::instance().contributionFor(QStringLiteral("raw-files")) != nullptr);
         QVERIFY(Kalburator::Sync::BackendRegistry::instance().contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
+    }
+
+    void memoDomainRegistered() {
+        Kalburator::PluginManager pm;
+        Kalburator::registerStockPlugins(pm);
+        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+            Kalburator::Shape::DomainId{QStringLiteral("memo")}) != nullptr);
     }
 };
 

@@ -345,13 +345,15 @@ set(KALBURATOR_MEMO_HEADERS
     src/memo/memoproperties.h
     src/memo/textdiffer.h
     src/memo/textmerger.h
-    src/memo/memodomainplugin.h
+    src/memo/memodomaindefinition.h
+    src/memo/memoplugin.h
 )
 set(KALBURATOR_MEMO_SOURCES
     src/memo/memoproperties.cpp
     src/memo/textdiffer.cpp
     src/memo/textmerger.cpp
-    src/memo/memodomainplugin.cpp
+    src/memo/memodomaindefinition.cpp
+    src/memo/memoplugin.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
