@@ -1,8 +1,8 @@
 # Phase K — Engine generalization & semantic cleansing (Status)
 
-**Status:** ⏳ **IN PROGRESS** — K.7 implementation underway (2026-05-11)  
-**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7.1, K.7.2, K.7.3  
-**Closing tag:** `v0.40-phase-k-engine-generalized` (pending K.7.4/K.7.5/K.8)
+**Status:** ⏳ **IN PROGRESS** — K.7 library complete (2026-05-11); K.8 next  
+**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7 (all subtasks)  
+**Closing tag:** `v0.40-phase-k-engine-generalized` (pending K.8)
 
 ## What exists now
 
@@ -12,6 +12,17 @@
 - Baseline unification: single `Storage::BaselineStore` replaces calendar + blob variants
 - Storage reorganization: `src/storage/` replaces `src/journal/` (mutable key-value stores, not journals)
 - All three consumer repos migrated (libkalburator, PlanStan, WildPalms)
+
+**Plugin extensibility surface (K.7):**
+- **K.7 (landed 2026-05-11):** Plugin extensibility surface. Four
+  contribution interfaces (DomainDefinition, ShapeContribution,
+  DomainOperations, BackendContribution); Kalburator::Plugin Qt
+  interface + JSON manifest; PluginManager with dependency-DAG
+  resolve, in-process and .so load paths, full error matrix.
+  Stock plugins migrated (DomainPlugin deleted); ProviderManager
+  rewired. End-to-end validated by the DocsToGo running-example
+  integration test (89/89 pass).
+  Tag candidate: v0.37-phase-k7-complete.
 
 **Semantic cleansing (K.5.5–K.6):**
 - Complete vocabulary realignment: 12 coherent namespaces (`Engine`, `Backend`, `Conflict`, `Storage`, `Provider`, `Host`, etc.)
@@ -29,28 +40,23 @@
 - ✅ Directory moves complete (`journal/` → `storage/`, `sinks/` → `universal/`)
 - ✅ `verify-all.sh` green: libkalburator 73/80 pass (known parallel flakes), PlanStan 82/106, WildPalms 81/81
 
-## Test posture (2026-05-11, post-K.7.3)
+## Test posture (2026-05-11, post-K.7)
 
-- libkalburator: **88/88** pass (100%) — 8 new tests added in K.7.3
-  (`tst_calendar_plugin`, `tst_domain_registry`, `tst_dynamic_domain_registration`
-  + 5 others rewritten/added). Pre-existing race fixed in `SyncEngineWorker`
-  fetch loops (see FINDINGS "Pre-existing race in SyncEngineWorker fetch loops").
-  The 3 previously-flaky tests (`tst_engine_cancellation`, `tst_cancellation_reason`,
+- libkalburator: **89/89** pass (100%) — 1 new test added in K.7.5 (DocsToGo
+  running-example integration scenario). K.7.3 added 8 tests (`tst_calendar_plugin`,
+  `tst_domain_registry`, `tst_dynamic_domain_registration` + 5 others). Pre-existing
+  race fixed in `SyncEngineWorker` fetch loops (see FINDINGS). The 3 previously-flaky
+  tests (`tst_engine_cancellation`, `tst_cancellation_reason`,
   `tst_engine_subset_dispatch`) now pass reliably under `-j 10`.
 - PlanStan: **82/106** pass (24 pre-existing env failures, unchanged).
 - WildPalms: **81/81** pass.
 
 ## Next
 
-⬜ **Phase K.7.4** (T18–T19) — Remove legacy `BackendFactory` API from
-   `BackendRegistry`; rewire `ProviderManager` to use `BackendRegistry::contributionFor`.
-
-⬜ **Phase K.7.5** (T20–T21) — DocsToGo running-example integration scenario test;
-   final cleanup + status docs + baseline refresh. Tag: `v0.35.5-phase-k7-design`.
-
-⬜ **Phase K.8** (code) — WildPalms migration to ideal architecture. Largest single
-   refactor; deletions per audit finding list. Gate: `verify-all.sh` green + Phase J
-   Task 9–11 passing. Tag: `v0.36-phase-k8-wildpalms-rewrite`.
+⬜ **Phase K.8** (code) — WildPalms migration to ideal architecture (K.7.6
+   reference impl + full rewrite). Largest single refactor; deletions per audit
+   finding list. Gate: `verify-all.sh` green + Phase J E2E tests passing.
+   Tag: `v0.36-phase-k8-wildpalms-rewrite`.
 
 Closing tag `v0.40-phase-k-engine-generalized` after K.8 lands clean and `verify-all.sh` is green.
 
@@ -64,6 +70,8 @@ Closing tag `v0.40-phase-k-engine-generalized` after K.8 lands clean and `verify
 - `07d562f`: K.7.3 complete — `CalendarDomainPlugin` → `CalendarPlugin` + decomposed
   contributions; delete `DomainPlugin` API; strip `DomainRegistry`; fix race in
   `SyncEngineWorker` fetch loops; 80 → 88 tests (all pass)
+- K.7.4: Remove legacy `BackendFactory` API; rewire `ProviderManager` to
+  `BackendRegistry::contributionFor`; 88 → 89 tests (DocsToGo scenario test)
 
 ---
 
