@@ -316,14 +316,18 @@ set(KALBURATOR_TODO_HEADERS
     src/todo/icalvtododiffer.h
     src/todo/icalvtodomerger.h
     src/todo/todotxttransformation.h
-    src/todo/tododomainplugin.h
+    src/todo/tododomaindefinition.h
+    src/todo/todostockshapes.h
+    src/todo/todoplugin.h
 )
 set(KALBURATOR_TODO_SOURCES
     src/todo/icalvtodoproperties.cpp
     src/todo/icalvtododiffer.cpp
     src/todo/icalvtodomerger.cpp
     src/todo/todotxttransformation.cpp
-    src/todo/tododomainplugin.cpp
+    src/todo/tododomaindefinition.cpp
+    src/todo/todostockshapes.cpp
+    src/todo/todoplugin.cpp
 )
 
 set(KALBURATOR_CONTACTS_HEADERS

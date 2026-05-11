@@ -9,7 +9,6 @@
 #include "recordmerger.h"
 #include "recordwriter.h"
 #include "syncbackend.h"
-#include "tododomainplugin.h"
 #include "transformationregistry.h"
 
 using namespace Kalburator::Shape;
@@ -154,12 +153,6 @@ private slots:
 
         {
             auto plugin = std::make_shared<Kalburator::Contacts::ContactsDomainPlugin>();
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-            plugin->applyCollectionProperties(&backend, col, someProps);
-            QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
-        }
-        {
-            auto plugin = std::make_shared<Kalburator::Todo::TodoDomainPlugin>();
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());
             plugin->applyCollectionProperties(&backend, col, someProps);
             QVERIFY(plugin->collectionProperties(&backend, col).isEmpty());

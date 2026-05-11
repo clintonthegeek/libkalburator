@@ -1,6 +1,7 @@
 #include <QTest>
 
-#include "tododomainplugin.h"
+#include "tododomaindefinition.h"
+#include "todostockshapes.h"
 #include "domainregistry.h"
 #include "transformationregistry.h"
 
@@ -22,60 +23,54 @@ private slots:
 
     void canonicalShapeIsTodoIcalVTodo()
     {
-        const TodoDomainPlugin plugin;
+        const TodoDomainDefinition def;
         const Kalburator::Shape::Shape expected{ DomainId{"todo"}, EncodingId{"ical-vtodo"} };
-        QCOMPARE(plugin.canonicalShape(), expected);
+        QCOMPARE(def.canonicalShape(), expected);
     }
 
     void domainIsTodo()
     {
-        const TodoDomainPlugin plugin;
-        QCOMPARE(plugin.domain().toString(), QStringLiteral("todo"));
+        const TodoDomainDefinition def;
+        QCOMPARE(def.domain().toString(), QStringLiteral("todo"));
     }
 
     void catalogueHasRequiredProperties()
     {
-        const TodoDomainPlugin plugin;
-        const auto cat = plugin.canonicalCatalogue();
+        const TodoDomainDefinition def;
+        const auto cat = def.canonicalCatalogue();
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
         QVERIFY(cat.hasProperty(PropertyId{"summary"}));
         QVERIFY(cat.hasProperty(PropertyId{"due"}));
         QVERIFY(cat.hasProperty(PropertyId{"percentcomplete"}));
     }
 
-    void peerShapesContainsTodoTxt()
-    {
-        const TodoDomainPlugin plugin;
-        const Kalburator::Shape::Shape todotxt{ DomainId{"todo"}, EncodingId{"todotxt"} };
-        QVERIFY(plugin.peerShapes().contains(todotxt));
-    }
-
-    void registerEdgesPopulatesRegistry()
-    {
-        TodoDomainPlugin plugin;
-        auto& reg = TransformationRegistry::instance();
-        plugin.registerEdges(reg);
-
-        const auto canonical = plugin.canonicalShape();
-        QCOMPARE(reg.canonicalFor(DomainId{"todo"}), canonical);
-
-        // Identity edge + ical→todotxt + todotxt→ical = 3 edges from canonical
-        // (only edges FROM canonical; todotxt→canonical is FROM todotxt)
-        const auto edges = reg.edgesFrom(canonical);
-        QVERIFY(edges.size() >= 1);
-    }
-
     void richnessRankCanonical()
     {
-        const TodoDomainPlugin plugin;
-        QCOMPARE(plugin.richnessRank(plugin.canonicalShape()), 10);
+        const TodoDomainDefinition def;
+        QCOMPARE(def.richnessRank(def.canonicalShape()), 10);
     }
 
     void richnessRankTodoTxtLower()
     {
-        const TodoDomainPlugin plugin;
+        const TodoDomainDefinition def;
         const Kalburator::Shape::Shape todotxt{ DomainId{"todo"}, EncodingId{"todotxt"} };
-        QVERIFY(plugin.richnessRank(todotxt) < 10);
+        QVERIFY(def.richnessRank(todotxt) < 10);
+    }
+
+    void stockShapesHasThreeEdges()
+    {
+        const TodoStockShapes shapes;
+        // identity + ical→todotxt + todotxt→ical
+        QCOMPARE(shapes.edges().size(), 3);
+    }
+
+    void stockShapesPeerContainsTodoTxt()
+    {
+        const TodoStockShapes shapes;
+        const Kalburator::Shape::Shape todotxt{ DomainId{"todo"}, EncodingId{"todotxt"} };
+        const auto peers = shapes.peerShapes();
+        QVERIFY(std::any_of(peers.begin(), peers.end(),
+            [&](const auto &p) { return p.first == todotxt; }));
     }
 };
 
