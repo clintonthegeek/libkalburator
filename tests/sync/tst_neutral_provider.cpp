@@ -44,6 +44,8 @@ private slots:
         info.name = QStringLiteral("Solo Collection");
         auto factory = []{ return std::make_unique<StubBackend>(); };
         NeutralProvider provider(QStringLiteral("kind-x"), info, factory);
+        auto future = provider.connect();
+        QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 1000);
         QCOMPARE(provider.kind(), QStringLiteral("kind-x"));
         const auto cols = provider.collections();
         QCOMPARE(cols.size(), 1);
@@ -52,9 +54,18 @@ private slots:
         QVERIFY(backend);
     }
 
+    void createBackendBeforeConnectReturnsNullptr() {
+        NeutralProvider p(QStringLiteral("k"), CollectionInfo{},
+                          [] { return std::make_unique<StubBackend>(); });
+        // Not connected yet
+        QCOMPARE(p.createBackend(QStringLiteral("any")), nullptr);
+    }
+
     void unknownCollectionReturnsNullptr() {
         NeutralProvider p(QStringLiteral("k"), CollectionInfo{},
                           [] { return std::make_unique<StubBackend>(); });
+        auto future = p.connect();
+        QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 1000);
         QCOMPARE(p.createBackend(QStringLiteral("nope")), nullptr);
     }
 };

@@ -53,6 +53,7 @@ void NeutralProvider::disconnect() {
 }
 
 std::unique_ptr<IBlobBackend> NeutralProvider::createBackend(const QString &collectionId) {
+    if (!m_connected) return nullptr;
     if (collectionId != m_info.id) return nullptr;
     return m_factory ? m_factory() : nullptr;
 }
