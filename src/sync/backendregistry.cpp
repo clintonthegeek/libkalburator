@@ -9,38 +9,6 @@ BackendRegistry::BackendRegistry(QObject *parent)
 {
 }
 
-void BackendRegistry::registerBackendType(const QString &typeName, BackendFactory factory)
-{
-    m_factories[typeName] = factory;
-    emit backendTypeRegistered(typeName);
-}
-
-void BackendRegistry::unregisterBackendType(const QString &typeName)
-{
-    m_factories.remove(typeName);
-}
-
-bool BackendRegistry::hasBackendType(const QString &typeName) const
-{
-    return m_factories.contains(typeName);
-}
-
-QStringList BackendRegistry::registeredTypes() const
-{
-    return m_factories.keys();
-}
-
-SyncBackend* BackendRegistry::createBackend(const QString &typeName,
-                                             const QVariantMap &config,
-                                             QObject *parent) const
-{
-    auto it = m_factories.find(typeName);
-    if (it == m_factories.end()) {
-        return nullptr;
-    }
-    return it.value()(config, parent);
-}
-
 void BackendRegistry::registerBackendInstance(const QString &backendId, SyncBackend *backend)
 {
     m_instances[backendId] = backend;
@@ -63,32 +31,6 @@ QStringList BackendRegistry::registeredInstanceIds() const
 {
     return m_instances.keys();
 }
-
-QString BackendRegistry::backendDisplayName(const QString &typeName)
-{
-    static const QMap<QString, QString> displayNames = {
-        {QStringLiteral("local"), QObject::tr("Local ICS Calendar")},
-        {QStringLiteral("orgmode"), QObject::tr("Org Mode Files")},
-        {QStringLiteral("caldav"), QObject::tr("CalDAV Server")},
-        {QStringLiteral("subscription"), QObject::tr("Subscription Calendar (Holidays)")},
-        {QStringLiteral("akonadi"), QObject::tr("Akonadi (KDE PIM)")},
-    };
-
-    return displayNames.value(typeName, typeName);  // Fallback to type name if unknown
-}
-
-QList<BackendRegistry::BackendTypeInfo> BackendRegistry::availableBackendTypes() const
-{
-    QList<BackendTypeInfo> types;
-    for (const QString &typeName : registeredTypes()) {
-        BackendTypeInfo info;
-        info.typeName = typeName;
-        info.displayName = backendDisplayName(typeName);
-        types.append(info);
-    }
-    return types;
-}
-
 
 BackendRegistry& BackendRegistry::instance() {
     static BackendRegistry s_instance;
@@ -120,7 +62,6 @@ void BackendRegistry::unregisterContribution(const QString &typeName) {
 }
 
 void BackendRegistry::clear() {
-    m_factories.clear();
     m_instances.clear();
     m_contributions.clear();
 }
