@@ -227,6 +227,9 @@ int main(int argc, char *argv[])
     }
 
     const QString workdir = parser.value(smokeOpt);
+    // Always start from a clean state so the content-hash skip optimisation
+    // doesn't cause propagation checks to fail on re-runs.
+    QDir(workdir).removeRecursively();
     QDir().mkpath(workdir);
 
     // ── Step 1: Load plugins ─────────────────────────────────────────────────
