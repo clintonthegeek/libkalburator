@@ -562,3 +562,8 @@ if(KALBURATOR_BUILD_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     add_subdirectory(tests)
 endif()
+
+option(KALBURATOR_BUILD_EXAMPLES "Build example consumers (reference_consumer)" ON)
+if(KALBURATOR_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
