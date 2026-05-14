@@ -394,11 +394,15 @@ set(KALBURATOR_PLUGIN_HEADERS
     src/plugin/pluginloaderror.h
     src/plugin/pluginmanager.h
     src/plugin/stock_plugins.h
+    src/plugin/caldavproviderplugin.h
+    src/plugin/carddavproviderplugin.h
 )
 set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/manifest.cpp
     src/plugin/pluginmanager.cpp
     src/plugin/stock_plugins.cpp
+    src/plugin/caldavproviderplugin.cpp
+    src/plugin/carddavproviderplugin.cpp
 )
 
 # Phase H — provider abstraction
