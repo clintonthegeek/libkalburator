@@ -7,6 +7,8 @@
 #include "todoplugin.h"
 #include "contactsplugin.h"
 #include "calendarplugin.h"
+#include "caldavproviderplugin.h"
+#include "carddavproviderplugin.h"
 
 namespace Kalburator {
 
@@ -30,6 +32,8 @@ void registerStockPlugins(PluginManager &pm) {
     static Todo::TodoPlugin s_todo;
     static Contacts::ContactsPlugin s_contacts;
     static Calendar::CalendarPlugin s_calendar;
+    static CalDavProviderPlugin s_caldav;
+    static CardDavProviderPlugin s_carddav;
     QList<QPair<Plugin*, PluginManifest>> items{
         {&s_universal, mkManifest(QStringLiteral("kalburator.universal-storage"))},
         {&s_blob, mkManifest(QStringLiteral("kalburator.blob"), {QStringLiteral("blob")})},
@@ -37,6 +41,8 @@ void registerStockPlugins(PluginManager &pm) {
         {&s_todo, mkManifest(QStringLiteral("kalburator.todo"), {QStringLiteral("todo")})},
         {&s_contacts, mkManifest(QStringLiteral("kalburator.contacts"), {QStringLiteral("contacts")})},
         {&s_calendar, mkManifest(QStringLiteral("kalburator.calendar"), {QStringLiteral("calendar")})},
+        {&s_caldav,   mkManifest(QStringLiteral("kalburator.provider.caldav"))},
+        {&s_carddav,  mkManifest(QStringLiteral("kalburator.provider.carddav"))},
     };
     pm.loadInProcess(items);
 }
