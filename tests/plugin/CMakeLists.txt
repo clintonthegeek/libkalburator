@@ -27,3 +27,7 @@ add_test(NAME tst_pluginmanager_smoke COMMAND tst_pluginmanager_smoke)
 add_executable(tst_stock_plugins tst_stock_plugins.cpp)
 target_link_libraries(tst_stock_plugins PRIVATE kalburator Qt6::Test)
 add_test(NAME tst_stock_plugins COMMAND tst_stock_plugins)
+
+add_executable(tst_provider_plugin_registration tst_provider_plugin_registration.cpp)
+target_link_libraries(tst_provider_plugin_registration PRIVATE kalburator Qt6::Test)
+add_test(NAME tst_provider_plugin_registration COMMAND tst_provider_plugin_registration)

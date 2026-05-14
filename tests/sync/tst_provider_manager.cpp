@@ -17,6 +17,8 @@
 #include "backendconfiguration.h"
 #include "collectioninfo.h"
 #include "shape.h"
+#include "caldavbackendcontribution.h"
+#include "carddavbackendcontribution.h"
 
 using namespace Kalburator::Sync;
 
@@ -480,9 +482,10 @@ void TstProviderManager::default_factory_creates_caldav_provider()
     providers.sync();
 
     BackendRegistry reg;
+    reg.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager mgr(&reg);
 
-    // Default factory should handle caldav (no custom factory set)
+    // Default factory should handle caldav (plugin registers to local registry)
     mgr.loadFromProfile(providers);
     QCOMPARE(mgr.providers().size(), 1);
     QCOMPARE(mgr.providers().first()->kind(), QStringLiteral("caldav"));
@@ -502,9 +505,10 @@ void TstProviderManager::default_factory_creates_carddav_provider()
     providers.sync();
 
     BackendRegistry reg;
+    reg.registerContribution(std::make_shared<CardDavBackendContribution>());
     ProviderManager mgr(&reg);
 
-    // Phase Ib: Default factory should now handle carddav (no custom factory set)
+    // Phase Ib: Default factory should now handle carddav (plugin registers to local registry)
     mgr.loadFromProfile(providers);
     QCOMPARE(mgr.providers().size(), 1);
     QCOMPARE(mgr.providers().first()->kind(), QStringLiteral("carddav"));

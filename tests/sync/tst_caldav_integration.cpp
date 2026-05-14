@@ -35,6 +35,7 @@
 
 #include "backendconfiguration.h"
 #include "backendregistry.h"
+#include "caldavbackendcontribution.h"
 #include "caldavprovider.h"
 #include "collectioninfo.h"
 #include "iprovider.h"
@@ -112,6 +113,7 @@ void TstCalDavIntegration::load_from_kconfig_constructs_caldav_provider()
     cfg.sync();
 
     BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager manager(&registry);
     manager.loadFromProfile(providers);
 
@@ -153,6 +155,7 @@ void TstCalDavIntegration::connectAll_registers_provider_backends()
     cfg.sync();
 
     BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager manager(&registry);
     manager.loadFromProfile(providers);
     QCOMPARE(manager.providers().size(), 1);
@@ -200,6 +203,7 @@ void TstCalDavIntegration::registered_backend_is_a_remote_backend()
     cfg.sync();
 
     BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager manager(&registry);
     manager.loadFromProfile(providers);
     QVERIFY(waitForFutureVoid(manager.connectAll()));
@@ -246,6 +250,7 @@ void TstCalDavIntegration::disconnectAll_unregisters_backends()
     cfg.sync();
 
     BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager manager(&registry);
     manager.loadFromProfile(providers);
     QVERIFY(waitForFutureVoid(manager.connectAll()));
@@ -313,6 +318,7 @@ void TstCalDavIntegration::save_then_load_round_trip()
         KConfigGroup providers(&cfg, QStringLiteral("Providers"));
 
         BackendRegistry registry;
+        registry.registerContribution(std::make_shared<CalDavBackendContribution>());
         ProviderManager manager(&registry);
         manager.loadFromProfile(providers);
 

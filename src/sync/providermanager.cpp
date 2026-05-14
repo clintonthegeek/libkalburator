@@ -6,10 +6,6 @@
 #include "backendcontribution.h"
 #include "syncbackend.h"
 #include "backendconfiguration.h"
-#include "caldavprovider.h"
-#include "carddavprovider.h"   // Phase Ib
-#include "caldavbackendcontribution.h"
-#include "carddavbackendcontribution.h"
 
 #include <KConfigGroup>
 
@@ -27,18 +23,6 @@ ProviderManager::ProviderManager(BackendRegistry *registry, QObject *parent)
     , m_registry(registry)
 {
     Q_ASSERT(m_registry);
-
-    // Register built-in contributions for caldav and carddav if not already
-    // present. A plugin or test can pre-register its own contribution for
-    // these kinds before constructing ProviderManager to override these.
-    if (!m_registry->contributionFor(QStringLiteral("caldav"))) {
-        m_registry->registerContribution(
-            std::make_shared<CalDavBackendContribution>());
-    }
-    if (!m_registry->contributionFor(QStringLiteral("carddav"))) {
-        m_registry->registerContribution(
-            std::make_shared<CardDavBackendContribution>());
-    }
 }
 
 ProviderManager::~ProviderManager()
