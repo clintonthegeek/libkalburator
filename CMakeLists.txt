@@ -405,6 +405,8 @@ set(KALBURATOR_PLUGIN_SOURCES
 # Phase Ib — CardDAV transport (carddavcapabilitydiscovery)
 set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/backendcontribution.h
+    src/sync/caldavbackendcontribution.h
+    src/sync/carddavbackendcontribution.h
     src/sync/iprovider.h
     src/sync/providermanager.h
     src/sync/caldavprovider.h

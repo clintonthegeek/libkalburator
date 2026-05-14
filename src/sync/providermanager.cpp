@@ -8,6 +8,8 @@
 #include "backendconfiguration.h"
 #include "caldavprovider.h"
 #include "carddavprovider.h"   // Phase Ib
+#include "caldavbackendcontribution.h"
+#include "carddavbackendcontribution.h"
 
 #include <KConfigGroup>
 
@@ -17,33 +19,6 @@
 
 #include <algorithm>
 
-namespace {
-
-// Built-in contributions for the two production provider kinds.
-// Registered into the BackendRegistry by ProviderManager's constructor
-// when no contribution for those kinds already exists.
-
-class CalDavBackendContribution : public Kalburator::Sync::BackendContribution {
-public:
-    QString backendType() const override { return QStringLiteral("caldav"); }
-    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
-    std::unique_ptr<Kalburator::Sync::IProvider>
-    createProvider(QObject *parent) const override {
-        return std::make_unique<Kalburator::Sync::CalDavProvider>(parent);
-    }
-};
-
-class CardDavBackendContribution : public Kalburator::Sync::BackendContribution {
-public:
-    QString backendType() const override { return QStringLiteral("carddav"); }
-    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
-    std::unique_ptr<Kalburator::Sync::IProvider>
-    createProvider(QObject *parent) const override {
-        return std::make_unique<Kalburator::Sync::CardDavProvider>(parent);
-    }
-};
-
-} // anon namespace
 
 namespace Kalburator::Sync {
 
