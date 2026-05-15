@@ -1,8 +1,9 @@
 # Phase K — Engine generalization & semantic cleansing (Status)
 
-**Status:** ⏳ **IN PROGRESS** — K.8a landed 2026-05-14; K.8b plan pending  
-**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a  
-**Closing tag:** `v0.40-phase-k-engine-generalized` (pending K.8b)
+**Status:** ✅ **K.8b landed 2026-05-15** — Tag `v0.36-phase-k8-wildpalms-rewrite`.
+Next: Phase K closing — `v0.40-phase-k-engine-generalized` tag (pending K.9+).
+**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a, K.8b  
+**Closing tag:** `v0.40-phase-k-engine-generalized` (pending K.9+)
 
 ## What exists now
 
@@ -44,19 +45,24 @@
 - ✅ Directory moves complete (`journal/` → `storage/`, `sinks/` → `universal/`)
 - ✅ `verify-all.sh` green: libkalburator 73/80 pass (known parallel flakes), PlanStan 82/106, WildPalms 81/81
 
-## Test posture (2026-05-14, post-K.8a)
+## Test posture (2026-05-15, post-K.8b)
 
 - libkalburator: **91/91** pass (100%). K.8a added 2 tests.
 - PlanStan: **82/106** pass (24 pre-existing env failures, unchanged).
-- WildPalms: **81/81** pass.
+- WildPalms: **71/71** pass (80→71 delta: 9 native-engine tests deleted by K.8b).
 
 ## Next
 
-⬜ **Phase K.8b** (code) — WildPalms migration to ideal architecture per audit
-   10-finding deletion list. Plan not yet written. Largest single refactor.
-   Gate: `verify-all.sh` green. Tag: `v0.36-phase-k8-wildpalms-rewrite`.
+✅ **Phase K.8b** (code) — Full WildPalms rewrite per audit deletion list.
+   Landed 2026-05-15. Tag `v0.36-phase-k8-wildpalms-rewrite`.
+   Native Sync::SyncEngine, LocalFileBackend, IConduit/IBackendPlugin V1+V2,
+   BackendPluginManager, ConduitManager, BlobBackendAdapter, CalendarCollection_WP,
+   native InteractiveConflictHandler, .wildpalms.providers sidecar — all deleted.
+   Mid-sync cancel restored. Memory-corruption guard removed at root cause.
+   5 Palm plugins migrated to Kalburator::Plugin + STATIC libs. Profile gains
+   accounts subgroup + one-shot sidecar migration. Audit Findings 1–10 closed.
 
-Closing tag `v0.40-phase-k-engine-generalized` after K.8 lands clean and `verify-all.sh` is green.
+Closing tag `v0.40-phase-k-engine-generalized` after K.9+ lands clean and `verify-all.sh` is green.
 
 ## Key commits
 
