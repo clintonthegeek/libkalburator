@@ -2,6 +2,7 @@
 
 #include <QByteArray>
 #include <QCryptographicHash>
+#include <QDomDocument>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -412,8 +413,17 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
         const QString uid = uidFromPath(href);
         if (uid.isEmpty()) continue;
 
+        // Real CalDAV servers always use path-only (absolute path) hrefs in
+        // multistatus responses, never full URLs with scheme+host. KDAV's
+        // DavItemsFetchJob checks that the response href matches the requested
+        // href by resolving both relative to the base URL — if we echo back a
+        // full URL the comparison fails and the item is silently dropped.
+        // Normalize to path-only here regardless of what the client sent.
+        const QUrl hrefUrl(href);
+        const QString responsePath = hrefUrl.isRelative() ? href : hrefUrl.path();
+
         xml += QStringLiteral("  <d:response>\n");
-        xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
+        xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(responsePath);
         xml += QStringLiteral("    <d:propstat>\n");
         xml += QStringLiteral("      <d:prop>\n");
 
@@ -482,26 +492,24 @@ QString FakeCalDavServer::makeEtag(const QByteArray &data)
 // static
 QList<QString> FakeCalDavServer::parseHrefsFromBody(const QByteArray &body)
 {
+    // Use QDomDocument for robust namespace-aware parsing.
+    // KDAV sends the multiget REPORT body with default-namespace declarations like
+    //   <href xmlns="DAV:">...</href>
+    // rather than prefixed declarations like <D:href>. A raw-text search for
+    // ":href>" misses those. QDomDocument with UseNamespaceProcessing resolves
+    // both forms correctly.
+    QDomDocument doc;
+    doc.setContent(body, QDomDocument::ParseOption::UseNamespaceProcessing);
+    const QDomElement root = doc.documentElement();
+
     QList<QString> hrefs;
-    // Simple text scan for <D:href>...</D:href> or <d:href>...</d:href>.
-    // KDAV emits namespaced hrefs; we match any variant of the tag name.
-    QByteArray lower = body.toLower();
-    int pos = 0;
-    while (pos < body.size()) {
-        // Find opening href tag (any namespace prefix)
-        int tagStart = lower.indexOf(":href>", pos);
-        if (tagStart < 0) break;
-        const int valueStart = tagStart + 6; // length of ":href>"
-
-        int closeTag = lower.indexOf("</", valueStart);
-        if (closeTag < 0) break;
-
-        const QByteArray hrefBytes = body.mid(valueStart, closeTag - valueStart).trimmed();
-        const QString href = QString::fromUtf8(hrefBytes);
+    QDomNodeList hrefElements = root.elementsByTagNameNS(
+        QStringLiteral("DAV:"), QStringLiteral("href"));
+    for (int i = 0; i < hrefElements.size(); ++i) {
+        const QString href = hrefElements.at(i).toElement().text().trimmed();
         if (!href.isEmpty()) {
             hrefs.append(href);
         }
-        pos = closeTag + 2;
     }
     return hrefs;
 }

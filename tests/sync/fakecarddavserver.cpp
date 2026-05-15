@@ -101,6 +101,25 @@ void FakeCardDavServer::setSeedRecords(const QString &collectionId,
     }
 }
 
+bool FakeCardDavServer::hasContact(const QString &collectionId,
+                                   const QString &uid) const
+{
+    auto it = m_store.constFind(collectionId);
+    if (it == m_store.constEnd()) return false;
+    return it->contains(uid);
+}
+
+QList<QByteArray> FakeCardDavServer::storedRecords(const QString &collectionId) const
+{
+    QList<QByteArray> result;
+    auto it = m_store.constFind(collectionId);
+    if (it == m_store.constEnd()) return result;
+    for (auto recIt = it->constBegin(); recIt != it->constEnd(); ++recIt) {
+        result.append(recIt.value().data);
+    }
+    return result;
+}
+
 void FakeCardDavServer::incomingConnection(qintptr socketDescriptor)
 {
     auto *socket = new QTcpSocket(this);

@@ -1885,10 +1885,16 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
                 KCalendarCore::ICalFormat format;
 
-                // Build a map of fetched items for quick lookup
+                // Build a map of fetched items for quick lookup.
+                // Use normalizeUrlKey (strips credentials) so the map key matches
+                // regardless of whether the multiget response URL includes user-info
+                // or not. Discovery URLs carry credentials (http://user@host/...);
+                // multiget response URLs typically don't (http://host/...) — using
+                // a raw toDisplayString() key here caused a systematic lookup miss
+                // (FINDINGS 2026-05-09 "FakeCalDavServer multiget REPORT").
                 QMap<QString, KDAV::DavItem> fetchedItemsMap;
                 for (const auto &davItem : fetchJob->items()) {
-                    fetchedItemsMap[davItem.url().toDisplayString()] = davItem;
+                    fetchedItemsMap[normalizeUrlKey(davItem.url().url().toString())] = davItem;
                 }
 
                 int currentItem = 0;
@@ -1904,9 +1910,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         return;
                     }
 
-                    // URL with credentials for fetchedItemsMap lookup
-                    QString urlDisplay = item.url().toDisplayString();
-                    // URL without credentials for cache/EtagCache - use normalizeUrlKey for consistency
+                    // URL without credentials for both fetchedItemsMap lookup and cache
                     QString urlKey = normalizeUrlKey(item.url().url().toString());
 
                     QString etag = serverEtags.value(urlKey);
@@ -1914,8 +1918,8 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     bool fromNetwork = false;
 
                     // Check if this item was fetched from network
-                    if (fetchedItemsMap.contains(urlDisplay)) {
-                        const KDAV::DavItem &davItem = fetchedItemsMap[urlDisplay];
+                    if (fetchedItemsMap.contains(urlKey)) {
+                        const KDAV::DavItem &davItem = fetchedItemsMap[urlKey];
                         icalData = QString::fromUtf8(davItem.data());
                         etag = davItem.etag();
                         fromNetwork = true;

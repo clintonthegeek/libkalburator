@@ -74,6 +74,13 @@ public:
     /// Returns false if the record is not found.
     bool bumpEtag(const QString &collectionId, const QString &uid);
 
+    /// Returns true if the given addressbook collectionId contains a record
+    /// with the given uid. Used by E2E tests to assert palm→server propagation.
+    bool hasContact(const QString &collectionId, const QString &uid) const;
+
+    /// Returns all stored raw vCard blobs for the given addressbook.
+    QList<QByteArray> storedRecords(const QString &collectionId) const;
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
