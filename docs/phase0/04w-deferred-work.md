@@ -34,7 +34,7 @@ your memory; don't trust the coordination folder.
   - [B.5 Combined multi-protocol provider (Nextcloud-style)](#b5-combined-multi-protocol-provider-nextcloud-style)
   - [B.6 vCard version negotiation hardening](#b6-vcard-version-negotiation-hardening)
 - [C. Backends (Phase J or beyond)](#c-backends-phase-j-or-beyond)
-  - [C.1 Akonadi backend](#c1-akonadi-backend)
+  - [C.1 Akonadi provider (backend exists; provider + contacts + plugin-ization pending — Phase L)](#c1-akonadi-provider-backend-exists-provider--contacts--plugin-ization-pending--phase-l)
   - [C.2 IMAP/JMAP transport](#c2-imapjmap-transport)
 - [D. Consumer UX (Phase Ic)](#d-consumer-ux-phase-ic)
   - [D.1 PlanStan: CardDAV add-account UI](#d1-planstan-carddav-add-account-ui)
@@ -340,30 +340,117 @@ them in.
 
 ## C. Backends (Phase J or beyond)
 
-### C.1 Akonadi backend
+### C.1 Akonadi provider (backend exists; provider + contacts + plugin-ization pending — Phase L)
 
-**Status:** ⬜ deferred since Phase D.
-**Target phase:** Phase J or beyond.
-**Source:** `ROADMAP.md` ("Akonadi/CardDAV deferred"); now CardDAV
-ships in Phase Ib but Akonadi remains.
+**Status:** ⬜ partially landed; Phase L proposed for completion (planned 2026-05-15).
+**Target phase:** Phase L.
+**Source:** `ROADMAP.md` ("Akonadi/CardDAV deferred"); CardDAV
+shipped in Phase Ib. Akonadi calendar backend was actually
+already in tree at the start of the refactor — see below.
 
 KDE PIM's Akonadi service exposes calendars and addressbooks as
-local resources. A native `AkonadiCalendarBackend` /
-`AkonadiContactsBackend` would let libkalburator participate in
-the KDE PIM ecosystem.
+local resources. Letting libkalburator participate in the KDE PIM
+ecosystem requires both per-collection backends *and* an
+`IProvider` that models the local Akonadi service as an account.
 
-**Why deferred:** Akonadi has a heavy runtime dependency; gating
-the library build on Akonadi presence is undesirable. Should be
-optional via `KALBURATOR_HAVE_AKONADI=ON` (which already exists in
-the CMake config but is unused).
+**What's already there (audit, 2026-05-15):**
 
-**Acceptance:**
-- `AkonadiCalendarBackend` + `AkonadiContactsBackend` behind the
-  build flag.
-- `IProvider` `AkonadiProvider` that enumerates the local
-  resources.
-- Tests against a fake Akonadi resource (or skipped if Akonadi
-  isn't available at build time).
+- `src/calendar/akonadibackend.{h,cpp}` — full calendar
+  `SyncBackend` (1100 LOC, "The Embassy" design, originated in
+  PlanStan Feb 2026 as commit `5964252d`, migrated into
+  libkalburator during the Step-6 library extraction). Uses
+  `Akonadi::Session` + `Akonadi::Monitor` with `ignoreSession()`
+  to avoid feedback loops. Calendar id scheme
+  `"akonadi-<collectionId>"`.
+- `tests/calendar/tst_akonadibackend_blob_view.cpp` — 67-line
+  smoke test (identity, `isAvailable()==false` when no session,
+  empty `availableCollections()`).
+- `CMakeLists.txt:34` — `KALBURATOR_HAVE_AKONADI` cache var
+  (default OFF). `:479-481` filter the source out when OFF.
+  `:525-528` find `KPim6Akonadi` and define `HAVE_AKONADI` when
+  ON. So the build flag is wired; what 04w originally claimed
+  ("unused") is no longer accurate.
+
+**What's actually missing:**
+
+1. **`AkonadiProvider`** (`IProvider` impl). The big new piece:
+   discovers Akonadi agent resources via `Akonadi::AgentManager`,
+   enumerates calendar + addressbook collections via
+   `CollectionFetchJob`, hands out backends. Modeled flat —
+   one `AkonadiProvider` instance = "the local Akonadi service,"
+   not per-resource (since the user already configures Akonadi
+   resources via `kcm5_akonadi`).
+2. **`AkonadiContactsBackend`.** The existing backend is
+   calendar-only. Needs the same Monitor/Session pattern but for
+   contacts collections (`KContacts::Addressee` payload, or
+   `Akonadi::ContactGroup`).
+3. **Plugin packaging.** K.7 + K.8a moved provider/backend wiring
+   onto `Kalburator::Plugin` + `BackendContribution`. Today the
+   existing `AkonadiBackend` is still compile-gated inside the
+   core `kalburator` target, not a contribution. To fit current
+   architecture, an `AkonadiProviderPlugin` should be the
+   single registration surface (built/registered only when
+   `KALBURATOR_HAVE_AKONADI=ON`).
+4. **Engine gap — `BackendConfiguration::enabled` is unread.**
+   `synctypes.h:233` (`SyncMapping::enabled`) is honored by the
+   engine; `backendconfiguration.h:96`
+   (`BackendConfiguration::enabled`) is not. Plumbing this in is
+   prerequisite for the "duplicate-collection fallback" UX
+   pattern described below.
+5. **Consumer wiring.** WildPalms' `AddAccountDialog` is
+   provider-generic post-K.8b — registering the contribution is
+   enough to surface "Akonadi" in the combo. Still need: a
+   minimal `AkonadiConfigWidget` (Akonadi has no server URL or
+   credentials — local DBus — so displayName + maybe a "show
+   hidden Akonadi resources" toggle is the whole config surface),
+   a per-provider `enabled` checkbox in `AccountsPage`, and a
+   per-mapping `enabled` checkbox in the mapping editor.
+   PlanStan has no add-account UI yet (it relies on raw config
+   editing) — Phase L scope deliberately excludes a PlanStan UX
+   build-out.
+
+**Fallback / failover (design decision, 2026-05-15):** Akonadi is
+notorious for occasional breakage that locks the user out of
+their data. We considered a `FallbackBackend` composition wrapper
+or engine-level hotswap policy and **rejected both as
+over-abstraction** — the whole concern collapses to "let the user
+enable/disable providers and mappings." The schema already
+supports this (`BackendConfiguration::enabled`,
+`SyncMapping::enabled`); the engine already honors mapping
+disable; what's missing is the provider-disable engine check + UX
+checkboxes. The fallback *pattern* is then: create a
+`CalDavProvider` mapping for the same upstream as an Akonadi
+calendar mapping, leave one disabled, flip them when Akonadi
+breaks. Per-calendar granularity follows naturally because the
+user creates separate mappings per calendar; no special "fallback
+edge" is encoded in the data model. Reads-only fallback (i.e.,
+disable Akonadi-mapping for reads but not writes) is *not*
+modeled — users who need writes during an Akonadi outage just
+flip both at once.
+
+**Acceptance (Phase L):**
+
+- `AkonadiBackendContribution` + `AkonadiProviderPlugin` registered
+  via `stock_plugins.cpp` when `KALBURATOR_HAVE_AKONADI=ON`.
+- `AkonadiProvider` enumerates calendar + addressbook collections;
+  `createBackend()` routes by mime type.
+- `AkonadiContactsBackend` lands with parity to existing calendar
+  backend (Monitor + Session, push/fetch/delete operations).
+- Engine consults `BackendConfiguration::enabled` during dispatch
+  and skips disabled providers' mappings entirely.
+- WildPalms `AccountsPage` exposes per-provider enable checkbox;
+  `MappingEditorDialog` (or `MappingRowDialog`) exposes per-
+  mapping enable checkbox.
+- Tests: env-gated against a live Akonadi (skipped otherwise)
+  *plus* a non-gated unit test for the engine's
+  provider-disable check (mock the BackendConfiguration, verify
+  dispatch skips). Existing `tst_akonadibackend_blob_view.cpp`
+  retained.
+- Phase L tag: `v0.41-phase-l-akonadi-provider` on
+  libkalburator's `refactor/engine-merger`.
+
+**Plan:** see
+`/home/clinton/dev/refactor-engine-merger/2026-05-15-phase-l-akonadi-plan.md`.
 
 ---
 
