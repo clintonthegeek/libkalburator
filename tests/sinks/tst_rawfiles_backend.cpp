@@ -8,10 +8,14 @@
 #include "rawfilesbackend.h"
 #include "collectioninfo.h"
 #include "backendrecord.h"
+#include "shape.h"
 
 using Kalburator::Sinks::RawFilesBackend;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
 
 namespace {
 
@@ -24,6 +28,11 @@ CollectionInfo makeCollection(const QString &id, const QString &name,
     ci.type = type;
     return ci;
 }
+
+// K.9 requires every collection in a universal sink to declare a shape.
+// These unit tests exercise storage semantics only — the engine isn't
+// involved — so a single synthetic test shape suffices.
+const Shape kTestShape{ DomainId{"test"}, EncodingId{"raw"} };
 
 BackendRecord makeRecord(const QString &id, const QByteArray &data)
 {
@@ -67,8 +76,9 @@ void TestRawFilesBackend::createCollection_createsDir()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     QVERIFY(b.isAvailable());
-    const QString id = b.createCollection(makeCollection(
-        QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+    const QString id = b.createCollection(
+        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+        kTestShape);
     QCOMPARE(id, QStringLiteral("memo+plaintext"));
 }
 
@@ -77,9 +87,13 @@ void TestRawFilesBackend::availableCollections_reflectsCreated()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
-    b.createCollection(makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
-    b.createCollection(makeCollection(QStringLiteral("contacts+vcard"),
-                                      QStringLiteral("Contacts"), QStringLiteral("contacts")));
+    b.createCollection(
+        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+        kTestShape);
+    b.createCollection(
+        makeCollection(QStringLiteral("contacts+vcard"),
+                       QStringLiteral("Contacts"), QStringLiteral("contacts")),
+        kTestShape);
     const auto cols = b.availableCollections();
     QCOMPARE(cols.size(), 2);
     QStringList ids;
@@ -94,7 +108,7 @@ void TestRawFilesBackend::createAndLoadRecord_roundTrip()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QByteArray data = QByteArrayLiteral("hello world");
     const QString id = b.createRecord(colId, makeRecord(QStringLiteral("r1"), data));
@@ -111,7 +125,7 @@ void TestRawFilesBackend::updateRecord_overwritesData()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QString id = b.createRecord(colId,
         makeRecord(QStringLiteral("r1"), QByteArrayLiteral("original")));
@@ -135,7 +149,7 @@ void TestRawFilesBackend::deleteRecord_removesFile()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QString id = b.createRecord(colId,
         makeRecord(QStringLiteral("r1"), QByteArrayLiteral("data")));
@@ -152,7 +166,7 @@ void TestRawFilesBackend::loadRecords_returnsAllForCollection()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("one")));
     b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("two")));
@@ -168,7 +182,7 @@ void TestRawFilesBackend::clearCollection_deletesAllRecords()
     QVERIFY(tmp.isValid());
     RawFilesBackend b(tmp.path());
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("a")));
     b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("b")));
@@ -185,8 +199,10 @@ void TestRawFilesBackend::multipleCollections_noInterference()
 
     const QString memoCol = QStringLiteral("memo+plaintext");
     const QString todoCol = QStringLiteral("todo+ical");
-    b.createCollection(makeCollection(memoCol, QStringLiteral("Memos")));
-    b.createCollection(makeCollection(todoCol, QStringLiteral("Todos"), QStringLiteral("todos")));
+    b.createCollection(makeCollection(memoCol, QStringLiteral("Memos")), kTestShape);
+    b.createCollection(
+        makeCollection(todoCol, QStringLiteral("Todos"), QStringLiteral("todos")),
+        kTestShape);
 
     b.createRecord(memoCol, makeRecord(QStringLiteral("m1"), QByteArrayLiteral("memo")));
     b.createRecord(todoCol, makeRecord(QStringLiteral("t1"), QByteArrayLiteral("todo")));
@@ -205,8 +221,9 @@ void TestRawFilesBackend::manifestPersists_acrossInstances()
     QVERIFY(tmp.isValid());
     {
         RawFilesBackend b(tmp.path());
-        b.createCollection(makeCollection(
-            QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+        b.createCollection(
+            makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+            kTestShape);
         b.createRecord(QStringLiteral("memo+plaintext"),
                        makeRecord(QStringLiteral("r1"), QByteArrayLiteral("persisted")));
     }

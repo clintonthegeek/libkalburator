@@ -39,7 +39,8 @@ CollectionInfo RawFilesBackend::collectionInfo(const QString &collectionId)
     return m_collections.value(collectionId);
 }
 
-QString RawFilesBackend::createCollection(const CollectionInfo &info)
+QString RawFilesBackend::createCollection(const CollectionInfo &info,
+                                          const Kalburator::Shape::Shape &shape)
 {
     QDir dir(m_rootPath);
     if (!dir.exists() && !dir.mkpath(QLatin1String(".")))
@@ -48,7 +49,24 @@ QString RawFilesBackend::createCollection(const CollectionInfo &info)
         m_collections[info.id] = info;
         saveManifest();
     }
+    m_shapeByCollection.insert(info.id, shape);
     return info.id;
+}
+
+QList<Kalburator::Shape::Shape> RawFilesBackend::nativeShapes() const
+{
+    QList<Kalburator::Shape::Shape> out;
+    for (auto it = m_shapeByCollection.constBegin();
+         it != m_shapeByCollection.constEnd(); ++it) {
+        if (!out.contains(it.value()))
+            out.append(it.value());
+    }
+    return out;
+}
+
+Kalburator::Shape::Shape RawFilesBackend::shapeFor(const QString &collectionId) const
+{
+    return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());
 }
 
 void RawFilesBackend::deleteCollection(const QString &collectionId)

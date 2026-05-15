@@ -9,19 +9,18 @@
 
 namespace Kalburator::Sinks {
 
-/// Universal SQLite-backed sink. Accepts any shape; on first push of a
-/// new shape creates a table <domain>_<encoding> with:
+/// Universal SQLite-backed sink. Each collection declares its native
+/// shape at createCollection() time. On first push of a new shape the
+/// backend creates a table <domain>_<encoding> with:
 ///   record_id TEXT PRIMARY KEY
 ///   data BLOB NOT NULL
 ///   content_hash TEXT NOT NULL
 ///   last_modified TEXT NOT NULL
-/// A _shapes table tracks which shapes have been seen.
-/// PropertyCatalogue-derived columns are a G.10 enhancement.
 ///
-/// Phase K.4: still inherits `SyncBackend` (for BackendRegistry
-/// interoperability), but no longer overrides any of the
-/// calendar-typed virtuals. Those are now non-pure on SyncBackend
-/// with empty default implementations.
+/// Phase K.9: same per-collection shape contract as RawFilesBackend.
+/// Universal sinks no longer declare Shape::Any(); each collection
+/// commits to a shape at creation time so SyncEngine::dispatchSync
+/// can resolve cross-domain mappings correctly.
 class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {
     Q_OBJECT
 public:
@@ -29,8 +28,13 @@ public:
     ~GenericSqliteBackend() override;
 
     QString backendType() const override { return QStringLiteral("generic-sqlite"); }
-    QList<Kalburator::Shape::Shape> nativeShapes() const override
-        { return { Kalburator::Shape::Shape::Any() }; }
+
+    /// Dedup'd union of the shapes declared across all collections.
+    QList<Kalburator::Shape::Shape> nativeShapes() const override;
+
+    /// Per-collection shape lookup. Engine uses this in dispatchSync.
+    Kalburator::Shape::Shape shapeFor(const QString &collectionId) const override;
+
     QString resourceId() const override
         { return QStringLiteral("generic-sqlite:") + m_dbPath; }
 
@@ -40,7 +44,11 @@ public:
 
     QList<Kalburator::Sync::CollectionInfo> availableCollections() override;
     Kalburator::Sync::CollectionInfo collectionInfo(const QString &collectionId) override;
-    QString createCollection(const Kalburator::Sync::CollectionInfo &info) override;
+
+    /// K.9: shape-aware createCollection. Callers MUST use this.
+    QString createCollection(const Kalburator::Sync::CollectionInfo &info,
+                             const Kalburator::Shape::Shape &shape);
+
     void deleteCollection(const QString &collectionId);
     void clearCollection(const QString &collectionId);
 
@@ -65,6 +73,7 @@ private:
     QString m_dbPath;
     QString m_connectionName;
     QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;
+    QHash<QString, Kalburator::Shape::Shape> m_shapeByCollection;
     bool m_open = false;
 };
 

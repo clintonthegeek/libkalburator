@@ -41,6 +41,17 @@ kalburator_add_engine_test(tst_property_phase)
 # transformation at the edge, and LossProfile delivery to the host.
 kalburator_add_engine_test(tst_engine_unified_routing)
 
+# Phase K.9 — typed-source -> universal-sink (RawFilesBackend) dispatch
+# regression test. Today (pre-K.9): red, because dispatchSync rejects the
+# cross-domain mismatch between the source's typed shape and the
+# RawFilesBackend's Shape::Any(). Green once shape becomes a per-
+# collection property.
+kalburator_add_engine_test(tst_engine_universal_sink_dispatch)
+target_link_libraries(tst_engine_universal_sink_dispatch
+    PRIVATE
+        KF6::CalendarCore
+)
+
 # Phase Ib Task 9 — CardDAV engine integration test.
 # FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
 # → SyncEngine::runSyncFuture → ShapedTestBackend (peer, vcard4).

@@ -1,9 +1,12 @@
 # Phase K — Engine generalization & semantic cleansing (Status)
 
-**Status:** ✅ **K.8b landed 2026-05-15** — Tag `v0.36-phase-k8-wildpalms-rewrite`.
-Next: Phase K closing — `v0.40-phase-k-engine-generalized` tag (pending K.9+).
-**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a, K.8b  
-**Closing tag:** `v0.40-phase-k-engine-generalized` (pending K.9+)
+**Status:** ✅ **K.9 landed 2026-05-15** — universal-sink shape contract fix
+(`SyncBackend::shapeFor` wired into `dispatchSync`; per-collection shape on
+`RawFilesBackend` / `GenericSqliteBackend`; `Shape::Any` no longer a
+backend-declarable shape). Closing tag `v0.40-phase-k-engine-generalized`
+drops after verify-all + manual HotSync regression test.
+**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a, K.8b, K.9
+**Closing tag:** `v0.40-phase-k-engine-generalized` (pending tag drop)
 
 ## What exists now
 
@@ -45,24 +48,41 @@ Next: Phase K closing — `v0.40-phase-k-engine-generalized` tag (pending K.9+).
 - ✅ Directory moves complete (`journal/` → `storage/`, `sinks/` → `universal/`)
 - ✅ `verify-all.sh` green: libkalburator 73/80 pass (known parallel flakes), PlanStan 82/106, WildPalms 81/81
 
-## Test posture (2026-05-15, post-K.8b)
+## Test posture (2026-05-15, post-K.9)
 
-- libkalburator: **91/91** pass (100%). K.8a added 2 tests.
-- PlanStan: **82/106** pass (24 pre-existing env failures, unchanged).
-- WildPalms: **71/71** pass (80→71 delta: 9 native-engine tests deleted by K.8b).
+- libkalburator: **92/92** pass (100%). K.9 added `tst_engine_universal_sink_dispatch`.
+- PlanStan: **82/105** pass (env-gated tests Not-Run; `tst_inboxmanager` pre-existing fail).
+- WildPalms: **71/71** pass.
 
 ## Next
 
-✅ **Phase K.8b** (code) — Full WildPalms rewrite per audit deletion list.
-   Landed 2026-05-15. Tag `v0.36-phase-k8-wildpalms-rewrite`.
-   Native Sync::SyncEngine, LocalFileBackend, IConduit/IBackendPlugin V1+V2,
-   BackendPluginManager, ConduitManager, BlobBackendAdapter, CalendarCollection_WP,
-   native InteractiveConflictHandler, .wildpalms.providers sidecar — all deleted.
-   Mid-sync cancel restored. Memory-corruption guard removed at root cause.
-   5 Palm plugins migrated to Kalburator::Plugin + STATIC libs. Profile gains
-   accounts subgroup + one-shot sidecar migration. Audit Findings 1–10 closed.
+✅ **Phase K.9** — universal-sink shape contract fix. Landed 2026-05-15.
+   Discovered when the first real HotSync against a Palm device after K.8b
+   failed with "cross-domain mappings not supported (src=calendar tgt=__any__)".
+   Root cause: `SyncEngine::dispatchSync` resolved shape via
+   `nativeShapes().first()` and rejected mismatched domains, but
+   `RawFilesBackend` declared `Shape::Any()`, so every typed-source → universal-sink
+   mapping bailed. K.8b's test suite never exercised a typed-source → universal-sink
+   sync end-to-end, so the regression slipped through.
+   Fix: shape moved from per-backend to per-collection.
+   - `SyncBackend::shapeFor(collectionId)` (declared in K.4, previously unused)
+     is now consulted by `dispatchSync` and `unifiedContinueAfterConflicts`.
+   - `RawFilesBackend::createCollection` and `GenericSqliteBackend::createCollection`
+     now take a required `Shape` arg and store it in a per-collection map.
+   - `nativeShapes()` on universal sinks returns the dedup'd union of collection
+     shapes; pre-K.9 it returned `{ Shape::Any() }` which was an attractive nuisance.
+   - `Shape::Any` survives as a library primitive (TransformationRegistry sentinel,
+     Pipeline default) but is no longer a *backend-declarable* shape.
+   - `PalmRuntime::finishConnect` passes the source backend's
+     `shapeFor(palmCol.id)` through to the RawFiles mirror's createCollection.
+   - Side-fix: `PalmRuntime::runAllMappings().then()` and `runMirror.then()`
+     propagate `SyncResult::errorMessage` to `PalmRunResult::errorMessage`
+     so the UI shows the real engine error instead of an empty string.
+   - New gate: `libkalburator/tests/engine/tst_engine_universal_sink_dispatch.cpp`
+     pins typed-source → RawFiles round-trip through the unified engine.
 
-Closing tag `v0.40-phase-k-engine-generalized` after K.9+ lands clean and `verify-all.sh` is green.
+Closing tag `v0.40-phase-k-engine-generalized` after `verify-all.sh` green +
+manual HotSync against the user's Palm device confirms K.9 fixed the regression.
 
 ## Key commits
 

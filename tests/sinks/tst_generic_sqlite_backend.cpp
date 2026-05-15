@@ -7,10 +7,14 @@
 #include "genericsqlitebackend.h"
 #include "collectioninfo.h"
 #include "backendrecord.h"
+#include "shape.h"
 
 using Kalburator::Sinks::GenericSqliteBackend;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
 
 namespace {
 
@@ -23,6 +27,10 @@ CollectionInfo makeCollection(const QString &id, const QString &name,
     ci.type = type;
     return ci;
 }
+
+// K.9: universal sinks now require a per-collection shape. Storage
+// round-trip tests don't care about shape semantics.
+const Shape kTestShape{ DomainId{"test"}, EncodingId{"raw"} };
 
 BackendRecord makeRecord(const QString &id, const QByteArray &data)
 {
@@ -66,7 +74,8 @@ void TestGenericSqliteBackend::createCollection_opensSqlite()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString id = b.createCollection(
-        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+        kTestShape);
     QCOMPARE(id, QStringLiteral("memo+plaintext"));
     QVERIFY(b.isAvailable());
 }
@@ -76,9 +85,13 @@ void TestGenericSqliteBackend::availableCollections_reflectsCreated()
     QTemporaryDir tmp;
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
-    b.createCollection(makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
-    b.createCollection(makeCollection(QStringLiteral("contacts+vcard"),
-                                      QStringLiteral("Contacts"), QStringLiteral("contacts")));
+    b.createCollection(
+        makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+        kTestShape);
+    b.createCollection(
+        makeCollection(QStringLiteral("contacts+vcard"),
+                       QStringLiteral("Contacts"), QStringLiteral("contacts")),
+        kTestShape);
     const auto cols = b.availableCollections();
     QCOMPARE(cols.size(), 2);
     QStringList ids;
@@ -93,7 +106,7 @@ void TestGenericSqliteBackend::createAndLoadRecord_roundTrip()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QByteArray data = QByteArrayLiteral("hello sqlite");
     const QString id = b.createRecord(colId, makeRecord(QStringLiteral("r1"), data));
@@ -110,7 +123,7 @@ void TestGenericSqliteBackend::updateRecord_modifiesExisting()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QString id = b.createRecord(colId,
         makeRecord(QStringLiteral("r1"), QByteArrayLiteral("original")));
@@ -134,7 +147,7 @@ void TestGenericSqliteBackend::deleteRecord_removesRow()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     const QString id = b.createRecord(colId,
         makeRecord(QStringLiteral("r1"), QByteArrayLiteral("data")));
@@ -151,7 +164,7 @@ void TestGenericSqliteBackend::loadRecords_returnsAll()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("one")));
     b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("two")));
@@ -166,7 +179,7 @@ void TestGenericSqliteBackend::clearCollection_emptiesTable()
     QVERIFY(tmp.isValid());
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
     const QString colId = QStringLiteral("memo+plaintext");
-    b.createCollection(makeCollection(colId, QStringLiteral("Memos")));
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
 
     b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("a")));
     b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("b")));
@@ -183,8 +196,10 @@ void TestGenericSqliteBackend::multipleCollections_separateTables()
 
     const QString memoCol = QStringLiteral("memo+plaintext");
     const QString todoCol = QStringLiteral("todo+ical");
-    b.createCollection(makeCollection(memoCol, QStringLiteral("Memos")));
-    b.createCollection(makeCollection(todoCol, QStringLiteral("Todos"), QStringLiteral("todos")));
+    b.createCollection(makeCollection(memoCol, QStringLiteral("Memos")), kTestShape);
+    b.createCollection(
+        makeCollection(todoCol, QStringLiteral("Todos"), QStringLiteral("todos")),
+        kTestShape);
 
     b.createRecord(memoCol, makeRecord(QStringLiteral("m1"), QByteArrayLiteral("memo")));
     b.createRecord(todoCol, makeRecord(QStringLiteral("t1"), QByteArrayLiteral("todo")));
@@ -204,8 +219,9 @@ void TestGenericSqliteBackend::persistsAcrossInstances()
     const QString dbPath = tmp.filePath(QStringLiteral("persist.db"));
     {
         GenericSqliteBackend b(dbPath);
-        b.createCollection(makeCollection(
-            QStringLiteral("memo+plaintext"), QStringLiteral("Memos")));
+        b.createCollection(
+            makeCollection(QStringLiteral("memo+plaintext"), QStringLiteral("Memos")),
+            kTestShape);
         b.createRecord(QStringLiteral("memo+plaintext"),
                        makeRecord(QStringLiteral("r1"), QByteArrayLiteral("persisted")));
     }

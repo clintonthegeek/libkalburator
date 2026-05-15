@@ -1371,13 +1371,20 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     emit syncStarted(request.mapping.id);
 
     // Task 82: compute composed loss profile for the mapping and notify host.
+    // K.9: resolve shapes per-collection (universal sinks like
+    // RawFilesBackend hold multiple collections of different shapes;
+    // nativeShapes().first() would pick arbitrarily).
     if (m_controller) {
         Kalburator::Shape::LossProfile loss;
         SyncBackend *src = m_controller->backendById(request.mapping.sourceBackend);
         SyncBackend *tgt = m_controller->backendById(request.mapping.targetBackend);
-        if (src && tgt && !src->nativeShapes().isEmpty() && !tgt->nativeShapes().isEmpty()) {
-            loss = Kalburator::Shape::TransformationRegistry::instance().inspect(
-                src->nativeShapes().first(), tgt->nativeShapes().first());
+        if (src && tgt) {
+            const auto srcShape = src->shapeFor(request.mapping.sourceCalendar);
+            const auto tgtShape = tgt->shapeFor(request.mapping.targetCalendar);
+            if (!srcShape.isAny() && !tgtShape.isAny()) {
+                loss = Kalburator::Shape::TransformationRegistry::instance().inspect(
+                    srcShape, tgtShape);
+            }
         }
         m_controller->syncStarted(request.mapping.id, loss);
     }
@@ -1704,21 +1711,36 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     const QString tgtColId  = request.mapping.targetCalendar;
     const QString mappingId = request.mapping.id;
 
+    // K.9: resolve per-collection shapes via shapeFor(). Universal sinks
+    // (RawFilesBackend, GenericSqliteBackend) may host collections of
+    // different shapes in one backend; nativeShapes().first() would pick
+    // arbitrarily across them and miscompute pipelines / cross-domain
+    // checks for any mapping whose target isn't the first one.
+    const Kalburator::Shape::Shape srcShape = srcBackend->shapeFor(srcColId);
+    const Kalburator::Shape::Shape tgtShape = tgtBackend->shapeFor(tgtColId);
+
+    if (srcShape.isAny() || tgtShape.isAny()) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: backend declares no shape for collection "
+            "(srcBackend=%1 srcCol=%2 tgtBackend=%3 tgtCol=%4)")
+                .arg(request.mapping.sourceBackend, srcColId,
+                     request.mapping.targetBackend, tgtColId);
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
+
     // Phase Ib.5 Task 4: first-sync fast path (unified for all domains).
     // Only fires when source and target have the same native shape — when shapes
     // differ the fast path would copy bytes verbatim without the pipeline
     // transform (e.g. contacts/vcard3 → contacts/vcard4 would land untransformed).
     // dispatchFirstSync returns false if the target is not empty, in which case
     // we fall through to the full diff path below.
-    {
-        const bool shapesMatch = !srcBackend->nativeShapes().isEmpty()
-            && !tgtBackend->nativeShapes().isEmpty()
-            && srcBackend->nativeShapes().first() == tgtBackend->nativeShapes().first();
-        if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload
-                && shapesMatch) {
-            if (dispatchFirstSync(request))
-                return true;
-        }
+    if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload
+            && srcShape == tgtShape) {
+        if (dispatchFirstSync(request))
+            return true;
     }
 
     // --- Phase Ia.5 Task 8: compile pipelines for shape promotion ---
@@ -1729,17 +1751,6 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     //   (TwoWay; the plan called for 3 pipelines but the existing
     //    finalSource push needs the 4th to avoid breaking TwoWay).
     // For blob domain (src=tgt=canonical), all four pipelines are identity.
-    if (srcBackend->nativeShapes().isEmpty() || tgtBackend->nativeShapes().isEmpty()) {
-        m_currentResult.success = false;
-        m_currentResult.errorMessage = QStringLiteral(
-            "dispatchSync: backend declares no native shapes");
-        m_currentResult.endTime = QDateTime::currentDateTime();
-        emit syncCompleted(mappingId, m_currentResult);
-        return true;
-    }
-
-    const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
-    const Kalburator::Shape::Shape tgtShape = tgtBackend->nativeShapes().first();
 
     if (srcShape.domain != tgtShape.domain) {
         m_currentResult.success = false;
@@ -2284,9 +2295,10 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     IBlobBackend *tgtBlob = asBlob(tgtBackend);
 
     // Re-derive pipelines from the stored canonical shape.
+    // K.9: per-collection shape resolution (see dispatchSync above).
     const auto &treg = Kalburator::Shape::TransformationRegistry::instance();
-    const Kalburator::Shape::Shape srcShape = srcBackend->nativeShapes().first();
-    const Kalburator::Shape::Shape tgtShape = tgtBackend->nativeShapes().first();
+    const Kalburator::Shape::Shape srcShape = srcBackend->shapeFor(srcColId);
+    const Kalburator::Shape::Shape tgtShape = tgtBackend->shapeFor(tgtColId);
     const auto canonToTgt = treg.compile(m_unifiedCanonical, tgtShape);
     const auto canonToSrc = treg.compile(m_unifiedCanonical, srcShape);
 

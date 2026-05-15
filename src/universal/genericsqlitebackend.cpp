@@ -45,7 +45,8 @@ CollectionInfo GenericSqliteBackend::collectionInfo(const QString &collectionId)
     return m_collections.value(collectionId);
 }
 
-QString GenericSqliteBackend::createCollection(const CollectionInfo &info)
+QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
+                                               const Kalburator::Shape::Shape &shape)
 {
     if (!m_open && !ensureOpen())
         return {};
@@ -64,7 +65,24 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info)
         q.exec();
         m_collections[info.id] = info;
     }
+    m_shapeByCollection.insert(info.id, shape);
     return info.id;
+}
+
+QList<Kalburator::Shape::Shape> GenericSqliteBackend::nativeShapes() const
+{
+    QList<Kalburator::Shape::Shape> out;
+    for (auto it = m_shapeByCollection.constBegin();
+         it != m_shapeByCollection.constEnd(); ++it) {
+        if (!out.contains(it.value()))
+            out.append(it.value());
+    }
+    return out;
+}
+
+Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectionId) const
+{
+    return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());
 }
 
 void GenericSqliteBackend::deleteCollection(const QString &collectionId)

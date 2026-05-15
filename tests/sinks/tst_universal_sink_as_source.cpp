@@ -10,11 +10,15 @@
 #include "genericsqlitebackend.h"
 #include "collectioninfo.h"
 #include "backendrecord.h"
+#include "shape.h"
 
 using Kalburator::Sinks::GenericSqliteBackend;
 using Kalburator::Sinks::RawFilesBackend;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
 
 namespace {
 
@@ -26,6 +30,11 @@ CollectionInfo makeCollection(const QString &id)
     ci.type = QStringLiteral("memos");
     return ci;
 }
+
+// K.9: universal sinks now require a per-collection shape. These
+// storage round-trip tests don't care about shape semantics, so use a
+// single synthetic test shape.
+const Shape kTestShape{ DomainId{"test"}, EncodingId{"raw"} };
 
 BackendRecord makeRecord(const QString &id, const QByteArray &data)
 {
@@ -61,7 +70,7 @@ void TestUniversalSinkAsSource::rawFiles_writeReadRoundTrip()
     // Writer instance
     {
         RawFilesBackend writer(tmp.path());
-        writer.createCollection(makeCollection(colId));
+        writer.createCollection(makeCollection(colId), kTestShape);
         writer.createRecord(colId, makeRecord(QStringLiteral("rec-a"), QByteArrayLiteral("alpha")));
         writer.createRecord(colId, makeRecord(QStringLiteral("rec-b"), QByteArrayLiteral("beta")));
         writer.createRecord(colId, makeRecord(QStringLiteral("rec-c"), QByteArrayLiteral("gamma")));
@@ -96,7 +105,7 @@ void TestUniversalSinkAsSource::genericSqlite_writeReadRoundTrip()
     // Writer instance
     {
         GenericSqliteBackend writer(dbPath);
-        writer.createCollection(makeCollection(colId));
+        writer.createCollection(makeCollection(colId), kTestShape);
         writer.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("one")));
         writer.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("two")));
     }
@@ -123,8 +132,8 @@ void TestUniversalSinkAsSource::rawFiles_multiShape_isolatedCollections()
     QVERIFY(tmp.isValid());
 
     RawFilesBackend b(tmp.path());
-    b.createCollection(makeCollection(QStringLiteral("memo+plaintext")));
-    b.createCollection(makeCollection(QStringLiteral("todo+ical")));
+    b.createCollection(makeCollection(QStringLiteral("memo+plaintext")), kTestShape);
+    b.createCollection(makeCollection(QStringLiteral("todo+ical")), kTestShape);
 
     b.createRecord(QStringLiteral("memo+plaintext"),
                    makeRecord(QStringLiteral("m1"), QByteArrayLiteral("memo-data")));
@@ -146,8 +155,8 @@ void TestUniversalSinkAsSource::genericSqlite_multiShape_isolatedCollections()
     QVERIFY(tmp.isValid());
 
     GenericSqliteBackend b(tmp.filePath(QStringLiteral("ms.db")));
-    b.createCollection(makeCollection(QStringLiteral("memo+plaintext")));
-    b.createCollection(makeCollection(QStringLiteral("contacts+vcard")));
+    b.createCollection(makeCollection(QStringLiteral("memo+plaintext")), kTestShape);
+    b.createCollection(makeCollection(QStringLiteral("contacts+vcard")), kTestShape);
 
     b.createRecord(QStringLiteral("memo+plaintext"),
                    makeRecord(QStringLiteral("m1"), QByteArrayLiteral("memo-bytes")));
