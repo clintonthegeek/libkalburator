@@ -50,9 +50,13 @@ The K.7 plugin extensibility surface (contributions decomposed into `DomainDefin
 ### New
 
 - **Libkalburator-side (K.8a):**
-  - `src/sync/providercontribution.h` — new K.7-style contribution: `id`, `displayName`, `createProvider(BackendConfiguration)`, `createConfigWidget(QWidget*)`. `Kalburator::Plugin` gains `providerContributions()` virtual.
-  - Stock provider plugins `Kalburator.Provider.CalDav` and `Kalburator.Provider.CardDav` migrating the existing `CalDavProvider` / `CardDavProvider` to be exposed via `ProviderContribution`. Registered through `registerStockPlugins()`.
-  - `ProviderManager` enumerates `ProviderContribution`s from `BackendRegistry` instead of being hand-coded.
+  - > **Amendment 2026-05-15:** `ProviderContribution` was NOT introduced. K.8a execution
+    > determined it would be redundant with `BackendContribution` (see FINDINGS 2026-05-14).
+    > The items below that reference `ProviderContribution` reflect pre-execution intent;
+    > read `BackendContribution` everywhere `ProviderContribution` appears.
+  - ~~`src/sync/providercontribution.h`~~ — not created; `BackendContribution` serves this role.
+  - Stock provider plugins `Kalburator.Provider.CalDav` and `Kalburator.Provider.CardDav` migrating the existing `CalDavProvider` / `CardDavProvider` via `BackendContribution`. Registered through `registerStockPlugins()`.
+  - `ProviderManager` enumerates `BackendContribution`s from `BackendRegistry` instead of being hand-coded.
   - `examples/reference_consumer/` — small executable that uses `PluginManager` to perform cross-domain (Calendar + Contacts) sync end-to-end between two stock-plugin backends. Backed by a `tst_reference_consumer_smoke` ctest target.
 - **WildPalms-side (K.8b):**
   - `Profile` schema extension: `accounts/<uuid>/{kind,displayName,config/...}` keys.
@@ -77,6 +81,14 @@ This means:
 
 ### Plugin shape per domain
 
+> **Amendment 2026-05-15 (post-K.8b execution):** Palm plugins do NOT use
+> `BackendContribution::createProvider()` or `NeutralProvider`. Instead, each
+> plugin exposes a non-virtual `createPalmBackend(PalmDeviceAccess*) → SyncBackend`
+> accessor that `PalmRuntime` calls directly after `loadInProcess()`. Rationale:
+> the K.7 `BackendContribution` surface is cloud-provider-shaped (CalDAV/CardDAV);
+> Palm backends are per-session, device-bound, and don't have a "connect to cloud"
+> model. The K.7 surface owns plugin lifecycle; the direct accessor owns device binding.
+
 For each of `calendar`, `contacts`, `memo`, `todo`, `webcalendar`:
 
 ```cpp
@@ -92,7 +104,8 @@ public:
 };
 ```
 
-Each `BackendContribution::createProvider()` returns a `NeutralProvider` (or per-domain provider) whose `BackendFactory` captures `device` + `profile`. `BackendContribution::backendType()` returns a stable identifier (`palm.calendar`, `palm.contacts`, …) so per-mapping configuration can target it.
+~~Each `BackendContribution::createProvider()` returns a `NeutralProvider` (or per-domain provider) whose `BackendFactory` captures `device` + `profile`.~~ (Superseded by amendment above.)
+`BackendContribution::backendType()` returns a stable identifier (`palm.calendar`, `palm.contacts`, …) so per-mapping configuration can target it.
 
 ## 4. Account / provider model
 
