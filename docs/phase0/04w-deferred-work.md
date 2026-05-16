@@ -289,8 +289,8 @@ current posture matches the pre-extraction PlanStan baseline.
 
 ### B.5 Combined multi-protocol provider (Nextcloud-style)
 
-**Status:** ⬜ deferred indefinitely.
-**Target phase:** none assigned; UX refinement.
+**Status:** ✅ landed 2026-05-16 (Phase M, tag pending user authorization).
+**Tag:** `v0.42-phase-m-multiprotocol-dav` (pending).
 **Source:** `iprovider.h:25` docstring; Phase Ib design §3.
 
 `IProvider`'s docstring mentions "Nextcloud (one server speaking
@@ -304,12 +304,20 @@ co-exist fine. Combination requires a `MultiProtocolProvider`
 abstraction that aggregates collections from multiple discoveries
 under one configuration UI.
 
-**Acceptance:**
-- New `NextcloudProvider` (or similar) wraps both CalDAV and
-  CardDAV discovery against the same URL.
+**Acceptance (as delivered):**
+- `MultiProtocolDavProvider` (Phase M.2–M.5) wraps parallel
+  CalDAV + CardDAV discovery against the same URL.
 - `collections()` returns the union, with domain-tagged ids.
-- `createBackend(id)` dispatches by domain.
-- Single config UI in PlanStan / WildPalms.
+- `createBackend(id)` dispatches by `"caldav:"` / `"carddav:"`
+  prefix.
+- `MultiProtocolDavConfigWidget` (M.6) provides the single config
+  UI surface.
+- `MultiProtocolDavBackendContribution` + `MultiProtocolDavProviderPlugin`
+  registered in `stock_plugins.cpp` (M.7–M.8).
+- WildPalms `AddAccountDialog` surfaces "Multi-protocol DAV" label
+  (M.13); `AccountsPage` embeds `AccountsListWidget` (M.14).
+- Both consumers receive the provider via `stock_plugins`.
+- PlanStan migration gated to M.5 (wizard-based flow; see D.1).
 
 ---
 
@@ -473,23 +481,41 @@ blocked.
 
 ### D.1 PlanStan: CardDAV add-account UI
 
-**Status:** ⬜ deferred from Phase Ib (Phase Ib in flight 2026-05-08).
-**Target phase:** Phase Ic.
+**Status:** ⬜ NOT landed. Gated to Phase M.5.
+**Target phase:** Phase M.5 (PlanStan wizard integration +
+ProviderConfigDialog wiring).
 **Source:** Phase Ib design §3; cross-reference `libkalburator/docs/phase0/04x-phase-ib-status.md`.
 **Tracked:** `PlanStan/docs/todo/carddav-account-ui.md`.
 
 Phase Ib lands the CardDAV transport in libkalburator and a one-
 line factory entry in PlanStan's `ProviderManager` factory at
 `PlanStan/src/controllers/collectioncontroller.cpp:1691-1707`.
+Phase M (2026-05-16) ships `ProviderConfigDialog` (M.11) and
+`MultiProtocolDavProvider` (M.2–M.5), and migrates WildPalms
+`AccountsPage` (M.14). PlanStan migration was **gated out** of
+Phase M because PlanStan has no `CalDavAddDialog` — its CalDAV
+add flow is wizard-based (`provisionCalDavProvider` via
+`AdditionalBackendsPage`). Tasks M.15/16 assumed a
+`CalDavAddDialog` that does not exist (Finding F-M5).
+
 PlanStan still needs:
 
-- An "Add CardDAV account" entry alongside the existing CalDAV
-  one in the account-creation flow.
-- A `CardDavConfigWidget` mirroring `CalDavConfigWidget`.
+- Wire `ProviderConfigDialog::rebuildProviderWidget()` provider
+  creation via `BackendRegistry` / contribution.
+- Surface `ProviderConfigDialog` in PlanStan's wizard-based add
+  flow (deeper integration than the dialog-swap the plan assumed).
 - Addressbook selection UI after successful discovery.
 - Profile persistence for the new provider kind.
 
-**Acceptance:** see PlanStan-side todo file.
+**Acceptance (M.5):**
+- PlanStan wizard flow reaches `ProviderConfigDialog` for
+  `MultiProtocolDavProvider` account creation.
+- `ProviderConfigDialog::rebuildProviderWidget()` provider
+  creation is fully wired (not stubbed).
+- `tst_collectioncontroller` covers the new flow.
+
+**Note:** WildPalms `AccountsPage` is migrated (M.14). The
+remaining gap is PlanStan-only.
 
 ---
 
