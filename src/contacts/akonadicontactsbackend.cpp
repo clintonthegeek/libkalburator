@@ -15,6 +15,8 @@
 #include <KContacts/Addressee>
 #include <KContacts/VCardConverter>
 
+#include <Akonadi/ServerManager>
+
 #include <QDebug>
 #include <QCryptographicHash>
 #include <memory>
@@ -333,12 +335,9 @@ QString AkonadiContactsBackend::displayName() const
 
 bool AkonadiContactsBackend::isAvailable() const
 {
-    // m_session is always constructed in the ctor via setupMonitor();
-    // return false when Akonadi is offline (no collections discovered yet
-    // and session hasn't been confirmed by a live server).
-    // For offline/unit-test purposes this returns false.
-    // A future phase can check Akonadi::ServerManager::isRunning().
-    return false;
+    // m_session is always non-null (created in setupMonitor() from ctor),
+    // so we use ServerManager to check actual server availability.
+    return Akonadi::ServerManager::isRunning();
 }
 
 QList<CollectionInfo> AkonadiContactsBackend::availableCollections()

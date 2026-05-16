@@ -1,6 +1,8 @@
 #include <QTest>
 #include "akonadicontactsbackend.h"
 
+#include <Akonadi/ServerManager>
+
 using namespace Kalburator::Sync;
 
 class TstAkonadiContactsBackend : public QObject {
@@ -14,7 +16,13 @@ private slots:
 
     void availableCollections_offline_isEmpty() {
         AkonadiContactsBackend b;
+        // availableCollections() is empty until collections are loaded
         QVERIFY(b.availableCollections().isEmpty());
+
+        // isAvailable() reflects live server state; can only assert false
+        // when the server is not running — QSKIP otherwise.
+        if (Akonadi::ServerManager::isRunning())
+            QSKIP("Akonadi server is running — cannot test unavailable state");
         QCOMPARE(b.isAvailable(), false);
     }
 };
