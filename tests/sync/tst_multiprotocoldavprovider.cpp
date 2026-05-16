@@ -4,7 +4,11 @@
 #include <QUuid>
 
 #include "../../src/sync/multiprotocoldavprovider.h"
+#include "../../src/plugin/pluginmanager.h"
+#include "../../src/plugin/stock_plugins.h"
+#include "../../src/sync/backendregistry.h"
 
+using namespace Kalburator;
 using namespace Kalburator::Sync;
 
 class TstMultiProtocolDavProvider : public QObject
@@ -23,6 +27,8 @@ private slots:
     void connectPartialSuccessSkipped();
     void createBackendUnknownIdReturnsNullptr();
     void createBackendNotConnectedReturnsNullptr();
+    void pluginRegistersMultiProtoDavContribution();
+    void cleanup();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -155,6 +161,19 @@ void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
     // Even with a valid-looking id, not connected → nullptr
     QVERIFY(!p.isConnected());
     QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:test:cal:some-calendar")) == nullptr);
+}
+
+void TstMultiProtocolDavProvider::cleanup()
+{
+    BackendRegistry::instance().clear();
+}
+
+void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()
+{
+    PluginManager pm;
+    registerStockPlugins(pm);
+    QVERIFY(BackendRegistry::instance().contributionFor(
+        QStringLiteral("multiproto-dav")) != nullptr);
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)
