@@ -5,6 +5,7 @@
 #include <QString>
 #include <QList>
 #include <QFuture>
+#include <QIcon>
 #include <memory>
 
 #include "collectioninfo.h"
@@ -120,6 +121,13 @@ public:
     /// correctly (e.g., "caldav:<provider-id>:<collection-id>").
     virtual std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) = 0;
+
+    // ── Optional UI / status accessors ─────────────────────────────
+    /// Optional icon for the account-list row. Default: null QIcon.
+    virtual QIcon icon() const { return {}; }
+
+    /// Non-fatal warning from the last connect(). Empty = no warning.
+    virtual QString lastWarning() const { return {}; }
 
 signals:
     /// Emitted when connect() completes (true) or disconnect() runs

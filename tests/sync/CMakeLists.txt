@@ -141,6 +141,21 @@ set_tests_properties(tst_carddav_provider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# M.1 — IProvider optional accessors smoke test
+add_executable(tst_iprovider_accessors tst_iprovider_accessors.cpp)
+target_link_libraries(tst_iprovider_accessors
+    PRIVATE
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Test
+        KF6::ConfigCore
+        Kalburator::Sync
+)
+add_test(NAME tst_iprovider_accessors COMMAND tst_iprovider_accessors)
+set_tests_properties(tst_iprovider_accessors PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Phase L.1 — AkonadiProvider identity tests.
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)
