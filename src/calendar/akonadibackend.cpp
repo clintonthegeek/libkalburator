@@ -79,7 +79,10 @@ QList<Kalburator::Shape::Shape> AkonadiBackend::nativeShapes() const
 
 void AkonadiBackend::setupMonitor()
 {
-    m_session = new Akonadi::Session("PlanStan-Akonadi", this);
+    const QByteArray sessionName = m_scopedCollectionId.isEmpty()
+        ? QByteArrayLiteral("kalburator-akonadi-backend")
+        : ("kalburator-akonadi-backend-" + m_scopedCollectionId.toUtf8());
+    m_session = new Akonadi::Session(sessionName, this);
 
     m_monitor = new Akonadi::Monitor(this);
     m_monitor->setSession(m_session);
@@ -100,18 +103,18 @@ void AkonadiBackend::setupMonitor()
     m_monitor->setCollectionMonitored(Akonadi::Collection::root());
 
     // Connect monitor signals to our slots
-    connect(m_monitor, &Akonadi::Monitor::itemAdded,
+    QObject::connect(m_monitor, &Akonadi::Monitor::itemAdded,
             this, &AkonadiBackend::onItemAdded);
-    connect(m_monitor, &Akonadi::Monitor::itemChanged,
+    QObject::connect(m_monitor, &Akonadi::Monitor::itemChanged,
             this, &AkonadiBackend::onItemChanged);
-    connect(m_monitor, &Akonadi::Monitor::itemRemoved,
+    QObject::connect(m_monitor, &Akonadi::Monitor::itemRemoved,
             this, &AkonadiBackend::onItemRemoved);
-    connect(m_monitor, &Akonadi::Monitor::collectionAdded,
+    QObject::connect(m_monitor, &Akonadi::Monitor::collectionAdded,
             this, &AkonadiBackend::onCollectionAdded);
-    connect(m_monitor, qOverload<const Akonadi::Collection &, const QSet<QByteArray> &>(
+    QObject::connect(m_monitor, qOverload<const Akonadi::Collection &, const QSet<QByteArray> &>(
                 &Akonadi::Monitor::collectionChanged),
             this, &AkonadiBackend::onCollectionChanged);
-    connect(m_monitor, &Akonadi::Monitor::collectionRemoved,
+    QObject::connect(m_monitor, &Akonadi::Monitor::collectionRemoved,
             this, &AkonadiBackend::onCollectionRemoved);
 }
 
@@ -190,7 +193,7 @@ void AkonadiBackend::loadCalendars(const QString &collectionId)
             [this, collectionId, job]() {
         if (job->error()) {
             qWarning() << "AkonadiBackend: CollectionFetchJob failed:" << job->errorString();
-            emit loadCalendarsFinished(collectionId, false, job->errorString());
+            Q_EMIT loadCalendarsFinished(collectionId, false, job->errorString());
             return;
         }
 
@@ -203,10 +206,10 @@ void AkonadiBackend::loadCalendars(const QString &collectionId)
             m_collectionToCalId.insert(col.id(), calId);
             m_collections.insert(calId, col);
 
-            emit calendarDiscovered(collectionId, calId);
+            Q_EMIT calendarDiscovered(collectionId, calId);
         }
 
-        emit loadCalendarsFinished(collectionId, true);
+        Q_EMIT loadCalendarsFinished(collectionId, true);
     });
 }
 
@@ -220,7 +223,7 @@ void AkonadiBackend::storeCalendars(const QString &collectionId,
     // Akonadi manages collections via resources - nothing to do here
     Q_UNUSED(collectionId);
     Q_UNUSED(calendars);
-    emit syncCompleted(collectionId);
+    Q_EMIT syncCompleted(collectionId);
 }
 
 void AkonadiBackend::startSync(const QString &collectionId,
@@ -234,7 +237,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     auto colIt = m_collections.find(calId);
     if (colIt == m_collections.end()) {
         qWarning() << "AkonadiBackend::startSync: unknown calendar" << calId;
-        emit syncCompleted(collectionId);
+        Q_EMIT syncCompleted(collectionId);
         return;
     }
 
@@ -244,7 +247,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     for (const auto &original : stagedCreations) {
         auto result = executeTranscodingPlan(plan, original);
         if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
+            Q_EMIT transcodingWarning(calId, original->uid(), result.warnings);
         }
         finalCreations.append(result.incidence);
     }
@@ -254,7 +257,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     for (const auto &original : stagedUpdates) {
         auto result = executeTranscodingPlan(plan, original);
         if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
+            Q_EMIT transcodingWarning(calId, original->uid(), result.warnings);
         }
         finalUpdates.append(result.incidence);
     }
@@ -263,7 +266,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
     int pending = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();
 
     if (pending == 0) {
-        emit syncCompleted(collectionId);
+        Q_EMIT syncCompleted(collectionId);
         return;
     }
 
@@ -272,7 +275,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
 
     auto checkDone = [this, collectionId, pending, completedCount]() {
         if (++(*completedCount) >= pending)
-            emit syncCompleted(collectionId);
+            Q_EMIT syncCompleted(collectionId);
     };
 
     // Process creations
@@ -346,10 +349,10 @@ void AkonadiBackend::removeItem(const QString &calId, const QString &itemUid)
         if (job->error()) {
             qWarning() << "AkonadiBackend: removeItem failed for"
                        << itemUid << ":" << job->errorString();
-            emit calendarError(QString(), calId, job->errorString());
+            Q_EMIT calendarError(QString(), calId, job->errorString());
         } else {
             m_itemsByCalendar[calId].remove(itemUid);
-            emit itemRemoved(calId, itemUid);
+            Q_EMIT itemRemoved(calId, itemUid);
         }
     });
 }
@@ -367,12 +370,12 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
     if (colIt == m_collections.end()) {
         QString errorMsg = QStringLiteral("Unknown calendar: ") + calendarId;
         op->fail(errorMsg);
-        emit fetchFinished(calendarId, false, errorMsg);
+        Q_EMIT fetchFinished(calendarId, false, errorMsg);
         return op;
     }
 
     op->setState(SyncOperation::Running);
-    emit fetchStarted(calendarId, -1);  // Unknown total until job completes
+    Q_EMIT fetchStarted(calendarId, -1);  // Unknown total until job completes
 
     auto *job = new Akonadi::ItemFetchJob(*colIt, m_session);
     job->fetchScope().fetchFullPayload(true);
@@ -381,7 +384,7 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
             [this, calendarId, op, job]() {
         if (job->error()) {
             op->fail(job->errorString());
-            emit fetchFinished(calendarId, false, job->errorString());
+            Q_EMIT fetchFinished(calendarId, false, job->errorString());
             return;
         }
 
@@ -390,7 +393,7 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
         int total = items.size();
         int current = 0;
 
-        emit fetchProgressChanged(calendarId, 0, total);
+        Q_EMIT fetchProgressChanged(calendarId, 0, total);
 
         for (const auto &item : items) {
             auto incidence = extractIncidence(item);
@@ -401,14 +404,14 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
             m_itemsByCalendar[calendarId][incidence->uid()] = item;
             fetched.append(incidence);
 
-            emit itemFetched(calendarId, incidence);
+            Q_EMIT itemFetched(calendarId, incidence);
             current++;
-            emit fetchProgressChanged(calendarId, current, total);
+            Q_EMIT fetchProgressChanged(calendarId, current, total);
         }
 
         op->setFetchedItems(fetched);
         op->complete();
-        emit fetchFinished(calendarId, true);
+        Q_EMIT fetchFinished(calendarId, true);
     });
 
     return op;
@@ -426,7 +429,7 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
     for (const auto &original : items) {
         auto result = executeTranscodingPlan(plan, original);
         if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
+            Q_EMIT transcodingWarning(calendarId, original->uid(), result.warnings);
         }
         finalItems.append(result.incidence);
     }
@@ -442,7 +445,7 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
 
     const Akonadi::Collection &col = *colIt;
     op->setState(SyncOperation::Running);
-    emit writeStarted(calendarId, finalItems.size());
+    Q_EMIT writeStarted(calendarId, finalItems.size());
 
     if (finalItems.isEmpty()) {
         op->complete();
@@ -468,7 +471,7 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
                     op->addSucceededUid(incidence->uid());
                 }
                 int done = ++(*completedCount);
-                emit writeProgressChanged(calendarId, done, total);
+                Q_EMIT writeProgressChanged(calendarId, done, total);
                 if (done >= total) {
                     op->complete();
                 }
@@ -489,7 +492,7 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
                     m_itemsByCalendar[calendarId][incidence->uid()] = job->item();
                 }
                 int done = ++(*completedCount);
-                emit writeProgressChanged(calendarId, done, total);
+                Q_EMIT writeProgressChanged(calendarId, done, total);
                 if (done >= total) {
                     op->complete();
                 }
@@ -656,14 +659,14 @@ bool AkonadiBackend::createCalendar(const QString &collectionId,
             [this, collectionId, job]() {
         if (job->error()) {
             qWarning() << "AkonadiBackend: createCalendar failed:" << job->errorString();
-            emit calendarError(collectionId, QString(), job->errorString());
+            Q_EMIT calendarError(collectionId, QString(), job->errorString());
             return;
         }
         const auto created = job->collection();
         const QString calId = calendarIdForCollection(created.id());
         m_collectionToCalId.insert(created.id(), calId);
         m_collections.insert(calId, created);
-        emit calendarCreated(collectionId, calId);
+        Q_EMIT calendarCreated(collectionId, calId);
     });
 
     return true;  // Async - true means request was submitted
@@ -682,14 +685,14 @@ bool AkonadiBackend::deleteCalendar(const QString &collectionId, const QString &
             [this, collectionId, calendarId, job]() {
         if (job->error()) {
             qWarning() << "AkonadiBackend: deleteCalendar failed:" << job->errorString();
-            emit calendarError(collectionId, calendarId, job->errorString());
+            Q_EMIT calendarError(collectionId, calendarId, job->errorString());
             return;
         }
         auto akonadiId = collectionIdForCalendar(calendarId);
         m_collectionToCalId.remove(akonadiId);
         m_collections.remove(calendarId);
         m_itemsByCalendar.remove(calendarId);
-        emit calendarDeleted(collectionId, calendarId);
+        Q_EMIT calendarDeleted(collectionId, calendarId);
     });
 
     return true;
@@ -744,7 +747,7 @@ void AkonadiBackend::onItemAdded(const Akonadi::Item &item, const Akonadi::Colle
     m_itemsByCalendar[calId][incidence->uid()] = item;
 
     // Emit as fetched item for live updates
-    emit itemFetched(calId, incidence);
+    Q_EMIT itemFetched(calId, incidence);
 }
 
 void AkonadiBackend::onItemChanged(const Akonadi::Item &item, const QSet<QByteArray> &parts)
@@ -763,7 +766,7 @@ void AkonadiBackend::onItemChanged(const Akonadi::Item &item, const QSet<QByteAr
     m_itemsByCalendar[calId][incidence->uid()] = item;
 
     // Emit as fetched item (same as added - updated data)
-    emit itemFetched(calId, incidence);
+    Q_EMIT itemFetched(calId, incidence);
 }
 
 void AkonadiBackend::onItemRemoved(const Akonadi::Item &item)
@@ -775,7 +778,7 @@ void AkonadiBackend::onItemRemoved(const Akonadi::Item &item)
                 const QString uid = itemIt.key();
                 const QString calId = calIt.key();
                 calIt->erase(itemIt);
-                emit itemRemoved(calId, uid);
+                Q_EMIT itemRemoved(calId, uid);
                 return;
             }
         }
@@ -796,7 +799,7 @@ void AkonadiBackend::onCollectionAdded(const Akonadi::Collection &col,
 
     // Use empty string for collectionId since we don't know which logical collection
     // this belongs to - the caller will match it by calendarId
-    emit calendarDiscovered(QString(), calId);
+    Q_EMIT calendarDiscovered(QString(), calId);
 }
 
 void AkonadiBackend::onCollectionChanged(const Akonadi::Collection &col,
@@ -817,7 +820,7 @@ void AkonadiBackend::onCollectionRemoved(const Akonadi::Collection &col)
         m_collectionToCalId.remove(col.id());
         m_collections.remove(calId);
         m_itemsByCalendar.remove(calId);
-        emit calendarDeleted(QString(), calId);
+        Q_EMIT calendarDeleted(QString(), calId);
     }
 }
 
