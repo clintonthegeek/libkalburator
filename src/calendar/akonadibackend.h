@@ -182,6 +182,10 @@ private:
     Akonadi::Session  *m_session  = nullptr;  // For our writes (ignored by monitor)
     Akonadi::Monitor  *m_monitor  = nullptr;  // Watches external changes
 
+    /// When non-empty, this backend is scoped to a single collection
+    /// (set by create() via "akonadiCollectionId" config key, Phase L.5).
+    QString m_scopedCollectionId;
+
     // Collection ID <-> calendar ID mapping
     QMap<Akonadi::Collection::Id, QString> m_collectionToCalId;
     QMap<QString, Akonadi::Collection>     m_collections;

@@ -53,6 +53,28 @@ private slots:
         // Note: if Akonadi IS running, this resolves true — that's fine.
         QVERIFY(QTest::qWaitFor([&]{ return f.isFinished(); }, 5000));
     }
+
+    void createBackend_calendarCollection_returnsBackend() {
+        if (qgetenv("KALBURATOR_AKONADI_LIVE_TEST").isEmpty()) {
+            QSKIP("Set KALBURATOR_AKONADI_LIVE_TEST=1.");
+        }
+        AkonadiProvider p;
+        auto f = p.connect();
+        QVERIFY(QTest::qWaitFor([&]{ return f.isFinished(); }, 10000));
+        QVERIFY(f.result());
+
+        QString calCollId;
+        for (const auto &c : p.collections()) {
+            if (c.type == QStringLiteral("calendar")) {
+                calCollId = c.id;
+                break;
+            }
+        }
+        if (calCollId.isEmpty()) QSKIP("No calendar collection in Akonadi.");
+
+        auto backend = p.createBackend(calCollId);
+        QVERIFY(backend != nullptr);
+    }
 };
 
 QTEST_MAIN(TstAkonadiProvider)

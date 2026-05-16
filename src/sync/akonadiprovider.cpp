@@ -4,6 +4,7 @@
 
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
+#include "../calendar/akonadibackend.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -147,9 +148,26 @@ void AkonadiProvider::disconnect()
 }
 
 std::unique_ptr<IBlobBackend>
-AkonadiProvider::createBackend(const QString & /*collectionId*/)
+AkonadiProvider::createBackend(const QString &collectionId)
 {
-    // Phase L.5 (calendar) and L.7 (contacts) will wire real backends.
+    if (!m_connected)
+        return nullptr;
+
+    const auto it = std::find_if(m_collections.cbegin(), m_collections.cend(),
+        [&](const CollectionInfo &c){ return c.id == collectionId; });
+    if (it == m_collections.cend())
+        return nullptr;
+
+    if (it->type == QStringLiteral("calendar")) {
+        QVariantMap cfg;
+        cfg.insert(QStringLiteral("akonadiCollectionId"), collectionId);
+        cfg.insert(QStringLiteral("providerId"), m_id);
+        auto *b = static_cast<AkonadiBackend *>(
+            AkonadiBackend::create(cfg, nullptr));
+        return std::unique_ptr<IBlobBackend>(b);
+    }
+
+    // Contacts route added in L.7.
     return nullptr;
 }
 

@@ -50,8 +50,13 @@ AkonadiBackend::~AkonadiBackend() = default;
 
 SyncBackend* AkonadiBackend::create(const QVariantMap &config, QObject *parent)
 {
-    Q_UNUSED(config);
-    return new AkonadiBackend(parent);
+    auto *backend = new AkonadiBackend(parent);
+    // Phase L.5: scope this backend to a single collection when the caller
+    // supplies "akonadiCollectionId" (e.g. "akonadi-42").
+    const QString collId = config.value(QStringLiteral("akonadiCollectionId")).toString();
+    if (!collId.isEmpty())
+        backend->m_scopedCollectionId = collId;
+    return backend;
 }
 
 const QString AkonadiBackend::BackendTypeName = QStringLiteral("akonadi");
@@ -833,7 +838,11 @@ void AkonadiBackend::onCollectionRemoved(const Akonadi::Collection &col)
 
 QString AkonadiBackend::backendId() const
 {
-    // Stable per-process id — no persistent Akonadi connection in Phase D stubs.
+    // When scoped to a single collection (Phase L.5+), include the collection ID
+    // so the engine can distinguish backends for different Akonadi collections.
+    if (!m_scopedCollectionId.isEmpty())
+        return QStringLiteral("akonadi:") + m_scopedCollectionId;
+    // Fallback: unscoped backend (pre-L.5 or BackendRegistry path).
     return QStringLiteral("akonadi:default");
 }
 
