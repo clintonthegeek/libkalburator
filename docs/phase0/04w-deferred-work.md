@@ -545,6 +545,49 @@ would be entirely manual.
   prompt user for rest.
 - Override UI surfaces the mapping for review/edit.
 
+### D.5 WildPalms multi-device cleanup (Phase L Task 0)
+
+**Status:** ✅ landed 2026-05-15 (Phase L Task 0, commits A/B/C on
+`refactor/engine-merger` in WildPalms).
+
+**Source:** `2026-05-15-phase-l-multidevice-cleanup-design.md` +
+`2026-05-15-phase-l-task0-multidevice-cleanup-plan.md` (coordination
+folder root).
+
+**Outcome:** WildPalms is now explicitly 1:1 device↔profile in code
+*and* docs. Changes:
+
+- `AutoSyncOrchestrator::onPalmDetected` no longer silently creates
+  profile dirs for unrecognised devices; it emits
+  `unregisteredDeviceDetected` and `KF6MainWindow` shows a
+  confirmation `QMessageBox`. New public method
+  `createProfileForDevice(serial,name,id)` does the actual creation
+  on user consent.
+- `KF6Settings::DeviceRegistry` group (fingerprint-keyed) deleted
+  along with its 5 methods. `DeviceSerials` (USB-serial-keyed) is
+  now the sole device→profile lookup. Migration in the
+  `KF6Settings` ctor copies legacy entries into `DeviceSerials`
+  once and `deleteGroup()`s the old group. Idempotent.
+- `DeviceFingerprint::registryKey()` + `fromRegistryKey(...)` deleted
+  (only existed to serve the deleted group).
+- `WildPalms/docs/ROADMAP.md §5.5 "Multiple Device Support"` deleted.
+- `SettingsDialog` "Registered Devices" page now enumerates the
+  serial-keyed group instead of the fingerprint-keyed one; columns
+  are Serial + Profile filename instead of the full fingerprint
+  breakdown.
+
+**Retained (deliberately, per design):** `DeviceFingerprint` struct,
+`Profile::deviceFingerprint()` persistence,
+`KF6MainWindow::handleDeviceFingerprint` mismatch dialog, dashboard
++ sidebar device-info display panels. These are the per-profile
+"this profile is for *this* device" warning surface and are useful
+even (especially) in a 1:1 world.
+
+**Net code change:** ~150 LOC deleted across `kf6settings.{h,cpp}`,
+`profile.h`, `autosyncorchestrator.cpp`, `settingsdialog.cpp`; ~80
+LOC added (migration + new test fixtures). WildPalms test count
+71 → 73.
+
 ---
 
 ## E. Test infrastructure
