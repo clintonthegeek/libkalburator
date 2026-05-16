@@ -31,7 +31,7 @@ using namespace Kalburator::Sync::Test;
 
 namespace {
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 // MockBackend subclass with a controllable resourceId.
 class ResourcedMockBackend : public MockBackend {

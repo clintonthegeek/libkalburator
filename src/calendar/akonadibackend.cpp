@@ -23,6 +23,8 @@
 #include <KCalendarCore/Journal>
 #include <KCalendarCore/MemoryCalendar>
 
+#include <Akonadi/ServerManager>
+
 #include <QDebug>
 #include <QCryptographicHash>
 #include <memory>
@@ -856,8 +858,10 @@ QString AkonadiBackend::displayName() const
 
 bool AkonadiBackend::isAvailable() const
 {
-    // m_session is only non-null after a live Akonadi connection is set up.
-    return m_session != nullptr;
+    // Report true only when the Akonadi server is actually running.
+    // m_session is always non-null (created in setupMonitor()), so we can't
+    // use it as an availability proxy — use ServerManager instead.
+    return Akonadi::ServerManager::isRunning();
 }
 
 QList<CollectionInfo> AkonadiBackend::availableCollections()

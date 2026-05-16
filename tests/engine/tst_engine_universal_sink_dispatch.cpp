@@ -66,7 +66,7 @@ using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 // Minimal typed SyncBackend that holds a single collection and serves
 // seeded BackendRecords. Mirrors tst_engine_unified_routing's

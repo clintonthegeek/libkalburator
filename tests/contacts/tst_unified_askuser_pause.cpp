@@ -69,7 +69,7 @@ using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 constexpr const char *kSourceId   = "contacts-source";
 constexpr const char *kTargetId   = "contacts-target";

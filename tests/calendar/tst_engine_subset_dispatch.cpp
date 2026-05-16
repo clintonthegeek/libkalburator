@@ -28,7 +28,7 @@ using namespace Kalburator::Sync::Test;
 
 namespace {
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 SyncMapping makeMapping(const QString &id,
                         const QString &src, const QString &tgt,

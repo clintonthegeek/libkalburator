@@ -17,6 +17,8 @@
 #include "akonadibackend.h"
 #include "iblobbackend.h"
 
+#include <Akonadi/ServerManager>
+
 using namespace Kalburator::Sync;
 
 class TestAkonadiBackendBlobView : public QObject
@@ -48,10 +50,16 @@ void TestAkonadiBackendBlobView::identityMethods_returnNonEmpty()
 
 void TestAkonadiBackendBlobView::isAvailable_falseWithoutLiveSession()
 {
+    // This test only makes sense when Akonadi is not running. If the server is
+    // active (e.g. on a KDE desktop), isAvailable() will correctly return true
+    // and the "unavailable without live session" assertion cannot be tested.
+    if (Akonadi::ServerManager::isRunning())
+        QSKIP("Akonadi server is running — cannot test unavailable state");
+
     AkonadiBackend backend;
     auto *blob = static_cast<IBlobBackend *>(&backend);
 
-    // No Akonadi session established — should report unavailable.
+    // No Akonadi server running — should report unavailable.
     QVERIFY(!blob->isAvailable());
 }
 

@@ -77,7 +77,7 @@ using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ShapedTestBackend

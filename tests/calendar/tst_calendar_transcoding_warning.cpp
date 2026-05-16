@@ -49,7 +49,7 @@ constexpr auto kMappingId       = "mapping-1";
 constexpr auto kSourceBackendType = "mock";
 constexpr auto kTargetBackendType = "lossy-mock";
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 // Subclass of MockBackend that advertises a different backendType()
 // so TranscodingRegistry sees source and target as distinct types

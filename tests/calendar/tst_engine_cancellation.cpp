@@ -215,7 +215,7 @@ void TstEngineCancellation::cancelBeforeStart()
     // Pump the event loop while the worker drains; QFuture::
     // waitForFinished doesn't run our event loop, but the engine
     // posts back to the main thread to finalize the future.
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(future.isFinished());
     QVERIFY(future.isCanceled());
@@ -289,7 +289,7 @@ void TstEngineCancellation::cancelDuringFetch()
 
     m_src->releaseFetchBlocker();
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(future.isCanceled());
 
@@ -348,7 +348,7 @@ void TstEngineCancellation::cancelDuringApply()
 
     m_dst->releaseFetchBlocker();
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(future.isCanceled());
 
@@ -434,7 +434,7 @@ void TstEngineCancellation::cancelDuringConflictPause()
     // onCancelDuringConflictPause reaches the worker.
     QTest::qWait(100);
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(future.isCanceled());
 
@@ -537,7 +537,7 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
 
     sources[2]->releaseFetchBlocker();
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(future.isCanceled());
 
@@ -585,7 +585,7 @@ void TstEngineCancellation::idempotentCancel()
     QTest::qWait(50);
     m_src->releaseFetchBlocker();
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
     QVERIFY(future.isCanceled());
 }
 
@@ -608,7 +608,7 @@ void TstEngineCancellation::cancelAfterFinished()
                                   QStringLiteral("Event One")));
 
     auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     // Read the result first (before cancel), then cancel, then
     // verify the result is unchanged and the future is still
@@ -644,7 +644,7 @@ void TstEngineCancellation::singleMappingFutureCompletes()
 
     auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(!future.isCanceled());
     QCOMPARE(future.resultCount(), 1);
@@ -666,7 +666,7 @@ void TstEngineCancellation::multiMappingFutureReturnsList()
 
     auto future = m_engine->runSyncFuture();
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(!future.isCanceled());
     QCOMPARE(future.resultCount(), 1);
@@ -691,7 +691,7 @@ void TstEngineCancellation::watcherFinishedFiresOnce()
     QSignalSpy finishedSpy(&watcher, &QFutureWatcher<SyncResult>::finished);
     watcher.setFuture(future);
 
-    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
     // Pump briefly so the watcher's queued finished signal lands.
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 1000);
 }

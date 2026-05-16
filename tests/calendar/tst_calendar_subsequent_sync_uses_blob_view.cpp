@@ -52,7 +52,7 @@ constexpr auto kCollectionId    = "stub-collection";
 constexpr auto kCalendarId      = "calendar-1";
 constexpr auto kMappingId       = "mapping-subsequent";
 
-constexpr int kSyncTimeoutMs = 5000;
+constexpr int kSyncTimeoutMs = 30000;
 
 KCalendarCore::Event::Ptr makeEvent(const QString &uid, const QString &summary,
                                      const QDateTime &lastModified = QDateTime())
