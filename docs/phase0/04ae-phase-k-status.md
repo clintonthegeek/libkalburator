@@ -1,12 +1,11 @@
 # Phase K — Engine generalization & semantic cleansing (Status)
 
-**Status:** ✅ **K.9 landed 2026-05-15** — universal-sink shape contract fix
-(`SyncBackend::shapeFor` wired into `dispatchSync`; per-collection shape on
-`RawFilesBackend` / `GenericSqliteBackend`; `Shape::Any` no longer a
-backend-declarable shape). Closing tag `v0.40-phase-k-engine-generalized`
-drops after verify-all + manual HotSync regression test.
-**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a, K.8b, K.9
-**Closing tag:** `v0.40-phase-k-engine-generalized` (pending tag drop)
+**Status:** ✅ **Layer B landed 2026-05-16** — silent-success-on-disconnect fix.
+Five engine call sites migrated to `loadRecordsOrError()`; Palm backends
+override it to check `isConnected()`. `v0.40-phase-k-engine-generalized`
+drops after manual HotSync regression test.
+**Phases completed:** K.0, K.1, K.2, K.3, K.4, K.5, K.5.5, K.6, K.7, K.8a, K.8b, K.9, Layer-B
+**Closing tag:** `v0.40-phase-k-engine-generalized` (pending manual HotSync + user tag)
 
 ## What exists now
 
@@ -48,11 +47,11 @@ drops after verify-all + manual HotSync regression test.
 - ✅ Directory moves complete (`journal/` → `storage/`, `sinks/` → `universal/`)
 - ✅ `verify-all.sh` green: libkalburator 73/80 pass (known parallel flakes), PlanStan 82/106, WildPalms 81/81
 
-## Test posture (2026-05-15, post-K.9)
+## Test posture (2026-05-16, post-Layer-B)
 
-- libkalburator: **92/92** pass (100%). K.9 added `tst_engine_universal_sink_dispatch`.
-- PlanStan: **82/105** pass (env-gated tests Not-Run; `tst_inboxmanager` pre-existing fail).
-- WildPalms: **71/71** pass.
+- libkalburator: **93/93** pass (100%). Layer B added `tst_engine_silent_success_guard`.
+- PlanStan: **82/106** pass (env-gated tests Not-Run; `tst_inboxmanager` pre-existing fail).
+- WildPalms: **74/74** pass. Layer B added `tst_palm_backend_disconnect`.
 
 ## Next
 
