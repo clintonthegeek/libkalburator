@@ -1,5 +1,6 @@
 #include "multiprotocoldavprovider.h"
 
+#include "multiprotocoldavconfigwidget.h"
 #include "../calendar/caldavcapabilitydiscovery.h"
 #include "../calendar/remotecalendarbackend.h"
 #include "../contacts/remotecontactsbackend.h"
@@ -53,10 +54,11 @@ BackendConfiguration MultiProtocolDavProvider::save() const
     return c;
 }
 
-QWidget *MultiProtocolDavProvider::createConfigWidget(QWidget *)
+QWidget *MultiProtocolDavProvider::createConfigWidget(QWidget *parent)
 {
-    // Task 6 implements this.
-    return nullptr;
+    auto *w = new MultiProtocolDavConfigWidget(parent);
+    w->setConfiguration(save());
+    return w;
 }
 
 QFuture<bool> MultiProtocolDavProvider::connect()

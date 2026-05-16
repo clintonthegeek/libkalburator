@@ -437,6 +437,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/akonadiconfigwidget.h
     # Phase M: Multi-protocol DAV provider
     src/sync/multiprotocoldavprovider.h
+    # Phase M.6: Multi-protocol DAV config widget
+    src/sync/multiprotocoldavconfigwidget.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -456,6 +458,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/akonadiconfigwidget.cpp
     # Phase M: Multi-protocol DAV provider
     src/sync/multiprotocoldavprovider.cpp
+    # Phase M.6: Multi-protocol DAV config widget
+    src/sync/multiprotocoldavconfigwidget.cpp
 )
 
 # Aggregate

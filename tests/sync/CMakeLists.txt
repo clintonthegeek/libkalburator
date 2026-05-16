@@ -159,6 +159,21 @@ set_tests_properties(tst_iprovider_accessors PROPERTIES
 # M.2 — MultiProtocolDavProvider skeleton smoke test
 kalburator_add_sync_test(tst_multiprotocoldavprovider)
 
+# M.6 — MultiProtocolDavConfigWidget UI test
+add_executable(tst_multiprotocoldavconfigwidget tst_multiprotocoldavconfigwidget.cpp)
+target_link_libraries(tst_multiprotocoldavconfigwidget
+    PRIVATE
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Test
+        KF6::ConfigCore
+        Kalburator::Sync
+)
+add_test(NAME tst_multiprotocoldavconfigwidget COMMAND tst_multiprotocoldavconfigwidget)
+set_tests_properties(tst_multiprotocoldavconfigwidget PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Phase L.1 — AkonadiProvider identity tests.
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)
