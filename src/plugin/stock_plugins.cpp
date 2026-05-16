@@ -9,6 +9,9 @@
 #include "calendarplugin.h"
 #include "caldavproviderplugin.h"
 #include "carddavproviderplugin.h"
+#ifdef HAVE_AKONADI
+#include "akonadiproviderplugin.h"
+#endif
 
 namespace Kalburator {
 
@@ -34,6 +37,9 @@ void registerStockPlugins(PluginManager &pm) {
     static Calendar::CalendarPlugin s_calendar;
     static CalDavProviderPlugin s_caldav;
     static CardDavProviderPlugin s_carddav;
+#ifdef HAVE_AKONADI
+    static AkonadiProviderPlugin s_akonadi;
+#endif
     QList<QPair<Plugin*, PluginManifest>> items{
         {&s_universal, mkManifest(QStringLiteral("kalburator.universal-storage"))},
         {&s_blob, mkManifest(QStringLiteral("kalburator.blob"), {QStringLiteral("blob")})},
@@ -43,6 +49,9 @@ void registerStockPlugins(PluginManager &pm) {
         {&s_calendar, mkManifest(QStringLiteral("kalburator.calendar"), {QStringLiteral("calendar")})},
         {&s_caldav,   mkManifest(QStringLiteral("kalburator.provider.caldav"))},
         {&s_carddav,  mkManifest(QStringLiteral("kalburator.provider.carddav"))},
+#ifdef HAVE_AKONADI
+        {&s_akonadi,  mkManifest(QStringLiteral("kalburator.provider.akonadi"))},
+#endif
     };
     pm.loadInProcess(items);
 }

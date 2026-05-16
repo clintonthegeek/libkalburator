@@ -31,3 +31,12 @@ add_test(NAME tst_stock_plugins COMMAND tst_stock_plugins)
 add_executable(tst_provider_plugin_registration tst_provider_plugin_registration.cpp)
 target_link_libraries(tst_provider_plugin_registration PRIVATE kalburator Qt6::Test)
 add_test(NAME tst_provider_plugin_registration COMMAND tst_provider_plugin_registration)
+
+if(KALBURATOR_HAVE_AKONADI)
+    add_executable(tst_akonadiprovider_plugin_registration
+        tst_akonadiprovider_plugin_registration.cpp)
+    target_link_libraries(tst_akonadiprovider_plugin_registration
+        PRIVATE Kalburator::Sync Qt6::Test Qt6::Core)
+    add_test(NAME tst_akonadiprovider_plugin_registration
+        COMMAND tst_akonadiprovider_plugin_registration)
+endif()

@@ -396,6 +396,8 @@ set(KALBURATOR_PLUGIN_HEADERS
     src/plugin/stock_plugins.h
     src/plugin/caldavproviderplugin.h
     src/plugin/carddavproviderplugin.h
+    # Phase L.3: Akonadi plugin manifest (gated on HAVE_AKONADI)
+    src/plugin/akonadiproviderplugin.h
 )
 set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/manifest.cpp
@@ -403,6 +405,8 @@ set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/stock_plugins.cpp
     src/plugin/caldavproviderplugin.cpp
     src/plugin/carddavproviderplugin.cpp
+    # Phase L.3: Akonadi plugin manifest (gated on HAVE_AKONADI)
+    src/plugin/akonadiproviderplugin.cpp
 )
 
 # Phase H — provider abstraction
@@ -491,6 +495,9 @@ if(NOT KALBURATOR_HAVE_AKONADI)
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadiprovider\\.cpp$")
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadibackendcontribution\\.h$")
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadibackendcontribution\\.cpp$")
+    # Phase L.3: plugin manifest
+    list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadiproviderplugin\\.h$")
+    list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadiproviderplugin\\.cpp$")
 endif()
 
 add_library(kalburator STATIC
