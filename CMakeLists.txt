@@ -468,12 +468,14 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/multiprotocoldavconfigwidget.cpp
 )
 
-# Phase M.9: Library UI widgets
+# Phase M.9–M.10: Library UI widgets
 set(KALBURATOR_UI_HEADERS
     src/ui/collectionpickerwidget.h
+    src/ui/accountslistwidget.h
 )
 set(KALBURATOR_UI_SOURCES
     src/ui/collectionpickerwidget.cpp
+    src/ui/accountslistwidget.cpp
 )
 
 # Aggregate
