@@ -1253,11 +1253,18 @@ struct WriterBatch {
 WriterBatch classifyForWriter(
     const QList<BackendRecord> &toWrite,
     IBlobBackend *backend,
-    const QString &collectionId)
+    const QString &collectionId,
+    QString *errOut = nullptr)
 {
     WriterBatch batch;
+    QList<BackendRecord> destRecords;
+    QString classifyErr;
+    if (!backend->loadRecordsOrError(collectionId, destRecords, classifyErr)) {
+        if (errOut) *errOut = classifyErr;
+        return batch;   // empty batch; caller must inspect errOut
+    }
     QHash<QString, bool> existing;
-    for (const auto &r : backend->loadRecords(collectionId))
+    for (const auto &r : destRecords)
         existing.insert(r.id, true);
     for (const auto &rec : toWrite) {
         if (rec.isDeleted) {
@@ -1541,10 +1548,26 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     const QString colId = request.mapping.sourceCalendar;
 
     bool targetEmpty = false;
+    QString targetReadErr;
     QMetaObject::invokeMethod(tgtBackend,
-        [tgt, colId, &targetEmpty]() {
-            targetEmpty = tgt->loadRecords(colId).isEmpty();
+        [tgt, colId, &targetEmpty, &targetReadErr]() {
+            QList<BackendRecord> records;
+            if (!tgt->loadRecordsOrError(colId, records, targetReadErr)) {
+                targetEmpty = false;   // unknown — must NOT be treated as empty
+                return;
+            }
+            targetEmpty = records.isEmpty();
         }, Qt::BlockingQueuedConnection);
+
+    if (!targetReadErr.isEmpty()) {
+        SyncResult result;
+        result.success      = false;
+        result.errorMessage = targetReadErr;
+        result.startTime    = m_currentResult.startTime;
+        result.endTime      = QDateTime::currentDateTime();
+        emit syncCompleted(request.mapping.id, result);
+        return true;
+    }
 
     if (!targetEmpty) {
         qDebug() << "SyncEngineWorker::dispatchFirstSync - target non-empty, deferring to quick-path for"
@@ -1578,16 +1601,23 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // plain error counter — the struct's errorMessage was never populated
     // so the failure branch logged an empty string regardless.
     int mirrorErrors = 0;
+    QString mirrorReadErr;
 
     // Task 10: inline the runBlobMirror body directly so Task 13 can
     // delete the F1 facade without leaving a dangling internal caller.
     // Marshalled to the source backend's thread because we walk both
     // backends synchronously (same threading requirement as the old call).
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, &mirrorErrors]() {
-            const auto srcRecords = src->loadRecords(colId);
-            const auto tgtRecords = tgt->loadRecords(colId);
-            const auto tgtById    = indexBlobById(tgtRecords);
+        [src, tgt, colId, &mirrorErrors, &mirrorReadErr]() {
+            QList<BackendRecord> srcRecords;
+            QList<BackendRecord> tgtRecords;
+            if (!src->loadRecordsOrError(colId, srcRecords, mirrorReadErr)) {
+                return;
+            }
+            if (!tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr)) {
+                return;
+            }
+            const auto tgtById = indexBlobById(tgtRecords);
 
             // Copy source → target (create or update).
             for (const auto &sr : srcRecords) {
@@ -1612,6 +1642,16 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
                 }
             }
         }, Qt::BlockingQueuedConnection);
+
+    if (!mirrorReadErr.isEmpty()) {
+        SyncResult result;
+        result.success      = false;
+        result.errorMessage = mirrorReadErr;
+        result.startTime    = m_currentResult.startTime;
+        result.endTime      = QDateTime::currentDateTime();
+        emit syncCompleted(request.mapping.id, result);
+        return true;
+    }
 
     SyncResult result;
     if (mirrorErrors > 0) {
@@ -1649,10 +1689,16 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
     const QString backendId = request.mapping.sourceBackend;
 
     QList<BackendRecord> records;
+    QString harvestReadErr;
     QMetaObject::invokeMethod(srcBackend,
-        [src, colId, &records]() {
-            records = src->loadRecords(colId);
+        [src, colId, &records, &harvestReadErr]() {
+            (void)src->loadRecordsOrError(colId, records, harvestReadErr);
         }, Qt::BlockingQueuedConnection);
+    if (!harvestReadErr.isEmpty()) {
+        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - read failed:"
+                   << harvestReadErr << "(no baselines harvested)";
+        return;
+    }
 
     QHash<QString, QString> uidToIcal;
     const QString mappingId = request.mapping.id;
@@ -2371,16 +2417,28 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             // (CalendarPluginWriter uses BlockingQueuedConnection
             // internally inside apply()).
             WriterBatch batch;
-            QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, toWrite]() {
-                batch = classifyForWriter(toWrite, blobBackend, colId);
+            QString classifyErr1;
+            QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr1, toWrite]() {
+                batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr1);
             }, Qt::BlockingQueuedConnection);
-            ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+            if (!classifyErr1.isEmpty()) {
+                ok = false;
+                writeError = classifyErr1;
+            } else {
+                ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+            }
         } else {
             // BackendThread: engine marshals classify + apply together.
-            QMetaObject::invokeMethod(backend, [writer, blobBackend, colId, toWrite, &ok]() {
-                const WriterBatch batch = classifyForWriter(toWrite, blobBackend, colId);
-                ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+            QString classifyErr2;
+            QMetaObject::invokeMethod(backend, [writer, blobBackend, colId, toWrite, &ok, &classifyErr2]() {
+                const WriterBatch batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
+                if (classifyErr2.isEmpty())
+                    ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
             }, Qt::BlockingQueuedConnection);
+            if (!classifyErr2.isEmpty()) {
+                ok = false;
+                writeError = classifyErr2;
+            }
         }
         if (!ok && !writeFailed) {
             writeFailed = true;
