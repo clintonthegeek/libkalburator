@@ -5,7 +5,7 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 
-#include <QPromise>
+#include <QFutureInterface>
 #include <QUuid>
 
 namespace Kalburator::Sync {
@@ -50,12 +50,11 @@ QWidget *AkonadiProvider::createConfigWidget(QWidget * /*parent*/)
 QFuture<bool> AkonadiProvider::connect()
 {
     // Phase L.4 will open a real Akonadi session.
-    QPromise<bool> p;
-    auto f = p.future();
-    p.start();
-    p.addResult(false);
-    p.finish();
-    return f;
+    QFutureInterface<bool> fi;
+    fi.reportStarted();
+    fi.reportResult(false);
+    fi.reportFinished();
+    return fi.future();
 }
 
 void AkonadiProvider::disconnect()
@@ -64,7 +63,7 @@ void AkonadiProvider::disconnect()
         return;
     m_connected = false;
     m_collections.clear();
-    emit connectionStateChanged(false);
+    Q_EMIT connectionStateChanged(false);
 }
 
 std::unique_ptr<IBlobBackend>
