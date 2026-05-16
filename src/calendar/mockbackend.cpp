@@ -624,6 +624,9 @@ QString MockBackend::createCollection(const CollectionInfo &info)
 QList<BackendRecord> MockBackend::loadRecords(const QString &collectionId)
 {
     logOperation(QStringLiteral("LOAD_RECORDS"), collectionId);
+    if (shouldFail(FailurePoint::OnFetch)) {
+        return {};   // silent — simulates a backend that fails without reporting error
+    }
     QList<BackendRecord> result;
     if (!m_calendars.contains(collectionId)) {
         return result;

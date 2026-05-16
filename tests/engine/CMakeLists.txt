@@ -80,3 +80,6 @@ add_test(NAME tst_carddav_engine_integration COMMAND tst_carddav_engine_integrat
 set_tests_properties(tst_carddav_engine_integration PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Layer B — silent-success guard (failing test: no engine call site migrated yet)
+kalburator_add_engine_integration_test(tst_engine_silent_success_guard)
