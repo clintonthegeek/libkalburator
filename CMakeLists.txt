@@ -468,6 +468,14 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/multiprotocoldavconfigwidget.cpp
 )
 
+# Phase M.9: Library UI widgets
+set(KALBURATOR_UI_HEADERS
+    src/ui/collectionpickerwidget.h
+)
+set(KALBURATOR_UI_SOURCES
+    src/ui/collectionpickerwidget.cpp
+)
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -486,6 +494,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_SINKS_HEADERS}
     ${KALBURATOR_PROVIDER_CORE_HEADERS}
     ${KALBURATOR_PLUGIN_HEADERS}
+    ${KALBURATOR_UI_HEADERS}
 )
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
@@ -503,6 +512,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_SINKS_SOURCES}
     ${KALBURATOR_PROVIDER_CORE_SOURCES}
     ${KALBURATOR_PLUGIN_SOURCES}
+    ${KALBURATOR_UI_SOURCES}
 )
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
@@ -552,6 +562,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/backend>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/plugin>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ui>
 )
 
 target_link_libraries(kalburator
