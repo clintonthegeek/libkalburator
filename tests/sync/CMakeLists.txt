@@ -156,6 +156,9 @@ set_tests_properties(tst_iprovider_accessors PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# M.2 — MultiProtocolDavProvider skeleton smoke test
+kalburator_add_sync_test(tst_multiprotocoldavprovider)
+
 # Phase L.1 — AkonadiProvider identity tests.
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)
