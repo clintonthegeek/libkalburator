@@ -16,9 +16,6 @@
 #include <QMap>
 #include <QSet>
 
-class KalbConfigManager;
-class TagSettings;
-
 namespace Kalburator::Sync {
 
 /**
@@ -103,11 +100,6 @@ public:
     void prepareCreationMetadata(const QString &calendarId,
                                  CalendarBackendBinding &binding) const override;
 
-    // === Tag Color Sync ===
-    void setConfigManager(KalbConfigManager *mgr);
-    void fetchTagColors(KalbConfigManager *configManager);
-    void pushTagColors(const TagSettings &tagSettings);
-
     // =========================================================================
     // IBlobBackend overrides (Phase D Task 15)
     //
@@ -157,9 +149,6 @@ public:
     void rollbackBatch() override {}
     bool supportsBatch() const override { return false; }
 
-Q_SIGNALS:
-    void tagColorsSynced(int importedCount);
-
 private slots:
     // Monitor callbacks for external changes
     void onItemAdded(const Akonadi::Item &item, const Akonadi::Collection &col);
@@ -192,7 +181,6 @@ private:
 
     Akonadi::Session  *m_session  = nullptr;  // For our writes (ignored by monitor)
     Akonadi::Monitor  *m_monitor  = nullptr;  // Watches external changes
-    KalbConfigManager *m_configManager = nullptr;  // For tag color import
 
     // Collection ID <-> calendar ID mapping
     QMap<Akonadi::Collection::Id, QString> m_collectionToCalId;
@@ -202,8 +190,8 @@ private:
     QMap<QString, QMap<QString, Akonadi::Item>> m_itemsByCalendar;
 };
 
-#endif // HAVE_AKONADI
-
 } // namespace Kalburator::Sync
+
+#endif // HAVE_AKONADI
 
 #endif // AKONADIBACKEND_H

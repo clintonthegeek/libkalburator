@@ -17,21 +17,11 @@
 #include <Akonadi/ItemCreateJob>
 #include <Akonadi/ItemModifyJob>
 #include <Akonadi/ItemDeleteJob>
-#include <Akonadi/TagFetchJob>
-#include <Akonadi/TagFetchScope>
-#include <Akonadi/TagModifyJob>
-#include <Akonadi/TagCreateJob>
-#include <Akonadi/TagAttribute>
-
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/Journal>
 #include <KCalendarCore/MemoryCalendar>
-
-#include "kalbconfigmanager.h"
-#include "collectionsettings.h"
-#include "tagsettings.h"
 
 #include <QDebug>
 #include <QCryptographicHash>
@@ -212,10 +202,6 @@ void AkonadiBackend::loadCalendars(const QString &collectionId)
         }
 
         emit loadCalendarsFinished(collectionId, true);
-
-        // Silently pull tag colors from KDE PIM
-        if (m_configManager)
-            fetchTagColors(m_configManager);
     });
 }
 
@@ -736,117 +722,6 @@ void AkonadiBackend::prepareCreationMetadata(const QString &calendarId,
 }
 
 // ============================================================================
-// Tag Color Sync
-// ============================================================================
-
-void AkonadiBackend::setConfigManager(KalbConfigManager *mgr)
-{
-    m_configManager = mgr;
-}
-
-void AkonadiBackend::fetchTagColors(KalbConfigManager *configManager)
-{
-    if (!configManager)
-        return;
-
-    auto *job = new Akonadi::TagFetchJob(m_session);
-    job->fetchScope().fetchAttribute<Akonadi::TagAttribute>();
-
-    connect(job, &Akonadi::TagFetchJob::finished, this,
-            [this, configManager, job]() {
-        if (job->error()) {
-            qWarning() << "AkonadiBackend: TagFetchJob failed:" << job->errorString();
-            emit tagColorsSynced(0);
-            return;
-        }
-
-        TagSettings &tagSettings = configManager->settings().tagSettings();
-        int importedCount = 0;
-
-        const auto tags = job->tags();
-        for (const auto &tag : tags) {
-            const QString name = tag.name();
-            if (name.isEmpty())
-                continue;
-
-            // Only import colors for tags not already defined locally
-            if (tagSettings.hasTag(name))
-                continue;
-
-            const auto *attr = tag.attribute<Akonadi::TagAttribute>();
-            if (!attr)
-                continue;
-
-            QColor color = attr->backgroundColor();
-            if (!color.isValid())
-                continue;
-
-            tagSettings.setTagColor(name, color);
-            importedCount++;
-            qDebug() << "AkonadiBackend: Imported tag color from KDE PIM:"
-                     << name << "->" << color.name();
-        }
-
-        if (importedCount > 0) {
-            configManager->saveCollectionConfig();
-            qDebug() << "AkonadiBackend: Imported" << importedCount << "tag colors from KDE PIM";
-        }
-
-        emit tagColorsSynced(importedCount);
-    });
-}
-
-void AkonadiBackend::pushTagColors(const TagSettings &tagSettings)
-{
-    // First fetch existing Akonadi tags to get their IDs
-    auto *fetchJob = new Akonadi::TagFetchJob(m_session);
-    fetchJob->fetchScope().fetchAttribute<Akonadi::TagAttribute>();
-
-    connect(fetchJob, &Akonadi::TagFetchJob::finished, this,
-            [this, tagSettings, fetchJob]() {
-        if (fetchJob->error()) {
-            qWarning() << "AkonadiBackend: Tag fetch for push failed:" << fetchJob->errorString();
-            return;
-        }
-
-        // Build map of existing Akonadi tag name -> Tag
-        QMap<QString, Akonadi::Tag> existingTags;
-        const auto akonadiTags = fetchJob->tags();
-        for (const auto &tag : akonadiTags) {
-            existingTags.insert(tag.name(), tag);
-        }
-
-        const auto allDefs = tagSettings.allTags();
-        for (const TagDefinition &def : allDefs) {
-            if (!def.color.isValid())
-                continue;
-
-            if (existingTags.contains(def.id)) {
-                // Update existing tag
-                Akonadi::Tag tag = existingTags.value(def.id);
-                auto *attr = tag.attribute<Akonadi::TagAttribute>(
-                    Akonadi::Tag::AddIfMissing);
-                attr->setBackgroundColor(def.color);
-                new Akonadi::TagModifyJob(tag, m_session);
-                qDebug() << "AkonadiBackend: Updated KDE PIM tag color:"
-                         << def.id << "->" << def.color.name();
-            } else {
-                // Create new tag
-                Akonadi::Tag tag(def.id);
-                tag.setGid(def.id.toUtf8());
-                auto *attr = tag.attribute<Akonadi::TagAttribute>(
-                    Akonadi::Tag::AddIfMissing);
-                attr->setBackgroundColor(def.color);
-                auto *createJob = new Akonadi::TagCreateJob(tag, m_session);
-                createJob->setMergeIfExisting(true);
-                qDebug() << "AkonadiBackend: Created KDE PIM tag:"
-                         << def.id << "with color" << def.color.name();
-            }
-        }
-    });
-}
-
-// ============================================================================
 // Monitor Signal Handlers
 // ============================================================================
 
@@ -1113,7 +988,6 @@ QStringList AkonadiBackend::deletedSince(const QString &collectionId,
     return {};
 }
 
-#endif // HAVE_AKONADI
-
-
 } // namespace Kalburator::Sync
+
+#endif // HAVE_AKONADI
