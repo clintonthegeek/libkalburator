@@ -9,12 +9,11 @@
 
 #include "collectioninfo.h"
 #include "backendconfiguration.h"
+#include "iblobbackend.h"
 
 class QWidget;
 
 namespace Kalburator::Sync {
-
-class IBlobBackend;
 
 /**
  * @brief Source-of-many-collections under a single auth/connection.

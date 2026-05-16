@@ -1,7 +1,6 @@
 #include <QTest>
 #include <QSignalSpy>
 #include "akonadiprovider.h"
-#include "iblobbackend.h"
 
 using namespace Kalburator::Sync;
 
