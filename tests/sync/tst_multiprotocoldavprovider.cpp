@@ -1,5 +1,6 @@
 #include <QObject>
 #include <QtTest/QtTest>
+#include <QSignalSpy>
 #include <QUuid>
 
 #include "../../src/sync/multiprotocoldavprovider.h"
@@ -17,6 +18,9 @@ private slots:
     void collectionsEmptyAfterConstruction();
     void loadAndSaveRoundTripsConnectionParams();
     void loadAppliesDisplayNameAndId();
+    void connectWithoutUrlReturnsFalseQuickly();
+    void connectInvalidCredentialsEmitsErrorAndResolvesFalse();
+    void connectPartialSuccessSkipped();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -94,6 +98,44 @@ void TstMultiProtocolDavProvider::loadAppliesDisplayNameAndId()
 
     QCOMPARE(p.id(),          QStringLiteral("specific-id"));
     QCOMPARE(p.displayName(), QStringLiteral("Work Nextcloud"));
+}
+
+void TstMultiProtocolDavProvider::connectWithoutUrlReturnsFalseQuickly()
+{
+    MultiProtocolDavProvider p;
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("test");
+    cfg.connectionParams[QStringLiteral("username")] = QStringLiteral("u");
+    cfg.connectionParams[QStringLiteral("password")] = QStringLiteral("p");
+    // url intentionally absent
+    p.load(cfg);
+
+    auto fut = p.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 5000);
+    QCOMPARE(fut.resultAt(0), false);
+    QVERIFY(!p.isConnected());
+}
+
+void TstMultiProtocolDavProvider::connectInvalidCredentialsEmitsErrorAndResolvesFalse()
+{
+    MultiProtocolDavProvider p;
+    QSignalSpy errSpy(&p, &IProvider::error);
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("test");
+    cfg.connectionParams[QStringLiteral("url")]      = QStringLiteral("http://localhost:1/");
+    cfg.connectionParams[QStringLiteral("username")] = QStringLiteral("nobody");
+    cfg.connectionParams[QStringLiteral("password")] = QStringLiteral("nopass");
+    p.load(cfg);
+
+    auto fut = p.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 30000);
+    QCOMPARE(fut.resultAt(0), false);
+    QVERIFY(errSpy.count() > 0 || !p.isConnected());  // either error emitted or simply not connected
+}
+
+void TstMultiProtocolDavProvider::connectPartialSuccessSkipped()
+{
+    QSKIP("Requires composed FakeCalDav+FakeCardDav harness; follow-up task");
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)

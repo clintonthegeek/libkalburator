@@ -3,6 +3,7 @@
 
 #include "iprovider.h"
 
+#include <QFutureWatcher>
 #include <QMap>
 #include <QPromise>
 #include <QUrl>
@@ -60,10 +61,10 @@ public:
     QString lastWarning() const override { return m_lastWarning; }
 
 private slots:
-    void onCalDavFinished();
-    void onCardDavFinished();
+    void onCalDavFinished(bool success);
 
 private:
+    void onCardDavFinished(QFutureWatcher<QList<CollectionInfo>> *w);
     void maybeResolveConnect();
 
     // Identity / config
@@ -92,6 +93,8 @@ private:
     QList<CollectionInfo> m_cardDavResult;
     QString m_calDavError;
     QString m_cardDavError;
+    QMap<QString, QString> m_calDavUrlMap;   // inner calendarId → URL href
+    QMap<QString, QString> m_cardDavUrlMap;  // inner collectionId → URL href
 
     std::shared_ptr<QPromise<bool>> m_connectPromise;
 };
