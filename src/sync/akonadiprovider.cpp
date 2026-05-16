@@ -2,6 +2,7 @@
 
 #ifdef HAVE_AKONADI
 
+#include "akonadiconfigwidget.h"
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "../calendar/akonadibackend.h"
@@ -50,10 +51,9 @@ BackendConfiguration AkonadiProvider::save() const
     return cfg;
 }
 
-QWidget *AkonadiProvider::createConfigWidget(QWidget * /*parent*/)
+QWidget *AkonadiProvider::createConfigWidget(QWidget *parent)
 {
-    // Phase L.8 will implement a real widget.
-    return nullptr;
+    return new AkonadiConfigWidget(parent);
 }
 
 QFuture<bool> AkonadiProvider::connect()
