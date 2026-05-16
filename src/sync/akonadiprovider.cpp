@@ -5,6 +5,7 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "../calendar/akonadibackend.h"
+#include "../contacts/akonadicontactsbackend.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -167,7 +168,14 @@ AkonadiProvider::createBackend(const QString &collectionId)
         return std::unique_ptr<IBlobBackend>(b);
     }
 
-    // Contacts route added in L.7.
+    if (it->type == QStringLiteral("contacts")) {
+        QVariantMap cfg;
+        cfg.insert(QStringLiteral("akonadiCollectionId"), collectionId);
+        cfg.insert(QStringLiteral("providerId"), m_id);
+        auto *b = static_cast<AkonadiContactsBackend *>(
+            AkonadiContactsBackend::create(cfg, nullptr));
+        return std::unique_ptr<IBlobBackend>(b);
+    }
     return nullptr;
 }
 

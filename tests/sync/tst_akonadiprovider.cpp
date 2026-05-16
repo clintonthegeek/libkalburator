@@ -2,6 +2,7 @@
 #include <QSignalSpy>
 #include "akonadiprovider.h"
 #include "akonadibackendcontribution.h"
+#include "akonadicontactsbackend.h"
 
 using namespace Kalburator::Sync;
 
@@ -74,6 +75,31 @@ private slots:
 
         auto backend = p.createBackend(calCollId);
         QVERIFY(backend != nullptr);
+    }
+
+    void createBackend_contactsCollection_returnsContactsBackend() {
+        if (qgetenv("KALBURATOR_AKONADI_LIVE_TEST").isEmpty()) {
+            QSKIP("Set KALBURATOR_AKONADI_LIVE_TEST=1.");
+        }
+        AkonadiProvider p;
+        auto f = p.connect();
+        QVERIFY(QTest::qWaitFor([&]{ return f.isFinished(); }, 10000));
+        QVERIFY(f.result());
+
+        QString contactsCollId;
+        for (const auto &c : p.collections()) {
+            if (c.type == QStringLiteral("contacts")) {
+                contactsCollId = c.id;
+                break;
+            }
+        }
+        if (contactsCollId.isEmpty()) QSKIP("No contacts collection in Akonadi.");
+
+        auto backend = p.createBackend(contactsCollId);
+        QVERIFY(backend != nullptr);
+        auto *contactsBackend = dynamic_cast<AkonadiContactsBackend *>(backend.get());
+        QVERIFY(contactsBackend != nullptr);
+        QCOMPARE(contactsBackend->backendType(), QStringLiteral("akonadi-contacts"));
     }
 };
 
