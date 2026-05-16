@@ -5,7 +5,13 @@
 
 #include "iprovider.h"
 
+#include <Akonadi/Session>
+
+#include <QPromise>
+
 #include <memory>
+
+class KJob;
 
 namespace Kalburator::Sync {
 
@@ -54,10 +60,15 @@ public:
         createBackend(const QString &collectionId) override;
 
 private:
-    QString             m_id;           // stable UUID
-    QString             m_displayName;
-    bool                m_connected = false;
+    void onCollectionsFetched(KJob *job);
+
+    QString               m_id;           // stable UUID
+    QString               m_displayName;
+    bool                  m_connected = false;
     QList<CollectionInfo> m_collections;
+
+    std::shared_ptr<QPromise<bool>> m_connectPromise;
+    Akonadi::Session               *m_session = nullptr;
 };
 
 } // namespace Kalburator::Sync
