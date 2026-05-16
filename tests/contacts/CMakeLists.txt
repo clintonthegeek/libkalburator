@@ -48,3 +48,11 @@ add_test(NAME tst_remote_contacts_backend COMMAND tst_remote_contacts_backend)
 set_tests_properties(tst_remote_contacts_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+if(KALBURATOR_HAVE_AKONADI)
+    add_executable(tst_akonadicontactsbackend tst_akonadicontactsbackend.cpp)
+    target_link_libraries(tst_akonadicontactsbackend
+        PRIVATE Kalburator::Sync Qt6::Test Qt6::Core)
+    add_test(NAME tst_akonadicontactsbackend
+        COMMAND tst_akonadicontactsbackend)
+endif()

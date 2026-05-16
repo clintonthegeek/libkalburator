@@ -344,6 +344,8 @@ set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/contactsplugin.h
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.h
+    # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
+    src/contacts/akonadicontactsbackend.h
 )
 set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcardproperties.cpp
@@ -355,6 +357,8 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/contactsplugin.cpp
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.cpp
+    # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
+    src/contacts/akonadicontactsbackend.cpp
 )
 
 set(KALBURATOR_MEMO_HEADERS
@@ -498,6 +502,9 @@ if(NOT KALBURATOR_HAVE_AKONADI)
     # Phase L.3: plugin manifest
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadiproviderplugin\\.h$")
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadiproviderplugin\\.cpp$")
+    # Phase L.6: Akonadi contacts backend
+    list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadicontactsbackend\\.h$")
+    list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadicontactsbackend\\.cpp$")
 endif()
 
 add_library(kalburator STATIC
