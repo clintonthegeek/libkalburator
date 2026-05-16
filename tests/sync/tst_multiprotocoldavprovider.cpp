@@ -21,6 +21,8 @@ private slots:
     void connectWithoutUrlReturnsFalseQuickly();
     void connectInvalidCredentialsEmitsErrorAndResolvesFalse();
     void connectPartialSuccessSkipped();
+    void createBackendUnknownIdReturnsNullptr();
+    void createBackendNotConnectedReturnsNullptr();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -136,6 +138,23 @@ void TstMultiProtocolDavProvider::connectInvalidCredentialsEmitsErrorAndResolves
 void TstMultiProtocolDavProvider::connectPartialSuccessSkipped()
 {
     QSKIP("Requires composed FakeCalDav+FakeCardDav harness; follow-up task");
+}
+
+void TstMultiProtocolDavProvider::createBackendUnknownIdReturnsNullptr()
+{
+    MultiProtocolDavProvider p;
+    // Not connected, no m_urlByCollectionId entries
+    QVERIFY(p.createBackend(QStringLiteral("totally-unknown")) == nullptr);
+    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:x:cal:y")) == nullptr);
+    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:x:contacts:y")) == nullptr);
+}
+
+void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
+{
+    MultiProtocolDavProvider p;
+    // Even with a valid-looking id, not connected → nullptr
+    QVERIFY(!p.isConnected());
+    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:test:cal:some-calendar")) == nullptr);
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)

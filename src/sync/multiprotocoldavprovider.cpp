@@ -1,6 +1,8 @@
 #include "multiprotocoldavprovider.h"
 
 #include "../calendar/caldavcapabilitydiscovery.h"
+#include "../calendar/remotecalendarbackend.h"
+#include "../contacts/remotecontactsbackend.h"
 #include "carddavcapabilitydiscovery.h"
 
 #include <QFutureWatcher>
@@ -142,9 +144,27 @@ void MultiProtocolDavProvider::disconnect()
 }
 
 std::unique_ptr<IBlobBackend>
-MultiProtocolDavProvider::createBackend(const QString &)
+MultiProtocolDavProvider::createBackend(const QString &collectionId)
 {
-    // Task 5 implements this.
+    if (!m_connected) return nullptr;
+    if (!m_urlByCollectionId.contains(collectionId)) return nullptr;
+    const QString href = m_urlByCollectionId.value(collectionId);
+
+    const QString calPrefix      = QStringLiteral("multiproto-dav:%1:cal:").arg(m_id);
+    const QString contactsPrefix = QStringLiteral("multiproto-dav:%1:contacts:").arg(m_id);
+
+    if (collectionId.startsWith(calPrefix)) {
+        auto backend = std::make_unique<RemoteCalendarBackend>(
+            m_serverUrl, m_username, m_password);
+        backend->registerCalendarUrl(collectionId, href);
+        return backend;
+    }
+    if (collectionId.startsWith(contactsPrefix)) {
+        auto backend = std::make_unique<RemoteContactsBackend>(
+            m_serverUrl, m_username, m_password);
+        backend->registerAddressbookUrl(collectionId, QUrl(href));
+        return backend;
+    }
     return nullptr;
 }
 
