@@ -423,6 +423,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/neutralprovider.h
     # Phase L.1: Akonadi first-class provider (gated on HAVE_AKONADI)
     src/sync/akonadiprovider.h
+    # Phase L.2: Akonadi backend contribution factory (gated on HAVE_AKONADI)
+    src/sync/akonadibackendcontribution.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -436,6 +438,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/neutralprovider.cpp
     # Phase L.1: Akonadi first-class provider (gated on HAVE_AKONADI)
     src/sync/akonadiprovider.cpp
+    # Phase L.2: Akonadi backend contribution factory (gated on HAVE_AKONADI)
+    src/sync/akonadibackendcontribution.cpp
 )
 
 # Aggregate
@@ -485,6 +489,8 @@ if(NOT KALBURATOR_HAVE_AKONADI)
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadibackend\\.cpp$")
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadiprovider\\.h$")
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadiprovider\\.cpp$")
+    list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "akonadibackendcontribution\\.h$")
+    list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "akonadibackendcontribution\\.cpp$")
 endif()
 
 add_library(kalburator STATIC

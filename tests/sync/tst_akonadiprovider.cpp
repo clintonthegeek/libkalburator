@@ -1,6 +1,7 @@
 #include <QTest>
 #include <QSignalSpy>
 #include "akonadiprovider.h"
+#include "akonadibackendcontribution.h"
 
 using namespace Kalburator::Sync;
 
@@ -20,6 +21,15 @@ private slots:
         AkonadiProvider p;
         auto backend = p.createBackend(QStringLiteral("akonadi-1"));
         QCOMPARE(backend.get(), nullptr);
+    }
+
+    void contribution_exposes_akonadiBackendType() {
+        Kalburator::Sync::AkonadiBackendContribution c;
+        QCOMPARE(c.backendType(), QStringLiteral("akonadi"));
+        QVERIFY(!c.nativeShapes().isEmpty());
+        auto p = c.createProvider(nullptr);
+        QVERIFY(p);
+        QCOMPARE(p->kind(), QStringLiteral("akonadi"));
     }
 };
 
