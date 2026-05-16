@@ -140,3 +140,14 @@ add_test(NAME tst_carddav_provider COMMAND tst_carddav_provider)
 set_tests_properties(tst_carddav_provider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# Phase L.1 — AkonadiProvider identity tests.
+if(KALBURATOR_HAVE_AKONADI)
+    add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)
+    target_link_libraries(tst_akonadiprovider PRIVATE
+        kalburator Qt6::Test Qt6::Core)
+    add_test(NAME tst_akonadiprovider COMMAND tst_akonadiprovider)
+    set_tests_properties(tst_akonadiprovider PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()
