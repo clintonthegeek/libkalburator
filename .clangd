@@ -1,4 +1,4 @@
+CompilationDatabase: build-akonadi
 CompileFlags:
-  CompilationDatabase: build-akonadi
   Remove:
     - -mno-direct-extern-access
