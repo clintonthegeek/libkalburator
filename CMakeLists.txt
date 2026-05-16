@@ -400,6 +400,8 @@ set(KALBURATOR_PLUGIN_HEADERS
     src/plugin/stock_plugins.h
     src/plugin/caldavproviderplugin.h
     src/plugin/carddavproviderplugin.h
+    # Phase M: Multi-protocol DAV provider plugin
+    src/plugin/multiprotocoldavproviderplugin.h
     # Phase L.3: Akonadi plugin manifest (gated on HAVE_AKONADI)
     src/plugin/akonadiproviderplugin.h
 )
@@ -409,6 +411,8 @@ set(KALBURATOR_PLUGIN_SOURCES
     src/plugin/stock_plugins.cpp
     src/plugin/caldavproviderplugin.cpp
     src/plugin/carddavproviderplugin.cpp
+    # Phase M: Multi-protocol DAV provider plugin
+    src/plugin/multiprotocoldavproviderplugin.cpp
     # Phase L.3: Akonadi plugin manifest (gated on HAVE_AKONADI)
     src/plugin/akonadiproviderplugin.cpp
 )
@@ -437,6 +441,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/akonadiconfigwidget.h
     # Phase M: Multi-protocol DAV provider
     src/sync/multiprotocoldavprovider.h
+    # Phase M.7: Multi-protocol DAV backend contribution
+    src/sync/multiprotocoldavbackendcontribution.h
     # Phase M.6: Multi-protocol DAV config widget
     src/sync/multiprotocoldavconfigwidget.h
 )
