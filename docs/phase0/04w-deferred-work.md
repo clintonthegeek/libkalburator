@@ -350,8 +350,8 @@ them in.
 
 ### C.1 Akonadi provider (backend exists; provider + contacts + plugin-ization pending — Phase L)
 
-**Status:** ⬜ partially landed; Phase L proposed for completion (planned 2026-05-15).
-**Target phase:** Phase L.
+**Status:** ✅ landed 2026-05-16 (Phase L, tag `v0.41-phase-l-akonadi-provider`).
+**Target phase:** Phase L (delivered).
 **Source:** `ROADMAP.md` ("Akonadi/CardDAV deferred"); CardDAV
 shipped in Phase Ib. Akonadi calendar backend was actually
 already in tree at the start of the refactor — see below.
