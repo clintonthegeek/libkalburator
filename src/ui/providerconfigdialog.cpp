@@ -71,6 +71,8 @@ ProviderConfigDialog::ProviderConfigDialog(
     rebuildProviderWidget();
 }
 
+ProviderConfigDialog::~ProviderConfigDialog() = default;
+
 void ProviderConfigDialog::onProviderChanged(int)
 {
     rebuildProviderWidget();
@@ -85,10 +87,7 @@ void ProviderConfigDialog::rebuildProviderWidget()
         delete c->widget();
         delete c;
     }
-    if (m_currentProvider) {
-        m_currentProvider->deleteLater();
-        m_currentProvider = nullptr;
-    }
+    m_currentProvider.reset();
 
     m_embeddedConfig = nullptr;
 

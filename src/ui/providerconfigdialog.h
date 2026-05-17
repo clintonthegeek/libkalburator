@@ -6,6 +6,7 @@
 
 #include <QDialog>
 #include <QList>
+#include <memory>
 
 class QComboBox;
 class QWidget;
@@ -31,6 +32,7 @@ public:
                          Mode mode,
                          const Sync::BackendConfiguration &existing = {},
                          QWidget *parent = nullptr);
+    ~ProviderConfigDialog() override;
 
     Sync::BackendConfiguration result() const;
     QStringList selectedCollectionIds() const;
@@ -50,7 +52,7 @@ private:
 
     QComboBox              *m_combo           = nullptr;
     QWidget                *m_embeddedConfig  = nullptr;
-    Sync::IProvider        *m_currentProvider = nullptr;
+    std::unique_ptr<Sync::IProvider> m_currentProvider;
     CollectionPickerWidget *m_picker          = nullptr;
     QPushButton            *m_testButton      = nullptr;
     QPushButton            *m_saveButton      = nullptr;
