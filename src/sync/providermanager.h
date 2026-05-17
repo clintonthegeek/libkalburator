@@ -48,6 +48,7 @@ public:
 
     QList<IProvider*> providers() const;
     IProvider *providerById(const QString &id) const;
+    BackendRegistry *backendRegistry() const { return m_registry; }
 
 signals:
     void providerConnectionStateChanged(QString providerId, bool connected);
