@@ -37,6 +37,13 @@ public:
     Sync::BackendConfiguration result() const;
     QStringList selectedCollectionIds() const;
 
+    /// M.5: moves the dialog's currently-configured provider out to the
+    /// caller. After this call the dialog is inert — do not invoke
+    /// onTestClicked(), result(), or selectedCollectionIds(). Returns
+    /// null if no provider was constructed (e.g. user cancelled before
+    /// selecting a kind, or the kind had no registered contribution).
+    std::unique_ptr<Sync::IProvider> takeProvider();
+
 private slots:
     void onProviderChanged(int comboIndex);
     void onTestClicked();

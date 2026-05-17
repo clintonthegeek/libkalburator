@@ -19,6 +19,7 @@ private slots:
     void comboPopulatedFromKindsList();
     void switchingComboEmbedHostPersists();
     void embedHostBuildsConfigWidgetWhenContributionRegistered();
+    void takeProviderMovesOwnership();
 };
 
 void TstProviderConfigDialog::comboPopulatedFromKindsList()
@@ -68,6 +69,21 @@ void TstProviderConfigDialog::embedHostBuildsConfigWidgetWhenContributionRegiste
     QVERIFY(embedHost != nullptr);
     QVERIFY2(embedHost->layout()->count() > 0,
              "expected provider's config widget to be embedded after wiring");
+}
+
+void TstProviderConfigDialog::takeProviderMovesOwnership()
+{
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
+    ProviderManager pm(&registry);
+    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
+        { QStringLiteral("caldav"), QStringLiteral("CalDAV") },
+    };
+    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    auto p = dlg.takeProvider();
+    QVERIFY2(p.get() != nullptr, "first takeProvider() must yield the constructed provider");
+    auto p2 = dlg.takeProvider();
+    QVERIFY2(p2.get() == nullptr, "second takeProvider() must yield null");
 }
 
 QTEST_MAIN(TstProviderConfigDialog)

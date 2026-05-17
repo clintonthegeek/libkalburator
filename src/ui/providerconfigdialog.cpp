@@ -155,4 +155,9 @@ QStringList ProviderConfigDialog::selectedCollectionIds() const
     return m_picker ? m_picker->selected() : QStringList{};
 }
 
+std::unique_ptr<Sync::IProvider> ProviderConfigDialog::takeProvider()
+{
+    return std::move(m_currentProvider);
+}
+
 } // namespace Kalburator::Ui
