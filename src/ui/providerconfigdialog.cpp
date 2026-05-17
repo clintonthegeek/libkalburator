@@ -2,6 +2,8 @@
 #include "collectionpickerwidget.h"
 #include "../sync/providermanager.h"
 #include "../sync/iprovider.h"
+#include "../sync/backendregistry.h"
+#include "../sync/backendcontribution.h"
 
 #include <QComboBox>
 #include <QDialogButtonBox>
@@ -94,9 +96,13 @@ void ProviderConfigDialog::rebuildProviderWidget()
     const QString kind = m_combo->currentData().toString();
     if (kind.isEmpty()) return;
 
-    // Provider creation via manager/registry is deferred to consumer wiring.
-    // For now the embed host is empty until the consumer subclasses or wires
-    // provider creation through a factory callback.
+    // M.5: instantiate the provider via the registry contribution.
+    // Pass nullptr parent — unique_ptr owns; QObject parent-child would
+    // double-delete.
+    auto *registry = m_manager ? m_manager->backendRegistry() : nullptr;
+    auto *contribution = registry ? registry->contributionFor(kind) : nullptr;
+    if (!contribution) return;
+    m_currentProvider = contribution->createProvider(nullptr);
     if (!m_currentProvider) return;
 
     if (m_mode == EditExisting && m_existing.type == kind)

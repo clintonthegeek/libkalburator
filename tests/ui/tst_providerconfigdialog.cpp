@@ -1,11 +1,13 @@
 #include <QObject>
 #include <QtTest/QtTest>
 #include <QComboBox>
+#include <QLayout>
 #include <QSignalSpy>
 
 #include "../../src/ui/providerconfigdialog.h"
 #include "../../src/sync/providermanager.h"
 #include "../../src/sync/backendregistry.h"
+#include "../../src/sync/caldavbackendcontribution.h"
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;
@@ -16,6 +18,7 @@ class TstProviderConfigDialog : public QObject
 private slots:
     void comboPopulatedFromKindsList();
     void switchingComboEmbedHostPersists();
+    void embedHostBuildsConfigWidgetWhenContributionRegistered();
 };
 
 void TstProviderConfigDialog::comboPopulatedFromKindsList()
@@ -50,6 +53,21 @@ void TstProviderConfigDialog::switchingComboEmbedHostPersists()
     QVERIFY(dlg.findChild<QWidget*>(QStringLiteral("providerConfigEmbed")) != nullptr);
     combo->setCurrentIndex(1);
     QVERIFY(dlg.findChild<QWidget*>(QStringLiteral("providerConfigEmbed")) != nullptr);
+}
+
+void TstProviderConfigDialog::embedHostBuildsConfigWidgetWhenContributionRegistered()
+{
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CalDavBackendContribution>());
+    ProviderManager pm(&registry);
+    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
+        { QStringLiteral("caldav"), QStringLiteral("CalDAV") },
+    };
+    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    auto *embedHost = dlg.findChild<QWidget*>(QStringLiteral("providerConfigEmbed"));
+    QVERIFY(embedHost != nullptr);
+    QVERIFY2(embedHost->layout()->count() > 0,
+             "expected provider's config widget to be embedded after wiring");
 }
 
 QTEST_MAIN(TstProviderConfigDialog)
