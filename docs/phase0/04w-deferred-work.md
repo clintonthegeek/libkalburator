@@ -481,9 +481,9 @@ blocked.
 
 ### D.1 PlanStan: CardDAV add-account UI
 
-**Status:** ⬜ NOT landed. Gated to Phase M.5.
-**Target phase:** Phase M.5 (PlanStan wizard integration +
-ProviderConfigDialog wiring).
+**Status:** ✅ landed M.5 (2026-05-17). Runtime "Add Account…" path;
+wizard cards left as follow-up cleanup (low priority).
+**Landed:** Phase M.5 — `v0.43-phase-m5-runtime-add-account`.
 **Source:** Phase Ib design §3; cross-reference `libkalburator/docs/phase0/04x-phase-ib-status.md`.
 **Tracked:** `PlanStan/docs/todo/carddav-account-ui.md`.
 

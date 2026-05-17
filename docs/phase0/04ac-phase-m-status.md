@@ -68,17 +68,25 @@ triggered; both tasks were deferred. See F-M5.
 - **F-M7:** WildPalms `.clangd` pointed at stale `build/` dir — updated to
   `build-dev/` to pick up Phase M's `src/ui/` include path.
 
-## What remains (M.5 follow-up)
+## M.5 follow-up — landed 2026-05-17
 
-- Wire `ProviderConfigDialog::rebuildProviderWidget()` provider creation via
-  `BackendRegistry` contribution lookup (unblock M.11's stub).
-- PlanStan wizard integration to surface `ProviderConfigDialog` in the
-  `AdditionalBackendsPage` / `provisionCalDavProvider` flow.
-- Close D.1 (PlanStan add-account UI).
+- `ProviderManager::backendRegistry()` accessor.
+- `ProviderConfigDialog::rebuildProviderWidget()` wired via
+  `BackendRegistry::contributionFor(kind)->createProvider(nullptr)`.
+- `ProviderConfigDialog::takeProvider()` exposes the constructed
+  IProvider to callers (move semantics).
+- PlanStan `MainWindow` "Add Account…" File-menu action launches
+  `ProviderConfigDialog` and feeds the result to a new generic
+  `CollectionController::provisionProvider()`. Wizard
+  `AdditionalBackendsPage` + `provisionCalDavProvider` left untouched.
+- Tag: `v0.43-phase-m5-runtime-add-account`.
 
 ## Deferred work status
 
 - **B.5** (multi-protocol DAV provider): ✅ CLOSED — `MultiProtocolDavProvider`
   shipped; both consumers receive it via `stock_plugins`.
-- **D.1** (PlanStan CalDAV dialog → library dialog): ❌ NOT CLOSED — gated to M.5.
-  WildPalms `AccountsPage` migrated (M.14); PlanStan wizard integration pending.
+- **D.1** (PlanStan CalDAV dialog → library dialog): ✅ CLOSED —
+  runtime "Add Account…" entry point in PlanStan MainWindow opens
+  `ProviderConfigDialog`. Wizard cards untouched (deliberate
+  non-goal; a future cleanup may dedupe against IProvider config
+  widgets). WildPalms keeps its own AddAccountDialog (not migrated).
