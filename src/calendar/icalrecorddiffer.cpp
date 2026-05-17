@@ -61,7 +61,7 @@ bool RecordDifferICal::equal(const CanonicalRecord& a,
     const auto incB = parseIcal(b.data);
 
     if (!incA && !incB)
-        return true;
+        return false;
     if (!incA || !incB)
         return false;
 

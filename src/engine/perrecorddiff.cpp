@@ -93,6 +93,18 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
     for (auto it = tById.constBegin(); it != tById.constEnd(); ++it) allIds.insert(it.key());
     for (auto it = bById.constBegin(); it != bById.constEnd(); ++it) allIds.insert(it.key());
 
+    // Prefer hash equality over semantic diff: baseline records store
+    // contentHash but not actual data bytes, so feeding a hash string
+    // to a JSON/iCal/vcard parser gives wrong results. When both records
+    // carry a contentHash, compare hashes directly; fall back to the
+    // semantic differ only when hashes are absent.
+    auto equalRecords = [&differ, &canonical](const BackendRecord& a,
+                                               const BackendRecord& b) -> bool {
+        if (!a.contentHash.isEmpty() && !b.contentHash.isEmpty())
+            return a.contentHash == b.contentHash;
+        return differ.equal(toCanonical(a, canonical), toCanonical(b, canonical));
+    };
+
     for (const QString& id : allIds) {
         const bool hasS = sById.contains(id);
         const bool hasT = tById.contains(id);
@@ -102,13 +114,9 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
         const BackendRecord tRec = hasT ? tById.value(id) : BackendRecord{};
         const BackendRecord bRec = hasB ? bById.value(id) : BackendRecord{};
 
-        const auto sCanon = toCanonical(sRec, canonical);
-        const auto tCanon = toCanonical(tRec, canonical);
-        const auto bCanon = toCanonical(bRec, canonical);
-
         if (hasS && hasT && hasB) {
-            const bool sChanged = !differ.equal(sCanon, bCanon);
-            const bool tChanged = !differ.equal(tCanon, bCanon);
+            const bool sChanged = !equalRecords(sRec, bRec);
+            const bool tChanged = !equalRecords(tRec, bRec);
             if (!sChanged && !tChanged) continue;
             if (sChanged && !tChanged)
                 result.toTarget.append(makeUpdate(sRec, bRec, tRec));
@@ -117,12 +125,12 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
             else
                 result.toTarget.append(makeConflict(sRec, tRec, bRec));
         } else if (!hasS && hasT && hasB) {
-            if (!differ.equal(tCanon, bCanon))
+            if (!equalRecords(tRec, bRec))
                 result.toTarget.append(makeConflict(BackendRecord{}, tRec, bRec));
             else
                 result.toTarget.append(makeDelete(bRec, bRec));
         } else if (hasS && !hasT && hasB) {
-            if (!differ.equal(sCanon, bCanon))
+            if (!equalRecords(sRec, bRec))
                 result.toTarget.append(makeConflict(sRec, BackendRecord{}, bRec));
             else
                 result.toSource.append(makeDelete(bRec, bRec));
@@ -131,7 +139,7 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
         } else if (!hasS && hasT && !hasB) {
             result.toSource.append(makeCreate(tRec));
         } else if (hasS && hasT && !hasB) {
-            if (!differ.equal(sCanon, tCanon))
+            if (!equalRecords(sRec, tRec))
                 result.toTarget.append(makeConflict(sRec, tRec, BackendRecord{}));
         }
         // (!hasS && !hasT && hasB) is vestigial; ignore.

@@ -32,6 +32,12 @@ QSet<PropertyId> TextDiffer::diff(
 
     QSet<PropertyId> changed;
 
+    if (src.isEmpty() && base.isEmpty()) {
+        // Both non-parseable as memo JSON; data not byte-equal (checked above).
+        changed.insert(PropertyId{"body"});
+        return changed;
+    }
+
     if (src["body"] != base["body"])
         changed.insert(PropertyId{"body"});
     if (src["categories"] != base["categories"])

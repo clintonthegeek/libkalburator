@@ -1,6 +1,7 @@
 #include "syncengine.h"
 #include "baselinestore.h"
 #include "blobbatchdiff.h"
+#include "perrecorddiff.h"
 #include "propertydiff.h"
 #include "domainoperationsregistry.h"
 #include "domaindefinition.h"
@@ -2034,12 +2035,13 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     }
 
     // --- Diff + merge (pure computation, worker thread) ---
-    // Phase Ia.5 Task 16: BlobDomainAdapter folded into free-function
-    // batch helpers. Phase Ib.5 (or later) replaces these with a
-    // per-record IRecordDiffer/Merger walk owned by the domain plugin.
-    const Sync::BackendCapabilities srcCaps, tgtCaps;
-    const EngineDiff engineDiff = blobBatchDiff(
-        sourceRecords, targetRecords, baselineRecords, srcCaps, tgtCaps);
+    // Phase N.1: per-record diff via the domain plugin's canonical
+    // RecordDiffer. Replaces the Phase Ia.5 batch helper blobBatchDiff.
+    m_unifiedDiffer = dd->createCanonicalDiffer();
+    m_unifiedMerger = dd->createCanonicalMerger();
+    const EngineDiff engineDiff = perRecordDiff(
+        sourceRecords, targetRecords, baselineRecords,
+        canonical, *m_unifiedDiffer);
 
     // Seed baselines for records that are already in sync (same ID, same hash
     // on both sides, no existing baseline). Without this, a subsequent sync
@@ -2091,10 +2093,13 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // mirror-aware helper and skip the conflict-walk entirely.
     using Direction = ExecutionOverride::Direction;
     const Direction dir = request.override.direction;
-    if (dir == Direction::MirrorAToB || dir == Direction::MirrorBToA) {
-        m_unifiedMerge = blobBatchMergeWithPlugin(
-            m_unifiedDiff, request.mapping.conflictPolicy,
-            request.override, /*customMerger=*/nullptr, canonical);
+    if (dir == Direction::MirrorAToB) {
+        m_unifiedMerge = mergeMirrorAToB(m_unifiedDiff);
+        unifiedContinueAfterConflicts();
+        return true;
+    }
+    if (dir == Direction::MirrorBToA) {
+        m_unifiedMerge = mergeMirrorBToA(m_unifiedDiff);
         unifiedContinueAfterConflicts();
         return true;
     }
@@ -2317,6 +2322,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
+            m_unifiedDiffer.reset();
+            m_unifiedMerger.reset();
             emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
             return;
         }
@@ -2541,6 +2548,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     }
     m_currentResult.endTime = QDateTime::currentDateTime();
     qDebug() << "SyncEngineWorker::unifiedContinueAfterConflicts completed for" << mappingId;
+    m_unifiedDiffer.reset();
+    m_unifiedMerger.reset();
     emit syncCompleted(mappingId, m_currentResult);
 }
 

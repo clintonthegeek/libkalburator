@@ -32,8 +32,10 @@ QSet<PropertyId> RecordDifferVCard::diff(
 
     QSet<PropertyId> changed;
 
-    if (src.isEmpty() && base.isEmpty())
-        return {};
+    if (src.isEmpty() && base.isEmpty()) {
+        changed.insert(PropertyId{"fn"});
+        return changed;
+    }
 
     if (src.isEmpty() || base.isEmpty()) {
         changed.insert(PropertyId{"fn"});

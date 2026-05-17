@@ -2,6 +2,8 @@
 #define KALBURATOR_SYNCENGINE_H
 
 #include "enginediff.h"
+#include "recorddiffer.h"
+#include "recordmerger.h"
 #include "shape.h"
 #include "synctypes.h"
 #include "syncdiff.h"
@@ -23,6 +25,7 @@
 #include <QFutureInterface>
 #include <QFutureWatcher>
 #include <atomic>
+#include <memory>
 #include <type_traits>
 
 namespace Kalburator::Storage {
@@ -312,6 +315,10 @@ private:
     ConflictResolution m_unifiedPolicy = ConflictResolution::SourceWins;
     ExecutionOverride m_unifiedOverride;
     Kalburator::Shape::Shape m_unifiedCanonical;
+    // Phase N.1: domain plugin's canonical differ + merger, acquired once per
+    // dispatchSync and retained across AskUser pause/resume.
+    std::unique_ptr<Kalburator::Shape::RecordDiffer> m_unifiedDiffer;
+    std::unique_ptr<Kalburator::Shape::RecordMerger> m_unifiedMerger;
 
     QElapsedTimer m_totalTimer;
     QElapsedTimer m_phaseTimer;
