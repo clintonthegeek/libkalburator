@@ -99,6 +99,8 @@ void ProviderManager::saveToProfile(KConfigGroup &providersGroup) const
 void ProviderManager::addProvider(std::unique_ptr<IProvider> provider)
 {
     if (!provider) return;
+    // m_providerStates is lazily populated — entry appears on first
+    // connectionStateChanged from this provider, not at addProvider time.
     wireProviderSignals(provider.get());
     m_providers.push_back(std::move(provider));
     emit providersChanged();
@@ -115,6 +117,7 @@ void ProviderManager::removeProvider(const QString &providerId)
         (*it)->disconnect();
     }
     m_providers.erase(it);
+    m_providerStates.remove(providerId);
     emit providersChanged();
 }
 
@@ -158,6 +161,11 @@ IProvider *ProviderManager::providerById(const QString &id) const
     return nullptr;
 }
 
+ProviderConnectionState ProviderManager::providerState(const QString &id) const
+{
+    return m_providerStates.value(id, ProviderConnectionState::Disconnected);
+}
+
 void ProviderManager::onProviderConnectionStateChanged(bool connected)
 {
     auto *provider = qobject_cast<IProvider*>(sender());
@@ -167,7 +175,12 @@ void ProviderManager::onProviderConnectionStateChanged(bool connected)
     } else {
         unregisterProviderBackends(provider);
     }
-    emit providerConnectionStateChanged(provider->id(), connected);
+    const ProviderConnectionState newState = connected
+        ? ProviderConnectionState::Connected
+        : ProviderConnectionState::Disconnected;
+    m_providerStates[provider->id()] = newState;
+    emit providerStateChanged(provider->id(), newState);
+    emit providerConnectionStateChanged(provider->id(), connected);  // deprecated in O.4
 }
 
 void ProviderManager::onProviderCollectionsChanged()

@@ -170,6 +170,7 @@ private slots:
     void connectAll_with_zero_providers_returns_finished_future();
     void default_factory_creates_caldav_provider();
     void default_factory_creates_carddav_provider();
+    void providerState_transitionsThroughLifecycle();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -512,6 +513,44 @@ void TstProviderManager::default_factory_creates_carddav_provider()
     mgr.loadFromProfile(providers);
     QCOMPARE(mgr.providers().size(), 1);
     QCOMPARE(mgr.providers().first()->kind(), QStringLiteral("carddav"));
+}
+
+void TstProviderManager::providerState_transitionsThroughLifecycle()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p1"));
+    FakeProvider *raw = p.get();
+    mgr.addProvider(std::move(p));
+
+    QSignalSpy spy(&mgr, &ProviderManager::providerStateChanged);
+
+    // Initial: Disconnected (querying state must not emit).
+    QCOMPARE(mgr.providerState(QStringLiteral("p1")),
+             ProviderConnectionState::Disconnected);
+    QCOMPARE(spy.count(), 0);
+
+    // Simulate connection success.
+    QVERIFY(waitForFuture(raw->connect()));
+    QCOMPARE(mgr.providerState(QStringLiteral("p1")),
+             ProviderConnectionState::Connected);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.first().at(0).toString(), QStringLiteral("p1"));
+    QCOMPARE(spy.first().at(1).value<ProviderConnectionState>(),
+             ProviderConnectionState::Connected);
+
+    // Simulate disconnect.
+    raw->disconnect();
+    QCOMPARE(mgr.providerState(QStringLiteral("p1")),
+             ProviderConnectionState::Disconnected);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.at(1).at(1).value<ProviderConnectionState>(),
+             ProviderConnectionState::Disconnected);
+
+    // Unknown provider: queries return Disconnected (safe default).
+    QCOMPARE(mgr.providerState(QStringLiteral("does-not-exist")),
+             ProviderConnectionState::Disconnected);
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)
