@@ -55,6 +55,7 @@ your memory; don't trust the coordination folder.
   - [F.9 G5: BackendsSettingsPage provider ownership](#f9-g5-backendssettingspage-provider-ownership)
   - [F.10 G6: Provider credentials vs backend params split](#f10-g6-provider-credentials-vs-backend-params-split)
   - [F.11 G10 part 2: provenance display in topology canvas](#f11-g10-part-2-provenance-display-in-topology-canvas)
+  - [F.12 Deferred to follow-up phase (post-O.4)](#f12-deferred-to-follow-up-phase-post-o4)
 
 ---
 
@@ -667,27 +668,33 @@ update for Phase O.
 
 ### F.1 G7: BackendRegistry signals + dynamic kind picker
 
-**Status:** ✅ landed 2026-05-18 (Phase O.1.1 + O.1.4,
-tag `v0.45-phase-o1-libkalburator-ui-foundations`).
+**Status:** ✅ closed 2026-05-18 (Phase O.1.1 + O.1.4 +
+O.4.10 ctor deletion,
+tags `v0.45-phase-o1-libkalburator-ui-foundations`,
+`v0.48-phase-o4-legacy-cleanup`).
 
 `BackendRegistry::contributionRegistered(id)` and
 `contributionUnregistered(id)` added (O.1.1). `ProviderConfigDialog`
 registry-aware constructor subscribes to those signals and rebuilds
 the kind-picker combo live (O.1.4). Old hardcoded-kinds constructor
-preserved for one release; removed in Phase O.4.
+deleted in Phase O.4 (task 10).
 
 ---
 
 ### F.2 G8 part 1: per-provider state introspection
 
-**Status:** ✅ landed 2026-05-18 (Phase O.1.2,
-tag `v0.45-phase-o1-libkalburator-ui-foundations`).
+**Status:** ⏳ partial 2026-05-18 (Phase O.1.2,
+tag `v0.45-phase-o1-libkalburator-ui-foundations`). Full G8
+closure (deprecated boolean signal removal) deferred pending
+WildPalms migration — see "Deferred to follow-up" below.
 
 `ProviderManager::providerState(id)` returns `ProviderConnectionState`;
 `providerStateChanged(id, ProviderConnectionState)` signal added.
 `ProviderConnectionState` enum: Disconnected / Connecting / Connected /
 Error. Old boolean `providerConnectionStateChanged(id, bool)` preserved
-for deprecation overlap; removed in Phase O.4.
+through Phase O.4 because WildPalms still subscribes to it (per design
+§3 WildPalms remains untouched through O.4). Removal blocked on WildPalms
+migration to the enum signal.
 
 **Note:** `Connecting` and `Error` are forward-looking reserved values.
 Current code paths map only to Connected/Disconnected because
@@ -765,47 +772,61 @@ IGraphNode subclasses render alongside `BackendNode` in the graph;
 
 ### F.8 G4 (partial): NewCollectionWizard reshape
 
-**Status:** ⏳ partial 2026-05-18 (Phase O.3 Task 9,
-tag `v0.47-phase-o3-topology-canvas-v2`); full rewire deferred to **Phase O.4**.
+**Status:** ⏳ partial 2026-05-18 (Phase O.3 Task 9 + Phase O.4
+Tasks 5–6, tags `v0.47-phase-o3-topology-canvas-v2`,
+`v0.48-phase-o4-legacy-cleanup`). Full wizard-chrome integration
+in `SyncTopologyViewPanel` deferred — see "Deferred to follow-up"
+below.
 
-`WizardChromeOverlay` lands as a composable wrapper around
+`WizardChromeOverlay` (O.3.9) lands as a composable wrapper around
 `SyncTopologyWidget` exposing a sidebar checklist of provider/backend/binding
-steps and a Finish button gated by `GraphValidationResult`. This is the
-canvas-side provider-aware wizard flow.
+steps and a Finish button gated by `GraphValidationResult`.
 
-**Deferred to O.4:** rewire `NewCollectionWizard` menu entry to launch
-`TopologyViewPanel` in wizard-chrome mode, then delete the old wizard. The
-existing `NewCollectionWizard` remains in place until O.4 finishes the
-cutover.
+Phase O.4 (Task 5) rewired `File → New Collection` to a minimal
+path-prompt + layout switch flow that creates an empty `.kalb`
+collection and switches the main window to the `collection` layout
+(which already renders `sync_topology` per O.3.10). The
+`NewCollectionWizard` + `AdditionalBackendsPage` files were deleted
+(Task 6).
+
+**Deferred to follow-up:** full wizard-chrome mode in
+`SyncTopologyViewPanel` (currently just renders the canvas; the
+`WizardChromeOverlay` is not yet wired into the panel's new-collection
+launch path).
 
 ---
 
 ### F.9 G5: BackendsSettingsPage provider ownership
 
-**Status:** ✅ superseded 2026-05-18 by Phase O.3 topology canvas
-(tag `v0.47-phase-o3-topology-canvas-v2`).
+**Status:** ✅ closed 2026-05-18 by Phase O.4 deletion of
+`BackendsSettingsPage` (tags `v0.47-phase-o3-topology-canvas-v2`,
+`v0.48-phase-o4-legacy-cleanup`).
 
 Rather than retrofit `BackendsSettingsPage` with a provider column, Phase O.3
-promotes the topology canvas to a main view (`sync_topology`) where provider
+promoted the topology canvas to a main view (`sync_topology`) where provider
 ownership is rendered structurally as graph edges between `ProviderNode`s
-and `BackendNode` / `LocalBackendNode` / `LogicalCalendarsBlock`. The old
-`BackendsSettingsPage` is scheduled for deletion in **Phase O.4** legacy
-cleanup.
+and `BackendNode` / `LocalBackendNode` / `LogicalCalendarsBlock`. Phase O.4
+Tasks 2–3 dropped `BackendsSettingsPage` (and `CalendarsSettingsPage`) from
+`CollectionSettingsDialog` + `CollectionSettingsViewPanel` registrations and
+then deleted the source files.
 
 ---
 
 ### F.10 G6: Provider credentials vs backend params split
 
-**Status:** ✅ landed 2026-05-18 across Phase O.1.4 + Phase O.3
+**Status:** ✅ closed 2026-05-18 across Phase O.1.4 + Phase O.3 +
+Phase O.4.10 hardcoded-ctor deletion
 (tags `v0.45-phase-o1-libkalburator-ui-foundations`,
-`v0.47-phase-o3-topology-canvas-v2`).
+`v0.47-phase-o3-topology-canvas-v2`,
+`v0.48-phase-o4-legacy-cleanup`).
 
 Phase O.1.4 added the registry-aware `ProviderConfigDialog` ctor that
 constructs provider widgets via `IProvider::createConfigWidget`, decoupling
 provider credentials from `BackendConfigWidgetBase` subclasses. Phase O.3
 extended this with provider CRUD on `ISyncTopologyDataSource` so the canvas
 can edit provider credentials directly via the registry-aware dialog without
-going through backend-shaped UI.
+going through backend-shaped UI. Phase O.4 Task 10 deleted the legacy
+hardcoded-kinds `ProviderConfigDialog` constructor.
 
 ---
 
@@ -820,6 +841,41 @@ capability chips and a connection-state chip; `LogicalCalendarsBlock`
 displays multi-row per-calendar binding rows linking each logical calendar
 back to its owning provider+backend edge. Provenance is now visible
 structurally rather than buried in tooltips.
+
+---
+
+### F.12 Deferred to follow-up phase (post-O.4)
+
+**Status:** ⬜ deferred 2026-05-18 — items the Phase O design called out
+but Phase O.4 (or earlier O sub-phases) explicitly did not deliver. These
+are tracked as a single follow-up bucket rather than a named phase until
+the work is scoped.
+
+- **`ProviderManager::providerConnectionStateChanged(QString, bool)` removal.**
+  The deprecated boolean signal was preserved through O.4 because WildPalms
+  still subscribes to it. Removal blocked on WildPalms migration to the
+  enum-typed `providerStateChanged(QString, ProviderConnectionState)`. See
+  F.2 above.
+
+- **WildPalms `ProviderConfigDialog` migration.** WildPalms still
+  instantiates `ProviderConfigDialog` via the hardcoded-kinds path (where
+  applicable) and consumes the boolean state signal. Per design §3 WildPalms
+  was kept untouched through O.4; migration to the registry-aware ctor and
+  the enum state signal is the prerequisite for closing F.2 fully and for
+  any further deprecation removal on the libkalburator side.
+
+- **`SyncTopologyViewPanel` wizard-chrome mode.** Phase O.4.5 wired
+  `File → New Collection` to a minimal path-prompt + layout switch that
+  lands the user in the topology canvas via the `collection` layout. The
+  panel does not yet host `WizardChromeOverlay`. Full wizard-chrome
+  integration (sidebar checklist + Finish-gating inside
+  `SyncTopologyViewPanel`) is deferred. See F.8 above.
+
+- **Right-click context menu on canvas.** The Phase O design called for
+  a canvas-level right-click context menu (provider/backend node actions:
+  edit, remove, reconnect, etc.). Not delivered in O.3 or O.4 — node
+  affordances are currently surfaced only via the palette dock and double-
+  click. Deferred to a follow-up phase.
 
 ---
 
