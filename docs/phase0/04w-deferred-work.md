@@ -50,6 +50,11 @@ your memory; don't trust the coordination folder.
   - [F.4 G9: CollectionController provider lifecycle API](#f4-g9-collectioncontroller-provider-lifecycle-api)
   - [F.5 G1: Add Account → addLogicalCalendarsFromCollections](#f5-g1-add-account--addlogicalcalendarsfromcollections)
   - [F.6 G2: PlanStan AccountsSettingsPage](#f6-g2-planstan-accountssettingspage)
+  - [F.7 G3: SyncTopologyWidget provider awareness](#f7-g3-synctopologywidget-provider-awareness)
+  - [F.8 G4 (partial): NewCollectionWizard reshape](#f8-g4-partial-newcollectionwizard-reshape)
+  - [F.9 G5: BackendsSettingsPage provider ownership](#f9-g5-backendssettingspage-provider-ownership)
+  - [F.10 G6: Provider credentials vs backend params split](#f10-g6-provider-credentials-vs-backend-params-split)
+  - [F.11 G10 part 2: provenance display in topology canvas](#f11-g10-part-2-provenance-display-in-topology-canvas)
 
 ---
 
@@ -740,6 +745,81 @@ between the Behaviours and Sync pages. Embeds `AccountsListWidget` (shipped
 in Phase M as the generic provider-list widget). Provides in-app accounts
 list, remove-account, and edit-account affordances. WildPalms equivalent
 (`AccountsPage`) was already shipped in Phase M (M.14).
+
+---
+
+### F.7 G3: SyncTopologyWidget provider awareness
+
+**Status:** ✅ landed 2026-05-18 (Phase O.3 Tasks 1, 2, 4, 6,
+tag `v0.47-phase-o3-topology-canvas-v2`).
+
+`ISyncTopologyDataSource` gained provider CRUD (`providers()`,
+`addProvider()`, `updateProvider()`, `removeProvider()`) with default empty
+impls, overridden by `KalbSyncTopologyDataSource` delegating to
+`CollectionController`. `TopologyChangeset` gained provider/local-backend
+node tracking with atomic apply. New `ProviderNode` and `LocalBackendNode`
+IGraphNode subclasses render alongside `BackendNode` in the graph;
+`SyncTopologyWidget` applies provider+backend+mapping changes atomically.
+
+---
+
+### F.8 G4 (partial): NewCollectionWizard reshape
+
+**Status:** ⏳ partial 2026-05-18 (Phase O.3 Task 9,
+tag `v0.47-phase-o3-topology-canvas-v2`); full rewire deferred to **Phase O.4**.
+
+`WizardChromeOverlay` lands as a composable wrapper around
+`SyncTopologyWidget` exposing a sidebar checklist of provider/backend/binding
+steps and a Finish button gated by `GraphValidationResult`. This is the
+canvas-side provider-aware wizard flow.
+
+**Deferred to O.4:** rewire `NewCollectionWizard` menu entry to launch
+`TopologyViewPanel` in wizard-chrome mode, then delete the old wizard. The
+existing `NewCollectionWizard` remains in place until O.4 finishes the
+cutover.
+
+---
+
+### F.9 G5: BackendsSettingsPage provider ownership
+
+**Status:** ✅ superseded 2026-05-18 by Phase O.3 topology canvas
+(tag `v0.47-phase-o3-topology-canvas-v2`).
+
+Rather than retrofit `BackendsSettingsPage` with a provider column, Phase O.3
+promotes the topology canvas to a main view (`sync_topology`) where provider
+ownership is rendered structurally as graph edges between `ProviderNode`s
+and `BackendNode` / `LocalBackendNode` / `LogicalCalendarsBlock`. The old
+`BackendsSettingsPage` is scheduled for deletion in **Phase O.4** legacy
+cleanup.
+
+---
+
+### F.10 G6: Provider credentials vs backend params split
+
+**Status:** ✅ landed 2026-05-18 across Phase O.1.4 + Phase O.3
+(tags `v0.45-phase-o1-libkalburator-ui-foundations`,
+`v0.47-phase-o3-topology-canvas-v2`).
+
+Phase O.1.4 added the registry-aware `ProviderConfigDialog` ctor that
+constructs provider widgets via `IProvider::createConfigWidget`, decoupling
+provider credentials from `BackendConfigWidgetBase` subclasses. Phase O.3
+extended this with provider CRUD on `ISyncTopologyDataSource` so the canvas
+can edit provider credentials directly via the registry-aware dialog without
+going through backend-shaped UI.
+
+---
+
+### F.11 G10 part 2: provenance display in topology canvas
+
+**Status:** ✅ landed 2026-05-18 (Phase O.3 Tasks 4, 5,
+tag `v0.47-phase-o3-topology-canvas-v2`).
+
+Building on F.3 (CollectionInfo capability fields), Phase O.3 surfaces
+provider ownership directly in the topology canvas: `ProviderNode` renders
+capability chips and a connection-state chip; `LogicalCalendarsBlock`
+displays multi-row per-calendar binding rows linking each logical calendar
+back to its owning provider+backend edge. Provenance is now visible
+structurally rather than buried in tooltips.
 
 ---
 
