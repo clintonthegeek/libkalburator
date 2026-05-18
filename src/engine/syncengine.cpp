@@ -2279,6 +2279,28 @@ void SyncEngineWorker::unifiedHandleConflicts()
                 ++m_unifiedMerge.conflictsResolved;
                 break;
             }
+            case ConflictResolution::CustomMerge: {
+                if (!m_unifiedMerger) {
+                    ++m_unifiedMerge.conflictsDeferred;
+                    break;
+                }
+                Kalburator::Shape::CanonicalRecord srcRec{
+                    m_unifiedCanonical, op.record.data,         op.record.id};
+                Kalburator::Shape::CanonicalRecord tgtRec{
+                    m_unifiedCanonical, op.targetRecord.data,   op.record.id};
+                Kalburator::Shape::CanonicalRecord baseRec{
+                    m_unifiedCanonical, op.baselineRecord.data, op.record.id};
+                const auto merged = m_unifiedMerger->merge(
+                    srcRec, tgtRec, baseRec,
+                    Kalburator::Conflict::ConflictPolicy::deferAll());
+                BackendRecord mergedRecord = op.record;
+                mergedRecord.data = merged.data;
+                m_unifiedMerge.finalTarget.append(mergedRecord);
+                m_unifiedMerge.finalSource.append(mergedRecord);
+                m_unifiedMerge.updatedBaselines.append(mergedRecord);
+                ++m_unifiedMerge.conflictsResolved;
+                break;
+            }
             case ConflictResolution::Skip:
                 ++m_unifiedMerge.conflictsDeferred; break;
             default:

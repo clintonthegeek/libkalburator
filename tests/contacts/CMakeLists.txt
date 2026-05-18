@@ -18,6 +18,9 @@ kalburator_add_contacts_test(tst_vcard3_vcard4_edge)
 # Phase Ib.5 Task 3 — AskUser pause/resume in unified dispatchSync (contacts domain)
 kalburator_add_contacts_test(tst_unified_askuser_pause)
 
+# Phase N.1 — CustomMerge resolution in unified dispatchSync (contacts domain)
+kalburator_add_contacts_test(tst_unified_custom_merge)
+
 # Phase K.3 — contacts engine witness.
 # Proves the full pipeline works (fetch/diff/conflict/write/cancel) using
 # KalburatorDomainContacts + vCard4 without calendar-domain code paths.
