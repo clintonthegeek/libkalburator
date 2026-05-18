@@ -775,13 +775,13 @@ IGraphNode subclasses render alongside `BackendNode` in the graph;
 
 ---
 
-### F.8 G4 (partial): NewCollectionWizard reshape
+### F.8 G4: NewCollectionWizard reshape
 
-**Status:** ⏳ partial 2026-05-18 (Phase O.3 Task 9 + Phase O.4
-Tasks 5–6, tags `v0.47-phase-o3-topology-canvas-v2`,
-`v0.48-phase-o4-legacy-cleanup`). Full wizard-chrome integration
-in `SyncTopologyViewPanel` deferred — see "Deferred to follow-up"
-below.
+**Status:** ✅ landed 2026-05-18 (Phase O.3 Task 9 + Phase O.4
+Tasks 5–6 + post-O.4 wizard-chrome integration follow-up). Tags
+`v0.47-phase-o3-topology-canvas-v2`,
+`v0.48-phase-o4-legacy-cleanup`; wizard-chrome wiring landed
+2026-05-18 in a follow-up commit (no separate tag — §F.12 bucket).
 
 `WizardChromeOverlay` (O.3.9) lands as a composable wrapper around
 `SyncTopologyWidget` exposing a sidebar checklist of provider/backend/binding
@@ -794,10 +794,14 @@ collection and switches the main window to the `collection` layout
 `NewCollectionWizard` + `AdditionalBackendsPage` files were deleted
 (Task 6).
 
-**Deferred to follow-up:** full wizard-chrome mode in
-`SyncTopologyViewPanel` (currently just renders the canvas; the
-`WizardChromeOverlay` is not yet wired into the panel's new-collection
-launch path).
+Post-O.4 follow-up (2026-05-18): `SyncTopologyViewPanel` gained
+`enterWizardMode()` which wraps `m_topologyWidget` in a
+`WizardChromeOverlay`. `MainWindow::onActionNewCollection` calls
+`enterWizardMode()` after switching to the `collection` layout, and
+connects `wizardCancelled` to a handler that prompts, then calls
+`closeCollection() + QFile::remove(kalbPath)`. Finish swaps the
+chrome back out, leaving the user in standard edit mode. Test:
+`tst_synctopologyviewpanel_wizard` (PlanStan tests/sync/).
 
 ---
 
@@ -869,12 +873,11 @@ the work is scoped.
   to the deprecated surface was the boolean signal consumer in
   `accountcontroller.cpp`. That bullet has been removed.
 
-- **`SyncTopologyViewPanel` wizard-chrome mode.** Phase O.4.5 wired
-  `File → New Collection` to a minimal path-prompt + layout switch that
-  lands the user in the topology canvas via the `collection` layout. The
-  panel does not yet host `WizardChromeOverlay`. Full wizard-chrome
-  integration (sidebar checklist + Finish-gating inside
-  `SyncTopologyViewPanel`) is deferred. See F.8 above.
+- **`SyncTopologyViewPanel` wizard-chrome mode.** ✅ landed 2026-05-18.
+  `SyncTopologyViewPanel::enterWizardMode()` wraps the canvas in
+  `WizardChromeOverlay`; `MainWindow::onActionNewCollection` calls it
+  after the layout switch and handles `wizardCancelled` by deleting the
+  freshly-created `.kalb`. See F.8 above.
 
 - **Right-click context menu on canvas.** The Phase O design called for
   a canvas-level right-click context menu (provider/backend node actions:
