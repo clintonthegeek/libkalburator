@@ -47,6 +47,9 @@ your memory; don't trust the coordination folder.
   - [F.1 G7: BackendRegistry signals + dynamic kind picker](#f1-g7-backendregistry-signals--dynamic-kind-picker)
   - [F.2 G8 part 1: per-provider state introspection](#f2-g8-part-1-per-provider-state-introspection)
   - [F.3 G10 part 1: CollectionInfo capability metadata](#f3-g10-part-1-collectioninfo-capability-metadata)
+  - [F.4 G9: CollectionController provider lifecycle API](#f4-g9-collectioncontroller-provider-lifecycle-api)
+  - [F.5 G1: Add Account → addLogicalCalendarsFromCollections](#f5-g1-add-account--addlogicalcalendarsfromcollections)
+  - [F.6 G2: PlanStan AccountsSettingsPage](#f6-g2-planstan-accountssettingspage)
 
 ---
 
@@ -488,11 +491,11 @@ blocked.
 
 ### D.1 PlanStan: CardDAV add-account UI
 
-**Status:** ✅ M.5 (2026-05-17) + O.1.4 partial (2026-05-18). Runtime "Add Account…"
-path landed; `ProviderConfigDialog` is now registry-aware (O.1.4); PlanStan wiring
-of the full Accounts page is O.2.
+**Status:** ✅ fully closed 2026-05-18 (O.2.3 + O.2.4,
+tag `v0.46-phase-o2-planstan-provider-lifecycle`).
 **Landed:** Phase M.5 — `v0.43-phase-m5-runtime-add-account`;
-O.1.4 — `v0.45-phase-o1-libkalburator-ui-foundations`.
+O.1.4 — `v0.45-phase-o1-libkalburator-ui-foundations`;
+O.2.3 + O.2.4 — `v0.46-phase-o2-planstan-provider-lifecycle`.
 **Source:** Phase Ib design §3; cross-reference `libkalburator/docs/phase0/04x-phase-ib-status.md`.
 **Tracked:** `PlanStan/docs/todo/carddav-account-ui.md`.
 
@@ -507,21 +510,20 @@ add flow is wizard-based (`provisionCalDavProvider` via
 `AdditionalBackendsPage`). Tasks M.15/16 assumed a
 `CalDavAddDialog` that does not exist (Finding F-M5).
 
-PlanStan still needs:
+O.2.3 (2026-05-18) closed G1: `MainWindow::onAddAccountTriggered`
+was switched to the registry-aware `ProviderConfigDialog` and now
+calls `addLogicalCalendarsFromCollections` after provisioning so
+the user's selected collections are actually persisted as
+`LogicalCalendar` bindings. O.2.4 closed G2: `AccountsSettingsPage`
+was added and wired into `SettingsDialog` between Behaviours and Sync.
+Both items are now complete; D.1 is fully closed.
 
-- Wire `ProviderConfigDialog::rebuildProviderWidget()` provider
-  creation via `BackendRegistry` / contribution.
-- Surface `ProviderConfigDialog` in PlanStan's wizard-based add
-  flow (deeper integration than the dialog-swap the plan assumed).
-- Addressbook selection UI after successful discovery.
-- Profile persistence for the new provider kind.
-
-**Acceptance (M.5):**
-- PlanStan wizard flow reaches `ProviderConfigDialog` for
-  `MultiProtocolDavProvider` account creation.
-- `ProviderConfigDialog::rebuildProviderWidget()` provider
-  creation is fully wired (not stubbed).
-- `tst_collectioncontroller` covers the new flow.
+**Acceptance (delivered):**
+- PlanStan `onAddAccountTriggered` uses registry-aware
+  `ProviderConfigDialog`.
+- `addLogicalCalendarsFromCollections` called after provision.
+- `AccountsSettingsPage` registered in `SettingsDialog`.
+- `tst_collectioncontroller` covers the new flows.
 
 **Note:** WildPalms `AccountsPage` is migrated (M.14). The
 remaining gap is PlanStan-only.
@@ -699,6 +701,45 @@ tag `v0.45-phase-o1-libkalburator-ui-foundations`).
 fields. `CollectionPickerWidget` renders capability chips: content-type
 labels (calendar / contacts / tasks / notes / raw) + read-only chip
 (lock icon) + disabled checkbox for read-only collections.
+
+---
+
+### F.4 G9: CollectionController provider lifecycle API
+
+**Status:** ✅ landed 2026-05-18 (Phase O.2.1,
+tag `v0.46-phase-o2-planstan-provider-lifecycle`).
+
+`CascadePolicy` enum added (Strict / DropBindings / DropBindingsAndOrphans).
+`CollectionController::listProviders()`, `updateProvider(uuid, cfg)`, and
+`removeProvider(uuid, policy)` added, giving PlanStan's UI layer a typed
+API for the full provider lifecycle.
+
+---
+
+### F.5 G1: Add Account → addLogicalCalendarsFromCollections
+
+**Status:** ✅ landed 2026-05-18 (Phase O.2.2 data layer + O.2.3 UI layer,
+tag `v0.46-phase-o2-planstan-provider-lifecycle`).
+
+O.2.2 added `CollectionController::addLogicalCalendarsFromCollections(uuid)`
+which iterates the provider's `collections()` (filtered by
+`selectedCollectionIds`) and creates `LogicalCalendar` bindings. O.2.3 wired
+this into `MainWindow::onAddAccountTriggered` so that completing the
+`ProviderConfigDialog` actually persists the user's selected collections
+rather than dropping them on the floor.
+
+---
+
+### F.6 G2: PlanStan AccountsSettingsPage
+
+**Status:** ✅ landed 2026-05-18 (Phase O.2.4,
+tag `v0.46-phase-o2-planstan-provider-lifecycle`).
+
+`AccountsSettingsPage` added to PlanStan and wired into `SettingsDialog`
+between the Behaviours and Sync pages. Embeds `AccountsListWidget` (shipped
+in Phase M as the generic provider-list widget). Provides in-app accounts
+list, remove-account, and edit-account affordances. WildPalms equivalent
+(`AccountsPage`) was already shipped in Phase M (M.14).
 
 ---
 
