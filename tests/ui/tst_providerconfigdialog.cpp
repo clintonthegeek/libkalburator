@@ -32,7 +32,7 @@ class TstProviderConfigDialog : public QObject
 {
     Q_OBJECT
 private slots:
-    void comboPopulatedFromKindsList();
+    void comboPopulatedFromRegistry();
     void switchingComboEmbedHostPersists();
     void embedHostBuildsConfigWidgetWhenContributionRegistered();
     void takeProviderMovesOwnership();
@@ -40,16 +40,17 @@ private slots:
     void dynamicKindsConstructor_reactsToContributionRegistered();
 };
 
-void TstProviderConfigDialog::comboPopulatedFromKindsList()
+void TstProviderConfigDialog::comboPopulatedFromRegistry()
 {
     BackendRegistry registry;
+    registry.registerContribution(
+        std::make_shared<StubContribution>(QStringLiteral("caldav")));
+    registry.registerContribution(
+        std::make_shared<StubContribution>(QStringLiteral("carddav")));
+    registry.registerContribution(
+        std::make_shared<StubContribution>(QStringLiteral("multiproto-dav")));
     ProviderManager pm(&registry);
-    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
-        { QStringLiteral("caldav"),         QStringLiteral("CalDAV") },
-        { QStringLiteral("carddav"),        QStringLiteral("CardDAV") },
-        { QStringLiteral("multiproto-dav"), QStringLiteral("Multi-protocol DAV") },
-    };
-    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
     auto *combo = dlg.findChild<QComboBox*>(QStringLiteral("providerCombo"));
     QVERIFY(combo != nullptr);
     QCOMPARE(combo->count(), 3);
@@ -58,12 +59,12 @@ void TstProviderConfigDialog::comboPopulatedFromKindsList()
 void TstProviderConfigDialog::switchingComboEmbedHostPersists()
 {
     BackendRegistry registry;
+    registry.registerContribution(
+        std::make_shared<StubContribution>(QStringLiteral("caldav")));
+    registry.registerContribution(
+        std::make_shared<StubContribution>(QStringLiteral("multiproto-dav")));
     ProviderManager pm(&registry);
-    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
-        { QStringLiteral("caldav"),         QStringLiteral("CalDAV") },
-        { QStringLiteral("multiproto-dav"), QStringLiteral("Multi-protocol DAV") },
-    };
-    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
     auto *combo = dlg.findChild<QComboBox*>(QStringLiteral("providerCombo"));
     QVERIFY(combo != nullptr);
     if (combo->count() < 2)
@@ -79,10 +80,7 @@ void TstProviderConfigDialog::embedHostBuildsConfigWidgetWhenContributionRegiste
     BackendRegistry registry;
     registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager pm(&registry);
-    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
-        { QStringLiteral("caldav"), QStringLiteral("CalDAV") },
-    };
-    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
     auto *embedHost = dlg.findChild<QWidget*>(QStringLiteral("providerConfigEmbed"));
     QVERIFY(embedHost != nullptr);
     QVERIFY2(embedHost->layout()->count() > 0,
@@ -94,10 +92,7 @@ void TstProviderConfigDialog::takeProviderMovesOwnership()
     BackendRegistry registry;
     registry.registerContribution(std::make_shared<CalDavBackendContribution>());
     ProviderManager pm(&registry);
-    QList<Ui::ProviderConfigDialog::ProviderKind> kinds {
-        { QStringLiteral("caldav"), QStringLiteral("CalDAV") },
-    };
-    Ui::ProviderConfigDialog dlg(&pm, kinds, Ui::ProviderConfigDialog::AddNew);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
     auto p = dlg.takeProvider();
     QVERIFY2(p.get() != nullptr, "first takeProvider() must yield the constructed provider");
     auto p2 = dlg.takeProvider();

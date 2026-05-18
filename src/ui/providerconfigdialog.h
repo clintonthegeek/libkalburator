@@ -27,16 +27,11 @@ public:
 
     struct ProviderKind { QString backendType; QString displayLabel; };
 
-    ProviderConfigDialog(Sync::ProviderManager *manager,
-                         const QList<ProviderKind> &availableKinds,
-                         Mode mode,
-                         const Sync::BackendConfiguration &existing = {},
-                         QWidget *parent = nullptr);
-
     /// O.1.4: registry-aware constructor. Iterates registry->contributions()
     /// to populate the kind combo and subscribes to contributionRegistered/
     /// Unregistered (O.1.1) so the kind list stays live with plugin loads.
-    /// Use this instead of the hardcoded-kinds constructor in new code.
+    /// O.4.10: this is the sole constructor; the hardcoded-kinds variant
+    /// was deleted.
     ProviderConfigDialog(Sync::ProviderManager *manager,
                          Sync::BackendRegistry *registry,
                          Mode mode,

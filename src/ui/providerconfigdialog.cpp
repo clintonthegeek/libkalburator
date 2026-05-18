@@ -17,15 +17,18 @@
 
 namespace Kalburator::Ui {
 
+// O.1.4: registry-aware constructor — builds the dialog, populates from
+// the registry, and subscribes to contribution change signals so the
+// combo stays live with plugin loads. O.4.10: this is the sole ctor;
+// the hardcoded-kinds variant was deleted.
 ProviderConfigDialog::ProviderConfigDialog(
         Sync::ProviderManager *manager,
-        const QList<ProviderKind> &availableKinds,
+        Sync::BackendRegistry *registry,
         Mode mode,
         const Sync::BackendConfiguration &existing,
         QWidget *parent)
     : QDialog(parent)
     , m_manager(manager)
-    , m_availableKinds(availableKinds)
     , m_mode(mode)
     , m_existing(existing)
 {
@@ -33,8 +36,6 @@ ProviderConfigDialog::ProviderConfigDialog(
 
     m_combo = new QComboBox(this);
     m_combo->setObjectName(QStringLiteral("providerCombo"));
-    for (const auto &k : m_availableKinds)
-        m_combo->addItem(k.displayLabel, k.backendType);
 
     auto *formRow = new QFormLayout;
     formRow->addRow(tr("Provider:"), m_combo);
@@ -68,6 +69,23 @@ ProviderConfigDialog::ProviderConfigDialog(
     QObject::connect(m_combo, &QComboBox::currentIndexChanged,
                      this, &ProviderConfigDialog::onProviderChanged);
 
+    Q_ASSERT(registry);
+    if (registry) {
+        m_registry = registry;
+        populateKindsFromRegistry();
+
+        QObject::connect(m_registry,
+                         &Sync::BackendRegistry::contributionRegistered,
+                         this, [this](const QString &) {
+                             populateKindsFromRegistry();
+                         });
+        QObject::connect(m_registry,
+                         &Sync::BackendRegistry::contributionUnregistered,
+                         this, [this](const QString &) {
+                             populateKindsFromRegistry();
+                         });
+    }
+
     if (mode == EditExisting) {
         const int idx = m_combo->findData(existing.type);
         if (idx >= 0) m_combo->setCurrentIndex(idx);
@@ -76,34 +94,6 @@ ProviderConfigDialog::ProviderConfigDialog(
 }
 
 ProviderConfigDialog::~ProviderConfigDialog() = default;
-
-// O.1.4: registry-aware constructor — delegates to the kinds-based ctor
-// with an empty list, then populates from the registry and subscribes to
-// contribution change signals so the combo stays live with plugin loads.
-ProviderConfigDialog::ProviderConfigDialog(
-        Sync::ProviderManager *manager,
-        Sync::BackendRegistry *registry,
-        Mode mode,
-        const Sync::BackendConfiguration &existing,
-        QWidget *parent)
-    : ProviderConfigDialog(manager, QList<ProviderKind>{}, mode, existing, parent)
-{
-    Q_ASSERT(registry);
-    if (!registry) return;
-    m_registry = registry;
-    populateKindsFromRegistry();
-
-    QObject::connect(m_registry,
-                     &Sync::BackendRegistry::contributionRegistered,
-                     this, [this](const QString &) {
-                         populateKindsFromRegistry();
-                     });
-    QObject::connect(m_registry,
-                     &Sync::BackendRegistry::contributionUnregistered,
-                     this, [this](const QString &) {
-                         populateKindsFromRegistry();
-                     });
-}
 
 void ProviderConfigDialog::populateKindsFromRegistry()
 {
