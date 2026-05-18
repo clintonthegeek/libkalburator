@@ -234,7 +234,6 @@ set(KALBURATOR_DISCOVERY_SOURCES
 )
 
 set(KALBURATOR_BLOB_HEADERS
-    src/blob/blobbatchdiff.h
     src/blob/blobdomaindefinition.h
     src/blob/blobplugin.h
     src/blob/blobstockshapes.h
@@ -243,7 +242,6 @@ set(KALBURATOR_BLOB_HEADERS
     src/blob/mockblobbackend.h
 )
 set(KALBURATOR_BLOB_SOURCES
-    src/blob/blobbatchdiff.cpp
     src/blob/blobdomaindefinition.cpp
     src/blob/blobplugin.cpp
     src/blob/blobstockshapes.cpp

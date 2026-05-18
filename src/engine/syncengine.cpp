@@ -1,6 +1,5 @@
 #include "syncengine.h"
 #include "baselinestore.h"
-#include "blobbatchdiff.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
 #include "domainoperationsregistry.h"
