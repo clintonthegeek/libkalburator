@@ -75,6 +75,26 @@ public:
     /// displayName, and provider-specific connectionParams.
     virtual BackendConfiguration save() const = 0;
 
+    /// O.1.3: Apply edited config to a possibly-connected provider.
+    /// Default impl: if connected, disconnect synchronously, load() the
+    /// new config, then connect() again (fire-and-forget; caller can
+    /// observe via connectionStateChanged or via
+    /// ProviderManager::providerStateChanged from O.1.2).
+    ///
+    /// Subclasses override only when they need special tear-down
+    /// (e.g. CalDavProvider clearing cached cookies, AkonadiProvider
+    /// re-binding to a new resource).
+    virtual void applyConfig(const BackendConfiguration &cfg) {
+        const bool wasConnected = isConnected();
+        if (wasConnected) {
+            disconnect();
+        }
+        load(cfg);
+        if (wasConnected) {
+            (void)connect();
+        }
+    }
+
     // ── Config UI ──────────────────────────────────────────────────
     /// Build a widget for editing this provider's config (server URL,
     /// credentials, display name, etc.). Caller takes ownership.

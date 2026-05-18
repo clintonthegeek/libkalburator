@@ -22,6 +22,9 @@ kalburator_add_sync_test(tst_backend_contribution)
 # O.1.1 — contribution-change signals on BackendRegistry.
 kalburator_add_sync_test(tst_backendregistry_signals)
 
+# O.1.3 — IProvider::applyConfig default impl + edit-account path.
+kalburator_add_sync_test(tst_iprovider_applyconfig)
+
 # K.7.1 Task 8 — NeutralProvider account-neutral IProvider adapter.
 kalburator_add_sync_test(tst_neutral_provider)
 
