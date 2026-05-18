@@ -79,8 +79,8 @@ zero hits. `dispatchCalendarLegacy` deleted; no remaining includes.
 
 ### A.4 Restructure blob batch diff/merge into per-record loop
 
-**Status:** ⬜ deferred from Phase Ia.5.
-**Target phase:** Phase Ib.5 or later (lower priority than A.1–A.3).
+**Status:** ✅ landed 2026-05-17 (Phase N.1, tag `v0.44-phase-n1-perrecord-diff-merge`).
+**Target phase:** Phase N.1 (delivered).
 **Source:** Phase Ia.5 FINDINGS — "BlobBackendAdapter blob/blob→
 blob/raw shape gotcha"; design discussion of `IRecordDiffer` /
 `IRecordMerger` impedance mismatch.
@@ -110,8 +110,11 @@ restructure is purely a code-shape improvement.
 
 ### A.5 CustomMerge and Duplicate conflict policies in unified path
 
-**Status:** ⬜ deferred from Phase Ib.5 Task 6.
-**Target phase:** post-Ib.5; only needed when a consumer wires these policies.
+**Status:** CustomMerge ✅ landed 2026-05-17 (Phase N.1). Duplicate already
+implemented in the unified path (Ib.5 era, never recorded here) but no test
+coverage; A.5 remains ⬜ for Duplicate-test follow-up only.
+**Target phase:** Phase N.1 for CustomMerge (delivered); test-only follow-up
+for Duplicate.
 **Source:** Phase Ib.5 parity audit (04y); Task 6 grep sweep.
 
 `unifiedHandleConflicts` routes CustomMerge and Duplicate conflict ops to
