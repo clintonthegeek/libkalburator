@@ -250,8 +250,7 @@ private slots:
     void cleanup();
 
     void customMerge_autoResolves_callsPluginMerger();
-    // Slot 2 (customMerge_resumeAfterAskUser_callsPluginMerger) is
-    // added in Task 5.
+    void customMerge_resumeAfterAskUser_callsPluginMerger();
 
 private:
     void seedConflictState(const QByteArray &baseline,
@@ -361,6 +360,51 @@ void TestUnifiedCustomMerge::customMerge_autoResolves_callsPluginMerger()
 
     // RecordMergerBlob with autoResolve == None defaults to source data.
     // Both sides should converge on the merger's output.
+    QCOMPARE(m_target->recordData(QString::fromLatin1(kConflictId)),
+             QByteArray("source-modified-content"));
+    QCOMPARE(m_source->recordData(QString::fromLatin1(kConflictId)),
+             QByteArray("source-modified-content"));
+}
+
+void TestUnifiedCustomMerge::customMerge_resumeAfterAskUser_callsPluginMerger()
+{
+    // Mapping uses AskUser so the engine yields into onWorkerConflictPauseRequested.
+    // The ConflictManager (AutoResolve mode, CustomMerge policy) then calls
+    // resumeAfterConflictResolution(CustomMerge), which invokes
+    // resumeAfterConflict(CustomMerge) in the worker — the code path under test.
+    SyncMapping m = makeTwoWayMapping();
+    m.conflictPolicy = ConflictResolution::AskUser;
+    m_engine->setSyncMappings({ m });
+
+    m_conflictManager->setAutoResolutionPolicy(ConflictResolution::CustomMerge);
+
+    seedConflictState(
+        "baseline-content",
+        "source-modified-content",
+        "target-modified-content"
+    );
+
+    QSignalSpy conflictSpy(m_engine.get(), &SyncEngine::conflictDetected);
+    QVERIFY(conflictSpy.isValid());
+
+    auto future = m_engine->runSyncFuture(SyncEngine::SyncBehavior::Monitored);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY(!future.isCanceled());
+
+    // conflictDetected must have fired — proves resumeAfterConflict was reached.
+    QVERIFY2(conflictSpy.count() >= 1,
+             qPrintable(QStringLiteral("expected conflictDetected for AskUser conflict "
+                                       "in Monitored mode, got %1 signals")
+                            .arg(conflictSpy.count())));
+
+    const auto results = future.resultAt(0);
+    QCOMPARE(results.size(), 1);
+    const SyncResult &r = results.first();
+
+    QVERIFY(r.unresolvedConflicts.isEmpty());
+
+    // RecordMergerBlob with autoResolve == None picks source on
+    // bothChanged; both sides should converge.
     QCOMPARE(m_target->recordData(QString::fromLatin1(kConflictId)),
              QByteArray("source-modified-content"));
     QCOMPARE(m_source->recordData(QString::fromLatin1(kConflictId)),
