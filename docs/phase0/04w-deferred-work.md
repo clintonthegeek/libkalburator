@@ -43,6 +43,10 @@ your memory; don't trust the coordination folder.
   - [D.4 Default-mapping logic](#d4-default-mapping-logic)
 - [E. Test infrastructure](#e-test-infrastructure)
   - [E.1 Real-device verification gate](#e1-real-device-verification-gate)
+- [F. Phase O closures (provider/backend UX gaps)](#f-phase-o-closures-providerbackend-ux-gaps)
+  - [F.1 G7: BackendRegistry signals + dynamic kind picker](#f1-g7-backendregistry-signals--dynamic-kind-picker)
+  - [F.2 G8 part 1: per-provider state introspection](#f2-g8-part-1-per-provider-state-introspection)
+  - [F.3 G10 part 1: CollectionInfo capability metadata](#f3-g10-part-1-collectioninfo-capability-metadata)
 
 ---
 
@@ -484,9 +488,11 @@ blocked.
 
 ### D.1 PlanStan: CardDAV add-account UI
 
-**Status:** ✅ landed M.5 (2026-05-17). Runtime "Add Account…" path;
-wizard cards left as follow-up cleanup (low priority).
-**Landed:** Phase M.5 — `v0.43-phase-m5-runtime-add-account`.
+**Status:** ✅ M.5 (2026-05-17) + O.1.4 partial (2026-05-18). Runtime "Add Account…"
+path landed; `ProviderConfigDialog` is now registry-aware (O.1.4); PlanStan wiring
+of the full Accounts page is O.2.
+**Landed:** Phase M.5 — `v0.43-phase-m5-runtime-add-account`;
+O.1.4 — `v0.45-phase-o1-libkalburator-ui-foundations`.
 **Source:** Phase Ib design §3; cross-reference `libkalburator/docs/phase0/04x-phase-ib-status.md`.
 **Tracked:** `PlanStan/docs/todo/carddav-account-ui.md`.
 
@@ -642,6 +648,57 @@ work has been gated on `verify-all.sh` (mock-based) so far.
   servers, CardDAV servers, Palm hardware, Akonadi if shipped).
 - A pass on the matrix before any tag rolls out of `refactor/
   engine-merger` to `main`.
+
+---
+
+## F. Phase O closures (provider/backend UX gaps)
+
+Items G7, G8, G10 from the Phase O inventory
+(`2026-05-17-provider-backend-ux-inventory.md`). They were never
+separate 04w entries because the inventory pre-dated this file's
+update for Phase O.
+
+### F.1 G7: BackendRegistry signals + dynamic kind picker
+
+**Status:** ✅ landed 2026-05-18 (Phase O.1.1 + O.1.4,
+tag `v0.45-phase-o1-libkalburator-ui-foundations`).
+
+`BackendRegistry::contributionRegistered(id)` and
+`contributionUnregistered(id)` added (O.1.1). `ProviderConfigDialog`
+registry-aware constructor subscribes to those signals and rebuilds
+the kind-picker combo live (O.1.4). Old hardcoded-kinds constructor
+preserved for one release; removed in Phase O.4.
+
+---
+
+### F.2 G8 part 1: per-provider state introspection
+
+**Status:** ✅ landed 2026-05-18 (Phase O.1.2,
+tag `v0.45-phase-o1-libkalburator-ui-foundations`).
+
+`ProviderManager::providerState(id)` returns `ProviderConnectionState`;
+`providerStateChanged(id, ProviderConnectionState)` signal added.
+`ProviderConnectionState` enum: Disconnected / Connecting / Connected /
+Error. Old boolean `providerConnectionStateChanged(id, bool)` preserved
+for deprecation overlap; removed in Phase O.4.
+
+**Note:** `Connecting` and `Error` are forward-looking reserved values.
+Current code paths map only to Connected/Disconnected because
+`IProvider::connectionStateChanged` is still a boolean signal. Phase
+O.3 must make that signal enum-typed before UI code can branch on
+Connecting or Error (see also F-O1-2 in FINDINGS).
+
+---
+
+### F.3 G10 part 1: CollectionInfo capability metadata
+
+**Status:** ✅ landed 2026-05-18 (Phase O.1.5,
+tag `v0.45-phase-o1-libkalburator-ui-foundations`).
+
+`CollectionInfo` gained `readOnly`, `contentTypes`, `estimatedSizeBytes`
+fields. `CollectionPickerWidget` renders capability chips: content-type
+labels (calendar / contacts / tasks / notes / raw) + read-only chip
+(lock icon) + disabled checkbox for read-only collections.
 
 ---
 
