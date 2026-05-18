@@ -95,6 +95,14 @@ signals:
      */
     void backendInstanceUnregistered(const QString &backendId);
 
+    /// O.1.1: Emitted after a BackendContribution is added. UI pickers
+    /// listen to this to keep their kind lists in sync with runtime
+    /// plugin registration.
+    void contributionRegistered(const QString &backendType);
+
+    /// O.1.1: Emitted after a BackendContribution is removed.
+    void contributionUnregistered(const QString &backendType);
+
 private:
     QMap<QString, SyncBackend*> m_instances;
     QMap<QString, std::shared_ptr<BackendContribution>> m_contributions;

@@ -19,6 +19,9 @@ kalburator_add_sync_test(tst_provider_manager)
 # K.7.1 Task 2 — BackendContribution interface + BackendRegistry extension.
 kalburator_add_sync_test(tst_backend_contribution)
 
+# O.1.1 — contribution-change signals on BackendRegistry.
+kalburator_add_sync_test(tst_backendregistry_signals)
+
 # K.7.1 Task 8 — NeutralProvider account-neutral IProvider adapter.
 kalburator_add_sync_test(tst_neutral_provider)
 

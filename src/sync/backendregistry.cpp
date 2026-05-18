@@ -42,6 +42,7 @@ bool BackendRegistry::registerContribution(std::shared_ptr<BackendContribution> 
     const QString type = contrib->backendType();
     if (m_contributions.contains(type)) return false;
     m_contributions.insert(type, std::move(contrib));
+    emit contributionRegistered(type);
     return true;
 }
 
@@ -58,7 +59,9 @@ QList<BackendContribution*> BackendRegistry::contributions() const {
 }
 
 void BackendRegistry::unregisterContribution(const QString &typeName) {
-    m_contributions.remove(typeName);
+    if (m_contributions.remove(typeName) > 0) {
+        emit contributionUnregistered(typeName);
+    }
 }
 
 void BackendRegistry::clear() {
