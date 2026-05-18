@@ -855,10 +855,11 @@ structurally rather than buried in tooltips.
 
 ### F.12 Deferred to follow-up phase (post-O.4)
 
-**Status:** ⏳ partial 2026-05-18 — items the Phase O design called out
-but Phase O.4 (or earlier O sub-phases) explicitly did not deliver. These
-are tracked as a single follow-up bucket rather than a named phase until
-the work is scoped.
+**Status:** ✅ landed 2026-05-18 — items the Phase O design called out
+but Phase O.4 (or earlier O sub-phases) explicitly did not deliver. All
+three bullets below shipped as post-O.4 follow-ups (no separate phase
+tag). The only remaining post-O.4 item is the §7.1 manual smoke
+checklist (user-driven, agentic execution has no UI driver).
 
 - **`ProviderManager::providerConnectionStateChanged(QString, bool)` removal.**
   ✅ landed 2026-05-18. WildPalms `AccountController` migrated to
@@ -879,11 +880,22 @@ the work is scoped.
   after the layout switch and handles `wizardCancelled` by deleting the
   freshly-created `.kalb`. See F.8 above.
 
-- **Right-click context menu on canvas.** The Phase O design called for
-  a canvas-level right-click context menu (provider/backend node actions:
-  edit, remove, reconnect, etc.). Not delivered in O.3 or O.4 — node
-  affordances are currently surfaced only via the palette dock and double-
-  click. Deferred to a follow-up phase.
+- **Right-click context menu on canvas.** ✅ landed 2026-05-18.
+  `SyncTopologyWidget::populateNodeContextMenu` extends the existing edge
+  + BackendNode menu to dispatch on the v2 nodes:
+  - `ProviderNode` (configured) → "Edit configuration…" (emits
+    `editProviderRequested(uuid)`; `SyncTopologyViewPanel` handles by
+    opening `ProviderConfigDialog` in `EditExisting` mode and calling
+    `IProvider::applyConfig` on accept) + "Remove" (cascade-policy
+    prompt: Strict / DropBindings / DropBindingsAndOrphans, then
+    `stagePendingProviderRemoval`).
+  - `LocalBackendNode` (configured) → "Remove" (Yes/No confirm →
+    `stagePendingLocalBackendRemoval`).
+  - Unconfigured (palette-dropped) nodes get no actions.
+
+  Reconnect deferred as a small follow-up — would call
+  `IProvider::disconnect()` + `connect()` from the menu; no infrastructure
+  blockers, just a separate UX decision (do we re-prompt for credentials?).
 
 ---
 
