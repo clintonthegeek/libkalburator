@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 #include <QCheckBox>
 #include <QGroupBox>
+#include <QLabel>
 
 #include "../../src/ui/collectionpickerwidget.h"
 #include "collectioninfo.h"
@@ -17,6 +18,7 @@ private slots:
     void rendersCheckboxPerCollection();
     void toggleEmitsSelectionChanged();
     void groupsByType();
+    void chipsRenderForCapabilityFields();
 };
 
 static QList<CollectionInfo> makeFixture()
@@ -61,6 +63,49 @@ void TstCollectionPickerWidget::groupsByType()
     for (auto *g : groups) titles << g->title();
     QVERIFY(titles.contains(QStringLiteral("Calendars")));
     QVERIFY(titles.contains(QStringLiteral("Address Books")));
+}
+
+void TstCollectionPickerWidget::chipsRenderForCapabilityFields()
+{
+    Ui::CollectionPickerWidget w;
+    QList<CollectionInfo> items;
+
+    CollectionInfo eventsOnly;
+    eventsOnly.id = QStringLiteral("id1");
+    eventsOnly.name = QStringLiteral("Events");
+    eventsOnly.type = QStringLiteral("calendar");
+    eventsOnly.readOnly = false;
+    eventsOnly.contentTypes = {QStringLiteral("VEVENT")};
+
+    CollectionInfo readOnlyTodos;
+    readOnlyTodos.id = QStringLiteral("id2");
+    readOnlyTodos.name = QStringLiteral("Tasks");
+    readOnlyTodos.type = QStringLiteral("calendar");
+    readOnlyTodos.readOnly = true;
+    readOnlyTodos.contentTypes = {QStringLiteral("VTODO")};
+
+    items << eventsOnly << readOnlyTodos;
+    w.setCollections(items);
+
+    const auto eventChips = w.findChildren<QLabel*>(QStringLiteral("chip-VEVENT"));
+    const auto todoChips  = w.findChildren<QLabel*>(QStringLiteral("chip-VTODO"));
+
+    // Find all read-only chips (objectName starts with "chip-readonly-")
+    const auto allLabels = w.findChildren<QLabel*>();
+    QList<QLabel*> roChips;
+    for (auto *l : allLabels) {
+        if (l->objectName().startsWith(QStringLiteral("chip-readonly-")))
+            roChips.append(l);
+    }
+
+    QCOMPARE(eventChips.size(), 1);
+    QCOMPARE(todoChips.size(),  1);
+    QCOMPARE(roChips.size(),    1);   // only the readOnlyTodos row
+
+    // Verify the read-only collection's checkbox is disabled.
+    const auto *roCheckbox = w.findChild<QCheckBox*>(QStringLiteral("collection-id2"));
+    QVERIFY(roCheckbox != nullptr);
+    QVERIFY(!roCheckbox->isEnabled());
 }
 
 QTEST_MAIN(TstCollectionPickerWidget)

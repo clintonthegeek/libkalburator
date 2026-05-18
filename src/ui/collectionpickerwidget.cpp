@@ -2,7 +2,10 @@
 
 #include <QCheckBox>
 #include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QVBoxLayout>
+#include <QWidget>
 
 namespace Kalburator::Ui {
 
@@ -31,19 +34,48 @@ void CollectionPickerWidget::rebuild()
     auto *calLayout      = new QVBoxLayout(calGroup);
     auto *contactsLayout = new QVBoxLayout(contactsGroup);
 
+    // O.1.5: chip factory
+    auto makeChip = [](const QString &text, const QString &objName) -> QLabel * {
+        auto *chip = new QLabel(text);
+        chip->setObjectName(objName);
+        chip->setStyleSheet(QStringLiteral(
+            "QLabel { padding: 1px 4px; margin-left: 4px; "
+            "border: 1px solid palette(mid); border-radius: 4px; "
+            "font-size: 9pt; }"));
+        return chip;
+    };
+
     bool anyCal = false, anyContacts = false;
     for (const auto &it : m_items) {
+        // Each collection gets a row widget with checkbox + chips
+        auto *rowWidget = new QWidget;
+        auto *rowLayout = new QHBoxLayout(rowWidget);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+
         auto *cb = new QCheckBox(it.name);
         cb->setObjectName(QStringLiteral("collection-%1").arg(it.id));
         QObject::connect(cb, &QCheckBox::toggled, this, [this]() {
             emit selectionChanged(selected());
         });
+        rowLayout->addWidget(cb);
+
+        // O.1.5: content-type chips
+        for (const QString &ct : it.contentTypes) {
+            rowLayout->addWidget(makeChip(ct, QStringLiteral("chip-%1").arg(ct)));
+        }
+        // O.1.5: read-only chip + disable checkbox
+        if (it.readOnly) {
+            rowLayout->addWidget(makeChip(tr("read-only"), QStringLiteral("chip-readonly-%1").arg(it.id)));
+            cb->setEnabled(false);
+        }
+        rowLayout->addStretch();
+
         if (it.type == QStringLiteral("calendar")) {
-            calLayout->addWidget(cb); anyCal = true;
+            calLayout->addWidget(rowWidget); anyCal = true;
         } else if (it.type == QStringLiteral("contacts")) {
-            contactsLayout->addWidget(cb); anyContacts = true;
+            contactsLayout->addWidget(rowWidget); anyContacts = true;
         } else {
-            layout()->addWidget(cb);
+            layout()->addWidget(rowWidget);
         }
     }
     if (anyCal)      layout()->addWidget(calGroup);      else delete calGroup;

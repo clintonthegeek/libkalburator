@@ -2,6 +2,7 @@
 #define KALBURATOR_TYPES_COLLECTIONINFO_H
 
 #include <QString>
+#include <QStringList>
 
 namespace Kalburator::Sync {
 
@@ -12,6 +13,13 @@ struct CollectionInfo {
     QString path;              ///< Filesystem path if file-based (optional).
     QString type;              ///< "memos", "contacts", "calendar", "todos".
     bool    isDefault = false;
+
+    /// O.1.5: capability hints. Populated by providers from their
+    /// discovered server capabilities; rendered as chips in
+    /// CollectionPickerWidget.
+    bool        readOnly     = false;
+    QStringList contentTypes;          ///< "VEVENT", "VTODO", "VCARD" subset.
+    int         estimatedSizeBytes = -1;  ///< Approx storage size in bytes; -1 = unknown.
 
     bool operator==(const CollectionInfo &other) const = default;
 };
