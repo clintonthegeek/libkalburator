@@ -165,7 +165,6 @@ private slots:
     void provider_failure_does_not_block_others();
     void connectAll_skips_already_connected_providers();
     void onProviderCollectionsChanged_reregisters_backends();
-    void providerConnectionStateChanged_signal_carries_provider_id();
     void removeProvider_with_unknown_id_is_noop();
     void providersChanged_emitted_on_add_and_remove();
     void connectAll_with_zero_providers_returns_finished_future();
@@ -415,22 +414,6 @@ void TstProviderManager::onProviderCollectionsChanged_reregisters_backends()
     const QStringList ids = reg.registeredInstanceIds();
     QVERIFY(!ids.contains(QStringLiteral("p-reregister:cal-1")));
     QVERIFY(ids.contains(QStringLiteral("p-reregister:cal-2")));
-}
-
-void TstProviderManager::providerConnectionStateChanged_signal_carries_provider_id()
-{
-    BackendRegistry reg;
-    ProviderManager mgr(&reg);
-
-    auto p = std::make_unique<FakeProvider>(QStringLiteral("sig-test"));
-    mgr.addProvider(std::move(p));
-
-    QSignalSpy spy(&mgr, &ProviderManager::providerConnectionStateChanged);
-    QVERIFY(waitForFuture(mgr.connectAll()));
-
-    QCOMPARE(spy.count(), 1);
-    QCOMPARE(spy.first().at(0).toString(), QStringLiteral("sig-test"));
-    QCOMPARE(spy.first().at(1).toBool(), true);
 }
 
 void TstProviderManager::removeProvider_with_unknown_id_is_noop()

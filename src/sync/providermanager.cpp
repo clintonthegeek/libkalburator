@@ -180,7 +180,6 @@ void ProviderManager::onProviderConnectionStateChanged(bool connected)
         : ProviderConnectionState::Disconnected;
     m_providerStates[provider->id()] = newState;
     emit providerStateChanged(provider->id(), newState);
-    emit providerConnectionStateChanged(provider->id(), connected);  // deprecated in O.4
 }
 
 void ProviderManager::onProviderCollectionsChanged()

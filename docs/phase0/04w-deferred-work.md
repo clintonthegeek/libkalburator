@@ -683,18 +683,23 @@ deleted in Phase O.4 (task 10).
 
 ### F.2 G8 part 1: per-provider state introspection
 
-**Status:** ⏳ partial 2026-05-18 (Phase O.1.2,
-tag `v0.45-phase-o1-libkalburator-ui-foundations`). Full G8
-closure (deprecated boolean signal removal) deferred pending
-WildPalms migration — see "Deferred to follow-up" below.
+**Status:** ✅ landed 2026-05-18 (Phase O.1.2 introspection +
+post-O.4 follow-up signal removal). Tag
+`v0.45-phase-o1-libkalburator-ui-foundations` for the initial
+introspection; deprecated boolean signal removed 2026-05-18 in a
+follow-up commit (no separate tag — §F.12 follow-up bucket).
 
 `ProviderManager::providerState(id)` returns `ProviderConnectionState`;
 `providerStateChanged(id, ProviderConnectionState)` signal added.
 `ProviderConnectionState` enum: Disconnected / Connecting / Connected /
-Error. Old boolean `providerConnectionStateChanged(id, bool)` preserved
-through Phase O.4 because WildPalms still subscribes to it (per design
-§3 WildPalms remains untouched through O.4). Removal blocked on WildPalms
-migration to the enum signal.
+Error. Old boolean `providerConnectionStateChanged(id, bool)` was
+preserved through Phase O.4 because WildPalms still subscribed to it.
+The 2026-05-18 follow-up migrated WildPalms `AccountController` to the
+enum signal (1:1 enum mapping into its existing `ConnectionState`) and
+deleted the boolean signal from `ProviderManager`. The redundant
+`tst_provider_manager::providerConnectionStateChanged_signal_carries_provider_id`
+test was deleted (id-routing is now covered by
+`providerState_transitionsThroughLifecycle`).
 
 **Note:** `Connecting` and `Error` are forward-looking reserved values.
 Current code paths map only to Connected/Disconnected because
@@ -846,23 +851,23 @@ structurally rather than buried in tooltips.
 
 ### F.12 Deferred to follow-up phase (post-O.4)
 
-**Status:** ⬜ deferred 2026-05-18 — items the Phase O design called out
+**Status:** ⏳ partial 2026-05-18 — items the Phase O design called out
 but Phase O.4 (or earlier O sub-phases) explicitly did not deliver. These
 are tracked as a single follow-up bucket rather than a named phase until
 the work is scoped.
 
 - **`ProviderManager::providerConnectionStateChanged(QString, bool)` removal.**
-  The deprecated boolean signal was preserved through O.4 because WildPalms
-  still subscribes to it. Removal blocked on WildPalms migration to the
-  enum-typed `providerStateChanged(QString, ProviderConnectionState)`. See
-  F.2 above.
+  ✅ landed 2026-05-18. WildPalms `AccountController` migrated to
+  `providerStateChanged(QString, ProviderConnectionState)`; the boolean
+  signal was deleted from `ProviderManager`. See F.2 above.
 
-- **WildPalms `ProviderConfigDialog` migration.** WildPalms still
-  instantiates `ProviderConfigDialog` via the hardcoded-kinds path (where
-  applicable) and consumes the boolean state signal. Per design §3 WildPalms
-  was kept untouched through O.4; migration to the registry-aware ctor and
-  the enum state signal is the prerequisite for closing F.2 fully and for
-  any further deprecation removal on the libkalburator side.
+  Note on the earlier scoping claim: §F.12 originally listed a separate
+  "WildPalms `ProviderConfigDialog` migration" bullet asserting that
+  WildPalms instantiated libkalburator's `ProviderConfigDialog`. That was
+  inaccurate — WildPalms uses its own `AddAccountDialog` (already
+  registry-aware via `BackendRegistry*`). The only WildPalms-side coupling
+  to the deprecated surface was the boolean signal consumer in
+  `accountcontroller.cpp`. That bullet has been removed.
 
 - **`SyncTopologyViewPanel` wizard-chrome mode.** Phase O.4.5 wired
   `File → New Collection` to a minimal path-prompt + layout switch that

@@ -20,9 +20,7 @@ class IBlobBackend;
 
 /// O.1.2: Per-provider connection state. Returned by
 /// ProviderManager::providerState(id) and reported on
-/// providerStateChanged signal. Supersedes the boolean overload
-/// providerConnectionStateChanged(id, bool) (preserved for one
-/// release; removed in Phase O.4).
+/// providerStateChanged signal.
 enum class ProviderConnectionState {
     Disconnected,
     Connecting,   ///< Reserved. Not yet emitted — requires IProvider::connectionStateChanged
@@ -69,11 +67,8 @@ public:
     ProviderConnectionState providerState(const QString &id) const;
 
 signals:
-    void providerConnectionStateChanged(QString providerId, bool connected);
     void providersChanged();
-    /// O.1.2: Per-provider connection state change. Supersedes
-    /// providerConnectionStateChanged(QString, bool) which is preserved
-    /// for one release (removed in Phase O.4).
+    /// O.1.2: Per-provider connection state change.
     void providerStateChanged(QString providerId,
                               ProviderConnectionState state);
 
