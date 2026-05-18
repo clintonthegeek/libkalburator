@@ -12,6 +12,7 @@ namespace Kalburator::Sync {
 class AkonadiBackendContribution : public BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("akonadi"); }
+    QString displayName() const override { return QStringLiteral("Akonadi"); }
     QList<Shape::Shape> nativeShapes() const override;
     std::unique_ptr<IProvider> createProvider(QObject *parent) const override
     {

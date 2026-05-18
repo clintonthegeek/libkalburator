@@ -50,6 +50,7 @@ public:
 class MsOfficeBC : public Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("office-docx"); }
+    QString displayName() const override { return QStringLiteral("MS Office"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<Sync::IProvider> createProvider(QObject*) const override { return nullptr; }
 };

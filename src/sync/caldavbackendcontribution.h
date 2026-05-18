@@ -10,6 +10,7 @@ namespace Kalburator::Sync {
 class CalDavBackendContribution : public BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("caldav"); }
+    QString displayName() const override { return QStringLiteral("CalDAV Calendar"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<IProvider> createProvider(QObject *parent) const override
     {

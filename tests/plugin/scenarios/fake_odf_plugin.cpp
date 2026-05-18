@@ -50,6 +50,7 @@ public:
 class OdfBC : public Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("office-odt"); }
+    QString displayName() const override { return QStringLiteral("ODF"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<Sync::IProvider> createProvider(QObject*) const override { return nullptr; }
 };

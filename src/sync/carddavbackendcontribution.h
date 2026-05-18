@@ -10,6 +10,7 @@ namespace Kalburator::Sync {
 class CardDavBackendContribution : public BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("carddav"); }
+    QString displayName() const override { return QStringLiteral("CardDAV Contacts"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<IProvider> createProvider(QObject *parent) const override
     {

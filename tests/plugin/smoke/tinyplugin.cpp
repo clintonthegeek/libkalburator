@@ -7,6 +7,7 @@ namespace {
 class TinyBC : public Kalburator::Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("tiny"); }
+    QString displayName() const override { return QStringLiteral("Tiny"); }
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<Kalburator::Sync::IProvider> createProvider(QObject*) const override { return nullptr; }
 };

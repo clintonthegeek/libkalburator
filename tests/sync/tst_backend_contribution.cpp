@@ -29,6 +29,7 @@ public:
 class StubBC : public Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("stub"); }
+    QString displayName() const override { return QStringLiteral("Stub"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<Sync::IProvider> createProvider(QObject*) const override {
         return std::make_unique<StubProvider>();

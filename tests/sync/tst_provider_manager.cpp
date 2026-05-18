@@ -133,6 +133,7 @@ private:
 class FakeBC : public BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("fake"); }
+    QString displayName() const override { return QStringLiteral("Fake"); }
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override {
         return std::make_unique<FakeProvider>(QString());

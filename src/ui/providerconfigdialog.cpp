@@ -5,6 +5,8 @@
 #include "../sync/backendregistry.h"
 #include "../sync/backendcontribution.h"
 
+#include <algorithm>
+
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFutureWatcher>
@@ -74,6 +76,71 @@ ProviderConfigDialog::ProviderConfigDialog(
 }
 
 ProviderConfigDialog::~ProviderConfigDialog() = default;
+
+// O.1.4: registry-aware constructor — delegates to the kinds-based ctor
+// with an empty list, then populates from the registry and subscribes to
+// contribution change signals so the combo stays live with plugin loads.
+ProviderConfigDialog::ProviderConfigDialog(
+        Sync::ProviderManager *manager,
+        Sync::BackendRegistry *registry,
+        Mode mode,
+        const Sync::BackendConfiguration &existing,
+        QWidget *parent)
+    : ProviderConfigDialog(manager, QList<ProviderKind>{}, mode, existing, parent)
+{
+    Q_ASSERT(registry);
+    if (!registry) return;
+    m_registry = registry;
+    populateKindsFromRegistry();
+
+    QObject::connect(m_registry,
+                     &Sync::BackendRegistry::contributionRegistered,
+                     this, [this](const QString &) {
+                         populateKindsFromRegistry();
+                     });
+    QObject::connect(m_registry,
+                     &Sync::BackendRegistry::contributionUnregistered,
+                     this, [this](const QString &) {
+                         populateKindsFromRegistry();
+                     });
+}
+
+void ProviderConfigDialog::populateKindsFromRegistry()
+{
+    if (!m_registry || !m_combo) return;
+
+    // Preserve the currently selected backendType so we can restore it.
+    const QString currentType = m_combo->currentData().toString();
+    // EditExisting: if combo is empty on first populate, fall back to
+    // the existing config's type so the right kind is pre-selected.
+    const QString effectiveType = currentType.isEmpty() ? m_existing.type : currentType;
+
+    // Build a sorted list of kinds from the registry contributions.
+    QList<Sync::BackendContribution*> contribs = m_registry->contributions();
+    std::sort(contribs.begin(), contribs.end(),
+              [](const Sync::BackendContribution *a, const Sync::BackendContribution *b) {
+                  return a->backendType() < b->backendType();
+              });
+
+    // Rebuild m_availableKinds and repopulate the combo.
+    m_availableKinds.clear();
+    m_combo->blockSignals(true);
+    m_combo->clear();
+    for (const Sync::BackendContribution *c : contribs) {
+        m_availableKinds.append(ProviderKind{ c->backendType(), c->displayName() });
+        m_combo->addItem(c->displayName(), c->backendType());
+    }
+    m_combo->blockSignals(false);
+
+    // Restore previous selection if it's still available.
+    const int idx = m_combo->findData(effectiveType);
+    if (idx >= 0) {
+        m_combo->setCurrentIndex(idx);
+    } else {
+        // Selection was removed or this is initial population — rebuild widget.
+        rebuildProviderWidget();
+    }
+}
 
 void ProviderConfigDialog::onProviderChanged(int)
 {

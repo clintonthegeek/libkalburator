@@ -9,6 +9,7 @@ namespace {
 class RawFilesBC : public Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("raw-files"); }
+    QString displayName() const override { return QStringLiteral("Raw Files"); }
     QList<Shape::Shape> nativeShapes() const override {
         return {{ Shape::DomainId{QStringLiteral("blob")}, Shape::EncodingId{QStringLiteral("raw")} }};
     }
@@ -20,6 +21,7 @@ public:
 class GenericSqliteBC : public Sync::BackendContribution {
 public:
     QString backendType() const override { return QStringLiteral("generic-sqlite"); }
+    QString displayName() const override { return QStringLiteral("Generic SQLite"); }
     QList<Shape::Shape> nativeShapes() const override {
         return {{ Shape::DomainId{QStringLiteral("blob")}, Shape::EncodingId{QStringLiteral("raw")} }};
     }

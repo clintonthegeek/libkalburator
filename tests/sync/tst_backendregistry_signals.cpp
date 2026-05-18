@@ -14,9 +14,7 @@ class StubContribution : public BackendContribution {
 public:
     explicit StubContribution(QString type) : m_type(std::move(type)) {}
     QString backendType() const override { return m_type; }
-    // Not yet override — BackendContribution::displayName() pure virtual
-    // added in O.1.4; add 'override' then.
-    QString displayName() const { return QStringLiteral("Stub (%1)").arg(m_type); }
+    QString displayName() const override { return QStringLiteral("Stub (%1)").arg(m_type); }
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<IProvider> createProvider(QObject * /*parent*/ = nullptr) const override {
         return nullptr;

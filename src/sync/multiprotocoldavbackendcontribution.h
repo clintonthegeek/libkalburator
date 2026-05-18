@@ -11,6 +11,8 @@ class MultiProtocolDavBackendContribution : public BackendContribution {
 public:
     QString backendType() const override
     { return QStringLiteral("multiproto-dav"); }
+    QString displayName() const override
+    { return QStringLiteral("Multi-protocol DAV"); }
 
     QList<Shape::Shape> nativeShapes() const override { return {}; }
 

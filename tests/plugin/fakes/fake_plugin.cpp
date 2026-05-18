@@ -49,6 +49,7 @@ class TrivialBC : public Sync::BackendContribution {
 public:
     explicit TrivialBC(QString t) : m_t(std::move(t)) {}
     QString backendType() const override { return m_t; }
+    QString displayName() const override { return QStringLiteral("Trivial"); }
     QList<Shape::Shape> nativeShapes() const override { return {}; }
     std::unique_ptr<Sync::IProvider> createProvider(QObject*) const override { return nullptr; }
 private:
