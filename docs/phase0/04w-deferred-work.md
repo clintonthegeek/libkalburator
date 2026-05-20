@@ -917,3 +917,39 @@ When discovering a new deferral:
 1. Add the entry under the right section (or create a new section).
 2. Same commit as the decision to defer.
 3. Cross-reference from the relevant phase's design doc.
+
+---
+
+## Phase Q — Full Session Refactor (deferred from Phase O.6, 2026-05-20)
+
+Phase O.6 promoted `BackendRegistry` + `ProviderManager` ownership from
+PlanStan's `CollectionController` to `AppController`, but kept the
+libkalburator `BackendRegistry::instance()` singleton as the storage
+mechanism. Phase Q completes the cleanup:
+
+1. **Remove `BackendRegistry::instance()`** from libkalburator. Every
+   call site (notably `PluginManager::applyPlugin`) takes an explicit
+   `BackendRegistry*` parameter.
+2. **Introduce a `PluginManager` accessor on `AppController`** (PlanStan
+   side) so plugins register into the session's registry rather than a
+   libkalburator-global one.
+3. **Move `KSharedConfig` / recent-files / window-geometry ownership**
+   onto `AppController` as first-class members.
+4. **Replace `qApp`-style access patterns** with explicit
+   `AppController*` parameters wherever they leak in.
+
+**Rationale:** removes the last process-global mutable state from
+libkalburator. Enables headless / multi-app embedding of the library.
+Makes `AppController` a complete session boundary rather than a partial
+one.
+
+**Why deferred from O.6:** the libkalburator API change has fanout into
+the consumer side (PlanStan + WildPalms) that doesn't earn its keep
+until embedding / plugin-isolation scenarios actually matter. The O.6
+work centralized the *seeding ceremony*, which was sufficient to fix
+the immediate dialog bug.
+
+**Estimated scope:** ~6–10 commits in libkalburator + ~3–5 in PlanStan
++ ~2–3 in WildPalms. Cross-repo coordination required.
+
+**Spec reference:** see `PlanStan/docs/superpowers/specs/2026-05-20-appcontroller-services-design.md` §"Deferred work" for the full design.
