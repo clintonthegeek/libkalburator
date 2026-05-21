@@ -16,9 +16,9 @@ class ISyncConfigStore;
 /**
  * @brief Abstract interface decoupling sync engine from the application shell.
  *
- * G.9.a narrows this interface to ~7 generic methods. Calendar-typed methods
- * are deprecated and will be deleted in Task 67. New code should implement
- * only the generic lifecycle events.
+ * G.9.a narrowed this interface to ~7 generic methods; the calendar-typed
+ * methods were deleted in Phase G Task 67. New code should implement only
+ * the generic lifecycle events below.
  */
 class ISyncHost
 {

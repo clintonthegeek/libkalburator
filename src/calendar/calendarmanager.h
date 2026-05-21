@@ -302,7 +302,7 @@ signals:
     // Progress (for batch operations)
     void operationProgress(const QString &operation, int current, int total);
 
-    // G.9.a Task 67 — host callbacks decoupled from ISyncHost
+    // G.9.a Task 67 (landed Phase G) — host callbacks decoupled from ISyncHost.
     void calendarUnloadRequested(const QString &calendarId);
     void syncMappingRegenerationRequested();
 
