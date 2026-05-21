@@ -57,6 +57,12 @@ your memory; don't trust the coordination folder.
   - [F.10 G6: Provider credentials vs backend params split](#f10-g6-provider-credentials-vs-backend-params-split)
   - [F.11 G10 part 2: provenance display in topology canvas](#f11-g10-part-2-provenance-display-in-topology-canvas)
   - [F.12 Deferred to follow-up phase (post-O.4)](#f12-deferred-to-follow-up-phase-post-o4)
+- [G. Phase P closures (Merge Readiness)](#g-phase-p-closures-merge-readiness)
+  - [G.1 Events render after wizard-finish (T1+T2+T3+T4)](#g1-events-render-after-wizard-finish-t1t2t3t4)
+  - [G.2 SyncTopologyWidget renders 4th data-model layer (T7+T8+T9+T10)](#g2-synctopologywidget-renders-4th-data-model-layer-t7t8t9t10)
+  - [G.3 Multi-backend wizard (T11+T12+T13+T14)](#g3-multi-backend-wizard-t11t12t13t14)
+  - [G.4 E2E test gate (T15)](#g4-e2e-test-gate-t15)
+  - [G.5 PlanStan baseline](#g5-planstan-baseline)
 
 ---
 
@@ -928,6 +934,36 @@ checklist (user-driven, agentic execution has no UI driver).
   Reconnect deferred as a small follow-up — would call
   `IProvider::disconnect()` + `connect()` from the menu; no infrastructure
   blockers, just a separate UX decision (do we re-prompt for credentials?).
+
+---
+
+## G. Phase P closures (Merge Readiness)
+
+✅ All Phase P items landed 2026-05-21 in tag `v0.52-phase-p-merge-ready`.
+
+### G.1 Events render after wizard-finish (T1+T2+T3+T4)
+- **T1** (PlanStan `fddcaeac`+): failing e2e test pins the contract
+- **T2** diagnostic: localized to `mirrorProviderBackends` not wiring signals on provider-owned backends
+- **T3** (`4b9fba69`): extracted `connectBackendSignals` helper called from both `loadAndCreateBackends` and `mirrorProviderBackends`; guarded by `m_signalsConnectedBackends` against double-connect
+- **T4** (`0cd6d9f6`): implemented `recordChanged` body (closes G.9.a IOU — see A.7)
+
+### G.2 SyncTopologyWidget renders 4th data-model layer (T7+T8+T9+T10)
+- **T7+T8** (`5302397`): wired existing `LogicalCalendarsBlock` (created in O.3.5, never instantiated) into `SyncTopologyWidget::buildNodes`
+- **T9** (`2dd1753f`): `createEdgeForMapping` resolves `targetBackend == "logical"` against the block's `in:<lcId>` anchors
+- **T10** (`d643267c`): validator warns when a logical calendar has no enabled bindings
+
+### G.3 Multi-backend wizard (T11+T12+T13+T14)
+- **T11** (`0f6b6cf2`): `LogicalCalendarGenerator::fromMultipleBackends` delegates to libkalburator's `LogicalCalendarBuilder::autoMatch`
+- **T12** (`46f6d6f9`): `CalendarDiscoveryStep` gains tabbed picker + "Add another account" + `multiDiscoverySelected` signal (back-compat preserved for single-provider)
+- **T13** (`a3c75a78`): `SyncTopologyViewPanel::enterNewCollectionWizard` wires both signals; Add Another Account opens `ProviderConfigDialog` in `AddNew` mode (full reuse of existing dialog, no duplication)
+- **T14** (`d75cf00`): e2e test pins the contract; semantic finding documented (initial-load is Primary-only by design — secondary bindings populate via sync)
+
+### G.4 E2E test gate (T15)
+- **T15** (`694fe773`): `tst_wizard_reopen_events_visible` proves O.7.2 reopen-path fix stays working
+- Combined with T1 + T14, three e2e tests are the Phase P mechanical merge gate
+
+### G.5 PlanStan baseline
+- Refreshed 101/125 → 105/129 (4 new tests gained, fail set unchanged)
 
 ---
 
