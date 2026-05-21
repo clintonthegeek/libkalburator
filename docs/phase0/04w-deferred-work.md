@@ -26,6 +26,7 @@ your memory; don't trust the coordination folder.
   - [A.2 Remove KCalendarCore from engine TU](#a2-remove-kcalendarcore-from-engine-tu)
   - [A.3 Delete `IDomainAdapter` and `CalendarDomainAdapter`](#a3-delete-idomainadapter-and-calendardomainadapter)
   - [A.4 Restructure blob batch diff/merge into per-record loop](#a4-restructure-blob-batch-diffmerge-into-per-record-loop)
+  - [A.7 ISyncHost::recordChanged — body implemented (Phase G IOU)](#a7-isynchostrecordchanged--body-implemented-phase-g-iou)
 - [B. Transport features (no phase yet)](#b-transport-features-no-phase-yet)
   - [B.1 ETag-based optimistic concurrency at engine level](#b1-etag-based-optimistic-concurrency-at-engine-level)
   - [B.2 CTag-based change detection](#b2-ctag-based-change-detection)
@@ -191,6 +192,37 @@ complexity until a consumer reports a property regression.
 - `tests/calendar/` gains a test that seeds a property baseline, changes
   displayName on one side, and asserts the change propagates without
   overwriting the unchanged side.
+
+---
+
+### A.7 ISyncHost::recordChanged — body implemented (Phase G IOU)
+
+**Status:** ✅ landed 2026-05-20 in Phase P.1 (commit `0cd6d9f6` in PlanStan, branch `refactor/engine-merger`).
+
+**Outcome:** Phase G Task 67 deleted the deprecated calendar-typed
+ISyncHost methods but never implemented the new generic
+`recordChanged(mappingId, recordId, ChangeKind)` body in
+`CollectionController`. The stub at `PlanStan/src/controllers/collectioncontroller.cpp:2312`
+was inherited unchanged through Phases H, Ia.5, Ib.5, K, L, M, N,
+O.1–O.7. Phase P.1 closes it: dispatch by `ChangeKind`, fetch via
+the source backend (`m_backends.value(mapping.sourceBackend)`),
+re-use `ItemLoadingCoordinator::onItemFetched` for Created/Updated
+and the new `onItemDeleted` for Deleted. Three tests at
+`PlanStan/tests/controllers/tst_collectioncontroller_recordchanged.cpp`
+cover all three ChangeKinds.
+
+**Why this entry exists:** the original `// G.9.a stub: full
+model-update implementation replaces per-incidence callbacks in
+Task 67.` code comment was a forward-reference to a task that
+*deleted* the deprecated methods rather than *implementing* the
+new body. A future agent who greps for `Task 67`, `recordChanged`,
+or `G.9.a` lands on this entry, not a dangling stub. Closure is
+documented so this class of "phase claimed done with stub left
+behind" is auditable in retrospect.
+
+**Reference:** Phase P design doc at
+`~/dev/refactor-engine-merger/2026-05-20-phase-p-merge-readiness-design.md`
+§1 Gap 1.
 
 ---
 
