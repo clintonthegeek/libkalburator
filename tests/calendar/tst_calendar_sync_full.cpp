@@ -103,14 +103,14 @@ private:
 // ---- Lifecycle ------------------------------------------------------------
 
 void TestCalendarSyncFull::initTestCase() {
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 void TestCalendarSyncFull::cleanupTestCase() {
     Kalburator::Shape::TransformationRegistry::instance().clear();
     Kalburator::Shape::DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestCalendarSyncFull::init()

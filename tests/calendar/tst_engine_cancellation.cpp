@@ -110,14 +110,14 @@ private:
 };
 
 void TstEngineCancellation::initTestCase() {
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 void TstEngineCancellation::cleanupTestCase() {
     Kalburator::Shape::TransformationRegistry::instance().clear();
     Kalburator::Shape::DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TstEngineCancellation::init()
