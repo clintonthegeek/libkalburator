@@ -28,7 +28,6 @@ private slots:
     void createBackendUnknownIdReturnsNullptr();
     void createBackendNotConnectedReturnsNullptr();
     void pluginRegistersMultiProtoDavContribution();
-    void cleanup();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -163,16 +162,12 @@ void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
     QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:test:cal:some-calendar")) == nullptr);
 }
 
-void TstMultiProtocolDavProvider::cleanup()
-{
-    BackendRegistry::instance().clear();
-}
-
 void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()
 {
-    PluginManager pm;
+    BackendRegistry reg;
+    PluginManager pm(&reg);
     registerStockPlugins(pm);
-    QVERIFY(BackendRegistry::instance().contributionFor(
+    QVERIFY(reg.contributionFor(
         QStringLiteral("multiproto-dav")) != nullptr);
 }
 

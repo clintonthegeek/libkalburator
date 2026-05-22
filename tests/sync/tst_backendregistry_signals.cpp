@@ -27,14 +27,6 @@ class TestBackendRegistrySignals : public QObject
 {
     Q_OBJECT
 private slots:
-    void cleanup() {
-        // Defensive guard: these tests use stack-local BackendRegistry
-        // instances (not the singleton), so RAII handles cleanup.
-        // Belt-and-suspenders in case any helper indirectly touches
-        // the process-wide singleton.
-        BackendRegistry::instance().clear();
-    }
-
     void registerContribution_emitsSignal()
     {
         BackendRegistry reg;
