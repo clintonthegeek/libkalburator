@@ -32,11 +32,6 @@ QStringList BackendRegistry::registeredInstanceIds() const
     return m_instances.keys();
 }
 
-BackendRegistry& BackendRegistry::instance() {
-    static BackendRegistry s_instance;
-    return s_instance;
-}
-
 bool BackendRegistry::registerContribution(std::shared_ptr<BackendContribution> contrib) {
     if (!contrib) return false;
     const QString type = contrib->backendType();

@@ -49,10 +49,8 @@ public:
     QStringList registeredInstanceIds() const;
 
     // ── BackendContribution API (K.7) ─────────────────────────────────
-    /**
-     * @brief Process-wide singleton instance.
-     */
-    static BackendRegistry& instance();
+    // (Phase Q.1, 2026-05-21: instance() singleton removed; each
+    //  session/test/embedder owns its own BackendRegistry.)
 
     /**
      * @brief Register a BackendContribution.
