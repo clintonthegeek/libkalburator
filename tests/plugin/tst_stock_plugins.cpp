@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <memory>
 #include "pluginmanager.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
@@ -9,36 +10,40 @@
 class TestStockPlugins : public QObject {
     Q_OBJECT
 private slots:
+    void init() {
+        m_pluginRegistry = std::make_unique<Kalburator::Sync::BackendRegistry>();
+    }
+
     void cleanup() {
         Kalburator::Shape::DomainRegistry::instance().clear();
         Kalburator::Shape::TransformationRegistry::instance().clear();
-        Kalburator::Sync::BackendRegistry::instance().clear();
+        m_pluginRegistry.reset();
         Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
 
     void universalStorageRegistersBothBackendTypes() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Sync::BackendRegistry::instance().contributionFor(QStringLiteral("raw-files")) != nullptr);
-        QVERIFY(Kalburator::Sync::BackendRegistry::instance().contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
+        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("raw-files")) != nullptr);
+        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
     }
 
     void memoDomainRegistered() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("memo")}) != nullptr);
     }
 
     void blobDomainRegistered() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("blob")}) != nullptr);
     }
 
     void todoDomainAndTodotxtPeerRegistered() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("todo")}) != nullptr);
@@ -50,7 +55,7 @@ private slots:
     }
 
     void contactsDomainAndVcard3PeerRegistered() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("contacts")}) != nullptr);
@@ -62,7 +67,7 @@ private slots:
     }
 
     void calendarDomainAndOperationsRegistered() {
-        Kalburator::PluginManager pm;
+        Kalburator::PluginManager pm(m_pluginRegistry.get());
         Kalburator::registerStockPlugins(pm);
         QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("calendar")}) != nullptr);
@@ -70,6 +75,9 @@ private slots:
             Kalburator::Shape::DomainId{QStringLiteral("calendar")});
         QVERIFY(ops != nullptr);
     }
+
+private:
+    std::unique_ptr<Kalburator::Sync::BackendRegistry> m_pluginRegistry;
 };
 
 QTEST_MAIN(TestStockPlugins)

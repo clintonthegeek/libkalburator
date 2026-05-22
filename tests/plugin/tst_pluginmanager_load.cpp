@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <memory>
 #include "pluginmanager.h"
 #include "domainregistry.h"
 #include "transformationregistry.h"
@@ -19,18 +20,22 @@ static PluginManifest mk(const QString &id, QStringList defines = {}, QStringLis
 class TestPluginManagerLoad : public QObject {
     Q_OBJECT
 private slots:
+    void init() {
+        m_pluginRegistry = std::make_unique<Kalburator::Sync::BackendRegistry>();
+    }
+
     void cleanup() {
         Shape::DomainRegistry::instance().clear();
         Shape::TransformationRegistry::instance().clear();
         Shape::DomainOperationsRegistry::instance().clear();
-        Sync::BackendRegistry::instance().clear();
+        m_pluginRegistry.reset();
     }
 
     void successPathLoadsBothPlugins() {
         FakePlugin a, b;
         a.dds = { makeTrivialDD(QStringLiteral("d1")) };
         b.scs = { makeTrivialSC(QStringLiteral("d1")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(pm.loadInProcess({
             {&a, mk(QStringLiteral("a"), {QStringLiteral("d1")})},
             {&b, mk(QStringLiteral("b"), {}, {QStringLiteral("d1")})}
@@ -42,7 +47,7 @@ private slots:
     void manifestMismatchRejects() {
         FakePlugin a;
         a.dds = { makeTrivialDD(QStringLiteral("d1")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(!pm.loadInProcess({{&a, mk(QStringLiteral("a"), {QStringLiteral("d2")})}}));
         QCOMPARE(pm.rejected().size(), 1);
         QCOMPARE(pm.rejected().first().error.code, PluginLoadErrorCode::ManifestMismatch);
@@ -52,7 +57,7 @@ private slots:
         FakePlugin a, b;
         a.dds = { makeTrivialDD(QStringLiteral("d1")) };
         b.dds = { makeTrivialDD(QStringLiteral("d1")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(!pm.loadInProcess({
             {&a, mk(QStringLiteral("a"), {QStringLiteral("d1")})},
             {&b, mk(QStringLiteral("b"), {QStringLiteral("d1")})}
@@ -66,7 +71,7 @@ private slots:
         FakePlugin a, b;
         a.bcs = { makeTrivialBC(QStringLiteral("x")) };
         b.bcs = { makeTrivialBC(QStringLiteral("x")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(!pm.loadInProcess({
             {&a, mk(QStringLiteral("a"))}, {&b, mk(QStringLiteral("b"))}
         }));
@@ -79,7 +84,7 @@ private slots:
         a.dds = { makeTrivialDD(QStringLiteral("d1")) };
         // a's manifest claims d2 — mismatch -> a rejected
         c.scs = { makeTrivialSC(QStringLiteral("d1")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(!pm.loadInProcess({
             {&a, mk(QStringLiteral("a"), {QStringLiteral("d2")})},
             {&c, mk(QStringLiteral("c"), {}, {QStringLiteral("d2")})}
@@ -92,7 +97,7 @@ private slots:
         FakePlugin good, bad;
         good.dds = { makeTrivialDD(QStringLiteral("dGood")) };
         bad.dds  = { makeTrivialDD(QStringLiteral("dBad")) };
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(!pm.loadInProcess({
             {&good, mk(QStringLiteral("good"), {QStringLiteral("dGood")})},
             {&bad,  mk(QStringLiteral("bad"),  {QStringLiteral("wrong")})}
@@ -100,6 +105,9 @@ private slots:
         QCOMPARE(pm.loaded().size(), 1);
         QCOMPARE(pm.loaded().first().id, QStringLiteral("good"));
     }
+
+private:
+    std::unique_ptr<Kalburator::Sync::BackendRegistry> m_pluginRegistry;
 };
 
 QTEST_APPLESS_MAIN(TestPluginManagerLoad)

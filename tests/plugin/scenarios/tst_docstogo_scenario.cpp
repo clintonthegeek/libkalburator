@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <memory>
 #include "pluginmanager.h"
 #include "transformationregistry.h"
 #include "domainregistry.h"
@@ -14,18 +15,22 @@ using namespace KalburatorTests;
 class TestDocsToGoScenario : public QObject {
     Q_OBJECT
 private slots:
+    void init() {
+        m_pluginRegistry = std::make_unique<Sync::BackendRegistry>();
+    }
+
     void cleanup() {
         Shape::DomainRegistry::instance().clear();
         Shape::TransformationRegistry::instance().clear();
         Shape::DomainOperationsRegistry::instance().clear();
-        Sync::BackendRegistry::instance().clear();
+        m_pluginRegistry.reset();
     }
 
     void pdbToOdtPipelineCompiles() {
         FakeDocsToGoPlugin docs;
         FakeMsOfficePlugin ms;
         FakeOdfPlugin odf;
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(pm.loadInProcess({
             {&docs, fakeDocsToGoManifest()},
             {&ms,   fakeMsOfficeManifest()},
@@ -47,15 +52,15 @@ private slots:
         FakeDocsToGoPlugin docs;
         FakeMsOfficePlugin ms;
         FakeOdfPlugin odf;
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(pm.loadInProcess({
             {&docs, fakeDocsToGoManifest()},
             {&ms,   fakeMsOfficeManifest()},
             {&odf,  fakeOdfManifest()}
         }));
-        QVERIFY(Sync::BackendRegistry::instance().contributionFor(
+        QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("office-docx")) != nullptr);
-        QVERIFY(Sync::BackendRegistry::instance().contributionFor(
+        QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("office-odt")) != nullptr);
     }
 
@@ -63,13 +68,16 @@ private slots:
         // Submit in reverse dependency order; resolve() must reorder.
         FakeDocsToGoPlugin docs;
         FakeOdfPlugin odf;
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         QVERIFY(pm.loadInProcess({
             {&odf,  fakeOdfManifest()},     // requires office.document
             {&docs, fakeDocsToGoManifest()} // defines office.document
         }));
         QCOMPARE(pm.loaded().size(), 2);
     }
+
+private:
+    std::unique_ptr<Sync::BackendRegistry> m_pluginRegistry;
 };
 
 QTEST_GUILESS_MAIN(TestDocsToGoScenario)

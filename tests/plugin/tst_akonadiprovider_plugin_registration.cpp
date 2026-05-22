@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <memory>
 #include "pluginmanager.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
@@ -10,25 +11,32 @@ using namespace Kalburator;
 class TestAkonadiProviderPluginRegistration : public QObject {
     Q_OBJECT
 private slots:
+    void init() {
+        m_pluginRegistry = std::make_unique<Sync::BackendRegistry>();
+    }
+
     void cleanup() {
-        Sync::BackendRegistry::instance().clear();
+        m_pluginRegistry.reset();
     }
 
     void registerStockPluginsRegistersAkonadiContribution() {
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         registerStockPlugins(pm);
-        QVERIFY(Sync::BackendRegistry::instance().contributionFor(
+        QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("akonadi")) != nullptr);
     }
 
     void akonadiContributionHasCorrectBackendType() {
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         registerStockPlugins(pm);
-        auto *contrib = Sync::BackendRegistry::instance().contributionFor(
+        auto *contrib = m_pluginRegistry->contributionFor(
             QStringLiteral("akonadi"));
         QVERIFY(contrib != nullptr);
         QCOMPARE(contrib->backendType(), QStringLiteral("akonadi"));
     }
+
+private:
+    std::unique_ptr<Sync::BackendRegistry> m_pluginRegistry;
 };
 
 QTEST_GUILESS_MAIN(TestAkonadiProviderPluginRegistration)

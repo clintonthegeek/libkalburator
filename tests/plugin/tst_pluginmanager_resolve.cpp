@@ -3,6 +3,7 @@
 #include "pluginmanager.h"
 #include "manifest.h"
 #include "pluginloaderror.h"
+#include "backendregistry.h"
 
 using namespace Kalburator;
 
@@ -20,7 +21,8 @@ class TestPluginManagerResolve : public QObject {
     Q_OBJECT
 private slots:
     void linearOrder() {
-        PluginManager pm;
+        Sync::BackendRegistry registry;
+        PluginManager pm(&registry);
         QList<PluginManifest> in{
             mk(QStringLiteral("b"), {}, {QStringLiteral("d1")}),
             mk(QStringLiteral("a"), {QStringLiteral("d1")}),
@@ -34,7 +36,8 @@ private slots:
     }
 
     void missingDependencyReportsError() {
-        PluginManager pm;
+        Sync::BackendRegistry registry;
+        PluginManager pm(&registry);
         QList<PluginManifest> in{
             mk(QStringLiteral("b"), {}, {QStringLiteral("d1")}),
         };
@@ -47,7 +50,8 @@ private slots:
     }
 
     void cycleReportsError() {
-        PluginManager pm;
+        Sync::BackendRegistry registry;
+        PluginManager pm(&registry);
         QList<PluginManifest> in{
             mk(QStringLiteral("a"), {QStringLiteral("dA")}, {QStringLiteral("dB")}),
             mk(QStringLiteral("b"), {QStringLiteral("dB")}, {QStringLiteral("dA")}),
@@ -60,7 +64,8 @@ private slots:
     }
 
     void independentPluginsAllScheduled() {
-        PluginManager pm;
+        Sync::BackendRegistry registry;
+        PluginManager pm(&registry);
         QList<PluginManifest> in{
             mk(QStringLiteral("x"), {QStringLiteral("dX")}),
             mk(QStringLiteral("y"), {QStringLiteral("dY")}),

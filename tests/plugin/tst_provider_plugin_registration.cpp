@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <memory>
 #include "pluginmanager.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
@@ -10,21 +11,25 @@ using namespace Kalburator;
 class TestProviderPluginRegistration : public QObject {
     Q_OBJECT
 private slots:
+    void init() {
+        m_pluginRegistry = std::make_unique<Sync::BackendRegistry>();
+    }
+
     void cleanup() {
-        Sync::BackendRegistry::instance().clear();
+        m_pluginRegistry.reset();
     }
 
     void registerStockPluginsRegistersCalDavContribution() {
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         registerStockPlugins(pm);
-        QVERIFY(Sync::BackendRegistry::instance().contributionFor(
+        QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("caldav")) != nullptr);
     }
 
     void registerStockPluginsRegistersCardDavContribution() {
-        PluginManager pm;
+        PluginManager pm(m_pluginRegistry.get());
         registerStockPlugins(pm);
-        QVERIFY(Sync::BackendRegistry::instance().contributionFor(
+        QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("carddav")) != nullptr);
     }
 
@@ -38,6 +43,9 @@ private slots:
         QCOMPARE(registry.contributionFor(QStringLiteral("carddav")),
                  static_cast<Sync::BackendContribution*>(nullptr));
     }
+
+private:
+    std::unique_ptr<Sync::BackendRegistry> m_pluginRegistry;
 };
 
 QTEST_GUILESS_MAIN(TestProviderPluginRegistration)
