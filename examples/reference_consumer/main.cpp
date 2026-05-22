@@ -233,13 +233,14 @@ int main(int argc, char *argv[])
     QDir().mkpath(workdir);
 
     // ── Step 1: Load plugins ─────────────────────────────────────────────────
-    Kalburator::PluginManager pm;
+    BackendRegistry registry;
+    Kalburator::PluginManager pm(&registry);
     Kalburator::registerStockPlugins(pm);
     qInfo() << "Loaded plugins:" << pm.loaded().size();
 
     // ── Step 2: Verify provider contributions ────────────────────────────────
-    auto *caldav  = Kalburator::Sync::BackendRegistry::instance().contributionFor("caldav");
-    auto *carddav = Kalburator::Sync::BackendRegistry::instance().contributionFor("carddav");
+    auto *caldav  = registry.contributionFor("caldav");
+    auto *carddav = registry.contributionFor("carddav");
     if (!caldav || !carddav) {
         qCritical() << "Missing provider contributions: caldav="
                     << (caldav != nullptr) << "carddav=" << (carddav != nullptr);
@@ -269,8 +270,7 @@ int main(int argc, char *argv[])
         "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:ref-contact-1\r\n"
         "FN:Reference Person\r\nEND:VCARD\r\n"));
 
-    // ── Step 4: Register backends in a local registry ────────────────────────
-    BackendRegistry registry;
+    // ── Step 4: Register backends in the same local registry ─────────────────
     registry.registerBackendInstance("cal-src", calSrc.get());
     registry.registerBackendInstance("cal-tgt", calTgt.get());
     registry.registerBackendInstance("con-src", conSrc.get());
@@ -338,11 +338,11 @@ int main(int argc, char *argv[])
 
     qInfo() << "Smoke test passed: both calendar and contacts records propagated";
 
-    // Clean up singletons registered by registerStockPlugins().
+    // Clean up Shape singletons registered by registerStockPlugins().
+    // The local BackendRegistry above is destroyed automatically.
     Kalburator::Shape::TransformationRegistry::instance().clear();
     Kalburator::Shape::DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 
     return 0;
 }
