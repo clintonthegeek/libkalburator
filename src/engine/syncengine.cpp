@@ -2464,7 +2464,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         IBlobBackend *blobBackend,
         const QString &colId,
         const QList<BackendRecord> &toWrite,
-        const TranscodingPlan &plan)
+        const TranscodingPlan &plan,
+        const QString &backendRegistryId)
     {
         bool ok = false;
 
@@ -2483,6 +2484,46 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             : nullptr;
         writer->prepareForApply(ctx);
 
+        // Mass-delete guard: consult the registered guard before allowing
+        // a batch of deletes that exceeds either threshold:
+        //   - absolute: more than 10 deletes in this batch; OR
+        //   - relative: more than 25% of the mapping's current baseline.
+        // If no guard is registered, deletes proceed unconditionally
+        // (backward compatible). If the guard returns false, the delete
+        // list is cleared and creates/updates proceed normally.
+        auto applyWithGuard = [this, writer, &colId, &backendRegistryId]
+            (WriterBatch &batch) -> bool
+        {
+            if (!batch.deletes.isEmpty() && m_engine && m_engine->massDeleteGuard()) {
+                const int proposed = static_cast<int>(batch.deletes.size());
+                const QString mappingId = m_currentRequest.mapping.id;
+                int baselineCount = 0;
+                if (m_baselineStore) {
+                    Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
+                    QMetaObject::invokeMethod(m_engine,
+                        [bbs, mappingId, &baselineCount]() {
+                            baselineCount = static_cast<int>(
+                                bbs->baselinesForMappingV3(mappingId).size());
+                        },
+                        Qt::BlockingQueuedConnection);
+                }
+                const bool overAbs = proposed > 10;
+                const bool overRel = baselineCount > 0
+                    && (proposed * 100 / baselineCount) > 25;
+                if (overAbs || overRel) {
+                    const bool allow = m_engine->massDeleteGuard()
+                        ->confirmMassDelete(mappingId, backendRegistryId,
+                                            proposed, baselineCount);
+                    if (!allow) {
+                        qDebug() << "SyncEngineWorker: mass-delete gate denied"
+                                 << proposed << "deletes for mapping" << mappingId;
+                        batch.deletes.clear();
+                    }
+                }
+            }
+            return writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+        };
+
         if (writer->threading() ==
             Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
             // Writer manages its own backend-thread marshalling
@@ -2497,19 +2538,25 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 ok = false;
                 writeError = classifyErr1;
             } else {
-                ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+                ok = applyWithGuard(batch);
             }
         } else {
-            // BackendThread: engine marshals classify + apply together.
+            // BackendThread: classify on backend thread, then guard check +
+            // apply on worker thread to avoid re-entering the backend thread
+            // while invoking m_engine (which lives on the engine thread).
+            WriterBatch batch;
             QString classifyErr2;
-            QMetaObject::invokeMethod(backend, [writer, blobBackend, colId, toWrite, &ok, &classifyErr2]() {
-                const WriterBatch batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
-                if (classifyErr2.isEmpty())
-                    ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
+            QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
+                batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
             }, Qt::BlockingQueuedConnection);
             if (!classifyErr2.isEmpty()) {
                 ok = false;
                 writeError = classifyErr2;
+            } else {
+                // Apply (and guard check) run on the worker thread. For
+                // BackendThread writers the apply() implementation marshals
+                // back to the backend thread internally if needed.
+                ok = applyWithGuard(batch);
             }
         }
         if (!ok && !writeFailed) {
@@ -2534,7 +2581,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             tgtBackend, &SyncBackend::transcodingWarning,
             this, &SyncEngineWorker::transcodingWarning,
             Qt::DirectConnection);
-        applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite, toTgtPlan);
+        applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite, toTgtPlan,
+                   m_currentRequest.mapping.targetBackend);
         QObject::disconnect(tgtWarningConn);
     }
 
@@ -2554,7 +2602,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             srcBackend, &SyncBackend::transcodingWarning,
             this, &SyncEngineWorker::transcodingWarning,
             Qt::DirectConnection);
-        applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite, toSrcPlan);
+        applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite, toSrcPlan,
+                   m_currentRequest.mapping.sourceBackend);
         QObject::disconnect(srcWarningConn);
     }
 

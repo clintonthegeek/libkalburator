@@ -84,5 +84,8 @@ set_tests_properties(tst_carddav_engine_integration PROPERTIES
 # Layer B — silent-success guard (failing test: no engine call site migrated yet)
 kalburator_add_engine_integration_test(tst_engine_silent_success_guard)
 
+# T3 — mass-delete guard engine integration test
+kalburator_add_engine_integration_test(tst_mass_delete_guard)
+
 # Phase N.1 — per-record diff helper unit tests
 kalburator_add_engine_test(tst_perrecorddiff)

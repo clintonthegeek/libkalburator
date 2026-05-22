@@ -1,9 +1,9 @@
-#ifndef KALBURATOR_SYNC_IMASSDELETEGUARD_H
-#define KALBURATOR_SYNC_IMASSDELETEGUARD_H
+#ifndef KALBURATOR_CONFLICT_IMASSDELETEGUARD_H
+#define KALBURATOR_CONFLICT_IMASSDELETEGUARD_H
 
 #include <QString>
 
-namespace Kalburator::Sync {
+namespace Kalburator::Conflict {
 
 /// Synchronous gate for bulk-delete operations during sync.
 ///
@@ -41,6 +41,6 @@ public:
                                    int baselineCount) = 0;
 };
 
-} // namespace Kalburator::Sync
+} // namespace Kalburator::Conflict
 
-#endif // KALBURATOR_SYNC_IMASSDELETEGUARD_H
+#endif // KALBURATOR_CONFLICT_IMASSDELETEGUARD_H
