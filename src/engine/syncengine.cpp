@@ -28,6 +28,7 @@
 #include "changedetection.h"
 #include "syncoperation.h"
 #include "conflictmanager.h"
+#include "imassdeleteguard.h"
 #include "synctesthooks.h"
 
 #include <QDebug>
@@ -149,6 +150,16 @@ void SyncEngine::setBaselineStore(Kalburator::Storage::BaselineStore *store)
 void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 {
     m_conflictStore = store;
+}
+
+void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
+{
+    m_massDeleteGuard = guard;
+}
+
+Kalburator::Conflict::IMassDeleteGuard *SyncEngine::massDeleteGuard() const
+{
+    return m_massDeleteGuard;
 }
 
 void SyncEngine::loadSyncMappings(ICalendarCollection *collection)

@@ -34,6 +34,7 @@ class BaselineStore;
 
 namespace Kalburator::Conflict {
 class ConflictHandlerRegistry;
+class IMassDeleteGuard;
 } // namespace Kalburator::Conflict
 
 namespace Kalburator::Sync {
@@ -437,6 +438,16 @@ public:
     }
 
     /**
+     * Register a synchronous gate consulted before mass deletes are
+     * propagated during sync. Non-owning; consumer must outlive the
+     * SyncEngine. Pass nullptr to clear. See imassdeleteguard.h for
+     * threshold semantics. Default: no guard (deletes proceed
+     * unconditionally — backward compatible).
+     */
+    void setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard);
+    Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard() const;
+
+    /**
      * @brief Load sync mappings from the collection's .kalb configuration.
      *
      * Reads the syncMappings array from KalbConfigManager and populates
@@ -729,6 +740,7 @@ private:
     SyncConflictStore *m_conflictStore = nullptr;
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Conflict::ConflictHandlerRegistry m_conflictRegistry;
+    Kalburator::Conflict::IMassDeleteGuard *m_massDeleteGuard = nullptr;
     TranscodingRouter m_transcodingRouter;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
