@@ -310,7 +310,8 @@ void TestCardDavEngineIntegration::initTestCase()
 {
     // Register stock plugins so the contacts vcard3<->vcard4 edges
     // (and all other stock-domain shapes) are available.
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 
@@ -319,7 +320,6 @@ void TestCardDavEngineIntegration::cleanupTestCase()
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

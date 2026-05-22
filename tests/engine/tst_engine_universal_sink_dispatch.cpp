@@ -225,7 +225,8 @@ void TestEngineUniversalSinkDispatch::initTestCase()
     // Stock plugins register the contacts canonical (vcard4) and its
     // edges; the engine's unified path consults DomainRegistry +
     // TransformationRegistry for any non-fast-path mapping.
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 
@@ -234,7 +235,6 @@ void TestEngineUniversalSinkDispatch::cleanupTestCase()
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestEngineUniversalSinkDispatch::typedSourceToRawFilesTarget_succeeds()
