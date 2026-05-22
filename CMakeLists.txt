@@ -445,6 +445,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/multiprotocoldavbackendcontribution.h
     # Phase M.6: Multi-protocol DAV config widget
     src/sync/multiprotocoldavconfigwidget.h
+    # Phase 5 step 1: provider lifecycle coordinator
+    src/sync/providerlifecycle.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -466,6 +468,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/multiprotocoldavprovider.cpp
     # Phase M.6: Multi-protocol DAV config widget
     src/sync/multiprotocoldavconfigwidget.cpp
+    # Phase 5 step 1: provider lifecycle coordinator
+    src/sync/providerlifecycle.cpp
 )
 
 # Phase M.9–M.11: Library UI widgets

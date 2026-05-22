@@ -16,6 +16,9 @@ endfunction()
 
 kalburator_add_sync_test(tst_provider_manager)
 
+# Phase 5 step 1 — ProviderLifecycle coordinator canary tests.
+kalburator_add_sync_test(tst_providerlifecycle)
+
 # K.7.1 Task 2 — BackendContribution interface + BackendRegistry extension.
 kalburator_add_sync_test(tst_backend_contribution)
 
