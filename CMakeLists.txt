@@ -262,6 +262,7 @@ set(KALBURATOR_BACKEND_HEADERS
 
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
+    src/engine/imassdeleteguard.h
     src/engine/mappingscheduler.h
     src/engine/perrecorddiff.h
     src/engine/propertydiff.h
