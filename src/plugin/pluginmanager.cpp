@@ -95,6 +95,12 @@ QList<PluginManifest> PluginManager::resolve(const QList<PluginManifest> &manife
     return out;
 }
 
+PluginManager::PluginManager(Sync::BackendRegistry *registry)
+    : m_backendRegistry(registry)
+{
+    Q_ASSERT(registry);
+}
+
 void PluginManager::reset() { m_loaded.clear(); m_rejected.clear(); }
 QList<PluginManager::LoadedPlugin>   PluginManager::loaded()   const { return m_loaded; }
 QList<PluginManager::RejectedPlugin> PluginManager::rejected() const { return m_rejected; }
@@ -116,7 +122,7 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
     PendingRegistrations pending;
     auto fail = [&](PluginLoadErrorCode c, const QString &detail) -> PluginLoadError {
         for (const auto &b : pending.backendTypesAdded)
-            Sync::BackendRegistry::instance().unregisterContribution(b);
+            m_backendRegistry->unregisterContribution(b);
         for (const auto &d : pending.operationsAdded)
             Shape::DomainOperationsRegistry::instance().unregister(d);
         Shape::TransformationRegistry::instance().unregisterEdges(pending.edgesAdded);
@@ -186,7 +192,7 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
 
     // 4. BackendContributions
     for (const auto &bc : plugin->backendContributions()) {
-        if (!Sync::BackendRegistry::instance().registerContribution(bc))
+        if (!m_backendRegistry->registerContribution(bc))
             return fail(PluginLoadErrorCode::BackendTypeCollision,
                 QStringLiteral("backend type '%1' already registered").arg(bc->backendType()));
         pending.backendTypesAdded.append(bc->backendType());

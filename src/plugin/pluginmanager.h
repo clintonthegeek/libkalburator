@@ -13,10 +13,11 @@
 namespace Kalburator {
 
 class Plugin;
+namespace Sync { class BackendRegistry; }
 
 class PluginManager {
 public:
-    PluginManager() = default;
+    explicit PluginManager(Sync::BackendRegistry *registry);
 
     struct LoadedPlugin   { QString id; PluginManifest manifest; Plugin *plugin; };
     struct RejectedPlugin { PluginManifest manifest; PluginLoadError error; };
@@ -50,6 +51,8 @@ private:
 
     QList<LoadedPlugin>   m_loaded;
     QList<RejectedPlugin> m_rejected;
+
+    Sync::BackendRegistry *m_backendRegistry = nullptr;   // borrowed, non-null
 
     std::optional<PluginLoadError> applyPlugin(Plugin *plugin,
                                                 const PluginManifest &manifest);
