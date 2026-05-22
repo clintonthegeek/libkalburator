@@ -266,7 +266,8 @@ private:
 
 void TestUnifiedAskUserPause::initTestCase()
 {
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 
@@ -275,7 +276,6 @@ void TestUnifiedAskUserPause::cleanupTestCase()
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestUnifiedAskUserPause::init()

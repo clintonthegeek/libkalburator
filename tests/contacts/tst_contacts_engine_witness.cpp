@@ -302,7 +302,8 @@ private slots:
 
 void TstContactsEngineWitness::initTestCase()
 {
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 
@@ -311,7 +312,6 @@ void TstContactsEngineWitness::cleanupTestCase()
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()

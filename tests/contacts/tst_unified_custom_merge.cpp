@@ -270,7 +270,8 @@ private:
 
 void TestUnifiedCustomMerge::initTestCase()
 {
-    Kalburator::PluginManager pm;
+    Kalburator::Sync::BackendRegistry pmRegistry;
+    Kalburator::PluginManager pm(&pmRegistry);
     Kalburator::registerStockPlugins(pm);
 }
 
@@ -279,7 +280,6 @@ void TestUnifiedCustomMerge::cleanupTestCase()
     TransformationRegistry::instance().clear();
     DomainRegistry::instance().clear();
     Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-    Kalburator::Sync::BackendRegistry::instance().clear();
 }
 
 void TestUnifiedCustomMerge::init()
