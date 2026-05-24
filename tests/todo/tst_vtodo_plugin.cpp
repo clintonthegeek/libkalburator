@@ -2,25 +2,15 @@
 
 #include "tododomaindefinition.h"
 #include "todostockshapes.h"
-#include "domainregistry.h"
-#include "transformationregistry.h"
 
 using namespace Kalburator::Todo;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyId;
-using Kalburator::Shape::DomainRegistry;
-using Kalburator::Shape::TransformationRegistry;
 
 class TestVTodoPlugin : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup()
-    {
-        DomainRegistry::instance().clear();
-        TransformationRegistry::instance().clear();
-    }
-
     void canonicalShapeIsTodoIcalVTodo()
     {
         const TodoDomainDefinition def;

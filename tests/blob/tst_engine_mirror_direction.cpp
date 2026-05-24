@@ -22,19 +22,17 @@
 
 #include "backendregistry.h"
 #include "baselinestore.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "isynchost.h"
 #include "isyncconfigstore.h"
 #include "logicalcalendar.h"
 #include "collectioninfo.h"
 #include "pluginmanager.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -269,13 +267,8 @@ class TstEngineMirrorDirection : public QObject
 private slots:
     void initTestCase() {
         Kalburator::Sync::BackendRegistry pmRegistry;
-        Kalburator::PluginManager pm(&pmRegistry);
+        Kalburator::PluginManager pm(&pmRegistry, m_shape);
         Kalburator::registerStockPlugins(pm);
-    }
-    void cleanupTestCase() {
-        Kalburator::Shape::TransformationRegistry::instance().clear();
-        Kalburator::Shape::DomainRegistry::instance().clear();
-        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
     void init();
     void cleanup();
@@ -334,6 +327,7 @@ private:
     std::unique_ptr<MinimalSyncHost>           m_host;
     std::unique_ptr<SyncEngine>                m_engine;
     int                                        m_testCounter = 0;
+    Kalburator::Shape::ShapeRegistries         m_shape;
 };
 
 void TstEngineMirrorDirection::init()
@@ -355,7 +349,7 @@ void TstEngineMirrorDirection::init()
     m_registry->registerBackendInstance(QString::fromLatin1(kTgtId), m_tgt.get());
 
     m_host = std::make_unique<MinimalSyncHost>(m_registry.get());
-    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_engine->setBaselineStore(m_baselines.get());
 
     // Seed the collections so dispatchBlobSync's fetch finds them.
@@ -548,7 +542,7 @@ void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
     registry.registerBackendInstance(QString::fromLatin1(kTgtId), &tgt);
 
     MinimalSyncHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
     engine.setBaselineStore(&blobBaselines);
 
     src.createCollection(makeCollection(QString::fromLatin1(kColId)));

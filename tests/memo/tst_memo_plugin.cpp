@@ -1,25 +1,15 @@
 #include <QTest>
 
 #include "memodomaindefinition.h"
-#include "domainregistry.h"
-#include "transformationregistry.h"
 
 using namespace Kalburator::Memo;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyId;
-using Kalburator::Shape::DomainRegistry;
-using Kalburator::Shape::TransformationRegistry;
 
 class TestMemoPlugin : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup()
-    {
-        DomainRegistry::instance().clear();
-        TransformationRegistry::instance().clear();
-    }
-
     void canonicalShapeIsMemoText()
     {
         const MemoDomainDefinition def;
