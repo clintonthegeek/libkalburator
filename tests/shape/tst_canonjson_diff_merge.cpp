@@ -1,8 +1,11 @@
 #include <QtTest>
+#include <QJsonDocument>
 #include <QJsonObject>
 
 #include "canonenvelope.h"
 #include "canonjsondiffer.h"
+#include "canonjsonmerger.h"
+#include "conflictpolicy.h"
 
 using namespace Kalburator::Shape;
 
@@ -63,6 +66,50 @@ private slots:
         CanonicalRecord src; src.data = R"({"attendees":[{"email":"a@x"},{"email":"b@x"}]})";
         CanonicalRecord base; base.data = R"({"attendees":[{"email":"a@x"}]})";
         QVERIFY(d.diff(src, base).contains(PropertyId{QStringLiteral("attendees")}));
+    }
+
+    void mergerTakesSourceWhenTargetUnchanged()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;  src.data  = R"({"uid":"e","summary":"edited"})"; src.recordId = QStringLiteral("e");
+        CanonicalRecord tgt;  tgt.data  = R"({"uid":"e","summary":"base"})";   tgt.recordId = QStringLiteral("e");
+        CanonicalRecord base; base.data = R"({"uid":"e","summary":"base"})";   base.recordId = QStringLiteral("e");
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Conflict::ConflictPolicy{});
+        QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(o.value("summary").toString(), QString("edited"));
+    }
+
+    void mergerTakesTargetWhenSourceUnchanged()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;  src.data  = R"({"uid":"e","summary":"base"})";    src.recordId = QStringLiteral("e");
+        CanonicalRecord tgt;  tgt.data  = R"({"uid":"e","summary":"edited"})";  tgt.recordId = QStringLiteral("e");
+        CanonicalRecord base; base.data = R"({"uid":"e","summary":"base"})";    base.recordId = QStringLiteral("e");
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Conflict::ConflictPolicy{});
+        QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(o.value("summary").toString(), QString("edited"));
+    }
+
+    void mergerConflictResolvesToSourceUnderDefaultPolicy()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;  src.data  = R"({"uid":"e","summary":"srcEdit"})"; src.recordId = QStringLiteral("e");
+        CanonicalRecord tgt;  tgt.data  = R"({"uid":"e","summary":"tgtEdit"})"; tgt.recordId = QStringLiteral("e");
+        CanonicalRecord base; base.data = R"({"uid":"e","summary":"base"})";    base.recordId = QStringLiteral("e");
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Conflict::ConflictPolicy{});
+        QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(o.value("summary").toString(), QString("srcEdit"));  // default → source wins
+    }
+
+    void mergerKeepsProviderExtrasFromChosenOrigin()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;  src.data  = R"({"uid":"e","summary":"edited","providerExtras":{"x":1}})"; src.recordId=QStringLiteral("e");
+        CanonicalRecord tgt;  tgt.data  = R"({"uid":"e","summary":"base","providerExtras":{"x":2}})";   tgt.recordId=QStringLiteral("e");
+        CanonicalRecord base; base.data = R"({"uid":"e","summary":"base","providerExtras":{"x":2}})";   base.recordId=QStringLiteral("e");
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Conflict::ConflictPolicy{});
+        QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(o.value("providerExtras").toObject().value("x").toInt(), 1); // followed source (the changed origin)
     }
 };
 
