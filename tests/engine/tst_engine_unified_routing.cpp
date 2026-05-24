@@ -48,6 +48,7 @@
 #include "lossprofile.h"
 #include "pluginmanager.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
@@ -286,31 +287,24 @@ class TestEngineUnifiedRouting : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
 
     // The unified dispatchSync path compiles a (vcard3 -> vcard4)
     // pipeline and applies it before pushing to the target.
     void unifiedPath_transformsBytesAtEdge();
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TestEngineUnifiedRouting::initTestCase()
 {
     // Register stock plugins so the contacts vcard3<->vcard4 edges
-    // (and all other stock-domain shapes) are available in
-    // TransformationRegistry and DomainRegistry.
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    // (and all other stock-domain shapes) are available in the
+    // injected ShapeRegistries bundle. Populated once; every slot's
+    // SyncEngine reads it via m_shape.
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-
-void TestEngineUnifiedRouting::cleanupTestCase()
-{
-    // Process-wide singletons leak across test classes; reset before
-    // any other test in this binary touches them. (No other slots
-    // exist here today, but this matches the FINDINGS guidance.)
-    TransformationRegistry::instance().clear();
-    DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
@@ -343,7 +337,7 @@ void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
 
     CapturingSyncHost host(&registry);
 
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     // The unified dispatchSync path uses BaselineStore for the
     // contacts domain; provide one so first-sync baseline writes don't

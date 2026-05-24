@@ -38,6 +38,7 @@
 #include "pluginmanager.h"
 #include "rawfilesbackend.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
@@ -215,26 +216,22 @@ class TestEngineUniversalSinkDispatch : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
 
     void typedSourceToRawFilesTarget_succeeds();
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TestEngineUniversalSinkDispatch::initTestCase()
 {
     // Stock plugins register the contacts canonical (vcard4) and its
-    // edges; the engine's unified path consults DomainRegistry +
-    // TransformationRegistry for any non-fast-path mapping.
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    // edges into the injected ShapeRegistries bundle; the engine's
+    // unified path consults that same bundle (via m_shape) for any
+    // non-fast-path mapping.
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-
-void TestEngineUniversalSinkDispatch::cleanupTestCase()
-{
-    TransformationRegistry::instance().clear();
-    DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 void TestEngineUniversalSinkDispatch::typedSourceToRawFilesTarget_succeeds()
@@ -269,7 +266,7 @@ void TestEngineUniversalSinkDispatch::typedSourceToRawFilesTarget_succeeds()
     registry.registerBackendInstance(targetBackendId, target.get());
 
     RegistrySyncHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     BaselineStore baselines(
         tmpDir.filePath(QStringLiteral("blob-baselines.db")));

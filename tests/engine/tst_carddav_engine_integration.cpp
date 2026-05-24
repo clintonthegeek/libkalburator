@@ -62,6 +62,7 @@
 #include "pluginmanager.h"
 #include "remotecontactsbackend.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
@@ -293,7 +294,6 @@ class TestCardDavEngineIntegration : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
 
     // Scenario A: two vCard 4.0 records seeded, both arrive on peer after sync.
     // Bytes round-trip exactly (UID and FN preserved).
@@ -303,22 +303,20 @@ private slots:
     // vCard 4.0 by the Pipeline registered for the (contacts,vcard3)→
     // (contacts,vcard4) edge.
     void vCard3Record_transcodedToVCard4OnPeer();
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TestCardDavEngineIntegration::initTestCase()
 {
-    // Register stock plugins so the contacts vcard3<->vcard4 edges
-    // (and all other stock-domain shapes) are available.
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    // Register stock plugins into the injected ShapeRegistries bundle so
+    // the contacts vcard3<->vcard4 edges (and all other stock-domain
+    // shapes) are available. Populated once; both slots' SyncEngines
+    // read it via m_shape.
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-
-void TestCardDavEngineIntegration::cleanupTestCase()
-{
-    TransformationRegistry::instance().clear();
-    DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -381,7 +379,7 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
     registry.registerBackendInstance(peerBackendId,   &peer);
 
     CapturingSyncHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());
@@ -512,7 +510,7 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
     registry.registerBackendInstance(peerBackendId,   &peer);
 
     CapturingSyncHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     QTemporaryDir tmpDir;
     QVERIFY(tmpDir.isValid());

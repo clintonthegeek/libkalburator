@@ -27,6 +27,7 @@
 #include "imassdeleteguard.h"
 #include "mockbackend.h"
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
 #include "syncconflictstore.h"
@@ -90,14 +91,10 @@ class TstMassDeleteGuard : public QObject
     Q_OBJECT
 private slots:
     void initTestCase() {
-        Kalburator::Sync::BackendRegistry pmRegistry;
-        Kalburator::PluginManager pm(&pmRegistry);
+        // Populate the injected bundle once; per-slot init() builds a
+        // SyncEngine reading from this same m_shape.
+        Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
         Kalburator::registerStockPlugins(pm);
-    }
-    void cleanupTestCase() {
-        Kalburator::Shape::TransformationRegistry::instance().clear();
-        Kalburator::Shape::DomainRegistry::instance().clear();
-        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
     void init();
     void cleanup();
@@ -112,6 +109,8 @@ private:
     void seedEvents(MockBackend *backend, int count, int startIndex = 1);
     bool runOneSync();
 
+    Kalburator::Shape::ShapeRegistries     m_shape;
+    Kalburator::Sync::BackendRegistry      m_pmRegistry;
     std::unique_ptr<QTemporaryDir>         m_tmpDir;
     std::unique_ptr<BackendRegistry>       m_registry;
     std::unique_ptr<MockBackend>           m_source;
@@ -155,7 +154,7 @@ void TstMassDeleteGuard::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_engine->setBaselineStore(m_baselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
