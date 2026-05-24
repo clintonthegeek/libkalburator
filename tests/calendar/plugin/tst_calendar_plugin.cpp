@@ -97,10 +97,10 @@ private:
 class TestCalendarPlugin : public QObject {
     Q_OBJECT
 private slots:
-    void canonicalShapeIsCalendarIcal()
+    void canonicalShapeIsCalendarCanon()
     {
         const CalendarDomainDefinition def;
-        const Kalburator::Shape::Shape expected{ DomainId{"calendar"}, EncodingId{"ical"} };
+        const Kalburator::Shape::Shape expected{ DomainId{"calendar"}, EncodingId{"canon"} };
         QCOMPARE(def.canonicalShape(), expected);
     }
 
@@ -117,29 +117,39 @@ private slots:
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
     }
 
-    void canonicalCatalogueHasSummary()
+    void canonicalCatalogueHasCanonProperties()
     {
         const CalendarDomainDefinition def;
         const auto cat = def.canonicalCatalogue();
+        // Core canon properties (schema doc §2)
         QVERIFY(cat.hasProperty(PropertyId{"summary"}));
+        QVERIFY(cat.hasProperty(PropertyId{"attendees"}));
+        // Plan 3 Task C1: Google/MS-only fields also present in canon
+        QVERIFY(cat.hasProperty(PropertyId{"onlineMeeting"}));
+        QVERIFY(cat.hasProperty(PropertyId{"guestsCanModify"}));
     }
 
-    void stockShapesEdgeIsIdentity()
+    void stockShapesHasThreeEdges()
     {
-        // Calendar has no peer shapes and one identity edge (canonical→canonical).
+        // Plan 3 Task C5: canon-identity + ical→canon + canon→ical
         const CalendarStockShapes shapes;
-        QVERIFY(shapes.peerShapes().isEmpty());
-        const auto edges = shapes.edges();
-        QCOMPARE(edges.size(), 1);
-        const Kalburator::Shape::Shape canonical{ DomainId{"calendar"}, EncodingId{"ical"} };
-        QCOMPARE(edges.first().from, canonical);
-        QCOMPARE(edges.first().to, canonical);
+        QCOMPARE(shapes.edges().size(), 3);
+    }
+
+    void stockShapesPeerContainsIcal()
+    {
+        const CalendarStockShapes shapes;
+        const Kalburator::Shape::Shape ical{ DomainId{"calendar"}, EncodingId{"ical"} };
+        const auto peers = shapes.peerShapes();
+        QVERIFY(std::any_of(peers.begin(), peers.end(),
+            [&](const auto &p) { return p.first == ical; }));
     }
 
     void richnessRankCanonical()
     {
         const CalendarDomainDefinition def;
-        QCOMPARE(def.richnessRank(def.canonicalShape()), 10);
+        // Canon head should have the highest richness rank
+        QCOMPARE(def.richnessRank(def.canonicalShape()), 100);
     }
 
     void richnessRankUnknownShapeIsZero()
