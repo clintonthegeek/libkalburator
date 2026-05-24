@@ -12,15 +12,13 @@
 #include "backendregistry.h"
 #include "baselinestore.h"
 #include "calendar_test_helpers.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "mockbackend.h"
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 #include <KCalendarCore/ICalFormat>
 
@@ -79,7 +77,6 @@ class TstEngineCancellation : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
     void init();
     void cleanup();
 
@@ -107,17 +104,14 @@ private:
     std::unique_ptr<StubSyncHost>          m_host;
     std::unique_ptr<Kalburator::Storage::BaselineStore> m_calendarBaselines;
     std::unique_ptr<SyncEngine>            m_engine;
+
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TstEngineCancellation::initTestCase() {
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-void TstEngineCancellation::cleanupTestCase() {
-    Kalburator::Shape::TransformationRegistry::instance().clear();
-    Kalburator::Shape::DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 void TstEngineCancellation::init()
@@ -151,7 +145,7 @@ void TstEngineCancellation::init()
     const QString dbPath = m_tmpDir->filePath(QStringLiteral(".kalburator-sync.db"));
     m_calendarBaselines = std::make_unique<Kalburator::Storage::BaselineStore>(dbPath);
 
-    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_engine->setBaselineStore(m_calendarBaselines.get());
     m_engine->setCollection(m_host->stubCollection());
     m_engine->setSyncMappings({ makeCalendarMapping() });

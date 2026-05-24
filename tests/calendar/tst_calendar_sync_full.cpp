@@ -19,15 +19,13 @@
 #include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "mockbackend.h"
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 #include "stubs/stubsynchost.h"
 
@@ -75,7 +73,6 @@ class TestCalendarSyncFull : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
     void init();
     void cleanup();
 
@@ -98,21 +95,17 @@ private:
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>       m_coordinator;
+
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 // ---- Lifecycle ------------------------------------------------------------
 
 void TestCalendarSyncFull::initTestCase() {
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
 }
-void TestCalendarSyncFull::cleanupTestCase() {
-    Kalburator::Shape::TransformationRegistry::instance().clear();
-    Kalburator::Shape::DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-}
-
 void TestCalendarSyncFull::init()
 {
     m_tmpDir = std::make_unique<QTemporaryDir>();
@@ -152,7 +145,7 @@ void TestCalendarSyncFull::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_coordinator = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_coordinator->setBaselineStore(m_calendarBaselines.get());
     m_coordinator->setSyncConflictStore(m_conflictStore.get());
     m_coordinator->setConflictManager(m_conflictManager.get());

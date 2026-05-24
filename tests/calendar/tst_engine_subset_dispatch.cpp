@@ -11,15 +11,13 @@
 #include "baselinestore.h"
 #include "calendar_test_helpers.h"
 #include "conflictmanager.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "mockbackend.h"
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 #include "stubs/stubsynchost.h"
 
@@ -53,14 +51,8 @@ class TestEngineSubsetDispatch : public QObject
     Q_OBJECT
 private slots:
     void initTestCase() {
-        Kalburator::Sync::BackendRegistry pmRegistry;
-        Kalburator::PluginManager pm(&pmRegistry);
+        Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
         Kalburator::registerStockPlugins(pm);
-    }
-    void cleanupTestCase() {
-        Kalburator::Shape::TransformationRegistry::instance().clear();
-        Kalburator::Shape::DomainRegistry::instance().clear();
-        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
     void init();
     void cleanup();
@@ -87,6 +79,9 @@ private:
     std::unique_ptr<SyncConflictStore>     m_conflictStore;
     std::unique_ptr<ConflictManager>       m_conflictManager;
     std::unique_ptr<SyncEngine>            m_engine;
+
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TestEngineSubsetDispatch::init()
@@ -121,7 +116,7 @@ void TestEngineSubsetDispatch::init()
     m_conflictManager = std::make_unique<ConflictManager>();
     m_conflictManager->setSyncConflictStore(m_conflictStore.get());
 
-    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_engine->setBaselineStore(m_calBaselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());

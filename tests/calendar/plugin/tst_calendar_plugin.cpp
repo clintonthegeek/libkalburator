@@ -5,11 +5,9 @@
 #include "calendardomaindefinition.h"
 #include "calendarstockshapes.h"
 #include "calendardomainoperations.h"
-#include "domainregistry.h"
 #include "propertycatalogue.h"
 #include "shape.h"
 #include "syncbackend.h"
-#include "transformationregistry.h"
 
 using Kalburator::Calendar::CalendarDomainDefinition;
 using Kalburator::Calendar::CalendarStockShapes;
@@ -17,8 +15,6 @@ using Kalburator::Calendar::CalendarDomainOperations;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::PropertyId;
-using Kalburator::Shape::DomainRegistry;
-using Kalburator::Shape::TransformationRegistry;
 
 // ---------------------------------------------------------------------------
 // Minimal inline backend for collection-property tests.
@@ -101,12 +97,6 @@ private:
 class TestCalendarPlugin : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup()
-    {
-        DomainRegistry::instance().clear();
-        TransformationRegistry::instance().clear();
-    }
-
     void canonicalShapeIsCalendarIcal()
     {
         const CalendarDomainDefinition def;
