@@ -326,18 +326,24 @@ set(KALBURATOR_SHAPE_SOURCES
 # Phase G.5 — new domain plugins (todo, contacts, memo).
 set(KALBURATOR_TODO_HEADERS
     src/todo/icalvtodoproperties.h
+    src/todo/todocanonproperties.h
     src/todo/icalvtododiffer.h
     src/todo/icalvtodomerger.h
     src/todo/todotxttransformation.h
+    # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
+    src/todo/vtodocanonstages.h
     src/todo/tododomaindefinition.h
     src/todo/todostockshapes.h
     src/todo/todoplugin.h
 )
 set(KALBURATOR_TODO_SOURCES
     src/todo/icalvtodoproperties.cpp
+    src/todo/todocanonproperties.cpp
     src/todo/icalvtododiffer.cpp
     src/todo/icalvtodomerger.cpp
     src/todo/todotxttransformation.cpp
+    # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
+    src/todo/vtodocanonstages.cpp
     src/todo/tododomaindefinition.cpp
     src/todo/todostockshapes.cpp
     src/todo/todoplugin.cpp
