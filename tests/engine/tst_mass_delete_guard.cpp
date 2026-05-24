@@ -22,8 +22,6 @@
 #include "backendregistry.h"
 #include "baselinestore.h"
 #include "conflictmanager.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "imassdeleteguard.h"
 #include "mockbackend.h"
 #include "pluginmanager.h"
@@ -32,7 +30,6 @@
 #include "syncengine.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 #include "stubsynchost.h"
 

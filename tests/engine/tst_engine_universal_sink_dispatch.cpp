@@ -31,8 +31,6 @@
 #include "backendregistry.h"
 #include "baselinestore.h"
 #include "collectioninfo.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "isynchost.h"
 #include "lossprofile.h"
 #include "pluginmanager.h"
@@ -43,8 +41,6 @@
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
-
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Storage::BaselineStore;
@@ -59,11 +55,9 @@ using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Sinks::RawFilesBackend;
 using Kalburator::Shape::DomainId;
-using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::Shape;
-using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 

@@ -53,8 +53,6 @@
 #include "baselinestore.h"
 #include "carddavprovider.h"
 #include "collectioninfo.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "fakecarddavserver.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
@@ -67,8 +65,6 @@
 #include "syncbackend.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
-
 using Kalburator::Sync::BackendConfiguration;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -86,11 +82,9 @@ using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Shape::DomainId;
-using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::Shape;
-using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 
