@@ -38,25 +38,21 @@
 #include "canonicalrecord.h"
 #include "collectioninfo.h"
 #include "conflictmanager.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
 #include "pluginmanager.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::DomainId;
-using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::Shape;
-using Kalburator::Shape::TransformationRegistry;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Storage::BaselineStore;
@@ -281,7 +277,6 @@ class TstContactsEngineWitness : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
 
     // Case 1: A has contact X, B has contact Y → TwoWay sync → both have X+Y.
     void bidirectionalAdd_bothSidesGetEachOthersContact();
@@ -298,20 +293,18 @@ private slots:
 
     // Case 5: Source (vcard3) → Target (vcard4) → engine applies transform.
     void vcard3To4Transform_targetBytesContainVersion4();
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
 };
 
 void TstContactsEngineWitness::initTestCase()
 {
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    // Populate the injected bundle once; every slot builds its own
+    // SyncEngine reading from this same m_shape.
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-
-void TstContactsEngineWitness::cleanupTestCase()
-{
-    TransformationRegistry::instance().clear();
-    DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()
@@ -332,7 +325,7 @@ void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()
     registry.registerBackendInstance(QStringLiteral("tgt"), tgt.get());
 
     StubHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
     engine.setBaselineStore(&baselines);
@@ -381,7 +374,7 @@ void TstContactsEngineWitness::contentHashSkip_secondSyncProducesNoWrites()
     registry.registerBackendInstance(QStringLiteral("tgt"), tgt.get());
 
     StubHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
     engine.setBaselineStore(&baselines);
@@ -455,7 +448,7 @@ void TstContactsEngineWitness::conflict_askUserAutoResolves_sourceWins()
     mgr.setWorkflowMode(ConflictManager::WorkflowMode::AutoResolve);
     mgr.setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
     engine.setBaselineStore(&baselines);
     engine.setSyncConflictStore(&conflictStore);
     engine.setConflictManager(&mgr);
@@ -490,7 +483,7 @@ void TstContactsEngineWitness::cancelBeforeSync_futureCompletesCleanly()
     registry.registerBackendInstance(QStringLiteral("tgt"), tgt.get());
 
     StubHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
     engine.setBaselineStore(&baselines);
@@ -527,7 +520,7 @@ void TstContactsEngineWitness::vcard3To4Transform_targetBytesContainVersion4()
     registry.registerBackendInstance(QStringLiteral("tgt"), tgt.get());
 
     StubHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, m_shape);
 
     BaselineStore baselines(tmp.filePath(QStringLiteral("bl.db")));
     engine.setBaselineStore(&baselines);

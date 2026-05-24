@@ -35,19 +35,17 @@
 #include "baselinestore.h"
 #include "collectioninfo.h"
 #include "conflictmanager.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
 #include "iblobbackend.h"
 #include "isynchost.h"
 #include "lossprofile.h"
 #include "pluginmanager.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
 #include "synctypes.h"
-#include "transformationregistry.h"
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -66,11 +64,9 @@ using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Shape::DomainId;
-using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::Shape;
-using Kalburator::Shape::TransformationRegistry;
 
 namespace {
 
@@ -245,7 +241,6 @@ class TestUnifiedCustomMerge : public QObject
 
 private slots:
     void initTestCase();
-    void cleanupTestCase();
     void init();
     void cleanup();
 
@@ -257,6 +252,8 @@ private:
                            const QByteArray &sourceData,
                            const QByteArray &targetData);
 
+    Kalburator::Shape::ShapeRegistries m_shape;
+    Kalburator::Sync::BackendRegistry  m_pmRegistry;
     QTemporaryDir                      m_tmpDir;
     std::unique_ptr<BackendRegistry>   m_registry;
     std::unique_ptr<RawBlobBackend>    m_source;
@@ -270,16 +267,10 @@ private:
 
 void TestUnifiedCustomMerge::initTestCase()
 {
-    Kalburator::Sync::BackendRegistry pmRegistry;
-    Kalburator::PluginManager pm(&pmRegistry);
+    // Populate the injected bundle once; per-slot init() builds a
+    // SyncEngine reading from this same m_shape.
+    Kalburator::PluginManager pm(&m_pmRegistry, m_shape);
     Kalburator::registerStockPlugins(pm);
-}
-
-void TestUnifiedCustomMerge::cleanupTestCase()
-{
-    TransformationRegistry::instance().clear();
-    DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
 }
 
 void TestUnifiedCustomMerge::init()
@@ -303,7 +294,7 @@ void TestUnifiedCustomMerge::init()
     m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::AutoResolve);
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::SourceWins);
 
-    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get());
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
     m_engine->setBaselineStore(m_baselines.get());
     m_engine->setSyncConflictStore(m_conflictStore.get());
     m_engine->setConflictManager(m_conflictManager.get());
