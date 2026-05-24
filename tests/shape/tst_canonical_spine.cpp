@@ -182,6 +182,30 @@ private slots:
         QVERIFY(o.contains(QStringLiteral("v2field")));   // widened by the auto-inserted bridge
         QCOMPARE(o.value(QStringLiteral("uid")).toString(), QStringLiteral("A"));
     }
+
+    void spineRoundTripIsIdentityForWidenedFields() {
+        auto& r = TransformationRegistry::instance();
+        r.registerShape(cal("canon"),  stubCat());
+        r.registerShape(cal("canon2"), stubCat());
+        r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
+        r.registerEdge(widenEdge(cal("canon"),  cal("canon2")));
+        r.registerEdge(narrowEdge(cal("canon2"), cal("canon")));
+        r.appendCanonicalVersion(DomainId{QStringLiteral("calendar")}, cal("canon2"));
+
+        // A v2 record that only uses fields v1 also has must survive v2->v1->v2:
+        const QByteArray v2in = QByteArray("{\"uid\":\"A\",\"v2field\":\"default\"}");
+        auto down = r.compile(cal("canon2"), cal("canon"));
+        auto up   = r.compile(cal("canon"),  cal("canon2"));
+        QVERIFY(down.has_value() && up.has_value());
+        const QByteArray back = up->apply(down->apply(v2in));
+        const QJsonObject o = QJsonDocument::fromJson(back).object();
+        QCOMPARE(o.value(QStringLiteral("uid")).toString(), QStringLiteral("A"));
+        QCOMPARE(o.value(QStringLiteral("v2field")).toString(), QStringLiteral("default"));
+
+        // And the narrowing declares its single field loss as Reversible:
+        QCOMPARE(down->composedLoss().affected.value(
+                     PropertyId{QStringLiteral("v2field")}), LossKind::Reversible);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestCanonicalSpine)

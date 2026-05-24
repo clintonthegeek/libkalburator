@@ -1,7 +1,8 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Planning complete. Plan 1 written and committed; **implementation not
-yet started.** Plans 2–4 are outlined (not yet written in full — see invariant P1).
+**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plans 2–4 are
+outlined (not yet written in full — see invariant P1). Plan 2 should now be written
+against the landed APIs.
 **Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
 **Last updated:** 2026-05-23.
 
@@ -27,7 +28,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 
 | # | Plan | Doc | Status |
 |---|---|---|---|
-| 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Written — ready to implement** |
+| 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
 | 2 | Per-engine registries (inject `TransformationRegistry`/`DomainRegistry` into `SyncEngine`; drop `instance()` in engine path; remove test `clear()` rituals) | _not written_ | Outlined (design §8) |
 | 3 | Canon encodings (`calendar+canon`/`contacts+canon`/`todo+canon`: catalogues, JSON (de)serialization stages, bridge edges, differ/merger) | _not written_ | Outlined (schema doc) |
 | 4 | Calendar convergence (retire `src/transcoding/`; RRULE-as-edge; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing) | _not written_ | Outlined (design §7, §10) |
@@ -37,13 +38,13 @@ Plans 2–4 are deliberately outlines: their task code must be written against t
 
 ## Plan 1 task checklist (mirror — update as tasks land)
 
-- [ ] Task 1 — New `LossProfile` shape (kinds map + helpers)
-- [ ] Task 2 — Migrate all `LossProfile` construction & assertion sites
-- [ ] Task 3 — Spine storage + `appendCanonicalVersion` / `canonicalSpine`
-- [ ] Task 4 — Spine-aware `compileImpl` routing
-- [ ] Task 5 — Freeze guards a frozen spine against late version appends
-- [ ] Task 6 — Widening/narrowing fixture stages + auto-extension test
-- [ ] Task 7 — `v1 → v2 → v1` round-trip compatibility guard
+- [x] Task 1 — New `LossProfile` shape (kinds map + helpers)
+- [x] Task 2 — Migrate all `LossProfile` construction & assertion sites
+- [x] Task 3 — Spine storage + `appendCanonicalVersion` / `canonicalSpine`
+- [x] Task 4 — Spine-aware `compileImpl` routing
+- [x] Task 5 — Freeze guards a frozen spine against late version appends
+- [x] Task 6 — Widening/narrowing fixture stages + auto-extension test
+- [x] Task 7 — `v1 → v2 → v1` round-trip compatibility guard
 
 ## Locked decisions ledger
 
@@ -88,9 +89,7 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **Implementing agent:** start Plan 1 Task 1. Read `INVARIANTS.md` first. Use
-  `superpowers:subagent-driven-development` (fresh subagent per task, review between)
-  or `superpowers:executing-plans`. Tick this file's checklist as tasks land.
-- **Planning agent (Plan 2):** only after Plan 1 lands. Read the design §8 outline +
-  the now-real `src/shape/` APIs, then use `superpowers:writing-plans`. Save to
+- **Planning agent (Plan 2):** Plan 1 is complete. Read design §8 and the now-real
+  `src/shape/` APIs (especially `TransformationRegistry`, `LossProfile`, `LossKind`),
+  then use `superpowers:writing-plans`. Save to
   `docs/2026-05-23-plan-2-per-engine-registries.md` and update the plan table here.
