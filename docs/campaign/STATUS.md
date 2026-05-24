@@ -95,8 +95,11 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **Plan 2 authoring (in progress):** design §8 is rewritten and locked; the task plan is being
-  written via `superpowers:writing-plans` against the landed `ShapeRegistries`/`SyncEngine`/
-  `PluginManager` signatures, saved to `docs/2026-05-23-plan-2-per-engine-registries.md`.
+- **Execute Plan 2:** the task plan is **written and ready** at
+  `docs/2026-05-23-plan-2-per-engine-registries.md` (12 tasks, against the landed
+  `ShapeRegistries`/`SyncEngine`/`PluginManager` signatures). Implement it task-by-task with
+  `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` — the
+  plan's header names the sub-skill. Start at Task 1; each task says how to build/test and is
+  green on its own. Update this Status line + the Plan-2 row as tasks land (invariant 7).
 - **After Plan 2 lands:** write Plan 3 (canon encodings) against the then-real bundle APIs;
   remember FINDINGS O7 (remove the Ambient-Context default) is downstream-port work, not Plan 3.

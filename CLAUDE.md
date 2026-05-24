@@ -15,7 +15,9 @@ behind a **versioned canonical spine** with a four-kind loss model.
 **Before your first non-trivial change, read in this order:**
 1. `docs/campaign/INVARIANTS.md` — the rules you accept by working here. Non-optional.
 2. `docs/campaign/STATUS.md` — where we are, the 4-plan sequence, locked decisions, and your next action.
-3. The current plan: `docs/2026-05-23-plan-1-shape-core-foundations.md` (Plans 2–4 written as Plan 1 lands).
+3. The current plan: `docs/2026-05-23-plan-2-per-engine-registries.md` (written, ready to execute;
+   Plan 1 `docs/2026-05-23-plan-1-shape-core-foundations.md` is complete). Plans 3–4 are written as
+   their predecessor lands. STATUS "Next action" always names the live plan and your entry point.
 4. Design set (as needed): `docs/2026-05-23-canon-upgrade-and-convergence-design.md`,
    `docs/2026-05-23-canon-schema-design.md`, `docs/2026-05-23-vendor-api-shapes-reference.md`.
 
