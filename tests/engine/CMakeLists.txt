@@ -41,6 +41,12 @@ kalburator_add_engine_test(tst_property_phase)
 # transformation at the edge, and LossProfile delivery to the host.
 kalburator_add_engine_test(tst_engine_unified_routing)
 
+# Plan 2 Task 2 — per-engine registry isolation (deliberately fails to compile
+# until Task 4 adds the injecting PluginManager(BackendRegistry*, ShapeRegistries&)
+# ctor). Red test: pins the design invariant that two independently-configured
+# ShapeRegistries bundles route independently.
+kalburator_add_engine_test(tst_engine_registry_injection)
+
 # Phase K.9 — typed-source -> universal-sink (RawFilesBackend) dispatch
 # regression test. Today (pre-K.9): red, because dispatchSync rejects the
 # cross-domain mismatch between the source's typed shape and the
