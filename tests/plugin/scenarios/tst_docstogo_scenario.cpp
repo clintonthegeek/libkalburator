@@ -1,9 +1,7 @@
 #include <QtTest/QtTest>
 #include <memory>
 #include "pluginmanager.h"
-#include "transformationregistry.h"
-#include "domainregistry.h"
-#include "domainoperationsregistry.h"
+#include "shaperegistries.h"
 #include "backendregistry.h"
 #include "fake_docstogo_plugin.h"
 #include "fake_msoffice_plugin.h"
@@ -17,12 +15,10 @@ class TestDocsToGoScenario : public QObject {
 private slots:
     void init() {
         m_pluginRegistry = std::make_unique<Sync::BackendRegistry>();
+        m_shape = Shape::ShapeRegistries{};
     }
 
     void cleanup() {
-        Shape::DomainRegistry::instance().clear();
-        Shape::TransformationRegistry::instance().clear();
-        Shape::DomainOperationsRegistry::instance().clear();
         m_pluginRegistry.reset();
     }
 
@@ -30,7 +26,7 @@ private slots:
         FakeDocsToGoPlugin docs;
         FakeMsOfficePlugin ms;
         FakeOdfPlugin odf;
-        PluginManager pm(m_pluginRegistry.get());
+        PluginManager pm(m_pluginRegistry.get(), m_shape);
         QVERIFY(pm.loadInProcess({
             {&docs, fakeDocsToGoManifest()},
             {&ms,   fakeMsOfficeManifest()},
@@ -41,7 +37,7 @@ private slots:
                                   Shape::EncodingId{QStringLiteral("pdb-word")} };
         const Shape::Shape to  { Shape::DomainId{QStringLiteral("office.document")},
                                   Shape::EncodingId{QStringLiteral("odt")} };
-        const auto pipeline = Shape::TransformationRegistry::instance().compile(from, to);
+        const auto pipeline = m_shape.transformation.compile(from, to);
         QVERIFY(pipeline.has_value());
         const QByteArray sample = "hello documents";
         const QByteArray transformed = pipeline->apply(sample);
@@ -52,7 +48,7 @@ private slots:
         FakeDocsToGoPlugin docs;
         FakeMsOfficePlugin ms;
         FakeOdfPlugin odf;
-        PluginManager pm(m_pluginRegistry.get());
+        PluginManager pm(m_pluginRegistry.get(), m_shape);
         QVERIFY(pm.loadInProcess({
             {&docs, fakeDocsToGoManifest()},
             {&ms,   fakeMsOfficeManifest()},
@@ -68,7 +64,7 @@ private slots:
         // Submit in reverse dependency order; resolve() must reorder.
         FakeDocsToGoPlugin docs;
         FakeOdfPlugin odf;
-        PluginManager pm(m_pluginRegistry.get());
+        PluginManager pm(m_pluginRegistry.get(), m_shape);
         QVERIFY(pm.loadInProcess({
             {&odf,  fakeOdfManifest()},     // requires office.document
             {&docs, fakeDocsToGoManifest()} // defines office.document
@@ -78,6 +74,7 @@ private slots:
 
 private:
     std::unique_ptr<Sync::BackendRegistry> m_pluginRegistry;
+    Shape::ShapeRegistries m_shape;
 };
 
 QTEST_GUILESS_MAIN(TestDocsToGoScenario)

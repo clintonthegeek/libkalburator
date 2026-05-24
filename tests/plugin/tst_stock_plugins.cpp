@@ -3,51 +3,47 @@
 #include "pluginmanager.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
-#include "domainregistry.h"
-#include "domainoperationsregistry.h"
-#include "transformationregistry.h"
+#include "shaperegistries.h"
 
 class TestStockPlugins : public QObject {
     Q_OBJECT
 private slots:
     void init() {
         m_pluginRegistry = std::make_unique<Kalburator::Sync::BackendRegistry>();
+        m_shape = Kalburator::Shape::ShapeRegistries{};
     }
 
     void cleanup() {
-        Kalburator::Shape::DomainRegistry::instance().clear();
-        Kalburator::Shape::TransformationRegistry::instance().clear();
         m_pluginRegistry.reset();
-        Kalburator::Shape::DomainOperationsRegistry::instance().clear();
     }
 
     void universalStorageRegistersBothBackendTypes() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
         QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("raw-files")) != nullptr);
         QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
     }
 
     void memoDomainRegistered() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+        QVERIFY(m_shape.domain.definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("memo")}) != nullptr);
     }
 
     void blobDomainRegistered() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+        QVERIFY(m_shape.domain.definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("blob")}) != nullptr);
     }
 
     void todoDomainAndTodotxtPeerRegistered() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+        QVERIFY(m_shape.domain.definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("todo")}) != nullptr);
-        const auto edges = Kalburator::Shape::TransformationRegistry::instance().edgesFrom(
+        const auto edges = m_shape.transformation.edgesFrom(
             Kalburator::Shape::Shape{
                 Kalburator::Shape::DomainId{QStringLiteral("todo")},
                 Kalburator::Shape::EncodingId{QStringLiteral("todotxt")} });
@@ -55,11 +51,11 @@ private slots:
     }
 
     void contactsDomainAndVcard3PeerRegistered() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+        QVERIFY(m_shape.domain.definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("contacts")}) != nullptr);
-        const auto edges = Kalburator::Shape::TransformationRegistry::instance().edgesFrom(
+        const auto edges = m_shape.transformation.edgesFrom(
             Kalburator::Shape::Shape{
                 Kalburator::Shape::DomainId{QStringLiteral("contacts")},
                 Kalburator::Shape::EncodingId{QStringLiteral("vcard3")} });
@@ -67,17 +63,18 @@ private slots:
     }
 
     void calendarDomainAndOperationsRegistered() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(Kalburator::Shape::DomainRegistry::instance().definitionFor(
+        QVERIFY(m_shape.domain.definitionFor(
             Kalburator::Shape::DomainId{QStringLiteral("calendar")}) != nullptr);
-        auto *ops = Kalburator::Shape::DomainOperationsRegistry::instance().operationsFor(
+        auto *ops = m_shape.operations.operationsFor(
             Kalburator::Shape::DomainId{QStringLiteral("calendar")});
         QVERIFY(ops != nullptr);
     }
 
 private:
     std::unique_ptr<Kalburator::Sync::BackendRegistry> m_pluginRegistry;
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_MAIN(TestStockPlugins)
