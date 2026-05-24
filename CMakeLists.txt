@@ -120,8 +120,11 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/updateincidenceitem.h
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.h
+    src/calendar/calendarcanonproperties.h
     src/calendar/icalrecorddiffer.h
     src/calendar/icalrecordmerger.h
+    # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
+    src/calendar/icalcanonstages.h
     src/calendar/calendardomaindefinition.h
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
@@ -157,8 +160,11 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/updateincidenceitem.cpp
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.cpp
+    src/calendar/calendarcanonproperties.cpp
     src/calendar/icalrecorddiffer.cpp
     src/calendar/icalrecordmerger.cpp
+    # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
+    src/calendar/icalcanonstages.cpp
     src/calendar/calendardomaindefinition.cpp
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp
