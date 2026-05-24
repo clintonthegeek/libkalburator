@@ -7,6 +7,7 @@
 #include "domainoperationsregistry.h"
 #include "domainregistry.h"
 #include "transformationregistry.h"
+#include "shaperegistries.h"
 #include "backendcontribution.h"
 #include "backendregistry.h"
 #include <QDir>
@@ -95,10 +96,17 @@ QList<PluginManifest> PluginManager::resolve(const QList<PluginManifest> &manife
     return out;
 }
 
-PluginManager::PluginManager(Sync::BackendRegistry *registry)
+PluginManager::PluginManager(Sync::BackendRegistry *registry,
+                             Shape::ShapeRegistries &shape)
     : m_backendRegistry(registry)
+    , m_shape(shape)
 {
     Q_ASSERT(registry);
+}
+
+PluginManager::PluginManager(Sync::BackendRegistry *registry)
+    : PluginManager(registry, Shape::defaultShapeRegistries())
+{
 }
 
 void PluginManager::reset() { m_loaded.clear(); m_rejected.clear(); }
@@ -124,11 +132,11 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
         for (const auto &b : pending.backendTypesAdded)
             m_backendRegistry->unregisterContribution(b);
         for (const auto &d : pending.operationsAdded)
-            Shape::DomainOperationsRegistry::instance().unregister(d);
-        Shape::TransformationRegistry::instance().unregisterEdges(pending.edgesAdded);
-        Shape::TransformationRegistry::instance().unregisterShapes(pending.shapesAdded);
+            m_shape.operations.unregister(d);
+        m_shape.transformation.unregisterEdges(pending.edgesAdded);
+        m_shape.transformation.unregisterShapes(pending.shapesAdded);
         for (const auto &d : pending.domainsAdded)
-            Shape::DomainRegistry::instance().unregisterDefinition(d);
+            m_shape.domain.unregisterDefinition(d);
         return PluginLoadError{ c, m.id, detail };
     };
 
@@ -142,15 +150,15 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
         if (!definesSet.contains(d))
             return fail(PluginLoadErrorCode::ManifestMismatch,
                 QStringLiteral("plugin defines domain '%1' not in manifest definesDomains").arg(d));
-        if (!Shape::DomainRegistry::instance().registerDefinition(def))
+        if (!m_shape.domain.registerDefinition(def))
             return fail(PluginLoadErrorCode::CanonicalConflict,
                 QStringLiteral("domain '%1' already defined by another plugin").arg(d));
         pending.domainsAdded.append(def->domain());
-        if (Shape::TransformationRegistry::instance().isFrozen(def->domain()))
+        if (m_shape.transformation.isFrozen(def->domain()))
             return fail(PluginLoadErrorCode::FreezeViolation,
                 QStringLiteral("transformation registry already frozen for '%1'").arg(d));
-        Shape::TransformationRegistry::instance().registerShape(def->canonicalShape(), def->canonicalCatalogue());
-        Shape::TransformationRegistry::instance().declareCanonical(def->domain(), def->canonicalShape());
+        m_shape.transformation.registerShape(def->canonicalShape(), def->canonicalCatalogue());
+        m_shape.transformation.declareCanonical(def->domain(), def->canonicalShape());
         pending.shapesAdded.append(def->canonicalShape());
     }
 
@@ -160,31 +168,31 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
         if (!definesOrRequires.contains(td))
             return fail(PluginLoadErrorCode::ManifestMismatch,
                 QStringLiteral("shape contribution targets '%1' not in manifest").arg(td));
-        if (Shape::TransformationRegistry::instance().isFrozen(sc->targetDomain()))
+        if (m_shape.transformation.isFrozen(sc->targetDomain()))
             return fail(PluginLoadErrorCode::FreezeViolation,
                 QStringLiteral("transformation registry frozen for '%1'").arg(td));
         QSet<Shape::Shape> knownInThisContribution;
         for (const auto &pair : sc->peerShapes()) {
-            Shape::TransformationRegistry::instance().registerShape(pair.first, pair.second);
+            m_shape.transformation.registerShape(pair.first, pair.second);
             pending.shapesAdded.append(pair.first);
             knownInThisContribution.insert(pair.first);
         }
         for (const auto &edge : sc->edges()) {
             auto endpointRegistered = [&](const Shape::Shape &s) {
                 return knownInThisContribution.contains(s)
-                    || Shape::TransformationRegistry::instance().catalogueFor(s) != nullptr;
+                    || m_shape.transformation.catalogueFor(s) != nullptr;
             };
             if (!endpointRegistered(edge.from) || !endpointRegistered(edge.to))
                 return fail(PluginLoadErrorCode::EdgeEndpointUnregistered,
                     QStringLiteral("edge endpoint not registered"));
-            Shape::TransformationRegistry::instance().registerEdge(edge);
+            m_shape.transformation.registerEdge(edge);
             pending.edgesAdded.append({edge.from, edge.to});
         }
     }
 
     // 3. DomainOperations
     for (const auto &ops : plugin->domainOperations()) {
-        if (!Shape::DomainOperationsRegistry::instance().registerOperations(ops))
+        if (!m_shape.operations.registerOperations(ops))
             return fail(PluginLoadErrorCode::DoubleBinding,
                 QStringLiteral("domain operations for '%1' already bound").arg(ops->targetDomain().toString()));
         pending.operationsAdded.append(ops->targetDomain());

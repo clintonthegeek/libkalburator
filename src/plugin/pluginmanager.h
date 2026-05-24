@@ -14,9 +14,16 @@ namespace Kalburator {
 
 class Plugin;
 namespace Sync { class BackendRegistry; }
+namespace Shape { struct ShapeRegistries; }
 
 class PluginManager {
 public:
+    /// Injecting ctor (preferred): contributions are registered into
+    /// `shape`, which must be the same bundle the consuming SyncEngine reads.
+    PluginManager(Sync::BackendRegistry *registry, Shape::ShapeRegistries &shape);
+
+    /// Transitional overload binding to the process-global default bundle
+    /// (Ambient Context; FINDINGS O7).
     explicit PluginManager(Sync::BackendRegistry *registry);
 
     struct LoadedPlugin   { QString id; PluginManifest manifest; Plugin *plugin; };
@@ -53,6 +60,7 @@ private:
     QList<RejectedPlugin> m_rejected;
 
     Sync::BackendRegistry *m_backendRegistry = nullptr;   // borrowed, non-null
+    Shape::ShapeRegistries &m_shape;
 
     std::optional<PluginLoadError> applyPlugin(Plugin *plugin,
                                                 const PluginManifest &manifest);
