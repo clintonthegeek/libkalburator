@@ -345,6 +345,7 @@ set(KALBURATOR_TODO_SOURCES
 
 set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/vcardproperties.h
+    src/contacts/contactscanonproperties.h
     src/contacts/vcarddiffer.h
     src/contacts/vcardmerger.h
     src/contacts/vcard3to4transformation.h
@@ -358,6 +359,7 @@ set(KALBURATOR_CONTACTS_HEADERS
 )
 set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcardproperties.cpp
+    src/contacts/contactscanonproperties.cpp
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
     src/contacts/vcard3to4transformation.cpp
