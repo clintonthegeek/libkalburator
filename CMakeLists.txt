@@ -349,6 +349,8 @@ set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/vcarddiffer.h
     src/contacts/vcardmerger.h
     src/contacts/vcard3to4transformation.h
+    # Plan 3 Task A2/A3 — vcard4 ↔ canon JSON stages
+    src/contacts/vcardcanonstages.h
     src/contacts/contactsdomaindefinition.h
     src/contacts/contactsstockshapes.h
     src/contacts/contactsplugin.h
@@ -363,6 +365,8 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
     src/contacts/vcard3to4transformation.cpp
+    # Plan 3 Task A2/A3 — vcard4 ↔ canon JSON stages
+    src/contacts/vcardcanonstages.cpp
     src/contacts/contactsdomaindefinition.cpp
     src/contacts/contactsstockshapes.cpp
     src/contacts/contactsplugin.cpp

@@ -15,6 +15,8 @@ endfunction()
 kalburator_add_contacts_test(tst_vcard_plugin)
 kalburator_add_contacts_test(tst_vcard_differ)
 kalburator_add_contacts_test(tst_vcard3_vcard4_edge)
+# Plan 3 Task A2 — VCard4ToCanonStage (vcard4 → canon JSON)
+kalburator_add_contacts_test(tst_contacts_canon_roundtrip)
 # Phase Ib.5 Task 3 — AskUser pause/resume in unified dispatchSync (contacts domain)
 kalburator_add_contacts_test(tst_unified_askuser_pause)
 
