@@ -5,6 +5,10 @@
 
 #include "canonenvelope.h"
 #include "orgicalcanonstages.h"
+#include "calendardomaindefinition.h"
+#include "calendarstockshapes.h"
+#include "shaperegistries.h"
+#include "lossprofile.h"
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>
@@ -13,6 +17,11 @@
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Calendar::CanonToOrgICalStage;
 using Kalburator::Calendar::OrgICalToCanonStage;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
+using Kalburator::Shape::PropertyId;
+using Kalburator::Shape::LossKind;
 
 namespace {
 
@@ -48,6 +57,34 @@ QByteArray makeCanon(const QStringList &recurrenceLines,
     obj.insert(QStringLiteral("_canon"), canonMeta);
 
     return QJsonDocument(obj).toJson(QJsonDocument::Compact);
+}
+
+// Build a ShapeRegistries with the calendar domain fully registered.
+Kalburator::Shape::ShapeRegistries makeOrgIcalRegistries()
+{
+    Kalburator::Shape::ShapeRegistries regs;
+    auto& reg = regs.transformation;
+
+    Kalburator::Calendar::CalendarDomainDefinition def;
+    const auto spine = def.canonicalSpine();
+    if (!spine.isEmpty()) {
+        const auto& [rootShape, rootCat] = spine.first();
+        reg.registerShape(rootShape, rootCat);
+        reg.declareCanonical(def.domain(), rootShape);
+        for (int i = 1; i < spine.size(); ++i) {
+            const auto& [s, cat] = spine.at(i);
+            reg.registerShape(s, cat);
+            reg.appendCanonicalVersion(def.domain(), s);
+        }
+    }
+
+    Kalburator::Calendar::CalendarStockShapes shapes;
+    for (const auto& [shape, cat] : shapes.peerShapes())
+        reg.registerShape(shape, cat);
+    for (const auto& edge : shapes.edges())
+        reg.registerEdge(edge);
+
+    return regs;
 }
 
 } // namespace
@@ -175,6 +212,34 @@ private slots:
         const auto *rule = rules.first();
         QCOMPARE(rule->recurrenceType(), KCalendarCore::RecurrenceRule::rDaily);
         QCOMPARE(rule->frequency(), 2);
+    }
+
+    // Edge routing tests (Task 3)
+
+    /// The shape router must be able to compile a canon → org-ical pipeline
+    /// directly (single registered edge, not via a two-hop path).
+    void canonRoutesToOrgIcalDirectly()
+    {
+        const auto registries = makeOrgIcalRegistries();
+        const Shape canon  { DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("canon")} };
+        const Shape orgIcal{ DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("org-ical")} };
+
+        const auto pipeline = registries.transformation.compile(canon, orgIcal);
+        QVERIFY2(pipeline.has_value(),
+                 "compile(canon, org-ical) must succeed — direct edge registered");
+    }
+
+    /// The loss profile for canon → org-ical must charge recurrence as Simplified
+    /// (invariant 4: complex RRULE is reduced, not dropped).
+    void canonToOrgIcalLossChargesRecurrenceSimplified()
+    {
+        const auto registries = makeOrgIcalRegistries();
+        const Shape canon  { DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("canon")} };
+        const Shape orgIcal{ DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("org-ical")} };
+
+        const auto loss = registries.transformation.inspect(canon, orgIcal);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrence")}),
+                 LossKind::Simplified);
     }
 };
 
