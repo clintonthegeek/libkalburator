@@ -188,20 +188,25 @@ set(KALBURATOR_CONFLICT_SOURCES
     src/conflict/conflictstore.cpp
 )
 
+set(KALBURATOR_DIFF_HEADERS
+    src/diff/incidencediff.h
+    src/diff/syncdiff.h
+)
+set(KALBURATOR_DIFF_SOURCES
+    src/diff/incidencediff.cpp
+    src/diff/syncdiff.cpp
+)
+
 set(KALBURATOR_TRANSCODING_HEADERS
-    src/transcoding/incidencediff.h
     src/transcoding/propertytranscoder.h
     src/transcoding/rruletranscoder.h
-    src/transcoding/syncdiff.h
     src/transcoding/transcodingplan.h
     src/transcoding/transcodingregistry.h
     src/transcoding/transcodingrouter.h
 )
 set(KALBURATOR_TRANSCODING_SOURCES
-    src/transcoding/incidencediff.cpp
     src/transcoding/propertytranscoder.cpp
     src/transcoding/rruletranscoder.cpp
-    src/transcoding/syncdiff.cpp
     src/transcoding/transcodingplan.cpp
     src/transcoding/transcodingregistry.cpp
     src/transcoding/transcodingrouter.cpp
@@ -519,6 +524,7 @@ set(KALBURATOR_UI_SOURCES
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
     ${KALBURATOR_CONFLICT_HEADERS}
+    ${KALBURATOR_DIFF_HEADERS}
     ${KALBURATOR_TRANSCODING_HEADERS}
     ${KALBURATOR_JOURNAL_HEADERS}
     ${KALBURATOR_STORAGE_HEADERS}
@@ -538,6 +544,7 @@ set(KALBURATOR_SYNC_HEADERS
 set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_CALENDAR_SOURCES}
     ${KALBURATOR_CONFLICT_SOURCES}
+    ${KALBURATOR_DIFF_SOURCES}
     ${KALBURATOR_TRANSCODING_SOURCES}
     ${KALBURATOR_JOURNAL_SOURCES}
     ${KALBURATOR_STORAGE_SOURCES}
@@ -587,6 +594,7 @@ target_include_directories(kalburator
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/diff>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/transcoding>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
