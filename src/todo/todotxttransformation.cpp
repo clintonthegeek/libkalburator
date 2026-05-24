@@ -133,13 +133,12 @@ QByteArray TodoTxtToICalStage::transform(const QByteArray &sourceBytes) const
 LossProfile todoTxtLoss()
 {
     LossProfile p;
-    p.level = LossLevel::IntraDomainLossy;
-    p.dropped.insert(PropertyId{QStringLiteral("description")});
-    p.dropped.insert(PropertyId{QStringLiteral("attendees")});
-    p.dropped.insert(PropertyId{QStringLiteral("rrule")});
-    p.dropped.insert(PropertyId{QStringLiteral("attachments")});
-    p.dropped.insert(PropertyId{QStringLiteral("alarms")});
-    p.dropped.insert(PropertyId{QStringLiteral("customproperties")});
+    p.affected.insert(PropertyId{QStringLiteral("description")}, LossKind::Dropped);
+    p.affected.insert(PropertyId{QStringLiteral("attendees")}, LossKind::Dropped);
+    p.affected.insert(PropertyId{QStringLiteral("rrule")}, LossKind::Dropped);
+    p.affected.insert(PropertyId{QStringLiteral("attachments")}, LossKind::Dropped);
+    p.affected.insert(PropertyId{QStringLiteral("alarms")}, LossKind::Dropped);
+    p.affected.insert(PropertyId{QStringLiteral("customproperties")}, LossKind::Dropped);
     return p;
 }
 

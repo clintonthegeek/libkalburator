@@ -1,44 +1,60 @@
 #include "lossprofile.h"
 
 #include <QStringList>
-#include <algorithm>
 
 namespace Kalburator::Shape {
 
+int lossKindSeverity(LossKind k) noexcept {
+    switch (k) {
+        case LossKind::Reversible: return 0;
+        case LossKind::Degraded:   return 1;
+        case LossKind::Simplified: return 2;
+        case LossKind::Dropped:    return 3;
+    }
+    return 0;
+}
+
 LossProfile LossProfile::compose(const LossProfile& downstream) const {
     LossProfile out;
-    out.level = std::max(level, downstream.level);
-    out.dropped = dropped;
-    out.dropped.unite(downstream.dropped);
+    out.affected = affected;
+    for (auto it = downstream.affected.constBegin(); it != downstream.affected.constEnd(); ++it) {
+        const auto existing = out.affected.constFind(it.key());
+        if (existing == out.affected.constEnd()
+            || lossKindSeverity(it.value()) > lossKindSeverity(existing.value())) {
+            out.affected.insert(it.key(), it.value());
+        }
+    }
     return out;
 }
 
-namespace {
-QString levelName(LossLevel l) {
-    switch (l) {
-    case LossLevel::Lossless:              return QStringLiteral("lossless");
-    case LossLevel::IntraDomainLossy:      return QStringLiteral("intra-lossy");
-    case LossLevel::InterDomainProjection: return QStringLiteral("inter-projection");
-    case LossLevel::Degenerate:            return QStringLiteral("degenerate");
-    }
-    return QStringLiteral("unknown");
+QSet<PropertyId> LossProfile::droppedProperties() const {
+    QSet<PropertyId> s;
+    for (auto it = affected.constBegin(); it != affected.constEnd(); ++it)
+        if (it.value() == LossKind::Dropped) s.insert(it.key());
+    return s;
 }
-}  // namespace
 
 QString LossProfile::summary() const {
-    if (isLossless() && dropped.isEmpty()) {
-        return QStringLiteral("lossless");
+    if (affected.isEmpty()) return QStringLiteral("lossless");
+    QStringList drop, simp, rev, deg;
+    for (auto it = affected.constBegin(); it != affected.constEnd(); ++it) {
+        const QString id = it.key().toString();
+        switch (it.value()) {
+            case LossKind::Dropped:    drop << id; break;
+            case LossKind::Simplified: simp << id; break;
+            case LossKind::Reversible: rev  << id; break;
+            case LossKind::Degraded:   deg  << id; break;
+        }
     }
-    QStringList names;
-    names.reserve(dropped.size());
-    for (const auto& p : dropped) {
-        names.append(p.toString());
-    }
-    std::sort(names.begin(), names.end());
-    if (names.isEmpty()) {
-        return levelName(level);
-    }
-    return levelName(level) + QStringLiteral(": drops ") + names.join(QStringLiteral(", "));
+    QStringList parts;
+    const auto add = [&](const QString& verb, QStringList& l) {
+        if (!l.isEmpty()) { l.sort(); parts << verb + QStringLiteral(" ") + l.join(QStringLiteral(", ")); }
+    };
+    add(QStringLiteral("drops"), drop);
+    add(QStringLiteral("simplifies"), simp);
+    add(QStringLiteral("stashes"), rev);
+    add(QStringLiteral("degrades"), deg);
+    return parts.join(QStringLiteral("; "));
 }
 
 }  // namespace Kalburator::Shape

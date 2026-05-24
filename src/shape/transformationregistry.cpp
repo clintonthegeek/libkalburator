@@ -69,9 +69,8 @@ void TransformationRegistry::registerEdge(TransformationEdge edge) {
 
     if (const auto* existing = findEdge(edge.from, edge.to)) {
         // Idempotent on identical re-registration; assert on conflict.
-        const bool sameLevel = existing->loss.level == edge.loss.level;
-        const bool sameDropped = existing->loss.dropped == edge.loss.dropped;
-        Q_ASSERT_X(sameLevel && sameDropped,
+        const bool sameAffected = existing->loss.affected == edge.loss.affected;
+        Q_ASSERT_X(sameAffected,
                    "TransformationRegistry::registerEdge",
                    "conflicting re-registration of (from, to) edge");
         return;
