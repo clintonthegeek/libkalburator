@@ -83,6 +83,18 @@ test #87 (introduced in commit `b395e5b`, before the campaign branch). The faili
 harness. The campaign suite is 111/112 green; this one excluded. **Watch:** investigate
 independently; do not confuse with campaign regressions. (Seeded 2026-05-24, Plan 3 Task 13.)
 
+### O10 — design §10 "delete src/transcoding/ in full" is wrong: incidencediff/syncdiff are load-bearing
+While researching Plan 4 (2026-05-24), found that `src/transcoding/incidencediff.{h,cpp}` and
+`src/transcoding/syncdiff.{h,cpp}` are **conflict/diff engines**, not transcoding, and are used widely
+outside the dir: `src/engine/syncengine.{h,cpp}`, `enginediff.h`, `propertydiff.h`,
+`src/calendar/icalrecorddiffer.{h,cpp}`, `icalrecordmerger.cpp`, `updateincidenceitem.cpp`,
+`decsyncactivecontroller.{h,cpp}`, and tests `tst_syncdiff.cpp`/`tst_incidencediff.cpp`/
+`tst_calendar_subsequent_sync_uses_blob_view.cpp`. So design §10's "Delete `src/transcoding/` in full"
+(inv 7: two sources of truth) cannot be taken literally. **Plan 4 retires only the transcoding
+machinery** (`transcodingregistry`, `transcodingrouter`, `transcodingplan`, `rruletranscoder`,
+`propertytranscoder`) and must **keep `incidencediff`/`syncdiff`** (move them out of the dir or leave
+the dir as their home — decision pending). (Seeded 2026-05-24, Plan 4 research.)
+
 ## Resolved
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
