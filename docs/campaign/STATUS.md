@@ -1,16 +1,22 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Plans 1, 2, and 3 implemented and committed. Plan 3 (canon encodings, 13 tasks)
-is **complete** (`docs/2026-05-24-plan-3-canon-encodings.md`): shared canon-JSON envelope
-helpers + reusable CanonJsonDiffer/CanonJsonMerger (Tasks 1–3); contacts+canon catalogue,
-VCard4ToCanonStage, CanonToVCard4Stage, ContactsDomainDefinition flipped, vcard4 demoted
-to peer + bridges (Tasks A1–A5); todo+canon catalogue, VTodoToCanonStage, CanonToVTodoStage,
-TodoDomainDefinition flipped, ical-vtodo demoted to peer + bridges (Tasks B1–B5); calendar+canon
-catalogue, ICalToCanonStage, CanonToICalStage, CalendarDomainDefinition flipped, ical demoted
-to peer + bridges (Tasks C1–C5). Full suite: 111/112 green (one pre-existing
-`tst_providerlifecycle` failure unrelated to this campaign, introduced in `b395e5b`).
-Plan 4 (pure convergence) remains next. Branch not yet pushed.
-**Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
+**Status: CAMPAIGN CONVERGED — Plans 1–4 all complete and committed.** The two parallel
+record-conversion mechanisms are now one: `src/transcoding/` is **deleted** and the shape
+graph is the sole mechanism (invariant 1 satisfied). Plan 3 (canon encodings, 13 tasks)
+landed the three rich canons (`contacts+canon`/`todo+canon`/`calendar+canon`) with the legacy
+text encodings demoted to lossy peers. Plan 4 (calendar convergence,
+`docs/2026-05-24-plan-4-calendar-convergence.md`, Tasks 1–9 incl. an added Task 6b) then:
+relocated the (non-transcoding) `incidencediff`/`syncdiff` engines to `src/diff/` (T1);
+re-homed org-mode RRULE simplification as the `canon ↔ org-ical` shape edge — `Simplified`
+loss, original kept verbatim in `X-ORIGINAL-RRULE` (T2–T3); re-sourced the lossy-sync warning
+from the demotion pipeline's composed `LossProfile` (T4); dropped the `TranscodingPlan`
+parameter from the engine, writer, sync items, and every backend `pushItems`/`startSync`
+(T5/T6); converged `CalendarManager`'s direct-write path off the registry (T6b); and deleted
+the `TranscodingRegistry`/`Router`/`Plan`/`RRuleTranscoder`/`PropertyTranscoder` machinery (T7/T8).
+Full suite: **111/112 green** (the lone failure is the pre-existing `tst_providerlifecycle`
+async flake, `b395e5b`, unrelated — passes in isolation).
+**Branch:** `feature/canon-upgrade-convergence` (off `main`). **Pushed through Plan 3** (`4fbbbf8`);
+Plan 4 commits are local and **not yet pushed**.
 **Last updated:** 2026-05-24.
 
 > Living document. Update the Status line, the plan table, the Plan-1 task checklist,
@@ -38,7 +44,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 | 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
 | 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Complete** |
 | 3 | Canon encodings (`contacts+canon`/`todo+canon`/`calendar+canon`: catalogues, JSON (de)serialization stages, bridge edges, reusable canon-JSON differ/merger) | `docs/2026-05-24-plan-3-canon-encodings.md` | **Complete** (13 tasks, committed 2026-05-24) |
-| 4 | Calendar **convergence only** (retire `src/transcoding/`; RRULE-as-edge `canon → org-ical` Simplified loss; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing). The `calendar+canon` encoding + `ical↔canon` bridges are landed by Plan 3, so Plan 4 only converges the live path. | `docs/2026-05-24-plan-4-calendar-convergence.md` | **Written (9 tasks); ready to execute** |
+| 4 | Calendar **convergence only** (retire `src/transcoding/`; RRULE-as-edge `canon → org-ical` Simplified loss; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing). The `calendar+canon` encoding + `ical↔canon` bridges are landed by Plan 3, so Plan 4 only converges the live path. | `docs/2026-05-24-plan-4-calendar-convergence.md` | **Complete** (9 tasks + Task 6b, committed 2026-05-24; `src/transcoding/` deleted) |
 
 Plans 2–4 are deliberately outlines: their task code must be written against the
 **landed** APIs of the prior plan, not guessed (invariant P1).
@@ -106,17 +112,20 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **Execute Plan 4 (convergence only):** the task plan is **written and ready** at
-  `docs/2026-05-24-plan-4-calendar-convergence.md` (9 tasks, against the landed Plan-3 +
-  transcoding-subsystem signatures). Structure: relocate `incidencediff`/`syncdiff` to
-  `src/diff/` (Task 1); re-home RRULE simplification as the `canon ↔ org-ical` edge
-  (Tasks 2–3); re-source the lossy-sync warning from the composed `LossProfile` **before**
-  removing the old source (Task 4); strip the `TranscodingPlan` seam from engine + writer +
-  all backends (Tasks 5–6); delete the machinery (Tasks 7–8); close out (Task 9). Two human
-  decisions are locked in the plan header (diff engines → `src/diff/`; drop the plan param
-  entirely, downstream ports post-merge). Use `superpowers:subagent-driven-development`
-  with mandatory per-task review (the campaign already paid once for an unsupervised
-  multi-task run — FINDINGS 2026-05-24). Plan 4 completion closes the campaign.
+- **The campaign is complete.** All four plans landed; the shape graph is the sole
+  record-transformation mechanism. The remaining work is **downstream / out-of-campaign**:
+  1. **Push Plan 4** (`git push origin feature/canon-upgrade-convergence`) and decide on the
+     merge to `main`.
+  2. **Downstream backend port (FINDINGS O7 + O12):** PlanStan and WildPalms must adopt the
+     injecting `ShapeRegistries` ctor (O7) **and** drop the `TranscodingPlan` param from their
+     `SyncBackend` subclass overrides (O12) before they compile against this branch. Then the
+     Ambient-Context `defaultShapeRegistries()` scaffolding (O7) can be deleted.
+  3. **Org-on wiring (FINDINGS O12, invariant 8):** wire `OrgBackend` (built only with
+     `KALBURATOR_HAVE_ORG_IO=ON`) to declare `{calendar, org-ical}` as its shape so the engine
+     routes `canon → org-ical` (RRULE simplification via the edge). The edge + warning are landed;
+     only the backend's `nativeShapes()`/`shapeFor()` wiring + a PlanStan org-sync ctest remain.
+  4. **Pre-existing flake (FINDINGS O9):** `tst_providerlifecycle` async timing — investigate
+     independently; it is not a campaign regression.
 - **Push the branch** once Plan 4 is outlined or before ending the session:
   `git push -u origin feature/canon-upgrade-convergence`.
 - **FINDINGS O7 stays OPEN (not Plan 4 scope unless convenient):** removing the

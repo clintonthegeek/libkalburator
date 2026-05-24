@@ -106,7 +106,30 @@ so the reverse transcoder silently restored *nothing*. No test ever covered it. 
 faithful (byte-for-byte) and proven by `tst_orgical_canon_roundtrip`'s round-trip slot. The legacy
 class is deleted in Plan 4 Task 8 regardless. (Seeded 2026-05-24, Plan 4 Task 2.)
 
+### O12 — Downstream backend port required before this branch compiles downstream (OPEN)
+Plan 4 dropped the `TranscodingPlan` parameter entirely from `SyncBackend::pushItems`/`startSync`
+(and the deprecated `storeItems`/`updateItem`) per the locked human decision (drop-entirely,
+port-post-merge — mirrors O7's ctor change). **PlanStan and WildPalms `SyncBackend` subclasses that
+override these methods with the old 3-arg signature will NOT compile against this branch** until they
+drop the param. Combined with O7 (the injecting `ShapeRegistries` ctor), this is the downstream-port
+work that must happen after merge. Also: the org backend (`KALBURATOR_HAVE_ORG_IO=ON`, not built in
+the default profile here) should declare its backend shape as `{calendar, org-ical}` so the engine
+routes `canon → org-ical` (applying RRULE simplification via the edge) — Plan 4 landed the edge + the
+warning re-sourcing org sync consumes, but wiring the org backend's `nativeShapes()`/`shapeFor()` to
+org-ical is org-on/downstream work (invariant 8). (Seeded 2026-05-24, Plan 4 Task 9.)
+
 ## Resolved
+
+### O10 — incidencediff/syncdiff relocated; transcoding deleted (resolved Plan 4 T1/T8, 2026-05-24)
+Decision (human): the two diff engines moved to a new `src/diff/` (Task 1, commit involving `git mv`),
+and the transcoding machinery was deleted with `src/transcoding/` removed entirely (Task 8, `88122b8`).
+The design §10 "delete in full" is thus honored in spirit (dir gone) without losing the load-bearing
+diff engines. Tree-wide grep confirms zero live transcoding references outside the (now-absent) dir.
+
+### O11 — legacy RRuleReverseTranscoder no-op (superseded/deleted Plan 4 T2/T8, 2026-05-24)
+The broken `RRuleReverseTranscoder` is gone with the rest of `rruletranscoder.cpp` (Task 8). RRULE
+simplification + faithful restoration now live in `CanonToOrgICalStage`/`OrgICalToCanonStage`
+(`src/calendar/orgicalcanonstages.cpp`), covered by `tst_orgical_canon_roundtrip`.
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
 `tst_engine_unified_routing.cpp` and `tst_carddav_engine_integration.cpp` were migrated
@@ -138,4 +161,22 @@ Format: `YYYY-MM-DD — file:line — inv N — phrase`
 
 2026-05-24 — src/contacts/vcardcanonstages.cpp (VCard4ToCanonStage, birthday mapping) — inv 4 — `birthday.hasYear` is hardcoded `true`: KContacts exposes `birthdayHasTime()` but no `birthdayHasYear()`, so a `--MMDD` (year-less) vCard4 BDAY round-trips with a spurious year. Edge case, not exercised by current tests; revisit if year-less birthdays become a contract.
 2026-05-24 — {contacts,todo,calendar}domaindefinition.cpp `richnessRank()` — deviation note — Plan 3 A4/B4/C4 specified `s==canonicalShape()?100:10`; implementations use 100 (canon) / 50 (primary legacy peer: vcard4, ical-vtodo, ical) / low (vcard3=10, todotxt=3, calendar-other=0). Documented deviation per the INVARIANTS deviation rule: only relative ordering matters (canon strictly highest) and the 3-tier scheme is consistent across all three domains and models the extra peers (vcard3, todotxt) more accurately than a flat 10. Harmless; recorded so the spec/code divergence is not mistaken for a bug.
+2026-05-24 — build system (AUTOMOC + parallel QtTest link) — process note — clean parallel builds
+intermittently emit `undefined reference to 'main'` on a QtTest target (the `QTEST_MAIN`/`.moc` racing
+under `-j`); it is NOT a real error and resolves on a build re-run. Seen on `tst_canonjson_diff_merge`
+and `tst_contacts_canon_roundtrip` during Plan 4. If it ever becomes persistent (not race), investigate
+AUTOMOC dependency wiring for the affected target.
+2026-05-24 — src/engine/syncengine.cpp (Task 4 materializedLoss warning) — inv 4 (minor) — the
+re-sourced lossy-sync warning fires per present + non-Reversible affected property, but the static edge
+LossProfile is value-independent: e.g. `canon→ical` charges `classification=Degraded` unconditionally,
+so a record with `classification:"public"` (which iCal represents losslessly) triggers a spurious
+"classification" warning. Harmless (no test asserts on it; warning, not failure) and matches the
+design's "warn on composed path loss" framing, but a future refinement could make Degraded
+value-dependent (only `personal`→private actually degrades). Documented, not fixed.
+2026-05-24 — src/calendar/calendarmanager.cpp (Task 6b) — decision — `CalendarManager`'s direct-write
+path (createIncidence/updateIncidence/transcodeForBackend) was converged OFF `TranscodingRegistry`
+(human decision): it now pushes incidences without per-target transcoding (conversion is the
+backend/shape graph's job) and no longer emits `dataLossWarning` on those sites (the signal declaration
+is kept). The methods have no in-repo callers; downstream apps using this facade with an org backend
+should route through the sync engine to get RRULE simplification + the loss warning.
 2026-05-24 — Plan 3 Parts A, B & C — inv 4/5 post-review fixups (commits 89edbbb, 7f68e36, 5b00a47) — a single subagent ran A5→Task13 unsupervised (per-task review checkpoints skipped) and introduced the SAME false-loss-contract bug in all three domains: a loss classified Reversible/Degraded whose verbatim stash was never emitted in code. Specifically: contacts sipAddresses/calendarUrls/externalIds (Reversible, A5); VTODO Degraded-status + checklistItems/sortOrder Reversible (B5); iCal classification="personal" Degraded (C5). Recurrence round-trip tests also asserted substring, not byte-identity. Fixed: originals now stashed as `CANON-*`/`X-CANON-*` custom props that round-trip into providerExtras; recurrence tests assert byte-identical RRULE/EXDATE; each fix has a falsifiable round-trip test. Caught by retroactive spec-compliance review of B and C, then — prompted by the human asking "is the mess cleaned up" — the identical bug was found and fixed in contacts (A) too. Lesson: when one agent silently expands scope past its task, review EVERY task it touched, not just the ones you remember dispatching.
