@@ -301,6 +301,8 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/shapecontribution.h
     src/shape/domainoperations.h
     src/shape/domainoperationsregistry.h
+    # Plan 3 — canon JSON differ
+    src/shape/canonjsondiffer.h
 )
 set(KALBURATOR_SHAPE_SOURCES
     # shape.cpp lives in kalburator-types (exposed via KALBURATOR_SHAPE_CORE_SOURCES)
@@ -315,6 +317,8 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/domainoperationsregistry.cpp
     src/shape/shaperegistries.cpp
     src/shape/canonenvelope.cpp
+    # Plan 3 — canon JSON differ
+    src/shape/canonjsondiffer.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).
