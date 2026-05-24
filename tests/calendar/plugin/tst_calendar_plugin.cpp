@@ -62,8 +62,7 @@ public:
     void startSync(const QString &, KCalendarCore::MemoryCalendar *,
                    const QList<KCalendarCore::Incidence::Ptr> &,
                    const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QMap<QString, QString> &,
-                   const Kalburator::Sync::TranscodingPlan &) override {}
+                   const QMap<QString, QString> &) override {}
     void removeItem(const QString &, const QString &) override {}
 
     Kalburator::Sync::FetchOperation  *fetchItems(const QString &) override { return nullptr; }

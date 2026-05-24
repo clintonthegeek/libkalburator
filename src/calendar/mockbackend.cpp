@@ -1,6 +1,5 @@
 #include "mockbackend.h"
 #include "syncoperation.h"
-#include "transcodingplan.h"
 
 #include <QThread>
 #include <QTimer>
@@ -72,8 +71,7 @@ void MockBackend::startSync(const QString &collectionId,
                              KCalendarCore::MemoryCalendar* calendar,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                             const QMap<QString, QString> &stagedDeletions,
-                             const TranscodingPlan& plan)
+                             const QMap<QString, QString> &stagedDeletions)
 {
     if (!calendar) {
         emit syncCompleted(collectionId);
@@ -96,26 +94,8 @@ void MockBackend::startSync(const QString &collectionId,
 
     applyDelay();
 
-    // Transcode creations and updates; deletions are never transcoded
-    QList<KCalendarCore::Incidence::Ptr> finalCreations;
-    finalCreations.reserve(stagedCreations.size());
-    for (const auto &original : stagedCreations) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalCreations.append(result.incidence);
-    }
-
-    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
-    finalUpdates.reserve(stagedUpdates.size());
-    for (const auto &original : stagedUpdates) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalUpdates.append(result.incidence);
-    }
+    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
+    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
 
     auto &calData = m_calendars[calendarId];
     KCalendarCore::ICalFormat format;

@@ -43,7 +43,6 @@
 
 #include "calendartype.h"   // CalendarType enum
 #include "syncbackendbase.h" // domain-neutral base (Phase K.4)
-#include "transcodingplan.h"
 
 namespace Kalburator::Sync {
 
@@ -152,11 +151,9 @@ public:
                            KCalendarCore::MemoryCalendar* calendar,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                           const QMap<QString, QString> &stagedDeletions,
-                           const TranscodingPlan& plan = TranscodingPlan{}) {
+                           const QMap<QString, QString> &stagedDeletions) {
         Q_UNUSED(collectionId); Q_UNUSED(calendar);
         Q_UNUSED(stagedCreations); Q_UNUSED(stagedUpdates); Q_UNUSED(stagedDeletions);
-        Q_UNUSED(plan);
     }
 
     /// Remove an item by calendar ID and item UID

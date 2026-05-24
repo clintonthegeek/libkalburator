@@ -25,9 +25,9 @@ namespace Kalburator::Calendar {
 ///   thread internally for the transaction commit.
 ///
 /// - `prepareForApply(ctx)` injects the host `MemoryCalendar*` (when
-///   the engine has one) and the per-write `TranscodingPlan`.
+///   the engine has one).
 ///   Replaces the K.3-and-earlier `dynamic_cast<CalendarPluginWriter>`
-///   + `setCollection()` / `setTranscodingPlan()` engine-side dance.
+///   + `setCollection()` engine-side dance.
 ///
 /// - When `ctx.calendarCollection` is null (e.g. for
 ///   RemoteCalendarBackend used purely via the blob path), `apply()`

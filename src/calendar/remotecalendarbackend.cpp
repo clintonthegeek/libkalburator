@@ -5,7 +5,6 @@
 #include "discoveredcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "transcodingplan.h"
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -831,8 +830,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                               KCalendarCore::MemoryCalendar *calendar,
                               const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                               const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                              const QMap<QString, QString> &stagedDeletions,
-                              const TranscodingPlan& plan)
+                              const QMap<QString, QString> &stagedDeletions)
 {
     if (!calendar) {
         qWarning() << "RemoteCalendarBackend::startSync: Null calendar";
@@ -853,27 +851,8 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
         return;
     }
 
-    // Apply transcoding plan to creations and updates before dispatching async jobs.
-    // Deletions are never transcoded.
-    QList<KCalendarCore::Incidence::Ptr> finalCreations;
-    finalCreations.reserve(stagedCreations.size());
-    for (const auto &original : stagedCreations) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalCreations.append(result.incidence);
-    }
-
-    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
-    finalUpdates.reserve(stagedUpdates.size());
-    for (const auto &original : stagedUpdates) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalUpdates.append(result.incidence);
-    }
+    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
+    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
 
     const KDAV::DavUrl baseDavUrl = m_davUrls.value(calId);
 

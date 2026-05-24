@@ -3,7 +3,6 @@
 #include "backendcapabilities.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "transcodingplan.h"
 
 #include <QDir>
 #include <QFile>
@@ -213,8 +212,7 @@ void OrgBackend::startSync(const QString &collectionId,
                            KCalendarCore::MemoryCalendar *calendar,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                            const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                           const QMap<QString, QString> &stagedDeletions,
-                           const TranscodingPlan& plan)
+                           const QMap<QString, QString> &stagedDeletions)
 {
     Q_UNUSED(collectionId)
 

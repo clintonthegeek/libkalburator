@@ -5,8 +5,6 @@
 #include "syncbackend.h"
 #include "icalendarcollection.h"
 #include "syncengine.h"
-#include "transcodingregistry.h"
-
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimeZone>
@@ -30,7 +28,6 @@ CalendarManager::CalendarManager(ISyncHost *host,
     , m_controller(host)
     , m_configManager(host ? host->configStore() : nullptr)
     , m_collection(collection)
-    , m_transcodingRegistry(nullptr)  // Will be implemented in Phase 5
 {
     Q_ASSERT(m_controller);
     qDebug() << "CalendarManager: Initialized";
@@ -571,26 +568,14 @@ bool CalendarManager::createIncidence(const QString &logicalCalendarId,
     qDebug() << "CalendarManager::createIncidence:" << incidence->uid()
              << "to" << logCal.displayName;
 
-    QString sourceType = getBackendType(logCal.primaryBinding().backendId);
     bool allSucceeded = true;
 
     for (const auto &binding : logCal.enabledBindings()) {
         SyncBackend *backend = m_controller->backendById(binding.backendId);
         if (!backend) continue;
 
-        QString targetType = backend->backendType();
-
-        // Clone and transcode for this backend
-        auto transcodedIncidence = KCalendarCore::Incidence::Ptr(incidence->clone());
-        QStringList warnings = TranscodingRegistry::instance()
-            .transcodeIncidence(sourceType, targetType, transcodedIncidence);
-
-        if (!warnings.isEmpty()) {
-            emit dataLossWarning(logicalCalendarId, warnings);
-        }
-
         // Push to backend
-        auto *pushOp = backend->pushItems(binding.calendarId, {transcodedIncidence});
+        auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
         if (pushOp) {
             // For now, synchronous wait - in future could be async
             // The operation should complete relatively quickly
@@ -632,26 +617,14 @@ bool CalendarManager::updateIncidence(const QString &logicalCalendarId,
     qDebug() << "CalendarManager::updateIncidence:" << incidence->uid()
              << "in" << logCal.displayName;
 
-    QString sourceType = getBackendType(logCal.primaryBinding().backendId);
     bool allSucceeded = true;
 
     for (const auto &binding : logCal.enabledBindings()) {
         SyncBackend *backend = m_controller->backendById(binding.backendId);
         if (!backend) continue;
 
-        QString targetType = backend->backendType();
-
-        // Clone and transcode for this backend
-        auto transcodedIncidence = KCalendarCore::Incidence::Ptr(incidence->clone());
-        QStringList warnings = TranscodingRegistry::instance()
-            .transcodeIncidence(sourceType, targetType, transcodedIncidence);
-
-        if (!warnings.isEmpty()) {
-            emit dataLossWarning(logicalCalendarId, warnings);
-        }
-
         // Push update to backend (same as create in push model)
-        auto *pushOp = backend->pushItems(binding.calendarId, {transcodedIncidence});
+        auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
         if (pushOp) {
             QEventLoop loop;
             connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
@@ -853,18 +826,10 @@ KCalendarCore::Incidence::Ptr CalendarManager::transcodeForBackend(
     const QString &targetBackendType,
     const KCalendarCore::Incidence::Ptr &incidence)
 {
-    auto clone = KCalendarCore::Incidence::Ptr(incidence->clone());
-
-    if (sourceBackendType != targetBackendType) {
-        QStringList warnings = TranscodingRegistry::instance()
-            .transcodeIncidence(sourceBackendType, targetBackendType, clone);
-        if (!warnings.isEmpty()) {
-            qDebug() << "CalendarManager: transcoding" << sourceBackendType << "->"
-                     << targetBackendType << "warnings:" << warnings;
-        }
-    }
-
-    return clone;
+    Q_UNUSED(sourceBackendType)
+    Q_UNUSED(targetBackendType)
+    // Transcoding is now the backend/shape graph's responsibility.
+    return KCalendarCore::Incidence::Ptr(incidence->clone());
 }
 
 QString CalendarManager::getBackendType(const QString &backendId) const

@@ -8,7 +8,6 @@
 #include "discoveredcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "transcodingplan.h"
 #include <KCalendarCore/ICalFormat>
 #include <QDir>
 #include <QDebug>
@@ -223,8 +222,7 @@ void DecSyncBackend::startSync(const QString &collectionId,
                                 KCalendarCore::MemoryCalendar* calendar,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                                const QMap<QString, QString> &stagedDeletions,
-                                const TranscodingPlan& plan)
+                                const QMap<QString, QString> &stagedDeletions)
 {
     if (!calendar) {
         qWarning() << "DecSyncBackend::startSync: Null calendar";
@@ -248,23 +246,11 @@ void DecSyncBackend::startSync(const QString &collectionId,
         removeItem(calId, it.key());
     }
 
-    // Apply transcoding plan to creations and updates; combine into allWrites
+    // Combine creations and updates into allWrites
     QList<KCalendarCore::Incidence::Ptr> allWrites;
     allWrites.reserve(stagedCreations.size() + stagedUpdates.size());
-    for (const auto &original : stagedCreations) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        allWrites.append(result.incidence);
-    }
-    for (const auto &original : stagedUpdates) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        allWrites.append(result.incidence);
-    }
+    allWrites.append(stagedCreations);
+    allWrites.append(stagedUpdates);
 
     if (!allWrites.isEmpty()) {
         QList<DecSyncEntry> eventEntries;

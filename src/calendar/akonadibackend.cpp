@@ -6,7 +6,6 @@
 #include "logicalcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "transcodingplan.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -232,8 +231,7 @@ void AkonadiBackend::startSync(const QString &collectionId,
                                 KCalendarCore::MemoryCalendar *calendar,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                                 const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                                const QMap<QString, QString> &stagedDeletions,
-                                const TranscodingPlan& plan)
+                                const QMap<QString, QString> &stagedDeletions)
 {
     const QString calId = calendar->id();
     auto colIt = m_collections.find(calId);
@@ -243,26 +241,8 @@ void AkonadiBackend::startSync(const QString &collectionId,
         return;
     }
 
-    // Apply transcoding plan to creations and updates; deletions are never transcoded
-    QList<KCalendarCore::Incidence::Ptr> finalCreations;
-    finalCreations.reserve(stagedCreations.size());
-    for (const auto &original : stagedCreations) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            Q_EMIT transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalCreations.append(result.incidence);
-    }
-
-    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
-    finalUpdates.reserve(stagedUpdates.size());
-    for (const auto &original : stagedUpdates) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            Q_EMIT transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalUpdates.append(result.incidence);
-    }
+    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
+    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
 
     const Akonadi::Collection &col = *colIt;
     int pending = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();

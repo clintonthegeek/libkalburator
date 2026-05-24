@@ -1,7 +1,6 @@
 #include "subscriptionbackend.h"
 #include "backendcapabilities.h"
 #include "syncoperation.h"
-#include "transcodingplan.h"
 #include <KCalendarCore/ICalFormat>
 #include <QCryptographicHash>
 #include <QDebug>
@@ -97,14 +96,12 @@ void SubscriptionBackend::startSync(const QString &collectionId,
                                     KCalendarCore::MemoryCalendar* calendar,
                                     const QList<KCalendarCore::Incidence::Ptr>& stagedCreations,
                                     const QList<KCalendarCore::Incidence::Ptr>& stagedUpdates,
-                                    const QMap<QString, QString>& stagedDeletions,
-                                    const TranscodingPlan& plan)
+                                    const QMap<QString, QString>& stagedDeletions)
 {
     Q_UNUSED(calendar);
     Q_UNUSED(stagedCreations);
     Q_UNUSED(stagedUpdates);
     Q_UNUSED(stagedDeletions);
-    Q_UNUSED(plan);
     // Read-only backend - just emit sync completed
     qDebug() << "SubscriptionBackend::startSync: no-op (read-only backend)";
     emit syncCompleted(collectionId);

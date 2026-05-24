@@ -4,7 +4,6 @@
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
-#include "transcodingplan.h"
 #include <KCalendarCore/ICalFormat>
 #include <QByteArrayView>
 #include <QCryptographicHash>
@@ -486,8 +485,7 @@ void LocalBackend::startSync(const QString &collectionId,
                              KCalendarCore::MemoryCalendar* calendar,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                              const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                             const QMap<QString, QString> &stagedDeletions,
-                             const TranscodingPlan& plan)
+                             const QMap<QString, QString> &stagedDeletions)
 {
     if (!calendar) {
         qWarning() << "LocalBackend::startSync: Null calendar provided";
@@ -497,33 +495,15 @@ void LocalBackend::startSync(const QString &collectionId,
 
     const QString calId = calendar->id();
 
-    // Apply transcoding plan to creations and updates; deletions are never transcoded
-    QList<KCalendarCore::Incidence::Ptr> finalCreations;
-    finalCreations.reserve(stagedCreations.size());
-    for (const auto &original : stagedCreations) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalCreations.append(result.incidence);
-    }
-
-    QList<KCalendarCore::Incidence::Ptr> finalUpdates;
-    finalUpdates.reserve(stagedUpdates.size());
-    for (const auto &original : stagedUpdates) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calId, original->uid(), result.warnings);
-        }
-        finalUpdates.append(result.incidence);
-    }
+    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
+    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
 
     // Apply deletions synchronously (fast operation)
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
         removeItem(calendar->id(), it.key());
     }
 
-    // Combine transcoded creations and updates for async writing
+    // Combine creations and updates for async writing
     QList<KCalendarCore::Incidence::Ptr> allWrites;
     allWrites.append(finalCreations);
     allWrites.append(finalUpdates);

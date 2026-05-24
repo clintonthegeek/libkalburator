@@ -40,8 +40,7 @@ public:
                    KCalendarCore::MemoryCalendar* calendar,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedCreations,
                    const QList<KCalendarCore::Incidence::Ptr> &stagedUpdates,
-                   const QMap<QString, QString> &stagedDeletions,
-                   const TranscodingPlan& plan = TranscodingPlan{}) override;
+                   const QMap<QString, QString> &stagedDeletions) override;
     void removeItem(const QString &calId, const QString &itemUid) override;
 
     static const QString BackendTypeName;

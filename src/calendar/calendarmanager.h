@@ -17,7 +17,6 @@ class ISyncHost;
 class ISyncConfigStore;
 class ICalendarCollection;
 class SyncBackend;
-class TranscodingRegistry;
 
 /**
  * @brief Mode for calendar deletion operations.
@@ -84,7 +83,6 @@ enum class OperationType {
  * - IMMEDIATE execution: Operations complete before methods return
  * - ALL backends: Changes propagate to all enabled bindings
  * - Backend-neutral: No backend type checks; uses BackendCapabilities
- * - Transcoding: Uses TranscodingRegistry for format conversions
  *
  * Usage:
  * @code
@@ -310,7 +308,6 @@ private:
     ISyncHost *m_controller;
     ISyncConfigStore *m_configManager;
     ICalendarCollection *m_collection = nullptr;
-    TranscodingRegistry *m_transcodingRegistry;  // Will be implemented in Phase 5
 
     int m_batchDepth = 0;
     bool m_regenPending = false;
@@ -342,15 +339,15 @@ private:
                               std::function<bool(SyncBackend*, const CalendarBackendBinding&)> operation);
 
     /**
-     * @brief Transcode an incidence for a target backend.
+     * @brief Clone an incidence for a target backend.
      *
-     * Uses TranscodingRegistry to convert incidence properties for
-     * backends with different capabilities.
+     * Conversion is the backend/shape graph's responsibility; this method
+     * now returns a plain clone of the incidence.
      *
-     * @param sourceBackendType Source backend type (e.g., "local")
-     * @param targetBackendType Target backend type (e.g., "orgmode")
-     * @param incidence The incidence to transcode
-     * @return Transcoded copy of the incidence
+     * @param sourceBackendType Unused (kept for ABI stability)
+     * @param targetBackendType Unused (kept for ABI stability)
+     * @param incidence The incidence to clone
+     * @return Clone of the incidence
      */
     KCalendarCore::Incidence::Ptr transcodeForBackend(
         const QString &sourceBackendType,
