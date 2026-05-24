@@ -1,4 +1,6 @@
 #include <QTest>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "transformationregistry.h"
 #include "propertycatalogue.h"
 #include "transformationedge.h"
@@ -24,6 +26,34 @@ Kalburator::Shape::TransformationEdge edge(Kalburator::Shape::Shape from,
                                            Kalburator::Shape::Shape to) {
     return Kalburator::Shape::TransformationEdge{
         from, to, Kalburator::Shape::LossProfile{}, std::make_shared<IdentityStage>() };
+}
+// v1 -> v2 widening: add a v2-only field with a default. Lossless.
+class WidenStage : public Kalburator::Shape::TransformationStage {
+public:
+    QByteArray transform(const QByteArray& in) const override {
+        QJsonObject o = QJsonDocument::fromJson(in).object();
+        if (!o.contains(QStringLiteral("v2field")))
+            o.insert(QStringLiteral("v2field"), QStringLiteral("default"));
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    }
+};
+// v2 -> v1 narrowing: drop the v2-only field.
+class NarrowStage : public Kalburator::Shape::TransformationStage {
+public:
+    QByteArray transform(const QByteArray& in) const override {
+        QJsonObject o = QJsonDocument::fromJson(in).object();
+        o.remove(QStringLiteral("v2field"));
+        return QJsonDocument(o).toJson(QJsonDocument::Compact);
+    }
+};
+Kalburator::Shape::TransformationEdge widenEdge(Kalburator::Shape::Shape f, Kalburator::Shape::Shape t) {
+    return { f, t, Kalburator::Shape::LossProfile{}, std::make_shared<WidenStage>() };
+}
+Kalburator::Shape::TransformationEdge narrowEdge(Kalburator::Shape::Shape f, Kalburator::Shape::Shape t) {
+    Kalburator::Shape::LossProfile loss;   // v2field is reversible: re-widen restores the default
+    loss.affected.insert(Kalburator::Shape::PropertyId{QStringLiteral("v2field")},
+                         Kalburator::Shape::LossKind::Reversible);
+    return { f, t, loss, std::make_shared<NarrowStage>() };
 }
 }  // namespace
 
@@ -127,6 +157,30 @@ private slots:
         // Appending a version now must be ignored (spine stays size 1):
         r.appendCanonicalVersion(DomainId{QStringLiteral("calendar")}, cal("canon2"));
         QCOMPARE(r.canonicalSpine(DomainId{QStringLiteral("calendar")}).size(), 1);
+    }
+
+    void unchangedPeerEdgeSurvivesVersionBump() {
+        auto& r = TransformationRegistry::instance();
+        r.registerShape(cal("canon"),  stubCat());
+        r.registerShape(cal("ical"),   stubCat());
+        r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
+        // The "third-party" peer edge — written once, never touched again:
+        r.registerEdge(edge(cal("ical"), cal("canon")));
+        r.registerEdge(edge(cal("canon"), cal("ical")));
+
+        // Library ships a v2 canon + bridge, WITHOUT touching the peer edge:
+        r.registerShape(cal("canon2"), stubCat());
+        r.registerEdge(widenEdge(cal("canon"),  cal("canon2")));
+        r.registerEdge(narrowEdge(cal("canon2"), cal("canon")));
+        r.appendCanonicalVersion(DomainId{QStringLiteral("calendar")}, cal("canon2"));
+
+        // The unchanged peer now reaches the new head automatically:
+        auto promote = r.compile(cal("ical"), cal("canon2"));
+        QVERIFY(promote.has_value());
+        const QByteArray out = promote->apply(QByteArray("{\"uid\":\"A\"}"));
+        const QJsonObject o = QJsonDocument::fromJson(out).object();
+        QVERIFY(o.contains(QStringLiteral("v2field")));   // widened by the auto-inserted bridge
+        QCOMPARE(o.value(QStringLiteral("uid")).toString(), QStringLiteral("A"));
     }
 };
 
