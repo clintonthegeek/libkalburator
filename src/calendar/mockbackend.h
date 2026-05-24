@@ -50,6 +50,11 @@ public:
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
 
+    /// Override the shape reported by shapeFor() / nativeShapes().
+    /// Default: {calendar, ical}. Tests can call this to route the
+    /// engine through a different canon-to-peer pipeline (e.g. org-ical).
+    void setShape(const Kalburator::Shape::Shape &shape) { m_shape = shape; }
+
     void loadCalendars(const QString &collectionId) override;
 
     void storeCalendars(const QString &collectionId,
@@ -280,6 +285,11 @@ private:
 
     // Backend identity (set at construction, used for backendId())
     QString m_backendId;
+
+    // Configurable shape (set via setShape(); default {calendar, ical}).
+    Kalburator::Shape::Shape m_shape{
+        Kalburator::Shape::DomainId{QString::fromLatin1("calendar")},
+        Kalburator::Shape::EncodingId{QString::fromLatin1("ical")} };
 
     // In-memory storage: calendarId -> (uid -> incidence)
     QHash<QString, QHash<QString, KCalendarCore::Incidence::Ptr>> m_calendars;

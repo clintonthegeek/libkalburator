@@ -31,8 +31,12 @@
 #include "conflictmanager.h"
 #include "imassdeleteguard.h"
 #include "synctesthooks.h"
+#include "canonenvelope.h"
+#include "lossprofile.h"
 
 #include <QDebug>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QHash>
 #include <QMap>
 #include <QSet>
@@ -44,6 +48,36 @@
 #include <QMutexLocker>
 #include <QUuid>
 #include <memory>
+
+namespace {
+
+/// Returns the list of property ids that will be materially lost when
+/// the given pipeline is applied to `canonData`. Only non-reversible
+/// loss kinds (Dropped, Simplified, Degraded) are reported, and only
+/// for properties that are actually present (non-empty) in the record.
+/// Returns an empty list if the pipeline is lossless or no affected
+/// properties are present in this record.
+static QStringList materializedLoss(const Kalburator::Shape::Pipeline &pipe,
+                                    const QByteArray &canonData)
+{
+    const Kalburator::Shape::LossProfile loss = pipe.composedLoss();
+    if (loss.isLossless()) return {};
+    const QJsonObject o = Kalburator::Shape::CanonEnvelope::parse(canonData);
+    QStringList lost;
+    for (auto it = loss.affected.constBegin(); it != loss.affected.constEnd(); ++it) {
+        if (it.value() == Kalburator::Shape::LossKind::Reversible) continue;
+        const QString k = it.key().toString();
+        const QJsonValue v = o.value(k);
+        const bool present = !v.isUndefined() && !v.isNull()
+            && !(v.isString() && v.toString().isEmpty())
+            && !(v.isArray()  && v.toArray().isEmpty())
+            && !(v.isObject() && v.toObject().isEmpty());
+        if (present) lost << k;
+    }
+    return lost;
+}
+
+} // anonymous namespace
 
 namespace Kalburator::Engine {
 
@@ -2584,8 +2618,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         QList<BackendRecord> toWrite = m_unifiedMerge.finalTarget;
         if (!canonToTgt->isIdentity()) {
             for (auto &rec : toWrite) {
-                if (!rec.isDeleted)
+                if (!rec.isDeleted) {
+                    // Warn on materialized non-reversible loss BEFORE apply
+                    // overwrites rec.data.
+                    const QStringList lost = materializedLoss(*canonToTgt, rec.data);
+                    if (!lost.isEmpty())
+                        emit transcodingWarning(tgtColId, rec.id, { lost.join(QStringLiteral(", ")) });
                     rec.data = canonToTgt->apply(rec.data);
+                }
             }
         }
         auto tgtWriter = opsUCC
@@ -2605,8 +2645,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         QList<BackendRecord> toWrite = m_unifiedMerge.finalSource;
         if (!canonToSrc->isIdentity()) {
             for (auto &rec : toWrite) {
-                if (!rec.isDeleted)
+                if (!rec.isDeleted) {
+                    // Warn on materialized non-reversible loss BEFORE apply
+                    // overwrites rec.data.
+                    const QStringList lost = materializedLoss(*canonToSrc, rec.data);
+                    if (!lost.isEmpty())
+                        emit transcodingWarning(srcColId, rec.id, { lost.join(QStringLiteral(", ")) });
                     rec.data = canonToSrc->apply(rec.data);
+                }
             }
         }
         auto srcWriter = opsUCC
