@@ -11,10 +11,10 @@ using Kalburator::Shape::PropertyId;
 class TestVCardPlugin : public QObject {
     Q_OBJECT
 private slots:
-    void canonicalShapeIsContactsVCard()
+    void canonicalShapeIsContactsCanon()
     {
         const ContactsDomainDefinition def;
-        const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"vcard4"} };
+        const Kalburator::Shape::Shape expected{ DomainId{"contacts"}, EncodingId{"canon"} };
         QCOMPARE(def.canonicalShape(), expected);
     }
 
@@ -24,37 +24,32 @@ private slots:
         QCOMPARE(def.domain().toString(), QStringLiteral("contacts"));
     }
 
-    void catalogueHasRequiredProperties()
+    void canonicalCatalogueHasCanonProperties()
     {
         const ContactsDomainDefinition def;
         const auto cat = def.canonicalCatalogue();
+        // Canon catalogue fields (schema doc §3)
         QVERIFY(cat.hasProperty(PropertyId{"uid"}));
-        QVERIFY(cat.hasProperty(PropertyId{"fn"}));
-        QVERIFY(cat.hasProperty(PropertyId{"email"}));
-        QVERIFY(cat.hasProperty(PropertyId{"tel"}));
-    }
-
-    void catalogueHasV4Properties()
-    {
-        const ContactsDomainDefinition def;
-        const auto cat = def.canonicalCatalogue();
-        QVERIFY(cat.hasProperty(PropertyId{"gender"}));
-        QVERIFY(cat.hasProperty(PropertyId{"lang"}));
-        QVERIFY(cat.hasProperty(PropertyId{"kind"}));
-        QVERIFY(cat.hasProperty(PropertyId{"anniversary"}));
+        QVERIFY(cat.hasProperty(PropertyId{"names"}));
+        QVERIFY(cat.hasProperty(PropertyId{"emails"}));
+        QVERIFY(cat.hasProperty(PropertyId{"phones"}));
+        // Google-only fields also present in canon
+        QVERIFY(cat.hasProperty(PropertyId{"occupations"}));
+        QVERIFY(cat.hasProperty(PropertyId{"interests"}));
     }
 
     void richnessRankCanonical()
     {
         const ContactsDomainDefinition def;
-        QCOMPARE(def.richnessRank(def.canonicalShape()), 10);
+        // Canon head should have the highest richness rank
+        QCOMPARE(def.richnessRank(def.canonicalShape()), 100);
     }
 
-    void stockShapesHasThreeEdges()
+    void stockShapesHasFiveEdges()
     {
         const ContactsStockShapes shapes;
-        // identity + vcard3→vcard4 + vcard4→vcard3
-        QCOMPARE(shapes.edges().size(), 3);
+        // canon-identity + v4→canon + canon→v4 + v3→v4 + v4→v3
+        QCOMPARE(shapes.edges().size(), 5);
     }
 
     void stockShapesPeerContainsVcard3()

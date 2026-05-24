@@ -157,9 +157,31 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
         if (m_shape.transformation.isFrozen(def->domain()))
             return fail(PluginLoadErrorCode::FreezeViolation,
                 QStringLiteral("transformation registry already frozen for '%1'").arg(d));
-        m_shape.transformation.registerShape(def->canonicalShape(), def->canonicalCatalogue());
-        m_shape.transformation.declareCanonical(def->domain(), def->canonicalShape());
-        pending.shapesAdded.append(def->canonicalShape());
+        // Build the versioned canonical spine. For single-node spines the
+        // default canonicalSpine() returns [{canonicalShape(), canonicalCatalogue()}],
+        // which is equivalent to the old declareCanonical-only path.
+        // For versioned spines (e.g. [vcard4, contacts+canon]) the first entry
+        // is declared as the v1 root and each subsequent entry is appended.
+        {
+            const auto spine = def->canonicalSpine();
+            if (!spine.isEmpty()) {
+                const auto &[rootShape, rootCat] = spine.first();
+                m_shape.transformation.registerShape(rootShape, rootCat);
+                m_shape.transformation.declareCanonical(def->domain(), rootShape);
+                pending.shapesAdded.append(rootShape);
+                for (int i = 1; i < spine.size(); ++i) {
+                    const auto &[s, cat] = spine.at(i);
+                    m_shape.transformation.registerShape(s, cat);
+                    m_shape.transformation.appendCanonicalVersion(def->domain(), s);
+                    pending.shapesAdded.append(s);
+                }
+            } else {
+                // Fallback: single-node spine (should not happen with default impl).
+                m_shape.transformation.registerShape(def->canonicalShape(), def->canonicalCatalogue());
+                m_shape.transformation.declareCanonical(def->domain(), def->canonicalShape());
+                pending.shapesAdded.append(def->canonicalShape());
+            }
+        }
     }
 
     // 2. ShapeContributions

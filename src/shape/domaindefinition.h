@@ -32,6 +32,24 @@ public:
     virtual std::unique_ptr<RecordMerger> createCanonicalMerger() const = 0;
     virtual int richnessRank(const Shape &) const = 0;
     virtual QStringList baselineProperties() const { return {}; }
+
+    /// Ordered canonical spine for versioned-canon domains: oldest node first,
+    /// current head last. `canonicalShape()` must equal `spine().last()` when
+    /// the spine is non-empty; the default returns `{ canonicalShape() }`.
+    ///
+    /// PluginManager uses this to build the full spine via `declareCanonical`
+    /// (first entry) + `appendCanonicalVersion` (subsequent entries), so that
+    /// N-hop peer routing works (e.g. vcard3 → vcard4 → canon).
+    ///
+    /// Returns (shape, catalogue) pairs.  The head's catalogue must equal
+    /// `canonicalCatalogue()`.  Intermediate entries may return an empty
+    /// catalogue if the plugin does not need to expose that version's fields
+    /// (the PluginManager will still register the shape so edges can reference
+    /// it).
+    virtual QList<std::pair<Shape, PropertyCatalogue>> canonicalSpine() const
+    {
+        return { { canonicalShape(), canonicalCatalogue() } };
+    }
 };
 
 } // namespace Kalburator::Shape

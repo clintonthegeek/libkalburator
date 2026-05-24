@@ -76,13 +76,21 @@ private slots:
 
     void registryCompilesPipelineV3ToV4()
     {
-        // Set up via ContactsStockShapes (replaces the old plugin.registerEdges() call).
-        // The canonical shape must be declared first (as DomainDefinition would do),
-        // then stock shapes populate the peer + edges.
+        // Set up via ContactsDomainDefinition::canonicalSpine() + ContactsStockShapes,
+        // mirroring how PluginManager loads the contacts plugin.
+        // Spine is [vcard4, canon], so v3→v4 is a direct single-hop
+        // (v3 peer attaches to spine[0]=vcard4).
         auto& reg = m_shape.transformation;
-        const Shape canonical{ DomainId{"contacts"}, EncodingId{"vcard4"} };
-        reg.registerShape(canonical, {});
-        reg.declareCanonical(DomainId{"contacts"}, canonical);
+        Kalburator::Contacts::ContactsDomainDefinition def;
+        const auto spine = def.canonicalSpine();
+        const auto& [rootShape, rootCat] = spine.first();
+        reg.registerShape(rootShape, rootCat);
+        reg.declareCanonical(DomainId{"contacts"}, rootShape);
+        for (int i = 1; i < spine.size(); ++i) {
+            const auto& [s, cat] = spine.at(i);
+            reg.registerShape(s, cat);
+            reg.appendCanonicalVersion(DomainId{"contacts"}, s);
+        }
 
         Kalburator::Contacts::ContactsStockShapes shapes;
         for (const auto &[shape, cat] : shapes.peerShapes())
@@ -93,6 +101,7 @@ private slots:
         const Shape v3{ DomainId{"contacts"}, EncodingId{"vcard3"} };
         const Shape v4{ DomainId{"contacts"}, EncodingId{"vcard4"} };
 
+        // v3 attaches at spine[0]=v4; compile(v3,v4) = single-hop (v3→v4 direct edge).
         const auto pipeline = reg.compile(v3, v4);
         QVERIFY(pipeline.has_value());
 

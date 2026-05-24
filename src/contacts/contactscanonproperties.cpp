@@ -39,7 +39,8 @@ Kalburator::Shape::PropertyCatalogue makeContactsCanonCatalogue()
 QList<Kalburator::Shape::PropertyId> contactsCanonPropertyIds()
 {
     QList<PropertyId> ids;
-    for (const auto& d : makeContactsCanonCatalogue().properties())
+    const PropertyCatalogue cat = makeContactsCanonCatalogue();
+    for (const auto& d : cat.properties())
         ids.append(d.id);
     return ids;
 }

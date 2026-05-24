@@ -5,6 +5,10 @@
 
 #include "canonenvelope.h"
 #include "vcardcanonstages.h"
+#include "contactsdomaindefinition.h"
+#include "contactsstockshapes.h"
+#include "shaperegistries.h"
+#include "lossprofile.h"
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>
@@ -12,6 +16,45 @@
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Contacts::VCard4ToCanonStage;
 using Kalburator::Contacts::CanonToVCard4Stage;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
+using Kalburator::Shape::Shape;
+using Kalburator::Shape::PropertyId;
+using Kalburator::Shape::LossKind;
+
+namespace {
+
+// Build a ShapeRegistries with the contacts domain fully registered
+// (DomainDefinition canonical spine + StockShapes peers + edges).
+Kalburator::Shape::ShapeRegistries makeContactsRegistries()
+{
+    Kalburator::Shape::ShapeRegistries regs;
+    auto& reg = regs.transformation;
+
+    Kalburator::Contacts::ContactsDomainDefinition def;
+    // Build the versioned spine (vcard4 → canon) as PluginManager would.
+    const auto spine = def.canonicalSpine();
+    if (!spine.isEmpty()) {
+        const auto& [rootShape, rootCat] = spine.first();
+        reg.registerShape(rootShape, rootCat);
+        reg.declareCanonical(def.domain(), rootShape);
+        for (int i = 1; i < spine.size(); ++i) {
+            const auto& [s, cat] = spine.at(i);
+            reg.registerShape(s, cat);
+            reg.appendCanonicalVersion(def.domain(), s);
+        }
+    }
+
+    Kalburator::Contacts::ContactsStockShapes shapes;
+    for (const auto& [shape, cat] : shapes.peerShapes())
+        reg.registerShape(shape, cat);
+    for (const auto& edge : shapes.edges())
+        reg.registerEdge(edge);
+
+    return regs;
+}
+
+} // namespace
 
 namespace {
 
@@ -252,6 +295,45 @@ private slots:
                  "organizations must be absent when vCard has no org");
         QVERIFY2(!obj.contains(QStringLiteral("categories")),
                  "categories must be absent when vCard has no categories");
+    }
+
+    // Edge + spine routing tests (Task A5)
+
+    void vcard3RoutesToCanonViaTwoHops()
+    {
+        // With spine=[vcard4, canon] and edges v3→v4 + v4→canon, the registry
+        // must compile a 2-hop pipeline v3→v4→canon.
+        const auto regs = makeContactsRegistries();
+        const Shape v3{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard3")} };
+        const Shape canon{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("canon")} };
+
+        const auto pipeline = regs.transformation.compile(v3, canon);
+        QVERIFY2(pipeline.has_value(),
+                 "compile(vcard3, canon) must succeed via vcard3->vcard4->canon N-hop");
+        QCOMPARE(pipeline->edges().size(), 2);
+    }
+
+    void canonToVcard4LossProfileChargesGoogleOnlyFields()
+    {
+        // The canon→vcard4 demote edge must declare Google-only fields as Dropped
+        // and reversible fields (sipAddresses etc.) as Reversible.
+        const auto regs = makeContactsRegistries();
+        const Shape canon{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("canon")} };
+        const Shape v4{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard4")} };
+
+        const auto loss = regs.transformation.inspect(canon, v4);
+        QVERIFY2(!loss.isLossless(),
+                 "canon->vcard4 must be lossy (Google-only fields cannot be represented)");
+
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("occupations")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("interests")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("skills")}),
+                 LossKind::Dropped);
+
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("sipAddresses")}),
+                 LossKind::Reversible);
     }
 };
 
