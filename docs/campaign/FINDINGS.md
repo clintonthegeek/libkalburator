@@ -76,12 +76,32 @@ build (empty plans; `RRuleTranscoder` only fires for `orgmode` backends, not bui
 `KALBURATOR_HAVE_ORG_IO=OFF`). Plan 3 Task 13 records the same in STATUS on completion.
 (Seeded 2026-05-24, Plan 3 authoring.)
 
+### O9 — pre-existing `tst_providerlifecycle` failure (unrelated, not introduced by campaign)
+`tst_providerlifecycle::provisionProvider_backendsReadyEmittedAfterConnectAll` fails in
+test #87 (introduced in commit `b395e5b`, before the campaign branch). The failing assertion
+`ready.count() >= 1` implies a signal-timing or async issue in the `ProviderLifecycle` test
+harness. The campaign suite is 111/112 green; this one excluded. **Watch:** investigate
+independently; do not confuse with campaign regressions. (Seeded 2026-05-24, Plan 3 Task 13.)
+
 ## Resolved
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
 `tst_engine_unified_routing.cpp` and `tst_carddav_engine_integration.cpp` were migrated
 to `isLossless()` / `droppedProperties()` in Task 2. Full build confirmed no remaining
 `LossLevel`/`.level`/`.dropped` references in production or test code.
+
+### O2 — Carry-verbatim containers (resolved Plan 3, 2026-05-24)
+All non-isomorphic structures (`relatedTo` tree / `parentUid` / `checklistItems` for todo;
+`recurrence` verbatim string list for both ical and vtodo) landed in Plan 3:
+`todocanonproperties.cpp` defines the catalogue fields; `vtodocanonstages.cpp` +
+`icalcanonstages.cpp` capture RRULE/RDATE/EXDATE as raw RFC5545 lines (invariant 3). The
+differ (CanonJsonDiffer) treats each as one opaque-field change per coarse-granularity rule.
+
+### O3 — Live API validation deferred (partially resolved Plan 3, 2026-05-24)
+The concrete JSON (de)serialization stages for all three domains are written and covered by
+round-trip tests. The remaining unknowns (live Google/Graph payloads, IANA↔Windows timezone
+mapping, Graph immutable-id edge cases) still require live integration testing, deferred to
+when real provider connectors are wired. Not a blocker for convergence (Plan 4).
 
 ### O5 — `pipeline.cpp` loss folding (resolved Plan 1 Task 2, 2026-05-23)
 `composedLoss()` in `src/shape/pipeline.cpp` uses only `compose()` — no direct field

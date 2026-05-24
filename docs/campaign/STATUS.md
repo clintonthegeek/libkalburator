@@ -1,13 +1,15 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Plans 1 and 2 implemented and committed. Plan 2 (per-engine `ShapeRegistries`
-injection, 12 tasks) is **complete** (`docs/2026-05-23-plan-2-per-engine-registries.md`):
-the bundle + Ambient-Context default, injecting ctors on `SyncEngine`/`SyncEngineWorker` and
-`PluginManager`, and all tests converted off the `clear()` rituals. Plan 3 (canon encodings)
-is **written and ready to execute** (`docs/2026-05-24-plan-3-canon-encodings.md`, 13 tasks,
-against the landed shape-graph APIs). **Scope decision (2026-05-24, human):** Plan 3 lands all
-three canons — `contacts+canon`, `todo+canon`, **and `calendar+canon`** — so Plan 4 is narrowed
-to pure convergence (see Plan-4 row + FINDINGS). Plan 4 remains outlined.
+**Status:** Plans 1, 2, and 3 implemented and committed. Plan 3 (canon encodings, 13 tasks)
+is **complete** (`docs/2026-05-24-plan-3-canon-encodings.md`): shared canon-JSON envelope
+helpers + reusable CanonJsonDiffer/CanonJsonMerger (Tasks 1–3); contacts+canon catalogue,
+VCard4ToCanonStage, CanonToVCard4Stage, ContactsDomainDefinition flipped, vcard4 demoted
+to peer + bridges (Tasks A1–A5); todo+canon catalogue, VTodoToCanonStage, CanonToVTodoStage,
+TodoDomainDefinition flipped, ical-vtodo demoted to peer + bridges (Tasks B1–B5); calendar+canon
+catalogue, ICalToCanonStage, CanonToICalStage, CalendarDomainDefinition flipped, ical demoted
+to peer + bridges (Tasks C1–C5). Full suite: 111/112 green (one pre-existing
+`tst_providerlifecycle` failure unrelated to this campaign, introduced in `b395e5b`).
+Plan 4 (pure convergence) remains next. Branch not yet pushed.
 **Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
 **Last updated:** 2026-05-24.
 
@@ -35,7 +37,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 |---|---|---|---|
 | 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
 | 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Complete** |
-| 3 | Canon encodings (`contacts+canon`/`todo+canon`/`calendar+canon`: catalogues, JSON (de)serialization stages, bridge edges, reusable canon-JSON differ/merger) | `docs/2026-05-24-plan-3-canon-encodings.md` | **Written (13 tasks); ready to execute** |
+| 3 | Canon encodings (`contacts+canon`/`todo+canon`/`calendar+canon`: catalogues, JSON (de)serialization stages, bridge edges, reusable canon-JSON differ/merger) | `docs/2026-05-24-plan-3-canon-encodings.md` | **Complete** (13 tasks, committed 2026-05-24) |
 | 4 | Calendar **convergence only** (retire `src/transcoding/`; RRULE-as-edge `canon → org-ical` Simplified loss; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing). The `calendar+canon` encoding + `ical↔canon` bridges are landed by Plan 3, so Plan 4 only converges the live path. | _not written_ | Outlined (design §7, §10) |
 
 Plans 2–4 are deliberately outlines: their task code must be written against the
@@ -104,14 +106,15 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **Execute Plan 3 (canon encodings):** the task plan is **written and ready** at
-  `docs/2026-05-24-plan-3-canon-encodings.md` (13 tasks, against the landed shape-graph
-  signatures). Implement task-by-task with `superpowers:subagent-driven-development`
-  (recommended) or `superpowers:executing-plans`. Structure: Part 0 (shared canon-JSON
-  envelope + reusable differ/merger), then Parts A/B/C (contacts → todo → calendar), each
-  ending in a green-gate. Update this Status line + the Plan-3 row as it lands (invariant 7).
-  Plan 3 Task 13 narrows the Plan-4 row to pure convergence on completion.
-- **FINDINGS O7 stays OPEN (not Plan 3 scope):** removing the Ambient-Context
-  `defaultShapeRegistries()` default and the transitional ctor overloads is **downstream-port
-  work** — PlanStan and WildPalms must first adopt the injecting ctors before the scaffolding can
-  be deleted. Track it in FINDINGS; do not fold it into Plan 3.
+- **Write and execute Plan 4 (convergence only):** retire `src/transcoding/` into the
+  shape graph; add RRULE-as-edge `canon → org-ical` Simplified loss; remove
+  `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing. Write Plan 4
+  against the landed canon APIs (all three domain canons + ical↔canon bridges now in place
+  from Plan 3). Use `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
+  Plan 4 is **not yet written** — write it first (per invariant P1: task code must be
+  written against the landed APIs of the prior plan).
+- **Push the branch** once Plan 4 is outlined or before ending the session:
+  `git push -u origin feature/canon-upgrade-convergence`.
+- **FINDINGS O7 stays OPEN (not Plan 4 scope unless convenient):** removing the
+  Ambient-Context `defaultShapeRegistries()` default and the transitional ctor overloads
+  is downstream-port work — PlanStan and WildPalms must first adopt the injecting ctors.
