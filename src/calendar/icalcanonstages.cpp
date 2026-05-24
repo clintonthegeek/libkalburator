@@ -541,9 +541,14 @@ QByteArray CanonToICalStage::transform(const QByteArray& canonBytes) const
         KCalendarCore::Incidence::Secrecy secrecy = KCalendarCore::Incidence::SecrecyPublic;
         if (cls == QStringLiteral("private")) {
             secrecy = KCalendarCore::Incidence::SecrecyPrivate;
-            // Degraded: MS "personal" → iCal "PRIVATE"; store original in providerExtras
         } else if (cls == QStringLiteral("confidential")) {
             secrecy = KCalendarCore::Incidence::SecrecyConfidential;
+        } else if (cls == QStringLiteral("personal")) {
+            // Degraded: MS "personal" has no iCal CLASS; map to PRIVATE but keep the
+            // original verbatim (invariant 4) so it is recoverable — emit as an X-
+            // property the forward stage round-trips into providerExtras["x-ical"].
+            secrecy = KCalendarCore::Incidence::SecrecyPrivate;
+            event->setNonKDECustomProperty("X-CANON-CLASSIFICATION", cls);
         }
         event->setSecrecy(secrecy);
     }

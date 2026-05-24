@@ -60,7 +60,7 @@ KCalendarCore::Event::Ptr parseEvent(const QByteArray &bytes)
     return inc.dynamicCast<KCalendarCore::Event>();
 }
 
-// A representative VEVENT with core fields, RRULE, and ATTENDEE.
+// A representative VEVENT with core fields, RRULE, EXDATE, and ATTENDEE.
 const QByteArray kTestIcal =
     "BEGIN:VCALENDAR\r\n"
     "VERSION:2.0\r\n"
@@ -74,10 +74,15 @@ const QByteArray kTestIcal =
     "STATUS:CONFIRMED\r\n"
     "CATEGORIES:Work,Meetings\r\n"
     "RRULE:FREQ=WEEKLY;BYDAY=MO\r\n"
+    "EXDATE:20260615T090000Z\r\n"
     "ORGANIZER;CN=Alice:mailto:alice@example.com\r\n"
     "ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED;RSVP=TRUE:mailto:bob@example.com\r\n"
     "END:VEVENT\r\n"
     "END:VCALENDAR\r\n";
+
+// Expected recurrence lines verbatim (no CR — extractRecurrenceLines trims them).
+const QByteArray kExpectedRRule  = "RRULE:FREQ=WEEKLY;BYDAY=MO";
+const QByteArray kExpectedExdate = "EXDATE:20260615T090000Z";
 
 } // namespace
 
@@ -182,9 +187,33 @@ private slots:
         if (origEvent->hasEndDate())
             QCOMPARE(outEvent->dtEnd().date(), origEvent->dtEnd().date());
 
-        // RRULE must survive in the output iCal bytes
-        QVERIFY2(output.contains("FREQ=WEEKLY"),
-                 "RRULE must survive ical->canon->ical round-trip");
+        // Recurrence lines must survive byte-identical (invariants 3/5).
+        // extractRecurrenceLines() trims CR; we do the same here before comparing.
+        auto normalizeLine = [](const QByteArray &line) -> QByteArray {
+            QByteArray n = line;
+            n.replace("\r\n", "\n");
+            if (n.endsWith('\r'))
+                n.chop(1);
+            return n.trimmed();
+        };
+
+        // Collect all RRULE:/RDATE:/EXDATE: lines from the output (one per LF-split line).
+        const auto outputLines = output.split('\n');
+        QByteArrayList recurrenceLines;
+        for (const QByteArray &raw : outputLines) {
+            const QByteArray normed = normalizeLine(raw);
+            if (normed.startsWith("RRULE:")  ||
+                normed.startsWith("RDATE:")  ||
+                normed.startsWith("EXDATE:"))
+                recurrenceLines.append(normed);
+        }
+
+        QVERIFY2(recurrenceLines.contains(kExpectedRRule),
+                 qPrintable(QStringLiteral("RRULE line must survive byte-identical; got: %1")
+                     .arg(QString::fromUtf8(output))));
+        QVERIFY2(recurrenceLines.contains(kExpectedExdate),
+                 qPrintable(QStringLiteral("EXDATE line must survive byte-identical; got: %1")
+                     .arg(QString::fromUtf8(output))));
     }
 
     void icalRoundTripPreservesAttendees()
@@ -243,6 +272,39 @@ private slots:
         // locations: Simplified
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("locations")}),
                  LossKind::Simplified);
+    }
+
+    // Fix 1 verification: classification=personal → CLASS:PRIVATE + verbatim stash
+    void canonPersonalClassificationProducesPrivateAndStash()
+    {
+        // Build a minimal canon JSON with classification="personal"
+        QJsonObject obj;
+        obj.insert(QStringLiteral("uid"),            QStringLiteral("personal-class-test-uid"));
+        obj.insert(QStringLiteral("summary"),        QStringLiteral("Personal Event"));
+        obj.insert(QStringLiteral("classification"), QStringLiteral("personal"));
+        QJsonObject startObj;
+        startObj.insert(QStringLiteral("dateTime"), QStringLiteral("2026-06-01T09:00:00Z"));
+        startObj.insert(QStringLiteral("floating"),  false);
+        obj.insert(QStringLiteral("start"), startObj);
+
+        QJsonObject canonMeta;
+        canonMeta.insert(QStringLiteral("domain"), QStringLiteral("calendar"));
+        obj.insert(QStringLiteral("_canon"), canonMeta);
+
+        const QByteArray canonBytes =
+            QJsonDocument(obj).toJson(QJsonDocument::Compact);
+
+        CanonToICalStage rev;
+        const QByteArray output = rev.transform(canonBytes);
+        QVERIFY2(!output.isEmpty(), "CanonToICalStage must produce output");
+
+        // Must emit CLASS:PRIVATE (invariant 4: best available iCal encoding)
+        QVERIFY2(output.contains("CLASS:PRIVATE"),
+                 "classification=personal must produce CLASS:PRIVATE in iCal output");
+
+        // Must stash the verbatim original (invariant 4: recoverable)
+        QVERIFY2(output.contains("X-CANON-CLASSIFICATION:personal"),
+                 "classification=personal must stash verbatim value in X-CANON-CLASSIFICATION");
     }
 };
 
