@@ -115,3 +115,6 @@ kalburator_add_calendar_test(tst_calendardomain_baseline_properties)
 # Phase G.2 — calendar property catalogue, differ, merger, plugin
 add_subdirectory(differs)
 add_subdirectory(plugin)
+
+# Plan 3 Task C2/C3/C5 — ical ↔ canon round-trip + loss profile tests
+kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
