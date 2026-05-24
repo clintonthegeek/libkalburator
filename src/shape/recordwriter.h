@@ -5,7 +5,6 @@
 #include <QStringList>
 
 #include "backendrecord.h"
-#include "transcodingplan.h"
 
 namespace KCalendarCore { class MemoryCalendar; }
 
@@ -19,7 +18,7 @@ namespace Kalburator::Shape {
 /// engine must call `apply()` on, and an opaque `prepareForApply()`
 /// hook is used to inject any per-call setup (replacing the previous
 /// `dynamic_cast<CalendarPluginWriter*>` + `setCollection()` /
-/// `setTranscodingPlan()` engine-side dance).
+/// `prepareForApply()` hook) engine-side dance.
 class RecordWriter {
 public:
     virtual ~RecordWriter() = default;
@@ -42,7 +41,6 @@ public:
     /// `BackendRecord::data` (raw iCal bytes) when null.
     struct ApplyContext {
         QString collectionId;
-        Kalburator::Sync::TranscodingPlan transcodingPlan;
         /// Optional: target backend's host MemoryCalendar (when the
         /// engine has one bound). May be null for backends without a
         /// host-resident MemoryCalendar (e.g. RemoteCalendarBackend

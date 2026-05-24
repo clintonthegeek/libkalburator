@@ -10,7 +10,6 @@
 #include "conflicthandlerregistry.h"
 #include "mappingscheduler.h"
 #include "syncenginefuture.h"
-#include "transcodingrouter.h"
 #include "syncoperation.h"  // F2 Task 16: required by await<Op> template
 #include "shaperegistries.h"
 #include <QObject>
@@ -48,7 +47,6 @@ class SyncConflictStore;
 class ISyncConfigStore;
 class ConflictManager;
 class DecSyncActiveController;
-class TranscodingRouter;
 } // namespace Kalburator::Sync
 
 namespace Kalburator::Engine {
@@ -79,15 +77,12 @@ using Kalburator::Sync::SyncConflictStore;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ConflictManager;
 using Kalburator::Sync::DecSyncActiveController;
-using Kalburator::Sync::TranscodingRouter;
 
 // Using declarations for other types from Kalburator::Sync
-using Kalburator::Sync::TranscodingRegistry;
 using Kalburator::Sync::SyncChangeType;
 using Kalburator::Sync::SyncRecord;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::ConflictType;
-using Kalburator::Sync::TranscodingPlan;
 
 // ExecutionOverride lives in synctypes.h.
 
@@ -146,8 +141,7 @@ public:
         ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
     };
 
-    explicit SyncEngineWorker(const TranscodingRouter &router,
-                              const Kalburator::Shape::ShapeRegistries &shape,
+    explicit SyncEngineWorker(const Kalburator::Shape::ShapeRegistries &shape,
                               QObject *parent = nullptr);
     ~SyncEngineWorker() override;
 
@@ -327,7 +321,6 @@ private:
     QElapsedTimer m_totalTimer;
     QElapsedTimer m_phaseTimer;
 
-    const TranscodingRouter &m_router;
     const Kalburator::Shape::ShapeRegistries &m_shape;
     ISyncHost *m_controller = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
@@ -756,7 +749,6 @@ private:
     ConflictManager *m_conflictManager = nullptr;
     Kalburator::Conflict::ConflictHandlerRegistry m_conflictRegistry;
     Kalburator::Conflict::IMassDeleteGuard *m_massDeleteGuard = nullptr;
-    TranscodingRouter m_transcodingRouter;
     Kalburator::Shape::ShapeRegistries &m_shape;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;

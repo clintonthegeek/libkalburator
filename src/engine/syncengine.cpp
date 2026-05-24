@@ -5,7 +5,6 @@
 #include "domainoperationsregistry.h"
 #include "domaindefinition.h"
 #include "defaultblobwriter.h"
-#include "transcodingregistry.h"
 #include "transformationregistry.h"
 #include "domainregistry.h"
 #include "shaperegistries.h"
@@ -88,11 +87,10 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     : QObject(parent)
     , m_registry(registry)
     , m_controller(host)
-    , m_transcodingRouter(TranscodingRegistry::instance())
     , m_shape(shape)
 {
     // Create worker but don't start thread yet
-    m_worker = new SyncEngineWorker(m_transcodingRouter, m_shape);
+    m_worker = new SyncEngineWorker(m_shape);
     setupWorkerConnections();
 
 }
@@ -1346,11 +1344,9 @@ const bool engineWorkerMetatypesRegistered = []() {
 
 } // namespace
 
-SyncEngineWorker::SyncEngineWorker(const TranscodingRouter &router,
-                                   const Kalburator::Shape::ShapeRegistries &shape,
+SyncEngineWorker::SyncEngineWorker(const Kalburator::Shape::ShapeRegistries &shape,
                                    QObject *parent)
     : QObject(parent)
-    , m_router(router)
     , m_shape(shape)
 {
     // F2 Task 20: when cancellation is observed (via observeCancel()
@@ -2479,14 +2475,6 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         return;
     }
 
-    // Compute backend-level TranscodingPlans for calendar domain writes.
-    // Non-calendar writers ignore the plan; CalendarPluginWriter uses it to
-    // drive property transcoding (transcodingWarning is emitted from here).
-    const TranscodingPlan toTgtPlan =
-        m_router.plan(srcBackend->backendType(), tgtBackend->backendType());
-    const TranscodingPlan toSrcPlan =
-        m_router.plan(tgtBackend->backendType(), srcBackend->backendType());
-
     bool writeFailed = false;
     QString writeError;
 
@@ -2512,21 +2500,18 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         IBlobBackend *blobBackend,
         const QString &colId,
         const QList<BackendRecord> &toWrite,
-        const TranscodingPlan &plan,
         const QString &backendRegistryId)
     {
         bool ok = false;
 
         // Build the per-apply context and let the writer prepare. For
         // calendar-domain writers, this injects the host MemoryCalendar
-        // (when one exists) and the transcoding plan — replacing the
-        // K.3-and-earlier engine-side `setCollection`/`setTranscodingPlan`
-        // dance. May supply a null calendarCollection: the writer must
-        // degrade gracefully (CalendarPluginWriter does, via the
+        // (when one exists) — replacing the K.3-and-earlier engine-side
+        // `setCollection` dance. May supply a null calendarCollection: the
+        // writer must degrade gracefully (CalendarPluginWriter does, via the
         // IBlobBackend fallback path).
         Kalburator::Shape::RecordWriter::ApplyContext ctx;
         ctx.collectionId = colId;
-        ctx.transcodingPlan = plan;
         ctx.calendarCollection = m_collection
             ? m_collection->calendar(colId)
             : nullptr;
@@ -2631,13 +2616,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         auto tgtWriter = opsUCC
             ? opsUCC->createWriter(tgtBackend)
             : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
-        QMetaObject::Connection tgtWarningConn = connect(
-            tgtBackend, &SyncBackend::transcodingWarning,
-            this, &SyncEngineWorker::transcodingWarning,
-            Qt::DirectConnection);
-        applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite, toTgtPlan,
+        applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
                    m_currentRequest.mapping.targetBackend);
-        QObject::disconnect(tgtWarningConn);
     }
 
     // Apply to source.
@@ -2658,13 +2638,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         auto srcWriter = opsUCC
             ? opsUCC->createWriter(srcBackend)
             : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
-        QMetaObject::Connection srcWarningConn = connect(
-            srcBackend, &SyncBackend::transcodingWarning,
-            this, &SyncEngineWorker::transcodingWarning,
-            Qt::DirectConnection);
-        applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite, toSrcPlan,
+        applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
                    m_currentRequest.mapping.sourceBackend);
-        QObject::disconnect(srcWarningConn);
     }
 
     if (writeFailed) {
