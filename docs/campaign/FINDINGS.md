@@ -63,6 +63,19 @@ port work, after this branch merges — see O4), delete `defaultShapeRegistries(
 `::instance()` accessors so the only construction site is the composition root. Not Plan 2's job;
 Plan 2 lands the seam green. (Seeded 2026-05-24, Plan 2 design.)
 
+### O8 — Plan-3/Plan-4 boundary: calendar canon moved into Plan 3 (scope decision)
+Design §10's file-change list placed "`calendarstockshapes.cpp`: add canon + `ical↔canon`
+bridges" under the **Plan 4** (convergence) work, while the STATUS Plan-3 row named
+`calendar+canon` as Plan-3 scope — two sources of truth disagreeing (inv 7). Surfaced while
+writing Plan 3 (2026-05-24). **Decision (human, 2026-05-24):** land all three canons —
+including `calendar+canon` and its `ical↔canon` bridges — in **Plan 3**; narrow **Plan 4** to
+pure convergence (retire `src/transcoding/`, RRULE-as-edge, remove `ApplyContext.transcodingPlan`
++ `CalendarPluginWriter` special-casing). Safe because the engine reads canonical from
+`DomainDefinition::canonicalShape()` (not the graph) and transcoding is dormant in the default
+build (empty plans; `RRuleTranscoder` only fires for `orgmode` backends, not built when
+`KALBURATOR_HAVE_ORG_IO=OFF`). Plan 3 Task 13 records the same in STATUS on completion.
+(Seeded 2026-05-24, Plan 3 authoring.)
+
 ## Resolved
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
