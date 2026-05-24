@@ -764,8 +764,13 @@ Kalburator::Shape::LossProfile canonToIcalLoss()
     p.affected.insert(PropertyId{QStringLiteral("privateCopy")},              LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("responseRequested")},        LossKind::Reversible);
 
-    // Degraded: MS "personal" classification → iCal "PRIVATE" with original kept
+    // Degraded: MS "personal" classification → iCal "PRIVATE" with original kept.
+    // Only "personal" actually degrades; public/private/confidential map to the
+    // exact iCal CLASS value, so the warning path must not flag those.
     p.affected.insert(PropertyId{QStringLiteral("classification")},   LossKind::Degraded);
+    p.losslessValues.insert(PropertyId{QStringLiteral("classification")},
+                            {QStringLiteral("public"), QStringLiteral("private"),
+                             QStringLiteral("confidential")});
 
     return p;
 }

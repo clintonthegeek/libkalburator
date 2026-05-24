@@ -23,6 +23,14 @@ int lossKindSeverity(LossKind) noexcept;
 struct LossProfile {
     QHash<PropertyId, LossKind> affected;
 
+    /// Optional warning-path refinement: for a property listed here, the loss
+    /// does NOT materialize when the record's (string) value is in the set.
+    /// A property absent from this map loses for every value (the default).
+    /// Lets a value-dependent Degraded edge (e.g. classification: only the MS
+    /// "personal" value degrades; public/private/confidential map exactly)
+    /// avoid crying wolf without making the static `affected` map value-aware.
+    QHash<PropertyId, QSet<QString>> losslessValues;
+
     bool isLossless() const noexcept { return affected.isEmpty(); }
 
     /// Composes self with a downstream profile when stacking edges into a

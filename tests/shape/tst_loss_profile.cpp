@@ -46,6 +46,41 @@ private slots:
         p.affected.insert(PropertyId{QStringLiteral("rrule")}, LossKind::Simplified);
         QCOMPARE(p.summary(), QStringLiteral("drops gender; simplifies rrule"));
     }
+
+    void composeIntersectsLosslessValues() {
+        // classification: Degraded, but "public"/"private"/"confidential" are
+        // representable losslessly. A second hop that only spares "public" must
+        // narrow the safe set to the intersection (a value is lossless only if
+        // every constraining hop agrees).
+        LossProfile a;
+        a.affected.insert(PropertyId{QStringLiteral("classification")}, LossKind::Degraded);
+        a.losslessValues.insert(PropertyId{QStringLiteral("classification")},
+                                {QStringLiteral("public"), QStringLiteral("private"),
+                                 QStringLiteral("confidential")});
+        LossProfile b;
+        b.affected.insert(PropertyId{QStringLiteral("classification")}, LossKind::Degraded);
+        b.losslessValues.insert(PropertyId{QStringLiteral("classification")},
+                                {QStringLiteral("public")});
+
+        const LossProfile r = a.compose(b);
+        const auto safe = r.losslessValues.value(PropertyId{QStringLiteral("classification")});
+        QCOMPARE(safe.size(), 1);
+        QVERIFY(safe.contains(QStringLiteral("public")));
+        QVERIFY(!safe.contains(QStringLiteral("private")));
+    }
+
+    void composeCarriesUnsharedLosslessValues() {
+        // A property constrained on only one side keeps its full safe set.
+        LossProfile a;
+        a.affected.insert(PropertyId{QStringLiteral("classification")}, LossKind::Degraded);
+        a.losslessValues.insert(PropertyId{QStringLiteral("classification")},
+                                {QStringLiteral("public"), QStringLiteral("private")});
+        LossProfile b;  // b touches a different property, nothing for classification
+        b.affected.insert(PropertyId{QStringLiteral("rrule")}, LossKind::Simplified);
+
+        const LossProfile r = a.compose(b);
+        QCOMPARE(r.losslessValues.value(PropertyId{QStringLiteral("classification")}).size(), 2);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestLossProfile)

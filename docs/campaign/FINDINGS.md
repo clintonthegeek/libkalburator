@@ -173,6 +173,15 @@ so a record with `classification:"public"` (which iCal represents losslessly) tr
 "classification" warning. Harmless (no test asserts on it; warning, not failure) and matches the
 design's "warn on composed path loss" framing, but a future refinement could make Degraded
 value-dependent (only `personal`→private actually degrades). Documented, not fixed.
+2026-05-24 — src/shape/lossprofile.{h,cpp}, src/calendar/icalcanonstages.cpp, src/engine/syncengine.cpp
+— inv 4 (resolves the 2026-05-24 over-charge above) — FIXED. Added an optional
+`LossProfile::losslessValues` (`PropertyId → QSet<QString>`): the static `affected` map stays
+value-independent (routing relies on the conservative upper bound), but the warning path
+(`materializedLoss`) now skips a present string value listed there. The `canon→ical` edge declares
+`classification`'s `{public,private,confidential}` lossless, so only `personal` warns. `compose()`
+carries the field forward, intersecting safe sets on a shared property (lossless only if every hop
+agrees). Additive — every existing `affected` site untouched. Covered by tst_loss_profile
+`composeIntersectsLosslessValues`/`composeCarriesUnsharedLosslessValues`; full suite 112/112.
 2026-05-24 — src/calendar/calendarmanager.cpp (Task 6b) — decision — `CalendarManager`'s direct-write
 path (createIncidence/updateIncidence/transcodeForBackend) was converged OFF `TranscodingRegistry`
 (human decision): it now pushes incidences without per-target transcoding (conversion is the

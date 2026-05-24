@@ -24,6 +24,17 @@ LossProfile LossProfile::compose(const LossProfile& downstream) const {
             out.affected.insert(it.key(), it.value());
         }
     }
+    // Carry the value-dependent refinement forward. A value is only lossless
+    // across the composed pipeline if every hop that constrains it agrees, so
+    // on a shared property we keep the intersection of the safe-value sets.
+    out.losslessValues = losslessValues;
+    for (auto it = downstream.losslessValues.constBegin(); it != downstream.losslessValues.constEnd(); ++it) {
+        const auto e = out.losslessValues.find(it.key());
+        if (e == out.losslessValues.end())
+            out.losslessValues.insert(it.key(), it.value());
+        else
+            *e &= it.value();   // intersection
+    }
     return out;
 }
 

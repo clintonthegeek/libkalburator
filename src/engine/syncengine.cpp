@@ -71,7 +71,15 @@ static QStringList materializedLoss(const Kalburator::Shape::Pipeline &pipe,
             && !(v.isString() && v.toString().isEmpty())
             && !(v.isArray()  && v.toArray().isEmpty())
             && !(v.isObject() && v.toObject().isEmpty());
-        if (present) lost << k;
+        if (!present) continue;
+        // Value-dependent loss: skip the warning when this record's value is one
+        // the target represents losslessly (e.g. classification "public").
+        if (v.isString()) {
+            const auto safe = loss.losslessValues.constFind(it.key());
+            if (safe != loss.losslessValues.constEnd() && safe->contains(v.toString()))
+                continue;
+        }
+        lost << k;
     }
     return lost;
 }

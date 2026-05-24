@@ -15,8 +15,8 @@ parameter from the engine, writer, sync items, and every backend `pushItems`/`st
 the `TranscodingRegistry`/`Router`/`Plan`/`RRuleTranscoder`/`PropertyTranscoder` machinery (T7/T8).
 Full suite: **111/112 green** (the lone failure is the pre-existing `tst_providerlifecycle`
 async flake, `b395e5b`, unrelated — passes in isolation).
-**Branch:** `feature/canon-upgrade-convergence` (off `main`). **Pushed through Plan 3** (`4fbbbf8`);
-Plan 4 commits are local and **not yet pushed**.
+**Branch:** `feature/canon-upgrade-convergence` (off `main`), **fully pushed** — `origin` is at
+HEAD (`435d7d3`), 0 commits ahead. All four plans landed and pushed.
 **Last updated:** 2026-05-24.
 
 > Living document. Update the Status line, the plan table, the Plan-1 task checklist,
