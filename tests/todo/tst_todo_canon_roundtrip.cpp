@@ -79,6 +79,7 @@ const QByteArray kTestVTodoWithRecurrence =
     "UID:test-recur-uid-001\r\n"
     "SUMMARY:Weekly review\r\n"
     "RRULE:FREQ=WEEKLY;BYDAY=MO\r\n"
+    "EXDATE:20260601T000000Z\r\n"
     "END:VTODO\r\n"
     "END:VCALENDAR\r\n";
 
@@ -192,19 +193,43 @@ private slots:
         const QJsonObject obj = parse(canon);
         const QJsonArray recArr = obj.value(QStringLiteral("recurrence")).toArray();
         QVERIFY2(!recArr.isEmpty(), "recurrence must be captured in canon");
-        // Must contain the RRULE line verbatim
-        bool foundRRule = false;
-        for (const auto& rv : recArr) {
-            if (rv.toString().contains(QStringLiteral("FREQ=WEEKLY")))
-                foundRRule = true;
-        }
-        QVERIFY2(foundRRule, "RRULE:FREQ=WEEKLY must be captured in recurrence array");
+
+        // Collect the verbatim recurrence lines the forward stage captured.
+        // Each entry in recArr is already stripped of CRLF (trimmed by extractRecurrenceLines).
+        QStringList capturedLines;
+        for (const auto& rv : recArr)
+            capturedLines << rv.toString();
+
+        // We expect both RRULE and EXDATE to be captured.
+        const QString expectedRRule  = QStringLiteral("RRULE:FREQ=WEEKLY;BYDAY=MO");
+        const QString expectedExdate = QStringLiteral("EXDATE:20260601T000000Z");
+        QVERIFY2(capturedLines.contains(expectedRRule),
+                 "RRULE:FREQ=WEEKLY;BYDAY=MO must be captured verbatim in recurrence array");
+        QVERIFY2(capturedLines.contains(expectedExdate),
+                 "EXDATE:20260601T000000Z must be captured verbatim in recurrence array");
 
         const QByteArray output = rev.transform(canon);
         QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
-        // RRULE line must appear in the output iCal
-        QVERIFY2(output.contains("FREQ=WEEKLY"),
-                 "RRULE must survive vtodo->canon->vtodo round-trip");
+
+        // Extract recurrence lines from the round-tripped output (strip CRLF → trimmed).
+        const auto outputText = QString::fromUtf8(output);
+        const auto outputLines = outputText.split(QLatin1Char('\n'));
+        QStringList outputRecLines;
+        for (const QString &raw : outputLines) {
+            const QString line = raw.trimmed();
+            if (line.startsWith(QStringLiteral("RRULE:"))  ||
+                line.startsWith(QStringLiteral("RDATE:"))  ||
+                line.startsWith(QStringLiteral("EXDATE:")))
+                outputRecLines << line;
+        }
+
+        // Byte-identical check: every verbatim line captured in canon must appear
+        // unchanged in the output (invariants 3 and 5).
+        for (const QString &line : capturedLines) {
+            QVERIFY2(outputRecLines.contains(line),
+                     qPrintable(QStringLiteral(
+                         "Recurrence line not found byte-identically in output: ") + line));
+        }
     }
 
     void vtodoRelatedToPreserved()

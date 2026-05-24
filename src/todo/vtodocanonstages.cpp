@@ -7,6 +7,7 @@
 #include <KCalendarCore/Todo>
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimeZone>
 
@@ -368,9 +369,12 @@ QByteArray CanonToVTodoStage::transform(const QByteArray& canonBytes) const
             if (status != KCalendarCore::Incidence::StatusNone)
                 todo->setStatus(status);
             else {
-                // Degraded: vendor-specific status not representable in VTODO.
-                // Keep original in providerExtras (set below); map to NEEDS-ACTION.
+                // Degraded: vendor-specific status not representable in VTODO. Map to
+                // NEEDS-ACTION but keep the original verbatim (invariant 4) so it is
+                // recoverable — emit as an X- custom property the forward stage will
+                // round-trip back into providerExtras["x-vtodo"].
                 todo->setStatus(KCalendarCore::Incidence::StatusNeedsAction);
+                todo->setNonKDECustomProperty("X-CANON-STATUS", statusStr);
             }
         }
     }
@@ -502,11 +506,23 @@ QByteArray CanonToVTodoStage::transform(const QByteArray& canonBytes) const
     }
 
     // ---- linkedResources: Dropped (no VTODO representation) ----------------
-    // ---- checklistItems: Reversible (kept in providerExtras) ---------------
-    // ---- sortOrder: Reversible (kept in providerExtras) --------------------
-    // These are preserved in providerExtras if present; they do NOT get emitted
-    // as VTODO properties (they are vendor-only fields with no VTODO mapping).
-    // The LossProfile (canonToVtodoLoss) declares them accordingly.
+    // (Nothing to do — Dropped means the data is intentionally not recoverable.)
+
+    // ---- checklistItems / sortOrder: Reversible (stashed as X- carriers) ----
+    // No native VTODO representation; emit verbatim so the forward stage round-
+    // trips them into providerExtras["x-vtodo"] (invariant 4: Reversible).
+    {
+        const QJsonValue checklist = obj.value(QStringLiteral("checklistItems"));
+        if (!checklist.isUndefined() && !checklist.isNull()) {
+            const QByteArray j = (checklist.isArray()
+                ? QJsonDocument(checklist.toArray())
+                : QJsonDocument(checklist.toObject())).toJson(QJsonDocument::Compact);
+            todo->setNonKDECustomProperty("X-CANON-CHECKLISTITEMS", QString::fromUtf8(j));
+        }
+        const QString sortOrder = obj.value(QStringLiteral("sortOrder")).toString();
+        if (!sortOrder.isEmpty())
+            todo->setNonKDECustomProperty("X-CANON-SORTORDER", sortOrder);
+    }
 
     // ---- Serialize to iCal -------------------------------------------------
     QByteArray icalBytes = serializeTodo(todo);
