@@ -39,9 +39,20 @@ public:
     /// domain. Idempotent on re-registration.
     void declareCanonical(DomainId domain, Shape canonical);
 
+    /// Append a newer canonical version to a domain's spine, making it the
+    /// new head (current canonical). Requires the spine to already exist
+    /// (declareCanonical first) and the domain not yet frozen. The bridge
+    /// edges between the previous head and `newCanonical` must be registered
+    /// separately. Idempotent if `newCanonical` is already the head.
+    void appendCanonicalVersion(DomainId domain, Shape newCanonical);
+
     /// Look up the canonical shape for a domain. Returns
     /// `Shape::Any()` if the domain has no canonical declared.
     Shape canonicalFor(const DomainId&) const;
+
+    /// The full ordered canonical spine for a domain (oldest → current).
+    /// Empty if no canonical declared.
+    QList<Shape> canonicalSpine(const DomainId&) const;
 
     /// True if compile() has been called against any shape in this
     /// domain. After that, registerEdge / registerShape for shapes
@@ -85,7 +96,7 @@ public:
     void clear();
 
     /// Remove the given shapes from the catalogues map and from the
-    /// canonical-by-domain map if this shape is the canonical for its domain.
+    /// canonical spine if the shape appears there.
     void unregisterShapes(const QList<Shape> &shapes);
 
     /// Remove edges from the edge graph. For each (from, to) pair,
@@ -112,7 +123,7 @@ private:
 
     QHash<Shape, PropertyCatalogue> m_catalogues;
     QMultiHash<Shape, TransformationEdge> m_edgesFrom;
-    QHash<DomainId, Shape> m_canonicalByDomain;
+    QHash<DomainId, QList<Shape>> m_spineByDomain;
 
     /// Domains for which compile() has produced a non-identity Pipeline.
     /// Once a domain is frozen, registerEdge / registerShape on shapes

@@ -22,23 +22,40 @@ void TransformationRegistry::declareCanonical(DomainId domain, Shape canonical) 
         qWarning("TransformationRegistry::declareCanonical: domain is frozen — redeclaration ignored");
         return;
     }
-    if (m_canonicalByDomain.contains(domain)) {
-        const Shape existing = m_canonicalByDomain.value(domain);
-        if (existing != canonical) {
+    auto it = m_spineByDomain.find(domain);
+    if (it != m_spineByDomain.end() && !it->isEmpty()) {
+        if (it->first() != canonical) {
             qCritical("TransformationRegistry::declareCanonical: "
                       "conflicting canonical for same domain — "
                       "second plugin must not redeclare; declaration ignored");
-            return;
         }
-        return;  // idempotent same-value
+        return;  // idempotent same-value (compares the v1 root)
     }
-    m_canonicalByDomain.insert(domain, canonical);
+    m_spineByDomain.insert(domain, QList<Shape>{ canonical });
+}
+
+void TransformationRegistry::appendCanonicalVersion(DomainId domain, Shape newCanonical) {
+    if (m_frozenDomains.contains(domain)) {
+        qWarning("TransformationRegistry::appendCanonicalVersion: domain is frozen — ignored");
+        return;
+    }
+    auto it = m_spineByDomain.find(domain);
+    if (it == m_spineByDomain.end() || it->isEmpty()) {
+        qCritical("TransformationRegistry::appendCanonicalVersion: no canonical declared yet");
+        return;
+    }
+    if (it->last() == newCanonical) return;  // idempotent
+    it->append(newCanonical);
 }
 
 Shape TransformationRegistry::canonicalFor(const DomainId& d) const {
-    auto it = m_canonicalByDomain.constFind(d);
-    if (it == m_canonicalByDomain.constEnd()) return Shape::Any();
-    return *it;
+    auto it = m_spineByDomain.constFind(d);
+    if (it == m_spineByDomain.constEnd() || it->isEmpty()) return Shape::Any();
+    return it->last();  // head = current canonical
+}
+
+QList<Shape> TransformationRegistry::canonicalSpine(const DomainId& d) const {
+    return m_spineByDomain.value(d);
 }
 
 bool TransformationRegistry::isFrozen(const DomainId& d) const
@@ -159,17 +176,17 @@ QList<TransformationEdge> TransformationRegistry::edgesFrom(const Shape& s) cons
 void TransformationRegistry::clear() {
     m_catalogues.clear();
     m_edgesFrom.clear();
-    m_canonicalByDomain.clear();
+    m_spineByDomain.clear();
     m_frozenDomains.clear();
 }
 
 void TransformationRegistry::unregisterShapes(const QList<Shape> &shapes) {
     for (const auto &s : shapes) {
         m_catalogues.remove(s);
-        // If this shape is declared canonical for its domain, remove that too.
-        auto it = m_canonicalByDomain.find(s.domain);
-        if (it != m_canonicalByDomain.end() && it.value() == s) {
-            m_canonicalByDomain.erase(it);
+        auto it = m_spineByDomain.find(s.domain);
+        if (it != m_spineByDomain.end()) {
+            it->removeAll(s);
+            if (it->isEmpty()) m_spineByDomain.erase(it);
         }
     }
 }
