@@ -120,6 +120,12 @@ Consequences:
   sub-part 3-way merge. This is intentional and safer: we never silently rewrite a user's
   recurrence by recomposing parsed fragments.
 
+In EIP's **Levels of Transformation** terms (Hohpe & Woolf, "Message Translator"), this is a
+decision to operate strictly at and above the **Data Representation** (syntax) layer for recurrence:
+we transport the finished RFC5545 string and only the single `canon → Microsoft` edge descends to
+the Data Types/Structures layers to parse it. A parse failure there is a localized edge loss
+(§6), not canon corruption.
+
 This is forced by the research (§9):
 
 - **Events.** Google's recurrence model *is* RFC5545; Microsoft's structured `patternedRecurrence`
@@ -174,6 +180,42 @@ to/from canon. `contacts` already works exactly this way (`vcard3 ↔ vcard4`,
 ---
 
 ## 5. The versioned canonical spine (router generalization)
+
+### 5.0 Pattern grounding — this is a Canonical Data Model with a Format Indicator
+
+This section is not a local invention; it is a composite of two named, published patterns from
+Hohpe & Woolf, *Enterprise Integration Patterns* (Addison-Wesley, 2003), confirmed against the
+primary text:
+
+- **Canonical Data Model** ("Canonical Data Model", EIP). "Design a Canonical Data Model that is
+  independent from any specific application. Require each application to produce and consume
+  messages in this common format." This is our canon: peer encodings (iCal/vCard/Graph) translate
+  *to and from* the canon rather than to each other. EIP quantifies the payoff — *"a solution
+  consisting of six applications requires 30 (!) Message Translators without a Canonical Data Model
+  and only 12 when using a Canonical Data Model"* — the N² → 2N collapse that justifies the hub.
+  The src→canon→tgt two-hop is what EIP calls **double translation**, and the canon-vs-peer split
+  is EIP's **public (canonical) vs. private (application-specific) messages** distinction. Note EIP
+  also licenses §4's "model only what syncs": *"the Canonical Data Model does not have to model the
+  complete set of data… only the portion that participates"* — the provider-extras bag (schema §1.3)
+  carries the rest.
+- **Format Indicator** ("Format Indicator", EIP). EIP closes the Canonical Data Model pattern with:
+  *"As always, the only constant is change. Therefore, messages conforming to the Canonical Data
+  Model should specify a Format Indicator."* A canonical model is **incomplete without a version
+  indicator** — which is precisely the spine's per-domain version (`v1, v2, …`). Of EIP's three
+  Format Indicator implementations (Version Number / Foreign Key / Format Document) the spine uses
+  the **Version Number**.
+- The individual edges are EIP **Message Translators** (themselves "the messaging equivalent of the
+  **Adapter** pattern [GoF]"); multiple peer encodings converging on the canon via one translator
+  each, routed by source format, is EIP's **Normalizer**; and the canon (de)serialization stages
+  (Plan 3) are EIP's **Messaging Mapper** (a mapper *inside* the boundary) as opposed to an external
+  Message Translator.
+
+The append-only / never-rewrite-a-peer rule (§5.2, invariant 2) is **the Format Indicator
+rationale verbatim**: EIP motivates it by observing that *"some applications will be converted
+before others, while some less-used applications may never be converted at all… applications will
+have to be able to support the old format and the new format simultaneously."* That is exactly why
+an existing peer edge keeps pointing at its original spine node and is bridged forward by the
+router rather than rewritten.
 
 ### 5.1 Today
 
@@ -248,6 +290,16 @@ a model that distinguishes **how** a property is lost, because consumers (and th
    *Example:* IANA → Windows time-zone mapping (`windowsZones.xml` is many-to-one). The canon keeps
    the original IANA string.
 
+These four kinds sit at specific layers of Hohpe & Woolf's **Levels of Transformation** stack
+(EIP, "Message Translator": Data Structures / Data Types / Data Representation / Transport).
+*Preserved-but-degraded* is a **Data Types**-layer loss — EIP's own example for that layer is a
+lossy vocabulary remap (*"Replace U.S. state name with two-character code"*), the exact shape of our
+IANA → Windows time-zone case. *Simplified-not-dropped* and *Dropped* are **Data Structures**-layer
+losses (an entity/cardinality can't be expressed in the target). *Reversible-via-extension* is the
+escape hatch that keeps a Data-Types/Structures loss round-trippable by stashing at the
+representation layer. (Recurrence custody, §4.0, is the deliberate refusal to descend *below* the
+**Data Representation** layer — we keep the finished RFC5545 syntax verbatim and never re-render it.)
+
 `LossProfile` must carry, per affected `PropertyId`, *which* of these applies (not just a flat
 "dropped" set), and `compose()`/`summary()` must fold them sensibly along a pipeline. The
 `transcodingWarning` surface becomes a projection of `Pipeline::composedLoss()` /
@@ -275,20 +327,94 @@ weaker one as its own peer encoding with its own loss edge, exactly as we do for
 
 ---
 
-## 8. Registry lifetime
+## 8. Registry lifetime (Plan 2)
 
-There are three singletons: `TransformationRegistry`, `DomainRegistry` (both `*::instance()`), and
-`TranscodingRegistry`. `src/transcoding/` (and thus `TranscodingRegistry`) is being **deleted**, so
-its singleton problem disappears.
+> **Resolution note (2026-05-24).** This section was rewritten from its planning-stub form after
+> Plan 1 landed and the real call sites were read. The stub said "**two** singletons remain
+> (`TransformationRegistry`, `DomainRegistry`)" and "owned by the `SyncEngine`." Both were
+> imprecise; the corrections below are **documented deviations** from the stub per the INVARIANTS
+> deviation rule. See FINDINGS O6.
 
-**Decision:** the two that remain become **per-engine instances**, ending the defensive `clear()`
-rituals in tests. `TransformationRegistry` and `DomainRegistry` are owned by the `SyncEngine` and
-passed by reference to the collaborators that need them, following the pattern the
-`TranscodingRouter` already demonstrated (`TranscodingRouter(TranscodingRegistry&)` — production
-wiring vs. a fresh registry per test). The versioned spine lives in `TransformationRegistry`, so
-this also gives each engine its own spine state. The implementation plan owns the mechanical
-migration (constructor wiring, threading the references, removing `instance()` call sites, deleting
-the test `clear()` calls).
+### 8.1 The problem, named
+
+There are **four** registry singletons in play, not two. `TranscodingRegistry` disappears with
+`src/transcoding/` (Plan 4). Of the rest, `BackendRegistry` (`Sync::`) is **already
+dependency-injected** — `PluginManager(BackendRegistry*)` and `SyncEngine(BackendRegistry*, …)`
+both take it by reference. The holdouts are the **three `Shape::` registries**, all still reached
+via `::instance()`:
+
+- `TransformationRegistry` — the shape graph + the versioned spine (Plan 1).
+- `DomainRegistry` — domain definitions / canonical shapes.
+- `DomainOperationsRegistry` — per-domain operation handlers. **The stub omitted this one; the
+  engine reads it at `syncengine.cpp:1874` and `:2423`, and ~40 tests `clear()` it.**
+
+The shared state is **ambient**: `PluginManager` is the *writer* (`applyPlugin`, pluginmanager.cpp
+:120–199 — registers domains/shapes/edges/operations and unwinds on failure) and `SyncEngine` is the
+*reader* (`:1403/1861/1874/1885/2417/2423/2641` — `inspect`/`compile`/`definitionFor`/`operationsFor`).
+Neither holds the other's state; both just trust `::instance()` resolves to the same global. This is
+the textbook **Service Locator** anti-pattern (Seemann, *Service Locator is an Anti-Pattern*, 2010):
+hidden dependencies, runtime-not-compile-time failure, and no test isolation — hence the defensive
+`clear()` ritual in every `cleanup()`.
+
+### 8.2 Pattern grounding
+
+The three registries are legitimate instances of Fowler's **Registry** pattern (*PoEAA*, 2002) — the
+bug is that they were given **process-global Singleton scope** for state that is actually
+**per-engine** (mutable, plugin-populated, test-varying). Fowler's own caution applies: a Registry
+reached through hardcoded statics "becomes a Service Locator… an effective sinkhole for
+dependencies," and the fix he points to is Dependency Injection. The end state is **Constructor
+Injection wired at a Composition Root** (Fowler, *IoC Containers and the DI pattern*, 2004; van
+Deursen & Seemann, *DIPPP*, 2019). The reference architecture for "a plugin host *writes* a registry
+and a separate consumer *reads* it, sharing without globals" is the **OSGi service registry /
+Eclipse extension registry**, which hand the registry to both sides via an injected context
+(`BundleContext`), never a language singleton. We already do exactly this for `BackendRegistry`;
+Plan 2 finishes the job for the three `Shape::` registries.
+
+### 8.3 Decision — an injected `ShapeRegistries` bundle
+
+A new composition-root product, `src/shape/shaperegistries.h`:
+
+```cpp
+struct ShapeRegistries {
+    TransformationRegistry   transformation;   // holds the versioned spine
+    DomainRegistry           domain;
+    DomainOperationsRegistry operations;
+};
+```
+
+Owned **by value at the composition root** (the consumer, or a stack-local in a test) — this is the
+shape-state `BundleContext`. It is passed **by reference to both** `PluginManager` (writer) and
+`SyncEngine` (reader); the same instance is shared structurally, not ambiently. The versioned spine
+lives in `transformation`, so each bundle gives an engine its own spine state. Engine read sites
+become `m_shape.transformation` / `.domain` / `.operations`; PluginManager write/unwind sites use its
+injected bundle.
+
+`BackendRegistry` is **not** folded into the bundle — it is a `Sync::` concern with a different
+lifetime, already injected; folding it is unrelated refactoring (scope-boundary discipline,
+invariant 8) and an explicit non-goal of Plan 2.
+
+### 8.4 Migration via a documented Ambient-Context scaffold
+
+A hard cutover would break the external contracts (invariant 10): PlanStan and WildPalms call the
+current `SyncEngine(BackendRegistry*, ISyncHost*)` ctor. So Plan 2 keeps a **process-global default
+bundle** — `ShapeRegistries& defaultShapeRegistries()` — and the three `::instance()` accessors are
+retained but **delegate to its members**. The existing ctors are kept as overloads binding to the
+default bundle; **new injecting overloads** take a `ShapeRegistries&`. Downstream compiles unchanged
+and stays green per commit.
+
+This default is exactly Seemann's **Ambient Context** — and he classifies it as an *anti-pattern*
+usable **only as removable migration scaffolding**, not an end state. Therefore:
+
+- Plan 2 converts the engine path and the integration tests to **explicit injection** (stack-local
+  bundles, dropping their `clear()` calls — isolation becomes lexical scope).
+- The Ambient-Context default and the `::instance()` accessors are **scheduled for removal** once
+  PlanStan/WildPalms adopt the injecting ctor — downstream-port work, **not** Plan 2 (tracked as
+  FINDINGS O7). Plan 2 lands the seam green; it does not delete the global.
+
+The implementation plan owns the mechanical migration (the `ShapeRegistries` header, constructor
+wiring, threading the reference through `SyncEngine`/`SyncEngineWorker` and `PluginManager`, the
+seven engine read sites, the `::instance()`→default-bundle delegation, and converting the ~40 test
+`cleanup()` blocks).
 
 ---
 

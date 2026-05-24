@@ -1,8 +1,8 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plans 2–4 are
-outlined (not yet written in full — see invariant P1). Plan 2 should now be written
-against the landed APIs.
+**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plan 2 **design is locked**
+(design §8 rewritten 2026-05-24 to the injected-`ShapeRegistries`-bundle topology); its task plan
+is being written against the landed APIs. Plans 3–4 remain outlined (invariant P1).
 **Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
 **Last updated:** 2026-05-23.
 
@@ -29,7 +29,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 | # | Plan | Doc | Status |
 |---|---|---|---|
 | 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
-| 2 | Per-engine registries (inject `TransformationRegistry`/`DomainRegistry` into `SyncEngine`; drop `instance()` in engine path; remove test `clear()` rituals) | _not written_ | Outlined (design §8) |
+| 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Design locked (§8 rewritten); plan being written** |
 | 3 | Canon encodings (`calendar+canon`/`contacts+canon`/`todo+canon`: catalogues, JSON (de)serialization stages, bridge edges, differ/merger) | _not written_ | Outlined (schema doc) |
 | 4 | Calendar convergence (retire `src/transcoding/`; RRULE-as-edge; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing) | _not written_ | Outlined (design §7, §10) |
 
@@ -59,8 +59,13 @@ deviation (invariant scope note).
 3. **Versioned canonical spine**, append-only upgrades; existing peer edges never
    rewritten. (design §5, invariant 2)
 4. **Four-kind loss model** (Dropped/Simplified/Reversible/Degraded). (design §6, invariant 4)
-5. **Per-engine registries** (Plan 2). Until then, tests `clear()` the singletons in
-   `cleanup()`. (design §8)
+5. **Per-engine registries** (Plan 2) via an injected `ShapeRegistries` bundle (the OSGi
+   `BundleContext` model; finishes the DI pattern `BackendRegistry` already uses). Three `Shape::`
+   registries fold in — incl. `DomainOperationsRegistry` (the §8 stub said two; corrected, FINDINGS
+   O6). A process-global default bundle is kept as **documented Ambient-Context scaffolding** so
+   downstream stays green (invariant 10); its removal is deferred to the downstream port (FINDINGS
+   O7). `BackendRegistry` stays separate (non-goal). Until Plan 2 lands, tests `clear()` the
+   singletons in `cleanup()`. (design §8)
 6. **Coarse diff granularity** — one `PropertyId` per row; a change anywhere in a
    composite marks the whole property changed. No per-element (per-attendee) diffing in v1.
 7. **Contacts `uid`** — canon mints/normalizes a stable id; vendor id → `providerExtras`.
@@ -89,7 +94,8 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **Planning agent (Plan 2):** Plan 1 is complete. Read design §8 and the now-real
-  `src/shape/` APIs (especially `TransformationRegistry`, `LossProfile`, `LossKind`),
-  then use `superpowers:writing-plans`. Save to
-  `docs/2026-05-23-plan-2-per-engine-registries.md` and update the plan table here.
+- **Plan 2 authoring (in progress):** design §8 is rewritten and locked; the task plan is being
+  written via `superpowers:writing-plans` against the landed `ShapeRegistries`/`SyncEngine`/
+  `PluginManager` signatures, saved to `docs/2026-05-23-plan-2-per-engine-registries.md`.
+- **After Plan 2 lands:** write Plan 3 (canon encodings) against the then-real bundle APIs;
+  remember FINDINGS O7 (remove the Ambient-Context default) is downstream-port work, not Plan 3.

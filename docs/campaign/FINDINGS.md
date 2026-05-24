@@ -44,6 +44,25 @@ Planning grep found no `.level`/`.dropped` usage in `src/shape/pipeline.cpp`, so
 Task 2's full build; if `composedLoss()` references the removed fields, update it the
 same way. (Seeded 2026-05-23.)
 
+### O6 — design §8 was imprecise; corrected when Plan 2 was designed
+The §8 planning stub said **two** `Shape::` singletons remain (`TransformationRegistry`,
+`DomainRegistry`) and that they would be "owned by the `SyncEngine`." Reading the landed call sites
+showed **three** (the engine also reads `DomainOperationsRegistry` at `syncengine.cpp:1874`,`:2423`;
+~40 tests `clear()` it), and that engine-ownership is wrong because `PluginManager` is an independent
+*writer* of the same registries. §8 was rewritten (2026-05-24) to the resolved topology — an injected
+`ShapeRegistries` bundle owned at the composition root, shared by reference with both PluginManager
+(writer) and SyncEngine (reader), the OSGi `BundleContext` model. Recorded as a documented deviation
+from the stub per the INVARIANTS deviation rule. (Seeded 2026-05-24, Plan 2 design.)
+
+### O7 — Ambient-Context default bundle must be removed after downstream ports
+Plan 2 keeps a process-global `defaultShapeRegistries()` and `::instance()` accessors that delegate
+to it, purely so PlanStan/WildPalms keep compiling against the current `SyncEngine`/`PluginManager`
+ctors (invariant 10). This is Seemann's **Ambient Context anti-pattern**, legitimate **only as
+removable scaffolding**. **Watch:** once PlanStan and WildPalms adopt the injecting ctor (downstream-
+port work, after this branch merges — see O4), delete `defaultShapeRegistries()` and the three
+`::instance()` accessors so the only construction site is the composition root. Not Plan 2's job;
+Plan 2 lands the seam green. (Seeded 2026-05-24, Plan 2 design.)
+
 ## Resolved
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
