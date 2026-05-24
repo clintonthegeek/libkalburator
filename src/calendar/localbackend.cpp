@@ -826,28 +826,13 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* LocalBackend::pushItems(const QString &calendarId,
-                                        const QList<KCalendarCore::Incidence::Ptr> &items,
-                                        const TranscodingPlan &plan)
+                                        const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    // F2 Task 7: apply the transcoding plan up front so all callers
-    // (including the 2-arg shim, which passes an empty plan) exercise
-    // a single code path. Mirrors storeItems()' behaviour and matches
-    // MockBackend's Task 6 migration.
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    auto *op = new PushOperation(calendarId, finalItems, this);
+    auto *op = new PushOperation(calendarId, items, this);
     registerOperation(op);
 
     // Use deferred execution
-    QTimer::singleShot(0, this, [this, op, calendarId, finalItems]() {
+    QTimer::singleShot(0, this, [this, op, calendarId, items]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -871,7 +856,7 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
         QStringList failedUids;
         KCalendarCore::ICalFormat icalFormat;
 
-        for (const auto &item : finalItems) {
+        for (const auto &item : items) {
             if (item.isNull()) {
                 continue;
             }

@@ -232,12 +232,8 @@ void OrgBackend::startSync(const QString &collectionId,
         if (!orgFile) {
             qWarning() << "OrgBackend::startSync: Failed to load org file for" << calendarId;
         } else {
-            // Apply transcoding plan and write each incidence to the org file
-            for (const auto &original : allChanges) {
-                auto result = executeTranscodingPlan(plan, original);
-                if (!result.warnings.isEmpty() && original)
-                    emit transcodingWarning(calendarId, original->uid(), result.warnings);
-                const auto &incidence = result.incidence;
+            // Write each incidence to the org file
+            for (const auto &incidence : allChanges) {
                 if (!incidence || incidence->uid().isEmpty())
                     continue;
 
@@ -368,26 +364,12 @@ FetchOperation* OrgBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* OrgBackend::pushItems(const QString &calendarId,
-                                      const QList<KCalendarCore::Incidence::Ptr> &items,
-                                      const TranscodingPlan &plan)
+                                      const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    // F2 Task 9: apply the transcoding plan up front so all callers
-    // (including the 2-arg shim, which passes an empty plan) exercise
-    // a single code path. Mirrors storeItems()' behaviour.
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    auto *op = new PushOperation(calendarId, finalItems, this);
+    auto *op = new PushOperation(calendarId, items, this);
     registerOperation(op);
 
-    QTimer::singleShot(0, this, [this, op, calendarId, finalItems]() {
+    QTimer::singleShot(0, this, [this, op, calendarId, items]() {
         if (op->state() == SyncOperation::Cancelled)
             return;
 
@@ -418,12 +400,12 @@ PushOperation* OrgBackend::pushItems(const QString &calendarId,
 
         QStringList succeededUids;
         QStringList failedUids;
-        int totalItems = finalItems.size();
+        int totalItems = items.size();
         int currentItem = 0;
 
         emit writeStarted(calendarId, totalItems);
 
-        for (const auto &incidence : finalItems) {
+        for (const auto &incidence : items) {
             if (incidence.isNull())
                 continue;
 

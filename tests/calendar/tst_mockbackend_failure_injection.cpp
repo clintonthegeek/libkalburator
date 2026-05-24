@@ -8,7 +8,6 @@
 
 #include "mockbackend.h"
 #include "syncoperation.h"
-#include "transcodingplan.h"
 
 #include <KCalendarCore/Event>
 
@@ -42,7 +41,7 @@ void TstMockBackendFailureInjection::pushItemsHonoursOnPushFailureInjection()
     mock.setFailurePoint(MockBackend::FailurePoint::OnPush);
 
     auto items = makeOneEvent(QStringLiteral("evt-1"));
-    auto *op = mock.pushItems(QStringLiteral("cal1"), items, TranscodingPlan{});
+    auto *op = mock.pushItems(QStringLiteral("cal1"), items);
     QVERIFY(op);
 
     QSignalSpy finished(op, &SyncOperation::finished);
@@ -59,7 +58,7 @@ void TstMockBackendFailureInjection::pushItemsHonoursOnStoreItemsFailureInjectio
     mock.setFailurePoint(MockBackend::FailurePoint::OnStoreItems);
 
     auto items = makeOneEvent(QStringLiteral("evt-2"));
-    auto *op = mock.pushItems(QStringLiteral("cal1"), items, TranscodingPlan{});
+    auto *op = mock.pushItems(QStringLiteral("cal1"), items);
     QVERIFY(op);
 
     QSignalSpy finished(op, &SyncOperation::finished);
@@ -74,7 +73,7 @@ void TstMockBackendFailureInjection::pushItemsThreeArgSucceedsWithoutFailureInje
 {
     MockBackend mock;
     auto items = makeOneEvent(QStringLiteral("evt-3"));
-    auto *op = mock.pushItems(QStringLiteral("cal1"), items, TranscodingPlan{});
+    auto *op = mock.pushItems(QStringLiteral("cal1"), items);
     QVERIFY(op);
 
     QSignalSpy finished(op, &SyncOperation::finished);
@@ -96,7 +95,7 @@ void TstMockBackendFailureInjection::twoArgPushItemsDelegatesToThreeArgForm()
     mock.setFailurePoint(MockBackend::FailurePoint::OnStoreItems);
 
     auto items = makeOneEvent(QStringLiteral("evt-4"));
-    auto *op = mock.pushItems(QStringLiteral("cal1"), items, TranscodingPlan{});
+    auto *op = mock.pushItems(QStringLiteral("cal1"), items);
     QVERIFY(op);
 
     QSignalSpy finished(op, &SyncOperation::finished);

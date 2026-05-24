@@ -2,7 +2,6 @@
 #define CREATEINCIDENCEITEM_H
 
 #include "synctransactionitem.h"
-#include "transcodingplan.h"
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
@@ -32,14 +31,12 @@ public:
      * @param incidence The incidence to create
      * @param calendar MemoryCalendar used by the backend (must outlive commit)
      * @param backend Backend to operate on
-     * @param plan Transcoding plan for write; empty plan is a no-op
      * @param parent Parent QObject
      */
     CreateIncidenceItem(const QString &calendarId,
                         KCalendarCore::Incidence::Ptr incidence,
                         KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
-                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     ~CreateIncidenceItem() override;
@@ -62,7 +59,6 @@ private slots:
 private:
     KCalendarCore::Incidence::Ptr m_incidence;
     KCalendarCore::MemoryCalendar *m_calendar = nullptr;
-    TranscodingPlan m_plan;
     FetchOperation *m_fetchOp = nullptr;
 };
 

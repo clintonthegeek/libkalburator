@@ -166,17 +166,11 @@ public:
 
     // ========== Operation-Based API (calendar-typed pushItems) ==========
     // `fetchItems` and `deleteItems` are inherited from SyncBackendBase.
-    // Only the Incidence::Ptr-typed pushItems overloads live here,
-    // since they require KCalendarCore.
-
-    /// Convenience overload: omit the plan -> empty TranscodingPlan.
-    PushOperation* pushItems(const QString &calendarId,
-                             const QList<KCalendarCore::Incidence::Ptr> &items)
-    { return pushItems(calendarId, items, TranscodingPlan{}); }
+    // Only the Incidence::Ptr-typed pushItems overload lives here,
+    // since it requires KCalendarCore.
 
     virtual PushOperation* pushItems(const QString &calendarId,
-                                     const QList<KCalendarCore::Incidence::Ptr> &items,
-                                     const TranscodingPlan &plan);
+                                     const QList<KCalendarCore::Incidence::Ptr> &items);
 
     // ========== Calendar-Level CRUD Operations ==========
 

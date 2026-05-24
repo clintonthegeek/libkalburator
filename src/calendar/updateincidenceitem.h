@@ -2,7 +2,6 @@
 #define UPDATEINCIDENCEITEM_H
 
 #include "synctransactionitem.h"
-#include "transcodingplan.h"
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
@@ -32,7 +31,6 @@ public:
      * @param newIncidence The updated incidence to commit
      * @param calendar MemoryCalendar used by the backend (must outlive commit)
      * @param backend Backend to operate on
-     * @param plan Transcoding plan for write; empty plan is a no-op
      * @param parent Parent QObject
      */
     UpdateIncidenceItem(const QString &calendarId,
@@ -40,7 +38,6 @@ public:
                         KCalendarCore::Incidence::Ptr newIncidence,
                         KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
-                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     /**
@@ -54,7 +51,6 @@ public:
                         const QString &expectedVersionHash,
                         KCalendarCore::MemoryCalendar *calendar,
                         SyncBackend *backend,
-                        const TranscodingPlan &plan = TranscodingPlan{},
                         QObject *parent = nullptr);
 
     ~UpdateIncidenceItem() override;
@@ -84,7 +80,6 @@ private:
     KCalendarCore::Incidence::Ptr m_newIncidence;
     QString m_expectedVersionHash;
     KCalendarCore::MemoryCalendar *m_calendar = nullptr;
-    TranscodingPlan m_plan;
     FetchOperation *m_fetchOp = nullptr;
 };
 

@@ -7,7 +7,6 @@
 #include "syncbackend.h"
 #include "synctransaction.h"
 #include "synctransactionitem.h"
-#include "transcodingplan.h"
 #include "updateincidenceitem.h"
 
 #include <KCalendarCore/ICalFormat>
@@ -41,7 +40,6 @@ using Kalburator::Sync::IBlobBackend;
 using Kalburator::Sync::ICalendarCollection;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncTransaction;
-using Kalburator::Sync::TranscodingPlan;
 using Kalburator::Sync::UpdateIncidenceItem;
 
 CalendarPluginWriter::CalendarPluginWriter(SyncBackend *backend)
@@ -53,21 +51,14 @@ CalendarPluginWriter::~CalendarPluginWriter() = default;
 void CalendarPluginWriter::prepareForApply(const ApplyContext &ctx)
 {
     // Phase K.4 setup hook. Replaces the engine-side
-    // `dynamic_cast<CalendarPluginWriter*>` + setCollection() +
-    // setTranscodingPlan() dance.
+    // `dynamic_cast<CalendarPluginWriter*>` + setCollection() dance.
     m_directCalendar = ctx.calendarCollection;
-    m_plan = ctx.transcodingPlan;
     m_prepared = true;
 }
 
 void CalendarPluginWriter::setCollection(ICalendarCollection *collection)
 {
     m_collection = collection;
-}
-
-void CalendarPluginWriter::setTranscodingPlan(const TranscodingPlan &plan)
-{
-    m_plan = plan;
 }
 
 bool CalendarPluginWriter::apply(
@@ -190,8 +181,6 @@ bool CalendarPluginWriter::apply(
     SyncTransaction tx(txId);
     int itemCount = 0;
 
-    const TranscodingPlan &plan = m_plan;
-
     for (const auto &r : creates) {
         auto inc = parseIncidence(r.data);
         if (!inc) {
@@ -200,7 +189,7 @@ bool CalendarPluginWriter::apply(
             continue;
         }
         tx.addItem(new CreateIncidenceItem(collectionId, inc, cal,
-                                           m_backend, plan));
+                                           m_backend));
         ++itemCount;
     }
 
@@ -213,7 +202,7 @@ bool CalendarPluginWriter::apply(
         }
         KCalendarCore::Incidence::Ptr oldInc;
         tx.addItem(new UpdateIncidenceItem(collectionId, oldInc, newInc,
-                                           cal, m_backend, plan));
+                                           cal, m_backend));
         ++itemCount;
     }
 

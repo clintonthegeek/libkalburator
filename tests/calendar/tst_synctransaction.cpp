@@ -18,8 +18,6 @@
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "transcodingplan.h"
-
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;
 
@@ -176,7 +174,7 @@ void TestSyncTransaction::testItemTypeToString()
 void TestSyncTransaction::testToJsonBase()
 {
     Event::Ptr event = createTestEvent(QStringLiteral("test-uid"), QStringLiteral("Test Event"));
-    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend, TranscodingPlan{});
+    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend);
 
     QJsonObject json = item.toJson();
     QCOMPARE(json[QStringLiteral("type")].toString(), QStringLiteral("create"));
@@ -192,7 +190,7 @@ void TestSyncTransaction::testToJsonBase()
 void TestSyncTransaction::testCreateSimulate_Success()
 {
     Event::Ptr event = createTestEvent(QStringLiteral("new-event-1"), QStringLiteral("New Event"));
-    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend, TranscodingPlan{});
+    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend);
 
     QSignalSpy spy(&item, &SyncTransactionItem::simulationFinished);
     item.simulate();
@@ -205,13 +203,13 @@ void TestSyncTransaction::testCreateSimulate_DuplicateUid()
 {
     // First, create an event in the backend
     Event::Ptr existingEvent = createTestEvent(QStringLiteral("existing-uid"), QStringLiteral("Existing"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {existingEvent}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {existingEvent});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
     // Now try to create an item with the same UID
     Event::Ptr duplicateEvent = createTestEvent(QStringLiteral("existing-uid"), QStringLiteral("Duplicate"));
-    CreateIncidenceItem item(m_calendarId, duplicateEvent, m_calendar.data(), m_backend, TranscodingPlan{});
+    CreateIncidenceItem item(m_calendarId, duplicateEvent, m_calendar.data(), m_backend);
 
     QSignalSpy spy(&item, &SyncTransactionItem::simulationFinished);
     QSignalSpy conflictSpy(&item, &SyncTransactionItem::conflictDetected);
@@ -225,7 +223,7 @@ void TestSyncTransaction::testCreateSimulate_DuplicateUid()
 void TestSyncTransaction::testCreateCommit_Success()
 {
     Event::Ptr event = createTestEvent(QStringLiteral("commit-test-1"), QStringLiteral("Commit Test"));
-    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend, TranscodingPlan{});
+    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend);
 
     // First simulate
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
@@ -256,7 +254,7 @@ void TestSyncTransaction::testCreateCommit_Success()
 void TestSyncTransaction::testCreateRollback()
 {
     Event::Ptr event = createTestEvent(QStringLiteral("rollback-test-1"), QStringLiteral("Rollback Test"));
-    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend, TranscodingPlan{});
+    CreateIncidenceItem item(m_calendarId, event, m_calendar.data(), m_backend);
 
     // Simulate and commit
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
@@ -294,14 +292,14 @@ void TestSyncTransaction::testUpdateSimulate_Success()
 {
     // Create an existing event first
     Event::Ptr oldEvent = createTestEvent(QStringLiteral("update-test-1"), QStringLiteral("Old Summary"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
     // Create updated version
     Event::Ptr newEvent = createTestEvent(QStringLiteral("update-test-1"), QStringLiteral("New Summary"));
 
-    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend, TranscodingPlan{});
+    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend);
 
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
     item.simulate();
@@ -316,7 +314,7 @@ void TestSyncTransaction::testUpdateSimulate_ItemNotFound()
     Event::Ptr oldEvent = createTestEvent(QStringLiteral("nonexistent-uid"), QStringLiteral("Old"));
     Event::Ptr newEvent = createTestEvent(QStringLiteral("nonexistent-uid"), QStringLiteral("New"));
 
-    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend, TranscodingPlan{});
+    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend);
 
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
     QSignalSpy conflictSpy(&item, &SyncTransactionItem::conflictDetected);
@@ -331,14 +329,14 @@ void TestSyncTransaction::testUpdateCommit_Success()
 {
     // Create existing event
     Event::Ptr oldEvent = createTestEvent(QStringLiteral("update-commit-1"), QStringLiteral("Old Summary"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
     // Create updated version
     Event::Ptr newEvent = createTestEvent(QStringLiteral("update-commit-1"), QStringLiteral("Updated Summary"));
 
-    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend, TranscodingPlan{});
+    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend);
 
     // Simulate
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
@@ -368,13 +366,13 @@ void TestSyncTransaction::testUpdateRollback_RestoresOldVersion()
 {
     // Create existing event
     Event::Ptr oldEvent = createTestEvent(QStringLiteral("update-rollback-1"), QStringLiteral("Original"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {oldEvent});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
     // Update
     Event::Ptr newEvent = createTestEvent(QStringLiteral("update-rollback-1"), QStringLiteral("Updated"));
-    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend, TranscodingPlan{});
+    UpdateIncidenceItem item(m_calendarId, oldEvent, newEvent, m_calendar.data(), m_backend);
 
     // Simulate and commit
     QSignalSpy simSpy(&item, &SyncTransactionItem::simulationFinished);
@@ -417,7 +415,7 @@ void TestSyncTransaction::testDeleteSimulate_Success()
 {
     // Create an event to delete
     Event::Ptr event = createTestEvent(QStringLiteral("delete-test-1"), QStringLiteral("To Delete"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {event}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {event});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
@@ -449,7 +447,7 @@ void TestSyncTransaction::testDeleteCommit_Success()
 {
     // Create event
     Event::Ptr event = createTestEvent(QStringLiteral("delete-commit-1"), QStringLiteral("To Delete"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {event}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {event});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
@@ -478,7 +476,7 @@ void TestSyncTransaction::testDeleteRollback_RecreatesItem()
 {
     // Create event
     Event::Ptr event = createTestEvent(QStringLiteral("delete-rollback-1"), QStringLiteral("Recoverable"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {event}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {event});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
@@ -520,8 +518,8 @@ void TestSyncTransaction::testTransactionSimulateAll_NoConflicts()
     Event::Ptr event1 = createTestEvent(QStringLiteral("tx-event-1"), QStringLiteral("Event 1"));
     Event::Ptr event2 = createTestEvent(QStringLiteral("tx-event-2"), QStringLiteral("Event 2"));
 
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend, TranscodingPlan{}));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend));
 
     QSignalSpy spy(&tx, &SyncTransaction::simulationCompleted);
     tx.simulateAll();
@@ -535,7 +533,7 @@ void TestSyncTransaction::testTransactionSimulateAll_WithConflicts()
 {
     // Create an existing event
     Event::Ptr existing = createTestEvent(QStringLiteral("conflict-uid"), QStringLiteral("Existing"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {existing}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {existing});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
@@ -544,8 +542,8 @@ void TestSyncTransaction::testTransactionSimulateAll_WithConflicts()
     Event::Ptr newEvent = createTestEvent(QStringLiteral("new-uid"), QStringLiteral("New Event"));
     Event::Ptr duplicate = createTestEvent(QStringLiteral("conflict-uid"), QStringLiteral("Duplicate"));
 
-    tx.addItem(new CreateIncidenceItem(m_calendarId, newEvent, m_calendar.data(), m_backend, TranscodingPlan{}));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, duplicate, m_calendar.data(), m_backend, TranscodingPlan{}));  // Will conflict
+    tx.addItem(new CreateIncidenceItem(m_calendarId, newEvent, m_calendar.data(), m_backend));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, duplicate, m_calendar.data(), m_backend));  // Will conflict
 
     QSignalSpy spy(&tx, &SyncTransaction::simulationCompleted);
     QSignalSpy conflictSpy(&tx, &SyncTransaction::conflictDetected);
@@ -565,8 +563,8 @@ void TestSyncTransaction::testTransactionCommitAll_Success()
     Event::Ptr event1 = createTestEvent(QStringLiteral("commit-all-1"), QStringLiteral("First"));
     Event::Ptr event2 = createTestEvent(QStringLiteral("commit-all-2"), QStringLiteral("Second"));
 
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend, TranscodingPlan{}));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend));
 
     // Simulate
     QSignalSpy simSpy(&tx, &SyncTransaction::simulationCompleted);
@@ -603,7 +601,7 @@ void TestSyncTransaction::testTransactionCommitAll_PartialFailure_RollsBack()
     Event::Ptr event1 = createTestEvent(QStringLiteral("partial-1"), QStringLiteral("First"));
 
     SyncTransaction tx(QStringLiteral("tx-partial-1"));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend));
 
     // Simulate
     QSignalSpy simSpy(&tx, &SyncTransaction::simulationCompleted);
@@ -632,7 +630,7 @@ void TestSyncTransaction::testTransactionCommitNonConflicting()
 {
     // Create an existing event for conflict
     Event::Ptr existing = createTestEvent(QStringLiteral("existing-for-skip"), QStringLiteral("Existing"));
-    auto *pushOp = m_backend->pushItems(m_calendarId, {existing}, TranscodingPlan{});
+    auto *pushOp = m_backend->pushItems(m_calendarId, {existing});
     QSignalSpy pushSpy(pushOp, &PushOperation::finished);
     QVERIFY(pushSpy.wait(5000));
 
@@ -642,8 +640,8 @@ void TestSyncTransaction::testTransactionCommitNonConflicting()
     Event::Ptr newEvent = createTestEvent(QStringLiteral("new-skip-1"), QStringLiteral("Should Succeed"));
     Event::Ptr duplicate = createTestEvent(QStringLiteral("existing-for-skip"), QStringLiteral("Should Skip"));
 
-    tx.addItem(new CreateIncidenceItem(m_calendarId, newEvent, m_calendar.data(), m_backend, TranscodingPlan{}));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, duplicate, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, newEvent, m_calendar.data(), m_backend));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, duplicate, m_calendar.data(), m_backend));
 
     // Simulate
     QSignalSpy simSpy(&tx, &SyncTransaction::simulationCompleted);
@@ -678,8 +676,8 @@ void TestSyncTransaction::testTransactionRollbackAll_ReverseOrder()
     Event::Ptr event1 = createTestEvent(QStringLiteral("rollback-all-1"), QStringLiteral("First"));
     Event::Ptr event2 = createTestEvent(QStringLiteral("rollback-all-2"), QStringLiteral("Second"));
 
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend, TranscodingPlan{}));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event1, m_calendar.data(), m_backend));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event2, m_calendar.data(), m_backend));
 
     // Simulate
     QSignalSpy simSpy(&tx, &SyncTransaction::simulationCompleted);
@@ -709,7 +707,7 @@ void TestSyncTransaction::testTransactionSignals()
     SyncTransaction tx(QStringLiteral("tx-signals-1"));
 
     Event::Ptr event = createTestEvent(QStringLiteral("signals-test-1"), QStringLiteral("Test"));
-    tx.addItem(new CreateIncidenceItem(m_calendarId, event, m_calendar.data(), m_backend, TranscodingPlan{}));
+    tx.addItem(new CreateIncidenceItem(m_calendarId, event, m_calendar.data(), m_backend));
 
     QSignalSpy startedSpy(&tx, &SyncTransaction::simulationStarted);
     QSignalSpy progressSpy(&tx, &SyncTransaction::simulationProgress);

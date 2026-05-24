@@ -63,8 +63,7 @@ public:
     // Subscription backends are strictly read-only — pushItems always
     // returns a Failed PushOperation.
     PushOperation* pushItems(const QString &calendarId,
-                             const QList<KCalendarCore::Incidence::Ptr> &items,
-                             const TranscodingPlan &plan) override;
+                             const QList<KCalendarCore::Incidence::Ptr> &items) override;
 
     // ========== Read-Only Enforcement ==========
     // These operations do nothing or return errors since subscriptions are read-only

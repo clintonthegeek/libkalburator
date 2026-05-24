@@ -254,10 +254,8 @@ void SyncBackend::prepareCreationMetadata(
 // ============================================================================
 
 PushOperation* SyncBackend::pushItems(const QString &calendarId,
-                                      const QList<KCalendarCore::Incidence::Ptr> &items,
-                                      const TranscodingPlan &plan)
+                                      const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    Q_UNUSED(plan);
     auto *op = new PushOperation(calendarId, items, this);
     op->fail(QStringLiteral("pushItems() not implemented by this backend"));
     return op;

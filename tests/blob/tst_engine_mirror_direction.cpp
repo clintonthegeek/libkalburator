@@ -164,10 +164,9 @@ public:
                    const QMap<QString, QString> &,
                    const Kalburator::Sync::TranscodingPlan &) override {}
     void removeItem(const QString &, const QString &) override {}
-    Kalburator::Engine::PushOperation *pushItems(
+    Kalburator::Sync::PushOperation *pushItems(
         const QString &,
-        const QList<KCalendarCore::Incidence::Ptr> &,
-        const Kalburator::Sync::TranscodingPlan &) override { return nullptr; }
+        const QList<KCalendarCore::Incidence::Ptr> &) override { return nullptr; }
 
     // ---- Test helpers ----
     QHash<QString, BackendRecord> recordsIn(const QString &colId) const

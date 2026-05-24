@@ -61,8 +61,7 @@ public:
     FetchOperation*  fetchItems(const QString &collectionId) override;
 
     PushOperation*   pushItems(const QString &collectionId,
-                               const QList<KCalendarCore::Incidence::Ptr> &items,
-                               const TranscodingPlan &plan) override;
+                               const QList<KCalendarCore::Incidence::Ptr> &items) override;
 
     DeleteOperation* deleteItems(const QString &collectionId,
                                  const QStringList &uids) override;

@@ -29,7 +29,6 @@ class SyncOperation;
 class FetchOperation;
 class PushOperation;
 class DeleteOperation;
-struct TranscodingPlan;
 
 /**
  * @brief Domain-neutral abstract sync-backend base.

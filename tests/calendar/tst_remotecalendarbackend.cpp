@@ -342,7 +342,7 @@ void RemoteCalendarBackendTest::testStoreEvent()
     items.append(event);
 
     // Use operation API instead of storeItems(cal, items)
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
 
@@ -371,7 +371,7 @@ void RemoteCalendarBackendTest::testStoreTodo()
     items.append(todo);
 
     // Use operation API instead of storeItems(cal, items)
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
 
@@ -398,7 +398,7 @@ void RemoteCalendarBackendTest::testLoadItems()
     QList<KCalendarCore::Incidence::Ptr> items;
     items.append(event);
 
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
 
@@ -448,7 +448,7 @@ void RemoteCalendarBackendTest::testUpdateItem()
     QList<KCalendarCore::Incidence::Ptr> items;
     items.append(event);
 
-    PushOperation *createOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *createOp = m_backend->pushItems(testCalId, items);
     QSignalSpy createSpy(createOp, &SyncOperation::finished);
     waitForSignal(createSpy, 10000);
 
@@ -461,7 +461,7 @@ void RemoteCalendarBackendTest::testUpdateItem()
     QList<KCalendarCore::Incidence::Ptr> updatedItems;
     updatedItems.append(event);
 
-    PushOperation *updateOp = m_backend->pushItems(testCalId, updatedItems, TranscodingPlan{});
+    PushOperation *updateOp = m_backend->pushItems(testCalId, updatedItems);
     QSignalSpy updateSpy(updateOp, &SyncOperation::finished);
     waitForSignal(updateSpy, 10000);
 
@@ -490,7 +490,7 @@ void RemoteCalendarBackendTest::testRemoveItem()
     QList<KCalendarCore::Incidence::Ptr> items;
     items.append(event);
 
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
 
@@ -528,7 +528,7 @@ void RemoteCalendarBackendTest::testStoreMultipleItems()
     }
 
     // Use operation API — pushItems handles multiple items
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
 
     // Wait up to 20 seconds for the multi-item push
@@ -566,7 +566,7 @@ void RemoteCalendarBackendTest::testEtagPopulatedOnCreate()
     items.append(event);
 
     // Use operation API instead of storeItems
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
 
@@ -598,7 +598,7 @@ void RemoteCalendarBackendTest::testEtagUpdatedOnModify()
     QList<KCalendarCore::Incidence::Ptr> items;
     items.append(event);
 
-    PushOperation *createOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *createOp = m_backend->pushItems(testCalId, items);
     QSignalSpy createSpy(createOp, &SyncOperation::finished);
     waitForSignal(createSpy, 10000);
 
@@ -611,7 +611,7 @@ void RemoteCalendarBackendTest::testEtagUpdatedOnModify()
     QList<KCalendarCore::Incidence::Ptr> updatedItems;
     updatedItems.append(event);
 
-    PushOperation *updateOp = m_backend->pushItems(testCalId, updatedItems, TranscodingPlan{});
+    PushOperation *updateOp = m_backend->pushItems(testCalId, updatedItems);
     QSignalSpy updateSpy(updateOp, &SyncOperation::finished);
     waitForSignal(updateSpy, 10000);
 
@@ -682,7 +682,7 @@ void RemoteCalendarBackendTest::testStartSyncUpdates()
     testCal->setId(testCalId);
     testCal->addIncidence(event);
 
-    PushOperation *createOp = m_backend->pushItems(testCalId, createItems, TranscodingPlan{});
+    PushOperation *createOp = m_backend->pushItems(testCalId, createItems);
     QSignalSpy createSpy(createOp, &SyncOperation::finished);
     waitForSignal(createSpy, 10000);
 
@@ -731,7 +731,7 @@ void RemoteCalendarBackendTest::testStartSyncDeletions()
     auto testCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
     testCal->setId(testCalId);
 
-    PushOperation *createOp = m_backend->pushItems(testCalId, createItems, TranscodingPlan{});
+    PushOperation *createOp = m_backend->pushItems(testCalId, createItems);
     QSignalSpy createSpy(createOp, &SyncOperation::finished);
     waitForSignal(createSpy, 10000);
 
@@ -780,7 +780,7 @@ void RemoteCalendarBackendTest::testStartSyncMixed()
     testCal->addIncidence(eventToUpdate);
     testCal->addIncidence(eventToDelete);
 
-    PushOperation *createOp = m_backend->pushItems(testCalId, createItems, TranscodingPlan{});
+    PushOperation *createOp = m_backend->pushItems(testCalId, createItems);
     int maxWait = 10000;
     int elapsed = 0;
     while (!createOp->isFinished() && elapsed < maxWait) {
@@ -844,7 +844,7 @@ void RemoteCalendarBackendTest::testCtagCacheSkip()
     QList<KCalendarCore::Incidence::Ptr> items;
     items.append(event);
 
-    PushOperation *pushOp = m_backend->pushItems(testCalId, items, TranscodingPlan{});
+    PushOperation *pushOp = m_backend->pushItems(testCalId, items);
     QSignalSpy pushSpy(pushOp, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
     QVERIFY(pushOp->state() == SyncOperation::Succeeded);
@@ -895,7 +895,7 @@ void RemoteCalendarBackendTest::testFetchAllCtagsBatched()
     // 2. Push an event so the server has a non-trivial CTag.
     auto event = createTestEvent(QStringLiteral("FetchAllCtags"));
     QList<KCalendarCore::Incidence::Ptr> items{ event };
-    PushOperation *push = m_backend->pushItems(m_testCalendarName, items, TranscodingPlan{});
+    PushOperation *push = m_backend->pushItems(m_testCalendarName, items);
     QSignalSpy pushSpy(push, &SyncOperation::finished);
     waitForSignal(pushSpy, 10000);
     QVERIFY(push->state() == SyncOperation::Succeeded);

@@ -420,23 +420,9 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
-                                          const QList<KCalendarCore::Incidence::Ptr> &items,
-                                          const TranscodingPlan &plan)
+                                          const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    // F2 Task 10: apply the transcoding plan up front so all callers
-    // (including the 2-arg shim, which passes an empty plan) exercise
-    // a single code path. Mirrors storeItems()' behaviour.
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            Q_EMIT transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    auto *op = new PushOperation(calendarId, finalItems, this);
+    auto *op = new PushOperation(calendarId, items, this);
     registerOperation(op);
 
     auto colIt = m_collections.find(calendarId);
@@ -447,17 +433,17 @@ PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
 
     const Akonadi::Collection &col = *colIt;
     op->setState(SyncOperation::Running);
-    Q_EMIT writeStarted(calendarId, finalItems.size());
+    Q_EMIT writeStarted(calendarId, items.size());
 
-    if (finalItems.isEmpty()) {
+    if (items.isEmpty()) {
         op->complete();
         return op;
     }
 
     auto completedCount = std::make_shared<int>(0);
-    int total = finalItems.size();
+    int total = items.size();
 
-    for (const auto &incidence : finalItems) {
+    for (const auto &incidence : items) {
         Akonadi::Item existing = findItemByUid(calendarId, incidence->uid());
 
         if (existing.isValid()) {

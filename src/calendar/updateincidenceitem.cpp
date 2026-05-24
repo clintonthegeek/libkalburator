@@ -14,7 +14,6 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr newIncidence,
                                           KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
-                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId,
                           newIncidence ? newIncidence->uid() : QString(),
@@ -22,7 +21,6 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
     , m_oldIncidence(oldIncidence)
     , m_newIncidence(newIncidence)
     , m_calendar(calendar)
-    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -33,7 +31,6 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
                                           const QString &expectedVersionHash,
                                           KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
-                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId,
                           newIncidence ? newIncidence->uid() : QString(),
@@ -42,7 +39,6 @@ UpdateIncidenceItem::UpdateIncidenceItem(const QString &calendarId,
     , m_newIncidence(newIncidence)
     , m_expectedVersionHash(expectedVersionHash)
     , m_calendar(calendar)
-    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -164,10 +160,9 @@ bool UpdateIncidenceItem::commit()
         return true;
     }
 
-    // Use pushItems so the backend applies the transcoding plan and emits
-    // transcodingWarning for any lossy conversions. pushItems handles both
-    // create and update (backend inspects UID existence to decide).
-    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_newIncidence}, m_plan);
+    // Use pushItems so the backend stores the incidence. pushItems handles
+    // both create and update (backend inspects UID existence to decide).
+    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_newIncidence});
     if (!pushOp) {
         setErrorString(tr("Backend returned null PushOperation for UID: %1")
                            .arg(m_newIncidence->uid()));

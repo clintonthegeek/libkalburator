@@ -13,13 +13,11 @@ CreateIncidenceItem::CreateIncidenceItem(const QString &calendarId,
                                           KCalendarCore::Incidence::Ptr incidence,
                                           KCalendarCore::MemoryCalendar *calendar,
                                           SyncBackend *backend,
-                                          const TranscodingPlan &plan,
                                           QObject *parent)
     : SyncTransactionItem(calendarId, incidence ? incidence->uid() : QString(),
                           ItemType::Create, parent)
     , m_incidence(incidence)
     , m_calendar(calendar)
-    , m_plan(plan)
 {
     setBackend(backend);
 }
@@ -109,10 +107,10 @@ bool CreateIncidenceItem::commit()
         return true;
     }
 
-    // Use pushItems so the backend applies the transcoding plan and emits
-    // transcodingWarning for any lossy conversions. pushItems returns a
-    // PushOperation; observe success/failure via state()/errorString().
-    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_incidence}, m_plan);
+    // Use pushItems so the backend stores the incidence.
+    // pushItems returns a PushOperation; observe success/failure via
+    // state()/errorString().
+    PushOperation *pushOp = backend()->pushItems(calendarId(), {m_incidence});
     if (!pushOp) {
         setErrorString(tr("Backend returned null PushOperation for UID: %1")
                            .arg(m_incidence->uid()));

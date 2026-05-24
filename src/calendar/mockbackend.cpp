@@ -251,27 +251,13 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
 }
 
 PushOperation* MockBackend::pushItems(const QString &calendarId,
-                                       const QList<KCalendarCore::Incidence::Ptr> &items,
-                                       const TranscodingPlan &plan)
+                                       const QList<KCalendarCore::Incidence::Ptr> &items)
 {
     for (const auto &item : items) {
         logOperation(QStringLiteral("PUSH"), calendarId, item->uid());
     }
 
-    // Apply transcoding plan up front so the failure-injection path
-    // and the success path see the same final items. Warnings are
-    // emitted now (consistent with storeItems()).
-    QList<KCalendarCore::Incidence::Ptr> finalItems;
-    finalItems.reserve(items.size());
-    for (const auto &original : items) {
-        auto result = executeTranscodingPlan(plan, original);
-        if (!result.warnings.isEmpty() && original) {
-            emit transcodingWarning(calendarId, original->uid(), result.warnings);
-        }
-        finalItems.append(result.incidence);
-    }
-
-    auto *op = new PushOperation(calendarId, finalItems, this);
+    auto *op = new PushOperation(calendarId, items, this);
     registerOperation(op);
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
 
@@ -291,7 +277,7 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
         // by C3 (cancel during apply) which needs a PushOperation
         // that hangs until the test releases it.
         auto *thread = QThread::create(
-            [this, op, calendarId, finalItems]() {
+            [this, op, calendarId, items]() {
             m_pushBlocker.acquire();
             // See fetchItems(): cancel() already transitions the op
             // to Cancelled, so a state() check is the public-API
@@ -302,7 +288,7 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
             auto &calendar = m_calendars[calendarId];
             KCalendarCore::ICalFormat format;
             QStringList succeededUids;
-            for (const auto &item : finalItems) {
+            for (const auto &item : items) {
                 QString ical = format.toICalString(item);
                 auto clone = format.fromString(ical);
                 if (clone) {
@@ -318,12 +304,12 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
         thread->start();
     } else {
         QTimer::singleShot(m_operationDelayMs, this,
-                           [op, calendarId, finalItems, this]() {
+                           [op, calendarId, items, this]() {
             // Store items
             auto &calendar = m_calendars[calendarId];
             KCalendarCore::ICalFormat format;
             QStringList succeededUids;
-            for (const auto &item : finalItems) {
+            for (const auto &item : items) {
                 QString ical = format.toICalString(item);
                 auto clone = format.fromString(ical);
                 if (clone) {

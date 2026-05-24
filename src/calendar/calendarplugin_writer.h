@@ -1,7 +1,6 @@
 #pragma once
 
 #include "recordwriter.h"
-#include "transcodingplan.h"
 
 namespace Kalburator::Sync {
 class SyncBackend;
@@ -49,7 +48,6 @@ public:
 
     // ---- Legacy direct setters (kept for tests; engine no longer uses) ------
     void setCollection(Kalburator::Sync::ICalendarCollection *collection);
-    void setTranscodingPlan(const Kalburator::Sync::TranscodingPlan &plan);
 
     bool apply(
         const QString &collectionId,
@@ -62,7 +60,6 @@ private:
     /// Optional ICalendarCollection set via setCollection() — used
     /// only when prepareForApply() did NOT supply a calendarCollection.
     Kalburator::Sync::ICalendarCollection *m_collection = nullptr;
-    Kalburator::Sync::TranscodingPlan      m_plan;
     /// Direct per-call MemoryCalendar from prepareForApply(); takes
     /// precedence over `m_collection->calendar()` when set. May be
     /// null (legitimate: blob-only target).

@@ -3,7 +3,6 @@
 #include "akonadicontactsbackend.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "transcodingplan.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -186,10 +185,8 @@ FetchOperation* AkonadiContactsBackend::fetchItems(const QString &collectionId)
 }
 
 PushOperation* AkonadiContactsBackend::pushItems(const QString &collectionId,
-                                                   const QList<KCalendarCore::Incidence::Ptr> &items,
-                                                   const TranscodingPlan &plan)
+                                                   const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    Q_UNUSED(plan)
     auto *op = new PushOperation(collectionId, items, this);
     registerOperation(op);
 

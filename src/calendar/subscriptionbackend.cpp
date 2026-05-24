@@ -119,16 +119,10 @@ void SubscriptionBackend::removeItem(const QString &calId, const QString &itemUi
 }
 
 PushOperation* SubscriptionBackend::pushItems(const QString &calendarId,
-                                              const QList<KCalendarCore::Incidence::Ptr> &items,
-                                              const TranscodingPlan &plan)
+                                              const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    // F2 Task 12: read-only backend; pushes are always rejected.
-    // The transcoding plan is intentionally ignored — items never
-    // reach storage so there's nothing to transcode and no warnings
-    // to emit. Behaviour mirrors the previous storeItems() / base
-    // pushItems() rejection paths. HolidaySubscriptionBackend
-    // inherits this override unchanged.
-    Q_UNUSED(plan);
+    // Read-only backend; pushes are always rejected.
+    // HolidaySubscriptionBackend inherits this override unchanged.
     auto *op = new PushOperation(calendarId, items, this);
     registerOperation(op);
     QTimer::singleShot(0, op, [op]() {
