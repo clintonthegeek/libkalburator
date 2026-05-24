@@ -93,4 +93,4 @@ access — so it compiled cleanly without changes. Confirmed by Task 2's full bu
 
 Format: `YYYY-MM-DD — file:line — inv N — phrase`
 
-_(empty — append as you pass through smells)_
+2026-05-24 — src/contacts/vcardcanonstages.cpp (VCard4ToCanonStage, birthday mapping) — inv 4 — `birthday.hasYear` is hardcoded `true`: KContacts exposes `birthdayHasTime()` but no `birthdayHasYear()`, so a `--MMDD` (year-less) vCard4 BDAY round-trips with a spurious year. Edge case, not exercised by current tests; revisit if year-less birthdays become a contract.
