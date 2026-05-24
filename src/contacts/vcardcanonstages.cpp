@@ -16,6 +16,7 @@
 #include <KContacts/TimeZone>
 
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 
 namespace {
@@ -781,6 +782,39 @@ QByteArray CanonToVCard4Stage::transform(const QByteArray& canonBytes) const
             }
             addr.setMembers(memberList);
         }
+    }
+
+    // ---- Stash Reversible Google-only fields as custom props ---------------
+    // sipAddresses, calendarUrls, externalIds are classified Reversible in the
+    // loss profile (contactsstockshapes.cpp canonToVcard4Loss).  Honor that
+    // contract: stash them as custom properties so VCard4ToCanonStage recovers
+    // them verbatim into providerExtras["x-vcard"] on the next forward pass.
+    // Key naming: "CANON-<FIELDNAME>" — split at first '-' yields
+    // app="CANON", name="<FIELDNAME>", which round-trips through KContacts
+    // customs() as "CANON-<FIELDNAME>:<jsonString>".
+    {
+        const QJsonValue sipVal  = obj.value(QStringLiteral("sipAddresses"));
+        const QJsonValue calVal  = obj.value(QStringLiteral("calendarUrls"));
+        const QJsonValue extVal  = obj.value(QStringLiteral("externalIds"));
+
+        auto stashJson = [&](const QString& name, const QJsonValue& val) {
+            if (val.isUndefined() || val.isNull())
+                return;
+            // Accept non-empty arrays or non-empty objects.
+            const bool isArr = val.isArray()  && !val.toArray().isEmpty();
+            const bool isObj = val.isObject() && !val.toObject().isEmpty();
+            if (!isArr && !isObj)
+                return;
+            const QByteArray json = val.isArray()
+                ? QJsonDocument(val.toArray()).toJson(QJsonDocument::Compact)
+                : QJsonDocument(val.toObject()).toJson(QJsonDocument::Compact);
+            addr.insertCustom(QStringLiteral("CANON"), name,
+                              QString::fromUtf8(json));
+        };
+
+        stashJson(QStringLiteral("SIPADDRESSES"), sipVal);
+        stashJson(QStringLiteral("CALENDARURLS"), calVal);
+        stashJson(QStringLiteral("EXTERNALIDS"),  extVal);
     }
 
     // ---- providerExtras["x-vcard"] — re-emit custom/X- props --------------

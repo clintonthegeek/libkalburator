@@ -1,5 +1,6 @@
 #include <QTest>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
 
@@ -311,6 +312,113 @@ private slots:
         QVERIFY2(pipeline.has_value(),
                  "compile(vcard3, canon) must succeed via vcard3->vcard4->canon N-hop");
         QCOMPARE(pipeline->edges().size(), 2);
+    }
+
+    void canonReversibleGoogleFieldsRoundTripViaProviderExtras()
+    {
+        // Verifies the Reversible loss contract for sipAddresses, calendarUrls,
+        // and externalIds: a canon→vcard4→canon cycle must not silently drop
+        // them; they must be recoverable from providerExtras["x-vcard"].
+        using Kalburator::Shape::CanonEnvelope::serialize;
+        using Kalburator::Shape::CanonEnvelope::stampEnvelope;
+        using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+
+        // --- Build a canon object with the three Reversible fields ---
+        QJsonObject canon;
+
+        // Core field so the vCard output has an FN
+        QJsonArray names;
+        QJsonObject nameObj;
+        nameObj.insert(QStringLiteral("formatted"), QStringLiteral("Reversible Test"));
+        nameObj.insert(QStringLiteral("given"),     QStringLiteral("Reversible"));
+        nameObj.insert(QStringLiteral("family"),    QStringLiteral("Test"));
+        names.append(nameObj);
+        canon.insert(QStringLiteral("names"), names);
+
+        // sipAddresses — StringList canon kind (array of strings)
+        QJsonArray sipArr;
+        sipArr.append(QStringLiteral("sip:alice@example.com"));
+        sipArr.append(QStringLiteral("sip:alice-work@corp.example.com"));
+        canon.insert(QStringLiteral("sipAddresses"), sipArr);
+
+        // calendarUrls — Json canon kind (array of objects)
+        QJsonArray calArr;
+        QJsonObject calEntry;
+        calEntry.insert(QStringLiteral("url"),  QStringLiteral("https://cal.example.com/alice"));
+        calEntry.insert(QStringLiteral("type"), QStringLiteral("work"));
+        calArr.append(calEntry);
+        canon.insert(QStringLiteral("calendarUrls"), calArr);
+
+        // externalIds — Json canon kind (array of objects)
+        QJsonArray extArr;
+        QJsonObject extEntry;
+        extEntry.insert(QStringLiteral("value"), QStringLiteral("abc-123"));
+        extEntry.insert(QStringLiteral("type"),  QStringLiteral("google_profile"));
+        extArr.append(extEntry);
+        canon.insert(QStringLiteral("externalIds"), extArr);
+
+        stampEnvelope(canon, QStringLiteral("contacts"),
+                      QStringLiteral("reversible-test-uid"));
+        const QByteArray canonBytes = serialize(canon);
+
+        // --- canon → vCard4 → canon ---
+        CanonToVCard4Stage rev;
+        const QByteArray vcardBytes = rev.transform(canonBytes);
+        QVERIFY2(!vcardBytes.isEmpty(), "CanonToVCard4Stage returned empty");
+
+        VCard4ToCanonStage fwd;
+        const QByteArray canonBytes2 = fwd.transform(vcardBytes);
+        QVERIFY2(!canonBytes2.isEmpty(), "VCard4ToCanonStage returned empty");
+
+        // --- Assert fields are recoverable from providerExtras["x-vcard"] ---
+        const QJsonObject obj2 = parse(canonBytes2);
+        QVERIFY2(!obj2.isEmpty(), "round-tripped canon is empty JSON");
+
+        const QJsonObject extras = obj2.value(providerExtrasKey()).toObject();
+        const QJsonObject xvcard = extras.value(QStringLiteral("x-vcard")).toObject();
+
+        // sipAddresses must be in xvcard["CANON-SIPADDRESSES"] as compact JSON array
+        QVERIFY2(xvcard.contains(QStringLiteral("CANON-SIPADDRESSES")),
+                 "sipAddresses must be stashed in providerExtras[x-vcard][CANON-SIPADDRESSES]");
+        {
+            const QJsonDocument doc = QJsonDocument::fromJson(
+                xvcard.value(QStringLiteral("CANON-SIPADDRESSES")).toString().toUtf8());
+            QVERIFY2(doc.isArray(), "CANON-SIPADDRESSES value must be a JSON array");
+            const QJsonArray recovered = doc.array();
+            QVERIFY2(recovered.contains(QJsonValue(QStringLiteral("sip:alice@example.com"))),
+                     "first SIP address must be recoverable verbatim");
+            QVERIFY2(recovered.contains(
+                         QJsonValue(QStringLiteral("sip:alice-work@corp.example.com"))),
+                     "second SIP address must be recoverable verbatim");
+        }
+
+        // calendarUrls must be in xvcard["CANON-CALENDARURLS"] as compact JSON array
+        QVERIFY2(xvcard.contains(QStringLiteral("CANON-CALENDARURLS")),
+                 "calendarUrls must be stashed in providerExtras[x-vcard][CANON-CALENDARURLS]");
+        {
+            const QJsonDocument doc = QJsonDocument::fromJson(
+                xvcard.value(QStringLiteral("CANON-CALENDARURLS")).toString().toUtf8());
+            QVERIFY2(doc.isArray(), "CANON-CALENDARURLS value must be a JSON array");
+            const QJsonArray recovered = doc.array();
+            QVERIFY2(!recovered.isEmpty(), "calendarUrls array must be non-empty");
+            QCOMPARE(recovered.at(0).toObject()
+                         .value(QStringLiteral("url")).toString(),
+                     QStringLiteral("https://cal.example.com/alice"));
+        }
+
+        // externalIds must be in xvcard["CANON-EXTERNALIDS"] as compact JSON array
+        QVERIFY2(xvcard.contains(QStringLiteral("CANON-EXTERNALIDS")),
+                 "externalIds must be stashed in providerExtras[x-vcard][CANON-EXTERNALIDS]");
+        {
+            const QJsonDocument doc = QJsonDocument::fromJson(
+                xvcard.value(QStringLiteral("CANON-EXTERNALIDS")).toString().toUtf8());
+            QVERIFY2(doc.isArray(), "CANON-EXTERNALIDS value must be a JSON array");
+            const QJsonArray recovered = doc.array();
+            QVERIFY2(!recovered.isEmpty(), "externalIds array must be non-empty");
+            QCOMPARE(recovered.at(0).toObject()
+                         .value(QStringLiteral("value")).toString(),
+                     QStringLiteral("abc-123"));
+        }
     }
 
     void canonToVcard4LossProfileChargesGoogleOnlyFields()
