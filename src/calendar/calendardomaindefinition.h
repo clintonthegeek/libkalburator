@@ -12,6 +12,12 @@ public:
     std::unique_ptr<Kalburator::Shape::RecordMerger> createCanonicalMerger() const override;
     int richnessRank(const Kalburator::Shape::Shape &s) const override;
     QStringList baselineProperties() const override;
+
+    /// Versioned canonical spine: [ical (root), canon (head)]. PluginManager uses
+    /// this to build the spine via declareCanonical (root) + appendCanonicalVersion
+    /// (upgrades).
+    QList<std::pair<Kalburator::Shape::Shape, Kalburator::Shape::PropertyCatalogue>>
+    canonicalSpine() const override;
 };
 
 } // namespace Kalburator::Calendar
