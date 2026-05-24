@@ -1,7 +1,7 @@
 #include "contactsdomaindefinition.h"
-#include "vcardproperties.h"
-#include "vcarddiffer.h"
-#include "vcardmerger.h"
+#include "contactscanonproperties.h"
+#include "canonjsondiffer.h"
+#include "canonjsonmerger.h"
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
@@ -15,31 +15,31 @@ Shape::DomainId ContactsDomainDefinition::domain() const
 
 Shape::Shape ContactsDomainDefinition::canonicalShape() const
 {
-    return { DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard4")} };
+    return { DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("canon")} };
 }
 
 Shape::PropertyCatalogue ContactsDomainDefinition::canonicalCatalogue() const
 {
-    return makeVCardCatalogue();
+    return makeContactsCanonCatalogue();
 }
 
 std::unique_ptr<Shape::RecordDiffer> ContactsDomainDefinition::createCanonicalDiffer() const
 {
-    return std::make_unique<RecordDifferVCard>();
+    return std::make_unique<Kalburator::Shape::CanonJsonDiffer>(contactsCanonPropertyIds());
 }
 
 std::unique_ptr<Shape::RecordMerger> ContactsDomainDefinition::createCanonicalMerger() const
 {
-    return std::make_unique<RecordMergerVCard>();
+    return std::make_unique<Kalburator::Shape::CanonJsonMerger>(QStringLiteral("contacts"), contactsCanonPropertyIds());
 }
 
 int ContactsDomainDefinition::richnessRank(const Shape::Shape &s) const
 {
     if (s == canonicalShape())
-        return 10;
-    if (s.encoding == EncodingId{QStringLiteral("vcard3")})
-        return 8;
-    return 0;
+        return 100;
+    if (s.encoding == EncodingId{QStringLiteral("vcard4")})
+        return 50;
+    return 10;
 }
 
 } // namespace Kalburator::Contacts
