@@ -102,48 +102,57 @@ const PropertyCatalogue* TransformationRegistry::catalogueFor(const Shape& s) co
 }
 
 std::optional<Pipeline> TransformationRegistry::compileImpl(Shape from, Shape to) const {
-    if (to.isAny()) {
-        // Universal sink: identity over the source shape so apply()
-        // is a passthrough; backend stores bytes plus shape metadata.
-        return Pipeline{from};
-    }
-    if (from.isAny()) {
-        return std::nullopt;
-    }
-    if (from == to) {
-        return Pipeline{from};
-    }
-    if (from.domain != to.domain) {
-        // Cross-domain not in v1.
-        return std::nullopt;
-    }
+    if (to.isAny()) return Pipeline{from};
+    if (from.isAny()) return std::nullopt;
+    if (from == to) return Pipeline{from};
+    if (from.domain != to.domain) return std::nullopt;  // cross-domain not in v1
 
-    const Shape hub = canonicalFor(from.domain);
-    if (hub.isAny()) {
-        // Domain has no canonical declared.
-        return std::nullopt;
-    }
+    const QList<Shape> spine = m_spineByDomain.value(from.domain);
+    if (spine.isEmpty()) return std::nullopt;
 
-    if (from == hub) {
-        // Single-leg from canonical → to.
-        if (const auto* e = findEdge(from, to)) {
-            return Pipeline{ {*e} };
+    QList<TransformationEdge> edges;
+
+    // 1. Source side: resolve `from` to a spine node `fromIdx`.
+    int fromIdx = spine.indexOf(from);
+    if (fromIdx < 0) {
+        const TransformationEdge* lead = nullptr;
+        for (int i = 0; i < spine.size(); ++i) {
+            if (const auto* e = findEdge(from, spine[i])) { lead = e; fromIdx = i; break; }
         }
-        return std::nullopt;
-    }
-    if (to == hub) {
-        // Single-leg from → canonical.
-        if (const auto* e = findEdge(from, to)) {
-            return Pipeline{ {*e} };
-        }
-        return std::nullopt;
+        if (!lead) return std::nullopt;
+        edges.append(*lead);
     }
 
-    // Two-leg: from → hub → to.
-    const auto* legA = findEdge(from, hub);
-    const auto* legB = findEdge(hub, to);
-    if (!legA || !legB) return std::nullopt;
-    return Pipeline{ {*legA, *legB} };
+    // 2. Target side: resolve `to` to a spine node `toIdx` (tail edge applied last).
+    int toIdx = spine.indexOf(to);
+    const TransformationEdge* tail = nullptr;
+    if (toIdx < 0) {
+        for (int i = 0; i < spine.size(); ++i) {
+            if (const auto* e = findEdge(spine[i], to)) { tail = e; toIdx = i; break; }
+        }
+        if (!tail) return std::nullopt;
+    }
+
+    // 3. Walk the spine between the two anchors via adjacent bridge edges.
+    if (fromIdx < toIdx) {
+        for (int i = fromIdx; i < toIdx; ++i) {
+            const auto* e = findEdge(spine[i], spine[i + 1]);
+            if (!e) return std::nullopt;
+            edges.append(*e);
+        }
+    } else if (fromIdx > toIdx) {
+        for (int i = fromIdx; i > toIdx; --i) {
+            const auto* e = findEdge(spine[i], spine[i - 1]);
+            if (!e) return std::nullopt;
+            edges.append(*e);
+        }
+    }
+
+    // 4. Apply the target tail edge last.
+    if (tail) edges.append(*tail);
+
+    if (edges.isEmpty()) return std::nullopt;  // defensive; unreachable when from != to
+    return Pipeline{ edges };
 }
 
 std::optional<Pipeline> TransformationRegistry::compile(Shape from, Shape to) const {
