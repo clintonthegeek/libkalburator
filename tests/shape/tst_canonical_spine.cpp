@@ -5,6 +5,7 @@
 #include "propertycatalogue.h"
 #include "transformationedge.h"
 #include "pipeline.h"
+#include "shaperegistries.h"
 
 using namespace Kalburator::Shape;
 
@@ -60,10 +61,10 @@ Kalburator::Shape::TransformationEdge narrowEdge(Kalburator::Shape::Shape f, Kal
 class TestCanonicalSpine : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() { TransformationRegistry::instance().clear(); }
+    void init() { m_shape = {}; }
 
     void singleNodeSpineHeadIsCanonical() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"), stubCat());
         r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
         QCOMPARE(r.canonicalFor(DomainId{QStringLiteral("calendar")}), cal("canon"));
@@ -71,7 +72,7 @@ private slots:
     }
 
     void appendMakesNewHead() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("canon2"), stubCat());
         r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
@@ -84,7 +85,7 @@ private slots:
     }
 
     void singleNodeReproducesPeerToCanon() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"), stubCat());
         r.registerShape(cal("ical"),  stubCat());
         r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
@@ -99,7 +100,7 @@ private slots:
     }
 
     void singleNodePeerToPeerGoesThroughHub() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"), stubCat());
         r.registerShape(cal("ical"),  stubCat());
         r.registerShape(cal("org"),   stubCat());
@@ -112,7 +113,7 @@ private slots:
     }
 
     void twoNodeSpinePromotesPeerToHead() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("canon2"), stubCat());
         r.registerShape(cal("ical"),   stubCat());
@@ -133,7 +134,7 @@ private slots:
     }
 
     void unbridgedSpineGapFailsToCompile() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("canon2"), stubCat());
         r.registerShape(cal("ical"),   stubCat());
@@ -145,7 +146,7 @@ private slots:
     }
 
     void appendAfterCompileIsRejected() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("canon2"), stubCat());
         r.registerShape(cal("ical"),   stubCat());
@@ -160,7 +161,7 @@ private slots:
     }
 
     void unchangedPeerEdgeSurvivesVersionBump() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("ical"),   stubCat());
         r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
@@ -184,7 +185,7 @@ private slots:
     }
 
     void spineRoundTripIsIdentityForWidenedFields() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(cal("canon"),  stubCat());
         r.registerShape(cal("canon2"), stubCat());
         r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
@@ -206,6 +207,9 @@ private slots:
         QCOMPARE(down->composedLoss().affected.value(
                      PropertyId{QStringLiteral("v2field")}), LossKind::Reversible);
     }
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_GUILESS_MAIN(TestCanonicalSpine)

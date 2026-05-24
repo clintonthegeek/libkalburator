@@ -5,6 +5,7 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "transformationregistry.h"
+#include "shaperegistries.h"
 
 using namespace Kalburator::Shape;
 
@@ -32,13 +33,10 @@ private:
 class TestDomainRegistry : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() {
-        DomainRegistry::instance().clear();
-        TransformationRegistry::instance().clear();
-    }
+    void init() { m_shape = {}; }
 
     void registerAndLookup() {
-        auto& r = DomainRegistry::instance();
+        auto& r = m_shape.domain;
         const Shape calIcal{ DomainId{"calendar"}, EncodingId{"ical"} };
         r.registerDefinition(std::make_shared<StubDefinition>(DomainId{"calendar"}, calIcal));
         QVERIFY(r.definitionFor(DomainId{"calendar"}) != nullptr);
@@ -46,7 +44,7 @@ private slots:
     }
 
     void multipleDefinitionsListed() {
-        auto& r = DomainRegistry::instance();
+        auto& r = m_shape.domain;
         r.registerDefinition(std::make_shared<StubDefinition>(
             DomainId{"calendar"}, Shape{ DomainId{"calendar"}, EncodingId{"ical"} }));
         r.registerDefinition(std::make_shared<StubDefinition>(
@@ -57,7 +55,7 @@ private slots:
 
     void firstRegistrationWins() {
         // registerDefinition returns true first time, false on duplicate.
-        auto& r = DomainRegistry::instance();
+        auto& r = m_shape.domain;
         const Shape calIcal{ DomainId{"calendar"}, EncodingId{"ical"} };
         auto first = std::make_shared<StubDefinition>(DomainId{"calendar"}, calIcal);
         auto second = std::make_shared<StubDefinition>(DomainId{"calendar"}, calIcal);
@@ -68,7 +66,7 @@ private slots:
     }
 
     void duplicateRegistrationFirstWins() {
-        auto& r = DomainRegistry::instance();
+        auto& r = m_shape.domain;
         const Shape calIcal{ DomainId{"calendar"}, EncodingId{"ical"} };
         auto first = std::make_shared<StubDefinition>(DomainId{"calendar"}, calIcal);
         auto second = std::make_shared<StubDefinition>(DomainId{"calendar"}, calIcal);
@@ -77,6 +75,9 @@ private slots:
         QVERIFY(!accepted);
         QCOMPARE(r.definitionFor(DomainId{"calendar"}), first.get());
     }
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_GUILESS_MAIN(TestDomainRegistry)

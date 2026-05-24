@@ -1,6 +1,7 @@
 #include <QTest>
 
 #include "transformationregistry.h"
+#include "shaperegistries.h"
 
 using namespace Kalburator::Shape;
 
@@ -36,19 +37,17 @@ Shape conVcard() { return { DomainId{"contacts"}, EncodingId{"vcard4"} }; }
 class TestTransformationRegistry : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() {
-        TransformationRegistry::instance().clear();
-    }
+    void init() { m_shape = {}; }
 
     void registerAndLookupCatalogue() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         QVERIFY(r.catalogueFor(calIcal()) != nullptr);
         QVERIFY(r.catalogueFor(calOrg()) == nullptr);
     }
 
     void declareAndLookupCanonical() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.declareCanonical(DomainId{"calendar"}, calIcal());
         QCOMPARE(r.canonicalFor(DomainId{"calendar"}), calIcal());
@@ -58,7 +57,7 @@ private slots:
     }
 
     void registerEdgeAndEdgesFrom() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         TransformationEdge e{ calIcal(), calOrg(), lossy(QStringLiteral("attendees")),
@@ -70,7 +69,7 @@ private slots:
     }
 
     void compileIdentitySameShape() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         auto p = r.compile(calIcal(), calIcal());
         QVERIFY(p.has_value());
@@ -80,7 +79,7 @@ private slots:
     }
 
     void compileToAnyIsIdentity() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         auto p = r.compile(calIcal(), Shape::Any());
         QVERIFY(p.has_value());
@@ -89,14 +88,14 @@ private slots:
     }
 
     void compileFromAnyReturnsNullopt() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         auto p = r.compile(Shape::Any(), calIcal());
         QVERIFY(!p.has_value());
     }
 
     void compileCrossDomainReturnsNullopt() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(),  makeStubCatalogue());
         r.registerShape(conVcard(), makeStubCatalogue());
         auto p = r.compile(calIcal(), conVcard());
@@ -104,7 +103,7 @@ private slots:
     }
 
     void compileSingleLegFromCanonical() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         r.declareCanonical(DomainId{"calendar"}, calIcal());
@@ -117,7 +116,7 @@ private slots:
     }
 
     void compileSingleLegToCanonical() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         r.declareCanonical(DomainId{"calendar"}, calIcal());
@@ -129,7 +128,7 @@ private slots:
     }
 
     void compileTwoLegThroughHub() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         r.registerShape(calPalm(), makeStubCatalogue());
@@ -146,7 +145,7 @@ private slots:
     }
 
     void compileNoPathReturnsNullopt() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         r.declareCanonical(DomainId{"calendar"}, calIcal());
@@ -156,7 +155,7 @@ private slots:
     }
 
     void inspectReturnsLossProfile() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         r.declareCanonical(DomainId{"calendar"}, calIcal());
@@ -168,7 +167,7 @@ private slots:
     }
 
     void registeredShapesEnumerated() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         const auto shapes = r.registeredShapes();
@@ -176,7 +175,7 @@ private slots:
     }
 
     void idempotentEdgeReregistration() {
-        auto& r = TransformationRegistry::instance();
+        auto& r = m_shape.transformation;
         r.registerShape(calIcal(), makeStubCatalogue());
         r.registerShape(calOrg(),  makeStubCatalogue());
         TransformationEdge e1{ calIcal(), calOrg(), lossy(QStringLiteral("attendees")),
@@ -186,6 +185,9 @@ private slots:
         r.registerEdge(e1);
         QCOMPARE(r.edgesFrom(calIcal()).size(), 1);
     }
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_GUILESS_MAIN(TestTransformationRegistry)

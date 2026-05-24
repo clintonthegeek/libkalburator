@@ -4,6 +4,7 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "transformationregistry.h"
+#include "shaperegistries.h"
 
 using namespace Kalburator::Shape;
 
@@ -39,104 +40,104 @@ void setupOfficeDomain(TransformationRegistry &reg)
 class TestDynamicDomainRegistration : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() {
-        TransformationRegistry::instance().clear();
-        DomainRegistry::instance().clear();
-    }
+    void init() { m_shape = {}; }
 
     void registersShapesDirectly_pipelineCompiles() {
         // Register shapes directly — as PluginManager::loadInProcess() does.
-        setupOfficeDomain(TransformationRegistry::instance());
+        setupOfficeDomain(m_shape.transformation);
 
         // Compile a pipeline that uses the registered shapes.
         const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
         const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
-        const auto pipeline = TransformationRegistry::instance().compile(from, to);
+        const auto pipeline = m_shape.transformation.compile(from, to);
         QVERIFY(pipeline.has_value());
     }
 
     void inspectDoesNotFreeze() {
-        setupOfficeDomain(TransformationRegistry::instance());
+        setupOfficeDomain(m_shape.transformation);
 
         // Probe loss via inspect() — should NOT freeze the domain.
         const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
         const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
-        (void)TransformationRegistry::instance().inspect(from, to);
+        (void)m_shape.transformation.inspect(from, to);
 
-        QVERIFY(!TransformationRegistry::instance().isFrozen(DomainId{"office"}));
+        QVERIFY(!m_shape.transformation.isFrozen(DomainId{"office"}));
 
         // Now register a second peer — must succeed because inspect didn't freeze.
         const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
-        TransformationRegistry::instance().registerShape(odt, {});
+        m_shape.transformation.registerShape(odt, {});
         TransformationEdge e;
         e.from  = odt;
         e.to    = { DomainId{"office"}, EncodingId{"canonical"} };
         e.loss  = LossProfile{};
         e.stage = std::make_shared<IdentityStage>();
-        TransformationRegistry::instance().registerEdge(e);
+        m_shape.transformation.registerEdge(e);
 
-        const auto p = TransformationRegistry::instance().compile(odt, to);
+        const auto p = m_shape.transformation.compile(odt, to);
         QVERIFY(p.has_value());
     }
 
     void registrationAfterCompile_isRejected() {
-        setupOfficeDomain(TransformationRegistry::instance());
+        setupOfficeDomain(m_shape.transformation);
 
         // Compile something in the office domain — this freezes it.
         const Shape from{ DomainId{"office"}, EncodingId{"docx"} };
         const Shape to  { DomainId{"office"}, EncodingId{"canonical"} };
-        QVERIFY(TransformationRegistry::instance().compile(from, to).has_value());
+        QVERIFY(m_shape.transformation.compile(from, to).has_value());
 
         // Now try to add another peer shape — must be silently rejected
         // because the domain is frozen.
         const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
-        TransformationRegistry::instance().registerShape(odt, {});
+        m_shape.transformation.registerShape(odt, {});
         TransformationEdge e;
         e.from  = odt;
         e.to    = to;
         e.loss  = LossProfile{};
         e.stage = std::make_shared<IdentityStage>();
-        TransformationRegistry::instance().registerEdge(e);
+        m_shape.transformation.registerEdge(e);
 
         // The new shape's pipeline should not compile.
-        const auto p = TransformationRegistry::instance().compile(odt, to);
+        const auto p = m_shape.transformation.compile(odt, to);
         QVERIFY2(!p.has_value(),
                  "post-freeze peer registration must not appear in compiled pipelines");
     }
 
     void conflictingCanonicalDeclaration_isRejected() {
-        setupOfficeDomain(TransformationRegistry::instance());
+        setupOfficeDomain(m_shape.transformation);
 
         // Try to redeclare canonical with a DIFFERENT shape — must be rejected.
         const Shape originalCanonical{ DomainId{"office"}, EncodingId{"canonical"} };
         const Shape altCanonical{ DomainId{"office"}, EncodingId{"canonical-v2"} };
-        TransformationRegistry::instance().registerShape(altCanonical, {});
-        TransformationRegistry::instance().declareCanonical(DomainId{"office"}, altCanonical);
+        m_shape.transformation.registerShape(altCanonical, {});
+        m_shape.transformation.declareCanonical(DomainId{"office"}, altCanonical);
 
         // The original canonical must remain.
-        QCOMPARE(TransformationRegistry::instance().canonicalFor(DomainId{"office"}),
+        QCOMPARE(m_shape.transformation.canonicalFor(DomainId{"office"}),
                  originalCanonical);
     }
 
     void multipleContributionsToSameDomain_unionPeers() {
-        setupOfficeDomain(TransformationRegistry::instance());
+        setupOfficeDomain(m_shape.transformation);
 
         // Second contribution for same domain, different peer.
         const Shape odt{ DomainId{"office"}, EncodingId{"odt"} };
-        TransformationRegistry::instance().registerShape(odt, {});
+        m_shape.transformation.registerShape(odt, {});
         TransformationEdge e;
         e.from  = odt;
         e.to    = { DomainId{"office"}, EncodingId{"canonical"} };
         e.loss  = LossProfile{};
         e.stage = std::make_shared<IdentityStage>();
-        TransformationRegistry::instance().registerEdge(e);
+        m_shape.transformation.registerEdge(e);
 
         // Both peers should now be reachable.
         const Shape canonical{ DomainId{"office"}, EncodingId{"canonical"} };
         const Shape docx    { DomainId{"office"}, EncodingId{"docx"} };
-        QVERIFY(TransformationRegistry::instance().compile(docx, canonical).has_value());
-        QVERIFY(TransformationRegistry::instance().compile(odt,  canonical).has_value());
+        QVERIFY(m_shape.transformation.compile(docx, canonical).has_value());
+        QVERIFY(m_shape.transformation.compile(odt,  canonical).has_value());
     }
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_GUILESS_MAIN(TestDynamicDomainRegistration)

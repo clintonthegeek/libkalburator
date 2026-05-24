@@ -5,6 +5,7 @@
 #include "domainoperationsregistry.h"
 #include "recordwriter.h"
 #include "syncbackendbase.h"
+#include "shaperegistries.h"
 
 using namespace Kalburator;
 
@@ -25,24 +26,27 @@ private:
 class TestDomainOperationsRegistry : public QObject {
     Q_OBJECT
 private slots:
-    void cleanup() { Shape::DomainOperationsRegistry::instance().clear(); }
+    void init() { m_shape = {}; }
 
     void registerAndLookup() {
-        auto &reg = Shape::DomainOperationsRegistry::instance();
+        auto &reg = m_shape.operations;
         QVERIFY(reg.registerOperations(std::make_shared<StubOps>(QStringLiteral("calendar"))));
         QVERIFY(reg.operationsFor(Shape::DomainId{QStringLiteral("calendar")}) != nullptr);
     }
 
     void doubleBindingRejected() {
-        auto &reg = Shape::DomainOperationsRegistry::instance();
+        auto &reg = m_shape.operations;
         QVERIFY(reg.registerOperations(std::make_shared<StubOps>(QStringLiteral("calendar"))));
         QVERIFY(!reg.registerOperations(std::make_shared<StubOps>(QStringLiteral("calendar"))));
     }
 
     void unknownDomainReturnsNullptr() {
-        QCOMPARE(Shape::DomainOperationsRegistry::instance().operationsFor(Shape::DomainId{QStringLiteral("nope")}),
+        QCOMPARE(m_shape.operations.operationsFor(Shape::DomainId{QStringLiteral("nope")}),
                  nullptr);
     }
+
+private:
+    Kalburator::Shape::ShapeRegistries m_shape;
 };
 
 QTEST_MAIN(TestDomainOperationsRegistry)
