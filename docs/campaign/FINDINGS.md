@@ -46,7 +46,14 @@ same way. (Seeded 2026-05-23.)
 
 ## Resolved
 
-_(none yet)_
+### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
+`tst_engine_unified_routing.cpp` and `tst_carddav_engine_integration.cpp` were migrated
+to `isLossless()` / `droppedProperties()` in Task 2. Full build confirmed no remaining
+`LossLevel`/`.level`/`.dropped` references in production or test code.
+
+### O5 — `pipeline.cpp` loss folding (resolved Plan 1 Task 2, 2026-05-23)
+`composedLoss()` in `src/shape/pipeline.cpp` uses only `compose()` — no direct field
+access — so it compiled cleanly without changes. Confirmed by Task 2's full build.
 
 ---
 
