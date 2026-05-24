@@ -103,9 +103,12 @@ public:
     /// remove all edges in m_edgesFrom[from] where edge.to == to.
     void unregisterEdges(const QList<QPair<Shape, Shape>> &edges);
 
-private:
+public:
+    /// Default-constructible so it can be a member of ShapeRegistries (DI).
+    /// Use ShapeRegistries / dependency injection, not instance(), in new code.
     TransformationRegistry() = default;
 
+private:
     /// Find the single edge from `a` to `b`, or nullptr if absent.
     const TransformationEdge* findEdge(const Shape& a, const Shape& b) const;
 

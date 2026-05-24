@@ -313,6 +313,7 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/defaultblobwriter.cpp
     # K.7.1 — split plugin interface
     src/shape/domainoperationsregistry.cpp
+    src/shape/shaperegistries.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).

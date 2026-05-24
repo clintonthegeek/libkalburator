@@ -2,11 +2,12 @@
 
 #include <QtGlobal>
 
+#include "shaperegistries.h"
+
 namespace Kalburator::Shape {
 
 TransformationRegistry& TransformationRegistry::instance() {
-    static TransformationRegistry s_instance;
-    return s_instance;
+    return defaultShapeRegistries().transformation;
 }
 
 void TransformationRegistry::registerShape(Shape shape, PropertyCatalogue catalogue) {

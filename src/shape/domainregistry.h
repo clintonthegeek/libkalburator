@@ -34,9 +34,10 @@ public:
     /// Test-only: drop all registrations.
     void clear();
 
-private:
+public:
     DomainRegistry() = default;
 
+private:
     QHash<DomainId, std::shared_ptr<DomainDefinition>> m_definitions;
 };
 

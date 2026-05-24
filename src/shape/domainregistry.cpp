@@ -1,12 +1,12 @@
 #include "domainregistry.h"
 
 #include "domaindefinition.h"
+#include "shaperegistries.h"
 
 namespace Kalburator::Shape {
 
 DomainRegistry& DomainRegistry::instance() {
-    static DomainRegistry s_instance;
-    return s_instance;
+    return defaultShapeRegistries().domain;
 }
 
 bool DomainRegistry::registerDefinition(std::shared_ptr<DomainDefinition> def) {

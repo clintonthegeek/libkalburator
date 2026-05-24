@@ -36,8 +36,10 @@ public:
     /// Remove the registration for @p domain. No-op if not registered.
     void unregister(const DomainId &domain);
 
-private:
+public:
     DomainOperationsRegistry() = default;
+
+private:
     QHash<DomainId, std::shared_ptr<DomainOperations>> m_byDomain;
 };
 
