@@ -12,13 +12,20 @@ the campaign that (a) retires `src/transcoding/` into the shape graph and
 (b) upgrades the calendar/contacts/todo canons to rich JSON superset encodings
 behind a **versioned canonical spine** with a four-kind loss model.
 
+**Status (2026-05-24): the campaign is COMPLETE — all four plans landed; `src/transcoding/`
+is deleted and the shape graph is the sole transformation mechanism (invariant 1).** What
+remains is downstream / out-of-campaign: the PlanStan/WildPalms backend port (FINDINGS O7/O12)
+and the eventual merge to `main`. Read `docs/campaign/STATUS.md` "Next action" first.
+
 **Before your first non-trivial change, read in this order:**
 1. `docs/campaign/INVARIANTS.md` — the rules you accept by working here. Non-optional.
-2. `docs/campaign/STATUS.md` — where we are, the 4-plan sequence, locked decisions, and your next action.
-3. The current plan: `docs/2026-05-23-plan-2-per-engine-registries.md` (written, ready to execute;
-   Plan 1 `docs/2026-05-23-plan-1-shape-core-foundations.md` is complete). Plans 3–4 are written as
-   their predecessor lands. STATUS "Next action" always names the live plan and your entry point.
-4. Design set (as needed): `docs/2026-05-23-canon-upgrade-and-convergence-design.md`,
+2. `docs/campaign/STATUS.md` — campaign state (now: converged), the 4-plan sequence, locked
+   decisions, and the remaining downstream next actions.
+3. `docs/campaign/FINDINGS.md` — open watch items (esp. O7, O9, O12) and the discipline log.
+4. The plans, all complete: `docs/2026-05-23-plan-1-shape-core-foundations.md`,
+   `docs/2026-05-23-plan-2-per-engine-registries.md`, `docs/2026-05-24-plan-3-canon-encodings.md`,
+   `docs/2026-05-24-plan-4-calendar-convergence.md`.
+5. Design set (as needed): `docs/2026-05-23-canon-upgrade-and-convergence-design.md`,
    `docs/2026-05-23-canon-schema-design.md`, `docs/2026-05-23-vendor-api-shapes-reference.md`.
 
 The one-paragraph why: libkalburator grew **two** parallel conversion mechanisms;
