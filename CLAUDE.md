@@ -5,6 +5,26 @@ standalone project shared with Wild Palms. The source of truth for the
 overall plan lives in PlanStan at
 `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
 
+## Canon-upgrade / convergence campaign — START HERE if on branch `feature/canon-upgrade-convergence`
+
+If your CWD is on branch `feature/canon-upgrade-convergence`, you are working
+the campaign that (a) retires `src/transcoding/` into the shape graph and
+(b) upgrades the calendar/contacts/todo canons to rich JSON superset encodings
+behind a **versioned canonical spine** with a four-kind loss model.
+
+**Before your first non-trivial change, read in this order:**
+1. `docs/campaign/INVARIANTS.md` — the rules you accept by working here. Non-optional.
+2. `docs/campaign/STATUS.md` — where we are, the 4-plan sequence, locked decisions, and your next action.
+3. The current plan: `docs/2026-05-23-plan-1-shape-core-foundations.md` (Plans 2–4 written as Plan 1 lands).
+4. Design set (as needed): `docs/2026-05-23-canon-upgrade-and-convergence-design.md`,
+   `docs/2026-05-23-canon-schema-design.md`, `docs/2026-05-23-vendor-api-shapes-reference.md`.
+
+The one-paragraph why: libkalburator grew **two** parallel conversion mechanisms;
+this campaign collapses them into one (the shape graph) and modernizes the canons.
+The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a third
+mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
+`docs/campaign/STATUS.md` in the same commit that changes plan state.
+
 ## Refactor-branch worktree
 
 If your CWD is `~/dev/refactor-engine-merger/libkalburator/`, you are
