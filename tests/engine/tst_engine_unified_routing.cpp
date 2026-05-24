@@ -70,7 +70,6 @@ using Kalburator::Sync::SyncResult;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
-using Kalburator::Shape::LossLevel;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::TransformationRegistry;
@@ -380,7 +379,7 @@ void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
     // default LossProfile). A non-Lossless or sentinel value would
     // mean the engine took the no-edge path or skipped registry consult.
     QCOMPARE(host.syncStartedCount(), 1);
-    QCOMPARE(host.lastLossProfile().level, LossLevel::Lossless);
+    QVERIFY(host.lastLossProfile().isLossless());
 
     // ── Assert: target received exactly one createRecord ──────────────
     QCOMPARE(target->createRecordCalls(), 1);

@@ -13,7 +13,6 @@ using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::LossProfile;
-using Kalburator::Shape::LossLevel;
 using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::TransformationRegistry;
 using Kalburator::Contacts::VCard3To4Stage;
@@ -73,8 +72,8 @@ private slots:
     void lossProfileDeclaresIntraDomainLossy()
     {
         const auto loss = vcard4ToVcard3Loss();
-        QCOMPARE(loss.level, LossLevel::IntraDomainLossy);
-        QVERIFY(!loss.dropped.isEmpty());
+        QVERIFY(!loss.isLossless());
+        QVERIFY(!loss.droppedProperties().isEmpty());
     }
 
     void registryCompilesPipelineV3ToV4()
@@ -136,7 +135,7 @@ private slots:
         // For each property the LossProfile declares dropped, verify
         // KContacts actually dropped it on the v4→v3 serialize.
         const auto loss = vcard4ToVcard3Loss();
-        for (const auto &p : loss.dropped) {
+        for (const auto &p : loss.droppedProperties()) {
             const auto name = p.toString();
             if (name == QStringLiteral("gender")) {
                 QVERIFY2(a.gender().gender().isEmpty(),

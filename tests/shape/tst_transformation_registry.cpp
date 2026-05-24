@@ -14,10 +14,9 @@ private:
     QByteArray m_prefix;
 };
 
-LossProfile lossy(const QString& dropped) {
+LossProfile lossy(const QString& prop) {
     LossProfile p;
-    p.level = LossLevel::IntraDomainLossy;
-    p.dropped.insert(PropertyId{dropped});
+    p.affected.insert(PropertyId{prop}, LossKind::Dropped);
     return p;
 }
 
@@ -143,7 +142,7 @@ private slots:
         QVERIFY(p.has_value());
         QCOMPARE(p->edges().size(), 2);
         QCOMPARE(p->apply("x"), QByteArray("ToPalm-FromOrg-x"));
-        QCOMPARE(p->composedLoss().level, LossLevel::IntraDomainLossy);
+        QVERIFY(!p->composedLoss().isLossless());
     }
 
     void compileNoPathReturnsNullopt() {
@@ -164,8 +163,8 @@ private slots:
         r.registerEdge({ calIcal(), calOrg(), lossy(QStringLiteral("attendees")),
                          std::make_shared<PrefixStage>("Org-") });
         const LossProfile lp = r.inspect(calIcal(), calOrg());
-        QCOMPARE(lp.level, LossLevel::IntraDomainLossy);
-        QVERIFY(lp.dropped.contains(PropertyId{QStringLiteral("attendees")}));
+        QVERIFY(!lp.isLossless());
+        QVERIFY(lp.droppedProperties().contains(PropertyId{QStringLiteral("attendees")}));
     }
 
     void registeredShapesEnumerated() {

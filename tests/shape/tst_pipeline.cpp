@@ -18,10 +18,9 @@ private:
     QByteArray m_prefix;
 };
 
-LossProfile lossy(const QString& dropped) {
+LossProfile lossy(const QString& prop) {
     LossProfile p;
-    p.level = LossLevel::IntraDomainLossy;
-    p.dropped.insert(PropertyId{dropped});
+    p.affected.insert(PropertyId{prop}, LossKind::Dropped);
     return p;
 }
 
@@ -39,7 +38,7 @@ private slots:
         QCOMPARE(p.inputShape(), calIcal());
         QCOMPARE(p.outputShape(), calIcal());
         QVERIFY(p.isIdentity());
-        QCOMPARE(p.composedLoss().level, LossLevel::Lossless);
+        QVERIFY(p.composedLoss().isLossless());
         QCOMPARE(p.apply("payload"), QByteArray("payload"));
     }
 
@@ -51,8 +50,8 @@ private slots:
         QCOMPARE(p.outputShape(), calOrg());
         QVERIFY(!p.isIdentity());
         QCOMPARE(p.apply("foo"), QByteArray("OrgEncoded:foo"));
-        QCOMPARE(p.composedLoss().level, LossLevel::IntraDomainLossy);
-        QVERIFY(p.composedLoss().dropped.contains(PropertyId{QStringLiteral("attendees")}));
+        QVERIFY(!p.composedLoss().isLossless());
+        QVERIFY(p.composedLoss().droppedProperties().contains(PropertyId{QStringLiteral("attendees")}));
     }
 
     void twoEdgePipelineChainsAndComposes() {
@@ -66,10 +65,10 @@ private slots:
         QCOMPARE(p.apply("payload"), QByteArray("Palm-Org-payload"));
         // Loss composes: dropped is {attachments, description}.
         const LossProfile loss = p.composedLoss();
-        QCOMPARE(loss.level, LossLevel::IntraDomainLossy);
-        QCOMPARE(loss.dropped.size(), 2);
-        QVERIFY(loss.dropped.contains(PropertyId{QStringLiteral("attachments")}));
-        QVERIFY(loss.dropped.contains(PropertyId{QStringLiteral("description")}));
+        QVERIFY(!loss.isLossless());
+        QCOMPARE(loss.droppedProperties().size(), 2);
+        QVERIFY(loss.droppedProperties().contains(PropertyId{QStringLiteral("attachments")}));
+        QVERIFY(loss.droppedProperties().contains(PropertyId{QStringLiteral("description")}));
     }
 
     void nonMatchingEdgeChainThrows() {
@@ -94,7 +93,7 @@ private slots:
         const QString s = e.toString();
         QVERIFY(s.contains(QStringLiteral("calendar+ical")));
         QVERIFY(s.contains(QStringLiteral("calendar+org")));
-        QVERIFY(s.contains(QStringLiteral("intra-lossy")));
+        QVERIFY(s.contains(QStringLiteral("drops")));
         QVERIFY(s.contains(QStringLiteral("attendees")));
     }
 };

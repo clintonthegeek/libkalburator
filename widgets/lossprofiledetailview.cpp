@@ -3,24 +3,35 @@
 #include <QLabel>
 #include <QVBoxLayout>
 
-using Kalburator::Shape::LossLevel;
 using Kalburator::Shape::LossProfile;
+using Kalburator::Shape::LossKind;
 
 namespace Kalburator::Widgets {
 
-static QString levelText(LossLevel level)
+static QString levelText(const LossProfile &profile)
 {
-    switch (level) {
-        case LossLevel::Lossless:
-            return QObject::tr("Lossless — full round-trip preserved");
-        case LossLevel::IntraDomainLossy:
-            return QObject::tr("Lossy — some fields dropped (same domain)");
-        case LossLevel::InterDomainProjection:
-            return QObject::tr("Projection — structural reduction to target domain");
-        case LossLevel::Degenerate:
-            return QObject::tr("Degenerate — only name-like fields preserved");
+    if (profile.isLossless())
+        return QObject::tr("Lossless — full round-trip preserved");
+
+    bool anyDropped = false;
+    bool anySimplified = false;
+    bool anyDegraded = false;
+    for (const auto kind : std::as_const(profile.affected)) {
+        switch (kind) {
+            case LossKind::Dropped:    anyDropped = true;    break;
+            case LossKind::Simplified: anySimplified = true; break;
+            case LossKind::Degraded:   anyDegraded = true;   break;
+            case LossKind::Reversible: break;
+        }
     }
-    return {};
+
+    if (anyDegraded)
+        return QObject::tr("Degenerate — only name-like fields preserved");
+    if (anyDropped)
+        return QObject::tr("Lossy — some fields dropped (same domain)");
+    if (anySimplified)
+        return QObject::tr("Simplified — some fields reduced");
+    return QObject::tr("Reversible — lossless with encoding change");
 }
 
 LossProfileDetailView::LossProfileDetailView(QWidget *parent)
@@ -50,13 +61,14 @@ LossProfile LossProfileDetailView::lossProfile() const
 
 void LossProfileDetailView::refresh()
 {
-    m_levelLabel->setText(levelText(m_profile.level));
+    m_levelLabel->setText(levelText(m_profile));
 
-    if (m_profile.dropped.isEmpty()) {
+    const auto dropped = m_profile.droppedProperties();
+    if (dropped.isEmpty()) {
         m_droppedLabel->hide();
     } else {
         QStringList ids;
-        for (const auto &pid : std::as_const(m_profile.dropped))
+        for (const auto &pid : dropped)
             ids.append(pid.toString());
         ids.sort();
         m_droppedLabel->setText(tr("Dropped: %1").arg(ids.join(QStringLiteral(", "))));

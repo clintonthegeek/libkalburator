@@ -87,7 +87,6 @@ using Kalburator::Sync::SyncResult;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::DomainRegistry;
 using Kalburator::Shape::EncodingId;
-using Kalburator::Shape::LossLevel;
 using Kalburator::Shape::LossProfile;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::TransformationRegistry;
