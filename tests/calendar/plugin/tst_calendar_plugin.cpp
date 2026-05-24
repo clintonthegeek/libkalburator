@@ -129,11 +129,22 @@ private slots:
         QVERIFY(cat.hasProperty(PropertyId{"guestsCanModify"}));
     }
 
-    void stockShapesHasThreeEdges()
+    void stockShapesHasFiveEdges()
     {
-        // Plan 3 Task C5: canon-identity + ical→canon + canon→ical
+        // Plan 3 Task C5: canon-identity + ical→canon + canon→ical (3)
+        // Plan 4 Task 3: + org-ical→canon + canon→org-ical (2) = 5
         const CalendarStockShapes shapes;
-        QCOMPARE(shapes.edges().size(), 3);
+        QCOMPARE(shapes.edges().size(), 5);
+    }
+
+    void stockShapesPeerContainsOrgIcal()
+    {
+        // Plan 4 Task 3: org-ical is registered as a less-capable peer encoding.
+        const CalendarStockShapes shapes;
+        const Kalburator::Shape::Shape orgIcal{ DomainId{"calendar"}, EncodingId{"org-ical"} };
+        const auto peers = shapes.peerShapes();
+        QVERIFY(std::any_of(peers.begin(), peers.end(),
+            [&](const auto &p) { return p.first == orgIcal; }));
     }
 
     void stockShapesPeerContainsIcal()
