@@ -113,6 +113,21 @@ private slots:
         // no bridge canon->canon2 registered:
         QVERIFY(!r.compile(cal("ical"), cal("canon2")).has_value());
     }
+
+    void appendAfterCompileIsRejected() {
+        auto& r = TransformationRegistry::instance();
+        r.registerShape(cal("canon"),  stubCat());
+        r.registerShape(cal("canon2"), stubCat());
+        r.registerShape(cal("ical"),   stubCat());
+        r.declareCanonical(DomainId{QStringLiteral("calendar")}, cal("canon"));
+        r.registerEdge(edge(cal("ical"), cal("canon")));
+        // First non-identity compile freezes the calendar domain:
+        QVERIFY(r.compile(cal("ical"), cal("canon")).has_value());
+        QVERIFY(r.isFrozen(DomainId{QStringLiteral("calendar")}));
+        // Appending a version now must be ignored (spine stays size 1):
+        r.appendCanonicalVersion(DomainId{QStringLiteral("calendar")}, cal("canon2"));
+        QCOMPARE(r.canonicalSpine(DomainId{QStringLiteral("calendar")}).size(), 1);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestCanonicalSpine)
