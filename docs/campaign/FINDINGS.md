@@ -95,6 +95,17 @@ machinery** (`transcodingregistry`, `transcodingrouter`, `transcodingplan`, `rru
 `propertytranscoder`) and must **keep `incidencediff`/`syncdiff`** (move them out of the dir or leave
 the dir as their home — decision pending). (Seeded 2026-05-24, Plan 4 research.)
 
+### O11 — legacy RRuleReverseTranscoder was a silent no-op (latent bug, superseded by Plan 4 Task 2)
+While re-homing RRULE simplification (Plan 4 Task 2, commit 624d2f3), found that the legacy
+`src/transcoding/rruletranscoder.cpp` `RRuleReverseTranscoder::transcode` (~:138-174) restored the
+stashed original RRULE via `KCalendarCore::ICalFormat::fromString(RecurrenceRule*, ruleStr)` — which
+**always returns false for RRULE strings** (both the `RRULE:FREQ=…` form and the value-only form),
+so the reverse transcoder silently restored *nothing*. No test ever covered it. The new
+`OrgICalToCanonStage` sidesteps the broken API: it stashes verbatim iCal recurrence *lines* (joined by
+`|`, a separator RFC5545 never uses) and restores by byte-level line injection — strictly more
+faithful (byte-for-byte) and proven by `tst_orgical_canon_roundtrip`'s round-trip slot. The legacy
+class is deleted in Plan 4 Task 8 regardless. (Seeded 2026-05-24, Plan 4 Task 2.)
+
 ## Resolved
 
 ### O1 — `LossProfile` engine-layer migration (resolved Plan 1 Task 2, 2026-05-23)
