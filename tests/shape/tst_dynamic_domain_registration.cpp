@@ -1,6 +1,5 @@
 #include <QTest>
 
-#include "domainregistry.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "transformationregistry.h"

@@ -4,7 +4,6 @@
 #include "domainregistry.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
-#include "transformationregistry.h"
 #include "shaperegistries.h"
 
 using namespace Kalburator::Shape;
