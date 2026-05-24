@@ -13,7 +13,8 @@ public:
 
 /// (contacts, canon) → (contacts, vcard4)
 /// Demote direction: serializes canon JSON bytes back to a vCard4 byte string.
-/// NOTE: stub for now — implemented in Task A3.
+/// Core fields round-trip losslessly; Google-only fields (occupations,
+/// interests, etc.) are silently dropped (no vCard4 representation).
 class CanonToVCard4Stage : public Kalburator::Shape::TransformationStage {
 public:
     QByteArray transform(const QByteArray& canonBytes) const override;

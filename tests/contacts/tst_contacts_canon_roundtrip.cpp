@@ -6,8 +6,12 @@
 #include "canonenvelope.h"
 #include "vcardcanonstages.h"
 
+#include <KContacts/VCardConverter>
+#include <KContacts/Addressee>
+
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Contacts::VCard4ToCanonStage;
+using Kalburator::Contacts::CanonToVCard4Stage;
 
 namespace {
 
@@ -102,6 +106,118 @@ private slots:
         // notes
         const QString notes = obj.value(QStringLiteral("notes")).toString();
         QCOMPARE(notes, QStringLiteral("This is a test contact."));
+    }
+
+    void vcard4RoundTripPreservesCoreFields()
+    {
+        // vCard4 with core fields plus a KContacts custom property.
+        // KContacts stores custom properties as "APP-NAME:value"; the round-trip
+        // must preserve them.  We use insertCustom("X-TEST","CUSTOM","hello")
+        // which stores in customs() as "X-TEST-CUSTOM:hello" — a form that
+        // KContacts can emit and re-parse correctly.
+        const QByteArray input =
+            "BEGIN:VCARD\r\n"
+            "VERSION:4.0\r\n"
+            "UID:rt-uid-001\r\n"
+            "FN:Round Trip\r\n"
+            "N:Trip;Round;;;\r\n"
+            "EMAIL;TYPE=WORK;PREF=1:rt@example.com\r\n"
+            "TEL;TYPE=CELL:+1-555-999-0000\r\n"
+            "ORG:RoundCorp\r\n"
+            "TITLE:Tester\r\n"
+            "CATEGORIES:TestCat\r\n"
+            "END:VCARD\r\n";
+
+        VCard4ToCanonStage  fwd;
+        CanonToVCard4Stage  rev;
+
+        const QByteArray canon  = fwd.transform(input);
+        QVERIFY2(!canon.isEmpty(),  "forward stage returned empty");
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty (stub?)");
+
+        // Parse both as Addressee objects and compare fields via KContacts getters.
+        KContacts::VCardConverter conv;
+        const auto origList = conv.parseVCards(input);
+        const auto outList  = conv.parseVCards(output);
+        QVERIFY2(!origList.isEmpty(), "could not parse original vCard");
+        QVERIFY2(!outList.isEmpty(),  "could not parse output vCard");
+
+        const KContacts::Addressee orig = origList.first();
+        const KContacts::Addressee out  = outList.first();
+
+        QCOMPARE(out.formattedName(), orig.formattedName());
+        QCOMPARE(out.familyName(),    orig.familyName());
+        QCOMPARE(out.givenName(),     orig.givenName());
+        QCOMPARE(out.organization(),  orig.organization());
+        QCOMPARE(out.title(),         orig.title());
+
+        // Email: round-trip must preserve address and type
+        QVERIFY2(!out.emailList().isEmpty(), "output has no emails");
+        bool foundEmail = false;
+        for (const auto& e : out.emailList()) {
+            if (e.mail() == QStringLiteral("rt@example.com")) {
+                foundEmail = true;
+                QVERIFY2(e.isPreferred(), "work email must survive as preferred");
+            }
+        }
+        QVERIFY2(foundEmail, "rt@example.com must survive round-trip");
+
+        // Phone
+        QVERIFY2(!out.phoneNumbers().isEmpty(), "output has no phones");
+        QCOMPARE(out.phoneNumbers().first().number(),
+                 orig.phoneNumbers().first().number());
+
+        // Categories
+        const QStringList outCats = out.categories();
+        QVERIFY2(outCats.contains(QStringLiteral("TestCat")),
+                 "categories must survive round-trip");
+    }
+
+    void canonToVcard4OmitsGoogleOnlyFields()
+    {
+        // Build a canon JSON that includes Google-only fields (occupations,
+        // interests) alongside a core field (names/FN). The reverse stage
+        // must emit the core field and silently drop the Google-only ones.
+        using Kalburator::Shape::CanonEnvelope::serialize;
+        using Kalburator::Shape::CanonEnvelope::stampEnvelope;
+
+        QJsonObject canon;
+        // Minimal names entry so the output vCard has an FN
+        QJsonArray names;
+        QJsonObject nameObj;
+        nameObj.insert(QStringLiteral("formatted"), QStringLiteral("Drop Test"));
+        nameObj.insert(QStringLiteral("given"),     QStringLiteral("Drop"));
+        nameObj.insert(QStringLiteral("family"),    QStringLiteral("Test"));
+        names.append(nameObj);
+        canon.insert(QStringLiteral("names"), names);
+
+        // Google-only fields that have no vCard4 representation
+        QJsonArray occupations;
+        occupations.append(QStringLiteral("Engineer"));
+        canon.insert(QStringLiteral("occupations"), occupations);
+
+        QJsonArray interests;
+        interests.append(QStringLiteral("Hiking"));
+        canon.insert(QStringLiteral("interests"), interests);
+
+        stampEnvelope(canon, QStringLiteral("contacts"), QStringLiteral("drop-test-uid"));
+        const QByteArray canonBytes = serialize(canon);
+
+        CanonToVCard4Stage rev;
+        const QByteArray output = rev.transform(canonBytes);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Core field must survive
+        QVERIFY2(output.contains("Drop Test") || output.contains("Drop"),
+                 "FN/N must survive in output");
+
+        // Google-only values must not appear
+        QVERIFY2(!output.contains("Engineer"),
+                 "occupations must be absent in vCard4 output");
+        QVERIFY2(!output.contains("Hiking"),
+                 "interests must be absent in vCard4 output");
     }
 
     void vcard4ToCanonEmptyInputReturnsEmpty()

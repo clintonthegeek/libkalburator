@@ -12,6 +12,8 @@
 #include <KContacts/Picture>
 #include <KContacts/Gender>
 #include <KContacts/Lang>
+#include <KContacts/ResourceLocatorUrl>
+#include <KContacts/TimeZone>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -460,12 +462,383 @@ QByteArray VCard4ToCanonStage::transform(const QByteArray& vcardBytes) const
 }
 
 // ---------------------------------------------------------------------------
-// CanonToVCard4Stage — stub; implemented in Task A3
+// CanonToVCard4Stage — canon JSON → vCard4 (Task A3)
 // ---------------------------------------------------------------------------
 
-QByteArray CanonToVCard4Stage::transform(const QByteArray& /*canonBytes*/) const
+QByteArray CanonToVCard4Stage::transform(const QByteArray& canonBytes) const
 {
-    return {};
+    if (canonBytes.isEmpty())
+        return {};
+
+    const QJsonObject obj = parse(canonBytes);
+    if (obj.isEmpty())
+        return {};
+
+    KContacts::Addressee addr;
+
+    // ---- uid ---------------------------------------------------------------
+    // Prefer the uid stashed in providerExtras["x-vcard"]["uid"]; fall back to
+    // the top-level "uid" field written by stampEnvelope.
+    {
+        const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
+        const QJsonObject xvcard = extras.value(QStringLiteral("x-vcard")).toObject();
+        const QString storedUid  = xvcard.value(QStringLiteral("uid")).toString();
+        if (!storedUid.isEmpty())
+            addr.setUid(storedUid);
+        else {
+            const QString topUid = obj.value(QStringLiteral("uid")).toString();
+            if (!topUid.isEmpty())
+                addr.setUid(topUid);
+        }
+    }
+
+    // ---- names -------------------------------------------------------------
+    {
+        const QJsonArray names = obj.value(QStringLiteral("names")).toArray();
+        if (!names.isEmpty()) {
+            const QJsonObject n = names.at(0).toObject();
+            const QString fn     = n.value(QStringLiteral("formatted")).toString();
+            const QString given  = n.value(QStringLiteral("given")).toString();
+            const QString family = n.value(QStringLiteral("family")).toString();
+            const QString middle = n.value(QStringLiteral("middle")).toString();
+            const QString pfx    = n.value(QStringLiteral("prefix")).toString();
+            const QString sfx    = n.value(QStringLiteral("suffix")).toString();
+            if (!fn.isEmpty())     addr.setFormattedName(fn);
+            if (!given.isEmpty())  addr.setGivenName(given);
+            if (!family.isEmpty()) addr.setFamilyName(family);
+            if (!middle.isEmpty()) addr.setAdditionalName(middle);
+            if (!pfx.isEmpty())    addr.setPrefix(pfx);
+            if (!sfx.isEmpty())    addr.setSuffix(sfx);
+        }
+    }
+
+    // ---- nicknames ---------------------------------------------------------
+    {
+        const QJsonArray nicks = obj.value(QStringLiteral("nicknames")).toArray();
+        if (!nicks.isEmpty()) {
+            const QString nick = nicks.at(0).toObject()
+                                      .value(QStringLiteral("value")).toString();
+            if (!nick.isEmpty())
+                addr.setNickName(nick);
+        }
+    }
+
+    // ---- emails ------------------------------------------------------------
+    {
+        const QJsonArray emails = obj.value(QStringLiteral("emails")).toArray();
+        for (const auto& ev : emails) {
+            const QJsonObject e  = ev.toObject();
+            const QString mail   = e.value(QStringLiteral("value")).toString();
+            if (mail.isEmpty())
+                continue;
+            KContacts::Email email(mail);
+            email.setPreferred(e.value(QStringLiteral("primary")).toBool());
+            const QString typeStr = e.value(QStringLiteral("type")).toString();
+            KContacts::Email::Type flags{};
+            if (typeStr.contains(QStringLiteral("work")))  flags |= KContacts::Email::Work;
+            if (typeStr.contains(QStringLiteral("home")))  flags |= KContacts::Email::Home;
+            if (typeStr.contains(QStringLiteral("other"))) flags |= KContacts::Email::Other;
+            if (flags != KContacts::Email::Type{})
+                email.setType(flags);
+            addr.addEmail(email);
+        }
+    }
+
+    // ---- phones ------------------------------------------------------------
+    {
+        const QJsonArray phones = obj.value(QStringLiteral("phones")).toArray();
+        for (const auto& pv : phones) {
+            const QJsonObject p = pv.toObject();
+            const QString num   = p.value(QStringLiteral("value")).toString();
+            if (num.isEmpty())
+                continue;
+            KContacts::PhoneNumber::Type flags{};
+            const QString typeStr = p.value(QStringLiteral("type")).toString();
+            if (typeStr.contains(QStringLiteral("cell")))  flags |= KContacts::PhoneNumber::Cell;
+            if (typeStr.contains(QStringLiteral("home")))  flags |= KContacts::PhoneNumber::Home;
+            if (typeStr.contains(QStringLiteral("work")))  flags |= KContacts::PhoneNumber::Work;
+            if (typeStr.contains(QStringLiteral("fax")))   flags |= KContacts::PhoneNumber::Fax;
+            if (typeStr.contains(QStringLiteral("voice"))) flags |= KContacts::PhoneNumber::Voice;
+            if (p.value(QStringLiteral("primary")).toBool())
+                flags |= KContacts::PhoneNumber::Pref;
+            KContacts::PhoneNumber phone(num, flags);
+            addr.insertPhoneNumber(phone);
+        }
+    }
+
+    // ---- addresses ---------------------------------------------------------
+    {
+        const QJsonArray addrs = obj.value(QStringLiteral("addresses")).toArray();
+        for (const auto& av : addrs) {
+            const QJsonObject a = av.toObject();
+            KContacts::Address address;
+            const QString street  = a.value(QStringLiteral("street")).toString();
+            const QString loc     = a.value(QStringLiteral("locality")).toString();
+            const QString region  = a.value(QStringLiteral("region")).toString();
+            const QString postal  = a.value(QStringLiteral("postalCode")).toString();
+            const QString country = a.value(QStringLiteral("country")).toString();
+            if (!street.isEmpty())  address.setStreet(street);
+            if (!loc.isEmpty())     address.setLocality(loc);
+            if (!region.isEmpty())  address.setRegion(region);
+            if (!postal.isEmpty())  address.setPostalCode(postal);
+            if (!country.isEmpty()) address.setCountry(country);
+            const QString typeStr = a.value(QStringLiteral("type")).toString();
+            KContacts::Address::Type flags{};
+            if (typeStr.contains(QStringLiteral("home"))) flags |= KContacts::Address::Home;
+            if (typeStr.contains(QStringLiteral("work"))) flags |= KContacts::Address::Work;
+            if (flags != KContacts::Address::Type{})
+                address.setType(flags);
+            addr.insertAddress(address);
+        }
+    }
+
+    // ---- organizations -----------------------------------------------------
+    {
+        const QJsonArray orgs = obj.value(QStringLiteral("organizations")).toArray();
+        if (!orgs.isEmpty()) {
+            const QJsonObject o = orgs.at(0).toObject();
+            const QString name  = o.value(QStringLiteral("name")).toString();
+            const QString dept  = o.value(QStringLiteral("department")).toString();
+            const QString title = o.value(QStringLiteral("title")).toString();
+            const QString role  = o.value(QStringLiteral("role")).toString();
+            if (!name.isEmpty())  addr.setOrganization(name);
+            if (!dept.isEmpty())  addr.setDepartment(dept);
+            if (!title.isEmpty()) addr.setTitle(title);
+            if (!role.isEmpty())  addr.setRole(role);
+        }
+    }
+
+    // ---- urls --------------------------------------------------------------
+    {
+        const QJsonArray urls = obj.value(QStringLiteral("urls")).toArray();
+        bool first = true;
+        for (const auto& uv : urls) {
+            const QString urlStr = uv.toObject()
+                                     .value(QStringLiteral("value")).toString();
+            if (urlStr.isEmpty())
+                continue;
+            KContacts::ResourceLocatorUrl rlu;
+            rlu.setUrl(QUrl(urlStr));
+            if (first) {
+                addr.setUrl(rlu);
+                first = false;
+            } else {
+                addr.insertExtraUrl(rlu);
+            }
+        }
+    }
+
+    // ---- imClients ---------------------------------------------------------
+    {
+        const QJsonArray impps = obj.value(QStringLiteral("imClients")).toArray();
+        for (const auto& iv : impps) {
+            const QJsonObject i = iv.toObject();
+            const QString val   = i.value(QStringLiteral("value")).toString();
+            if (val.isEmpty())
+                continue;
+            addr.insertImpp(KContacts::Impp(QUrl(val)));
+        }
+    }
+
+    // ---- birthday ----------------------------------------------------------
+    {
+        const QJsonObject bday = obj.value(QStringLiteral("birthday")).toObject();
+        if (!bday.isEmpty()) {
+            const QString dateStr = bday.value(QStringLiteral("date")).toString();
+            if (!dateStr.isEmpty()) {
+                // Try ISO date with time first, then date-only
+                const QDateTime dt = QDateTime::fromString(dateStr, Qt::ISODate);
+                if (dt.isValid())
+                    addr.setBirthday(dt, false);
+                else {
+                    const QDate d = QDate::fromString(dateStr, Qt::ISODate);
+                    if (d.isValid())
+                        addr.setBirthday(d);
+                }
+            }
+        }
+    }
+
+    // ---- anniversary -------------------------------------------------------
+    {
+        const QJsonObject ann = obj.value(QStringLiteral("anniversary")).toObject();
+        if (!ann.isEmpty()) {
+            const QString dateStr = ann.value(QStringLiteral("date")).toString();
+            if (!dateStr.isEmpty()) {
+                const QDate d = QDate::fromString(dateStr, Qt::ISODate);
+                if (d.isValid())
+                    addr.setAnniversary(d);
+            }
+        }
+    }
+
+    // ---- gender ------------------------------------------------------------
+    {
+        const QJsonObject g = obj.value(QStringLiteral("gender")).toObject();
+        if (!g.isEmpty()) {
+            const QString sex      = g.value(QStringLiteral("sex")).toString();
+            const QString identity = g.value(QStringLiteral("identity")).toString();
+            KContacts::Gender gender;
+            if (!sex.isEmpty())      gender.setGender(sex);
+            if (!identity.isEmpty()) gender.setComment(identity);
+            addr.setGender(gender);
+        }
+    }
+
+    // ---- notes -------------------------------------------------------------
+    {
+        const QString note = obj.value(QStringLiteral("notes")).toString();
+        if (!note.isEmpty())
+            addr.setNote(note);
+    }
+
+    // ---- photos ------------------------------------------------------------
+    {
+        const QJsonArray photos = obj.value(QStringLiteral("photos")).toArray();
+        if (!photos.isEmpty()) {
+            const QJsonObject p = photos.at(0).toObject();
+            KContacts::Picture pic;
+            if (p.contains(QStringLiteral("data"))) {
+                const QByteArray raw = QByteArray::fromBase64(
+                    p.value(QStringLiteral("data")).toString().toLatin1());
+                pic.setRawData(raw, p.value(QStringLiteral("mediaType")).toString());
+            } else if (p.contains(QStringLiteral("url"))) {
+                pic.setUrl(p.value(QStringLiteral("url")).toString());
+            }
+            if (!pic.isEmpty())
+                addr.setPhoto(pic);
+        }
+    }
+
+    // ---- categories --------------------------------------------------------
+    {
+        const QJsonArray cats = obj.value(QStringLiteral("categories")).toArray();
+        if (!cats.isEmpty()) {
+            QStringList catList;
+            for (const auto& c : cats)
+                catList << c.toString();
+            addr.setCategories(catList);
+        }
+    }
+
+    // ---- languages ---------------------------------------------------------
+    {
+        const QJsonArray langs = obj.value(QStringLiteral("languages")).toArray();
+        if (!langs.isEmpty()) {
+            KContacts::Lang::List langList;
+            for (const auto& lv : langs) {
+                const QString lang = lv.toString();
+                if (!lang.isEmpty())
+                    langList << KContacts::Lang(lang);
+            }
+            addr.setLangs(langList);
+        }
+    }
+
+    // ---- timeZone ----------------------------------------------------------
+    {
+        const QString tzStr = obj.value(QStringLiteral("timeZone")).toString();
+        if (!tzStr.isEmpty()) {
+            // tzStr is like "+05:30" or "-08:00"; parse back to minutes offset.
+            const bool neg = tzStr.startsWith(QLatin1Char('-'));
+            const QString body = tzStr.mid(1); // strip sign
+            const QStringList parts = body.split(QLatin1Char(':'));
+            if (parts.size() == 2) {
+                const int h = parts[0].toInt();
+                const int m = parts[1].toInt();
+                int offset = h * 60 + m;
+                if (neg) offset = -offset;
+                addr.setTimeZone(KContacts::TimeZone(offset));
+            }
+        }
+    }
+
+    // ---- relations (RELATED) -----------------------------------------------
+    {
+        const QJsonArray rels = obj.value(QStringLiteral("relations")).toArray();
+        if (!rels.isEmpty()) {
+            KContacts::Related::List relList;
+            for (const auto& rv : rels) {
+                const QString val = rv.toObject()
+                                      .value(QStringLiteral("value")).toString();
+                if (!val.isEmpty())
+                    relList << KContacts::Related(val);
+            }
+            addr.setRelationships(relList);
+        }
+    }
+
+    // ---- memberships (MEMBER) ----------------------------------------------
+    {
+        const QJsonArray members = obj.value(QStringLiteral("memberships")).toArray();
+        if (!members.isEmpty()) {
+            QStringList memberList;
+            for (const auto& mv : members) {
+                const QString val = mv.toObject()
+                                      .value(QStringLiteral("value")).toString();
+                if (!val.isEmpty())
+                    memberList << val;
+            }
+            addr.setMembers(memberList);
+        }
+    }
+
+    // ---- providerExtras["x-vcard"] — re-emit custom/X- props --------------
+    // The forward stage stored customs as JSON keys "APP-NAME" → value.
+    // Re-emit them using insertCustom(app, name, value) where app = everything
+    // before the first '-' and name = the rest.  The special "uid" key was
+    // already consumed above.  Well-known KContacts X- helpers (AssistantsName,
+    // etc.) were stored under manually chosen keys and are restored via setters.
+    {
+        const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
+        const QJsonObject xvcard = extras.value(QStringLiteral("x-vcard")).toObject();
+
+        // Helper keys that the forward stage stored via dedicated getters.
+        // Restore via setters to avoid double-emission.
+        static const QSet<QString> kWellKnown = {
+            QStringLiteral("X-AssistantsName"),
+            QStringLiteral("X-ManagersName"),
+            QStringLiteral("X-Office"),
+            QStringLiteral("X-Profession"),
+            QStringLiteral("X-SpousesName"),
+            QStringLiteral("X-BlogFeed"),
+            QStringLiteral("uid"),
+        };
+
+        const QString assistants = xvcard.value(QStringLiteral("X-AssistantsName")).toString();
+        const QString managers   = xvcard.value(QStringLiteral("X-ManagersName")).toString();
+        const QString office     = xvcard.value(QStringLiteral("X-Office")).toString();
+        const QString profession = xvcard.value(QStringLiteral("X-Profession")).toString();
+        const QString spouses    = xvcard.value(QStringLiteral("X-SpousesName")).toString();
+        const QString blogFeed   = xvcard.value(QStringLiteral("X-BlogFeed")).toString();
+        if (!assistants.isEmpty()) addr.setAssistantsName(assistants);
+        if (!managers.isEmpty())   addr.setManagersName(managers);
+        if (!office.isEmpty())     addr.setOffice(office);
+        if (!profession.isEmpty()) addr.setProfession(profession);
+        if (!spouses.isEmpty())    addr.setSpousesName(spouses);
+        if (!blogFeed.isEmpty())   addr.setBlogFeed(QUrl(blogFeed));
+
+        // Remaining entries are raw customs: key = "APP-NAME", value = string.
+        for (auto it = xvcard.constBegin(); it != xvcard.constEnd(); ++it) {
+            if (kWellKnown.contains(it.key()))
+                continue;
+            const QString key   = it.key();
+            const QString value = it.value().toString();
+            // Split "APP-NAME" at the first '-' to recover app + name.
+            const int dash = key.indexOf(QLatin1Char('-'));
+            if (dash > 0) {
+                const QString app  = key.left(dash);
+                const QString name = key.mid(dash + 1);
+                addr.insertCustom(app, name, value);
+            } else {
+                // No dash: store under a synthetic app name.
+                addr.insertCustom(QStringLiteral("X"), key, value);
+            }
+        }
+    }
+
+    KContacts::VCardConverter conv;
+    return conv.createVCard(addr, KContacts::VCardConverter::v4_0);
 }
 
 }  // namespace Kalburator::Contacts
