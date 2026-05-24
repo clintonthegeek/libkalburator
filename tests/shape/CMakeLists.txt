@@ -26,3 +26,4 @@ kalburator_add_shape_test(tst_default_blob_writer)
 # K.7.1 — DomainOperations + registry
 kalburator_add_shape_test(tst_domain_operations_registry)
 kalburator_add_shape_test(tst_canonical_spine)
+kalburator_add_shape_test(tst_canonjson_diff_merge)

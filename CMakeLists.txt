@@ -314,6 +314,7 @@ set(KALBURATOR_SHAPE_SOURCES
     # K.7.1 — split plugin interface
     src/shape/domainoperationsregistry.cpp
     src/shape/shaperegistries.cpp
+    src/shape/canonenvelope.cpp
 )
 
 # Phase G.5 — new domain plugins (todo, contacts, memo).
