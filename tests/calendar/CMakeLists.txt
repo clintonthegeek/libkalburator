@@ -118,3 +118,6 @@ add_subdirectory(plugin)
 
 # Plan 3 Task C2/C3/C5 — ical ↔ canon round-trip + loss profile tests
 kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
+
+# Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
+kalburator_add_calendar_test(tst_orgical_canon_roundtrip)

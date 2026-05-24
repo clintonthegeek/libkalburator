@@ -125,6 +125,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalrecordmerger.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
+    # Plan 4 Task 2 — org-ical stages (RRULE simplification)
+    src/calendar/orgicalcanonstages.h
     src/calendar/calendardomaindefinition.h
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
@@ -165,6 +167,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalrecordmerger.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
+    # Plan 4 Task 2 — org-ical stages (RRULE simplification)
+    src/calendar/orgicalcanonstages.cpp
     src/calendar/calendardomaindefinition.cpp
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp
