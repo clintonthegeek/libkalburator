@@ -8,6 +8,7 @@
 #include "transcodingregistry.h"
 #include "transformationregistry.h"
 #include "domainregistry.h"
+#include "shaperegistries.h"
 #include "decsyncactivecontroller.h"
 #include "canonicalrecord.h"
 #include "recordwriter.h"
@@ -48,16 +49,26 @@ namespace Kalburator::Engine {
 
 SyncEngine::SyncEngine(BackendRegistry *registry,
                                    ISyncHost *host,
+                                   Kalburator::Shape::ShapeRegistries &shape,
                                    QObject *parent)
     : QObject(parent)
     , m_registry(registry)
     , m_controller(host)
     , m_transcodingRouter(TranscodingRegistry::instance())
+    , m_shape(shape)
 {
     // Create worker but don't start thread yet
-    m_worker = new SyncEngineWorker(m_transcodingRouter);
+    m_worker = new SyncEngineWorker(m_transcodingRouter, m_shape);
     setupWorkerConnections();
 
+}
+
+SyncEngine::SyncEngine(BackendRegistry *registry,
+                                   ISyncHost *host,
+                                   QObject *parent)
+    : SyncEngine(registry, host,
+                 Kalburator::Shape::defaultShapeRegistries(), parent)
+{
 }
 
 SyncEngine::~SyncEngine()
@@ -1301,9 +1312,12 @@ const bool engineWorkerMetatypesRegistered = []() {
 
 } // namespace
 
-SyncEngineWorker::SyncEngineWorker(const TranscodingRouter &router, QObject *parent)
+SyncEngineWorker::SyncEngineWorker(const TranscodingRouter &router,
+                                   const Kalburator::Shape::ShapeRegistries &shape,
+                                   QObject *parent)
     : QObject(parent)
     , m_router(router)
+    , m_shape(shape)
 {
     // F2 Task 20: when cancellation is observed (via observeCancel()
     // queued from the engine thread), wake any in-progress conflict
@@ -1400,7 +1414,7 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
             const auto srcShape = src->shapeFor(request.mapping.sourceCalendar);
             const auto tgtShape = tgt->shapeFor(request.mapping.targetCalendar);
             if (!srcShape.isAny() && !tgtShape.isAny()) {
-                loss = Kalburator::Shape::TransformationRegistry::instance().inspect(
+                loss = m_shape.transformation.inspect(
                     srcShape, tgtShape);
             }
         }
@@ -1858,7 +1872,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // (Task 9 precursor) so DomainRegistry has them available at sync
     // time. Compile(X, X) returns identity, so the same code path
     // handles homogeneous and heterogeneous mappings uniformly.
-    auto *dd = Kalburator::Shape::DomainRegistry::instance()
+    auto *dd = m_shape.domain
                    .definitionFor(srcShape.domain);
     if (!dd) {
         m_currentResult.success = false;
@@ -1871,7 +1885,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     }
 
     const Kalburator::Shape::Shape canonical = dd->canonicalShape();
-    auto *ops = Kalburator::Shape::DomainOperationsRegistry::instance()
+    auto *ops = m_shape.operations
                     .operationsFor(srcShape.domain);
 
     // Phase Ib.5 Task 7: if-calendar guard removed. Calendar now routes
@@ -1882,7 +1896,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // in the outer BlockingQueuedConnection) by unifiedContinueAfterConflicts'
     // applyBatch helper, which dispatches via IRecordWriter::threading().
 
-    const auto &reg = Kalburator::Shape::TransformationRegistry::instance();
+    const auto &reg = m_shape.transformation;
     std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);
     std::optional<Kalburator::Shape::Pipeline> tgtToCanon = reg.compile(tgtShape, canonical);
     std::optional<Kalburator::Shape::Pipeline> canonToTgt = reg.compile(canonical, tgtShape);
@@ -2414,13 +2428,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
 
     // Re-derive pipelines from the stored canonical shape.
     // K.9: per-collection shape resolution (see dispatchSync above).
-    const auto &treg = Kalburator::Shape::TransformationRegistry::instance();
+    const auto &treg = m_shape.transformation;
     const Kalburator::Shape::Shape srcShape = srcBackend->shapeFor(srcColId);
     const Kalburator::Shape::Shape tgtShape = tgtBackend->shapeFor(tgtColId);
     const auto canonToTgt = treg.compile(m_unifiedCanonical, tgtShape);
     const auto canonToSrc = treg.compile(m_unifiedCanonical, srcShape);
 
-    auto *opsUCC = Kalburator::Shape::DomainOperationsRegistry::instance()
+    auto *opsUCC = m_shape.operations
                        .operationsFor(srcShape.domain);
     if (!canonToTgt || !canonToSrc) {
         m_currentResult.success = false;
@@ -2638,7 +2652,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (m_baselineStore && m_engine && opsUCC) {
             // baselineProperties is on DomainDefinition, not DomainOperations.
             // Re-look up via DomainRegistry using the same domain the ops cover.
-            auto *ddUCC = Kalburator::Shape::DomainRegistry::instance()
+            auto *ddUCC = m_shape.domain
                               .definitionFor(opsUCC->targetDomain());
             const QStringList keys = ddUCC ? ddUCC->baselineProperties() : QStringList{};
             if (!keys.isEmpty()) {

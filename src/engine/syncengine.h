@@ -12,6 +12,7 @@
 #include "syncenginefuture.h"
 #include "transcodingrouter.h"
 #include "syncoperation.h"  // F2 Task 16: required by await<Op> template
+#include "shaperegistries.h"
 #include <QObject>
 #include <QList>
 #include <QMap>
@@ -145,7 +146,9 @@ public:
         ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
     };
 
-    explicit SyncEngineWorker(const TranscodingRouter &router, QObject *parent = nullptr);
+    explicit SyncEngineWorker(const TranscodingRouter &router,
+                              const Kalburator::Shape::ShapeRegistries &shape,
+                              QObject *parent = nullptr);
     ~SyncEngineWorker() override;
 
     /**
@@ -325,6 +328,7 @@ private:
     QElapsedTimer m_phaseTimer;
 
     const TranscodingRouter &m_router;
+    const Kalburator::Shape::ShapeRegistries &m_shape;
     ISyncHost *m_controller = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
     ICalendarCollection *m_collection = nullptr;
@@ -387,6 +391,17 @@ public:
     };
     Q_ENUM(SyncBehavior)
 
+    /// Injecting ctor (preferred): the engine reads shape state from
+    /// `shape`, which the caller must also have handed to the
+    /// PluginManager that populated it. Per-engine isolation lives here.
+    explicit SyncEngine(BackendRegistry *registry,
+                              ISyncHost *host,
+                              Kalburator::Shape::ShapeRegistries &shape,
+                              QObject *parent = nullptr);
+
+    /// Transitional overload: binds to the process-global default bundle
+    /// (Ambient Context). Kept so existing consumers compile unchanged;
+    /// scheduled for removal once they adopt the injecting ctor (FINDINGS O7).
     explicit SyncEngine(BackendRegistry *registry,
                               ISyncHost *host,
                               QObject *parent = nullptr);
@@ -742,6 +757,7 @@ private:
     Kalburator::Conflict::ConflictHandlerRegistry m_conflictRegistry;
     Kalburator::Conflict::IMassDeleteGuard *m_massDeleteGuard = nullptr;
     TranscodingRouter m_transcodingRouter;
+    Kalburator::Shape::ShapeRegistries &m_shape;
     ICalendarCollection *m_collection = nullptr;
     QList<SyncMapping> m_syncMappings;
 
