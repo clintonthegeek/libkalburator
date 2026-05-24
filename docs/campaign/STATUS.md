@@ -1,8 +1,9 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plan 2 **design is locked**
-(design §8 rewritten 2026-05-24 to the injected-`ShapeRegistries`-bundle topology); its task plan
-is being written against the landed APIs. Plans 3–4 remain outlined (invariant P1).
+**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plan 2 is **written and ready to
+execute** (`docs/2026-05-23-plan-2-per-engine-registries.md`, 12 tasks; design §8 rewritten
+2026-05-24 to the injected-`ShapeRegistries`-bundle topology). Plans 3–4 remain outlined
+(invariant P1).
 **Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
 **Last updated:** 2026-05-23.
 
@@ -29,7 +30,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 | # | Plan | Doc | Status |
 |---|---|---|---|
 | 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
-| 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Design locked (§8 rewritten); plan being written** |
+| 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Written (12 tasks); ready to execute** |
 | 3 | Canon encodings (`calendar+canon`/`contacts+canon`/`todo+canon`: catalogues, JSON (de)serialization stages, bridge edges, differ/merger) | _not written_ | Outlined (schema doc) |
 | 4 | Calendar convergence (retire `src/transcoding/`; RRULE-as-edge; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing) | _not written_ | Outlined (design §7, §10) |
 
