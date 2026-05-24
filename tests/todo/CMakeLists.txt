@@ -15,3 +15,5 @@ endfunction()
 kalburator_add_todo_test(tst_vtodo_plugin)
 kalburator_add_todo_test(tst_vtodo_differ)
 kalburator_add_todo_test(tst_todotxt_stage)
+# Plan 3 Task B2/B3/B5 — vtodo ↔ canon round-trip + loss profile tests
+kalburator_add_todo_test(tst_todo_canon_roundtrip)
