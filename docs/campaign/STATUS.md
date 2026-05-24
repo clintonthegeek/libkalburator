@@ -1,11 +1,13 @@
 # Campaign STATUS — canon-upgrade / convergence
 
-**Status:** Plan 1 implemented and committed (Tasks 1–7 complete). Plan 2 is **written and ready to
-execute** (`docs/2026-05-23-plan-2-per-engine-registries.md`, 12 tasks; design §8 rewritten
-2026-05-24 to the injected-`ShapeRegistries`-bundle topology). Plans 3–4 remain outlined
-(invariant P1).
+**Status:** Plans 1 and 2 implemented and committed. Plan 2 (per-engine `ShapeRegistries`
+injection, 12 tasks) is **complete** (`docs/2026-05-23-plan-2-per-engine-registries.md`):
+the bundle + Ambient-Context default, injecting ctors on `SyncEngine`/`SyncEngineWorker` and
+`PluginManager`, and all tests converted off the `clear()` rituals. Plan 3 (canon encodings)
+is **next, not yet written** — to be authored against the now-landed APIs (invariant P1). Plan 4
+remains outlined.
 **Branch:** `feature/canon-upgrade-convergence` (off `main`; not pushed).
-**Last updated:** 2026-05-23.
+**Last updated:** 2026-05-24.
 
 > Living document. Update the Status line, the plan table, the Plan-1 task checklist,
 > and the decision ledger **in the same commit** that changes any of them
@@ -30,7 +32,7 @@ per-property taxonomy. memo stays on `(blob, raw)` (out of scope).
 | # | Plan | Doc | Status |
 |---|---|---|---|
 | 1 | Shape-core foundations (four-kind loss model, versioned spine, synthetic v1→v2 fixture) | `docs/2026-05-23-plan-1-shape-core-foundations.md` | **Complete** |
-| 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Written (12 tasks); ready to execute** |
+| 2 | Per-engine registries (inject a `ShapeRegistries` bundle — `Transformation`+`Domain`+`DomainOperations` — into `SyncEngine` **and** `PluginManager`; `::instance()` delegates to a documented Ambient-Context default; remove test `clear()` rituals) | `docs/2026-05-23-plan-2-per-engine-registries.md` | **Complete** |
 | 3 | Canon encodings (`calendar+canon`/`contacts+canon`/`todo+canon`: catalogues, JSON (de)serialization stages, bridge edges, differ/merger) | _not written_ | Outlined (schema doc) |
 | 4 | Calendar convergence (retire `src/transcoding/`; RRULE-as-edge; remove `ApplyContext.transcodingPlan` + `CalendarPluginWriter` special-casing) | _not written_ | Outlined (design §7, §10) |
 
@@ -90,16 +92,23 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 - Use `QTRY_VERIFY_WITH_TIMEOUT(...)`, **not** `waitForFinished` (Qt6 doesn't spin the
   test event loop).
 - Read futures via `future.resultAt(0)`, not `future.results()` (empty after cancel).
-- `TransformationRegistry`/`DomainRegistry`/`TranscodingRegistry` are process-wide
-  singletons → every test `cleanup()` calls `...::instance().clear()` until Plan 2.
+- **(Plan 2 landed)** The three shape registries (`TransformationRegistry`/`DomainRegistry`/
+  `DomainOperationsRegistry`) are no longer cleared as process-wide singletons in tests: each
+  test now owns a `ShapeRegistries` fixture member and injects it. The `::instance()` accessors
+  remain as documented Ambient-Context scaffolding bound to `defaultShapeRegistries()` (removal
+  deferred to the downstream port, FINDINGS O7). `TranscodingRegistry` is a *different* registry,
+  still a process-wide singleton; `tst_calendar_transcoding_warning.cpp` still calls
+  `TranscodingRegistry::instance().clear()` in `cleanup()` (out of Plan 2 scope, retired in Plan 4).
 
 ## Next action
 
-- **Execute Plan 2:** the task plan is **written and ready** at
-  `docs/2026-05-23-plan-2-per-engine-registries.md` (12 tasks, against the landed
-  `ShapeRegistries`/`SyncEngine`/`PluginManager` signatures). Implement it task-by-task with
-  `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` — the
-  plan's header names the sub-skill. Start at Task 1; each task says how to build/test and is
-  green on its own. Update this Status line + the Plan-2 row as tasks land (invariant 7).
-- **After Plan 2 lands:** write Plan 3 (canon encodings) against the then-real bundle APIs;
-  remember FINDINGS O7 (remove the Ambient-Context default) is downstream-port work, not Plan 3.
+- **Write Plan 3 (canon encodings):** author the task plan against the **now-landed**
+  `ShapeRegistries` bundle + injecting-ctor APIs (`SyncEngine`/`SyncEngineWorker`,
+  `PluginManager`) — not guessed signatures (invariant P1). Plan 3 covers
+  `calendar+canon`/`contacts+canon`/`todo+canon`: catalogues, JSON (de)serialization stages,
+  bridge edges, and the differ/merger. Use the schema doc (`docs/2026-05-23-canon-schema-design.md`)
+  as the source for property models.
+- **FINDINGS O7 stays OPEN (not Plan 3 scope):** removing the Ambient-Context
+  `defaultShapeRegistries()` default and the transitional ctor overloads is **downstream-port
+  work** — PlanStan and WildPalms must first adopt the injecting ctors before the scaffolding can
+  be deleted. Track it in FINDINGS; do not fold it into Plan 3.
