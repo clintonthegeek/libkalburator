@@ -229,16 +229,29 @@ The WildPalms invariant (10) requires *a* lossy-sync warning channel. Today it c
 
 - [ ] **Step 1: Read the demote-on-write region** (`src/engine/syncengine.cpp` around `:2560-2620`) to find where each outbound record is demoted via the compiled `canon→tgtShape` pipeline, and where `collectionId`/`recordId` are in scope. Confirm the existing `emit transcodingWarning(...)` forward at `:2595-2596`/`:2616-2617` and `onWorkerTranscodingWarning` (`:1210-1219`) — the **signal stays**; only its *source* changes.
 
-- [ ] **Step 2: Add the loss-derived warning at the demote site.** Where a record is demoted with the `canon→tgtShape` pipeline (and symmetrically `canon→srcShape`), after obtaining the `Pipeline`, compute its `composedLoss()` once; if `!loss.isLossless()`, emit the warning for that record:
+- [ ] **Step 2: Add the loss-derived warning at the demote site — warn on *materialized*, non-reversible loss only.** A static edge `LossProfile` is a *capability* statement (e.g. `canon→ical` lists `onlineMeeting=Dropped` whether or not a given record has an online meeting), so a blanket `!isLossless()` emit would over-warn on every demotion and is dishonest (it would "warn" about fields the record never had — and iCal-origin records round-trip `canon→ical` losslessly). The honest, shape-driven rule (no encoding special-casing): warn only for affected `PropertyId`s that are **present and non-empty in this record's canon JSON** AND whose `LossKind` is user-visible (`Dropped`/`Simplified`/`Degraded` — exclude pure `Reversible`, which round-trips clean). In the default build this fires for nothing (only `canon→ical` runs, and iCal-origin records have none of its dropped Google-only fields present); it fires for the `canon→org-ical` recurrence simplification (recurrence present + `Simplified`), which is exactly the org-mode case the campaign converges.
 
 ```cpp
-// Re-sourced lossy-sync warning (was: TranscodingPlan warnings). The demotion
-// pipeline's composed loss is the honest, mechanism-agnostic signal.
+// Re-sourced lossy-sync warning (was: TranscodingPlan warnings). Honest signal:
+// only properties this record actually carries AND that the demotion edge loses
+// in a user-visible way (Reversible is round-trip-clean → no warning).
 const Kalburator::Shape::LossProfile demoteLoss = pipeline.composedLoss();
-if (!demoteLoss.isLossless())
-    emit transcodingWarning(collectionId, rec.recordId, { demoteLoss.summary() });
+const QJsonObject canonObj = Kalburator::Shape::CanonEnvelope::parse(rec.data); // rec.data is canon JSON pre-apply
+QStringList lostHere;
+for (auto it = demoteLoss.affected.constBegin(); it != demoteLoss.affected.constEnd(); ++it) {
+    if (it.value() == Kalburator::Shape::LossKind::Reversible) continue;
+    const QString key = it.key().toString();
+    const QJsonValue v = canonObj.value(key);
+    const bool present = !v.isUndefined() && !v.isNull()
+        && !(v.isString() && v.toString().isEmpty())
+        && !(v.isArray() && v.toArray().isEmpty())
+        && !(v.isObject() && v.toObject().isEmpty());
+    if (present) lostHere << key;
+}
+if (!lostHere.isEmpty())
+    emit /*worker*/ transcodingWarning(collectionId, uid, { demoteLoss.summary() }); // or lostHere.join(", ")
 ```
-(Use the exact pipeline/record variable names found in Step 1. Emit via the same path the existing warning uses — if the worker emits and the engine forwards, keep that wiring; if simpler to emit once per non-lossless record at the worker demote site, do that. The signal signature `(QString, QString, QStringList)` is unchanged.)
+(Use the exact pipeline/record/uid variable names found in Step 1; the canon bytes are `rec.data` *before* `pipeline.apply`. Emit through the existing worker→engine forward wiring — `SyncEngineWorker::transcodingWarning` → `SyncEngine::onWorkerTranscodingWarning` → public `transcodingWarning`; the signal signature `(QString,QString,QStringList)` is unchanged. Add the `canonenvelope.h`/`<QJsonObject>` includes to the engine if needed.)
 
 - [ ] **Step 3: Rewrite `tests/calendar/tst_calendar_transcoding_warning.cpp`** to drive the warning through the shape graph instead of `TranscodingRegistry` + a stub `PropertyTranscoder`:
   - Remove the `ByDayStripTranscoder` stub, the `TranscodingRegistry::instance().register…` in `init()`, and the `TranscodingRegistry::instance().clear()` in `cleanup()`.
