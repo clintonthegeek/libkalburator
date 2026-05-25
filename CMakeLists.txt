@@ -405,11 +405,13 @@ set(KALBURATOR_NOTE_SOURCES
 # Phase K.7.3 — UniversalStoragePlugin wrapping those backends.
 set(KALBURATOR_SINKS_HEADERS
     src/universal/rawfilesbackend.h
+    src/universal/markdownfilesbackend.h
     src/universal/genericsqlitebackend.h
     src/universal/universalstorageplugin.h
 )
 set(KALBURATOR_SINKS_SOURCES
     src/universal/rawfilesbackend.cpp
+    src/universal/markdownfilesbackend.cpp
     src/universal/genericsqlitebackend.cpp
     src/universal/universalstorageplugin.cpp
 )
