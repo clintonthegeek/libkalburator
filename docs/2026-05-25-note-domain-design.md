@@ -1,7 +1,7 @@
 # Design — a `note` plaintext-carrier domain, `(note, markdown)` peer, and Markdown-file sink
 
 **Date:** 2026-05-25
-**Status:** Design approved (human, 2026-05-25); implementation plan pending.
+**Status:** Implemented 2026-05-25 (per `docs/2026-05-25-note-domain-plan.md`); WildPalms adoption is downstream. Full suite 115/115.
 **Driver:** WildPalms requirements doc `~/dev/WildPalms/docs/2026-05-25-document-domain-requirements-for-libkalburator.md`.
 **Relates to:** campaign FINDINGS O4 (WildPalms port is downstream; its invariants are upstream).
 This is **additive, post-convergence** work — it adds a domain; it does not touch the converged

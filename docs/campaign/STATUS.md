@@ -130,7 +130,10 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
      domain (`note`) with a `(note, markdown)` peer and a Markdown-file sink, to put Palm memos on the
      shape graph. Design approved 2026-05-25 → `docs/2026-05-25-note-domain-design.md` (stratum 1:
      body-as-verbatim-string, no AST; `document` name reserved for a future conversion domain).
-     Additive; not urgent relative to the `main` merge. Implementation plan pending.
+     Additive; not urgent relative to the `main` merge. **Implemented 2026-05-25** per
+     `docs/2026-05-25-note-domain-plan.md` (6 tasks: memo→note rename, markdown↔canon stages,
+     NoteStockShapes peer+edges, RawFilesBackend virtual seams, MarkdownFilesBackend sink). Full
+     suite 115/115. WildPalms-side adoption ((note,palm) edge + device round-trip) is downstream.
 - **Push the branch** once Plan 4 is outlined or before ending the session:
   `git push -u origin feature/canon-upgrade-convergence`.
 - **FINDINGS O7 stays OPEN (not Plan 4 scope unless convenient):** removing the
