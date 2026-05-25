@@ -119,8 +119,8 @@ QString RawFilesBackend::createRecord(const QString &collectionId,
     if (!dir.exists() && !dir.mkpath(QLatin1String(".")))
         return {};
 
-    const QString base = record.id.isEmpty() ? record.displayName : record.id;
-    const QString fileName = sanitize(base) + QLatin1Char('.') + suffixFor(collectionId);
+    const QString fileName = sanitize(recordStem(collectionId, record))
+                             + QLatin1Char('.') + suffixFor(collectionId);
     const QString absPath = dir.filePath(fileName);
     QFile f(absPath);
     if (!f.open(QIODevice::WriteOnly))
@@ -216,9 +216,10 @@ QString RawFilesBackend::sanitize(const QString &id)
     return out;
 }
 
-// static: for collectionId of the form "domain+encoding", returns "encoding.domain"
-// (following the design doc's <encoding>.<domain> file suffix convention)
-QString RawFilesBackend::suffixFor(const QString &collectionId)
+// For collectionId of the form "domain+encoding", returns "encoding.domain"
+// (following the design doc's <encoding>.<domain> file suffix convention).
+// Virtual: subclasses (e.g. MarkdownFilesBackend) may override.
+QString RawFilesBackend::suffixFor(const QString &collectionId) const
 {
     // Collection IDs are Shape::toString() = "<domain>+<encoding>" or just the
     // raw collectionId if not shape-keyed. Split on '+'.
@@ -228,6 +229,14 @@ QString RawFilesBackend::suffixFor(const QString &collectionId)
     const QString domain = collectionId.left(plus);
     const QString encoding = collectionId.mid(plus + 1);
     return encoding + QLatin1Char('.') + domain;
+}
+
+// Default filename stem: record id, or displayName when id is empty.
+// Virtual: subclasses (e.g. MarkdownFilesBackend) may override.
+QString RawFilesBackend::recordStem(const QString & /*collectionId*/,
+                                    const BackendRecord &record) const
+{
+    return record.id.isEmpty() ? record.displayName : record.id;
 }
 
 } // namespace Kalburator::Sinks

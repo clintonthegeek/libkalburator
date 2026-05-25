@@ -72,7 +72,18 @@ private:
     void saveManifest() const;
 
     static QString sanitize(const QString &id);
-    static QString suffixFor(const QString &collectionId);
+
+protected:
+    /// File suffix for a collection. Default: "<encoding>.<domain>" derived from
+    /// the shape-keyed collection id. Subclasses may override (e.g. "md").
+    virtual QString suffixFor(const QString &collectionId) const;
+
+    /// Unsanitised filename stem for a record. Default: record id, or
+    /// displayName when id is empty. createRecord() sanitises the result.
+    virtual QString recordStem(const QString &collectionId,
+                               const Kalburator::Sync::BackendRecord &record) const;
+
+private:
 
     QString m_rootPath;
     QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;
