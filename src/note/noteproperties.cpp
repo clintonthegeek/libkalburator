@@ -1,14 +1,14 @@
-#include "memoproperties.h"
+#include "noteproperties.h"
 
 using namespace Kalburator::Shape;
 
-namespace Kalburator::Memo {
+namespace Kalburator::Note {
 
-PropertyCatalogue makeMemoCatalogue()
+PropertyCatalogue makeNoteCatalogue()
 {
     PropertyCatalogue cat;
 
-    cat.addProperty({ PropertyId{"id"},           PropertyKind::String,     QStringLiteral("ID"),           false });
+    cat.addProperty({ PropertyId{"uid"},          PropertyKind::String,     QStringLiteral("UID"),          false });
     cat.addProperty({ PropertyId{"body"},         PropertyKind::String,     QStringLiteral("Body") });
     cat.addProperty({ PropertyId{"categories"},   PropertyKind::StringList, QStringLiteral("Categories") });
     cat.addProperty({ PropertyId{"lastmodified"}, PropertyKind::DateTime,   QStringLiteral("Last Modified") });
@@ -16,4 +16,4 @@ PropertyCatalogue makeMemoCatalogue()
     return cat;
 }
 
-} // namespace Kalburator::Memo
+} // namespace Kalburator::Note

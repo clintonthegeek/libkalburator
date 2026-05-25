@@ -3,7 +3,7 @@
 #include "manifest.h"
 #include "universalstorageplugin.h"
 #include "blobplugin.h"
-#include "memoplugin.h"
+#include "noteplugin.h"
 #include "todoplugin.h"
 #include "contactsplugin.h"
 #include "calendarplugin.h"
@@ -32,7 +32,7 @@ PluginManifest mkManifest(const QString &id, QStringList defines = {}, QStringLi
 void registerStockPlugins(PluginManager &pm) {
     static UniversalStoragePlugin s_universal;
     static Blob::BlobPlugin s_blob;
-    static Memo::MemoPlugin s_memo;
+    static Note::NotePlugin s_note;
     static Todo::TodoPlugin s_todo;
     static Contacts::ContactsPlugin s_contacts;
     static Calendar::CalendarPlugin s_calendar;
@@ -45,7 +45,7 @@ void registerStockPlugins(PluginManager &pm) {
     QList<QPair<Plugin*, PluginManifest>> items{
         {&s_universal, mkManifest(QStringLiteral("kalburator.universal-storage"))},
         {&s_blob, mkManifest(QStringLiteral("kalburator.blob"), {QStringLiteral("blob")})},
-        {&s_memo, mkManifest(QStringLiteral("kalburator.memo"), {QStringLiteral("memo")})},
+        {&s_note, mkManifest(QStringLiteral("kalburator.note"), {QStringLiteral("note")})},
         {&s_todo, mkManifest(QStringLiteral("kalburator.todo"), {QStringLiteral("todo")})},
         {&s_contacts, mkManifest(QStringLiteral("kalburator.contacts"), {QStringLiteral("contacts")})},
         {&s_calendar, mkManifest(QStringLiteral("kalburator.calendar"), {QStringLiteral("calendar")})},

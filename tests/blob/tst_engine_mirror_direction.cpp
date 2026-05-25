@@ -85,13 +85,15 @@ public:
     QString backendType() const override { return QStringLiteral("memo"); }
     QList<Kalburator::Shape::Shape> nativeShapes() const override
     {
-        // Phase Ia.5 Task 9: declare the memo plugin's canonical shape
-        // (memo/text) so dispatchSync's plugin-aware path finds an edge.
-        // The test still treats payloads as opaque bytes; "raw" was a
-        // legacy placeholder from before dispatchSync consulted plugins.
+        // Declare the note plugin's canonical shape (note/canon) so
+        // dispatchSync's plugin-aware path finds a registered domain
+        // definition. The test still treats payloads as opaque bytes;
+        // "raw" was a legacy placeholder from before dispatchSync
+        // consulted plugins. (Was (memo,text) before the memo->note
+        // domain rename, 2026-05-25.)
         return { Kalburator::Shape::Shape{
-            DomainId{QStringLiteral("memo")},
-            EncodingId{QStringLiteral("text")} } };
+            DomainId{QStringLiteral("note")},
+            EncodingId{QStringLiteral("canon")} } };
     }
     QString resourceId() const override
         { return QStringLiteral("memo-test:") + m_id; }

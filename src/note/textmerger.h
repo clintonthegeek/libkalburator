@@ -2,9 +2,9 @@
 
 #include "recordmerger.h"
 
-namespace Kalburator::Memo {
+namespace Kalburator::Note {
 
-/// IRecordMerger for (memo, text). Performs 3-way merge by line
+/// IRecordMerger for (note, canon). Performs 3-way merge by line
 /// for body text; falls through to conflict policy when lines diverge.
 class TextMerger : public Kalburator::Shape::RecordMerger {
 public:
@@ -15,4 +15,4 @@ public:
         const Kalburator::Conflict::ConflictPolicy& policy) const override;
 };
 
-} // namespace Kalburator::Memo
+} // namespace Kalburator::Note

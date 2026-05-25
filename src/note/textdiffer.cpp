@@ -18,7 +18,7 @@ QJsonObject parseMemo(const QByteArray &data)
 
 } // namespace
 
-namespace Kalburator::Memo {
+namespace Kalburator::Note {
 
 QSet<PropertyId> TextDiffer::diff(
     const CanonicalRecord &source,
@@ -57,4 +57,4 @@ bool TextDiffer::equal(
     return diff(a, b).isEmpty();
 }
 
-} // namespace Kalburator::Memo
+} // namespace Kalburator::Note

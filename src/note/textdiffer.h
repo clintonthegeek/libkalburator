@@ -2,9 +2,9 @@
 
 #include "recorddiffer.h"
 
-namespace Kalburator::Memo {
+namespace Kalburator::Note {
 
-/// IRecordDiffer for (memo, text). Compares body text, categories,
+/// IRecordDiffer for (note, canon). Compares body text, categories,
 /// and last-modified timestamp stored as JSON in CanonicalRecord.data.
 class TextDiffer : public Kalburator::Shape::RecordDiffer {
 public:
@@ -16,4 +16,4 @@ public:
                const Kalburator::Shape::CanonicalRecord& b) const override;
 };
 
-} // namespace Kalburator::Memo
+} // namespace Kalburator::Note

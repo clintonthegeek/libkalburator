@@ -382,19 +382,19 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/akonadicontactsbackend.cpp
 )
 
-set(KALBURATOR_MEMO_HEADERS
-    src/memo/memoproperties.h
-    src/memo/textdiffer.h
-    src/memo/textmerger.h
-    src/memo/memodomaindefinition.h
-    src/memo/memoplugin.h
+set(KALBURATOR_NOTE_HEADERS
+    src/note/noteproperties.h
+    src/note/textdiffer.h
+    src/note/textmerger.h
+    src/note/notedomaindefinition.h
+    src/note/noteplugin.h
 )
-set(KALBURATOR_MEMO_SOURCES
-    src/memo/memoproperties.cpp
-    src/memo/textdiffer.cpp
-    src/memo/textmerger.cpp
-    src/memo/memodomaindefinition.cpp
-    src/memo/memoplugin.cpp
+set(KALBURATOR_NOTE_SOURCES
+    src/note/noteproperties.cpp
+    src/note/textdiffer.cpp
+    src/note/textmerger.cpp
+    src/note/notedomaindefinition.cpp
+    src/note/noteplugin.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
@@ -523,7 +523,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_SHAPE_HEADERS}
     ${KALBURATOR_TODO_HEADERS}
     ${KALBURATOR_CONTACTS_HEADERS}
-    ${KALBURATOR_MEMO_HEADERS}
+    ${KALBURATOR_NOTE_HEADERS}
     ${KALBURATOR_SINKS_HEADERS}
     ${KALBURATOR_PROVIDER_CORE_HEADERS}
     ${KALBURATOR_PLUGIN_HEADERS}
@@ -541,7 +541,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_SHAPE_SOURCES}
     ${KALBURATOR_TODO_SOURCES}
     ${KALBURATOR_CONTACTS_SOURCES}
-    ${KALBURATOR_MEMO_SOURCES}
+    ${KALBURATOR_NOTE_SOURCES}
     ${KALBURATOR_SINKS_SOURCES}
     ${KALBURATOR_PROVIDER_CORE_SOURCES}
     ${KALBURATOR_PLUGIN_SOURCES}
@@ -591,7 +591,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/todo>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/contacts>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/memo>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/note>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/backend>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/plugin>

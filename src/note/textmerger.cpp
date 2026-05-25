@@ -53,7 +53,7 @@ bool srcWins(AutoResolveStrategy strategy,
 
 } // namespace
 
-namespace Kalburator::Memo {
+namespace Kalburator::Note {
 
 CanonicalRecord TextMerger::merge(
     const CanonicalRecord &source,
@@ -105,4 +105,4 @@ CanonicalRecord TextMerger::merge(
     return result;
 }
 
-} // namespace Kalburator::Memo
+} // namespace Kalburator::Note

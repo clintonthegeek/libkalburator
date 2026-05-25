@@ -12,11 +12,11 @@ using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
-using Kalburator::Memo::TextDiffer;
+using Kalburator::Note::TextDiffer;
 
 namespace {
 
-const Shape kShape{ DomainId{"memo"}, EncodingId{"text"} };
+const Shape kShape{ DomainId{"note"}, EncodingId{"canon"} };
 
 QByteArray makeMemoData(const QString &body, const QStringList &cats = {})
 {

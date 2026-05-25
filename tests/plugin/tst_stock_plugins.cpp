@@ -24,11 +24,11 @@ private slots:
         QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
     }
 
-    void memoDomainRegistered() {
+    void noteDomainRegistered() {
         Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
         QVERIFY(m_shape.domain.definitionFor(
-            Kalburator::Shape::DomainId{QStringLiteral("memo")}) != nullptr);
+            Kalburator::Shape::DomainId{QStringLiteral("note")}) != nullptr);
     }
 
     void blobDomainRegistered() {
