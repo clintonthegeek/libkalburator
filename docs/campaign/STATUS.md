@@ -126,6 +126,11 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
      only the backend's `nativeShapes()`/`shapeFor()` wiring + a PlanStan org-sync ctest remain.
   4. **Pre-existing flake (FINDINGS O9):** `tst_providerlifecycle` async timing — investigate
      independently; it is not a campaign regression.
+  5. **`note` domain (new, post-convergence; FINDINGS O4):** WildPalms requested a plaintext-carrier
+     domain (`note`) with a `(note, markdown)` peer and a Markdown-file sink, to put Palm memos on the
+     shape graph. Design approved 2026-05-25 → `docs/2026-05-25-note-domain-design.md` (stratum 1:
+     body-as-verbatim-string, no AST; `document` name reserved for a future conversion domain).
+     Additive; not urgent relative to the `main` merge. Implementation plan pending.
 - **Push the branch** once Plan 4 is outlined or before ending the session:
   `git push -u origin feature/canon-upgrade-convergence`.
 - **FINDINGS O7 stays OPEN (not Plan 4 scope unless convenient):** removing the

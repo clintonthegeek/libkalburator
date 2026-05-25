@@ -37,6 +37,10 @@ WildPalms moves its conduits onto the converged pipeline **after this branch mer
 (handoff §3, §7). We do not wire WildPalms. But the five WildPalms invariants
 (invariant 10) must hold throughout — especially that the loss model can express
 `Reversible` (X-property round-trip) before Plan 3 writes the palm/canon edges. (Seeded 2026-05-23.)
+**Update 2026-05-25:** WildPalms' memo holdout now has a concrete, human-approved design — a `note`
+plaintext-carrier domain + `(note, markdown)` peer (frontmatter ⟷ `providerExtras`, `Reversible`) +
+a `MarkdownFilesBackend` sink. See `docs/2026-05-25-note-domain-design.md`. Additive, post-convergence;
+implementation plan pending. The `Reversible` requirement is satisfied by the existing four-kind model.
 
 ### O5 — `pipeline.cpp` loss folding assumed clean
 Planning grep found no `.level`/`.dropped` usage in `src/shape/pipeline.cpp`, so
