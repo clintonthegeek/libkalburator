@@ -1,5 +1,6 @@
 #include "noteplugin.h"
 #include "notedomaindefinition.h"
+#include "notestockshapes.h"
 
 namespace Kalburator::Note {
 
@@ -8,7 +9,7 @@ QList<std::shared_ptr<Shape::DomainDefinition>> NotePlugin::domainDefinitions() 
 }
 
 QList<std::shared_ptr<Shape::ShapeContribution>> NotePlugin::shapeContributions() const {
-    return {};  // Task 3 returns { std::make_shared<NoteStockShapes>() }
+    return { std::make_shared<NoteStockShapes>() };
 }
 
 } // namespace Kalburator::Note

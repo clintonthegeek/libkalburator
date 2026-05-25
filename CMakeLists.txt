@@ -389,6 +389,7 @@ set(KALBURATOR_NOTE_HEADERS
     src/note/notedomaindefinition.h
     src/note/noteplugin.h
     src/note/markdowncanonstages.h
+    src/note/notestockshapes.h
 )
 set(KALBURATOR_NOTE_SOURCES
     src/note/noteproperties.cpp
@@ -397,6 +398,7 @@ set(KALBURATOR_NOTE_SOURCES
     src/note/notedomaindefinition.cpp
     src/note/noteplugin.cpp
     src/note/markdowncanonstages.cpp
+    src/note/notestockshapes.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
