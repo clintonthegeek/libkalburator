@@ -48,20 +48,28 @@ CalDavConfigWidget::CalDavConfigWidget(CalDavProvider *provider, QWidget *parent
 CalDavConfigWidget::~CalDavConfigWidget() = default;
 
 void CalDavConfigWidget::readFromProvider() {
-    const auto cfg = m_provider->save();
+    setConfiguration(m_provider->save());
+}
+
+void CalDavConfigWidget::setConfiguration(const BackendConfiguration &cfg) {
     m_displayNameEdit->setText(cfg.displayName);
     m_urlEdit->setText(cfg.connectionParams.value(QStringLiteral("url")).toString());
     m_usernameEdit->setText(cfg.connectionParams.value(QStringLiteral("username")).toString());
     m_passwordEdit->setText(cfg.connectionParams.value(QStringLiteral("password")).toString());
 }
 
-void CalDavConfigWidget::applyToProvider() {
+BackendConfiguration CalDavConfigWidget::configuration() const {
+    // Start from the provider's config to preserve id/type, overlay the form.
     BackendConfiguration cfg = m_provider->save();
     cfg.displayName = m_displayNameEdit->text();
     cfg.connectionParams[QStringLiteral("url")]      = m_urlEdit->text();
     cfg.connectionParams[QStringLiteral("username")] = m_usernameEdit->text();
     cfg.connectionParams[QStringLiteral("password")] = m_passwordEdit->text();
-    m_provider->load(cfg);
+    return cfg;
+}
+
+void CalDavConfigWidget::applyToProvider() {
+    m_provider->load(configuration());
 }
 
 void CalDavConfigWidget::onTestClicked() {

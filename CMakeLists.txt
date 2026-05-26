@@ -474,6 +474,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/caldavbackendcontribution.h
     src/sync/carddavbackendcontribution.h
     src/sync/iprovider.h
+    # Uniform config-widget contract (widget <-> provider bridge)
+    src/sync/iproviderconfigwidget.h
     src/sync/providermanager.h
     src/sync/caldavprovider.h
     src/sync/caldavconfigwidget.h

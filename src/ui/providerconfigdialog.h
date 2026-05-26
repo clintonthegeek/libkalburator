@@ -60,6 +60,11 @@ private:
     void rebuildProviderWidget();
     void populateKindsFromRegistry();
 
+    /// Copy the embedded config widget's current values into the provider
+    /// (widget → provider) so connect()/save() act on the user's input.
+    /// No-op if the widget doesn't implement IProviderConfigWidget.
+    void applyWidgetToProvider() const;
+
     Sync::ProviderManager  *m_manager;
     Sync::BackendRegistry  *m_registry = nullptr;   // borrowed, non-owning
     QList<ProviderKind>     m_availableKinds;

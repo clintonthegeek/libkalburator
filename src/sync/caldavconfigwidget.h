@@ -1,6 +1,7 @@
 #ifndef KALBURATOR_SYNC_CALDAVCONFIGWIDGET_H
 #define KALBURATOR_SYNC_CALDAVCONFIGWIDGET_H
 
+#include "iproviderconfigwidget.h"
 #include <QWidget>
 
 class QLineEdit;
@@ -23,12 +24,17 @@ class CalDavProvider;
  * applyToProvider() — this widget has no Save button itself; the
  * hosting dialog typically owns the Apply/OK button.
  */
-class CalDavConfigWidget : public QWidget
+class CalDavConfigWidget : public QWidget,
+                           public IProviderConfigWidget
 {
     Q_OBJECT
 public:
     explicit CalDavConfigWidget(CalDavProvider *provider, QWidget *parent = nullptr);
     ~CalDavConfigWidget() override;
+
+    // IProviderConfigWidget — the form's current values / populate the form.
+    BackendConfiguration configuration() const override;
+    void setConfiguration(const BackendConfiguration &cfg) override;
 
     /// Write the form's current values back into the bound provider.
     /// Idempotent. Safe to call multiple times.

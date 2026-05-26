@@ -2,6 +2,7 @@
 #include "collectionpickerwidget.h"
 #include "../sync/providermanager.h"
 #include "../sync/iprovider.h"
+#include "../sync/iproviderconfigwidget.h"
 #include "../sync/backendregistry.h"
 #include "../sync/backendcontribution.h"
 
@@ -183,9 +184,19 @@ void ProviderConfigDialog::rebuildProviderWidget()
     if (m_statusLabel) m_statusLabel->clear();
 }
 
+void ProviderConfigDialog::applyWidgetToProvider() const
+{
+    if (!m_currentProvider || !m_embeddedConfig) return;
+    if (auto *cw = dynamic_cast<Sync::IProviderConfigWidget *>(m_embeddedConfig))
+        m_currentProvider->load(cw->configuration());
+}
+
 void ProviderConfigDialog::onTestClicked()
 {
     if (!m_currentProvider) return;
+    // Bridge the user's edited values into the provider before connecting;
+    // otherwise connect() runs against an empty config and fails immediately.
+    applyWidgetToProvider();
     m_testButton->setEnabled(false);
     if (m_statusLabel) m_statusLabel->setText(tr("Testing…"));
 
@@ -241,6 +252,10 @@ void ProviderConfigDialog::onConnectFinished(bool ok)
 
 Sync::BackendConfiguration ProviderConfigDialog::result() const
 {
+    // Pull the latest widget values into the provider so the saved config
+    // reflects what the user typed (preserving provider-managed fields like
+    // id that the widget doesn't carry).
+    applyWidgetToProvider();
     return m_currentProvider ? m_currentProvider->save()
                              : Sync::BackendConfiguration{};
 }

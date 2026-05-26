@@ -22,6 +22,17 @@ AkonadiConfigWidget::AkonadiConfigWidget(QWidget *parent)
     form->addRow(info);
 }
 
+BackendConfiguration AkonadiConfigWidget::configuration() const {
+    BackendConfiguration cfg;
+    cfg.type        = QStringLiteral("akonadi");
+    cfg.displayName = m_name->text();
+    return cfg;
+}
+
+void AkonadiConfigWidget::setConfiguration(const BackendConfiguration &cfg) {
+    m_name->setText(cfg.displayName);
+}
+
 QString AkonadiConfigWidget::displayName() const { return m_name->text(); }
 void AkonadiConfigWidget::setDisplayName(const QString &name) { m_name->setText(name); }
 

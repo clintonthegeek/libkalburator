@@ -2,6 +2,7 @@
 #define KALBURATOR_SYNC_MULTIPROTOCOLDAVCONFIGWIDGET_H
 
 #include "backendconfiguration.h"
+#include "iproviderconfigwidget.h"
 #include <QWidget>
 
 class QLineEdit;
@@ -9,14 +10,15 @@ class QGroupBox;
 
 namespace Kalburator::Sync {
 
-class MultiProtocolDavConfigWidget : public QWidget
+class MultiProtocolDavConfigWidget : public QWidget,
+                                     public IProviderConfigWidget
 {
     Q_OBJECT
 public:
     explicit MultiProtocolDavConfigWidget(QWidget *parent = nullptr);
 
-    void setConfiguration(const BackendConfiguration &cfg);
-    BackendConfiguration configuration() const;
+    void setConfiguration(const BackendConfiguration &cfg) override;
+    BackendConfiguration configuration() const override;
 
 private:
     QLineEdit *m_displayNameEdit;

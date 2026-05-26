@@ -12,9 +12,64 @@
 #include "../../src/sync/backendcontribution.h"
 #include "../../src/sync/caldavbackendcontribution.h"
 #include "../../src/sync/iprovider.h"
+#include "../../src/sync/iproviderconfigwidget.h"
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;
+
+// A config widget (implementing the IProviderConfigWidget contract) that always
+// reports a non-empty URL, plus a provider that only "connects" if it actually
+// received that URL via load(). Together they prove the dialog bridges the
+// widget's edited config into the provider before calling connect().
+class BridgeStubConfigWidget : public QWidget, public IProviderConfigWidget {
+public:
+    BackendConfiguration configuration() const override {
+        BackendConfiguration c;
+        c.type = QStringLiteral("bridge-stub");
+        c.displayName = QStringLiteral("Bridged");
+        c.connectionParams[QStringLiteral("url")] = QStringLiteral("http://example.test/");
+        return c;
+    }
+    void setConfiguration(const BackendConfiguration &) override {}
+};
+
+class BridgeStubProvider : public IProvider {
+    Q_OBJECT
+public:
+    QString id() const override { return QStringLiteral("bridge-stub"); }
+    QString kind() const override { return QStringLiteral("bridge-stub"); }
+    QString displayName() const override { return QStringLiteral("Bridge Stub"); }
+    void load(const BackendConfiguration &c) override
+    { m_url = c.connectionParams.value(QStringLiteral("url")).toString(); }
+    BackendConfiguration save() const override {
+        BackendConfiguration c; c.type = kind();
+        c.connectionParams[QStringLiteral("url")] = m_url;
+        return c;
+    }
+    QWidget *createConfigWidget(QWidget *) override { return new BridgeStubConfigWidget; }
+    QFuture<bool> connect() override {
+        const bool ok = !m_url.isEmpty();
+        if (!ok) emit error(QStringLiteral("no server URL configured"));
+        QPromise<bool> p; auto f = p.future();
+        p.start(); p.addResult(ok); p.finish();
+        return f;
+    }
+    void disconnect() override {}
+    bool isConnected() const override { return false; }
+    QList<CollectionInfo> collections() const override { return {}; }
+    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+private:
+    QString m_url;
+};
+
+class BridgeStubContribution : public BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("bridge-stub"); }
+    QString displayName() const override { return QStringLiteral("Bridge Stub"); }
+    QList<Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override
+    { return std::make_unique<BridgeStubProvider>(); }
+};
 
 // A provider whose connect() fails and emits a specific error() message, so
 // we can assert the dialog surfaces that message to the user.
@@ -79,7 +134,26 @@ private slots:
     void dynamicKindsConstructor_populatesFromRegistry();
     void dynamicKindsConstructor_reactsToContributionRegistered();
     void failedTestConnection_surfacesErrorMessage();
+    void testConnection_bridgesWidgetConfigIntoProvider();
 };
+
+void TstProviderConfigDialog::testConnection_bridgesWidgetConfigIntoProvider()
+{
+    // The provider only connects if it received a URL via load(). The dialog
+    // must pull that URL from the embedded config widget before connect();
+    // otherwise the provider is empty and "connect" fails.
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<BridgeStubContribution>());
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry,
+                                 Ui::ProviderConfigDialog::AddNew, {});
+
+    QMetaObject::invokeMethod(&dlg, "onTestClicked");
+
+    auto *status = dlg.findChild<QLabel*>(QStringLiteral("testStatusLabel"));
+    QVERIFY(status != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(status->text().contains(QStringLiteral("Connected")), 3000);
+}
 
 void TstProviderConfigDialog::failedTestConnection_surfacesErrorMessage()
 {
