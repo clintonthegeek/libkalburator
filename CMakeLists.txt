@@ -481,6 +481,7 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/caldavconfigwidget.h
     src/sync/carddavcapabilitydiscovery.h
     src/sync/carddavprovider.h
+    src/sync/carddavconfigwidget.h
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.h
     # Phase K.7.1: account-neutral IProvider adapter
@@ -508,6 +509,7 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/caldavconfigwidget.cpp
     src/sync/carddavcapabilitydiscovery.cpp
     src/sync/carddavprovider.cpp
+    src/sync/carddavconfigwidget.cpp
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.cpp
     # Phase K.7.1: account-neutral IProvider adapter

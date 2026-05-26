@@ -135,6 +135,20 @@ set_tests_properties(tst_carddav_capability_discovery PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# CardDavConfigWidget tests — lean config-widget round-trip + provider wiring.
+add_executable(tst_carddav_config_widget tst_carddav_config_widget.cpp)
+target_link_libraries(tst_carddav_config_widget
+    PRIVATE
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_carddav_config_widget COMMAND tst_carddav_config_widget)
+set_tests_properties(tst_carddav_config_widget PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Phase Ib Task 8 — CardDavProvider tests against a fake CardDAV server.
 add_executable(tst_carddav_provider
     tst_carddav_provider.cpp

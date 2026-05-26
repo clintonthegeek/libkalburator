@@ -79,8 +79,9 @@ private slots:
     void connect_fails_on_unreachable_server();
     // Test 8: kind() == "carddav"
     void kind_is_carddav();
-    // Test 9: createConfigWidget returns nullptr in Phase Ib
-    void createConfigWidget_returns_nullptr();
+    // createConfigWidget() now returns a real CardDavConfigWidget; that path is
+    // covered (needs a GUI QApplication) by tst_carddav_config_widget, so it is
+    // not tested here in this QTEST_GUILESS_MAIN target.
     // Additional edge cases mirrored from tst_caldav_provider
     void connect_when_already_connected_is_noop();
     void connect_with_empty_url_emits_error_immediately();
@@ -335,14 +336,6 @@ void TstCardDavProvider::kind_is_carddav()
 {
     CardDavProvider provider;
     QCOMPARE(provider.kind(), QStringLiteral("carddav"));
-}
-
-// --- Test 9 ------------------------------------------------------------------
-
-void TstCardDavProvider::createConfigWidget_returns_nullptr()
-{
-    CardDavProvider provider;
-    QVERIFY(provider.createConfigWidget(nullptr) == nullptr);
 }
 
 // --- Edge cases (mirrored from tst_caldav_provider) --------------------------

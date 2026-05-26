@@ -3,6 +3,7 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "carddavcapabilitydiscovery.h"
+#include "carddavconfigwidget.h"
 #include "remotecontactsbackend.h"
 
 #include <QFutureInterface>
@@ -38,9 +39,10 @@ BackendConfiguration CardDavProvider::save() const {
     return cfg;
 }
 
-QWidget *CardDavProvider::createConfigWidget(QWidget * /*parent*/) {
-    // Phase Ib: config widget not yet implemented.
-    return nullptr;
+QWidget *CardDavProvider::createConfigWidget(QWidget *parent) {
+    auto *w = new CardDavConfigWidget(parent);
+    w->setConfiguration(save());   // provider -> widget, same as CalDav/multiproto
+    return w;
 }
 
 QFuture<bool> CardDavProvider::connect() {
