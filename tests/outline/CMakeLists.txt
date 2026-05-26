@@ -13,3 +13,4 @@ function(kalburator_add_outline_test TEST_NAME)
 endfunction()
 
 kalburator_add_outline_test(tst_outline_node)
+kalburator_add_outline_test(tst_outline_catalogue)

@@ -403,9 +403,11 @@ set(KALBURATOR_NOTE_SOURCES
 
 set(KALBURATOR_OUTLINE_HEADERS
     src/outline/outlinenode.h
+    src/outline/outlinecanonproperties.h
 )
 set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinenode.cpp
+    src/outline/outlinecanonproperties.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
