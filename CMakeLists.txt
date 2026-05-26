@@ -407,6 +407,7 @@ set(KALBURATOR_OUTLINE_HEADERS
     src/outline/outlinediffer.h
     src/outline/outlinemerger.h
     src/outline/opmlcanonstages.h
+    src/outline/orgcanonstages.h
 )
 set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinenode.cpp
@@ -414,6 +415,7 @@ set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinediffer.cpp
     src/outline/outlinemerger.cpp
     src/outline/opmlcanonstages.cpp
+    src/outline/orgcanonstages.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
@@ -530,6 +532,24 @@ set(KALBURATOR_UI_SOURCES
     src/ui/providerconfigdialog.cpp
 )
 
+# --- OrgGrove (Org-mode parser/serializer for the outline domain) -----------
+# Consumers that embed libkalburator via add_subdirectory can point
+# KALBURATOR_ORGGROVE_SOURCE_DIR at a local checkout to avoid network access.
+set(KALBURATOR_ORGGROVE_SOURCE_DIR "" CACHE PATH
+    "Optional local OrgGrove checkout (overrides FetchContent)")
+set(KALBURATOR_ORGGROVE_GIT_TAG "2901bff8197cc704421e9b65c68a9c3817fa1875" CACHE STRING
+    "OrgGrove commit to fetch when SOURCE_DIR is unset")
+
+if(KALBURATOR_ORGGROVE_SOURCE_DIR)
+    add_subdirectory(${KALBURATOR_ORGGROVE_SOURCE_DIR} orggrove EXCLUDE_FROM_ALL)
+else()
+    include(FetchContent)
+    FetchContent_Declare(OrgGrove
+        GIT_REPOSITORY https://codeberg.org/clintonthegeek/OrgGrove.git
+        GIT_TAG        ${KALBURATOR_ORGGROVE_GIT_TAG})
+    FetchContent_MakeAvailable(OrgGrove)
+endif()
+
 # Aggregate
 set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_CALENDAR_HEADERS}
@@ -635,6 +655,8 @@ target_link_libraries(kalburator
         KF6::Holidays
         KF6::Contacts
         KF6::ConfigCore
+    PRIVATE
+        OrgGrove::OrgGrove
 )
 
 if(KALBURATOR_HAVE_AKONADI)
