@@ -50,6 +50,14 @@ public:
     void setReturn401(bool on) { m_return401 = on; }
     void setReturn500(bool on) { m_return500 = on; }
 
+    /// Emulate a NextCloud-style deployment (RFC 6764 well-known discovery):
+    ///   - the DAV endpoints live under @p contextPath (e.g. "/remote.php/dav")
+    ///   - GET/PROPFIND "/.well-known/carddav" returns 301 -> "<contextPath>/"
+    ///   - PROPFIND on the bare root "/" returns 405 (it is the web UI, not DAV)
+    /// All principal/home/addressbook hrefs are emitted under @p contextPath.
+    /// Pass an empty string to restore the default root-served behavior.
+    void setContextPath(const QString &contextPath) { m_contextPath = contextPath; }
+
     /**
      * @brief Insert an artificial delay (ms) before sending any response.
      *
@@ -130,6 +138,7 @@ private:
 
     bool m_return401 = false;
     bool m_return500 = false;
+    QString m_contextPath;  ///< empty => DAV served at root; else NextCloud-style
     int  m_responseDelayMs = 0; ///< Artificial response delay for cancellation tests.
 };
 

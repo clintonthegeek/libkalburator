@@ -253,7 +253,31 @@ void FakeCardDavServer::handleRequest(QTcpSocket *socket,
     }
 
     const QByteArray method = parts.at(0);
-    const QString path = QString::fromUtf8(parts.at(1));
+    const QString rawPath = QString::fromUtf8(parts.at(1));
+
+    // RFC 6764 well-known bootstrap for NextCloud-style deployments.
+    if (!m_contextPath.isEmpty()) {
+        if (rawPath == QStringLiteral("/.well-known/carddav")) {
+            const QByteArray loc = (m_contextPath + QStringLiteral("/")).toUtf8();
+            writeResponse(socket, 301, "Moved Permanently", QByteArray(),
+                          "Location: " + loc + "\r\n");
+            return;
+        }
+        if (method == "PROPFIND"
+            && (rawPath == QStringLiteral("/") || rawPath.isEmpty())) {
+            // The bare root is the web UI, not a DAV collection.
+            writeResponse(socket, 405, "Method Not Allowed", QByteArray());
+            return;
+        }
+    }
+
+    // Strip the context prefix so the routing below is path-shape agnostic.
+    QString path = rawPath;
+    if (!m_contextPath.isEmpty() && path.startsWith(m_contextPath)) {
+        path = path.mid(m_contextPath.length());
+        if (path.isEmpty())
+            path = QStringLiteral("/");
+    }
 
     // Split headers from body.
     const int headerEnd = fullRequest.indexOf("\r\n\r\n");
@@ -315,13 +339,13 @@ QString FakeCardDavServer::xmlForPrincipal() const
         "    <d:propstat>\n"
         "      <d:prop>\n"
         "        <d:current-user-principal>\n"
-        "          <d:href>/principals/users/testuser/</d:href>\n"
+        "          <d:href>%1/principals/users/testuser/</d:href>\n"
         "        </d:current-user-principal>\n"
         "      </d:prop>\n"
         "      <d:status>HTTP/1.1 200 OK</d:status>\n"
         "    </d:propstat>\n"
         "  </d:response>\n"
-        "</d:multistatus>\n");
+        "</d:multistatus>\n").arg(m_contextPath);
 }
 
 QString FakeCardDavServer::xmlForHome() const
@@ -331,17 +355,17 @@ QString FakeCardDavServer::xmlForHome() const
         "<d:multistatus xmlns:d=\"DAV:\""
         " xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n"
         "  <d:response>\n"
-        "    <d:href>/principals/users/testuser/</d:href>\n"
+        "    <d:href>%1/principals/users/testuser/</d:href>\n"
         "    <d:propstat>\n"
         "      <d:prop>\n"
         "        <card:addressbook-home-set>\n"
-        "          <d:href>/addressbooks/testuser/</d:href>\n"
+        "          <d:href>%1/addressbooks/testuser/</d:href>\n"
         "        </card:addressbook-home-set>\n"
         "      </d:prop>\n"
         "      <d:status>HTTP/1.1 200 OK</d:status>\n"
         "    </d:propstat>\n"
         "  </d:response>\n"
-        "</d:multistatus>\n");
+        "</d:multistatus>\n").arg(m_contextPath);
 }
 
 QString FakeCardDavServer::xmlForAddressbooks() const
@@ -354,7 +378,7 @@ QString FakeCardDavServer::xmlForAddressbooks() const
         const QString &collId      = book.first;
         const QString &displayName = book.second;
         const QString href =
-            QStringLiteral("/addressbooks/testuser/%1/").arg(collId);
+            QStringLiteral("%1/addressbooks/testuser/%2/").arg(m_contextPath, collId);
         xml += QStringLiteral("  <d:response>\n");
         xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
         xml += QStringLiteral("    <d:propstat>\n");

@@ -60,6 +60,7 @@ class TstCalDavProvider : public QObject
     Q_OBJECT
 private slots:
     void connect_succeeds_against_fake_server();
+    void connect_succeeds_via_wellknown_against_nextcloud_style_server();
     void connect_populates_collections();
     void createBackend_returns_remote_backend_for_known_collection();
     void createBackend_returns_nullptr_for_unknown_collection();
@@ -90,6 +91,30 @@ void TstCalDavProvider::connect_succeeds_against_fake_server()
     QVERIFY(provider.isConnected());
     QCOMPARE(stateSpy.count(), 1);
     QCOMPARE(stateSpy.first().at(0).toBool(), true);
+}
+
+void TstCalDavProvider::connect_succeeds_via_wellknown_against_nextcloud_style_server()
+{
+    // NextCloud (and any RFC 6764 server) serves DAV under a context path
+    // such as /remote.php/dav and advertises it via a 301 from
+    // /.well-known/caldav. The user naturally enters only the bare host they
+    // log into, so discovery must follow the well-known redirect rather than
+    // PROPFIND the web-UI root (which answers 405).
+    FakeCalDavServer server;
+    server.setContextPath(QStringLiteral("/remote.php/dav"));
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));  // bare host root, no DAV path
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+    QVERIFY(provider.isConnected());
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 1);
+    QCOMPARE(cols.first().name, QStringLiteral("Personal"));
 }
 
 void TstCalDavProvider::connect_populates_collections()

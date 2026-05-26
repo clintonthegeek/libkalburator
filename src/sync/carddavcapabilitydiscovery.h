@@ -73,11 +73,13 @@ signals:
     void error(const QString &message);
 
 private slots:
+    void onContextPathReplyFinished();
     void onPrincipalReplyFinished();
     void onHomeSetReplyFinished();
     void onAddressbooksReplyFinished();
 
 private:
+    void stepResolveContextPath();
     void stepDiscoverPrincipal();
     void stepDiscoverHomeSet();
     void stepDiscoverAddressbooks();
@@ -92,6 +94,8 @@ private:
     void resolveWithSuccess(const QList<CollectionInfo> &books);
 
     QUrl    m_serverRoot;
+    QUrl    m_baseUrl;  // effective DAV base: m_serverRoot, or the RFC 6764
+                        // well-known context path once resolved
     QString m_username;
     QString m_password;
 

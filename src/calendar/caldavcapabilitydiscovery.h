@@ -104,12 +104,14 @@ Q_SIGNALS:
     void progressMessage(const QString &message);
 
 private Q_SLOTS:
+    void onContextPathReplyFinished();
     void onPrincipalReplyFinished();
     void onCalendarHomeReplyFinished();
     void onCalendarsListReplyFinished();
     void onCalendarPropsReplyFinished();
 
 private:
+    void resolveContextPath();
     void discoverPrincipal();
     void discoverCalendarHome();
     void discoverCalendars();
@@ -126,6 +128,8 @@ private:
     void finishWithSuccess();
 
     QUrl m_serverUrl;
+    QUrl m_baseUrl;  // effective DAV base: m_serverUrl, or the RFC 6764
+                     // well-known context path once resolved
     QString m_username;
     QString m_password;
     QNetworkAccessManager *m_networkManager = nullptr;

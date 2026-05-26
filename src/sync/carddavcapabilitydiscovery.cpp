@@ -69,13 +69,78 @@ QFuture<QList<CollectionInfo>> CardDavCapabilityDiscovery::discover()
     m_principalHref.clear();
     m_homeHref.clear();
     m_addressbookUrls.clear();
+    m_baseUrl = m_serverRoot;
 
     m_promise = new QPromise<QList<CollectionInfo>>();
     m_promise->start();
 
-    stepDiscoverPrincipal();
+    // RFC 6764: when only the bare host is supplied (no DAV path), bootstrap
+    // the context path via /.well-known/carddav before walking principals.
+    // NextCloud and similar serve their web UI at the root (405 to PROPFIND)
+    // and the DAV endpoint elsewhere (e.g. /remote.php/dav/), advertised by a
+    // redirect from well-known.
+    const QString path = m_serverRoot.path();
+    if (path.isEmpty() || path == QStringLiteral("/")) {
+        stepResolveContextPath();
+    } else {
+        stepDiscoverPrincipal();
+    }
 
     return m_promise->future();
+}
+
+void CardDavCapabilityDiscovery::stepResolveContextPath()
+{
+    QUrl wellKnown = m_serverRoot;
+    wellKnown.setPath(QStringLiteral("/.well-known/carddav"));
+
+    QNetworkRequest req(wellKnown);
+    req.setHeader(QNetworkRequest::ContentTypeHeader,
+                  QStringLiteral("application/xml; charset=utf-8"));
+    req.setRawHeader("Depth", "0");
+    // Read the redirect target ourselves rather than letting QNAM follow it:
+    // the context path lives in the Location header, and a manual hop avoids
+    // any ambiguity about whether the PROPFIND body survives an auto-redirect.
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                     QNetworkRequest::ManualRedirectPolicy);
+
+    const QByteArray body = buildPropfindXml(
+        { QStringLiteral("current-user-principal") }, {});
+
+    QNetworkReply *reply = m_nam->sendCustomRequest(req, "PROPFIND", body);
+    QObject::connect(reply, &QNetworkReply::finished,
+                     this, &CardDavCapabilityDiscovery::onContextPathReplyFinished);
+}
+
+void CardDavCapabilityDiscovery::onContextPathReplyFinished()
+{
+    auto *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply) {
+        resolveWithError(tr("Internal error: null reply for well-known PROPFIND"));
+        return;
+    }
+    reply->deleteLater();
+
+    const QUrl wellKnownUrl = reply->request().url();
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    if (status == 301 || status == 302 || status == 307 || status == 308) {
+        const QByteArray location = reply->rawHeader("Location");
+        if (!location.isEmpty()) {
+            // Resolve relative against the well-known URL so both absolute
+            // (NextCloud) and relative Location values work.
+            m_baseUrl = wellKnownUrl.resolved(QUrl(QString::fromUtf8(location)));
+            stepDiscoverPrincipal();
+            return;
+        }
+    }
+
+    // No usable redirect (server doesn't implement well-known, or returned an
+    // error/2xx without Location): fall back to probing the entered URL
+    // directly, preserving pre-RFC-6764 behavior.
+    m_baseUrl = m_serverRoot;
+    stepDiscoverPrincipal();
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +149,7 @@ QFuture<QList<CollectionInfo>> CardDavCapabilityDiscovery::discover()
 
 void CardDavCapabilityDiscovery::stepDiscoverPrincipal()
 {
-    QNetworkRequest req(m_serverRoot);
+    QNetworkRequest req(m_baseUrl);
     req.setHeader(QNetworkRequest::ContentTypeHeader,
                   QStringLiteral("application/xml; charset=utf-8"));
     req.setRawHeader("Depth", "0");
@@ -125,8 +190,8 @@ void CardDavCapabilityDiscovery::onPrincipalReplyFinished()
                                   NS_DAV);
 
     if (m_principalHref.isEmpty()) {
-        // Some servers expose the principal at the root itself.
-        m_principalHref = m_serverRoot.toString();
+        // Some servers expose the principal at the DAV base itself.
+        m_principalHref = m_baseUrl.toString();
     }
 
     stepDiscoverHomeSet();
@@ -140,7 +205,7 @@ void CardDavCapabilityDiscovery::stepDiscoverHomeSet()
 {
     QUrl principalUrl(m_principalHref);
     if (principalUrl.isRelative()) {
-        principalUrl = m_serverRoot.resolved(principalUrl);
+        principalUrl = m_baseUrl.resolved(principalUrl);
     }
 
     QNetworkRequest req(principalUrl);
@@ -199,7 +264,7 @@ void CardDavCapabilityDiscovery::stepDiscoverAddressbooks()
 {
     QUrl homeUrl(m_homeHref);
     if (homeUrl.isRelative()) {
-        homeUrl = m_serverRoot.resolved(homeUrl);
+        homeUrl = m_baseUrl.resolved(homeUrl);
     }
 
     QNetworkRequest req(homeUrl);
@@ -307,7 +372,7 @@ void CardDavCapabilityDiscovery::onAddressbooksReplyFinished()
         {
             QUrl u(href);
             if (u.isRelative())
-                absoluteHref = m_serverRoot.resolved(u).toString();
+                absoluteHref = m_baseUrl.resolved(u).toString();
         }
 
         CollectionInfo ci;

@@ -76,6 +76,19 @@ protected:
             const QByteArray req = sock->readAll();
             QByteArray resp;
             const QByteArray requestLine = req.left(req.indexOf("\r\n"));
+
+            // Answer the RFC 6764 well-known bootstrap probe with 404 so
+            // discovery falls back to probing the root directly.
+            if (requestLine.contains(".well-known")) {
+                QByteArray resp404 = "HTTP/1.1 404 Not Found\r\n"
+                                     "Content-Length: 0\r\n"
+                                     "Connection: close\r\n\r\n";
+                sock->write(resp404);
+                sock->flush();
+                sock->disconnectFromHost();
+                return;
+            }
+
             const bool isPrincipal = requestLine.contains("PROPFIND") &&
                                      (requestLine.contains(" / ") ||
                                       requestLine.endsWith(" /"));
@@ -165,6 +178,20 @@ protected:
             QByteArray xml;
             const QByteArray requestLine = req.left(req.indexOf("\r\n"));
 
+            // This fixture is request-count based and does not model RFC 6764.
+            // Answer the well-known bootstrap probe with 404 so discovery falls
+            // back to probing the root directly, leaving the count sequence
+            // (principal → home → addressbooks) intact.
+            if (requestLine.contains(".well-known")) {
+                QByteArray resp404 = "HTTP/1.1 404 Not Found\r\n"
+                                     "Content-Length: 0\r\n"
+                                     "Connection: close\r\n\r\n";
+                sock->write(resp404);
+                sock->flush();
+                sock->disconnectFromHost();
+                return;
+            }
+
             ++m_requestCount;
             if (m_requestCount == 1) {
                 // Principal
@@ -248,6 +275,7 @@ class TstCardDavCapabilityDiscovery : public QObject
 
 private slots:
     void happy_path_one_addressbook();
+    void happy_path_via_wellknown_against_nextcloud_style_server();
     void happy_path_three_addressbooks();
     void error_401_on_principal_propfind();
     void error_500_on_home_set_propfind();
@@ -287,6 +315,33 @@ void TstCardDavCapabilityDiscovery::happy_path_one_addressbook()
     const QMap<QString, QString> urls = discovery.addressbookUrls();
     QVERIFY(urls.contains(QStringLiteral("personal")));
     QVERIFY(!urls.value(QStringLiteral("personal")).isEmpty());
+}
+
+void TstCardDavCapabilityDiscovery::happy_path_via_wellknown_against_nextcloud_style_server()
+{
+    // NextCloud serves CardDAV under a context path (e.g. /remote.php/dav)
+    // advertised via a 301 from /.well-known/carddav. The user enters only the
+    // bare host, so discovery must follow the well-known redirect rather than
+    // PROPFIND the web-UI root (which answers 405).
+    FakeCardDavServer server;
+    server.setContextPath(QStringLiteral("/remote.php/dav"));
+    QVERIFY(server.startListening());
+
+    CardDavCapabilityDiscovery discovery;
+    discovery.setCredentials(server.baseUrl(),  // bare host root, no DAV path
+                             QStringLiteral("testuser"),
+                             QStringLiteral("testpass"));
+
+    QSignalSpy errorSpy(&discovery, &CardDavCapabilityDiscovery::error);
+
+    QFuture<QList<CollectionInfo>> fut = discovery.discover();
+    QVERIFY(waitForFuture(fut));
+
+    QCOMPARE(errorSpy.count(), 0);
+    const QList<CollectionInfo> result = fut.result();
+    QCOMPARE(result.size(), 1);
+    QCOMPARE(result.at(0).id,   QStringLiteral("personal"));
+    QCOMPARE(result.at(0).name, QStringLiteral("Personal"));
 }
 
 void TstCardDavCapabilityDiscovery::happy_path_three_addressbooks()

@@ -201,13 +201,36 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
         ? fullRequest.mid(headerEnd + 4)
         : QByteArray();
 
+    // RFC 6764 well-known bootstrap for NextCloud-style deployments.
+    if (!m_contextPath.isEmpty()) {
+        if (path == QStringLiteral("/.well-known/caldav")) {
+            const QByteArray loc = (m_contextPath + QStringLiteral("/")).toUtf8();
+            writeResponse(socket, 301, "Moved Permanently", QByteArray(),
+                          "Location: " + loc + "\r\n");
+            return;
+        }
+        if (method == "PROPFIND"
+            && (path == QStringLiteral("/") || path.isEmpty())) {
+            // The bare root is the web UI, not a DAV collection.
+            writeResponse(socket, 405, "Method Not Allowed", QByteArray());
+            return;
+        }
+    }
+
+    // Paths the DAV walk targets, shifted under the (possibly empty) context path.
+    const QString principalRoot = m_contextPath + QStringLiteral("/");
+    const QString principalPath  =
+        m_contextPath + QStringLiteral("/principals/users/testuser/");
+    const QString calendarsPath  =
+        m_contextPath + QStringLiteral("/calendars/testuser/");
+
     if (method == "PROPFIND") {
         QString xml;
-        if (path == QStringLiteral("/") || path.isEmpty()) {
+        if (path == principalRoot || (m_contextPath.isEmpty() && path.isEmpty())) {
             xml = xmlForPrincipal();
-        } else if (path == QStringLiteral("/principals/users/testuser/")) {
+        } else if (path == principalPath) {
             xml = xmlForHome();
-        } else if (path == QStringLiteral("/calendars/testuser/")) {
+        } else if (path == calendarsPath) {
             xml = xmlForCalendars();
         } else {
             // Depth:0 PROPFIND on a collection (e.g. for CTag) — return 404
@@ -308,17 +331,17 @@ QString FakeCalDavServer::xmlForPrincipal() const
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<d:multistatus xmlns:d=\"DAV:\">\n"
         "  <d:response>\n"
-        "    <d:href>/</d:href>\n"
+        "    <d:href>%1/</d:href>\n"
         "    <d:propstat>\n"
         "      <d:prop>\n"
         "        <d:current-user-principal>\n"
-        "          <d:href>/principals/users/testuser/</d:href>\n"
+        "          <d:href>%1/principals/users/testuser/</d:href>\n"
         "        </d:current-user-principal>\n"
         "      </d:prop>\n"
         "      <d:status>HTTP/1.1 200 OK</d:status>\n"
         "    </d:propstat>\n"
         "  </d:response>\n"
-        "</d:multistatus>\n");
+        "</d:multistatus>\n").arg(m_contextPath);
 }
 
 QString FakeCalDavServer::xmlForHome() const
@@ -327,17 +350,17 @@ QString FakeCalDavServer::xmlForHome() const
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
         "<d:multistatus xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">\n"
         "  <d:response>\n"
-        "    <d:href>/principals/users/testuser/</d:href>\n"
+        "    <d:href>%1/principals/users/testuser/</d:href>\n"
         "    <d:propstat>\n"
         "      <d:prop>\n"
         "        <cal:calendar-home-set>\n"
-        "          <d:href>/calendars/testuser/</d:href>\n"
+        "          <d:href>%1/calendars/testuser/</d:href>\n"
         "        </cal:calendar-home-set>\n"
         "      </d:prop>\n"
         "      <d:status>HTTP/1.1 200 OK</d:status>\n"
         "    </d:propstat>\n"
         "  </d:response>\n"
-        "</d:multistatus>\n");
+        "</d:multistatus>\n").arg(m_contextPath);
 }
 
 QString FakeCalDavServer::xmlForCalendars() const
@@ -348,7 +371,8 @@ QString FakeCalDavServer::xmlForCalendars() const
                           "xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">\n");
     for (const auto &cal : m_calendars) {
         xml += QStringLiteral("  <d:response>\n");
-        xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(cal.second);
+        xml += QStringLiteral("    <d:href>%1%2</d:href>\n")
+                   .arg(m_contextPath, cal.second);
         xml += QStringLiteral("    <d:propstat>\n");
         xml += QStringLiteral("      <d:prop>\n");
         xml += QStringLiteral(

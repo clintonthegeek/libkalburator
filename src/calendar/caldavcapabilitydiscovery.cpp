@@ -41,15 +41,83 @@ void CalDavCapabilityDiscovery::start()
     m_capabilities = DiscoveredCapabilities();
     m_calendarUrls.clear();
     m_capabilities.discoveredAt = QDateTime::currentDateTimeUtc();
+    m_baseUrl = m_serverUrl;
 
     emit progressMessage(tr("Discovering server capabilities..."));
+
+    // RFC 6764: when the user supplies only the bare host (no DAV path),
+    // bootstrap the context path via /.well-known/caldav before walking
+    // principals. Servers like NextCloud serve their web UI at the root
+    // (which answers 405 to PROPFIND) and the DAV endpoint elsewhere
+    // (e.g. /remote.php/dav/), advertised by a redirect from well-known.
+    const QString path = m_serverUrl.path();
+    if (path.isEmpty() || path == QStringLiteral("/")) {
+        resolveContextPath();
+    } else {
+        discoverPrincipal();
+    }
+}
+
+void CalDavCapabilityDiscovery::resolveContextPath()
+{
+    QUrl wellKnown = m_serverUrl;
+    wellKnown.setPath(QStringLiteral("/.well-known/caldav"));
+
+    QNetworkRequest request(wellKnown);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/xml; charset=utf-8"));
+    request.setRawHeader("Depth", "0");
+    // Read the redirect target ourselves rather than letting QNAM follow it:
+    // the context path lives in the Location header, and a manual hop avoids
+    // any ambiguity about whether the PROPFIND body survives an auto-redirect.
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
+
+    QByteArray body = buildPropfindRequest({
+        QStringLiteral("current-user-principal")
+    });
+
+    QNetworkReply *reply = m_networkManager->sendCustomRequest(request, "PROPFIND", body);
+    connect(reply, &QNetworkReply::finished, this, &CalDavCapabilityDiscovery::onContextPathReplyFinished);
+}
+
+void CalDavCapabilityDiscovery::onContextPathReplyFinished()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply) {
+        finishWithError(tr("Internal error: invalid reply"));
+        return;
+    }
+    reply->deleteLater();
+
+    const QUrl wellKnownUrl = reply->request().url();
+    const int status =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    if (status == 301 || status == 302 || status == 307 || status == 308) {
+        const QByteArray location = reply->rawHeader("Location");
+        if (!location.isEmpty()) {
+            // Resolve relative against the well-known URL so both absolute
+            // (NextCloud) and relative Location values work.
+            m_baseUrl = wellKnownUrl.resolved(QUrl(QString::fromUtf8(location)));
+            emit progressMessage(tr("Discovered context path: %1").arg(m_baseUrl.toString()));
+            discoverPrincipal();
+            return;
+        }
+    }
+
+    // No usable redirect (server doesn't implement well-known, or returned an
+    // error/2xx without Location): fall back to probing the entered URL
+    // directly, preserving pre-RFC-6764 behavior for servers that serve DAV
+    // at the root.
+    m_baseUrl = m_serverUrl;
     discoverPrincipal();
 }
 
 void CalDavCapabilityDiscovery::discoverPrincipal()
 {
-    // PROPFIND on the server root to find the current user principal
-    QNetworkRequest request(m_serverUrl);
+    // PROPFIND on the DAV base to find the current user principal
+    QNetworkRequest request(m_baseUrl);
     request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/xml; charset=utf-8"));
     request.setRawHeader("Depth", "0");
 
@@ -87,8 +155,8 @@ void CalDavCapabilityDiscovery::onPrincipalReplyFinished()
     m_principalUrl = extractHref(response, QStringLiteral("current-user-principal"));
 
     if (m_principalUrl.isEmpty()) {
-        // Some servers put principal directly at the root
-        m_principalUrl = m_serverUrl.toString();
+        // Some servers put principal directly at the DAV base
+        m_principalUrl = m_baseUrl.toString();
     }
 
     emit progressMessage(tr("Found principal: %1").arg(m_principalUrl));
@@ -100,7 +168,7 @@ void CalDavCapabilityDiscovery::discoverCalendarHome()
     // PROPFIND on principal to find calendar-home-set
     QUrl principalUrl(m_principalUrl);
     if (principalUrl.isRelative()) {
-        principalUrl = m_serverUrl.resolved(QUrl(m_principalUrl));
+        principalUrl = m_baseUrl.resolved(QUrl(m_principalUrl));
     }
 
     QNetworkRequest request(principalUrl);
@@ -148,7 +216,7 @@ void CalDavCapabilityDiscovery::discoverCalendars()
     // PROPFIND on calendar-home-set to list calendars
     QUrl homeUrl(m_calendarHomeUrl);
     if (homeUrl.isRelative()) {
-        homeUrl = m_serverUrl.resolved(QUrl(m_calendarHomeUrl));
+        homeUrl = m_baseUrl.resolved(QUrl(m_calendarHomeUrl));
     }
 
     QNetworkRequest request(homeUrl);
