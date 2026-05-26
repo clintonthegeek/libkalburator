@@ -12,7 +12,7 @@ namespace Kalburator::Outline {
 /// (see docs/2026-05-25-outline-domain-design.md §2.3). Absent optional
 /// fields are omitted from toJson() rather than emitted as null.
 struct OutlineNode {
-    QString id;
+    QString id;            // reserved; no peer stage currently populates/serializes this (see loss profiles)
     QString text;
     QString note;                 // empty == absent
     bool done = false;

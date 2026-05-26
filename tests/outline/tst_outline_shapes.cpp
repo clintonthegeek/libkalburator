@@ -72,6 +72,10 @@ private slots:
         QCOMPARE(loss.affected.value(PropertyId{"attributes"}), LossKind::Reversible);
         const LossProfile reverseL = reg.compile(canon, org)->composedLoss();
         QCOMPARE(reverseL.affected.value(PropertyId{"attributes"}), LossKind::Reversible);
+        // The thin OrgGrove adapter drops these per-node fields with no org representation:
+        QCOMPARE(reverseL.affected.value(PropertyId{"progress"}), LossKind::Dropped);
+        QCOMPARE(reverseL.affected.value(PropertyId{"created"}),  LossKind::Dropped);
+        QCOMPARE(reverseL.affected.value(PropertyId{"id"}),       LossKind::Dropped);
     }
 };
 

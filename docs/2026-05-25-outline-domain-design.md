@@ -195,8 +195,10 @@ Org is the high-water mark and validates the full canon. Mapping:
 
 `orgToCanonLoss()`: lossless for Tier 1–2; unmapped `:PROPERTIES:`/`#+` keywords →
 `attributes`, **Reversible**.
-`canonToOrgLoss()`: Reversible on `attributes` (re-emitted as `:PROPERTIES:`/`#+`). Org
-expresses everything else first-class, so no Dropped/Degraded for canon-origin data.
+`canonToOrgLoss()`: Reversible on `attributes` (re-emitted as `:PROPERTIES:`/`#+`). The thin
+OrgGrove adapter declares `progress`, `created`, and `id` as **Dropped** — they have no current
+org representation. Mapping them into `:PROPERTIES:` for true reversibility is a deferred
+enhancement.
 
 > **Org parsing/serialization is delegated to the OrgGrove library**
 > (`codeberg.org/clintonthegeek/OrgGrove`, tree-sitter based) — resolved after this spec was
@@ -231,13 +233,21 @@ Reversible). The OPML edge is the domain's primary **loss-honesty test surface**
 
 | Canon field | → Org | → OPML |
 |---|---|---|
-| `text`, `children`, `order`, `id` | lossless | lossless |
+| `text`, `children`, `order` | lossless | lossless |
+| `id` | **Dropped** (thin adapter; see note) | lossless |
 | `done`, `status` | lossless (TODO kw) | **Dropped** |
-| `priority`, `progress` | lossless | **Dropped** |
-| `start`/`due`/`completed`/`created` | lossless (planning/`:CREATED:`) | `created` only; rest **Dropped** |
+| `priority` | lossless | **Dropped** |
+| `progress` | **Dropped** (thin adapter; see note) | **Dropped** |
+| `start`/`due`/`completed` | lossless (planning line) | rest **Dropped** |
+| `created` | **Dropped** (thin adapter; see note) | `created` only; rest **Dropped** |
 | `note` | lossless (body) | Reversible (`_note` attr) |
 | `tags` | lossless (`:tags:`) | Reversible (`category`) |
 | `attributes` (Tier 3) | Reversible (`:PROPERTIES:`) | Reversible (arbitrary attrs) |
+
+> **Thin-adapter note (org):** `progress`, `created`, and `id` are declared **Dropped** in
+> `canonToOrgLoss()` because the current thin OrgGrove adapter has no org representation for
+> them. Mapping them into `:PROPERTIES:` drawers (making them Reversible) is a deferred
+> enhancement beyond the thin-adapter scope.
 
 `LossKind` values used: `Reversible` (round-trips via extras/attributes), `Dropped` (no
 target representation). No `Degraded`/`Simplified` needed in the first cut.

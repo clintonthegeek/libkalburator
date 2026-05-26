@@ -25,10 +25,12 @@ class TestOutlineRoundtrip : public QObject {
 
 private slots:
 
-    // org→canon composed with canon→org must contain no Dropped fields.
-    // The only affected property in either direction is `attributes`
-    // (Reversible), so the composed round-trip preserves all data.
-    void orgPathIsLossless()
+    // org is near-lossless (richnessRank 70): it preserves all task semantics
+    // (text, note, status, priority, due, start, completed, tags) through the
+    // round-trip. Only progress, created, and id have no thin-adapter org
+    // representation and are honestly declared Dropped. Mapping them into
+    // :PROPERTIES: for true reversibility is a deferred enhancement.
+    void orgPreservesRichFieldsDroppingOnlyThinGaps()
     {
         auto reg = buildRegistry();
         const Shape org  { DomainId{"outline"}, EncodingId{"org"} };
@@ -44,16 +46,22 @@ private slots:
         const LossProfile composed =
             fwdPipeline->composedLoss().compose(revPipeline->composedLoss());
 
-        // The round-trip must have no Dropped fields.
+        // The composed dropped set must be exactly the three known thin-adapter gaps.
         const QSet<PropertyId> dropped = composed.droppedProperties();
-        QVERIFY2(dropped.isEmpty(),
-                 qPrintable(QStringLiteral("org round-trip has unexpected Dropped fields: ")
-                            + [&]() {
-                                  QStringList ids;
-                                  for (const auto& id : dropped)
-                                      ids << id.toString();
-                                  return ids.join(QStringLiteral(", "));
-                              }()));
+        const QSet<PropertyId> expectedDropped {
+            PropertyId{QStringLiteral("progress")},
+            PropertyId{QStringLiteral("created")},
+            PropertyId{QStringLiteral("id")},
+        };
+        QCOMPARE(dropped, expectedDropped);
+
+        // Rich Tier-1/2 fields must NOT be dropped through the org round-trip.
+        for (const char* k : { "text", "note", "status", "priority",
+                               "due", "start", "completed", "tags" }) {
+            QVERIFY2(!dropped.contains(PropertyId{QString::fromLatin1(k)}),
+                     qPrintable(QStringLiteral("org round-trip must not drop: ")
+                                + QString::fromLatin1(k)));
+        }
     }
 
     // canon→opml must honestly report the task fields it drops, and must NOT

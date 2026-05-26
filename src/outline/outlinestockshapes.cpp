@@ -16,11 +16,25 @@ namespace Kalburator::Outline {
 
 namespace {
 
-// org <-> canon: node attributes survive as org property drawers (Reversible).
-LossProfile attributesReversible()
+// org → canon: unmapped :PROPERTIES: keys ride in `attributes` (Reversible).
+// No data is structurally dropped in this direction.
+LossProfile orgToCanonLoss()
 {
     LossProfile p;
     p.affected.insert(PropertyId{QStringLiteral("attributes")}, LossKind::Reversible);
+    return p;
+}
+
+// canon → org: `attributes` Reversible (re-emitted as :PROPERTIES:), but the
+// thin OrgGrove adapter has no org representation for progress, created, or id,
+// so those three fields are honestly declared Dropped.
+LossProfile canonToOrgLoss()
+{
+    LossProfile p;
+    p.affected.insert(PropertyId{QStringLiteral("attributes")}, LossKind::Reversible);
+    // The thin OrgGrove adapter has no representation for these per-node fields:
+    for (const auto& k : { QStringLiteral("progress"), QStringLiteral("created"), QStringLiteral("id") })
+        p.affected.insert(PropertyId{k}, LossKind::Dropped);
     return p;
 }
 
@@ -59,8 +73,8 @@ QList<Shape::TransformationEdge> OutlineStockShapes::edges() const
 
     return {
         TransformationEdge{ canon, canon, LossProfile{},           std::make_shared<IdentityStage>() },
-        TransformationEdge{ org,   canon, attributesReversible(),   std::make_shared<OrgToCanonStage>() },
-        TransformationEdge{ canon, org,   attributesReversible(),   std::make_shared<CanonToOrgStage>() },
+        TransformationEdge{ org,   canon, orgToCanonLoss(),   std::make_shared<OrgToCanonStage>() },
+        TransformationEdge{ canon, org,   canonToOrgLoss(),  std::make_shared<CanonToOrgStage>() },
         TransformationEdge{ opml,  canon, LossProfile{},            std::make_shared<OpmlToCanonStage>() },
         TransformationEdge{ canon, opml,  canonToOpmlLoss(),        std::make_shared<CanonToOpmlStage>() },
     };
