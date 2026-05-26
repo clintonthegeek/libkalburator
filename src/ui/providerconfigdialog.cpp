@@ -12,6 +12,7 @@
 #include <QFutureWatcher>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -65,6 +66,12 @@ ProviderConfigDialog::ProviderConfigDialog(
     QObject::connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
     btnRow->addWidget(bb);
     root->addLayout(btnRow);
+
+    m_statusLabel = new QLabel(this);
+    m_statusLabel->setObjectName(QStringLiteral("testStatusLabel"));
+    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    root->addWidget(m_statusLabel);
 
     QObject::connect(m_combo, &QComboBox::currentIndexChanged,
                      this, &ProviderConfigDialog::onProviderChanged);
@@ -173,12 +180,24 @@ void ProviderConfigDialog::rebuildProviderWidget()
 
     m_picker->setVisible(false);
     m_saveButton->setEnabled(false);
+    if (m_statusLabel) m_statusLabel->clear();
 }
 
 void ProviderConfigDialog::onTestClicked()
 {
     if (!m_currentProvider) return;
     m_testButton->setEnabled(false);
+    if (m_statusLabel) m_statusLabel->setText(tr("Testing…"));
+
+    // Capture the provider's error() message for the duration of this test so
+    // onConnectFinished can report the actual reason instead of a bare
+    // "Failed". The connection is torn down once the test resolves.
+    m_lastTestError.clear();
+    QObject::disconnect(m_errorConn);
+    m_errorConn = QObject::connect(
+        m_currentProvider.get(), &Sync::IProvider::error,
+        this, [this](const QString &msg) { m_lastTestError = msg; });
+
     auto fut = m_currentProvider->connect();
     auto *watcher = new QFutureWatcher<bool>(this);
     QObject::connect(watcher, &QFutureWatcher<bool>::finished, this,
@@ -193,11 +212,30 @@ void ProviderConfigDialog::onTestClicked()
 void ProviderConfigDialog::onConnectFinished(bool ok)
 {
     m_testButton->setEnabled(true);
+    QObject::disconnect(m_errorConn);
     if (!m_currentProvider) return;
+
     if (ok) {
         m_picker->setCollections(m_currentProvider->collections());
         m_picker->setVisible(true);
         m_saveButton->setEnabled(true);
+
+        const int n = m_currentProvider->collections().size();
+        QString msg = tr("Connected — %n collection(s) found", nullptr, n);
+        // A partial success (e.g. CalDAV worked but CardDAV didn't) is reported
+        // via lastWarning() even when connect() overall succeeded.
+        const QString warning = m_currentProvider->lastWarning();
+        if (!warning.isEmpty())
+            msg += QStringLiteral("\n⚠ %1").arg(warning);
+        if (m_statusLabel) m_statusLabel->setText(msg);
+    } else {
+        // Prefer the captured error(); fall back to lastWarning(), then a
+        // generic message — but always say more than just "Failed".
+        QString reason = m_lastTestError;
+        if (reason.isEmpty()) reason = m_currentProvider->lastWarning();
+        if (reason.isEmpty()) reason = tr("Connection failed (no detail reported).");
+        if (m_statusLabel)
+            m_statusLabel->setText(tr("Connection failed: %1").arg(reason));
     }
 }
 

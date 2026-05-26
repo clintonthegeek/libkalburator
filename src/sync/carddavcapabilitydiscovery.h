@@ -51,6 +51,17 @@ public:
                         const QString &password);
 
     /**
+     * @brief Override the current-user-principal href, skipping auto-discovery.
+     *
+     * When set (non-empty), discover() bypasses the /.well-known bootstrap and
+     * the principal PROPFIND and walks straight from this principal to the
+     * addressbook-home-set. Backs the "Advanced → CardDAV principal" manual
+     * override.
+     */
+    void setPrincipalHrefOverride(const QString &principalHref)
+    { m_principalOverride = principalHref; }
+
+    /**
      * @brief Async: walks current-user-principal → addressbook-home-set
      *        → addressbook collections.
      *
@@ -96,6 +107,7 @@ private:
     QUrl    m_serverRoot;
     QUrl    m_baseUrl;  // effective DAV base: m_serverRoot, or the RFC 6764
                         // well-known context path once resolved
+    QString m_principalOverride;  // manual "Advanced" principal; skips probe
     QString m_username;
     QString m_password;
 

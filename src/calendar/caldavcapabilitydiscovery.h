@@ -58,6 +58,17 @@ public:
     void start();
 
     /**
+     * @brief Override the current-user-principal URL, skipping auto-discovery.
+     *
+     * When set (non-empty), start() bypasses the /.well-known bootstrap and
+     * the principal PROPFIND and walks straight from this principal to the
+     * calendar-home-set. Used by the "Advanced → CalDAV principal" manual
+     * override for servers whose auto-discovery doesn't work.
+     */
+    void setPrincipalUrlOverride(const QString &principalUrl)
+    { m_principalOverride = principalUrl; }
+
+    /**
      * @brief Get the discovered capabilities.
      *
      * Only valid after finished(true) is emitted.
@@ -136,6 +147,7 @@ private:
 
     // Discovery state
     bool m_running = false;
+    QString m_principalOverride;  // manual "Advanced" principal; skips probe
     QString m_principalUrl;
     QString m_calendarHomeUrl;
     QStringList m_pendingCalendarUrls;

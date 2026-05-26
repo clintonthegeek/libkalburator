@@ -45,6 +45,15 @@ void CalDavCapabilityDiscovery::start()
 
     emit progressMessage(tr("Discovering server capabilities..."));
 
+    // Manual override: skip both the well-known bootstrap and the principal
+    // PROPFIND, walking straight from the user-supplied principal.
+    if (!m_principalOverride.isEmpty()) {
+        m_principalUrl = m_principalOverride;
+        emit progressMessage(tr("Using manual principal: %1").arg(m_principalUrl));
+        discoverCalendarHome();
+        return;
+    }
+
     // RFC 6764: when the user supplies only the bare host (no DAV path),
     // bootstrap the context path via /.well-known/caldav before walking
     // principals. Servers like NextCloud serve their web UI at the root

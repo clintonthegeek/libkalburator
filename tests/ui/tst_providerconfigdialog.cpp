@@ -1,7 +1,9 @@
 #include <QObject>
 #include <QtTest/QtTest>
 #include <QComboBox>
+#include <QLabel>
 #include <QLayout>
+#include <QPromise>
 #include <QSignalSpy>
 
 #include "../../src/ui/providerconfigdialog.h"
@@ -13,6 +15,44 @@
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;
+
+// A provider whose connect() fails and emits a specific error() message, so
+// we can assert the dialog surfaces that message to the user.
+class FailingStubProvider : public IProvider {
+    Q_OBJECT
+public:
+    explicit FailingStubProvider(QString msg) : m_msg(std::move(msg)) {}
+    QString id() const override { return QStringLiteral("failing-stub"); }
+    QString kind() const override { return QStringLiteral("failing-stub"); }
+    QString displayName() const override { return QStringLiteral("Failing Stub"); }
+    void load(const BackendConfiguration &) override {}
+    BackendConfiguration save() const override { return {}; }
+    QWidget *createConfigWidget(QWidget *) override { return nullptr; }
+    QFuture<bool> connect() override {
+        emit error(m_msg);
+        QPromise<bool> p; auto f = p.future();
+        p.start(); p.addResult(false); p.finish();
+        return f;
+    }
+    void disconnect() override {}
+    bool isConnected() const override { return false; }
+    QList<CollectionInfo> collections() const override { return {}; }
+    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+private:
+    QString m_msg;
+};
+
+class FailingStubContribution : public BackendContribution {
+public:
+    explicit FailingStubContribution(QString msg) : m_msg(std::move(msg)) {}
+    QString backendType() const override { return QStringLiteral("failing-stub"); }
+    QString displayName() const override { return QStringLiteral("Failing Stub"); }
+    QList<Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override
+    { return std::make_unique<FailingStubProvider>(m_msg); }
+private:
+    QString m_msg;
+};
 
 // Minimal stub BackendContribution for O.1.4 dynamic-kinds tests.
 class StubContribution : public BackendContribution {
@@ -38,7 +78,30 @@ private slots:
     void takeProviderMovesOwnership();
     void dynamicKindsConstructor_populatesFromRegistry();
     void dynamicKindsConstructor_reactsToContributionRegistered();
+    void failedTestConnection_surfacesErrorMessage();
 };
+
+void TstProviderConfigDialog::failedTestConnection_surfacesErrorMessage()
+{
+    const QString kMsg = QStringLiteral(
+        "Calendar discovery failed: Failed to discover principal (HTTP 401)");
+
+    BackendRegistry registry;
+    registry.registerContribution(
+        std::make_shared<FailingStubContribution>(kMsg));
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry,
+                                 Ui::ProviderConfigDialog::AddNew, {});
+
+    // Trigger the Test-connection flow.
+    QMetaObject::invokeMethod(&dlg, "onTestClicked");
+
+    // A status label must exist and display the provider's error message,
+    // not just an opaque "Failed".
+    auto *status = dlg.findChild<QLabel*>(QStringLiteral("testStatusLabel"));
+    QVERIFY2(status != nullptr, "dialog must expose a testStatusLabel");
+    QTRY_VERIFY_WITH_TIMEOUT(status->text().contains(kMsg), 3000);
+}
 
 void TstProviderConfigDialog::comboPopulatedFromRegistry()
 {

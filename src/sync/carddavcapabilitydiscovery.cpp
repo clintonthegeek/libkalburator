@@ -74,6 +74,14 @@ QFuture<QList<CollectionInfo>> CardDavCapabilityDiscovery::discover()
     m_promise = new QPromise<QList<CollectionInfo>>();
     m_promise->start();
 
+    // Manual override: skip both the well-known bootstrap and the principal
+    // PROPFIND, walking straight from the user-supplied principal.
+    if (!m_principalOverride.isEmpty()) {
+        m_principalHref = m_principalOverride;
+        stepDiscoverHomeSet();
+        return m_promise->future();
+    }
+
     // RFC 6764: when only the bare host is supplied (no DAV path), bootstrap
     // the context path via /.well-known/carddav before walking principals.
     // NextCloud and similar serve their web UI at the root (405 to PROPFIND)

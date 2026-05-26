@@ -7,7 +7,10 @@
 #include "carddavcapabilitydiscovery.h"
 
 #include <QFutureWatcher>
+#include <QLoggingCategory>
 #include <QUuid>
+
+Q_LOGGING_CATEGORY(lcMultiDav, "kalburator.sync.multidav")
 
 namespace Kalburator::Sync {
 
@@ -77,6 +80,10 @@ QFuture<bool> MultiProtocolDavProvider::connect()
         return fut;
     }
 
+    qCInfo(lcMultiDav).nospace()
+        << "connect: probing " << m_serverUrl.toString()
+        << " as user '" << m_username << "' (CalDAV + CardDAV)";
+
     m_connectPromise = std::make_shared<QPromise<bool>>();
     m_connectPromise->start();
 
@@ -96,6 +103,8 @@ QFuture<bool> MultiProtocolDavProvider::connect()
         m_caldavDiscovery = nullptr;
     }
     m_caldavDiscovery = new CalDavCapabilityDiscovery(m_serverUrl, m_username, m_password, this);
+    if (!m_manualCalDavPrincipal.isEmpty())
+        m_caldavDiscovery->setPrincipalUrlOverride(m_manualCalDavPrincipal);
     QObject::connect(m_caldavDiscovery, &CalDavCapabilityDiscovery::finished,
                      this, &MultiProtocolDavProvider::onCalDavFinished);
     m_caldavDiscovery->start();
@@ -108,6 +117,8 @@ QFuture<bool> MultiProtocolDavProvider::connect()
     }
     m_carddavDiscovery = new CardDavCapabilityDiscovery(this);
     m_carddavDiscovery->setCredentials(m_serverUrl, m_username, m_password);
+    if (!m_manualCardDavPrincipal.isEmpty())
+        m_carddavDiscovery->setPrincipalHrefOverride(m_manualCardDavPrincipal);
     QObject::connect(m_carddavDiscovery, &CardDavCapabilityDiscovery::error,
                      this, [this](const QString &msg) { m_cardDavError = msg; });
     QFuture<QList<CollectionInfo>> cardFut = m_carddavDiscovery->discover();
@@ -242,6 +253,21 @@ void MultiProtocolDavProvider::maybeResolveConnect()
 
     const bool calOk  = m_calDavError.isEmpty()  && !m_calDavResult.isEmpty();
     const bool cardOk = m_cardDavError.isEmpty() && !m_cardDavResult.isEmpty();
+
+    // Log each protocol's outcome at a boundary so failures are visible on the
+    // console even if the UI only shows a summary.
+    if (calOk)
+        qCInfo(lcMultiDav) << "CalDAV: discovered" << m_calDavResult.size() << "calendar(s)";
+    else
+        qCWarning(lcMultiDav).noquote()
+            << "CalDAV: no calendars —" << (m_calDavError.isEmpty()
+                ? QStringLiteral("empty result") : m_calDavError);
+    if (cardOk)
+        qCInfo(lcMultiDav) << "CardDAV: discovered" << m_cardDavResult.size() << "addressbook(s)";
+    else
+        qCWarning(lcMultiDav).noquote()
+            << "CardDAV: no addressbooks —" << (m_cardDavError.isEmpty()
+                ? QStringLiteral("empty result") : m_cardDavError);
 
     if (!calOk && cardOk)
         m_lastWarning = QStringLiteral("Calendar discovery failed: %1")

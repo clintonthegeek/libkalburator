@@ -281,7 +281,31 @@ private slots:
     void error_500_on_home_set_propfind();
     void empty_home_set_succeeds_with_empty_list();
     void mixed_home_set_returns_only_addressbooks();
+    void manual_principal_override_skips_autodiscovery();
 };
+
+void TstCardDavCapabilityDiscovery::manual_principal_override_skips_autodiscovery()
+{
+    // Without an override, FakeCardDavServer auto-discovers a valid principal
+    // at the root (see happy_path_one_addressbook). With a bogus override,
+    // discovery must walk straight to home-set on that bogus path — which 404s
+    // — proving the override short-circuits the principal auto-probe.
+    FakeCardDavServer server;
+    QVERIFY(server.startListening());
+
+    CardDavCapabilityDiscovery discovery;
+    discovery.setCredentials(server.baseUrl(),
+                             QStringLiteral("testuser"),
+                             QStringLiteral("testpass"));
+    discovery.setPrincipalHrefOverride(QStringLiteral("/bogus-principal/"));
+
+    QSignalSpy errorSpy(&discovery, &CardDavCapabilityDiscovery::error);
+    QFuture<QList<CollectionInfo>> fut = discovery.discover();
+    QVERIFY(waitForFuture(fut));
+
+    QVERIFY(errorSpy.count() >= 1);
+    QVERIFY(fut.result().isEmpty());
+}
 
 // ---------------------------------------------------------------------------
 // Test implementations

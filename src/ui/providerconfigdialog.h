@@ -11,6 +11,7 @@
 class QComboBox;
 class QWidget;
 class QPushButton;
+class QLabel;
 
 namespace Kalburator {
 namespace Sync { class ProviderManager; class IProvider; class BackendRegistry; }
@@ -71,6 +72,12 @@ private:
     CollectionPickerWidget *m_picker          = nullptr;
     QPushButton            *m_testButton      = nullptr;
     QPushButton            *m_saveButton      = nullptr;
+    QLabel                 *m_statusLabel     = nullptr;
+
+    // Captures the provider's error() message for the in-flight Test
+    // connection, so onConnectFinished can display the reason on failure.
+    QString                 m_lastTestError;
+    QMetaObject::Connection m_errorConn;
 };
 
 } // namespace Ui

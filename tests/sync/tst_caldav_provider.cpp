@@ -16,6 +16,7 @@
 #include "fakecaldavserver.h"
 
 #include "backendconfiguration.h"
+#include "caldavcapabilitydiscovery.h"
 #include "caldavprovider.h"
 #include "collectioninfo.h"
 #include "iblobbackend.h"
@@ -74,7 +75,28 @@ private slots:
     void disconnect_mid_flight_resolves_promise_false();
     void createBackend_when_not_connected_returns_nullptr();
     void createBackend_after_disconnect_returns_nullptr();
+    void manual_principal_override_skips_autodiscovery();
 };
+
+void TstCalDavProvider::manual_principal_override_skips_autodiscovery()
+{
+    // Without an override, discovery auto-finds a valid principal at the root
+    // (connect_succeeds_against_fake_server). With a bogus override, discovery
+    // walks straight to calendar-home-set on that path — which 404s — proving
+    // the override short-circuits the principal auto-probe.
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    CalDavCapabilityDiscovery disc(server.baseUrl(),
+                                   QStringLiteral("testuser"),
+                                   QStringLiteral("testpass"));
+    disc.setPrincipalUrlOverride(QStringLiteral("/bogus-principal/"));
+
+    QSignalSpy finishedSpy(&disc, &CalDavCapabilityDiscovery::finished);
+    disc.start();
+    QVERIFY(finishedSpy.wait(5000));
+    QCOMPARE(finishedSpy.first().at(0).toBool(), false);
+}
 
 void TstCalDavProvider::connect_succeeds_against_fake_server()
 {
