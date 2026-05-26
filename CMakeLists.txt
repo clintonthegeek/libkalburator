@@ -408,6 +408,9 @@ set(KALBURATOR_OUTLINE_HEADERS
     src/outline/outlinemerger.h
     src/outline/opmlcanonstages.h
     src/outline/orgcanonstages.h
+    src/outline/outlinedomaindefinition.h
+    src/outline/outlinestockshapes.h
+    src/outline/outlineplugin.h
 )
 set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinenode.cpp
@@ -416,6 +419,9 @@ set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinemerger.cpp
     src/outline/opmlcanonstages.cpp
     src/outline/orgcanonstages.cpp
+    src/outline/outlinedomaindefinition.cpp
+    src/outline/outlinestockshapes.cpp
+    src/outline/outlineplugin.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
