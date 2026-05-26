@@ -406,12 +406,14 @@ set(KALBURATOR_OUTLINE_HEADERS
     src/outline/outlinecanonproperties.h
     src/outline/outlinediffer.h
     src/outline/outlinemerger.h
+    src/outline/opmlcanonstages.h
 )
 set(KALBURATOR_OUTLINE_SOURCES
     src/outline/outlinenode.cpp
     src/outline/outlinecanonproperties.cpp
     src/outline/outlinediffer.cpp
     src/outline/outlinemerger.cpp
+    src/outline/opmlcanonstages.cpp
 )
 
 # Phase G.8 — Universal sinks (RawFilesBackend, GenericSqliteBackend).
