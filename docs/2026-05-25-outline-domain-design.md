@@ -198,8 +198,11 @@ Org is the high-water mark and validates the full canon. Mapping:
 `canonToOrgLoss()`: Reversible on `attributes` (re-emitted as `:PROPERTIES:`/`#+`). Org
 expresses everything else first-class, so no Dropped/Degraded for canon-origin data.
 
-> Reuse: consult existing `src/calendar/orgicalcanonstages.*` and the org I/O plumbing
-> (`KALBURATOR_HAVE_ORG_IO`) for parsing/serialization patterns; do not fork a parser.
+> **Org parsing/serialization is delegated to the OrgGrove library**
+> (`codeberg.org/clintonthegeek/OrgGrove`, tree-sitter based) — resolved after this spec was
+> written; see plan Task 5. The org stages are thin adapters mapping `OrgGrove::Headline` ⇄
+> canon `OutlineNode`. Do NOT hand-roll an org parser and do NOT reuse the calendar domain's
+> `KALBURATOR_HAVE_ORG_IO` path (host-gated, KCalendarCore-bound).
 
 ### 4.2 OPML 2.0 (`(outline, opml)`) — the thin/broad-reach interchange
 
@@ -297,9 +300,9 @@ plus a canon-JSON golden.
 
 ## 9. Open questions (resolve in plan or early implementation)
 
-1. **Org parser source.** Reuse libkalburator's existing org I/O (calendar domain) vs. a
-   minimal outline-focused parser? Lean reuse; confirm the existing parser exposes
-   headline tree + planning + properties, not just calendar-relevant bits.
+1. **Org parser source.** ✅ RESOLVED: delegate to the new **OrgGrove** library (tree-sitter,
+   `codeberg.org/clintonthegeek/OrgGrove`, built 2026-05-26). Neither a hand-rolled parser nor
+   the calendar domain's KCalendarCore-bound org I/O. See plan Task 5.
 2. **Coarse vs. structural differ in the first cut.** Recommend coarse (pick-a-side) to
    land the round-trip, structural merge as the immediate follow-on. Confirm.
 3. **OPML task stashing.** First cut Drops task fields to OPML (honest). Optional: stash
