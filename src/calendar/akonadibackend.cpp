@@ -882,7 +882,12 @@ QList<BackendRecord> AkonadiBackend::loadRecords(const QString &collectionId)
         const QByteArray bytes = fmt.toString(tmpCalPtr).toUtf8();
 
         BackendRecord rec;
-        rec.id          = QString::number(aItem.id());
+        // BackendRecord.id is the cross-backend-stable domain UID (the iCal
+        // UID), matching RemoteCalendarBackend. The Akonadi item id is local
+        // only and would never match a peer backend's records. The (uid ->
+        // Akonadi::Item) cache (m_itemsByCalendar) resolves the local item for
+        // write jobs.
+        rec.id          = incidence->uid();
         rec.type        = QStringLiteral("calendar");
         rec.data        = bytes;
         rec.contentHash = QString::fromLatin1(
