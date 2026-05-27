@@ -901,31 +901,34 @@ QList<BackendRecord> AkonadiBackend::loadRecords(const QString &collectionId)
 
 std::optional<BackendRecord> AkonadiBackend::loadRecord(const QString &recordId)
 {
-    // Search in-memory cache across all known calendars.
+    // recordId is the iCal UID (cross-backend id scheme); the inner cache
+    // map is keyed by UID, so look it up directly instead of scanning by
+    // Akonadi item id (which is no longer the id scheme after Task 1).
     KCalendarCore::ICalFormat fmt;
-    for (auto calIt = m_itemsByCalendar.constBegin(); calIt != m_itemsByCalendar.constEnd(); ++calIt) {
-        for (auto itemIt = calIt->constBegin(); itemIt != calIt->constEnd(); ++itemIt) {
-            const Akonadi::Item &aItem = itemIt.value();
-            if (QString::number(aItem.id()) != recordId) continue;
+    for (auto calIt = m_itemsByCalendar.constBegin();
+         calIt != m_itemsByCalendar.constEnd(); ++calIt) {
+        const auto &inner = calIt.value();
+        const auto itemIt = inner.constFind(recordId);
+        if (itemIt == inner.constEnd()) continue;
 
-            const KCalendarCore::Incidence::Ptr incidence = extractIncidence(aItem);
-            if (!incidence) return std::nullopt;
+        const Akonadi::Item &aItem = itemIt.value();
+        const KCalendarCore::Incidence::Ptr incidence = extractIncidence(aItem);
+        if (!incidence) return std::nullopt;
 
-            auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-            tmpCal->addIncidence(incidence);
-            QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-            const QByteArray bytes = fmt.toString(tmpCalPtr).toUtf8();
+        auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+        tmpCal->addIncidence(incidence);
+        QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
+        const QByteArray bytes = fmt.toString(tmpCalPtr).toUtf8();
 
-            BackendRecord rec;
-            rec.id          = recordId;
-            rec.type        = QStringLiteral("calendar");
-            rec.data        = bytes;
-            rec.contentHash = QString::fromLatin1(
-                QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
-            rec.lastModified = aItem.modificationTime();
-            rec.isDeleted   = false;
-            return rec;
-        }
+        BackendRecord rec;
+        rec.id          = recordId;
+        rec.type        = QStringLiteral("calendar");
+        rec.data        = bytes;
+        rec.contentHash = QString::fromLatin1(
+            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+        rec.lastModified = aItem.modificationTime();
+        rec.isDeleted   = false;
+        return rec;
     }
     return std::nullopt;
 }
