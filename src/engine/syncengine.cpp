@@ -2110,10 +2110,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
-                // Only blob/raw records carry content-hash data usable by
-                // blobBatchDiff.  Calendar iCal records (domain="calendar",
-                // encoding="ical") store ical text, not hashes — including
-                // them here would corrupt the hash-skip logic.
+                // The unified engine persists EVERY baseline as blob/raw with
+                // data = contentHash bytes (see the two setBaselineV3 sites
+                // below and in unifiedContinueAfterConflicts), regardless of the
+                // record's real domain. So this filter does not drop modern
+                // baselines — it skips only *legacy* calendar baselines
+                // (domain="calendar", encoding="ical") left by the pre-unified
+                // path, which stored iCal text, not hashes. Loading those would
+                // set contentHash = <ical text> and break perRecordDiff's
+                // hash-equality comparison. Baseline-driven deletion detection
+                // for calendar/contacts works via the blob+hash form (proven by
+                // tst_calendar_subsequent_sync_uses_blob_view
+                // ::subsequentSync_deletedSourceRecordPropagatesDeletion).
                 if (canonical.shape.domain.toString() != QLatin1String("blob")) {
                     continue;
                 }

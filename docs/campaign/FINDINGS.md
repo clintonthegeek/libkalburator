@@ -110,13 +110,22 @@ so the reverse transcoder silently restored *nothing*. No test ever covered it. 
 faithful (byte-for-byte) and proven by `tst_orgical_canon_roundtrip`'s round-trip slot. The legacy
 class is deleted in Plan 4 Task 8 regardless. (Seeded 2026-05-24, Plan 4 Task 2.)
 
-### O13 — baseline-load filters to blob domain (OPEN, inherited)
+### O13 — baseline-load filters to blob domain (RESOLVED — was a misdiagnosis, 2026-05-26)
 
-`src/engine/syncengine.cpp` (~line 2121) loads only `blob`-domain baselines into the
-per-record diff, so baseline-driven *deletion* detection for non-blob domains
-(calendar/contacts) is not yet active for ANY backend (DAV included). The Akonadi
-backends inherit this; it is not Akonadi-specific. Tracked here so Akonadi sync
-deletion behavior is understood. (Seeded 2026-05-26, Akonadi full-functionality work.)
+Original claim: `src/engine/syncengine.cpp` (~line 2121) loads only `blob`-domain
+baselines, so baseline-driven *deletion* detection for calendar/contacts is "not active
+for ANY backend." **Investigation showed this framing is wrong for the converged engine.**
+The unified engine persists *every* baseline as `blob`/`raw` with `data = contentHash`
+bytes (both `setBaselineV3` sites, regardless of the record's real domain), and
+`perRecordDiff`'s `equalRecords` does hash-equality when both sides carry a `contentHash`
+(every calendar/contacts backend populates one — SHA-256 of the bytes). So the load
+filter drops *nothing* the unified engine wrote; it correctly skips only legacy
+`calendar`/`ical` baselines (iCal text, not hashes) whose inclusion would corrupt hash
+comparison. Proven by `tst_calendar_subsequent_sync_uses_blob_view`
+`::subsequentSync_deletedSourceRecordPropagatesDeletion`: a source-deleted calendar
+record known via a blob baseline is correctly deleted on the target (delete op, not a
+spurious conflict). Fixed the stale `blobBatchDiff` comment at the filter site in the
+same change. (Resolved 2026-05-26.)
 
 ### O14 — Akonadi ChangeRecorder warm-path deferred (DEFERRED, 2026-05-26)
 

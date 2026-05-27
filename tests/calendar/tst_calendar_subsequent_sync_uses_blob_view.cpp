@@ -129,6 +129,11 @@ private slots:
     // Modified record (hash differs from baseline) propagates correctly.
     void subsequentSync_modifiedRecordPropagates();
 
+    // FINDINGS O13 probe: a calendar record known via baseline that the source
+    // deletes must be deleted on the target — i.e. baseline-driven deletion
+    // detection is active for the calendar domain, not just blob.
+    void subsequentSync_deletedSourceRecordPropagatesDeletion();
+
 private:
     bool runOneSync();
     void setupCoordinator();
@@ -351,6 +356,40 @@ void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_modifiedRecordPropag
 
     // Source unchanged: still 3 records.
     QCOMPARE(sourceUids().size(), 3);
+}
+
+void TestCalendarSubsequentSyncUsesBlobView::subsequentSync_deletedSourceRecordPropagatesDeletion()
+{
+    // evt-1 is kept; evt-2 is deleted on the source after the prior sync.
+    auto evt1 = makeEvent(QStringLiteral("evt-1"), QStringLiteral("Keeper"));
+    auto evt2 = makeEvent(QStringLiteral("evt-2"), QStringLiteral("Doomed"));
+
+    // Seed blob baselines (the form the unified engine actually persists:
+    // domain="blob", encoding="raw", data = contentHash bytes). Both records
+    // are "known" from a prior sync.
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       makeBlobRec(QStringLiteral("evt-1"), hashFor(evt1)));
+    m_calendarBaselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                                       makeBlobRec(QStringLiteral("evt-2"), hashFor(evt2)));
+
+    // Both sides started in sync with both events...
+    m_source->addIncidence(QString::fromLatin1(kCalendarId), evt1);
+    m_source->addIncidence(QString::fromLatin1(kCalendarId), evt2);
+    m_target->addIncidence(QString::fromLatin1(kCalendarId), evt1);
+    m_target->addIncidence(QString::fromLatin1(kCalendarId), evt2);
+
+    // ...then the source deleted evt-2.
+    m_source->removeItem(QString::fromLatin1(kCalendarId), QStringLiteral("evt-2"));
+    QCOMPARE(sourceUids().size(), 1);
+    QCOMPARE(targetUids().size(), 2);
+
+    setupCoordinator();
+    QVERIFY(runOneSync());
+
+    // The deletion must propagate to the target (source-absent + target-present
+    // + baseline-present, source unchanged → delete, not conflict).
+    QCOMPARE(targetUids(), QStringList{ QStringLiteral("evt-1") });
+    QCOMPARE(sourceUids(), QStringList{ QStringLiteral("evt-1") });
 }
 
 QTEST_MAIN(TestCalendarSubsequentSyncUsesBlobView)
