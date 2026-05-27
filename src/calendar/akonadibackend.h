@@ -172,6 +172,10 @@ private:
     /// Look up the cached Akonadi::Item for a given calendar + uid
     Akonadi::Item findItemByUid(const QString &calendarId, const QString &uid) const;
 
+    /// Resolve a cross-backend record id (iCal UID) to its cached Akonadi
+    /// item and owning calendar id. Returns an invalid Item if not found.
+    Akonadi::Item findCachedItem(const QString &uid, QString *outCalendarId) const;
+
     /// Extract KCalendarCore::Incidence::Ptr from an Akonadi::Item
     KCalendarCore::Incidence::Ptr extractIncidence(const Akonadi::Item &item) const;
 

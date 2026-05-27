@@ -148,6 +148,21 @@ Akonadi::Item AkonadiBackend::findItemByUid(const QString &calendarId, const QSt
     return Akonadi::Item();
 }
 
+Akonadi::Item AkonadiBackend::findCachedItem(const QString &uid,
+                                             QString *outCalendarId) const
+{
+    for (auto cit = m_itemsByCalendar.constBegin();
+         cit != m_itemsByCalendar.constEnd(); ++cit) {
+        const auto &inner = cit.value();
+        const auto innerIt = inner.constFind(uid);
+        if (innerIt != inner.constEnd()) {
+            if (outCalendarId) *outCalendarId = cit.key();
+            return innerIt.value();
+        }
+    }
+    return {};
+}
+
 KCalendarCore::Incidence::Ptr AkonadiBackend::extractIncidence(const Akonadi::Item &item) const
 {
     if (!item.hasPayload<KCalendarCore::Incidence::Ptr>())
@@ -950,23 +965,68 @@ std::optional<BackendRecord> AkonadiBackend::loadRecord(const QString &recordId)
 QString AkonadiBackend::createRecord(const QString &collectionId,
                                       const BackendRecord &record)
 {
-    qWarning() << "AkonadiBackend::createRecord: Phase D stub — Akonadi live server required."
-               << "collectionId:" << collectionId << "uid:" << record.id;
-    return {};
+    auto colIt = m_collections.find(collectionId);
+    if (colIt == m_collections.end()) {
+        qWarning() << "AkonadiBackend::createRecord: unknown collection" << collectionId;
+        return {};
+    }
+    KCalendarCore::Incidence::Ptr incidence = incidenceFromRecord(record);
+    if (!incidence) {
+        qWarning() << "AkonadiBackend::createRecord: iCal parse failed for" << record.id;
+        return {};
+    }
+    Akonadi::Item item;
+    item.setMimeType(incidence->mimeType());
+    item.setPayload<KCalendarCore::Incidence::Ptr>(incidence);
+    auto *job = new Akonadi::ItemCreateJob(item, *colIt, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiBackend::createRecord: ItemCreateJob failed:" << job->errorString();
+        return {};
+    }
+    m_itemsByCalendar[collectionId][incidence->uid()] = job->item();
+    return incidence->uid();
 }
 
 bool AkonadiBackend::updateRecord(const BackendRecord &record)
 {
-    qWarning() << "AkonadiBackend::updateRecord: Phase D stub — Akonadi live server required."
-               << "uid:" << record.id;
-    return false;
+    KCalendarCore::Incidence::Ptr incidence = incidenceFromRecord(record);
+    if (!incidence) {
+        qWarning() << "AkonadiBackend::updateRecord: iCal parse failed for" << record.id;
+        return false;
+    }
+    QString calId;
+    Akonadi::Item existing = findCachedItem(record.id, &calId);
+    if (!existing.isValid()) {
+        qWarning() << "AkonadiBackend::updateRecord: no cached item for" << record.id;
+        return false;
+    }
+    existing.setPayload<KCalendarCore::Incidence::Ptr>(incidence);
+    auto *job = new Akonadi::ItemModifyJob(existing, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiBackend::updateRecord: ItemModifyJob failed:" << job->errorString();
+        return false;
+    }
+    // Cache under the incidence's own UID (matches createRecord), so the
+    // entry stays coherent even if the payload's UID differs from record.id.
+    m_itemsByCalendar[calId][incidence->uid()] = job->item();
+    return true;
 }
 
 bool AkonadiBackend::deleteRecord(const QString &recordId)
 {
-    qWarning() << "AkonadiBackend::deleteRecord: Phase D stub — Akonadi live server required."
-               << "recordId:" << recordId;
-    return false;
+    QString calId;
+    Akonadi::Item existing = findCachedItem(recordId, &calId);
+    if (!existing.isValid()) {
+        qWarning() << "AkonadiBackend::deleteRecord: no cached item for" << recordId;
+        return false;
+    }
+    auto *job = new Akonadi::ItemDeleteJob(existing, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiBackend::deleteRecord: ItemDeleteJob failed:" << job->errorString();
+        return false;
+    }
+    m_itemsByCalendar[calId].remove(recordId);
+    return true;
 }
 
 QList<BackendRecord> AkonadiBackend::modifiedSince(const QString &collectionId,
