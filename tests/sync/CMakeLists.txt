@@ -203,6 +203,9 @@ set_tests_properties(tst_multiprotocoldavconfigwidget PROPERTIES
 # Task 7 — Akonadi revision digest helper (pure; unconditional — no Akonadi gate).
 kalburator_add_sync_test(tst_akonadirevisiondigest)
 
+# Task 8 — Akonadi persistent per-collection revision store (pure; unconditional — no Akonadi gate).
+kalburator_add_sync_test(tst_akonadirevisionstore)
+
 # Phase L.1 — AkonadiProvider identity tests.
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)

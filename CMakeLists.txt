@@ -504,6 +504,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/syncruncoordinator.h
     # Akonadi change-detection digest helper (pure; unconditional)
     src/sync/akonadirevisiondigest.h
+    # Akonadi persistent per-collection revision store (pure; unconditional)
+    src/sync/akonadirevisionstore.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -532,6 +534,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/syncruncoordinator.cpp
     # Akonadi change-detection digest helper (pure; unconditional)
     src/sync/akonadirevisiondigest.cpp
+    # Akonadi persistent per-collection revision store (pure; unconditional)
+    src/sync/akonadirevisionstore.cpp
 )
 
 # Phase M.9–M.11: Library UI widgets
