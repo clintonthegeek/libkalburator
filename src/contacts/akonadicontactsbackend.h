@@ -13,6 +13,8 @@
 #include <Akonadi/Collection>
 #include <Akonadi/Item>
 
+#include <KContacts/Addressee>
+
 #include <QMap>
 #include <QSet>
 
@@ -104,6 +106,10 @@ public:
                                       const QDateTime &since) override;
     bool                 supportsDeleteTracking() const override { return false; }
 
+    /// Test-only passthrough to addresseeFromRecord (no Akonadi server needed).
+    KContacts::Addressee addresseeFromRecordForTest(const BackendRecord &record) const
+    { return addresseeFromRecord(record); }
+
     // Batch — no-op; Akonadi has its own transaction layer
     void beginBatch()    override {}
     bool commitBatch()   override { return true; }
@@ -121,6 +127,10 @@ private slots:
 
 private:
     void setupMonitor();
+
+    /// Inverse of loadRecords serialization: parse BackendRecord.data
+    /// (vCard bytes) into a KContacts::Addressee.
+    KContacts::Addressee addresseeFromRecord(const BackendRecord &record) const;
 
     /// Convert Akonadi Collection::Id to our collection ID string
     QString collectionIdForAkonadiId(Akonadi::Collection::Id id) const;

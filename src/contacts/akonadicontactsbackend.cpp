@@ -384,7 +384,10 @@ QList<BackendRecord> AkonadiContactsBackend::loadRecords(const QString &collecti
         const QByteArray bytes = converter.createVCard(addressee, KContacts::VCardConverter::v4_0);
 
         BackendRecord rec;
-        rec.id          = QString::number(aItem.id());
+        // vCard UID is the cross-backend-stable id (matches RemoteContactsBackend);
+        // the Akonadi item id is local-only. The (uid -> Akonadi::Item) cache
+        // resolves the local item for writes.
+        rec.id          = addressee.uid();
         rec.type        = QStringLiteral("contacts");
         rec.data        = bytes;
         rec.contentHash = QString::fromLatin1(
@@ -398,28 +401,38 @@ QList<BackendRecord> AkonadiContactsBackend::loadRecords(const QString &collecti
 
 std::optional<BackendRecord> AkonadiContactsBackend::loadRecord(const QString &recordId)
 {
+    // recordId is the vCard UID (cross-backend id scheme); the inner cache
+    // map is keyed by UID, so look it up directly.
     KContacts::VCardConverter converter;
-    for (auto colIt = m_itemsByCollection.constBegin(); colIt != m_itemsByCollection.constEnd(); ++colIt) {
-        for (auto itemIt = colIt->constBegin(); itemIt != colIt->constEnd(); ++itemIt) {
-            const Akonadi::Item &aItem = itemIt.value();
-            if (QString::number(aItem.id()) != recordId) continue;
-            if (!aItem.hasPayload<KContacts::Addressee>()) return std::nullopt;
+    for (auto colIt = m_itemsByCollection.constBegin();
+         colIt != m_itemsByCollection.constEnd(); ++colIt) {
+        const auto &inner = colIt.value();
+        const auto itemIt = inner.constFind(recordId);
+        if (itemIt == inner.constEnd()) continue;
+        const Akonadi::Item &aItem = itemIt.value();
+        if (!aItem.hasPayload<KContacts::Addressee>()) return std::nullopt;
 
-            const KContacts::Addressee addressee = aItem.payload<KContacts::Addressee>();
-            const QByteArray bytes = converter.createVCard(addressee, KContacts::VCardConverter::v4_0);
+        const KContacts::Addressee addressee = aItem.payload<KContacts::Addressee>();
+        const QByteArray bytes = converter.createVCard(addressee, KContacts::VCardConverter::v4_0);
 
-            BackendRecord rec;
-            rec.id          = recordId;
-            rec.type        = QStringLiteral("contacts");
-            rec.data        = bytes;
-            rec.contentHash = QString::fromLatin1(
-                QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
-            rec.lastModified = aItem.modificationTime();
-            rec.isDeleted    = false;
-            return rec;
-        }
+        BackendRecord rec;
+        rec.id          = recordId;
+        rec.type        = QStringLiteral("contacts");
+        rec.data        = bytes;
+        rec.contentHash = QString::fromLatin1(
+            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+        rec.lastModified = aItem.modificationTime();
+        rec.isDeleted    = false;
+        return rec;
     }
     return std::nullopt;
+}
+
+KContacts::Addressee
+AkonadiContactsBackend::addresseeFromRecord(const BackendRecord &record) const
+{
+    KContacts::VCardConverter converter;
+    return converter.parseVCard(record.data);
 }
 
 QString AkonadiContactsBackend::createRecord(const QString &collectionId,

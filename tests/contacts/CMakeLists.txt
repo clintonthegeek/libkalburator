@@ -60,4 +60,6 @@ if(KALBURATOR_HAVE_AKONADI)
         PRIVATE Kalburator::Sync Qt6::Test Qt6::Core)
     add_test(NAME tst_akonadicontactsbackend
         COMMAND tst_akonadicontactsbackend)
+
+    kalburator_add_contacts_test(tst_akonadi_contacts_payload)
 endif()
