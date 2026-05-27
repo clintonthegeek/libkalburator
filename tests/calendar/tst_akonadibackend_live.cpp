@@ -10,6 +10,7 @@ private slots:
     void init();
     void createUpdateDeleteRoundTrip();
     void createsCollection();
+    void changeDetectionSkipsUnchanged();
 private:
     QString m_collectionId;
 };
@@ -62,6 +63,16 @@ void TestAkonadiBackendLive::createsCollection() {
 
     const QString id = backend.createCollection(info);
     QVERIFY(!id.isEmpty());
+}
+
+void TestAkonadiBackendLive::changeDetectionSkipsUnchanged() {
+    AkonadiBackend backend;
+    backend.loadCalendars(m_collectionId);
+    QTest::qWait(500);
+    const QString r1 = backend.collectionRevision(m_collectionId);
+    QVERIFY(!r1.isEmpty());
+    const QString r2 = backend.collectionRevision(m_collectionId);
+    QCOMPARE(r1, r2);  // unchanged collection -> identical token
 }
 
 QTEST_GUILESS_MAIN(TestAkonadiBackendLive)

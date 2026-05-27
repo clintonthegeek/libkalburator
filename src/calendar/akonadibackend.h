@@ -7,6 +7,8 @@
 #include "syncoperation.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "../backend/changedetection.h"
+#include "akonadirevisionstore.h"
 
 #include <Akonadi/Session>
 #include <Akonadi/Monitor>
@@ -15,6 +17,7 @@
 
 #include <QMap>
 #include <QSet>
+#include <memory>
 
 namespace Kalburator::Sync {
 
@@ -31,7 +34,8 @@ namespace Kalburator::Sync {
  * and maps those to SyncBackend signals. Writes use a dedicated Session
  * that the Monitor ignores to prevent feedback loops.
  */
-class AkonadiBackend : public SyncBackend
+class AkonadiBackend : public SyncBackend,
+                       public Kalburator::Backend::ChangeDetection
 {
     Q_OBJECT
 
@@ -151,6 +155,11 @@ public:
     void rollbackBatch() override {}
     bool supportsBatch() const override { return false; }
 
+    // === Backend::ChangeDetection ===
+    QString collectionRevision(const QString &collectionId) override;
+    QString cachedCollectionRevision(const QString &collectionId) const override;
+    void    primeRevisionCache(const QMap<QString, QString> &cache) override;
+
 private slots:
     // Monitor callbacks for external changes
     void onItemAdded(const Akonadi::Item &item, const Akonadi::Collection &col);
@@ -202,6 +211,10 @@ private:
 
     // Item tracking: calendarId -> (uid -> Akonadi::Item)
     QMap<QString, QMap<QString, Akonadi::Item>> m_itemsByCalendar;
+
+    /// Lazily-constructed persistent revision token store.
+    Kalburator::Sync::AkonadiRevisionStore *revisionStore() const;
+    mutable std::unique_ptr<Kalburator::Sync::AkonadiRevisionStore> m_revisionStore;
 };
 
 } // namespace Kalburator::Sync
