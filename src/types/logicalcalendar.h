@@ -11,6 +11,7 @@
 #include <QPair>
 #include <algorithm>
 #include "calendartype.h"  // For CalendarType
+#include "shape.h"         // For Shape::DomainId
 
 namespace Kalburator::Sync {
 
@@ -144,6 +145,7 @@ struct LogicalCalendar {
     QColor color;               ///< Display color
     int displayOrder = 0;       ///< Sort order in lists
     CalendarType type = CalendarType::Hybrid;  ///< Event, Todo, or Hybrid
+    Shape::DomainId domain = Shape::DomainId(QStringLiteral("calendar")); ///< Data domain (calendar/contacts/todo/...)
 
     // Backend bindings
     QList<CalendarBackendBinding> bindings;
@@ -164,6 +166,9 @@ struct LogicalCalendar {
     bool isValid() const {
         return !id.isEmpty() && !displayName.isEmpty() && hasPrimaryBinding();
     }
+
+    /// Domain-agnostic alias for `id` (collection identity).
+    QString collectionId() const { return id; }
 
     bool hasPrimaryBinding() const {
         for (const auto &binding : bindings) {
@@ -419,6 +424,10 @@ struct LogicalCalendar {
     }
 };
 
+/// Domain-agnostic alias for LogicalCalendar. Both names are permanent; new
+/// domain-neutral code (and external consumers like WildPalms) may use this name.
+using LogicalCollection = LogicalCalendar;
+
 // ============================================================================
 // JSON Serialization
 // ============================================================================
@@ -544,6 +553,11 @@ inline QJsonObject logicalCalendarToJson(const LogicalCalendar &cal) {
     }
     obj[QStringLiteral("displayOrder")] = cal.displayOrder;
     obj[QStringLiteral("type")] = static_cast<int>(cal.type);  // CalendarType enum
+    // Domain: omit for the calendar domain so existing .kalb files round-trip
+    // byte-for-byte (no new key); emit only for non-calendar domains.
+    if (cal.domain != Shape::DomainId(QStringLiteral("calendar"))) {
+        obj[QStringLiteral("domain")] = cal.domain.toString();
+    }
     obj[QStringLiteral("enabled")] = cal.enabled;
     obj[QStringLiteral("visible")] = cal.visible;
     if (cal.secret) {
@@ -577,6 +591,9 @@ inline LogicalCalendar logicalCalendarFromJson(const QJsonObject &obj) {
     cal.displayOrder = obj.value(QStringLiteral("displayOrder")).toInt(0);
     // CalendarType: default to Hybrid (2) for backward compatibility
     cal.type = static_cast<CalendarType>(obj.value(QStringLiteral("type")).toInt(static_cast<int>(CalendarType::Hybrid)));
+    cal.domain = obj.contains(QStringLiteral("domain"))
+        ? Shape::DomainId(obj.value(QStringLiteral("domain")).toString())
+        : Shape::DomainId(QStringLiteral("calendar"));  // absent ⇒ calendar (back-compat)
     cal.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
     cal.visible = obj.value(QStringLiteral("visible")).toBool(true);
     cal.secret = obj.value(QStringLiteral("secret")).toBool(false);

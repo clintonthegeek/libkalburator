@@ -118,3 +118,7 @@ kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
 
 # Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
 kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
+
+# Sync-topology promotion (2026-05-27) — domain field, collectionId, alias,
+# domain serialization, hasWritableRemoteSyncTarget() demotion fact
+kalburator_add_calendar_test(tst_logicalcalendar_domain)
