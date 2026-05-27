@@ -8,12 +8,14 @@
 
 #include <algorithm>
 
+#include <QAction>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFutureWatcher>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -53,20 +55,20 @@ ProviderConfigDialog::ProviderConfigDialog(
     m_picker->setVisible(false);
     root->addWidget(m_picker);
 
-    auto *btnRow = new QHBoxLayout;
+    m_buttonRow = new QHBoxLayout;
     m_testButton = new QPushButton(tr("Test connection"), this);
     QObject::connect(m_testButton, &QPushButton::clicked,
                      this, &ProviderConfigDialog::onTestClicked);
-    btnRow->addWidget(m_testButton);
-    btnRow->addStretch();
+    m_buttonRow->addWidget(m_testButton);
+    m_buttonRow->addStretch();
     auto *bb = new QDialogButtonBox(
         QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
     m_saveButton = bb->button(QDialogButtonBox::Save);
     m_saveButton->setEnabled(false);
     QObject::connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
     QObject::connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    btnRow->addWidget(bb);
-    root->addLayout(btnRow);
+    m_buttonRow->addWidget(bb);
+    root->addLayout(m_buttonRow);
 
     m_statusLabel = new QLabel(this);
     m_statusLabel->setObjectName(QStringLiteral("testStatusLabel"));
@@ -189,6 +191,48 @@ void ProviderConfigDialog::applyWidgetToProvider() const
     if (!m_currentProvider || !m_embeddedConfig) return;
     if (auto *cw = dynamic_cast<Sync::IProviderConfigWidget *>(m_embeddedConfig))
         m_currentProvider->load(cw->configuration());
+}
+
+void ProviderConfigDialog::setAutofillProfiles(const QList<AutofillProfile> &profiles)
+{
+    m_autofillProfiles = profiles;
+
+    // Rebuild from scratch so repeated calls are well-defined.
+    if (m_autofillButton) {
+        delete m_autofillButton;   // deletes its QMenu child too
+        m_autofillButton = nullptr;
+    }
+    if (m_autofillProfiles.isEmpty() || !m_buttonRow)
+        return;
+
+    m_autofillButton = new QPushButton(tr("Autofill"), this);
+    m_autofillButton->setObjectName(QStringLiteral("autofillButton"));
+    auto *menu = new QMenu(m_autofillButton);
+    for (const AutofillProfile &profile : m_autofillProfiles) {
+        QAction *act = menu->addAction(profile.label);
+        QObject::connect(act, &QAction::triggered, this,
+                         [this, profile]() { applyAutofillProfile(profile); });
+    }
+    m_autofillButton->setMenu(menu);
+    // Leftmost in the button row, before "Test connection".
+    m_buttonRow->insertWidget(0, m_autofillButton);
+}
+
+void ProviderConfigDialog::applyAutofillProfile(const AutofillProfile &profile)
+{
+    if (!m_combo)
+        return;
+    const int idx = m_combo->findData(profile.config.type);
+    if (idx < 0)
+        return;   // profile references an unregistered backend — safe no-op
+
+    // Selecting the type rebuilds the embedded widget (onProviderChanged ->
+    // rebuildProviderWidget). If the index is unchanged, the existing widget
+    // is reused — either way m_embeddedConfig is valid below.
+    m_combo->setCurrentIndex(idx);
+
+    if (auto *cw = dynamic_cast<Sync::IProviderConfigWidget *>(m_embeddedConfig))
+        cw->setConfiguration(profile.config);
 }
 
 void ProviderConfigDialog::onTestClicked()

@@ -3,7 +3,9 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QLayout>
+#include <QMenu>
 #include <QPromise>
+#include <QPushButton>
 #include <QSignalSpy>
 
 #include "../../src/ui/providerconfigdialog.h"
@@ -123,6 +125,44 @@ private:
     QString m_type;
 };
 
+// A config widget that records what setConfiguration() was handed, and reports
+// it back via configuration(). Lets a test prove autofill pushed values in.
+class CapturingConfigWidget : public QWidget, public IProviderConfigWidget {
+    Q_OBJECT
+public:
+    BackendConfiguration configuration() const override { return m_cfg; }
+    void setConfiguration(const BackendConfiguration &c) override { m_cfg = c; }
+private:
+    BackendConfiguration m_cfg;
+};
+
+class CapturingProvider : public IProvider {
+    Q_OBJECT
+public:
+    QString id() const override { return QStringLiteral("cap-dav"); }
+    QString kind() const override { return QStringLiteral("cap-dav"); }
+    QString displayName() const override { return QStringLiteral("Capturing DAV"); }
+    void load(const BackendConfiguration &) override {}
+    BackendConfiguration save() const override { BackendConfiguration c; c.type = kind(); return c; }
+    QWidget *createConfigWidget(QWidget *) override { return new CapturingConfigWidget; }
+    QFuture<bool> connect() override {
+        QPromise<bool> p; auto f = p.future(); p.start(); p.addResult(true); p.finish(); return f;
+    }
+    void disconnect() override {}
+    bool isConnected() const override { return false; }
+    QList<CollectionInfo> collections() const override { return {}; }
+    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+};
+
+class CapturingContribution : public BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("cap-dav"); }
+    QString displayName() const override { return QStringLiteral("Capturing DAV"); }
+    QList<Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override
+    { return std::make_unique<CapturingProvider>(); }
+};
+
 class TstProviderConfigDialog : public QObject
 {
     Q_OBJECT
@@ -135,6 +175,8 @@ private slots:
     void dynamicKindsConstructor_reactsToContributionRegistered();
     void failedTestConnection_surfacesErrorMessage();
     void testConnection_bridgesWidgetConfigIntoProvider();
+    void autofillButtonAbsentWithoutProfiles();
+    void autofillAppliesProfileToEmbeddedWidget();
 };
 
 void TstProviderConfigDialog::testConnection_bridgesWidgetConfigIntoProvider()
@@ -270,6 +312,45 @@ void TstProviderConfigDialog::dynamicKindsConstructor_reactsToContributionRegist
 
     reg.unregisterContribution(QStringLiteral("alpha"));
     QCOMPARE(combo->count(), 1);
+}
+
+void TstProviderConfigDialog::autofillButtonAbsentWithoutProfiles()
+{
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CapturingContribution>());
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
+    // No setAutofillProfiles() call -> no button.
+    QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("autofillButton")) == nullptr);
+}
+
+void TstProviderConfigDialog::autofillAppliesProfileToEmbeddedWidget()
+{
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<CapturingContribution>());
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
+
+    BackendConfiguration cfg;
+    cfg.type = QStringLiteral("cap-dav");
+    cfg.connectionParams[QStringLiteral("url")] = QStringLiteral("http://localhost:5232/testuser1/");
+    cfg.connectionParams[QStringLiteral("username")] = QStringLiteral("testuser1");
+    dlg.setAutofillProfiles({ { QStringLiteral("CalDAV (Radicale)"), cfg } });
+
+    auto *btn = dlg.findChild<QPushButton*>(QStringLiteral("autofillButton"));
+    QVERIFY(btn != nullptr);
+    QVERIFY(btn->menu() != nullptr);
+    QCOMPARE(btn->menu()->actions().size(), 1);
+
+    // Trigger the menu action -> applyAutofillProfile.
+    btn->menu()->actions().first()->trigger();
+
+    auto *embed = dlg.findChild<QWidget*>(QStringLiteral("providerConfigEmbed"));
+    QVERIFY(embed != nullptr);
+    auto *cw = embed->findChild<CapturingConfigWidget*>();
+    QVERIFY2(cw != nullptr, "embedded capturing widget expected after combo selects cap-dav");
+    QCOMPARE(cw->configuration().connectionParams.value(QStringLiteral("url")).toString(),
+             QStringLiteral("http://localhost:5232/testuser1/"));
 }
 
 QTEST_MAIN(TstProviderConfigDialog)

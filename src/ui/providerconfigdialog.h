@@ -9,6 +9,7 @@
 #include <memory>
 
 class QComboBox;
+class QHBoxLayout;
 class QWidget;
 class QPushButton;
 class QLabel;
@@ -27,6 +28,19 @@ public:
     enum Mode { AddNew, EditExisting };
 
     struct ProviderKind { QString backendType; QString displayLabel; };
+
+    /// A named profile a caller can offer for one-click autofill. The dialog
+    /// is app-agnostic: it renders whatever profiles it is given and does not
+    /// know where they came from. If never set (or set empty), no autofill UI
+    /// is shown and the dialog is unchanged.
+    struct AutofillProfile {
+        QString label;                       // menu item text
+        Sync::BackendConfiguration config;   // type + connectionParams to apply
+    };
+
+    /// Provide autofill profiles. Non-empty -> an "Autofill" menu button appears
+    /// in the button row. Empty/never-called -> no UI added.
+    void setAutofillProfiles(const QList<AutofillProfile> &profiles);
 
     /// O.1.4: registry-aware constructor. Iterates registry->contributions()
     /// to populate the kind combo and subscribes to contributionRegistered/
@@ -65,6 +79,11 @@ private:
     /// No-op if the widget doesn't implement IProviderConfigWidget.
     void applyWidgetToProvider() const;
 
+    /// Apply one profile: select its type in the combo (rebuilds the embedded
+    /// widget) and push its config into that widget. No-op if the type is not
+    /// a registered kind.
+    void applyAutofillProfile(const AutofillProfile &profile);
+
     Sync::ProviderManager  *m_manager;
     Sync::BackendRegistry  *m_registry = nullptr;   // borrowed, non-owning
     QList<ProviderKind>     m_availableKinds;
@@ -78,6 +97,9 @@ private:
     QPushButton            *m_testButton      = nullptr;
     QPushButton            *m_saveButton      = nullptr;
     QLabel                 *m_statusLabel     = nullptr;
+    QHBoxLayout            *m_buttonRow       = nullptr;   // row holding Test/Save
+    QPushButton            *m_autofillButton  = nullptr;   // null unless profiles set
+    QList<AutofillProfile>  m_autofillProfiles;
 
     // Captures the provider's error() message for the in-flight Test
     // connection, so onConnectFinished can display the reason on failure.
