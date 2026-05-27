@@ -934,11 +934,24 @@ QList<BackendRecord> AkonadiBackend::loadRecords(const QString &collectionId)
         // only and would never match a peer backend's records. The (uid ->
         // Akonadi::Item) cache (m_itemsByCalendar) resolves the local item for
         // write jobs.
-        rec.id          = incidence->uid();
-        rec.type        = QStringLiteral("calendar");
-        rec.data        = bytes;
-        rec.contentHash = QString::fromLatin1(
-            QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+        rec.id   = incidence->uid();
+        rec.type = QStringLiteral("calendar");
+        rec.data = bytes;
+
+        // Memoize contentHash by Item::revision(): if the revision is unchanged
+        // the bytes are unchanged and we can skip re-hashing.
+        const QString uid = incidence->uid();
+        QString hash;
+        const auto memoIt = m_hashMemo.constFind(uid);
+        if (memoIt != m_hashMemo.constEnd() && memoIt->first == aItem.revision()) {
+            hash = memoIt->second;
+        } else {
+            hash = QString::fromLatin1(
+                QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+            m_hashMemo[uid] = qMakePair(aItem.revision(), hash);
+        }
+        rec.contentHash = hash;
+
         rec.lastModified = aItem.modificationTime();
         rec.isDeleted   = false;
         result.append(rec);

@@ -215,6 +215,10 @@ private:
     /// Lazily-constructed persistent revision token store.
     Kalburator::Sync::AkonadiRevisionStore *revisionStore() const;
     mutable std::unique_ptr<Kalburator::Sync::AkonadiRevisionStore> m_revisionStore;
+
+    /// uid -> (Akonadi item revision, cached contentHash). Lets loadRecords
+    /// skip re-serializing+re-hashing an item whose revision is unchanged.
+    mutable QMap<QString, QPair<int, QString>> m_hashMemo;
 };
 
 } // namespace Kalburator::Sync
