@@ -190,11 +190,12 @@ private Q_SLOTS:
         lc.provisionProvider(
             std::make_unique<FakeProvider>(QStringLiteral("p-ready")));
 
-        // FakeProvider::connect() is synchronous; then() continuation may need
-        // the event loop to fire.
-        QCoreApplication::processEvents();
-
-        QVERIFY(ready.count() >= 1);
+        // backendsReady is emitted from a QFuture::then(context, ...) continuation,
+        // which is delivered via this thread's event loop on a later iteration —
+        // NOT inline, even when connectAll() is synchronous. A single
+        // processEvents() races the queued delivery (flaky); spin the loop until
+        // the signal arrives.
+        QTRY_VERIFY(ready.count() >= 1);
     }
 
     // ── updateProvider ────────────────────────────────────────────────────────
