@@ -11,6 +11,7 @@
 #include <Akonadi/ItemCreateJob>
 #include <Akonadi/ItemModifyJob>
 #include <Akonadi/ItemDeleteJob>
+#include <Akonadi/CollectionCreateJob>
 #include <KContacts/Addressee>
 #include <KContacts/VCardConverter>
 
@@ -129,6 +130,21 @@ Akonadi::Item AkonadiContactsBackend::findItemByUid(const QString &collectionId,
             return *itemIt;
     }
     return Akonadi::Item();
+}
+
+Akonadi::Item AkonadiContactsBackend::findCachedItem(const QString &uid,
+                                                     QString *outCollectionId) const
+{
+    for (auto cit = m_itemsByCollection.constBegin();
+         cit != m_itemsByCollection.constEnd(); ++cit) {
+        const auto &inner = cit.value();
+        const auto innerIt = inner.constFind(uid);
+        if (innerIt != inner.constEnd()) {
+            if (outCollectionId) *outCollectionId = cit.key();
+            return innerIt.value();
+        }
+    }
+    return {};
 }
 
 // ============================================================================
@@ -364,9 +380,21 @@ CollectionInfo AkonadiContactsBackend::collectionInfo(const QString &collectionI
 
 QString AkonadiContactsBackend::createCollection(const CollectionInfo &info)
 {
-    qWarning() << "AkonadiContactsBackend::createCollection: Phase L.6 stub — "
-                  "Akonadi live server required. collectionId:" << info.id;
-    return {};
+    const Akonadi::Collection::Id parentId = akonadiIdForCollection(info.path);
+    if (parentId < 0) {
+        qWarning() << "AkonadiContactsBackend::createCollection: unknown parent" << info.path;
+        return {};
+    }
+    Akonadi::Collection col;
+    col.setParentCollection(Akonadi::Collection(parentId));
+    col.setName(info.name);
+    col.setContentMimeTypes({KContacts::Addressee::mimeType()});
+    auto *job = new Akonadi::CollectionCreateJob(col, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiContactsBackend::createCollection failed:" << job->errorString();
+        return {};
+    }
+    return collectionIdForAkonadiId(job->collection().id());
 }
 
 QList<BackendRecord> AkonadiContactsBackend::loadRecords(const QString &collectionId)
@@ -438,24 +466,66 @@ AkonadiContactsBackend::addresseeFromRecord(const BackendRecord &record) const
 QString AkonadiContactsBackend::createRecord(const QString &collectionId,
                                                const BackendRecord &record)
 {
-    qWarning() << "AkonadiContactsBackend::createRecord: Phase L.6 stub — "
-                  "Akonadi live server required. collectionId:" << collectionId
-               << "uid:" << record.id;
-    return {};
+    auto colIt = m_collections.find(collectionId);
+    if (colIt == m_collections.end()) {
+        qWarning() << "AkonadiContactsBackend::createRecord: unknown collection" << collectionId;
+        return {};
+    }
+    KContacts::Addressee addressee = addresseeFromRecord(record);
+    if (addressee.isEmpty()) {
+        qWarning() << "AkonadiContactsBackend::createRecord: vCard parse failed for" << record.id;
+        return {};
+    }
+    Akonadi::Item item;
+    item.setMimeType(KContacts::Addressee::mimeType());
+    item.setPayload<KContacts::Addressee>(addressee);
+    auto *job = new Akonadi::ItemCreateJob(item, *colIt, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiContactsBackend::createRecord: ItemCreateJob failed:" << job->errorString();
+        return {};
+    }
+    m_itemsByCollection[collectionId][addressee.uid()] = job->item();
+    return addressee.uid();
 }
 
 bool AkonadiContactsBackend::updateRecord(const BackendRecord &record)
 {
-    qWarning() << "AkonadiContactsBackend::updateRecord: Phase L.6 stub — "
-                  "Akonadi live server required. uid:" << record.id;
-    return false;
+    KContacts::Addressee addressee = addresseeFromRecord(record);
+    if (addressee.isEmpty()) {
+        qWarning() << "AkonadiContactsBackend::updateRecord: vCard parse failed for" << record.id;
+        return false;
+    }
+    QString colId;
+    Akonadi::Item existing = findCachedItem(record.id, &colId);
+    if (!existing.isValid()) {
+        qWarning() << "AkonadiContactsBackend::updateRecord: no cached item for" << record.id;
+        return false;
+    }
+    existing.setPayload<KContacts::Addressee>(addressee);
+    auto *job = new Akonadi::ItemModifyJob(existing, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiContactsBackend::updateRecord: ItemModifyJob failed:" << job->errorString();
+        return false;
+    }
+    m_itemsByCollection[colId][addressee.uid()] = job->item();
+    return true;
 }
 
 bool AkonadiContactsBackend::deleteRecord(const QString &recordId)
 {
-    qWarning() << "AkonadiContactsBackend::deleteRecord: Phase L.6 stub — "
-                  "Akonadi live server required. recordId:" << recordId;
-    return false;
+    QString colId;
+    Akonadi::Item existing = findCachedItem(recordId, &colId);
+    if (!existing.isValid()) {
+        qWarning() << "AkonadiContactsBackend::deleteRecord: no cached item for" << recordId;
+        return false;
+    }
+    auto *job = new Akonadi::ItemDeleteJob(existing, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiContactsBackend::deleteRecord: ItemDeleteJob failed:" << job->errorString();
+        return false;
+    }
+    m_itemsByCollection[colId].remove(recordId);
+    return true;
 }
 
 QList<BackendRecord> AkonadiContactsBackend::modifiedSince(const QString &collectionId,

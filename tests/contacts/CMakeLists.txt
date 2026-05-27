@@ -62,4 +62,5 @@ if(KALBURATOR_HAVE_AKONADI)
         COMMAND tst_akonadicontactsbackend)
 
     kalburator_add_contacts_test(tst_akonadi_contacts_payload)
+    kalburator_add_contacts_test(tst_akonadicontactsbackend_live)
 endif()

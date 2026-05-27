@@ -141,6 +141,10 @@ private:
     /// Look up the cached Akonadi::Item for a given collection + uid
     Akonadi::Item findItemByUid(const QString &collectionId, const QString &uid) const;
 
+    /// Resolve a cross-backend record id (vCard UID) to its cached Akonadi
+    /// item and owning collection id. Returns an invalid Item if not found.
+    Akonadi::Item findCachedItem(const QString &uid, QString *outCollectionId) const;
+
     Akonadi::Session  *m_session  = nullptr;  // For our writes (ignored by monitor)
     Akonadi::Monitor  *m_monitor  = nullptr;  // Watches external changes
 
