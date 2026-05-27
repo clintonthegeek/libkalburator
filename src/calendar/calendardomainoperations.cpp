@@ -2,7 +2,7 @@
 
 #include <QColor>
 
-#include "calendarplugin_writer.h"
+#include "recordwriter.h"
 #include "syncbackend.h"
 
 using Kalburator::Shape::DomainId;
@@ -17,9 +17,12 @@ DomainId CalendarDomainOperations::targetDomain() const
 std::unique_ptr<Kalburator::Shape::RecordWriter>
 CalendarDomainOperations::createWriter(Kalburator::Sync::SyncBackendBase *backend) const
 {
-    auto *syncBackend = qobject_cast<Kalburator::Sync::SyncBackend *>(backend);
-    if (!syncBackend) return nullptr;
-    return std::make_unique<Kalburator::Calendar::CalendarPluginWriter>(syncBackend);
+    // Calendar uses the uniform DefaultBlobWriter record path. Returning nullptr
+    // signals the engine to build it (O15 convergence). Type-aware work (typed
+    // diff, loss model, conflict detection) is upstream in the canon/diff/merge
+    // layer, not the writer.
+    Q_UNUSED(backend);
+    return nullptr;
 }
 
 QVariantMap CalendarDomainOperations::collectionProperties(

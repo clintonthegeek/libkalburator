@@ -637,6 +637,14 @@ QString MockBackend::createRecord(const QString &collectionId, const BackendReco
     // pass-through even for non-iCal payloads (e.g. Palm-wire bytes).
     m_createRecordCalls.append(record);
 
+    // Honour write-path failure injection (OnStoreItems and OnPush both map
+    // to "create a record fails"). Mirrors the startSync / pushItems paths
+    // so that tests using DefaultBlobWriter (O15 convergence) observe the
+    // same failure semantics as the old CalendarPluginWriter path.
+    if (shouldFail(FailurePoint::OnStoreItems) || shouldFail(FailurePoint::OnPush)) {
+        return {};
+    }
+
     auto incidence = fromBackendRecord(record);
     if (!incidence) {
         return {};
@@ -653,6 +661,12 @@ QString MockBackend::createRecord(const QString &collectionId, const BackendReco
 
 bool MockBackend::updateRecord(const BackendRecord &record)
 {
+    // Honour write-path failure injection (OnStoreItems and OnPush both map
+    // to "update a record fails"). Mirrors the startSync / pushItems paths.
+    if (shouldFail(FailurePoint::OnStoreItems) || shouldFail(FailurePoint::OnPush)) {
+        return false;
+    }
+
     // Find the calendar containing this uid
     for (auto calIt = m_calendars.begin(); calIt != m_calendars.end(); ++calIt) {
         if (calIt.value().contains(record.id)) {
@@ -669,6 +683,15 @@ bool MockBackend::updateRecord(const BackendRecord &record)
 
 bool MockBackend::deleteRecord(const QString &recordId)
 {
+    // Honour delete-path failure injection. Mirrors the startSync / deleteItems
+    // paths so that tests using DefaultBlobWriter (O15 convergence) observe the
+    // same failure semantics as the old CalendarPluginWriter path. On failure
+    // the record is NOT removed, matching the test contract for
+    // deleteFailsImmediate (all 3 records retained on the target).
+    if (shouldFail(FailurePoint::OnDelete)) {
+        return false;
+    }
+
     for (auto calIt = m_calendars.begin(); calIt != m_calendars.end(); ++calIt) {
         if (calIt.value().contains(recordId)) {
             calIt.value().remove(recordId);

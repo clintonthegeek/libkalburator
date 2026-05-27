@@ -2512,17 +2512,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     {
         bool ok = false;
 
-        // Build the per-apply context and let the writer prepare. For
-        // calendar-domain writers, this injects the host MemoryCalendar
-        // (when one exists) — replacing the K.3-and-earlier engine-side
-        // `setCollection` dance. May supply a null calendarCollection: the
-        // writer must degrade gracefully (CalendarPluginWriter does, via the
-        // IBlobBackend fallback path).
+        // The converged writers (DefaultBlobWriter) ignore the host
+        // MemoryCalendar; do not source it. prepareForApply remains a no-op hook
+        // on the RecordWriter interface. (m_collection / setCollection stay for
+        // CalendarManager's separate use.)
         Kalburator::Shape::RecordWriter::ApplyContext ctx;
         ctx.collectionId = colId;
-        ctx.calendarCollection = m_collection
-            ? m_collection->calendar(colId)
-            : nullptr;
         writer->prepareForApply(ctx);
 
         // Mass-delete guard: consult the registered guard before allowing
@@ -2621,9 +2616,9 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
             }
         }
-        auto tgtWriter = opsUCC
-            ? opsUCC->createWriter(tgtBackend)
-            : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
+        auto tgtWriter = opsUCC ? opsUCC->createWriter(tgtBackend) : nullptr;
+        if (!tgtWriter)
+            tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
                    m_currentRequest.mapping.targetBackend);
     }
@@ -2643,9 +2638,9 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
             }
         }
-        auto srcWriter = opsUCC
-            ? opsUCC->createWriter(srcBackend)
-            : std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
+        auto srcWriter = opsUCC ? opsUCC->createWriter(srcBackend) : nullptr;
+        if (!srcWriter)
+            srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
                    m_currentRequest.mapping.sourceBackend);
     }
