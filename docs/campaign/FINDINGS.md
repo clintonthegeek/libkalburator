@@ -110,23 +110,6 @@ so the reverse transcoder silently restored *nothing*. No test ever covered it. 
 faithful (byte-for-byte) and proven by `tst_orgical_canon_roundtrip`'s round-trip slot. The legacy
 class is deleted in Plan 4 Task 8 regardless. (Seeded 2026-05-24, Plan 4 Task 2.)
 
-### O13 — baseline-load filters to blob domain (RESOLVED — was a misdiagnosis, 2026-05-26)
-
-Original claim: `src/engine/syncengine.cpp` (~line 2121) loads only `blob`-domain
-baselines, so baseline-driven *deletion* detection for calendar/contacts is "not active
-for ANY backend." **Investigation showed this framing is wrong for the converged engine.**
-The unified engine persists *every* baseline as `blob`/`raw` with `data = contentHash`
-bytes (both `setBaselineV3` sites, regardless of the record's real domain), and
-`perRecordDiff`'s `equalRecords` does hash-equality when both sides carry a `contentHash`
-(every calendar/contacts backend populates one — SHA-256 of the bytes). So the load
-filter drops *nothing* the unified engine wrote; it correctly skips only legacy
-`calendar`/`ical` baselines (iCal text, not hashes) whose inclusion would corrupt hash
-comparison. Proven by `tst_calendar_subsequent_sync_uses_blob_view`
-`::subsequentSync_deletedSourceRecordPropagatesDeletion`: a source-deleted calendar
-record known via a blob baseline is correctly deleted on the target (delete op, not a
-spurious conflict). Fixed the stale `blobBatchDiff` comment at the filter site in the
-same change. (Resolved 2026-05-26.)
-
 ### O14 — Akonadi ChangeRecorder warm-path deferred (DEFERRED, 2026-05-26)
 
 The Akonadi change-detection backbone is the payload-free id+revision digest
@@ -152,6 +135,23 @@ warning re-sourcing org sync consumes, but wiring the org backend's `nativeShape
 org-ical is org-on/downstream work (invariant 8). (Seeded 2026-05-24, Plan 4 Task 9.)
 
 ## Resolved
+
+### O13 — baseline-load filters to blob domain (RESOLVED — was a misdiagnosis, 2026-05-26)
+
+Original claim: `src/engine/syncengine.cpp` (~line 2121) loads only `blob`-domain
+baselines, so baseline-driven *deletion* detection for calendar/contacts is "not active
+for ANY backend." **Investigation showed this framing is wrong for the converged engine.**
+The unified engine persists *every* baseline as `blob`/`raw` with `data = contentHash`
+bytes (both `setBaselineV3` sites, regardless of the record's real domain), and
+`perRecordDiff`'s `equalRecords` does hash-equality when both sides carry a `contentHash`
+(every calendar/contacts backend populates one — SHA-256 of the bytes). So the load
+filter drops *nothing* the unified engine wrote; it correctly skips only legacy
+`calendar`/`ical` baselines (iCal text, not hashes) whose inclusion would corrupt hash
+comparison. Proven by `tst_calendar_subsequent_sync_uses_blob_view`
+`::subsequentSync_deletedSourceRecordPropagatesDeletion`: a source-deleted calendar
+record known via a blob baseline is correctly deleted on the target (delete op, not a
+spurious conflict). Fixed the stale `blobBatchDiff` comment at the filter site in the
+same change. (Resolved 2026-05-26.)
 
 ### O15 — CalendarPluginWriter dual write-path (resolved 2026-05-27)
 Converged the calendar domain onto the uniform `DefaultBlobWriter` record path and
