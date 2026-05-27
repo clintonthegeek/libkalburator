@@ -9,6 +9,7 @@ class TestAkonadiBackendLive : public QObject {
 private slots:
     void init();
     void createUpdateDeleteRoundTrip();
+    void createsCollection();
 private:
     QString m_collectionId;
 };
@@ -44,6 +45,23 @@ void TestAkonadiBackendLive::createUpdateDeleteRoundTrip() {
     QVERIFY(backend.updateRecord(rec));
 
     QVERIFY(backend.deleteRecord("kalb-live-1"));
+}
+
+void TestAkonadiBackendLive::createsCollection() {
+    const QString parent = qEnvironmentVariable("KALBURATOR_AKONADI_PARENT_ID");
+    if (parent.isEmpty())
+        QSKIP("set KALBURATOR_AKONADI_PARENT_ID to a writable parent collection id");
+    AkonadiBackend backend;
+    backend.loadCalendars(parent);
+    QTest::qWait(500);
+
+    CollectionInfo info;
+    info.name = QStringLiteral("kalb-live-newcal");
+    info.type = QStringLiteral("calendar");
+    info.path = parent;  // parent collection id carrier
+
+    const QString id = backend.createCollection(info);
+    QVERIFY(!id.isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestAkonadiBackendLive)

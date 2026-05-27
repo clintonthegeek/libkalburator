@@ -887,9 +887,24 @@ CollectionInfo AkonadiBackend::collectionInfo(const QString &collectionId)
 
 QString AkonadiBackend::createCollection(const CollectionInfo &info)
 {
-    qWarning() << "AkonadiBackend::createCollection: Phase D stub — Akonadi live server required."
-               << "collectionId:" << info.id;
-    return {};
+    const Akonadi::Collection::Id parentId = collectionIdForCalendar(info.path);
+    if (parentId < 0) {
+        qWarning() << "AkonadiBackend::createCollection: unknown parent" << info.path;
+        return {};
+    }
+    Akonadi::Collection col;
+    col.setParentCollection(Akonadi::Collection(parentId));
+    col.setName(info.name);
+    col.setContentMimeTypes({
+        KCalendarCore::Event::eventMimeType(),
+        KCalendarCore::Todo::todoMimeType(),
+        KCalendarCore::Journal::journalMimeType()});
+    auto *job = new Akonadi::CollectionCreateJob(col, m_session);
+    if (!job->exec()) {
+        qWarning() << "AkonadiBackend::createCollection failed:" << job->errorString();
+        return {};
+    }
+    return calendarIdForCollection(job->collection().id());
 }
 
 QList<BackendRecord> AkonadiBackend::loadRecords(const QString &collectionId)
