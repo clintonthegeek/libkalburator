@@ -391,13 +391,6 @@ public:
                               ISyncHost *host,
                               Kalburator::Shape::ShapeRegistries &shape,
                               QObject *parent = nullptr);
-
-    /// Transitional overload: binds to the process-global default bundle
-    /// (Ambient Context). Kept so existing consumers compile unchanged;
-    /// scheduled for removal once they adopt the injecting ctor (FINDINGS O7).
-    explicit SyncEngine(BackendRegistry *registry,
-                              ISyncHost *host,
-                              QObject *parent = nullptr);
     ~SyncEngine() override;
 
     /**

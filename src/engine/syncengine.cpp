@@ -102,14 +102,6 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
 
 }
 
-SyncEngine::SyncEngine(BackendRegistry *registry,
-                                   ISyncHost *host,
-                                   QObject *parent)
-    : SyncEngine(registry, host,
-                 Kalburator::Shape::defaultShapeRegistries(), parent)
-{
-}
-
 SyncEngine::~SyncEngine()
 {
     stopWorkerThread();

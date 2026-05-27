@@ -104,11 +104,6 @@ PluginManager::PluginManager(Sync::BackendRegistry *registry,
     Q_ASSERT(registry);
 }
 
-PluginManager::PluginManager(Sync::BackendRegistry *registry)
-    : PluginManager(registry, Shape::defaultShapeRegistries())
-{
-}
-
 void PluginManager::reset() { m_loaded.clear(); m_rejected.clear(); }
 QList<PluginManager::LoadedPlugin>   PluginManager::loaded()   const { return m_loaded; }
 QList<PluginManager::RejectedPlugin> PluginManager::rejected() const { return m_rejected; }

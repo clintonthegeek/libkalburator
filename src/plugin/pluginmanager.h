@@ -22,10 +22,6 @@ public:
     /// `shape`, which must be the same bundle the consuming SyncEngine reads.
     PluginManager(Sync::BackendRegistry *registry, Shape::ShapeRegistries &shape);
 
-    /// Transitional overload binding to the process-global default bundle
-    /// (Ambient Context; FINDINGS O7).
-    explicit PluginManager(Sync::BackendRegistry *registry);
-
     struct LoadedPlugin   { QString id; PluginManifest manifest; Plugin *plugin; };
     struct RejectedPlugin { PluginManifest manifest; PluginLoadError error; };
 

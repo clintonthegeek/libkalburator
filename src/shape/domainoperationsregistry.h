@@ -19,7 +19,6 @@ namespace Kalburator::Shape {
 /// false) to catch accidental duplicate registration at startup.
 class DomainOperationsRegistry {
 public:
-    static DomainOperationsRegistry &instance();
 
     /// Register @p ops for its targetDomain(). Returns false if a
     /// DomainOperations for that domain is already registered, or if

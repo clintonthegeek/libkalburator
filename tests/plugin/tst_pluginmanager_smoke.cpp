@@ -2,6 +2,7 @@
 #include <QtTest/QtTest>
 #include <memory>
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "backendregistry.h"
 
 class TestPluginManagerSmoke : public QObject {
@@ -16,7 +17,8 @@ private slots:
     }
 
     void loadsRealSoAndRegistersBackend() {
-        Kalburator::PluginManager pm(m_pluginRegistry.get());
+        Kalburator::Shape::ShapeRegistries shape;
+        Kalburator::PluginManager pm(m_pluginRegistry.get(), shape);
         pm.addSearchPath(QStringLiteral(TINY_PLUGIN_DIR));
         QVERIFY(pm.loadAll());
         QCOMPARE(pm.loaded().size(), 1);

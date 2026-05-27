@@ -1,6 +1,7 @@
 #include <QtTest/QtTest>
 #include <memory>
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "backendregistry.h"
 #include "backendcontribution.h"
@@ -20,14 +21,16 @@ private slots:
     }
 
     void registerStockPluginsRegistersCalDavContribution() {
-        PluginManager pm(m_pluginRegistry.get());
+        Shape::ShapeRegistries shape;
+        PluginManager pm(m_pluginRegistry.get(), shape);
         registerStockPlugins(pm);
         QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("caldav")) != nullptr);
     }
 
     void registerStockPluginsRegistersCardDavContribution() {
-        PluginManager pm(m_pluginRegistry.get());
+        Shape::ShapeRegistries shape;
+        PluginManager pm(m_pluginRegistry.get(), shape);
         registerStockPlugins(pm);
         QVERIFY(m_pluginRegistry->contributionFor(
             QStringLiteral("carddav")) != nullptr);

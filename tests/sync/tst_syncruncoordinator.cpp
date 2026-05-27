@@ -8,6 +8,7 @@
 
 #include "syncruncoordinator.h"
 #include "syncengine.h"
+#include "shaperegistries.h"
 #include "backendregistry.h"
 
 using namespace Kalburator::Sync;
@@ -27,7 +28,8 @@ private Q_SLOTS:
         // BackendRegistry and a null ISyncHost (nullptr is accepted for the
         // basic construction path tested here).
         Kalburator::Sync::BackendRegistry registry;
-        SyncEngine engine(&registry, nullptr, nullptr);
+        Kalburator::Shape::ShapeRegistries shape;
+        SyncEngine engine(&registry, nullptr, shape);
 
         // Coordinator borrows all pointers; null stores are allowed (spec § 3).
         SyncRunCoordinator coordinator(&engine, nullptr, nullptr, nullptr);
@@ -41,7 +43,8 @@ private Q_SLOTS:
     void currentSyncFuture_returnsDefaultFutureBeforeAnyRun()
     {
         Kalburator::Sync::BackendRegistry registry;
-        SyncEngine engine(&registry, nullptr, nullptr);
+        Kalburator::Shape::ShapeRegistries shape;
+        SyncEngine engine(&registry, nullptr, shape);
 
         SyncRunCoordinator coordinator(&engine, nullptr, nullptr, nullptr);
 
@@ -53,7 +56,8 @@ private Q_SLOTS:
     void accessors_returnPassedPointers()
     {
         Kalburator::Sync::BackendRegistry registry;
-        SyncEngine engine(&registry, nullptr, nullptr);
+        Kalburator::Shape::ShapeRegistries shape;
+        SyncEngine engine(&registry, nullptr, shape);
 
         // Null stores are fine — borrowed ownership allows null.
         SyncRunCoordinator coordinator(&engine, nullptr, nullptr, nullptr);
@@ -66,7 +70,8 @@ private Q_SLOTS:
     void runSync_noMappings_isNoOp()
     {
         Kalburator::Sync::BackendRegistry registry;
-        SyncEngine engine(&registry, nullptr, nullptr);
+        Kalburator::Shape::ShapeRegistries shape;
+        SyncEngine engine(&registry, nullptr, shape);
 
         SyncRunCoordinator coordinator(&engine, nullptr, nullptr, nullptr);
 

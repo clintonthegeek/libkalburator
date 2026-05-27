@@ -31,6 +31,7 @@
 #include "isynchost.h"
 #include "pluginmanager.h"
 #include "shape.h"
+#include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
@@ -233,8 +234,13 @@ int main(int argc, char *argv[])
     QDir().mkpath(workdir);
 
     // ── Step 1: Load plugins ─────────────────────────────────────────────────
+    // One ShapeRegistries bundle, owned here at the composition root and shared
+    // by reference with both the PluginManager (which populates it) and the
+    // SyncEngine (which reads it). This is the sole construction site — there is
+    // no process-global default.
     BackendRegistry registry;
-    Kalburator::PluginManager pm(&registry);
+    Kalburator::Shape::ShapeRegistries shape;
+    Kalburator::PluginManager pm(&registry, shape);
     Kalburator::registerStockPlugins(pm);
     qInfo() << "Loaded plugins:" << pm.loaded().size();
 
@@ -278,7 +284,7 @@ int main(int argc, char *argv[])
 
     // ── Step 5: Configure engine ─────────────────────────────────────────────
     RefHost host(&registry);
-    SyncEngine engine(&registry, &host);
+    SyncEngine engine(&registry, &host, shape);
 
     BaselineStore baselines(QDir(workdir).filePath("baselines.db"));
     engine.setBaselineStore(&baselines);
@@ -338,11 +344,8 @@ int main(int argc, char *argv[])
 
     qInfo() << "Smoke test passed: both calendar and contacts records propagated";
 
-    // Clean up Shape singletons registered by registerStockPlugins().
-    // The local BackendRegistry above is destroyed automatically.
-    Kalburator::Shape::TransformationRegistry::instance().clear();
-    Kalburator::Shape::DomainRegistry::instance().clear();
-    Kalburator::Shape::DomainOperationsRegistry::instance().clear();
-
+    // No global cleanup needed: the `shape` bundle, `registry`, and `engine`
+    // are stack-owned and destroyed automatically. (Pre-DI code had to clear
+    // process-global Shape singletons here.)
     return 0;
 }

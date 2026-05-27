@@ -13,21 +13,15 @@ namespace Kalburator::Shape {
 /// gives that engine its own versioned spine (in `transformation`) and its
 /// own domain/operations tables.
 ///
-/// New code MUST inject a ShapeRegistries& rather than call
-/// TransformationRegistry::instance() etc. The instance() accessors and
-/// defaultShapeRegistries() are transitional Ambient-Context scaffolding
-/// (Seemann) kept only so downstream consumers compile during migration;
-/// see FINDINGS O7 for their scheduled removal.
+/// A ShapeRegistries is constructed at the composition root and injected
+/// by reference; it is the sole construction site. There is deliberately
+/// no process-global default and no `::instance()` accessor — the
+/// Ambient-Context scaffolding that bridged the DI migration was removed
+/// once downstream adopted the injecting ctors (FINDINGS O7, resolved).
 struct ShapeRegistries {
     TransformationRegistry   transformation;
     DomainRegistry           domain;
     DomainOperationsRegistry operations;
 };
-
-/// The process-global default bundle. TransformationRegistry::instance()
-/// and friends delegate to its members so existing callers and the
-/// no-bundle ctor overloads keep working. ANTI-PATTERN (Ambient Context):
-/// do not reach for this in new code — inject a ShapeRegistries& instead.
-ShapeRegistries &defaultShapeRegistries();
 
 }  // namespace Kalburator::Shape

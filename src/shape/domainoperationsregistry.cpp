@@ -1,13 +1,6 @@
 #include "domainoperationsregistry.h"
 
-#include "shaperegistries.h"
-
 namespace Kalburator::Shape {
-
-DomainOperationsRegistry &DomainOperationsRegistry::instance()
-{
-    return defaultShapeRegistries().operations;
-}
 
 bool DomainOperationsRegistry::registerOperations(std::shared_ptr<DomainOperations> ops)
 {

@@ -5,6 +5,7 @@
 
 #include "../../src/sync/multiprotocoldavprovider.h"
 #include "../../src/plugin/pluginmanager.h"
+#include "../../src/shape/shaperegistries.h"
 #include "../../src/plugin/stock_plugins.h"
 #include "../../src/sync/backendregistry.h"
 
@@ -165,7 +166,8 @@ void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
 void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()
 {
     BackendRegistry reg;
-    PluginManager pm(&reg);
+    Shape::ShapeRegistries shape;
+    PluginManager pm(&reg, shape);
     registerStockPlugins(pm);
     QVERIFY(reg.contributionFor(
         QStringLiteral("multiproto-dav")) != nullptr);

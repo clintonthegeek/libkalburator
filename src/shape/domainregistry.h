@@ -17,7 +17,6 @@ class DomainDefinition;
 /// calls definitionFor() at sync time to retrieve canonical-shape info.
 class DomainRegistry {
 public:
-    static DomainRegistry& instance();
 
     /// Register a DomainDefinition contributed by a plugin.
     /// Returns false if a definition for that domain is already registered

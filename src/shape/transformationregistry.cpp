@@ -2,13 +2,7 @@
 
 #include <QtGlobal>
 
-#include "shaperegistries.h"
-
 namespace Kalburator::Shape {
-
-TransformationRegistry& TransformationRegistry::instance() {
-    return defaultShapeRegistries().transformation;
-}
 
 void TransformationRegistry::registerShape(Shape shape, PropertyCatalogue catalogue) {
     if (m_frozenDomains.contains(shape.domain)) {

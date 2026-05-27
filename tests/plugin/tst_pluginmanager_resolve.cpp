@@ -1,6 +1,7 @@
 // tests/plugin/tst_pluginmanager_resolve.cpp
 #include <QtTest/QtTest>
 #include "pluginmanager.h"
+#include "shaperegistries.h"
 #include "manifest.h"
 #include "pluginloaderror.h"
 #include "backendregistry.h"
@@ -22,7 +23,8 @@ class TestPluginManagerResolve : public QObject {
 private slots:
     void linearOrder() {
         Sync::BackendRegistry registry;
-        PluginManager pm(&registry);
+        Shape::ShapeRegistries shape;
+        PluginManager pm(&registry, shape);
         QList<PluginManifest> in{
             mk(QStringLiteral("b"), {}, {QStringLiteral("d1")}),
             mk(QStringLiteral("a"), {QStringLiteral("d1")}),
@@ -37,7 +39,8 @@ private slots:
 
     void missingDependencyReportsError() {
         Sync::BackendRegistry registry;
-        PluginManager pm(&registry);
+        Shape::ShapeRegistries shape;
+        PluginManager pm(&registry, shape);
         QList<PluginManifest> in{
             mk(QStringLiteral("b"), {}, {QStringLiteral("d1")}),
         };
@@ -51,7 +54,8 @@ private slots:
 
     void cycleReportsError() {
         Sync::BackendRegistry registry;
-        PluginManager pm(&registry);
+        Shape::ShapeRegistries shape;
+        PluginManager pm(&registry, shape);
         QList<PluginManifest> in{
             mk(QStringLiteral("a"), {QStringLiteral("dA")}, {QStringLiteral("dB")}),
             mk(QStringLiteral("b"), {QStringLiteral("dB")}, {QStringLiteral("dA")}),
@@ -65,7 +69,8 @@ private slots:
 
     void independentPluginsAllScheduled() {
         Sync::BackendRegistry registry;
-        PluginManager pm(&registry);
+        Shape::ShapeRegistries shape;
+        PluginManager pm(&registry, shape);
         QList<PluginManifest> in{
             mk(QStringLiteral("x"), {QStringLiteral("dX")}),
             mk(QStringLiteral("y"), {QStringLiteral("dY")}),

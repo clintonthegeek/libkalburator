@@ -303,7 +303,6 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/defaultblobwriter.cpp
     # K.7.1 — split plugin interface
     src/shape/domainoperationsregistry.cpp
-    src/shape/shaperegistries.cpp
     src/shape/canonenvelope.cpp
     # Plan 3 — canon JSON differ + merger
     src/shape/canonjsondiffer.cpp

@@ -58,15 +58,6 @@ showed **three** (the engine also reads `DomainOperationsRegistry` at `syncengin
 (writer) and SyncEngine (reader), the OSGi `BundleContext` model. Recorded as a documented deviation
 from the stub per the INVARIANTS deviation rule. (Seeded 2026-05-24, Plan 2 design.)
 
-### O7 — Ambient-Context default bundle must be removed after downstream ports
-Plan 2 keeps a process-global `defaultShapeRegistries()` and `::instance()` accessors that delegate
-to it, purely so PlanStan/WildPalms keep compiling against the current `SyncEngine`/`PluginManager`
-ctors (invariant 10). This is Seemann's **Ambient Context anti-pattern**, legitimate **only as
-removable scaffolding**. **Watch:** once PlanStan and WildPalms adopt the injecting ctor (downstream-
-port work, after this branch merges — see O4), delete `defaultShapeRegistries()` and the three
-`::instance()` accessors so the only construction site is the composition root. Not Plan 2's job;
-Plan 2 lands the seam green. (Seeded 2026-05-24, Plan 2 design.)
-
 ### O8 — Plan-3/Plan-4 boundary: calendar canon moved into Plan 3 (scope decision)
 Design §10's file-change list placed "`calendarstockshapes.cpp`: add canon + `ical↔canon`
 bridges" under the **Plan 4** (convergence) work, while the STATUS Plan-3 row named
@@ -135,6 +126,21 @@ warning re-sourcing org sync consumes, but wiring the org backend's `nativeShape
 org-ical is org-on/downstream work (invariant 8). (Seeded 2026-05-24, Plan 4 Task 9.)
 
 ## Resolved
+
+### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)
+Once PlanStan and WildPalms adopted the injecting `ShapeRegistries` ctors (per
+`docs/2026-05-27-downstream-port-checklist.md`), the transitional scaffolding was
+deleted: the process-global `defaultShapeRegistries()`, the three
+`TransformationRegistry`/`DomainRegistry`/`DomainOperationsRegistry` `::instance()`
+accessors, `src/shape/shaperegistries.cpp`, and the no-`ShapeRegistries` ctor
+overloads on `SyncEngine` and `PluginManager`. A `ShapeRegistries` is now
+constructed only at the composition root and injected by reference — the OSGi
+`BundleContext` topology is complete and the Ambient-Context anti-pattern is gone.
+Internal callers updated: `tst_calendar_sync_oneway`, `tst_syncruncoordinator`,
+`tst_pluginmanager_resolve`/`_smoke`, `tst_provider_plugin_registration`,
+`tst_akonadiprovider_plugin_registration`, `tst_multiprotocoldavprovider`, and
+`examples/reference_consumer` (now models the injecting pattern with no global
+cleanup). Build clean, suite 124/124. (Resolved 2026-05-27.)
 
 ### O13 — baseline-load filters to blob domain (RESOLVED — was a misdiagnosis, 2026-05-26)
 

@@ -26,7 +26,6 @@ namespace Kalburator::Shape {
 /// In v1, no cross-domain edges are registered.
 class TransformationRegistry {
 public:
-    static TransformationRegistry& instance();
 
     /// Register a property catalogue for a shape. Required before
     /// any edge involving that shape can be registered. Idempotent
@@ -105,7 +104,7 @@ public:
 
 public:
     /// Default-constructible so it can be a member of ShapeRegistries (DI).
-    /// Use ShapeRegistries / dependency injection, not instance(), in new code.
+    /// Always obtained by injecting a ShapeRegistries&, never globally.
     TransformationRegistry() = default;
 
 private:
