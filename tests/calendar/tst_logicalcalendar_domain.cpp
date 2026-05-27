@@ -60,6 +60,46 @@ private slots:
         const LogicalCalendar back = logicalCalendarFromJson(obj);
         QCOMPARE(back.domain.toString(), QStringLiteral("calendar"));
     }
+
+    // === Task 2: hasWritableRemoteSyncTarget() demotion fact ===
+
+    void noWritableRemoteWhenOnlyPrimary()
+    {
+        LogicalCalendar lc;
+        CalendarBackendBinding p;
+        p.backendId = QStringLiteral("local");
+        p.calendarId = QStringLiteral("c");
+        p.role = BackendRole::Primary;
+        lc.bindings.append(p);
+        QVERIFY(!lc.hasWritableRemoteSyncTarget());
+    }
+
+    void readOnlyRemoteIsNotWritableTarget()
+    {
+        LogicalCalendar lc;
+        CalendarBackendBinding p; p.backendId = "local"; p.calendarId = "c"; p.role = BackendRole::Primary;
+        CalendarBackendBinding r; r.backendId = "caldav"; r.calendarId = "c"; r.role = BackendRole::ReadOnly;
+        lc.bindings = { p, r };
+        QVERIFY(!lc.hasWritableRemoteSyncTarget());
+    }
+
+    void syncBindingIsWritableTarget()
+    {
+        LogicalCalendar lc;
+        CalendarBackendBinding p; p.backendId = "local"; p.calendarId = "c"; p.role = BackendRole::Primary;
+        CalendarBackendBinding s; s.backendId = "caldav"; s.calendarId = "c"; s.role = BackendRole::Sync1;
+        lc.bindings = { p, s };
+        QVERIFY(lc.hasWritableRemoteSyncTarget());
+    }
+
+    void disabledSyncBindingDoesNotCount()
+    {
+        LogicalCalendar lc;
+        CalendarBackendBinding p; p.backendId = "local"; p.calendarId = "c"; p.role = BackendRole::Primary;
+        CalendarBackendBinding s; s.backendId = "caldav"; s.calendarId = "c"; s.role = BackendRole::Sync1; s.enabled = false;
+        lc.bindings = { p, s };
+        QVERIFY(!lc.hasWritableRemoteSyncTarget());
+    }
 };
 
 QTEST_MAIN(TstLogicalCalendarDomain)

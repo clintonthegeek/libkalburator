@@ -170,6 +170,23 @@ struct LogicalCalendar {
     /// Domain-agnostic alias for `id` (collection identity).
     QString collectionId() const { return id; }
 
+    /**
+     * @brief Neutral fact: does an enabled Sync* (writable remote spoke) binding exist?
+     *
+     * Pure config-level query, no backend access. Consumers apply their own policy:
+     * a conduit (WildPalms) demotes user editing when true; a two-way editor (PlanStan)
+     * may ignore it. ReadOnly (-1) and Primary (0) bindings do not count — only the
+     * positive Sync1..N roles, which is exactly what isSyncRole() selects.
+     */
+    bool hasWritableRemoteSyncTarget() const {
+        for (const auto &b : bindings) {
+            if (b.enabled && isSyncRole(b.role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool hasPrimaryBinding() const {
         for (const auto &binding : bindings) {
             if (binding.role == BackendRole::Primary && binding.enabled) {
