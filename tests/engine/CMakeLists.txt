@@ -95,3 +95,9 @@ kalburator_add_engine_integration_test(tst_mass_delete_guard)
 
 # Phase N.1 — per-record diff helper unit tests
 kalburator_add_engine_test(tst_perrecorddiff)
+
+# Sync-topology promotion (2026-05-27) — write-gate: read-only targets receive
+# zero writes on both the first-sync mirror (Task 5) and the steady-state sink
+# writer (Task 6). Integration test (StubSyncHost + MockBackend).
+kalburator_add_engine_integration_test(tst_engine_write_gate)
+target_link_libraries(tst_engine_write_gate PRIVATE Qt6::Sql)

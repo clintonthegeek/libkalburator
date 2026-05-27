@@ -1680,6 +1680,18 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
 
     IBlobBackend *src = asBlob(srcBackend);
 
+    // Authority: never write to a target that reports read-only for this
+    // collection. Read-only targets are also excluded upstream (generator +
+    // builder ReadOnly seed); this is the engine-level backstop for the
+    // first-sync mirror, uniform with the steady-state gate in
+    // unifiedContinueAfterConflicts. Skip is a no-op, not an error.
+    const bool tgtWritable = tgtBackend->discoveredWritable(colId);
+    if (!tgtWritable) {
+        qWarning() << "SyncEngine: target backend" << request.mapping.targetBackend
+                   << "reports read-only for collection" << colId
+                   << "- skipping first-sync writes";
+    }
+
     // Task 14: replaced BlobSyncResult/BlobSyncStats (now deleted) with a
     // plain error counter — the struct's errorMessage was never populated
     // so the failure branch logged an empty string regardless.
@@ -1691,7 +1703,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // Marshalled to the source backend's thread because we walk both
     // backends synchronously (same threading requirement as the old call).
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, &mirrorErrors, &mirrorReadErr]() {
+        [src, tgt, colId, tgtWritable, &mirrorErrors, &mirrorReadErr]() {
             QList<BackendRecord> srcRecords;
             QList<BackendRecord> tgtRecords;
             if (!src->loadRecordsOrError(colId, srcRecords, mirrorReadErr)) {
@@ -1702,16 +1714,18 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
             }
             const auto tgtById = indexBlobById(tgtRecords);
 
-            // Copy source → target (create or update).
+            // Copy source → target (create or update). Short-circuit &&: the
+            // write call is never invoked when the target is read-only, so
+            // mirrorErrors stays 0 and the success-completion path runs.
             for (const auto &sr : srcRecords) {
                 const auto it = tgtById.constFind(sr.id);
                 if (it == tgtById.constEnd()) {
-                    if (tgt->createRecord(colId, sr).isEmpty())
+                    if (tgtWritable && tgt->createRecord(colId, sr).isEmpty())
                         ++mirrorErrors;
                 } else if (it.value().contentHash != sr.contentHash) {
                     BackendRecord out = sr;
                     out.id = it.value().id;
-                    if (!tgt->updateRecord(out))
+                    if (tgtWritable && !tgt->updateRecord(out))
                         ++mirrorErrors;
                 }
             }
@@ -1720,7 +1734,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
             const auto srcById = indexBlobById(srcRecords);
             for (const auto &tr : tgtRecords) {
                 if (!srcById.contains(tr.id)) {
-                    if (!tgt->deleteRecord(tr.id))
+                    if (tgtWritable && !tgt->deleteRecord(tr.id))
                         ++mirrorErrors;
                 }
             }
@@ -2505,6 +2519,19 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         const QList<BackendRecord> &toWrite,
         const QString &backendRegistryId)
     {
+        // Authority: never write to a backend that reports read-only for this
+        // collection (e.g. an ACL change at runtime). Skip is a no-op, NOT a
+        // failure: return before the ok-checked failure tail so writeFailed
+        // stays false and the success path runs. Read-only targets are also
+        // excluded upstream (generator + builder ReadOnly seed); this is the
+        // engine-level backstop, uniform with the first-sync gate (dispatchFirstSync).
+        if (!backend->discoveredWritable(colId)) {
+            qWarning() << "SyncEngine: backend" << backendRegistryId
+                       << "reports read-only for collection" << colId
+                       << "- skipping" << toWrite.size() << "steady-state writes";
+            return;
+        }
+
         bool ok = false;
 
         // The converged writers (DefaultBlobWriter) ignore the host
