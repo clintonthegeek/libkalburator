@@ -125,9 +125,20 @@ QFuture<void> ProviderManager::connectAll()
 {
     auto sync = std::make_shared<QFutureSynchronizer<bool>>();
     for (const auto &p : m_providers) {
-        if (!p->isConnected()) {
-            sync->addFuture(p->connect());
-        }
+        // Skip providers that are already connected or whose async connect is
+        // in-flight (Connecting). m_providerStates is updated synchronously to
+        // Connecting here so that a second connectAll() call (e.g. from
+        // AccountController::addProvider()) does not re-launch discovery for
+        // providers already being handled.
+        const auto st = m_providerStates.value(
+            p->id(), ProviderConnectionState::Disconnected);
+        if (st == ProviderConnectionState::Connecting
+            || st == ProviderConnectionState::Connected)
+            continue;
+
+        m_providerStates[p->id()] = ProviderConnectionState::Connecting;
+        emit providerStateChanged(p->id(), ProviderConnectionState::Connecting);
+        sync->addFuture(p->connect());
     }
     sync->setCancelOnWait(false);
     return QtConcurrent::run([sync]() {
