@@ -122,3 +122,4 @@ kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 # Sync-topology promotion (2026-05-27) — domain field, collectionId, alias,
 # domain serialization, hasWritableRemoteSyncTarget() demotion fact
 kalburator_add_calendar_test(tst_logicalcalendar_domain)
+kalburator_add_calendar_test(tst_logicalcalendarbuilder_readonly_seed)

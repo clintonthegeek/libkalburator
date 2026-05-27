@@ -178,6 +178,19 @@ CalendarBackendBinding LogicalCalendarBuilder::createBindingFromDiscovery(
     binding.enabled = true;
     binding.needsCreation = false;  // Already exists!
 
+    // Authority: a discovered non-writable calendar must not become a writable
+    // sync target. Seed ReadOnly for sync bindings; a non-writable PRIMARY is a
+    // warning (silently demoting it would break exactly-one-Primary).
+    if (!discovered.writable) {
+        if (role == BackendRole::Primary) {
+            m_warnings.append(
+                QStringLiteral("Primary backend '%1' calendar '%2' reports read-only")
+                    .arg(discovered.backendId, discovered.calendarId));
+        } else {
+            binding.role = BackendRole::ReadOnly;
+        }
+    }
+
     // Copy ALL metadata from discovery
     binding.metadata = discovered.metadata;
 
