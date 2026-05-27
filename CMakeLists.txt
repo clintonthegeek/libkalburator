@@ -492,6 +492,9 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/akonadirevisiondigest.h
     # Akonadi persistent per-collection revision store (pure; unconditional)
     src/sync/akonadirevisionstore.h
+    # Sync-topology promotion (2026-05-27): pure (logical calendars + topology)
+    # -> SyncMapping list generator. No provider/engine state.
+    src/sync/syncmappinggenerator.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -522,6 +525,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/akonadirevisiondigest.cpp
     # Akonadi persistent per-collection revision store (pure; unconditional)
     src/sync/akonadirevisionstore.cpp
+    # Sync-topology promotion (2026-05-27): pure generator (see header)
+    src/sync/syncmappinggenerator.cpp
 )
 
 # Phase M.9–M.11: Library UI widgets

@@ -16,6 +16,9 @@ endfunction()
 
 kalburator_add_sync_test(tst_provider_manager)
 
+# Sync-topology promotion (2026-05-27) — pure generateMappings() generator.
+kalburator_add_sync_test(tst_syncmappinggenerator)
+
 # Phase 5 step 1 — ProviderLifecycle coordinator canary tests.
 kalburator_add_sync_test(tst_providerlifecycle)
 
