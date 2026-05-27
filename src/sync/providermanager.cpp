@@ -15,7 +15,6 @@
 #include <QFutureWatcher>
 
 #include <algorithm>
-#include <memory>
 
 
 namespace Kalburator::Sync {
@@ -145,18 +144,21 @@ QFuture<void> ProviderManager::connectAll()
         // Connecting state forever because it won't emit connectionStateChanged(false)
         // (that signal only fires on explicit disconnect()). Attach a per-provider
         // future watcher to reset the state if the connect operation fails.
+        // Parented to 'this' so Qt's parent-child mechanism cleans it up if
+        // ProviderManager is destroyed before the future completes.
         auto future = p->connect();
-        auto watcher_ptr = std::make_shared<QFutureWatcher<bool>>();
+        auto *watcher = new QFutureWatcher<bool>(this);
         const QString pid = p->id();
-        QObject::connect(watcher_ptr.get(), &QFutureWatcher<bool>::finished, this,
-            [this, watcher_ptr, pid]() {
-                if (!watcher_ptr->result()) {
+        QObject::connect(watcher, &QFutureWatcher<bool>::finished, this,
+            [this, watcher, pid]() {
+                if (!watcher->result()) {
                     // Connect failed — reset state so retries are possible.
                     m_providerStates[pid] = ProviderConnectionState::Disconnected;
                     emit providerStateChanged(pid, ProviderConnectionState::Disconnected);
                 }
+                watcher->deleteLater();
             });
-        watcher_ptr->setFuture(future);
+        watcher->setFuture(future);
         sync->addFuture(future);
     }
     sync->setCancelOnWait(false);
