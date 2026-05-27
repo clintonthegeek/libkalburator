@@ -12,8 +12,20 @@ class TestNoteShapes : public QObject {
     TransformationRegistry buildRegistry() {
         TransformationRegistry reg;
         NoteDomainDefinition def;
-        // Single-node spine: declareCanonical(note, canon).
-        reg.declareCanonical(def.domain(), def.canonicalShape());
+        // Mirror PluginManager's canonical-spine registration: registerShape
+        // the canonical shape's catalogue AND declareCanonical. Post-O7
+        // declareCanonical only records the spine — it does NOT register the
+        // shape's catalogue — so the canonical shape must be registered
+        // explicitly or registerEdge() aborts ("from-shape not registered")
+        // on the (note,canon) edges below.
+        const auto spine = def.canonicalSpine();
+        const auto& [rootShape, rootCat] = spine.first();
+        reg.registerShape(rootShape, rootCat);
+        reg.declareCanonical(def.domain(), rootShape);
+        for (int i = 1; i < spine.size(); ++i) {
+            reg.registerShape(spine[i].first, spine[i].second);
+            reg.appendCanonicalVersion(def.domain(), spine[i].first);
+        }
         NoteStockShapes stock;
         for (const auto& [shape, cat] : stock.peerShapes())
             reg.registerShape(shape, cat);
