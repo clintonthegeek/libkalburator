@@ -944,7 +944,14 @@ git commit -m "perf(akonadi): memoize contentHash by Item::revision()"
 
 ---
 
-## Task 12: ChangeRecorder warm-path layer
+## Task 12: ChangeRecorder warm-path layer — DEFERRED (2026-05-26)
+
+> **DEFERRED.** See FINDINGS O14 for rationale: `ChangeRecorder`'s recording mode
+> changes Monitor signal-delivery semantics (queued, `replayNext`-driven) and would
+> risk the live cache the write path depends on; an in-memory dirty set cannot
+> account for changes during downtime (which the digest already handles). The digest
+> fetch is a cheap local-DB read, making this a marginal optimization. Revisit only
+> if profiling shows the digest fetch is hot.
 
 Upgrade the live `Akonadi::Monitor` to a persistent `ChangeRecorder`, exposing a "dirty uids since last sync" set used as a fast path on top of the digest backbone. The digest remains the correctness floor — when the recorder is empty but the digest differs (changes during downtime), callers fall back to the full path.
 
@@ -1060,6 +1067,13 @@ git commit -m "docs(akonadi): mark vestigial pushItems path, drop stale Phase F 
 ---
 
 ## Task 14: CMake wiring for new sources and tests
+
+> **Note:** the pure helpers (`AkonadiRevisionStore`, `AkonadiRevisionDigest`) were
+> registered unconditionally (not behind the `KALBURATOR_HAVE_AKONADI` gate) as part
+> of Tasks 7/8, so their unit tests run in the default CI profile. This was intentional:
+> both helpers are pure Qt/QSettings logic with no Akonadi headers, and gating them
+> would exclude them from routine CI. Only the Akonadi-header-dependent backends and
+> live tests remain gated.
 
 Register the new `src/sync/*` sources in the Akonadi-gated build and add a contacts test helper if missing.
 

@@ -110,6 +110,26 @@ so the reverse transcoder silently restored *nothing*. No test ever covered it. 
 faithful (byte-for-byte) and proven by `tst_orgical_canon_roundtrip`'s round-trip slot. The legacy
 class is deleted in Plan 4 Task 8 regardless. (Seeded 2026-05-24, Plan 4 Task 2.)
 
+### O13 — baseline-load filters to blob domain (OPEN, inherited)
+
+`src/engine/syncengine.cpp` (~line 2121) loads only `blob`-domain baselines into the
+per-record diff, so baseline-driven *deletion* detection for non-blob domains
+(calendar/contacts) is not yet active for ANY backend (DAV included). The Akonadi
+backends inherit this; it is not Akonadi-specific. Tracked here so Akonadi sync
+deletion behavior is understood. (Seeded 2026-05-26, Akonadi full-functionality work.)
+
+### O14 — Akonadi ChangeRecorder warm-path deferred (DEFERRED, 2026-05-26)
+
+The Akonadi change-detection backbone is the payload-free id+revision digest
+(`Backend::ChangeDetection`, `AkonadiRevisionStore`). A `ChangeRecorder`-based
+persistent warm-path (skip even the local digest fetch using a cross-restart change
+journal) was scoped but deferred: `ChangeRecorder`'s recording mode changes Monitor
+signal-delivery semantics (queued, `replayNext`-driven) and would risk the live cache
+the write path depends on, and an in-memory-only dirty set cannot safely account for
+changes during downtime (which the digest already handles). The digest fetch is a cheap
+local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
+shows the digest fetch is hot. (Decided 2026-05-26.)
+
 ### O12 — Downstream backend port required before this branch compiles downstream (OPEN)
 Plan 4 dropped the `TranscodingPlan` parameter entirely from `SyncBackend::pushItems`/`startSync`
 (and the deprecated `storeItems`/`updateItem`) per the locked human decision (drop-entirely,

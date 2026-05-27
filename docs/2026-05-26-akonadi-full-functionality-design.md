@@ -176,6 +176,11 @@ For both backends, move the real Akonadi item-write logic onto
 
 ### Component 4 — `ChangeRecorder` live/incremental layer
 
+> **DEFERRED (2026-05-26)** — not implemented this round; see FINDINGS O14 for
+> rationale (digest backbone is sufficient and cheap; `ChangeRecorder` recording
+> mode risks the live cache). The design below is the record of the considered
+> approach.
+
 - Upgrade the existing live `Akonadi::Monitor` to a `ChangeRecorder` with a
   stable identity via `setConfig(QSettings*)` (journal at
   `<our-config>/<account>_changes.dat`; identity is purely the QSettings file

@@ -9,8 +9,11 @@
 - `AkonadiProvider` (implements `IProvider`) — discovers calendar and addressbook
   collections via `Akonadi::CollectionFetchJob`; `createBackend()` dispatches by
   MIME type (calendar → `AkonadiBackend`, contacts → `AkonadiContactsBackend`).
-- `AkonadiContactsBackend` — new; mirrors `AkonadiBackend` for `KContacts::Addressee`,
-  uses `KContacts::VCardConverter` v4_0, monitors on `KContacts::Addressee::mimeType()`.
+- `AkonadiContactsBackend` — new *skeleton*; identity, read (`loadRecords` via
+  `ItemFetchJob`), and Monitor wiring for `KContacts::Addressee`. The write path
+  (`createRecord`/`updateRecord`/`deleteRecord`), `createCollection`, and
+  `Backend::ChangeDetection` were **stubs** at Phase L; real implementations landed
+  2026-05-26 (see §2026-05-26 below).
 - `AkonadiBackendContribution` + `AkonadiProviderPlugin` — registered in
   `stock_plugins.cpp` under `#ifdef HAVE_AKONADI`; WildPalms CMake changed from
   forced-OFF to `option()` so callers can enable it.
@@ -41,3 +44,35 @@
 - clangd: `.clangd` `CompilationDatabase` must point at `build-akonadi/` for
   Akonadi-gated code to be visible. The repo `.clangd` was updated accordingly.
 - Live Akonadi tests guarded by `KALBURATOR_AKONADI_LIVE_TEST=1` env var (skip in CI).
+
+---
+
+## 2026-05-26 — full functionality landed (branch `feature/akonadi-full-functionality`)
+
+Phase L shipped provider wiring, discovery, and the contacts skeleton. The following
+landed 2026-05-26, bringing both the calendar and contacts backends to full sync-target
+parity:
+
+- **`createRecord` / `updateRecord` / `deleteRecord`** — real `ItemCreateJob` /
+  `ItemModifyJob` / `ItemDeleteJob` via `KJob::exec()` sync bridge. Supersedes the
+  vestigial `pushItems` path (now marked vestigial; full removal deferred to the
+  `SyncBackend` ABI cleanup).
+- **`createCollection`** — real `CollectionCreateJob` under a user-selected parent
+  resource. Implemented for both calendar (MIME: event/todo/journal) and contacts
+  (MIME: `KContacts::Addressee::mimeType()`).
+- **`Backend::ChangeDetection`** — payload-free `ItemFetchJob` (id + revision only,
+  no decode) digested via `AkonadiRevisionStore`. Persisted across restarts; lets the
+  engine skip unchanged collections without reading any records.
+- **`contentHash` memoization** — `m_hashMemo` keyed by `Item::revision()`; avoids
+  re-serializing + re-hashing items whose Akonadi revision is unchanged.
+- **Cross-backend record identity fix** — `BackendRecord.id` now set from the
+  iCal UID / vCard UID (not the local Akonadi item id), matching `RemoteCalendarBackend`
+  and enabling engine-level cross-backend diffing.
+
+**Design and implementation plan:**
+`docs/2026-05-26-akonadi-full-functionality-design.md`,
+`docs/2026-05-26-akonadi-full-functionality-plan.md`
+
+**Note:** the `ChangeRecorder` warm-path (incremental dirty-tracking on top of the
+digest backbone) was scoped in the design but **deferred** — see `docs/campaign/FINDINGS.md`
+O14 for rationale. The digest backbone is the correctness floor and is sufficient.

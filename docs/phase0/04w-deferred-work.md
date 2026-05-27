@@ -404,8 +404,11 @@ them in.
 
 ### C.1 Akonadi provider (backend exists; provider + contacts + plugin-ization pending — Phase L)
 
-**Status:** ✅ landed 2026-05-16 (Phase L, tag `v0.41-phase-l-akonadi-provider`).
-**Target phase:** Phase L (delivered).
+**Status:** ✅ Phase L landed 2026-05-16 (provider + discovery + contacts skeleton,
+tag `v0.41-phase-l-akonadi-provider`). ✅ Write path + collection creation +
+change-detection parity landed 2026-05-26 (branch `feature/akonadi-full-functionality`;
+see `docs/2026-05-26-akonadi-full-functionality-design.md`).
+**Target phase:** Phase L (partially delivered); remainder delivered 2026-05-26.
 **Source:** `ROADMAP.md` ("Akonadi/CardDAV deferred"); CardDAV
 shipped in Phase Ib. Akonadi calendar backend was actually
 already in tree at the start of the refactor — see below.
@@ -490,14 +493,17 @@ disable Akonadi-mapping for reads but not writes) is *not*
 modeled — users who need writes during an Akonadi outage just
 flip both at once.
 
-**Acceptance (Phase L):**
+**Acceptance (Phase L — delivered 2026-05-16):**
 
 - `AkonadiBackendContribution` + `AkonadiProviderPlugin` registered
   via `stock_plugins.cpp` when `KALBURATOR_HAVE_AKONADI=ON`.
 - `AkonadiProvider` enumerates calendar + addressbook collections;
   `createBackend()` routes by mime type.
-- `AkonadiContactsBackend` lands with parity to existing calendar
-  backend (Monitor + Session, push/fetch/delete operations).
+- `AkonadiContactsBackend` skeleton: identity, read (`loadRecords`
+  via `ItemFetchJob`), and Monitor wiring for `KContacts::Addressee`.
+  Write ops (`createRecord`/`updateRecord`/`deleteRecord`),
+  `createCollection`, and `Backend::ChangeDetection` were stubs at
+  Phase L — **these were NOT delivered at Phase L**.
 - Engine consults `BackendConfiguration::enabled` during dispatch
   and skips disabled providers' mappings entirely.
 - WildPalms `AccountsPage` exposes per-provider enable checkbox;
@@ -510,6 +516,18 @@ flip both at once.
   retained.
 - Phase L tag: `v0.41-phase-l-akonadi-provider` on
   libkalburator's `refactor/engine-merger`.
+
+**Acceptance (2026-05-26 — write path, collection creation, change detection):**
+
+- Real `createRecord`/`updateRecord`/`deleteRecord` via `KJob::exec()` bridge
+  for both calendar and contacts backends.
+- Real `createCollection` via `CollectionCreateJob` for both backends.
+- `Backend::ChangeDetection` via payload-free id+revision digest persisted in
+  `AkonadiRevisionStore` (CTagStore analogue).
+- `contentHash` memoized by `Item::revision()`.
+- Cross-backend record identity: `BackendRecord.id` set from iCal UID / vCard UID.
+- Design: `docs/2026-05-26-akonadi-full-functionality-design.md`.
+- Note: `ChangeRecorder` warm-path deferred — see `docs/campaign/FINDINGS.md` O14.
 
 **Plan:** see
 `/home/clinton/dev/refactor-engine-merger/2026-05-15-phase-l-akonadi-plan.md`.
