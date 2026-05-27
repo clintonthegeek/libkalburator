@@ -100,6 +100,7 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
                                                               : it.value().serverDisplayName;
             ci.type = QStringLiteral("calendar");
             ci.isDefault = false;
+            ci.readOnly = !it.value().writable;  // thread discovered writability (Phase 2C authority seed)
             m_collections.append(ci);
         }
         m_connected = true;

@@ -63,6 +63,7 @@ private slots:
     void connect_succeeds_against_fake_server();
     void connect_succeeds_via_wellknown_against_nextcloud_style_server();
     void connect_populates_collections();
+    void connect_populates_readonly_from_discovered_writability();
     void createBackend_returns_remote_backend_for_known_collection();
     void createBackend_returns_nullptr_for_unknown_collection();
     void connect_fails_on_401();
@@ -168,6 +169,44 @@ void TstCalDavProvider::connect_populates_collections()
     }
     std::sort(names.begin(), names.end());
     QCOMPARE(names, (QStringList{ QStringLiteral("Personal"), QStringLiteral("Work") }));
+}
+
+void TstCalDavProvider::connect_populates_readonly_from_discovered_writability()
+{
+    // A calendar whose server ACL advertises no write privilege must surface
+    // as CollectionInfo.readOnly == true; a normal calendar stays writable.
+    // (Phase 2C: the new-collection wizard excludes read-only remotes.)
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") },
+        { QStringLiteral("Shared"),   QStringLiteral("/calendars/testuser/shared/") }
+    });
+    server.setReadOnlyCalendars({ QStringLiteral("/calendars/testuser/shared/") });
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 2);
+
+    bool sawPersonal = false;
+    bool sawShared = false;
+    for (const auto &c : cols) {
+        if (c.name == QStringLiteral("Personal")) {
+            sawPersonal = true;
+            QVERIFY2(!c.readOnly, "writable calendar must not be marked readOnly");
+        } else if (c.name == QStringLiteral("Shared")) {
+            sawShared = true;
+            QVERIFY2(c.readOnly, "read-only ACL calendar must be marked readOnly");
+        }
+    }
+    QVERIFY(sawPersonal);
+    QVERIFY(sawShared);
 }
 
 void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collection()

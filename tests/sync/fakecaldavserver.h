@@ -61,6 +61,14 @@ public:
     /// "Personal" at "/calendars/testuser/personal/".
     void setCalendars(const QList<QPair<QString, QString>> &cals);
 
+    /// Mark the listed calendar hrefs as read-only. The calendar-list PROPFIND
+    /// then advertises a <current-user-privilege-set> containing only <read/>
+    /// for those collections (no write/write-content/bind/unbind), so
+    /// CalDavCapabilityDiscovery reports them as writable=false. Calendars not
+    /// listed here emit no privilege-set and default to writable. hrefs must
+    /// match those set via setCalendars() (e.g. "/calendars/testuser/work/").
+    void setReadOnlyCalendars(const QStringList &hrefs) { m_readOnlyHrefs = hrefs; }
+
     /// Pre-populate a calendar collection with iCal event blobs.
     /// Each blob must be a full VCALENDAR containing a UID property.
     /// collectionHref must match one of the hrefs set via setCalendars()
@@ -110,6 +118,7 @@ private:
     bool m_return500 = false;
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
+    QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
 
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
     /// then by UID.
