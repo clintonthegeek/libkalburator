@@ -156,18 +156,27 @@ behavioral contract per repo `CLAUDE.md`).
    threading modes; the calendar writer's `WorkerThread` override (which existed
    only because `SyncTransaction::commitAll` marshalled internally) is no longer
    needed. No engine change beyond removing the now-dead writer.
-6. **Rewrite the four rollback tests** in `tst_calendar_sync_error_recovery.cpp`
-   (`storeFailsPartial_rolledBack`, `pushFailsPartial_rolledBack`,
-   `deleteFailsPartial_rolledBack`, `partialWriteRollback_targetClean`). Routing
-   calendar through `DefaultBlobWriter` removes rollback, so their
-   all-or-nothing assertions (`targetUids() == 0`, target restored to 3) no
-   longer hold. Re-point each to the **meaningful, retry-safe contract**: the
-   sync reports failure (`!m_lastResult.success`), and baselines are *not* saved
-   so a retry re-attempts the failed writes (no phantom deletions). Drop the
-   `targetUids() == 0` / `== 3` rollback assertions; where useful, assert that
-   partial writes may remain (best-effort) and that a subsequent successful sync
-   converges. The other error-recovery slots (immediate-failure, fetch-failure)
-   already assert failure propagation and are unaffected — keep them.
+6. **Rewrite the rollback-asserting slots** in
+   `tst_calendar_sync_error_recovery.cpp`. Routing calendar through
+   `DefaultBlobWriter` removes rollback, so all-or-nothing assertions
+   (`targetUids() == 0`, target restored to 3) no longer hold. Impact is **~9
+   slots** (not the 4 first estimated), handled as:
+   - **Delete (3, redundant rollback duplicates of `storeFailsPartial`):**
+     `partialWriteRollback_targetClean`, `crashRecoveryReplay_targetClean`,
+     `pendingLogContentFidelity_targetRolledBack` — all assert `target==0` via the
+     same `OnStoreItems,2` setup.
+   - **Rewrite (5) to the retry-safe contract** (failure propagates; baselines not
+     saved; a follow-up clean sync converges; pre-existing data untouched; partial
+     writes may remain): `storeFailsPartial_rolledBack`,
+     `pushFailsPartial_rolledBack`, `deleteFailsPartial_rolledBack`,
+     `rollbackPreservesPreExistingData`, `mixedOperationRollback_targetRestored`.
+   - **Trim (2):** `rollbackFailureResilience_errorReported` (drop `target==0`,
+     keep failure+error-message asserts); `retryAfterFailure_recoversCorrectly`
+     (drop the mid `target==0`, keep the recovery asserts — this slot already
+     encodes the retry-safe contract).
+   - **Keep unchanged:** the immediate-failure (`pushFailsImmediate`,
+     `deleteFailsImmediate`), fetch-failure, `twoDirectionFailureIsolation`, and
+     success/empty slots — best-effort yields the same result there.
 7. **Comment cleanup:** drop the stale `CalendarPluginWriter`/`SyncTransaction`
    references in `syncengine.{h,cpp}` comments where they describe the removed
    path (don't rewrite unrelated text).
