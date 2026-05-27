@@ -37,8 +37,9 @@ namespace Kalburator::Sync {
  * to SyncBackend signals. Writes use a dedicated Session that the
  * Monitor ignores to prevent feedback loops.
  *
- * Phase L.6: skeleton with identity + offline stubs. Full Akonadi
- * job implementations mirror AkonadiBackend (Phase D / L.5).
+ * Read and write ops (loadRecords, createRecord, updateRecord, deleteRecord,
+ * createCollection) and change detection are real, bridging async Akonadi
+ * jobs via KJob::exec(). Mirror AkonadiBackend (calendar counterpart).
  */
 class AkonadiContactsBackend : public SyncBackend,
                                public Kalburator::Backend::ChangeDetection
@@ -73,16 +74,20 @@ public:
                                  const QStringList &uids) override;
 
     // =========================================================================
-    // IBlobBackend overrides
+    // IBlobBackend overrides.
     //
-    // recordId     = Akonadi::Item::id().toString()
+    // recordId     = vCard UID (cross-backend-stable; Akonadi::Item::id() is
+    //                local-only and is never exposed as the record id)
     // collectionId = "akonadi-contacts-<Akonadi::Collection::Id>"
-    // data         = serialized vCard bytes (KContacts::VCardConverter)
+    // data         = serialized vCard bytes (KContacts::VCardConverter v4_0)
     // contentHash  = SHA-256 of vCard bytes
     // lastModified = Akonadi::Item::modificationTime()
     //
-    // Phase L.6 stubs: all blob methods emit qWarning and return empty/false
-    // because Akonadi async jobs require a running Akonadi server.
+    // The per-record ops (createRecord/updateRecord/deleteRecord),
+    // createCollection, loadRecords/loadRecord, and the Backend::ChangeDetection
+    // methods are real (bridge async Akonadi jobs via KJob::exec()). Require a
+    // running Akonadi server.
+    // See docs/2026-05-26-akonadi-full-functionality-design.md.
     // =========================================================================
 
     // Identity
@@ -95,7 +100,7 @@ public:
     CollectionInfo        collectionInfo(const QString &collectionId) override;
     QString               createCollection(const CollectionInfo &info) override;
 
-    // Records — stubs; Akonadi live server required
+    // Records — real implementations; KJob::exec() bridge; Akonadi server required
     QList<BackendRecord>         loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
     QString                      createRecord(const QString &collectionId,
@@ -103,7 +108,7 @@ public:
     bool                         updateRecord(const BackendRecord &record) override;
     bool                         deleteRecord(const QString &recordId) override;
 
-    // Change detection — stubs
+    // Change detection — real; filters in-memory cache by modification time
     QList<BackendRecord> modifiedSince(const QString &collectionId,
                                        const QDateTime &since) override;
     QStringList          deletedSince(const QString &collectionId,

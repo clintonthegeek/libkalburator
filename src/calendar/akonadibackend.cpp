@@ -431,6 +431,12 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
     return op;
 }
 
+// VESTIGIAL (2026-05-26): the unified SyncEngine drives all writes through the
+// per-record IBlobBackend ops (createRecord/updateRecord/deleteRecord), never
+// pushItems/startSync/deleteItems. These remain only because they are
+// SyncBackend ABI overrides; full removal is deferred to the SyncBackend ABI
+// cleanup. Do not wire new write logic here — see
+// docs/2026-05-26-akonadi-full-functionality-design.md §1.
 PushOperation* AkonadiBackend::pushItems(const QString &calendarId,
                                           const QList<KCalendarCore::Incidence::Ptr> &items)
 {
@@ -826,17 +832,16 @@ void AkonadiBackend::onCollectionRemoved(const Akonadi::Collection &col)
 
 
 // ============================================================================
-// IBlobBackend implementation (Phase D Task 15)
+// IBlobBackend implementation (real; KJob::exec() bridge)
 //
-// STUB: Akonadi requires a running D-Bus session and Akonadi daemon.
-// Phase D honours the type-system change (SyncBackend : IBlobBackend) by
-// providing compilable overrides. Full implementations are deferred to Phase F.
+// Akonadi requires a running D-Bus session and Akonadi daemon.
 //
-// recordId     = Akonadi::Item::id().toString()
+// recordId     = iCal UID (cross-backend-stable; Akonadi::Item::id() is
+//                local-only and is never exposed as the record id)
 // collectionId = calendarId ("akonadi-<Akonadi::Collection::Id>")
 // data         = serialized iCal bytes via KCalendarCore::ICalFormat
 // contentHash  = SHA-256 of the iCal bytes
-// lastModified = Akonadi::Item::modificationTime() (when available)
+// lastModified = Akonadi::Item::modificationTime()
 // ============================================================================
 
 QString AkonadiBackend::backendId() const
@@ -1077,7 +1082,7 @@ QStringList AkonadiBackend::deletedSince(const QString &collectionId,
                                           const QDateTime &since)
 {
     // Akonadi tracks deletions via Monitor notifications; no persistent log.
-    // Phase F will implement tombstone-based deletion tracking.
+    // Tombstone-based deletion tracking is deferred to a future cleanup.
     Q_UNUSED(collectionId)
     Q_UNUSED(since)
     return {};

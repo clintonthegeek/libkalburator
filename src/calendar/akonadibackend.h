@@ -107,21 +107,23 @@ public:
                                  CalendarBackendBinding &binding) const override;
 
     // =========================================================================
-    // IBlobBackend overrides (Phase D Task 15)
+    // IBlobBackend overrides.
     //
     // Gated: compiled only when KALBURATOR_HAVE_AKONADI=ON (and HAVE_AKONADI
     // is defined at build time).
     //
-    // recordId     = Akonadi::Item::id().toString()
-    // collectionId = calendarId ("akonadi-<collectionId>")
-    // data         = serialized iCal bytes of the incidence
+    // recordId     = iCal UID (cross-backend-stable; Akonadi::Item::id() is
+    //                local-only and is never exposed as the record id)
+    // collectionId = calendarId ("akonadi-<Akonadi::Collection::Id>")
+    // data         = serialized iCal bytes via KCalendarCore::ICalFormat
     // contentHash  = SHA-256 of the iCal bytes
-    // lastModified = item's modification time from Akonadi::Item
+    // lastModified = Akonadi::Item::modificationTime()
     //
-    // Phase D stubs: all methods emit qWarning and return empty/false because
-    // Akonadi async jobs require a running Akonadi server. Phase F will wrap
-    // these properly with QEventLoop or a dedicated worker thread strategy.
-    // The type-system change (SyncBackend : IBlobBackend) is honored here.
+    // The per-record ops (createRecord/updateRecord/deleteRecord),
+    // createCollection, loadRecords/loadRecord, and the Backend::ChangeDetection
+    // methods are real (bridge async Akonadi jobs via KJob::exec()). Require a
+    // running Akonadi server.
+    // See docs/2026-05-26-akonadi-full-functionality-design.md.
     // =========================================================================
 
     // Identity
@@ -134,7 +136,7 @@ public:
     CollectionInfo        collectionInfo(const QString &collectionId) override;
     QString               createCollection(const CollectionInfo &info) override;
 
-    // Records — stub implementations; Akonadi live server required
+    // Records — real implementations; KJob::exec() bridge; Akonadi server required
     QList<BackendRecord>         loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
     QString                      createRecord(const QString &collectionId,
@@ -142,7 +144,7 @@ public:
     bool                         updateRecord(const BackendRecord &record) override;
     bool                         deleteRecord(const QString &recordId) override;
 
-    // Change detection — stubs
+    // Change detection — real; filters in-memory cache by modification time
     QList<BackendRecord> modifiedSince(const QString &collectionId,
                                        const QDateTime &since) override;
     QStringList          deletedSince(const QString &collectionId,

@@ -203,6 +203,12 @@ FetchOperation* AkonadiContactsBackend::fetchItems(const QString &collectionId)
     return op;
 }
 
+// VESTIGIAL (2026-05-26): the unified SyncEngine drives all writes through the
+// per-record IBlobBackend ops (createRecord/updateRecord/deleteRecord), never
+// pushItems/startSync/deleteItems. These remain only because they are
+// SyncBackend ABI overrides; full removal is deferred to the SyncBackend ABI
+// cleanup. Do not wire new write logic here — see
+// docs/2026-05-26-akonadi-full-functionality-design.md §1.
 PushOperation* AkonadiContactsBackend::pushItems(const QString &collectionId,
                                                    const QList<KCalendarCore::Incidence::Ptr> &items)
 {
@@ -215,8 +221,9 @@ PushOperation* AkonadiContactsBackend::pushItems(const QString &collectionId,
         return op;
     }
 
-    qWarning() << "AkonadiContactsBackend::pushItems: Phase L.6 stub — "
-                  "contacts push not yet implemented (collectionId:" << collectionId << ")";
+    qWarning() << "AkonadiContactsBackend::pushItems: vestigial path called — "
+                  "SyncEngine should be using createRecord/updateRecord/deleteRecord instead "
+                  "(collectionId:" << collectionId << ")";
     op->setState(SyncOperation::Running);
     op->complete();
     return op;
@@ -334,7 +341,7 @@ void AkonadiContactsBackend::onCollectionRemoved(const Akonadi::Collection &col)
 }
 
 // ============================================================================
-// IBlobBackend implementation (Phase L.6 stubs)
+// IBlobBackend implementation (real; KJob::exec() bridge)
 // ============================================================================
 
 QString AkonadiContactsBackend::backendId() const
