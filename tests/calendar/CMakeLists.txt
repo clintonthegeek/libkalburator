@@ -102,9 +102,7 @@ kalburator_add_calendar_test(tst_incidencediff)
 kalburator_add_calendar_test(tst_syncstore)
 target_link_libraries(tst_syncstore PRIVATE Qt6::Sql)
 
-# Task 6 — SyncTransaction + ConflictManager tests (migrated from PlanStan)
-kalburator_add_calendar_test(tst_synctransaction)
-
+# Task 6 — ConflictManager tests (migrated from PlanStan)
 kalburator_add_calendar_test(tst_conflictmanager)
 target_link_libraries(tst_conflictmanager PRIVATE Qt6::Sql Qt6::Widgets)
 

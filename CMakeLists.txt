@@ -90,13 +90,11 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/sync/backendregistry.h
     src/calendar/caldavcapabilitydiscovery.h
     src/calendar/calendarmanager.h
-    src/calendar/createincidenceitem.h
     src/calendar/decsyncactivecontroller.h
     src/calendar/decsyncbackend.h
     src/calendar/decsynccontrollerstore.h
     src/calendar/decsyncgarbagecollector.h
     src/calendar/decsynclib.h
-    src/calendar/deleteincidenceitem.h
     src/calendar/discoveredcalendar.h
     src/calendar/holidaysubscriptionbackend.h
     src/calendar/iconflictpresenter.h
@@ -114,10 +112,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/syncbackend.h
     src/calendar/syncconflictstore.h
     src/calendar/syncoperation.h
-    src/calendar/synctesthooks.h
-    src/calendar/synctransaction.h
-    src/calendar/synctransactionitem.h
-    src/calendar/updateincidenceitem.h
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.h
     src/calendar/calendarcanonproperties.h
@@ -138,13 +132,11 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/sync/backendregistry.cpp
     src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/calendarmanager.cpp
-    src/calendar/createincidenceitem.cpp
     src/calendar/decsyncactivecontroller.cpp
     src/calendar/decsyncbackend.cpp
     src/calendar/decsynccontrollerstore.cpp
     src/calendar/decsyncgarbagecollector.cpp
     src/calendar/decsynclib.cpp
-    src/calendar/deleteincidenceitem.cpp
     src/calendar/holidaysubscriptionbackend.cpp
     src/calendar/icsfeedfetcher.cpp
     src/calendar/localbackend.cpp
@@ -156,9 +148,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/syncbackend.cpp
     src/calendar/syncconflictstore.cpp
     src/calendar/syncoperation.cpp
-    src/calendar/synctransaction.cpp
-    src/calendar/synctransactionitem.cpp
-    src/calendar/updateincidenceitem.cpp
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.cpp
     src/calendar/calendarcanonproperties.cpp

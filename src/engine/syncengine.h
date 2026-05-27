@@ -107,7 +107,7 @@ namespace Kalburator::Engine {
  * - Fetching records from source and target backends
  * - Computing 3-way diff via the unified dispatchSync path
  * - Handling conflicts based on mode (monitored/unmonitored)
- * - Applying changes to backends via CalendarPluginWriter / IBlobBackend
+ * - Applying changes to backends via the RecordWriter / IBlobBackend path
  * - Updating baselines
  *
  * Two sync modes are supported:

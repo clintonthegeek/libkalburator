@@ -26,10 +26,9 @@ public:
     /// Threading contract that controls how the engine dispatches
     /// `apply()`. The default is `BackendThread` — the engine wraps
     /// `apply()` in a `BlockingQueuedConnection` to the backend's own
-    /// thread. The calendar plugin writer overrides to
-    /// `WorkerThread` because its inner `SyncTransaction::commitAll`
-    /// uses BlockingQueuedConnection internally and therefore must be
-    /// called from a thread that is NOT the backend thread.
+    /// thread. A writer may override to `WorkerThread` when its
+    /// `apply()` uses BlockingQueuedConnection internally and therefore
+    /// must be called from a thread that is NOT the backend thread.
     enum class Threading { BackendThread, WorkerThread };
 
     virtual Threading threading() const { return Threading::BackendThread; }

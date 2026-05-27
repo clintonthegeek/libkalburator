@@ -708,7 +708,7 @@ bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 }
 
 // ============================================================================
-// Operation-Based API for SyncTransaction support
+// Operation-based push/delete API (PushOperation / DeleteOperation)
 // ============================================================================
 
 FetchOperation* LocalBackend::fetchItems(const QString &calendarId)

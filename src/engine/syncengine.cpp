@@ -11,7 +11,7 @@
 #include "decsyncactivecontroller.h"
 #include "canonicalrecord.h"
 #include "recordwriter.h"
-// Phase K.4: the engine no longer dynamic_casts to CalendarPluginWriter;
+// Phase K.4: the engine no longer dynamic_casts to a concrete writer;
 // writer-specific behaviour is mediated by IRecordWriter::threading()
 // and IRecordWriter::prepareForApply().
 #include "iblobbackend.h"
@@ -29,7 +29,6 @@
 #include "syncoperation.h"
 #include "conflictmanager.h"
 #include "imassdeleteguard.h"
-#include "synctesthooks.h"
 #include "canonenvelope.h"
 #include "lossprofile.h"
 
@@ -866,7 +865,6 @@ void SyncEngine::advanceQueue()
 
         // Aggregate into last result (no stats to add; success stays true unless
         // already false from a prior mapping failure).
-        SYNC_HOOK_CALL(onSyncMappingEnd, mapping.id, true);
         m_queueResults.append(skippedResult);
 
         // Advance to the next mapping without touching the worker.
@@ -1149,9 +1147,6 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             }
         }
     }
-
-    // Test hook: sync mapping end
-    SYNC_HOOK_CALL(onSyncMappingEnd, mappingId, result.success);
 
     // Reset phase
     m_currentPhase = SyncPhase::Complete;
@@ -1930,9 +1925,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // through the same unified dispatchSync path as all other domains.
     // Parity was established by Tasks 3–6: AskUser pause/resume, first-sync
     // fast-path, property-phase deferral, CustomMerge/Duplicate deferral.
-    // CalendarPluginWriter::apply is called on the worker thread (not wrapped
-    // in the outer BlockingQueuedConnection) by unifiedContinueAfterConflicts'
-    // applyBatch helper, which dispatches via IRecordWriter::threading().
+    // A WorkerThread writer's apply() is called on the worker thread (not
+    // wrapped in the outer BlockingQueuedConnection) by
+    // unifiedContinueAfterConflicts' applyBatch helper, which dispatches via
+    // IRecordWriter::threading().
 
     const auto &reg = m_shape.transformation;
     std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);
@@ -2357,7 +2353,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
                                + QStringLiteral("-dup-")
                                + QUuid::createUuid().toString(QUuid::WithoutBraces);
                     // For calendar backends, BackendRecord.id == iCal UID.
-                    // Rewrite the UID line in the iCal data so CalendarPluginWriter
+                    // Rewrite the UID line in the iCal data so the writer
                     // writes the clone to the correct file (new UID, not the
                     // original — which would overwrite the source record).
                     if (!op.targetRecord.id.isEmpty() && !clone.data.isEmpty()) {
@@ -2490,18 +2486,17 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     //
     // Phase K.4: writer dispatch is driven by `IRecordWriter::threading()`
     // and per-call setup happens via `prepareForApply(ctx)`. The previous
-    // `dynamic_cast<CalendarPluginWriter*>` is gone — the engine no
-    // longer special-cases the calendar writer.
+    // `dynamic_cast` to a concrete calendar writer is gone — the engine
+    // no longer special-cases the calendar writer.
     //
     // Threading values:
     //   - BackendThread (default): classify + apply both run on the
     //     backend's own thread, wrapped in a single
     //     BlockingQueuedConnection.
-    //   - WorkerThread (CalendarPluginWriter): classify runs on the
-    //     backend thread; apply runs on the worker thread (the writer
-    //     uses BlockingQueuedConnection internally for the
-    //     SyncTransaction commit and asserts it is NOT called from the
-    //     backend thread).
+    //   - WorkerThread: classify runs on the backend thread; apply
+    //     runs on the worker thread (a writer that uses
+    //     BlockingQueuedConnection internally must not be called from
+    //     the backend thread).
     auto applyBatch = [this, &writeFailed, &writeError](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackend *backend,
@@ -2563,7 +2558,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (writer->threading() ==
             Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
             // Writer manages its own backend-thread marshalling
-            // (CalendarPluginWriter uses BlockingQueuedConnection
+            // (a WorkerThread writer uses BlockingQueuedConnection
             // internally inside apply()).
             WriterBatch batch;
             QString classifyErr1;

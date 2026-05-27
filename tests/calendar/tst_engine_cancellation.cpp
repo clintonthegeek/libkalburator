@@ -302,8 +302,8 @@ void TstEngineCancellation::cancelDuringApply()
     // the current production wiring, between fetch and apply).
     //
     // Production note: SyncEngine's apply path is synchronous (the
-    // CalendarPluginWriter builds a SyncTransaction and commits via
-    // BlockingQueuedConnection to the main thread). The observable
+    // writer commits via BlockingQueuedConnection to the main thread).
+    // The observable
     // cancellation checkpoint that gates apply is the post-target-fetch
     // m_cancelled check in processSync.
     //

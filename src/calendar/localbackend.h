@@ -104,7 +104,7 @@ public:
     void prepareCreationMetadata(const QString &calendarId,
                                  CalendarBackendBinding &binding) const override;
 
-    // Operation-based API for SyncTransaction support
+    // Operation-based push/delete API (PushOperation / DeleteOperation)
     FetchOperation* fetchItems(const QString &calendarId) override;
 
     PushOperation* pushItems(const QString &calendarId,
