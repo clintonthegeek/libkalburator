@@ -103,20 +103,17 @@ private slots:
 
     // Partial-write rollback and count-based failure injection
     // (absorbed from PlanStan's tst_sync_error_recovery.cpp, Task 7)
-    void storeFailsPartial_rolledBack();
+    void storeFailsPartial_failsAndRetryConverges();
     void pushFailsImmediate_propagatesAsSyncResultFailure();
-    void pushFailsPartial_rolledBack();
+    void pushFailsPartial_failsAndRetryConverges();
     void deleteFailsImmediate_propagatesAsSyncResultFailure();
-    void deleteFailsPartial_rolledBack();
-    void partialWriteRollback_targetClean();
+    void deleteFailsPartial_failsAndRetryConverges();
     void successfulSync_allItemsReachTarget();
-    void crashRecoveryReplay_targetClean();
-    void rollbackPreservesPreExistingData();
+    void preExistingDataPreservedOnFailure();
     void retryAfterFailure_recoversCorrectly();
-    void mixedOperationRollback_targetRestored();
+    void mixedOperationFailure_sharedDataPreservedAndRetryConverges();
     void twoDirectionFailureIsolation();
     void rollbackFailureResilience_errorReported();
-    void pendingLogContentFidelity_targetRolledBack();
     void emptyChangesetNoTransaction_syncSucceeds();
     void singleItemSuccess_targetHasItem();
 
@@ -373,11 +370,12 @@ void TestCalendarSyncErrorRecovery::targetFetchFailure_propagatesAsSyncResultFai
 // original F.0 slots above.  All use the same init()/cleanup() harness
 // and runOneSync() helper.
 
-void TestCalendarSyncErrorRecovery::storeFailsPartial_rolledBack()
+void TestCalendarSyncErrorRecovery::storeFailsPartial_failsAndRetryConverges()
 {
-    // Source has 5 events. Target fails after 2 successful stores.
-    // SyncTransaction must roll back the 2 committed creates.
-    // Expected: target has 0 items; sync reports failure.
+    // Target fails after 2 of 5 stores. The converged engine is best-effort
+    // (no transactional rollback): the sync reports failure and does NOT save
+    // baselines, so a retry re-attempts the writes and converges. We do not
+    // assert the partial count — it is unordered and not contractual.
     addSourceEvent(QStringLiteral("event-1"), QStringLiteral("Event One"));
     addSourceEvent(QStringLiteral("event-2"), QStringLiteral("Event Two"));
     addSourceEvent(QStringLiteral("event-3"), QStringLiteral("Event Three"));
@@ -385,13 +383,16 @@ void TestCalendarSyncErrorRecovery::storeFailsPartial_rolledBack()
     addSourceEvent(QStringLiteral("event-5"), QStringLiteral("Event Five"));
 
     m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
-
     QVERIFY(runOneSync());
-
-    QVERIFY2(!m_lastResult.success,
-             "Partial store failure must propagate as SyncResult failure");
+    QVERIFY2(!m_lastResult.success, "Partial store failure must propagate");
     QCOMPARE(sourceUids().size(), 5);
-    QCOMPARE(targetUids().size(), 0); // SyncTransaction rolled back partial writes
+
+    // Retry-safe: clearing the failure and re-syncing converges the target.
+    m_target->clearFailurePoint();
+    QVERIFY(runOneSync());
+    QVERIFY2(m_lastResult.success, "Retry after cleared failure must succeed");
+    QCOMPARE(targetUids().size(), 5);
+    QCOMPARE(sourceUids().size(), 5);
 }
 
 void TestCalendarSyncErrorRecovery::pushFailsImmediate_propagatesAsSyncResultFailure()
@@ -412,11 +413,9 @@ void TestCalendarSyncErrorRecovery::pushFailsImmediate_propagatesAsSyncResultFai
     QCOMPARE(targetUids().size(), 0);
 }
 
-void TestCalendarSyncErrorRecovery::pushFailsPartial_rolledBack()
+void TestCalendarSyncErrorRecovery::pushFailsPartial_failsAndRetryConverges()
 {
-    // Source has 5 events. Target fails after 2 successful pushes.
-    // SyncTransaction must roll back the 2 committed creates.
-    // Expected: target has 0 items; sync reports failure.
+    // OnPush variant of storeFailsPartial: best-effort + retry-safe.
     addSourceEvent(QStringLiteral("event-1"), QStringLiteral("Event One"));
     addSourceEvent(QStringLiteral("event-2"), QStringLiteral("Event Two"));
     addSourceEvent(QStringLiteral("event-3"), QStringLiteral("Event Three"));
@@ -424,13 +423,15 @@ void TestCalendarSyncErrorRecovery::pushFailsPartial_rolledBack()
     addSourceEvent(QStringLiteral("event-5"), QStringLiteral("Event Five"));
 
     m_target->setFailurePoint(MockBackend::FailurePoint::OnPush, 2);
-
     QVERIFY(runOneSync());
-
-    QVERIFY2(!m_lastResult.success,
-             "Partial push failure must propagate as SyncResult failure");
+    QVERIFY2(!m_lastResult.success, "Partial push failure must propagate");
     QCOMPARE(sourceUids().size(), 5);
-    QCOMPARE(targetUids().size(), 0); // SyncTransaction rolled back partial pushes
+
+    m_target->clearFailurePoint();
+    QVERIFY(runOneSync());
+    QVERIFY2(m_lastResult.success, "Retry after cleared failure must succeed");
+    QCOMPARE(targetUids().size(), 5);
+    QCOMPARE(sourceUids().size(), 5);
 }
 
 void TestCalendarSyncErrorRecovery::deleteFailsImmediate_propagatesAsSyncResultFailure()
@@ -466,56 +467,34 @@ void TestCalendarSyncErrorRecovery::deleteFailsImmediate_propagatesAsSyncResultF
     QCOMPARE(targetUids().size(), 3);
 }
 
-void TestCalendarSyncErrorRecovery::deleteFailsPartial_rolledBack()
+void TestCalendarSyncErrorRecovery::deleteFailsPartial_failsAndRetryConverges()
 {
-    // Both start with 3 identical events. First sync establishes baselines.
-    // Delete all 3 from source. Target fails after 1 successful delete.
-    // SyncTransaction must roll back the 1 committed delete (re-create item).
-    // Expected: target has 3 events; sync fails.
+    // Both start with 3 identical events (baseline sync). Delete all 3 from
+    // source; target fails after 1 delete. Best-effort leaves a partial state,
+    // but the sync fails and baselines are not advanced, so a retry converges
+    // the target to empty.
     addEventToBoth(QStringLiteral("event-1"), QStringLiteral("Event One"));
     addEventToBoth(QStringLiteral("event-2"), QStringLiteral("Event Two"));
     addEventToBoth(QStringLiteral("event-3"), QStringLiteral("Event Three"));
 
-    // Establish baselines
-    QVERIFY(runOneSync());
+    QVERIFY(runOneSync());                 // establish baselines
     QCOMPARE(sourceUids().size(), 3);
     QCOMPARE(targetUids().size(), 3);
 
-    // Delete all 3 from source
     m_source->removeItem(QString::fromLatin1(kCalendarId), QStringLiteral("event-1"));
     m_source->removeItem(QString::fromLatin1(kCalendarId), QStringLiteral("event-2"));
     m_source->removeItem(QString::fromLatin1(kCalendarId), QStringLiteral("event-3"));
     QCOMPARE(sourceUids().size(), 0);
 
-    // Fail after 1 successful delete
     m_target->setFailurePoint(MockBackend::FailurePoint::OnDelete, 1);
-
     QVERIFY(runOneSync());
-    QVERIFY2(!m_lastResult.success,
-             "Partial delete failure must propagate as SyncResult failure");
-
+    QVERIFY2(!m_lastResult.success, "Partial delete failure must propagate");
     QCOMPARE(sourceUids().size(), 0);
-    // SyncTransaction rolled back the 1 partial delete; target restored to 3
-    QCOMPARE(targetUids().size(), 3);
-}
 
-void TestCalendarSyncErrorRecovery::partialWriteRollback_targetClean()
-{
-    // Source has 5 events. Target fails after 2 successful stores.
-    // Verifies the SyncTransaction all-or-nothing guarantee:
-    // target must have 0 items after rollback.
-    addSourceEvent(QStringLiteral("event-1"), QStringLiteral("Event One"));
-    addSourceEvent(QStringLiteral("event-2"), QStringLiteral("Event Two"));
-    addSourceEvent(QStringLiteral("event-3"), QStringLiteral("Event Three"));
-    addSourceEvent(QStringLiteral("event-4"), QStringLiteral("Event Four"));
-    addSourceEvent(QStringLiteral("event-5"), QStringLiteral("Event Five"));
-
-    m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
-
+    m_target->clearFailurePoint();
     QVERIFY(runOneSync());
-
-    QCOMPARE(sourceUids().size(), 5);
-    QCOMPARE(targetUids().size(), 0); // all-or-nothing rollback
+    QVERIFY2(m_lastResult.success, "Retry after cleared failure must succeed");
+    QCOMPARE(targetUids().size(), 0);
 }
 
 void TestCalendarSyncErrorRecovery::successfulSync_allItemsReachTarget()
@@ -531,31 +510,12 @@ void TestCalendarSyncErrorRecovery::successfulSync_allItemsReachTarget()
     QCOMPARE(targetUids().size(), 3);
 }
 
-void TestCalendarSyncErrorRecovery::crashRecoveryReplay_targetClean()
+void TestCalendarSyncErrorRecovery::preExistingDataPreservedOnFailure()
 {
-    // Source has 5 events. Target fails at item 3 (simulating a crash mid-sync).
-    // Verifies: SyncTransaction rolls back partial writes; target is clean.
-    addSourceEvent(QStringLiteral("event-1"), QStringLiteral("Event One"));
-    addSourceEvent(QStringLiteral("event-2"), QStringLiteral("Event Two"));
-    addSourceEvent(QStringLiteral("event-3"), QStringLiteral("Event Three"));
-    addSourceEvent(QStringLiteral("event-4"), QStringLiteral("Event Four"));
-    addSourceEvent(QStringLiteral("event-5"), QStringLiteral("Event Five"));
-
-    m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
-
-    QVERIFY(runOneSync());
-    QCOMPARE(targetUids().size(), 0); // rolled back
-}
-
-void TestCalendarSyncErrorRecovery::rollbackPreservesPreExistingData()
-{
-    // Pre-populate target with 3 events. Source has 5 different events.
-    // Target fails after 2 of the 5 new stores.
-    // Expected: rollback removes the 2 partial writes; pre-existing 3 items remain.
-    //
-    // Note: in TwoWay sync the 3 pre-existing target items also propagate to
-    // source (target→source direction succeeds before the store failure is
-    // detected on the source→target direction). Source goes from 5 to 8.
+    // Target pre-populated with 3 events; source has 5 new events. Target fails
+    // mid-store. The failed target-direction write must not destroy pre-existing
+    // target data; the (successful) target->source direction still propagates
+    // the 3 pre-existing items to source.
     addTargetEvent(QStringLiteral("existing-1"), QStringLiteral("Existing One"));
     addTargetEvent(QStringLiteral("existing-2"), QStringLiteral("Existing Two"));
     addTargetEvent(QStringLiteral("existing-3"), QStringLiteral("Existing Three"));
@@ -568,14 +528,15 @@ void TestCalendarSyncErrorRecovery::rollbackPreservesPreExistingData()
     addSourceEvent(QStringLiteral("new-5"), QStringLiteral("New Five"));
 
     m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
-
     QVERIFY(runOneSync());
+    QVERIFY2(!m_lastResult.success, "Partial store failure must propagate");
 
-    // Target: pre-existing 3 preserved; 2 partial writes rolled back
-    QCOMPARE(targetUids().size(), 3);
+    // Pre-existing target data is untouched by the failed sync.
+    QVERIFY(targetUids().contains(QStringLiteral("existing-1")));
+    QVERIFY(targetUids().contains(QStringLiteral("existing-2")));
+    QVERIFY(targetUids().contains(QStringLiteral("existing-3")));
 
-    // Source: TwoWay sync picked up the 3 target-only items before the
-    // target-direction write failed (source went 5→8).
+    // target->source direction succeeded: source gained the 3 pre-existing items.
     QCOMPARE(sourceUids().size(), 8);
 }
 
@@ -594,7 +555,6 @@ void TestCalendarSyncErrorRecovery::retryAfterFailure_recoversCorrectly()
     m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
     QVERIFY(runOneSync());
     QVERIFY2(!m_lastResult.success, "First sync should fail");
-    QCOMPARE(targetUids().size(), 0); // rolled back
 
     // Clear failure and retry
     m_target->clearFailurePoint();
@@ -607,40 +567,35 @@ void TestCalendarSyncErrorRecovery::retryAfterFailure_recoversCorrectly()
     QCOMPARE(targetUids().size(), 5);
 }
 
-void TestCalendarSyncErrorRecovery::mixedOperationRollback_targetRestored()
+void TestCalendarSyncErrorRecovery::mixedOperationFailure_sharedDataPreservedAndRetryConverges()
 {
-    // Source and target both start with 3 identical events (baseline sync).
-    // Then 3 new events are added to source; target fails after 2 successful
-    // pushes (3rd create fails). The 2 committed creates are rolled back.
-    // Verifies: pre-sync target state (3 items) is restored after rollback.
+    // Both start with 3 identical events (baseline). Add 3 new to source; target
+    // fails mid-push. Shared (baseline) data must remain; retry converges to 6.
     addEventToBoth(QStringLiteral("shared-1"), QStringLiteral("Shared One"));
     addEventToBoth(QStringLiteral("shared-2"), QStringLiteral("Shared Two"));
     addEventToBoth(QStringLiteral("shared-3"), QStringLiteral("Shared Three"));
 
-    // First sync: establish baselines
-    QVERIFY(runOneSync());
+    QVERIFY(runOneSync());                 // establish baselines
     QCOMPARE(sourceUids().size(), 3);
     QCOMPARE(targetUids().size(), 3);
 
-    // Add 3 new events to source only
     addSourceEvent(QStringLiteral("new-1"), QStringLiteral("New One"));
     addSourceEvent(QStringLiteral("new-2"), QStringLiteral("New Two"));
     addSourceEvent(QStringLiteral("new-3"), QStringLiteral("New Three"));
     QCOMPARE(sourceUids().size(), 6);
 
-    // OnPush: fail after 2 successful pushes; rollback uses deleteItems (unaffected)
     m_target->setFailurePoint(MockBackend::FailurePoint::OnPush, 2);
-
     QVERIFY(runOneSync());
+    QVERIFY2(!m_lastResult.success, "Partial push failure must propagate");
 
-    // Target restored to pre-sync state: 3 original items; rollback removed partials
-    QCOMPARE(targetUids().size(), 3);
-    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId),
-                                QStringLiteral("shared-1")));
-    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId),
-                                QStringLiteral("shared-2")));
-    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId),
-                                QStringLiteral("shared-3")));
+    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId), QStringLiteral("shared-1")));
+    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId), QStringLiteral("shared-2")));
+    QVERIFY(m_target->incidence(QString::fromLatin1(kCalendarId), QStringLiteral("shared-3")));
+
+    m_target->clearFailurePoint();
+    QVERIFY(runOneSync());
+    QVERIFY2(m_lastResult.success, "Retry after cleared failure must succeed");
+    QCOMPARE(targetUids().size(), 6);
 }
 
 void TestCalendarSyncErrorRecovery::twoDirectionFailureIsolation()
@@ -681,23 +636,6 @@ void TestCalendarSyncErrorRecovery::rollbackFailureResilience_errorReported()
     QVERIFY2(!m_lastResult.success, "Sync must report failure");
     QVERIFY2(!m_lastResult.errorMessage.isEmpty(), "Error message must be non-empty");
     QCOMPARE(sourceUids().size(), 3);
-    QCOMPARE(targetUids().size(), 0); // 1 committed item rolled back
-}
-
-void TestCalendarSyncErrorRecovery::pendingLogContentFidelity_targetRolledBack()
-{
-    // Source has 5 events. Target fails after 2 stores.
-    // Verifies: sync fails; partial writes are rolled back (target has 0 items).
-    addSourceEvent(QStringLiteral("event-1"), QStringLiteral("Event One"));
-    addSourceEvent(QStringLiteral("event-2"), QStringLiteral("Event Two"));
-    addSourceEvent(QStringLiteral("event-3"), QStringLiteral("Event Three"));
-    addSourceEvent(QStringLiteral("event-4"), QStringLiteral("Event Four"));
-    addSourceEvent(QStringLiteral("event-5"), QStringLiteral("Event Five"));
-
-    m_target->setFailurePoint(MockBackend::FailurePoint::OnStoreItems, 2);
-
-    QVERIFY(runOneSync());
-    QCOMPARE(targetUids().size(), 0); // rolled back
 }
 
 void TestCalendarSyncErrorRecovery::emptyChangesetNoTransaction_syncSucceeds()
