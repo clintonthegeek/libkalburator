@@ -27,7 +27,7 @@ generator sits *above* the engine.
 
 | Decision | Resolution |
 |---|---|
-| Generator wiring | **Pure function + opt-in persist helper.** The library ships a pure `generateMappings()` and a `regenerateInto(store)` helper that generates + persists; each host still owns its runtime-engine feed (inherently host-specific). |
+| Generator wiring | **Pure function only** (single + list overloads). The `regenerateInto(store)` persist helper was **dropped during planning**: `ISyncConfigStore` exposes no `setSyncMappings()` setter / plural `logicalCalendars()` / `syncTopology()`, and WildPalms doesn't implement `ISyncConfigStore` at all — so a store-based helper serves neither consumer. Persistence + runtime feed stay host-side (~3 lines; the runtime feed was always host-specific). |
 | Type mechanic | **Keep the name `LogicalCalendar`**; add a `domain` field + `collectionId()` accessor; add `using LogicalCollection = LogicalCalendar;`. No struct rename, no serialization-fn rename. |
 | Demotion query | **Neutral fact, not policy.** Ship `hasWritableRemoteSyncTarget()`; the *consumer* applies its policy (WildPalms demotes editing; PlanStan does not — it is not a conduit and syncs two-way). |
 | CalendarManager auto-regenerate | **No.** CalendarManager keeps emitting `syncMappingRegenerationRequested()`; it does not take over persistence. |
@@ -73,32 +73,31 @@ Namespace `Kalburator::Sync`. Added to the sync source list in `CMakeLists.txt`.
 ```cpp
 namespace Kalburator::Sync {
 
-// Pure: no engine/runtime state, no side effects.
-QList<SyncMapping> generateMappings(const Types::LogicalCalendar &lc,
+// Pure: no engine/runtime/store state, no side effects.
+QList<SyncMapping> generateMappings(const LogicalCalendar &lc,
                                     SyncTopology topology);
 
-// Convenience: per-lc concat, skipping !syncEnabled.
-QList<SyncMapping> generateMappings(const QList<Types::LogicalCalendar> &lcs,
+// Convenience: per-lc concat (the single-lc overload already skips !syncEnabled).
+QList<SyncMapping> generateMappings(const QList<LogicalCalendar> &lcs,
                                     SyncTopology topology);
-
-// Opt-in helper: reads logical calendars + topology from the store, generates,
-// writes back via store.setSyncMappings(...), and RETURNS the list so the host
-// can feed its own runtime engine. (Does NOT touch any runtime coordinator.)
-QList<SyncMapping> regenerateInto(ISyncConfigStore &store);
 
 }
 ```
 
+- `LogicalCalendar`, `SyncMapping`, `SyncTopology`, `BackendRole`, `backendRoleToString`
+  all live in namespace `Kalburator::Sync` (confirmed via `isyncconfigstore.h` forward
+  decls), so the generator is unqualified within that namespace.
 - Generation logic is lifted verbatim from PlanStan `collectioncontroller.cpp:1862-1926`
   (Star = primary ↔ each spoke; Mirror = full mesh i<j; Chain = sequential), minus the
-  persistence/coordinator side-effects. Per-lc it: skips `!syncEnabled`, requires a valid
-  `primaryBinding()`, excludes `BackendRole::ReadOnly`, and uses the existing deterministic
-  mapping-id scheme (`auto_<lcId>_<role>` / `auto_<lcId>_mirror_<a>_<b>` /
-  `auto_<lcId>_chain_<a>_<b>`) so ids are stable across regenerations.
-- **Impl note:** verify `ISyncConfigStore` exposes `logicalCalendars()`, `syncTopology()`,
-  and `setSyncMappings()`. If `syncTopology()` is absent on the interface, change
-  `regenerateInto` to take `SyncTopology` as an explicit parameter rather than widening the
-  interface.
+  persistence/coordinator side-effects. The single-lc overload: returns empty if
+  `!lc.syncEnabled`, requires a valid `primaryBinding()`, excludes `BackendRole::ReadOnly`,
+  and uses the existing deterministic mapping-id scheme (`auto_<lcId>_<role>` /
+  `auto_<lcId>_mirror_<a>_<b>` / `auto_<lcId>_chain_<a>_<b>`) so ids are stable across
+  regenerations. The list overload is plain concatenation over the single-lc overload.
+- **Persistence is host-side.** Each host reads its own logical calendars + topology
+  (PlanStan's concrete `KalbConfigManager` already exposes these), calls the list overload,
+  then persists + feeds its runtime engine — the ~3 lines that previously lived bespoke in
+  `generateSyncMappingsFromLogicalCalendars()`.
 
 ### 3.4 Authority
 
@@ -108,17 +107,18 @@ After the role is assigned by index, if the discovered calendar is not writable:
 - for the **primary** binding: do **not** silently demote (would break exactly-one-Primary);
   instead record a builder warning ("primary backend reports read-only").
 
-**(b) Write-gate — `src/engine/syncengine.cpp`:**
-Add a private helper that gates the unified write path and reports without aborting:
-```cpp
-bool SyncEngine::ensureWritable(IBlobBackend *tgt, const QString &collectionId);
-// false ⇒ skip the write, increment a skipped/error counter, log once.
-```
-Call it before **every** `createRecord`/`updateRecord`/`deleteRecord`. The exploration
-located only the first-sync mirror sites (`syncengine.cpp:1709,1714,1723`); the
-implementation **must audit all write call sites** (including the regular diff-apply path)
-and gate each. This is defense-in-depth — read-only targets are already excluded from the
-mapping set by 3.3 + 3.4(a), but a backend can become non-writable at runtime (ACL change).
+**(b) Write-gate — `src/engine/syncengine.cpp` (`SyncEngineWorker::dispatchFirstSync`):**
+A tree-wide grep confirmed the engine invokes the unified write API at **exactly three
+sites**, all in the first-sync inline-blob-mirror block: `createRecord` (1709),
+`updateRecord` (1714), `deleteRecord` (1723). `tgtBackend` there is a `SyncBackend *`
+(1630-ish), so `discoveredWritable(colId)` is directly reachable. The gate: compute
+`const bool tgtWritable = tgtBackend->discoveredWritable(colId);` before the
+`QMetaObject::invokeMethod` mirror block, capture it in the lambda, and guard each of the
+three write calls (skip + log once when not writable). No completion-path changes needed —
+`mirrorErrors` stays 0 and the existing success path runs. This is defense-in-depth: read-
+only targets are already excluded from the mapping set by 3.3 + 3.4(a), but a backend can
+become non-writable at runtime (ACL change). If future engine paths add write sites, they
+inherit the same guard pattern.
 
 **(c) Demotion fact — `src/types/logicalcalendar.h`:**
 ```cpp
