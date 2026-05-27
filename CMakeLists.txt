@@ -131,7 +131,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
     src/calendar/calendarplugin.h
-    src/calendar/calendarplugin_writer.h
 )
 set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
@@ -173,7 +172,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp
     src/calendar/calendarplugin.cpp
-    src/calendar/calendarplugin_writer.cpp
 )
 
 set(KALBURATOR_CONFLICT_HEADERS
