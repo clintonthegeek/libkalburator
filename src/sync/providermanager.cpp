@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QtConcurrent>
 #include <QFutureSynchronizer>
+#include <QFutureWatcher>
 
 #include <algorithm>
 
@@ -125,9 +126,40 @@ QFuture<void> ProviderManager::connectAll()
 {
     auto sync = std::make_shared<QFutureSynchronizer<bool>>();
     for (const auto &p : m_providers) {
-        if (!p->isConnected()) {
-            sync->addFuture(p->connect());
-        }
+        // Skip providers that are already connected or whose async connect is
+        // in-flight (Connecting). m_providerStates is updated synchronously to
+        // Connecting here so that a second connectAll() call (e.g. from
+        // AccountController::addProvider()) does not re-launch discovery for
+        // providers already being handled.
+        const auto st = m_providerStates.value(
+            p->id(), ProviderConnectionState::Disconnected);
+        if (st == ProviderConnectionState::Connecting
+            || st == ProviderConnectionState::Connected)
+            continue;
+
+        m_providerStates[p->id()] = ProviderConnectionState::Connecting;
+        emit providerStateChanged(p->id(), ProviderConnectionState::Connecting);
+
+        // If p->connect() fails (returns false), the provider will remain in
+        // Connecting state forever because it won't emit connectionStateChanged(false)
+        // (that signal only fires on explicit disconnect()). Attach a per-provider
+        // future watcher to reset the state if the connect operation fails.
+        // Parented to 'this' so Qt's parent-child mechanism cleans it up if
+        // ProviderManager is destroyed before the future completes.
+        auto future = p->connect();
+        auto *watcher = new QFutureWatcher<bool>(this);
+        const QString pid = p->id();
+        QObject::connect(watcher, &QFutureWatcher<bool>::finished, this,
+            [this, watcher, pid]() {
+                if (!watcher->result()) {
+                    // Connect failed — reset state so retries are possible.
+                    m_providerStates[pid] = ProviderConnectionState::Disconnected;
+                    emit providerStateChanged(pid, ProviderConnectionState::Disconnected);
+                }
+                watcher->deleteLater();
+            });
+        watcher->setFuture(future);
+        sync->addFuture(future);
     }
     sync->setCancelOnWait(false);
     return QtConcurrent::run([sync]() {
