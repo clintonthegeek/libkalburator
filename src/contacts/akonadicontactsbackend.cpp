@@ -3,6 +3,7 @@
 #include "akonadicontactsbackend.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "../sync/akonadirevisiondigest.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -19,6 +20,8 @@
 
 #include <QDebug>
 #include <QCryptographicHash>
+#include <QDir>
+#include <QStandardPaths>
 #include <memory>
 
 namespace Kalburator::Sync {
@@ -546,6 +549,54 @@ QStringList AkonadiContactsBackend::deletedSince(const QString &collectionId,
     Q_UNUSED(collectionId)
     Q_UNUSED(since)
     return {};
+}
+
+// ============================================================================
+// Backend::ChangeDetection (Task 10)
+//
+// Fresh token: payload-free ItemFetchJob → computeRevisionDigest over
+// (item id, revision) pairs. Cached token: persisted via AkonadiRevisionStore.
+// ============================================================================
+
+Kalburator::Sync::AkonadiRevisionStore *AkonadiContactsBackend::revisionStore() const
+{
+    if (!m_revisionStore) {
+        const QString dir = QStandardPaths::writableLocation(
+            QStandardPaths::AppDataLocation);
+        QDir().mkpath(dir);
+        m_revisionStore = std::make_unique<Kalburator::Sync::AkonadiRevisionStore>(
+            dir + QStringLiteral("/akonadi-contacts-revisions.ini"));
+    }
+    return m_revisionStore.get();
+}
+
+QString AkonadiContactsBackend::collectionRevision(const QString &collectionId)
+{
+    const Akonadi::Collection::Id cid = akonadiIdForCollection(collectionId);
+    if (cid < 0) return {};
+    auto *job = new Akonadi::ItemFetchJob(Akonadi::Collection(cid), m_session);
+    job->fetchScope().fetchFullPayload(false);  // ids + revisions only, no decode
+    if (!job->exec()) {
+        qWarning() << "AkonadiContactsBackend::collectionRevision: fetch failed:" << job->errorString();
+        return {};
+    }
+    QList<QPair<qint64, int>> idRev;
+    const auto items = job->items();
+    idRev.reserve(items.size());
+    for (const auto &it : items)
+        idRev.append({it.id(), it.revision()});
+    return computeRevisionDigest(idRev);
+}
+
+QString AkonadiContactsBackend::cachedCollectionRevision(const QString &collectionId) const
+{
+    return revisionStore()->token(collectionId);
+}
+
+void AkonadiContactsBackend::primeRevisionCache(const QMap<QString, QString> &cache)
+{
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+        revisionStore()->setToken(it.key(), it.value());
 }
 
 } // namespace Kalburator::Sync

@@ -9,6 +9,7 @@ class TestAkonadiContactsLive : public QObject {
 private slots:
     void init();
     void createUpdateDeleteRoundTrip();
+    void changeDetectionSkipsUnchanged();
 private:
     QString m_collectionId;
 };
@@ -35,6 +36,16 @@ void TestAkonadiContactsLive::createUpdateDeleteRoundTrip() {
     rec.data.replace("Created Person", "Updated Person");
     QVERIFY(backend.updateRecord(rec));
     QVERIFY(backend.deleteRecord("kalb-contact-1"));
+}
+
+void TestAkonadiContactsLive::changeDetectionSkipsUnchanged() {
+    AkonadiContactsBackend backend;
+    backend.fetchItems(m_collectionId);
+    QTest::qWait(500);
+    const QString r1 = backend.collectionRevision(m_collectionId);
+    QVERIFY(!r1.isEmpty());
+    const QString r2 = backend.collectionRevision(m_collectionId);
+    QCOMPARE(r1, r2);
 }
 
 QTEST_GUILESS_MAIN(TestAkonadiContactsLive)
