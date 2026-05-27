@@ -155,6 +155,20 @@ KCalendarCore::Incidence::Ptr AkonadiBackend::extractIncidence(const Akonadi::It
     return item.payload<KCalendarCore::Incidence::Ptr>();
 }
 
+KCalendarCore::Incidence::Ptr
+AkonadiBackend::incidenceFromRecord(const BackendRecord &record) const
+{
+    KCalendarCore::ICalFormat fmt;
+    KCalendarCore::MemoryCalendar::Ptr cal(
+        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+    if (!fmt.fromString(cal, QString::fromUtf8(record.data)))
+        return {};
+    const auto incidences = cal->incidences();
+    if (incidences.isEmpty())
+        return {};
+    return incidences.first();
+}
+
 bool AkonadiBackend::isCalendarCollection(const Akonadi::Collection &col) const
 {
     const auto mimeTypes = col.contentMimeTypes();

@@ -64,6 +64,10 @@ public:
                    const QMap<QString, QString> &stagedDeletions) override;
     void removeItem(const QString &calId, const QString &itemUid) override;
 
+    /// Test-only passthrough to incidenceFromRecord (no Akonadi server needed).
+    KCalendarCore::Incidence::Ptr incidenceFromRecordForTest(const BackendRecord &record) const
+    { return incidenceFromRecord(record); }
+
     // === Operation-Based Async API ===
     FetchOperation*  fetchItems(const QString &calendarId) override;
 
@@ -170,6 +174,10 @@ private:
 
     /// Extract KCalendarCore::Incidence::Ptr from an Akonadi::Item
     KCalendarCore::Incidence::Ptr extractIncidence(const Akonadi::Item &item) const;
+
+    /// Inverse of loadRecords serialization: parse BackendRecord.data
+    /// (iCal bytes) into an Incidence. Returns null on parse failure.
+    KCalendarCore::Incidence::Ptr incidenceFromRecord(const BackendRecord &record) const;
 
     /// Check if a collection contains calendar MIME types
     bool isCalendarCollection(const Akonadi::Collection &col) const;
