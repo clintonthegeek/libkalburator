@@ -130,6 +130,26 @@ changes during downtime (which the digest already handles). The digest fetch is 
 local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
 shows the digest fetch is hot. (Decided 2026-05-26.)
 
+### O15 — CalendarPluginWriter carries two write mechanisms (OPEN, convergence debt)
+
+`src/calendar/calendarplugin_writer.cpp` has two write paths: (1) the
+`MemoryCalendar` + `SyncTransaction` path (for backends that expose a host
+in-process calendar), and (2) the per-record `IBlobBackend`
+`createRecord`/`updateRecord`/`deleteRecord` path (labelled "blob-only fallback").
+Post-convergence, path (2) is actually the *canonical* engine write mechanism —
+it is what `DefaultBlobWriter` does and what the unified engine drives for the
+modern cross-encoding backends (RemoteCalendar, Palm). Path (1) is the legacy
+calendar-specific special-case, and the "fallback" label inverts reality. This is
+a lingering second write-mechanism of the kind invariant §1 exists to retire. The
+ideal end-state is a single uniform record path, with host-`MemoryCalendar`
+backends performing their transaction/old-incidence handling *inside* their own
+`createRecord`/`updateRecord` rather than in the writer. Not tackled reactively;
+it is a real refactor touching the calendar backends + `SyncTransaction` wiring.
+(Seeded 2026-05-26, while fixing the blob-path iCal-validation drop bug — see the
+`refactor/calendar-writer-drop-blob-validation` change which removed the
+per-encoding iCal assumption from path (2), a first step toward making it the
+clean canonical path.)
+
 ### O12 — Downstream backend port required before this branch compiles downstream (OPEN)
 Plan 4 dropped the `TranscodingPlan` parameter entirely from `SyncBackend::pushItems`/`startSync`
 (and the deprecated `storeItems`/`updateItem`) per the locked human decision (drop-entirely,

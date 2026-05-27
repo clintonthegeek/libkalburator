@@ -122,29 +122,22 @@ bool CalendarPluginWriter::apply(
             return false;
         }
 
-        // Only iCal-validate when the target backend actually speaks iCal.
-        // A non-iCal target (e.g. (calendar,palm)) gets native-wire bytes from
-        // the engine's canon->native demote; parsing those as iCal would wrongly
-        // drop every record. Let the backend validate in its own format.
-        const bool targetIsICal =
-            m_backend->shapeFor(collectionId).encoding
-                == Kalburator::Shape::EncodingId{QStringLiteral("ical")};
-
+        // The blob/record path is encoding-agnostic: the engine has already
+        // demoted records to the target backend's native encoding (canon ->
+        // native), and the backend's createRecord/updateRecord is the authority
+        // on whether the bytes are valid for its format. We deliberately do NOT
+        // iCal-parse here — doing so would bake a per-encoding (iCal) assumption
+        // into the generic record path and wrongly drop native-wire records for
+        // non-iCal targets (e.g. (calendar,palm)). Malformed records are
+        // rejected by the backend (empty createRecord() / false updateRecord()).
         bool ok = true;
         QMetaObject::invokeMethod(m_backend, [this, &creates, &updates, &deletes,
-                                              &collectionId, blob, &ok,
-                                              targetIsICal]() {
+                                              &collectionId, blob, &ok]() {
             for (const auto &r : creates) {
-                if (targetIsICal && !parseIncidence(r.data)) {
-                    qWarning() << "CalendarPluginWriter::apply (blob path)"
-                               << "- skipping create, iCal parse failed (id:" << r.id << ")";
-                    continue;
-                }
                 BackendRecord rec = r;
                 if (blob->createRecord(collectionId, rec).isEmpty()) {
-                    // Mirror the legacy behavior: log and continue rather
-                    // than abort the batch; an empty createRecord() result
-                    // means the backend rejected the record.
+                    // Log and continue rather than abort the batch; an empty
+                    // createRecord() result means the backend rejected the record.
                     qWarning() << "CalendarPluginWriter::apply (blob path)"
                                << "- createRecord returned empty for"
                                << r.id;
@@ -152,11 +145,6 @@ bool CalendarPluginWriter::apply(
                 }
             }
             for (const auto &r : updates) {
-                if (targetIsICal && !parseIncidence(r.data)) {
-                    qWarning() << "CalendarPluginWriter::apply (blob path)"
-                               << "- skipping update, iCal parse failed (id:" << r.id << ")";
-                    continue;
-                }
                 if (!blob->updateRecord(r)) {
                     qWarning() << "CalendarPluginWriter::apply (blob path)"
                                << "- updateRecord failed for" << r.id;
