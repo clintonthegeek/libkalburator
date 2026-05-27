@@ -256,6 +256,13 @@ public:
     bool                          updateRecord(const BackendRecord &record) override;
     bool                          deleteRecord(const QString &recordId) override;
 
+    /// Raw invocation log for createRecord() — every call is appended
+    /// regardless of whether the record payload is valid. Used by tests
+    /// that need to verify the writer PASSED a record through to the
+    /// backend (rather than silently skipping it on a failed iCal parse).
+    const QList<Kalburator::Sync::BackendRecord> &createRecordCalls() const
+        { return m_createRecordCalls; }
+
     // Change detection
     QList<BackendRecord> modifiedSince(const QString &collectionId,
                                        const QDateTime &since) override;
@@ -280,6 +287,11 @@ private:
     // Tracks which UIDs were deleted (per calendarId), for deletedSince()
     // Key: calendarId, Value: list of (uid, deletionTime) pairs
     QHash<QString, QList<QPair<QString, QDateTime>>> m_deletionLog;
+
+    // Raw invocation log: every createRecord() call appended before
+    // any payload parse, so tests can verify pass-through even for
+    // non-iCal payloads.
+    QList<Kalburator::Sync::BackendRecord> m_createRecordCalls;
 
     // Backend identity (set at construction, used for backendId())
     QString m_backendId;

@@ -633,6 +633,10 @@ std::optional<BackendRecord> MockBackend::loadRecord(const QString &recordId)
 
 QString MockBackend::createRecord(const QString &collectionId, const BackendRecord &record)
 {
+    // Log every invocation BEFORE payload parse — lets tests verify
+    // pass-through even for non-iCal payloads (e.g. Palm-wire bytes).
+    m_createRecordCalls.append(record);
+
     auto incidence = fromBackendRecord(record);
     if (!incidence) {
         return {};

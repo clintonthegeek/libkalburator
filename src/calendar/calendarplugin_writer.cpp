@@ -122,28 +122,24 @@ bool CalendarPluginWriter::apply(
             return false;
         }
 
-        // Validate that the records parse — fail fast on garbage iCal
-        // before we hop threads.
-        for (const auto &r : creates) {
-            if (!parseIncidence(r.data)) {
-                qWarning() << "CalendarPluginWriter::apply (blob path)"
-                           << "- skipping create, iCal parse failed (id:"
-                           << r.id << ")";
-            }
-        }
-        for (const auto &r : updates) {
-            if (!parseIncidence(r.data)) {
-                qWarning() << "CalendarPluginWriter::apply (blob path)"
-                           << "- skipping update, iCal parse failed (id:"
-                           << r.id << ")";
-            }
-        }
+        // Only iCal-validate when the target backend actually speaks iCal.
+        // A non-iCal target (e.g. (calendar,palm)) gets native-wire bytes from
+        // the engine's canon->native demote; parsing those as iCal would wrongly
+        // drop every record. Let the backend validate in its own format.
+        const bool targetIsICal =
+            m_backend->shapeFor(collectionId).encoding
+                == Kalburator::Shape::EncodingId{QStringLiteral("ical")};
 
         bool ok = true;
         QMetaObject::invokeMethod(m_backend, [this, &creates, &updates, &deletes,
-                                              &collectionId, blob, &ok]() {
+                                              &collectionId, blob, &ok,
+                                              targetIsICal]() {
             for (const auto &r : creates) {
-                if (!parseIncidence(r.data)) continue;
+                if (targetIsICal && !parseIncidence(r.data)) {
+                    qWarning() << "CalendarPluginWriter::apply (blob path)"
+                               << "- skipping create, iCal parse failed (id:" << r.id << ")";
+                    continue;
+                }
                 BackendRecord rec = r;
                 if (blob->createRecord(collectionId, rec).isEmpty()) {
                     // Mirror the legacy behavior: log and continue rather
@@ -156,7 +152,11 @@ bool CalendarPluginWriter::apply(
                 }
             }
             for (const auto &r : updates) {
-                if (!parseIncidence(r.data)) continue;
+                if (targetIsICal && !parseIncidence(r.data)) {
+                    qWarning() << "CalendarPluginWriter::apply (blob path)"
+                               << "- skipping update, iCal parse failed (id:" << r.id << ")";
+                    continue;
+                }
                 if (!blob->updateRecord(r)) {
                     qWarning() << "CalendarPluginWriter::apply (blob path)"
                                << "- updateRecord failed for" << r.id;

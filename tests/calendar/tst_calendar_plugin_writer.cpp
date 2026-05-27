@@ -26,6 +26,8 @@
 #include "backendrecord.h"
 #include "calendarplugin_writer.h"
 #include "mockbackend.h"
+#include "shape.h"
+#include "recordwriter.h"
 
 #include "stubs/stubcalendarcollection.h"
 
@@ -106,6 +108,11 @@ private slots:
 
     /// A delete removes a previously-seeded incidence.
     void apply_delete_removesSeededIncidence();
+
+    /// Blob-path apply() with a non-iCal target backend must pass the
+    /// record straight through to createRecord() without iCal-validating
+    /// it. Regression for the Palm-wire drop bug.
+    void apply_blobPath_nonICalTarget_passesThrough();
 
 private:
     std::unique_ptr<MockBackend>            m_backend;
@@ -215,6 +222,38 @@ void TestCalendarPluginWriter::apply_delete_removesSeededIncidence()
     // Gone after delete.
     QVERIFY2(!m_backend->incidence(QString::fromLatin1(kCalendarId), uid),
              "Incidence should be gone after delete");
+}
+
+void TestCalendarPluginWriter::apply_blobPath_nonICalTarget_passesThrough()
+{
+    // Target backend speaks a NON-iCal encoding (Palm wire).
+    m_backend->setShape(Kalburator::Shape::Shape{
+        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
+        Kalburator::Shape::EncodingId{QStringLiteral("palm")}});
+
+    CalendarPluginWriter writer(m_backend.get());
+
+    // Drive the blob-only fallback: prepareForApply() with a null
+    // calendarCollection (no host MemoryCalendar).
+    Kalburator::Shape::RecordWriter::ApplyContext ctx;
+    ctx.calendarCollection = nullptr;
+    writer.prepareForApply(ctx);
+
+    // A record whose bytes are NOT iCal (simulated Palm-wire payload).
+    BackendRecord r;
+    r.id   = QStringLiteral("palm-evt-1");
+    r.type = QStringLiteral("event");
+    r.data = QByteArrayLiteral("\x01\x02PALM-WIRE-NOT-ICAL\x03");
+
+    // Run it (return value not asserted: MockBackend::createRecord returns
+    // empty because it can't parse Palm-wire — that's fine; we only care
+    // that the writer INVOKED createRecord rather than skipping on a
+    // failed iCal parse).
+    applyOnWorker(&writer, QString::fromLatin1(kCalendarId), {r}, {}, {});
+
+    const auto calls = m_backend->createRecordCalls();
+    QCOMPARE(calls.size(), 1);
+    QCOMPARE(calls.first().id, QStringLiteral("palm-evt-1"));
 }
 
 QTEST_MAIN(TestCalendarPluginWriter)
