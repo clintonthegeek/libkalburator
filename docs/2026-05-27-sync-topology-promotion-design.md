@@ -107,18 +107,37 @@ After the role is assigned by index, if the discovered calendar is not writable:
 - for the **primary** binding: do **not** silently demote (would break exactly-one-Primary);
   instead record a builder warning ("primary backend reports read-only").
 
-**(b) Write-gate — `src/engine/syncengine.cpp` (`SyncEngineWorker::dispatchFirstSync`):**
-A tree-wide grep confirmed the engine invokes the unified write API at **exactly three
-sites**, all in the first-sync inline-blob-mirror block: `createRecord` (1709),
-`updateRecord` (1714), `deleteRecord` (1723). `tgtBackend` there is a `SyncBackend *`
-(1630-ish), so `discoveredWritable(colId)` is directly reachable. The gate: compute
-`const bool tgtWritable = tgtBackend->discoveredWritable(colId);` before the
-`QMetaObject::invokeMethod` mirror block, capture it in the lambda, and guard each of the
-three write calls (skip + log once when not writable). No completion-path changes needed —
-`mirrorErrors` stays 0 and the existing success path runs. This is defense-in-depth: read-
-only targets are already excluded from the mapping set by 3.3 + 3.4(a), but a backend can
-become non-writable at runtime (ACL change). If future engine paths add write sites, they
-inherit the same guard pattern.
+**(b) Write-gate — `src/engine/syncengine.cpp`:**
+The engine writes to backends through **two** paths, and **both** are gated on
+`discoveredWritable()`. (An earlier draft of this section claimed "exactly three write
+sites"; that grep counted only the record-level `createRecord`/`updateRecord`/`deleteRecord`
+API and missed the steady-state sink writer, which writes via `RecordWriter::apply()`. The
+gate below covers both.)
+
+1. **First-sync inline blob mirror — `SyncEngineWorker::dispatchFirstSync`.** Three
+   record-level calls in the empty-target mirror block: `createRecord` (1709),
+   `updateRecord` (1714), `deleteRecord` (1723). `tgtBackend` there is a `SyncBackend *`
+   (1630-ish), so `discoveredWritable(colId)` is directly reachable. The gate: compute
+   `const bool tgtWritable = tgtBackend->discoveredWritable(colId);` before the
+   `QMetaObject::invokeMethod` mirror block, capture it in the lambda, and short-circuit each
+   of the three write calls (skip + log once when not writable). `mirrorErrors` stays 0, so
+   the existing success path runs.
+
+2. **Steady-state sink writer — `SyncEngineWorker::unifiedContinueAfterConflicts`,
+   the `applyBatch` helper (~2500).** The post-conflict apply path writes to **both** the
+   target (2617) and the source (2639) via `writer->apply(colId, creates, updates, deletes)`.
+   `applyBatch` already receives `SyncBackend *backend` and `colId`; guard at the **top** of
+   the lambda — if `!backend->discoveredWritable(colId)`, log once and `return` **before** the
+   `bool ok = false;` / `if (!ok && !writeFailed)` failure tail, so the skip does not set
+   `writeFailed` (skip is success, a no-op). `dispatchSync` delegates its writes to this
+   helper (see the comment at ~1922), so gating `applyBatch` once covers the entire
+   steady-state path in both sync directions.
+
+Skipping a read-only backend is treated as success (a no-op, not an error) in both paths.
+This is defense-in-depth: read-only targets are already excluded from the mapping set by
+3.3 + 3.4(a), but a backend can become non-writable at runtime (ACL change), and gating
+both write paths — not just the first-sync mirror — keeps that guarantee uniform. If future
+engine paths add write sites, they inherit the same guard pattern.
 
 **(c) Demotion fact — `src/types/logicalcalendar.h`:**
 ```cpp
@@ -141,8 +160,10 @@ CMake. New files:
 - `tests/calendar/tst_logicalcalendarbuilder_readonly_seed.cpp` — non-writable discovered
   sync binding ⇒ `ReadOnly`; non-writable primary ⇒ warning (role stays Primary).
 - `tests/engine/tst_engine_write_gate.cpp` — using a stub backend whose `discoveredWritable`
-  returns false: create/update/delete are skipped + counted, sync does not abort, writable
-  targets are unaffected. (Reuse `tests/calendar/stubs/` patterns.)
+  returns false: (1) first-sync `createRecord`/`updateRecord`/`deleteRecord` are skipped +
+  counted; (2) steady-state `RecordWriter::apply` does not reach the read-only side (no
+  records written via the `applyBatch` path). In both cases the sync does not abort, and
+  writable targets are unaffected. (Reuse `tests/calendar/stubs/` patterns.)
 
 ## 4. Out of scope (guardrails)
 

@@ -4,7 +4,7 @@
 
 **Goal:** Promote the topology→`SyncMapping` generator into libkalburator as a pure headless function, make `LogicalCalendar` domain-agnostic, and close the `discoveredWritable()` authority gap.
 
-**Architecture:** Five independent changes, each TDD. A new pure `generateMappings()` (lifted from PlanStan's `CollectionController`), a `domain` field + `LogicalCollection` alias + a neutral demotion fact on `LogicalCalendar`, a ReadOnly role seed in `LogicalCalendarBuilder`, and a writability guard at the engine's three first-sync write sites. The engine's `SyncMapping` loop and the `SyncMapping` struct are untouched. Lands on `main`, tagged v0.57.
+**Architecture:** Six independent changes, each TDD. A new pure `generateMappings()` (lifted from PlanStan's `CollectionController`), a `domain` field + `LogicalCollection` alias + a neutral demotion fact on `LogicalCalendar`, a ReadOnly role seed in `LogicalCalendarBuilder`, and a writability guard at the engine's **two** write paths (the first-sync mirror and the steady-state sink writer). The engine's `SyncMapping` loop and the `SyncMapping` struct are untouched. Lands on `main`, tagged v0.57.
 
 **Tech Stack:** C++17, Qt6 (Core/Test), CMake, QtTest. Namespace `Kalburator::Sync`.
 
@@ -25,7 +25,7 @@
 - `tests/sync/tst_syncmappinggenerator.cpp` — generator canaries (Task 3).
 - `tests/calendar/tst_logicalcalendar_domain.cpp` — domain + alias + demotion fact (Tasks 1-2).
 - `tests/calendar/tst_logicalcalendarbuilder_readonly_seed.cpp` — ReadOnly seed (Task 4).
-- `tests/engine/tst_engine_write_gate.cpp` — write-gate (Task 5).
+- `tests/engine/tst_engine_write_gate.cpp` — write-gate, first-sync (Task 5) + steady-state (Task 6).
 
 **Modify:**
 - `src/types/logicalcalendar.h` — `domain` field, `collectionId()`, `hasWritableRemoteSyncTarget()`, `using LogicalCollection`, serialize/deserialize `domain` (Tasks 1-2).
@@ -686,6 +686,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ## Task 5: Writability guard at the engine's first-sync write sites
 
+> The engine has **two** write paths. Task 5 gates the first-sync inline blob mirror;
+> Task 6 gates the steady-state sink writer. Both are required for uniform coverage —
+> see design §3.4(b).
+
 **Files:**
 - Modify: `src/engine/syncengine.cpp` (`SyncEngineWorker::dispatchFirstSync`)
 - Test: `tests/engine/tst_engine_write_gate.cpp` (new)
@@ -795,6 +799,95 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 
 ---
 
+## Task 6: Writability guard at the engine's steady-state sink writer
+
+**Files:**
+- Modify: `src/engine/syncengine.cpp` (`SyncEngineWorker::unifiedContinueAfterConflicts`, the `applyBatch` helper)
+- Test: `tests/engine/tst_engine_write_gate.cpp` (extend)
+
+Context: the steady-state (post-first-sync) write path does **not** use
+`createRecord`/`updateRecord`/`deleteRecord`. It writes through the `applyBatch` lambda in
+`unifiedContinueAfterConflicts` (syncengine.cpp ~2500), which calls
+`writer->apply(colId, creates, updates, deletes)` (~2555) for **both** the target (~2617)
+and the source (~2639). `dispatchSync` delegates its writes to this same helper (comment
+~1922), so this is the single steady-state write site. `applyBatch` already receives
+`SyncBackend *backend` and `const QString &colId`.
+
+- [ ] **Step 1: Write the failing test**
+
+Extend `tests/engine/tst_engine_write_gate.cpp` (from Task 5) with a steady-state case.
+Unlike the first-sync mirror (which only runs when the target is **empty**), this path runs
+when the target is **non-empty**, so the stub must be seeded so a sync change is computed
+and `writer->apply` would fire. Reuse the Task 5 read-only stub (its `discoveredWritable`
+returns false and it counts writes), but drive a **second** sync over a target that already
+holds a (differing) record so the engine takes the quick / steady-state path rather than the
+first-sync mirror. Model the multi-sync setup on the sibling steady-state engine test
+(grep `tests/engine/` for a test that runs a sync over a pre-populated target — e.g. the
+`subsequentSync_*` / quick-path integration tests — for the harness pattern).
+
+Assertion shape:
+
+```cpp
+// after running a steady-state sync where the target reports read-only:
+QCOMPARE(target->applyWriteCount, 0);   // RecordWriter::apply never reached the backend
+QVERIFY(syncSucceededWithoutError);     // skip is not an error
+```
+
+The read-only stub's write surface must cover whatever `RecordWriter::apply` ultimately
+calls on the backend for this backend type (the `DefaultBlobWriter` path writes blob
+records); count those calls. The simplest robust assertion is that the stub observes **zero**
+mutating backend calls of any kind after the steady-state sync.
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cmake --build build --target tst_engine_write_gate -j8 && ctest --test-dir build -R tst_engine_write_gate --output-on-failure`
+Expected: FAIL — the steady-state path writes to the read-only target today (write count > 0).
+
+- [ ] **Step 3: Implement the guard**
+
+In `src/engine/syncengine.cpp`, at the **top** of the `applyBatch` lambda in
+`unifiedContinueAfterConflicts` (immediately after the lambda's opening brace, **before**
+`bool ok = false;`), insert:
+
+```cpp
+        // Authority: never write to a backend that reports read-only for this
+        // collection (e.g. an ACL change at runtime). Skip is a no-op, NOT a
+        // failure: return before the ok-checked failure tail so writeFailed
+        // stays false and the success path runs. Read-only targets are also
+        // excluded upstream (generator + builder ReadOnly seed); this is the
+        // engine-level backstop, uniform with the first-sync gate (Task 5).
+        if (!backend->discoveredWritable(colId)) {
+            qWarning() << "SyncEngine: backend" << backendRegistryId
+                       << "reports read-only for collection" << colId
+                       << "- skipping" << toWrite.size() << "steady-state writes";
+            return;
+        }
+```
+
+(The early `return` is correct precisely because `ok`/`writeFailed` are evaluated only at the
+end of the lambda; returning first leaves `writeFailed` untouched.)
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `cmake --build build --target tst_engine_write_gate -j8 && ctest --test-dir build -R tst_engine_write_gate --output-on-failure`
+Expected: PASS (both the first-sync and steady-state read-only cases write 0 records; sync succeeds).
+
+- [ ] **Step 5: Run the full engine suite (no regressions)**
+
+Run: `cmake --build build -j8 && ctest --test-dir build -R "tst_.*engine|tst_calendar" --output-on-failure`
+Expected: PASS (the guard is a no-op when backends are writable — the default `discoveredWritable` returns `true`).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/engine/syncengine.cpp tests/engine/tst_engine_write_gate.cpp
+git commit -m "fix(engine): gate steady-state sink writer on discoveredWritable
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
+```
+
+---
+
 ## Final verification
 
 - [ ] Run the whole suite: `cmake --build build -j8 && ctest --test-dir build --output-on-failure`. Expected: all pass.
@@ -806,8 +899,8 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>"
 - **§3.2 serialization round-trip** → Task 1 (calendarDomainOmitsKey, absentDomainKeyDefaultsToCalendar). ✔
 - **§3.3 generator (single + list, Star/Mirror/Chain, ReadOnly exclude, syncEnabled skip, deterministic ids)** → Task 3. ✔
 - **§3.4(a) ReadOnly role seed + non-writable-primary warning** → Task 4. ✔
-- **§3.4(b) write-gate at the 3 confirmed sites via tgtBackend->discoveredWritable** → Task 5. ✔
+- **§3.4(b) write-gate, both paths via `discoveredWritable`** → Task 5 (first-sync mirror, 3 record-level sites) + Task 6 (steady-state `applyBatch` sink writer). ✔
 - **§3.4(c) neutral demotion fact (hasWritableRemoteSyncTarget, not isPrimaryUserWritable)** → Task 2. ✔
-- **§4 guardrails** — no SyncMapping/loop change (Task 5 only short-circuits writes), no struct rename (Task 1 uses alias), no persist helper (dropped). ✔
+- **§4 guardrails** — no SyncMapping/loop change (Tasks 5/6 only short-circuit writes), no struct rename (Task 1 uses alias), no persist helper (dropped). ✔
 
-Two tasks contain a bounded in-execution discovery (acknowledged in the spec): Task 4/5 reference sibling tests/headers for harness shape (test plumbing only — the production change is fully specified). No placeholders in production code steps.
+Three tasks contain a bounded in-execution discovery (acknowledged in the spec): Tasks 4/5/6 reference sibling tests/headers for harness shape (test plumbing only — the production change is fully specified). No placeholders in production code steps.
