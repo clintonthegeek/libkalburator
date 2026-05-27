@@ -200,6 +200,9 @@ set_tests_properties(tst_multiprotocoldavconfigwidget PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# Task 7 — Akonadi revision digest helper (pure; unconditional — no Akonadi gate).
+kalburator_add_sync_test(tst_akonadirevisiondigest)
+
 # Phase L.1 — AkonadiProvider identity tests.
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadiprovider tst_akonadiprovider.cpp)

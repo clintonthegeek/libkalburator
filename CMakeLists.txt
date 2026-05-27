@@ -502,6 +502,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/providerlifecycle.h
     # Phase 5 step 2: sync execution coordinator
     src/sync/syncruncoordinator.h
+    # Akonadi change-detection digest helper (pure; unconditional)
+    src/sync/akonadirevisiondigest.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -528,6 +530,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providerlifecycle.cpp
     # Phase 5 step 2: sync execution coordinator
     src/sync/syncruncoordinator.cpp
+    # Akonadi change-detection digest helper (pure; unconditional)
+    src/sync/akonadirevisiondigest.cpp
 )
 
 # Phase M.9–M.11: Library UI widgets
