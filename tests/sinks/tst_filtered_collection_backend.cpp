@@ -189,6 +189,12 @@ private slots:
     void deleteRecord_delegatesToParent();
     void discoveredWritable_delegatesToParentForParentColId();
     void discoveredWritable_readOnlyParentYieldsReadOnlyView();
+
+    // ---- resourceId stability (Task 6) -----------------------------------
+    void resourceId_includesParentResourceColIdPropertyOpAndValue();
+    void resourceId_equivalentConstructions_yieldEqualIds();
+    void resourceId_differingFilters_yieldDifferentIds();
+    void resourceId_urlEncodesNonAsciiValue();
 };
 
 void TestFilteredCollectionBackend::filter_contains_matchingArrayElement_returnsTrue()
@@ -638,6 +644,76 @@ void TestFilteredCollectionBackend::discoveredWritable_readOnlyParentYieldsReadO
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
     QVERIFY(!v.discoveredWritable("v1"));
+}
+
+void TestFilteredCollectionBackend::resourceId_includesParentResourceColIdPropertyOpAndValue()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    const QString rid = v.resourceId();
+    QVERIFY2(rid.startsWith("filtered-view:"), qPrintable(rid));
+    QVERIFY2(rid.contains("fake://p1"),        qPrintable(rid));
+    QVERIFY2(rid.contains("/cal-1?"),          qPrintable(rid));
+    // Fixed key order: p, op, v.
+    const int pIdx  = rid.indexOf("?p=");
+    const int opIdx = rid.indexOf("op=");
+    const int vIdx  = rid.indexOf("v=");
+    QVERIFY(pIdx > 0 && opIdx > pIdx && vIdx > opIdx);
+    QVERIFY2(rid.contains("p=categories"), qPrintable(rid));
+    QVERIFY2(rid.contains("op=contains"),  qPrintable(rid));
+}
+
+void TestFilteredCollectionBackend::resourceId_equivalentConstructions_yieldEqualIds()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend a(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    FilteredCollectionBackend b(&parent, "cal-1", "v1-alt",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    // virtualColId is NOT part of resourceId — it's the consumer's local
+    // handle, not part of identity. Spec §2.2 lists only parent.resourceId,
+    // parentColId, propertyId, op, value.
+    QCOMPARE(a.resourceId(), b.resourceId());
+}
+
+void TestFilteredCollectionBackend::resourceId_differingFilters_yieldDifferentIds()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend work(&parent, "cal-1", "v1",
+                                   RecordFilter{ PropertyId{"categories"},
+                                                 RecordFilter::Op::Contains,
+                                                 QStringLiteral("Work") });
+    FilteredCollectionBackend personal(&parent, "cal-1", "v2",
+                                       RecordFilter{ PropertyId{"categories"},
+                                                     RecordFilter::Op::Contains,
+                                                     QStringLiteral("Personal") });
+    QVERIFY(work.resourceId() != personal.resourceId());
+
+    FilteredCollectionBackend equalsDone(&parent, "cal-1", "v3",
+                                         RecordFilter{ PropertyId{"status"},
+                                                       RecordFilter::Op::Equals,
+                                                       QStringLiteral("Done") });
+    QVERIFY(equalsDone.resourceId() != work.resourceId());
+}
+
+void TestFilteredCollectionBackend::resourceId_urlEncodesNonAsciiValue()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("café") });
+    const QString rid = v.resourceId();
+    QVERIFY2(rid.contains("v="), qPrintable(rid));
+    // "café" should be percent-encoded — no raw é byte.
+    QVERIFY2(!rid.contains(QStringLiteral("é")), qPrintable(rid));
 }
 
 QTEST_MAIN(TestFilteredCollectionBackend)

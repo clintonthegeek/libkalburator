@@ -107,12 +107,45 @@ CollectionInfo FilteredCollectionBackend::collectionInfo(const QString& collecti
     return composeCollectionInfo();
 }
 
+QByteArray FilteredCollectionBackend::canonJsonOfValue(const QVariant& value)
+{
+    // QJsonDocument cannot serialize scalars at the root; wrap in a
+    // single-element array, serialize compactly (keys auto-sorted for
+    // objects), and strip the brackets.
+    QJsonArray wrapper;
+    wrapper.append(QJsonValue::fromVariant(value));
+    const QByteArray bytes = QJsonDocument(wrapper).toJson(QJsonDocument::Compact);
+    // bytes looks like "[\"Work\"]" — strip outer [ and ].
+    if (bytes.size() >= 2 && bytes.startsWith('[') && bytes.endsWith(']'))
+        return bytes.mid(1, bytes.size() - 2);
+    return bytes;
+}
+
+QString FilteredCollectionBackend::opToken(Kalburator::Shape::RecordFilter::Op op)
+{
+    using Op = Kalburator::Shape::RecordFilter::Op;
+    switch (op) {
+    case Op::Contains: return QStringLiteral("contains");
+    case Op::Equals:   return QStringLiteral("equals");
+    }
+    Q_UNREACHABLE_RETURN(QStringLiteral("unknown"));
+}
+
 QString FilteredCollectionBackend::resourceId() const
 {
-    // Implemented in Task 6.
-    if (!m_parent) return QStringLiteral("filtered-view:?");
-    return QStringLiteral("filtered-view:") + m_parent->resourceId()
-         + QLatin1Char('/') + m_parentColId;
+    const QString parentRes = m_parent ? m_parent->resourceId() : QString();
+    const QString encodedProp  = QString::fromUtf8(
+        QUrl::toPercentEncoding(m_filter.property.toString()));
+    const QString encodedColId = QString::fromUtf8(
+        QUrl::toPercentEncoding(m_parentColId));
+    const QString encodedValue = QString::fromUtf8(
+        QUrl::toPercentEncoding(QString::fromUtf8(canonJsonOfValue(m_filter.value))));
+    return QStringLiteral("filtered-view:%1/%2?p=%3&op=%4&v=%5")
+        .arg(parentRes,
+             encodedColId,
+             encodedProp,
+             opToken(m_filter.op),
+             encodedValue);
 }
 
 bool FilteredCollectionBackend::discoveredWritable(const QString& calendarId) const

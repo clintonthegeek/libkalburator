@@ -76,6 +76,14 @@ private:
     /// JSON object (caller decides what to do with that).
     QByteArray stampFilterValue(const QByteArray& payload) const;
 
+    /// Canonical JSON serialization of the filter value, suitable for
+    /// embedding in resourceId(). Strings come back as JSON (`"Work"`);
+    /// objects/arrays come back with sorted keys and no whitespace.
+    static QByteArray canonJsonOfValue(const QVariant& value);
+
+    /// Lowercase token for the filter op ("contains" / "equals").
+    static QString opToken(Kalburator::Shape::RecordFilter::Op op);
+
     QString defaultComposedDisplayName(const QString& parentName) const;
     QString filterDescription() const;
 
