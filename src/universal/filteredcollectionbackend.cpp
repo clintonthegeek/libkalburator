@@ -30,7 +30,18 @@ FilteredCollectionBackend::FilteredCollectionBackend(
     , m_filter(std::move(filter))
     , m_displayNameOverride(std::move(displayNameOverride))
 {
-    Q_UNUSED(registry); // wired in Task 7
+    if (registry && !m_parentBackendId.isEmpty()) {
+        // BackendRegistry mutation is assumed single-threaded (same thread as
+        // this FCB). DirectConnection makes the assumption explicit: any cross-
+        // thread emit would fire the lambda inline on the emitter's thread,
+        // surfacing the contract violation rather than queueing silently.
+        connect(registry, &Kalburator::Sync::BackendRegistry::backendInstanceUnregistered,
+                this, [this](const QString& backendId) {
+            if (backendId == m_parentBackendId) {
+                m_parent = nullptr;
+            }
+        }, Qt::DirectConnection);
+    }
 }
 
 QString FilteredCollectionBackend::displayName() const
@@ -63,8 +74,7 @@ QString FilteredCollectionBackend::defaultComposedDisplayName(const QString& par
 
 bool FilteredCollectionBackend::isAvailable() const
 {
-    // Task 7 will tighten this to also follow parent's isAvailable.
-    return m_parent != nullptr;
+    return m_parent != nullptr && m_parent->isAvailable();
 }
 
 QList<Shape> FilteredCollectionBackend::nativeShapes() const

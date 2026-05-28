@@ -59,7 +59,8 @@ public:
     QString backendType()  const override { return QStringLiteral("fake-parent"); }
     QString displayName()  const override { return QStringLiteral("Fake Parent"); }
     QString resourceId()   const override { return QStringLiteral("fake://") + m_backendId; }
-    bool    isAvailable()  const override { return true; }
+    bool    isAvailable()  const override { return m_available; }
+    void    setAvailable(bool a) { m_available = a; }
 
     QList<Shape> nativeShapes() const override { return { m_shape }; }
     Shape shapeFor(const QString&) const override { return m_shape; }
@@ -122,6 +123,7 @@ private:
     QString m_colId;
     QString m_colName = QStringLiteral("Parent Collection");
     Shape   m_shape;
+    bool    m_available = true;
     bool    m_readOnly = false;
     int     m_autoId = 0;
     QHash<QString, BackendRecord> m_records;
@@ -195,6 +197,15 @@ private slots:
     void resourceId_equivalentConstructions_yieldEqualIds();
     void resourceId_differingFilters_yieldDifferentIds();
     void resourceId_urlEncodesNonAsciiValue();
+
+    // ---- Parent lifetime (Task 7) ----------------------------------------
+    void isAvailable_followsParentAvailability();
+    void parentUnregistered_isAvailableBecomesFalse();
+    void parentUnregistered_loadRecordsReturnsEmpty();
+    void parentUnregistered_createRecordReturnsEmpty();
+    void parentUnregistered_updateRecordReturnsFalse();
+    void parentUnregistered_deleteRecordReturnsFalse();
+    void parentUnregisteredOtherId_isStillAvailable();
 };
 
 void TestFilteredCollectionBackend::filter_contains_matchingArrayElement_returnsTrue()
@@ -714,6 +725,112 @@ void TestFilteredCollectionBackend::resourceId_urlEncodesNonAsciiValue()
     QVERIFY2(rid.contains("v="), qPrintable(rid));
     // "café" should be percent-encoded — no raw é byte.
     QVERIFY2(!rid.contains(QStringLiteral("é")), qPrintable(rid));
+}
+
+void TestFilteredCollectionBackend::isAvailable_followsParentAvailability()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QVERIFY(v.isAvailable());
+    parent.setAvailable(false);
+    QVERIFY(!v.isAvailable());
+    parent.setAvailable(true);
+    QVERIFY(v.isAvailable());
+}
+
+void TestFilteredCollectionBackend::parentUnregistered_isAvailableBecomesFalse()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    registry.registerBackendInstance("p1", &parent);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    QVERIFY(v.isAvailable());
+    registry.unregisterBackendInstance("p1");
+    QVERIFY(!v.isAvailable());
+}
+
+void TestFilteredCollectionBackend::parentUnregistered_loadRecordsReturnsEmpty()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
+    registry.registerBackendInstance("p1", &parent);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    registry.unregisterBackendInstance("p1");
+    QVERIFY(v.loadRecords("v1").isEmpty());
+    QVERIFY(!v.loadRecord("r1").has_value());
+}
+
+void TestFilteredCollectionBackend::parentUnregistered_createRecordReturnsEmpty()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    registry.registerBackendInstance("p1", &parent);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    registry.unregisterBackendInstance("p1");
+    QVERIFY(v.createRecord("v1", makeJsonRecord("r1", withCategories({"Work"})))
+              .isEmpty());
+}
+
+void TestFilteredCollectionBackend::parentUnregistered_updateRecordReturnsFalse()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
+    registry.registerBackendInstance("p1", &parent);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    registry.unregisterBackendInstance("p1");
+    QVERIFY(!v.updateRecord(makeJsonRecord("r1", withCategories({"Personal"}))));
+}
+
+void TestFilteredCollectionBackend::parentUnregistered_deleteRecordReturnsFalse()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
+    registry.registerBackendInstance("p1", &parent);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    registry.unregisterBackendInstance("p1");
+    QVERIFY(!v.deleteRecord("r1"));
+}
+
+void TestFilteredCollectionBackend::parentUnregisteredOtherId_isStillAvailable()
+{
+    Kalburator::Sync::BackendRegistry registry;
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FakeParentBackend other("p2", "cal-2", kCalendarCanonShape);
+    registry.registerBackendInstance("p1", &parent);
+    registry.registerBackendInstance("p2", &other);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                &registry);
+    registry.unregisterBackendInstance("p2");  // signal IS emitted with id "p2"
+    QVERIFY(v.isAvailable());                  // FCB ignored it
 }
 
 QTEST_MAIN(TestFilteredCollectionBackend)

@@ -88,10 +88,11 @@ private:
     QString filterDescription() const;
 
     Kalburator::Sync::SyncBackend*   m_parent = nullptr;
-    /// Captured at construction from `parentBackend->backendId()`. Compared
-    /// against the id carried by `BackendRegistry::backendInstanceUnregistered`
-    /// in the Task 7 hook so the FCB only reacts when its own parent goes
-    /// away (not any other backend).
+    /// Captured at construction from `parentBackend->backendId()`. The
+    /// constructor connects to `BackendRegistry::backendInstanceUnregistered`
+    /// and compares each emitted id to this snapshot, so the FCB only nulls
+    /// its parent pointer when its own parent backend is unregistered — not
+    /// when any other backend is.
     QString                          m_parentBackendId;
     QString                          m_parentColId;
     QString                          m_virtualColId;
