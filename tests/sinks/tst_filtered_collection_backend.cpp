@@ -297,7 +297,7 @@ void TestFilteredCollectionBackend::filter_documentOverload_rootArrayDoc_returns
 void TestFilteredCollectionBackend::identity_backendType_isFilteredView()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -307,7 +307,7 @@ void TestFilteredCollectionBackend::identity_backendType_isFilteredView()
 void TestFilteredCollectionBackend::identity_displayName_overrideWins()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -320,7 +320,7 @@ void TestFilteredCollectionBackend::identity_displayName_composedDefault_include
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setColName(QStringLiteral("Calendar"));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -333,7 +333,7 @@ void TestFilteredCollectionBackend::identity_displayName_composedDefault_include
 void TestFilteredCollectionBackend::shape_delegatesToParentsShapeForParentColId()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -345,7 +345,7 @@ void TestFilteredCollectionBackend::shape_delegatesToParentsShapeForParentColId(
 void TestFilteredCollectionBackend::availableCollections_returnsOneVirtualEntry()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -357,7 +357,7 @@ void TestFilteredCollectionBackend::availableCollections_returnsOneVirtualEntry(
 void TestFilteredCollectionBackend::collectionInfo_unknownId_returnsDefault()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -369,7 +369,7 @@ void TestFilteredCollectionBackend::collectionInfo_inheritsReadOnlyFromParent()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setReadOnly(true);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -383,7 +383,7 @@ void TestFilteredCollectionBackend::loadRecords_returnsOnlyMatchingRecords()
     parent.setRecord(makeJsonRecord("r2", withCategories({"Work"})));
     parent.setRecord(makeJsonRecord("r3", withCategories({"Work", "Personal"})));
 
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -403,7 +403,7 @@ void TestFilteredCollectionBackend::loadRecords_excludesRecordsWithoutFilterProp
     parent.setRecord(makeJsonRecord("r1", noCats));
     parent.setRecord(makeJsonRecord("r2", withCategories({"Work"})));
 
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -421,7 +421,7 @@ void TestFilteredCollectionBackend::loadRecords_excludesNonJsonPayloads()
     parent.setRecord(bad);
     parent.setRecord(makeJsonRecord("good", withCategories({"Work"})));
 
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -434,7 +434,7 @@ void TestFilteredCollectionBackend::loadRecord_matching_returnsRecord()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -447,7 +447,7 @@ void TestFilteredCollectionBackend::loadRecord_nonMatching_returnsNullopt()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Personal"})));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -458,7 +458,7 @@ void TestFilteredCollectionBackend::loadRecord_nonMatching_returnsNullopt()
 void TestFilteredCollectionBackend::loadRecord_unknownId_returnsNullopt()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -468,7 +468,7 @@ void TestFilteredCollectionBackend::loadRecord_unknownId_returnsNullopt()
 void TestFilteredCollectionBackend::createRecord_contains_appendsFilterValueIfAbsent()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -485,7 +485,7 @@ void TestFilteredCollectionBackend::createRecord_contains_appendsFilterValueIfAb
 void TestFilteredCollectionBackend::createRecord_contains_noDuplicateIfAlreadyPresent()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -498,7 +498,7 @@ void TestFilteredCollectionBackend::createRecord_contains_noDuplicateIfAlreadyPr
 void TestFilteredCollectionBackend::createRecord_contains_preservesExistingOrder()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -514,7 +514,7 @@ void TestFilteredCollectionBackend::createRecord_contains_preservesExistingOrder
 void TestFilteredCollectionBackend::createRecord_contains_preservesOtherCategoryValues()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -531,7 +531,7 @@ void TestFilteredCollectionBackend::createRecord_contains_preservesOtherCategory
 void TestFilteredCollectionBackend::createRecord_contains_payloadHasNoCategoriesField_addsArrayWithFilterValue()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -547,7 +547,7 @@ void TestFilteredCollectionBackend::createRecord_contains_payloadHasNoCategories
 void TestFilteredCollectionBackend::createRecord_equals_alwaysOverwritesFilterProperty()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"status"},
                                               RecordFilter::Op::Equals,
                                               QStringLiteral("Done") });
@@ -563,7 +563,7 @@ void TestFilteredCollectionBackend::updateRecord_contains_stampsAndUpdatesParent
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Personal"})));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -585,7 +585,7 @@ void TestFilteredCollectionBackend::updateRecord_equals_overwritesFilterProperty
     seed.insert(QStringLiteral("uid"), QStringLiteral("u1"));
     seed.insert(QStringLiteral("status"), QStringLiteral("Done"));
     parent.setRecord(makeJsonRecord("r1", seed));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"status"},
                                               RecordFilter::Op::Equals,
                                               QStringLiteral("Done") });
@@ -600,19 +600,20 @@ void TestFilteredCollectionBackend::updateRecord_equals_overwritesFilterProperty
 void TestFilteredCollectionBackend::createRecord_unknownCollectionId_returnsEmpty()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
     const QString id = v.createRecord("not-v1",
         makeJsonRecord("r1", withCategories({"Work"})));
     QVERIFY(id.isEmpty());
+    QCOMPARE(parent.recordCount(), 0);  // parent must NOT have received the create
 }
 
 void TestFilteredCollectionBackend::createRecord_nonJsonPayload_passesThroughUnchanged()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -628,7 +629,7 @@ void TestFilteredCollectionBackend::deleteRecord_delegatesToParent()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -639,7 +640,7 @@ void TestFilteredCollectionBackend::deleteRecord_delegatesToParent()
 void TestFilteredCollectionBackend::discoveredWritable_delegatesToParentForParentColId()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -650,7 +651,7 @@ void TestFilteredCollectionBackend::discoveredWritable_readOnlyParentYieldsReadO
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setReadOnly(true);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -660,7 +661,7 @@ void TestFilteredCollectionBackend::discoveredWritable_readOnlyParentYieldsReadO
 void TestFilteredCollectionBackend::resourceId_includesParentResourceColIdPropertyOpAndValue()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -680,11 +681,11 @@ void TestFilteredCollectionBackend::resourceId_includesParentResourceColIdProper
 void TestFilteredCollectionBackend::resourceId_equivalentConstructions_yieldEqualIds()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend a(&parent, "cal-1", "v1",
+    FilteredCollectionBackend a(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
-    FilteredCollectionBackend b(&parent, "cal-1", "v1-alt",
+    FilteredCollectionBackend b(&parent, "p1", "cal-1", "v1-alt",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -697,17 +698,17 @@ void TestFilteredCollectionBackend::resourceId_equivalentConstructions_yieldEqua
 void TestFilteredCollectionBackend::resourceId_differingFilters_yieldDifferentIds()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend work(&parent, "cal-1", "v1",
+    FilteredCollectionBackend work(&parent, "p1", "cal-1", "v1",
                                    RecordFilter{ PropertyId{"categories"},
                                                  RecordFilter::Op::Contains,
                                                  QStringLiteral("Work") });
-    FilteredCollectionBackend personal(&parent, "cal-1", "v2",
+    FilteredCollectionBackend personal(&parent, "p1", "cal-1", "v2",
                                        RecordFilter{ PropertyId{"categories"},
                                                      RecordFilter::Op::Contains,
                                                      QStringLiteral("Personal") });
     QVERIFY(work.resourceId() != personal.resourceId());
 
-    FilteredCollectionBackend equalsDone(&parent, "cal-1", "v3",
+    FilteredCollectionBackend equalsDone(&parent, "p1", "cal-1", "v3",
                                          RecordFilter{ PropertyId{"status"},
                                                        RecordFilter::Op::Equals,
                                                        QStringLiteral("Done") });
@@ -717,7 +718,7 @@ void TestFilteredCollectionBackend::resourceId_differingFilters_yieldDifferentId
 void TestFilteredCollectionBackend::resourceId_urlEncodesNonAsciiValue()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("café") });
@@ -730,7 +731,7 @@ void TestFilteredCollectionBackend::resourceId_urlEncodesNonAsciiValue()
 void TestFilteredCollectionBackend::isAvailable_followsParentAvailability()
 {
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
@@ -746,7 +747,7 @@ void TestFilteredCollectionBackend::parentUnregistered_isAvailableBecomesFalse()
     Kalburator::Sync::BackendRegistry registry;
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     registry.registerBackendInstance("p1", &parent);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -762,7 +763,7 @@ void TestFilteredCollectionBackend::parentUnregistered_loadRecordsReturnsEmpty()
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
     registry.registerBackendInstance("p1", &parent);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -777,7 +778,7 @@ void TestFilteredCollectionBackend::parentUnregistered_createRecordReturnsEmpty(
     Kalburator::Sync::BackendRegistry registry;
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     registry.registerBackendInstance("p1", &parent);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -793,7 +794,7 @@ void TestFilteredCollectionBackend::parentUnregistered_updateRecordReturnsFalse(
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
     registry.registerBackendInstance("p1", &parent);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -808,7 +809,7 @@ void TestFilteredCollectionBackend::parentUnregistered_deleteRecordReturnsFalse(
     FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
     parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
     registry.registerBackendInstance("p1", &parent);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },
@@ -824,7 +825,7 @@ void TestFilteredCollectionBackend::parentUnregisteredOtherId_isStillAvailable()
     FakeParentBackend other("p2", "cal-2", kCalendarCanonShape);
     registry.registerBackendInstance("p1", &parent);
     registry.registerBackendInstance("p2", &other);
-    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
                                 RecordFilter{ PropertyId{"categories"},
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") },

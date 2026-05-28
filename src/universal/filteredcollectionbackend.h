@@ -25,10 +25,15 @@ namespace Kalburator::Sinks {
 /// no add-account UI. Consuming apps build instances at runtime and
 /// register them via `BackendRegistry::registerBackendInstance` like any
 /// other backend.
+///
+/// Caller MUST pass the same `parentBackendId` that was used to register
+/// the parent in `BackendRegistry`; the default `backendId()` for
+/// production `SyncBackend`s is not unique.
 class FilteredCollectionBackend : public Kalburator::Sync::SyncBackend {
     Q_OBJECT
 public:
     FilteredCollectionBackend(Kalburator::Sync::SyncBackend* parentBackend,
+                              QString parentBackendId,
                               QString parentCollectionId,
                               QString virtualCollectionId,
                               Kalburator::Shape::RecordFilter filter,
@@ -47,7 +52,7 @@ public:
     QList<Kalburator::Sync::CollectionInfo> availableCollections() override;
     Kalburator::Sync::CollectionInfo        collectionInfo(const QString& collectionId) override;
 
-    bool    discoveredWritable(const QString& calendarId) const override;
+    bool    discoveredWritable(const QString& collectionId) const override;
 
     QList<Kalburator::Sync::BackendRecord>            loadRecords(const QString& collectionId) override;
     std::optional<Kalburator::Sync::BackendRecord>    loadRecord(const QString& recordId)      override;
@@ -88,11 +93,13 @@ private:
     QString filterDescription() const;
 
     Kalburator::Sync::SyncBackend*   m_parent = nullptr;
-    /// Captured at construction from `parentBackend->backendId()`. The
-    /// constructor connects to `BackendRegistry::backendInstanceUnregistered`
-    /// and compares each emitted id to this snapshot, so the FCB only nulls
-    /// its parent pointer when its own parent backend is unregistered — not
-    /// when any other backend is.
+    /// The registry key under which the parent backend was registered via
+    /// `BackendRegistry::registerBackendInstance(id, ...)`. Compared against
+    /// the id emitted by `BackendRegistry::backendInstanceUnregistered` so
+    /// the FCB only nulls its parent pointer when its own parent goes away.
+    /// MUST be the same string the consumer passes to
+    /// `registerBackendInstance` — `parentBackend->backendId()` is NOT a
+    /// reliable substitute (the default impl returns `backendType()`).
     QString                          m_parentBackendId;
     QString                          m_parentColId;
     QString                          m_virtualColId;

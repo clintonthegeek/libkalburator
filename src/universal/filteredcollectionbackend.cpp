@@ -16,6 +16,7 @@ using Kalburator::Sync::CollectionInfo;
 
 FilteredCollectionBackend::FilteredCollectionBackend(
         Kalburator::Sync::SyncBackend* parentBackend,
+        QString parentBackendId,
         QString parentCollectionId,
         QString virtualCollectionId,
         Kalburator::Shape::RecordFilter filter,
@@ -24,7 +25,7 @@ FilteredCollectionBackend::FilteredCollectionBackend(
         QObject* parent)
     : Kalburator::Sync::SyncBackend(parent)
     , m_parent(parentBackend)
-    , m_parentBackendId(parentBackend ? parentBackend->backendId() : QString())
+    , m_parentBackendId(std::move(parentBackendId))
     , m_parentColId(std::move(parentCollectionId))
     , m_virtualColId(std::move(virtualCollectionId))
     , m_filter(std::move(filter))
@@ -158,10 +159,10 @@ QString FilteredCollectionBackend::resourceId() const
              encodedValue);
 }
 
-bool FilteredCollectionBackend::discoveredWritable(const QString& calendarId) const
+bool FilteredCollectionBackend::discoveredWritable(const QString& collectionId) const
 {
     if (!m_parent) return false;
-    if (calendarId != m_virtualColId) return false;
+    if (collectionId != m_virtualColId) return false;
     return m_parent->discoveredWritable(m_parentColId);
 }
 
