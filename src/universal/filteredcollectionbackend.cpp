@@ -124,14 +124,25 @@ bool FilteredCollectionBackend::discoveredWritable(const QString& calendarId) co
 
 QList<BackendRecord> FilteredCollectionBackend::loadRecords(const QString& collectionId)
 {
-    Q_UNUSED(collectionId);
-    return {};  // implemented in Task 3
+    if (!m_parent || collectionId != m_virtualColId) return {};
+    QList<BackendRecord> all = m_parent->loadRecords(m_parentColId);
+    QList<BackendRecord> filtered;
+    filtered.reserve(all.size());
+    for (int i = 0; i < all.size(); ++i) {
+        if (m_filter.matches(all[i].data))
+            filtered.append(std::move(all[i]));
+    }
+    filtered.squeeze();
+    return filtered;
 }
 
 std::optional<BackendRecord> FilteredCollectionBackend::loadRecord(const QString& recordId)
 {
-    Q_UNUSED(recordId);
-    return std::nullopt;  // implemented in Task 3
+    if (!m_parent) return std::nullopt;
+    auto rec = m_parent->loadRecord(recordId);
+    if (!rec.has_value()) return std::nullopt;
+    if (!m_filter.matches(rec->data)) return std::nullopt;
+    return rec;
 }
 
 QString FilteredCollectionBackend::createRecord(const QString& collectionId,
