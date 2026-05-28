@@ -1,8 +1,10 @@
 #include "outlinestockshapes.h"
 #include "outlinecanonproperties.h"
 #include "opmlcanonstages.h"
-#include "orgcanonstages.h"
 #include "lossprofile.h"
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
+#include "orgcanonstages.h"   // OrgGrove-dependent org<->canon stages
+#endif
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
@@ -16,6 +18,7 @@ namespace Kalburator::Outline {
 
 namespace {
 
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
 // org → canon: unmapped :PROPERTIES: keys ride in `attributes` (Reversible).
 // No data is structurally dropped in this direction.
 LossProfile orgToCanonLoss()
@@ -37,6 +40,7 @@ LossProfile canonToOrgLoss()
         p.affected.insert(PropertyId{k}, LossKind::Dropped);
     return p;
 }
+#endif // KALBURATOR_HAVE_OUTLINE_ORG
 
 // canon -> opml: task fields have no OPML representation (Dropped);
 // the free-text note rides as an _note attribute (Reversible).
@@ -54,30 +58,34 @@ LossProfile canonToOpmlLoss()
 
 QList<std::pair<Shape::Shape, Shape::PropertyCatalogue>> OutlineStockShapes::peerShapes() const
 {
-    const Shape::Shape org { DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("org")} };
     const Shape::Shape opml{ DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("opml")} };
     // Peer shapes reuse the canon catalogue: per-encoding (org/opml) property
     // catalogues are a deferred follow-on (design §3.2). The canon catalogue is a
     // superset, mirroring how the note domain registers its markdown peer.
-    return {
-        { org,  makeOutlineCanonCatalogue() },
-        { opml, makeOutlineCanonCatalogue() },
-    };
+    QList<std::pair<Shape::Shape, Shape::PropertyCatalogue>> peers;
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
+    const Shape::Shape org { DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("org")} };
+    peers.append({ org, makeOutlineCanonCatalogue() });
+#endif
+    peers.append({ opml, makeOutlineCanonCatalogue() });
+    return peers;
 }
 
 QList<Shape::TransformationEdge> OutlineStockShapes::edges() const
 {
     const Shape::Shape canon{ DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("canon")} };
-    const Shape::Shape org  { DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("org")} };
     const Shape::Shape opml { DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("opml")} };
 
-    return {
-        TransformationEdge{ canon, canon, LossProfile{},           std::make_shared<IdentityStage>() },
-        TransformationEdge{ org,   canon, orgToCanonLoss(),   std::make_shared<OrgToCanonStage>() },
-        TransformationEdge{ canon, org,   canonToOrgLoss(),  std::make_shared<CanonToOrgStage>() },
-        TransformationEdge{ opml,  canon, LossProfile{},            std::make_shared<OpmlToCanonStage>() },
-        TransformationEdge{ canon, opml,  canonToOpmlLoss(),        std::make_shared<CanonToOpmlStage>() },
-    };
+    QList<Shape::TransformationEdge> e;
+    e.append(TransformationEdge{ canon, canon, LossProfile{}, std::make_shared<IdentityStage>() });
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
+    const Shape::Shape org { DomainId{QStringLiteral("outline")}, EncodingId{QStringLiteral("org")} };
+    e.append(TransformationEdge{ org,   canon, orgToCanonLoss(), std::make_shared<OrgToCanonStage>() });
+    e.append(TransformationEdge{ canon, org,   canonToOrgLoss(), std::make_shared<CanonToOrgStage>() });
+#endif
+    e.append(TransformationEdge{ opml, canon, LossProfile{},     std::make_shared<OpmlToCanonStage>() });
+    e.append(TransformationEdge{ canon, opml, canonToOpmlLoss(), std::make_shared<CanonToOpmlStage>() });
+    return e;
 }
 
 } // namespace Kalburator::Outline

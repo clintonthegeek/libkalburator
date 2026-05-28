@@ -30,6 +30,7 @@ private slots:
     // round-trip. Only progress, created, and id have no thin-adapter org
     // representation and are honestly declared Dropped. Mapping them into
     // :PROPERTIES: for true reversibility is a deferred enhancement.
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
     void orgPreservesRichFieldsDroppingOnlyThinGaps()
     {
         auto reg = buildRegistry();
@@ -63,6 +64,7 @@ private slots:
                                 + QString::fromLatin1(k)));
         }
     }
+#endif // KALBURATOR_HAVE_OUTLINE_ORG
 
     // canon→opml must honestly report the task fields it drops, and must NOT
     // drop `text` (structural content always survives in OPML).

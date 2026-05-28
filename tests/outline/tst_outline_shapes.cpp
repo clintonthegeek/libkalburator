@@ -26,11 +26,13 @@ private slots:
     void registersCanonAndPeers() {
         auto reg = buildRegistry();
         const Shape canon{ DomainId{"outline"}, EncodingId{"canon"} };
-        const Shape org  { DomainId{"outline"}, EncodingId{"org"} };
         const Shape opml { DomainId{"outline"}, EncodingId{"opml"} };
         QCOMPARE(reg.canonicalFor(DomainId{"outline"}), canon);
-        QVERIFY(reg.compile(org, canon).has_value());
         QVERIFY(reg.compile(opml, canon).has_value());
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
+        const Shape org { DomainId{"outline"}, EncodingId{"org"} };
+        QVERIFY(reg.compile(org, canon).has_value());
+#endif
     }
 
     void richnessOrdersOrgAboveOpml() {
@@ -64,6 +66,7 @@ private slots:
         QVERIFY(loss.affected.isEmpty());
     }
 
+#ifdef KALBURATOR_HAVE_OUTLINE_ORG
     void orgCanonAttributesReversible() {
         auto reg = buildRegistry();
         const Shape org  { DomainId{"outline"}, EncodingId{"org"} };
@@ -77,6 +80,7 @@ private slots:
         QCOMPARE(reverseL.affected.value(PropertyId{"created"}),  LossKind::Dropped);
         QCOMPARE(reverseL.affected.value(PropertyId{"id"}),       LossKind::Dropped);
     }
+#endif // KALBURATOR_HAVE_OUTLINE_ORG
 };
 
 QTEST_GUILESS_MAIN(TestOutlineShapes)

@@ -17,6 +17,11 @@ kalburator_add_outline_test(tst_outline_node)
 kalburator_add_outline_test(tst_outline_catalogue)
 kalburator_add_outline_test(tst_outline_differ)
 kalburator_add_outline_test(tst_outline_opml)
-kalburator_add_outline_test(tst_outline_org)
+# The org peer (and its OrgGrove dependency) is optional; only build its test
+# when KALBURATOR_HAVE_OUTLINE_ORG is ON. The shapes/round-trip tests below
+# #ifdef-guard their org assertions, so they build and pass either way.
+if(KALBURATOR_HAVE_OUTLINE_ORG)
+    kalburator_add_outline_test(tst_outline_org)
+endif()
 kalburator_add_outline_test(tst_outline_shapes)
 kalburator_add_outline_test(tst_outline_canon_roundtrip)

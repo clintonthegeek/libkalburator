@@ -34,6 +34,15 @@ set(KALBURATOR_HAVE_ORG_IO OFF CACHE BOOL "Build with PlanStan org-io (for OrgBa
 # Optional Akonadi support; follows host's HAVE_AKONADI setting in-tree.
 set(KALBURATOR_HAVE_AKONADI OFF CACHE BOOL "Build with KPim6 Akonadi support")
 
+# Optional outline-domain org encoding peer. The outline domain's canon and OPML
+# peers are always built; the org peer (org<->canon transcoder) is the ONLY thing
+# that needs OrgGrove. When OFF, orgcanonstages is excluded, the org peer/edges are
+# not registered, and OrgGrove is not fetched/linked at all — consumers that don't
+# need org outlines get an OrgGrove-free build. Default ON preserves prior behavior
+# and existing (outline,org) configs. Independent of KALBURATOR_HAVE_ORG_IO (that
+# flag gates the calendar OrgBackend, a separate subsystem).
+set(KALBURATOR_HAVE_OUTLINE_ORG ON CACHE BOOL "Build the outline org encoding peer (requires OrgGrove)")
+
 # --- Kalburator::Types ------------------------------------------------------
 file(GLOB KALBURATOR_TYPE_HEADERS CONFIGURE_DEPENDS src/types/*.h)
 file(GLOB KALBURATOR_TYPE_SOURCES CONFIGURE_DEPENDS src/types/*.cpp)
@@ -549,14 +558,17 @@ set(KALBURATOR_ORGGROVE_SOURCE_DIR "" CACHE PATH
 set(KALBURATOR_ORGGROVE_GIT_TAG "2901bff8197cc704421e9b65c68a9c3817fa1875" CACHE STRING
     "OrgGrove commit to fetch when SOURCE_DIR is unset")
 
-if(KALBURATOR_ORGGROVE_SOURCE_DIR)
-    add_subdirectory(${KALBURATOR_ORGGROVE_SOURCE_DIR} orggrove EXCLUDE_FROM_ALL)
-else()
-    include(FetchContent)
-    FetchContent_Declare(OrgGrove
-        GIT_REPOSITORY https://codeberg.org/clintonthegeek/OrgGrove.git
-        GIT_TAG        ${KALBURATOR_ORGGROVE_GIT_TAG})
-    FetchContent_MakeAvailable(OrgGrove)
+# Only pull OrgGrove when the outline org peer is enabled — it is the sole user.
+if(KALBURATOR_HAVE_OUTLINE_ORG)
+    if(KALBURATOR_ORGGROVE_SOURCE_DIR)
+        add_subdirectory(${KALBURATOR_ORGGROVE_SOURCE_DIR} orggrove EXCLUDE_FROM_ALL)
+    else()
+        include(FetchContent)
+        FetchContent_Declare(OrgGrove
+            GIT_REPOSITORY https://codeberg.org/clintonthegeek/OrgGrove.git
+            GIT_TAG        ${KALBURATOR_ORGGROVE_GIT_TAG})
+        FetchContent_MakeAvailable(OrgGrove)
+    endif()
 endif()
 
 # Aggregate
@@ -603,6 +615,13 @@ set(KALBURATOR_SYNC_SOURCES
 if(NOT KALBURATOR_HAVE_ORG_IO)
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgbackend\\.h$")
     list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "orgbackend\\.cpp$")
+endif()
+
+if(NOT KALBURATOR_HAVE_OUTLINE_ORG)
+    # Drop the org<->canon transcoder (the only OrgGrove-dependent outline file).
+    # canon + OPML peers remain; outlinestockshapes.cpp #ifdef-guards the org edges.
+    list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgcanonstages\\.h$")
+    list(FILTER KALBURATOR_SYNC_SOURCES EXCLUDE REGEX "orgcanonstages\\.cpp$")
 endif()
 
 if(NOT KALBURATOR_HAVE_AKONADI)
@@ -664,9 +683,13 @@ target_link_libraries(kalburator
         KF6::Holidays
         KF6::Contacts
         KF6::ConfigCore
-    PRIVATE
-        OrgGrove::OrgGrove
 )
+
+if(KALBURATOR_HAVE_OUTLINE_ORG)
+    target_link_libraries(kalburator PRIVATE OrgGrove::OrgGrove)
+    # PUBLIC so library sources, tests, and downstream consumers can #ifdef on it.
+    target_compile_definitions(kalburator PUBLIC KALBURATOR_HAVE_OUTLINE_ORG)
+endif()
 
 if(KALBURATOR_HAVE_AKONADI)
     find_package(KPim6Akonadi REQUIRED)
@@ -678,6 +701,7 @@ set_target_properties(kalburator PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 message(STATUS "libkalburator: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "
+        "outline-org=${KALBURATOR_HAVE_OUTLINE_ORG} "
         "akonadi=${KALBURATOR_HAVE_AKONADI})")
 
 # -- Kalburator::Widgets (G.10 Task 83) ------------------------------------
