@@ -7,9 +7,19 @@
 #include <QJsonObject>
 
 #include "recordfilter.h"
+#include "filteredcollectionbackend.h"
+#include "backendregistry.h"
+#include "syncbackend.h"
 
 using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::RecordFilter;
+using Kalburator::Sinks::FilteredCollectionBackend;
+using Kalburator::Sync::BackendRecord;
+using Kalburator::Sync::CollectionInfo;
+using Kalburator::Sync::SyncBackend;
+using Kalburator::Shape::Shape;
+using Kalburator::Shape::DomainId;
+using Kalburator::Shape::EncodingId;
 
 namespace {
 
@@ -18,7 +28,7 @@ QByteArray canonJson(const QJsonObject& obj)
     return QJsonDocument(obj).toJson(QJsonDocument::Compact);
 }
 
-QJsonObject withCategories(QStringList cats)
+QJsonObject withCategories(const QStringList& cats)
 {
     QJsonObject obj;
     obj.insert(QStringLiteral("uid"), QStringLiteral("u1"));
@@ -26,6 +36,106 @@ QJsonObject withCategories(QStringList cats)
     for (const auto& c : cats) arr.append(c);
     obj.insert(QStringLiteral("categories"), arr);
     return obj;
+}
+
+const Shape kCalendarCanonShape{ DomainId{"calendar"}, EncodingId{"canon"} };
+
+/// Minimal in-memory SyncBackend used as a filtered-view parent in tests.
+/// Holds a single collection of BackendRecords keyed by record id; ops
+/// (load/create/update/delete) record their effects in the in-memory map.
+class FakeParentBackend : public SyncBackend {
+    Q_OBJECT
+public:
+    explicit FakeParentBackend(QString backendId,
+                               QString collectionId,
+                               Shape shape,
+                               QObject* parent = nullptr)
+        : SyncBackend(parent)
+        , m_backendId(std::move(backendId))
+        , m_colId(std::move(collectionId))
+        , m_shape(shape) {}
+
+    QString backendId()    const override { return m_backendId; }
+    QString backendType()  const override { return QStringLiteral("fake-parent"); }
+    QString displayName()  const override { return QStringLiteral("Fake Parent"); }
+    QString resourceId()   const override { return QStringLiteral("fake://") + m_backendId; }
+    bool    isAvailable()  const override { return true; }
+
+    QList<Shape> nativeShapes() const override { return { m_shape }; }
+    Shape shapeFor(const QString&) const override { return m_shape; }
+
+    QList<CollectionInfo> availableCollections() override {
+        CollectionInfo ci;
+        ci.id = m_colId;
+        ci.name = m_colName;
+        ci.readOnly = m_readOnly;
+        return { ci };
+    }
+    CollectionInfo collectionInfo(const QString& id) override {
+        if (id != m_colId) return {};
+        CollectionInfo ci;
+        ci.id = m_colId;
+        ci.name = m_colName;
+        ci.readOnly = m_readOnly;
+        return ci;
+    }
+
+    bool discoveredWritable(const QString& id) const override {
+        return id == m_colId ? !m_readOnly : false;
+    }
+
+    QList<BackendRecord> loadRecords(const QString& id) override {
+        if (id != m_colId) return {};
+        return m_records.values();
+    }
+    std::optional<BackendRecord> loadRecord(const QString& recordId) override {
+        if (!m_records.contains(recordId)) return std::nullopt;
+        return m_records.value(recordId);
+    }
+    QString createRecord(const QString& id, const BackendRecord& r) override {
+        if (id != m_colId) return {};
+        BackendRecord copy = r;
+        if (copy.id.isEmpty()) copy.id = QStringLiteral("auto-%1").arg(++m_autoId);
+        m_records.insert(copy.id, copy);
+        m_lastWritten = copy;
+        return copy.id;
+    }
+    bool updateRecord(const BackendRecord& r) override {
+        if (!m_records.contains(r.id)) return false;
+        m_records.insert(r.id, r);
+        m_lastWritten = r;
+        return true;
+    }
+    bool deleteRecord(const QString& recordId) override {
+        return m_records.remove(recordId) > 0;
+    }
+
+    void setRecord(const BackendRecord& r) { m_records.insert(r.id, r); }
+    void setReadOnly(bool ro) { m_readOnly = ro; }
+    void setColName(QString n) { m_colName = std::move(n); }
+
+    const BackendRecord& lastWritten() const { return m_lastWritten; }
+    int recordCount() const { return m_records.size(); }
+
+private:
+    QString m_backendId;
+    QString m_colId;
+    QString m_colName = QStringLiteral("Parent Collection");
+    Shape   m_shape;
+    bool    m_readOnly = false;
+    int     m_autoId = 0;
+    QHash<QString, BackendRecord> m_records;
+    BackendRecord m_lastWritten;
+};
+
+BackendRecord makeJsonRecord(const QString& id, const QJsonObject& obj)
+{
+    BackendRecord r;
+    r.id = id;
+    r.displayName = id;
+    r.type = QStringLiteral("event");
+    r.data = QJsonDocument(obj).toJson(QJsonDocument::Compact);
+    return r;
 }
 
 } // namespace
@@ -45,6 +155,15 @@ private slots:
     void filter_unparseableBytes_returnsFalse();
     void filter_emptyPropertyId_returnsFalse();
     void filter_documentOverload_rootArrayDoc_returnsFalse();
+
+    // ---- Identity / shape / collectionInfo (Task 2) ----------------------
+    void identity_backendType_isFilteredView();
+    void identity_displayName_overrideWins();
+    void identity_displayName_composedDefault_includesParentNameAndFilter();
+    void shape_delegatesToParentsShapeForParentColId();
+    void availableCollections_returnsOneVirtualEntry();
+    void collectionInfo_unknownId_returnsDefault();
+    void collectionInfo_inheritsReadOnlyFromParent();
 };
 
 void TestFilteredCollectionBackend::filter_contains_matchingArrayElement_returnsTrue()
@@ -131,6 +250,88 @@ void TestFilteredCollectionBackend::filter_documentOverload_rootArrayDoc_returns
                     QStringLiteral("u1") };
     QJsonDocument arrayDoc(QJsonArray{ QStringLiteral("a") });
     QVERIFY(!f.matches(arrayDoc));
+}
+
+void TestFilteredCollectionBackend::identity_backendType_isFilteredView()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QCOMPARE(v.backendType(), QStringLiteral("filtered-view"));
+}
+
+void TestFilteredCollectionBackend::identity_displayName_overrideWins()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") },
+                                /*registry=*/nullptr,
+                                QStringLiteral("Work Route"));
+    QCOMPARE(v.displayName(), QStringLiteral("Work Route"));
+}
+
+void TestFilteredCollectionBackend::identity_displayName_composedDefault_includesParentNameAndFilter()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setColName(QStringLiteral("Calendar"));
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    const QString name = v.displayName();
+    QVERIFY2(name.contains(QStringLiteral("Calendar")), qPrintable(name));
+    QVERIFY2(name.contains(QStringLiteral("categories")), qPrintable(name));
+    QVERIFY2(name.contains(QStringLiteral("Work")), qPrintable(name));
+}
+
+void TestFilteredCollectionBackend::shape_delegatesToParentsShapeForParentColId()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QCOMPARE(v.shapeFor("v1"), kCalendarCanonShape);
+    QCOMPARE(v.nativeShapes().size(), 1);
+    QCOMPARE(v.nativeShapes().first(), kCalendarCanonShape);
+}
+
+void TestFilteredCollectionBackend::availableCollections_returnsOneVirtualEntry()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    const auto cols = v.availableCollections();
+    QCOMPARE(cols.size(), 1);
+    QCOMPARE(cols.first().id, QStringLiteral("v1"));
+}
+
+void TestFilteredCollectionBackend::collectionInfo_unknownId_returnsDefault()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    const auto info = v.collectionInfo("other");
+    QCOMPARE(info.id, QString());
+}
+
+void TestFilteredCollectionBackend::collectionInfo_inheritsReadOnlyFromParent()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setReadOnly(true);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QVERIFY(v.collectionInfo("v1").readOnly);
 }
 
 QTEST_MAIN(TestFilteredCollectionBackend)

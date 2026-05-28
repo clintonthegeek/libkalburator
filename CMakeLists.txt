@@ -428,12 +428,14 @@ set(KALBURATOR_SINKS_HEADERS
     src/universal/markdownfilesbackend.h
     src/universal/genericsqlitebackend.h
     src/universal/universalstorageplugin.h
+    src/universal/filteredcollectionbackend.h
 )
 set(KALBURATOR_SINKS_SOURCES
     src/universal/rawfilesbackend.cpp
     src/universal/markdownfilesbackend.cpp
     src/universal/genericsqlitebackend.cpp
     src/universal/universalstorageplugin.cpp
+    src/universal/filteredcollectionbackend.cpp
 )
 
 # Phase K.7.1 — Qt plugin entry-point interface + manifest parser.
