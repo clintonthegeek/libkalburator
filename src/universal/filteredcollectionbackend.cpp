@@ -145,18 +145,51 @@ std::optional<BackendRecord> FilteredCollectionBackend::loadRecord(const QString
     return rec;
 }
 
+QByteArray FilteredCollectionBackend::stampFilterValue(const QByteArray& payload) const
+{
+    using Op = Kalburator::Shape::RecordFilter::Op;
+    QJsonDocument doc = QJsonDocument::fromJson(payload);
+    if (!doc.isObject())
+        return payload;
+    QJsonObject obj = doc.object();
+    const QString key = m_filter.property.toString();
+    if (key.isEmpty())
+        return payload;
+
+    const QJsonValue filterValue = QJsonValue::fromVariant(m_filter.value);
+    switch (m_filter.op) {
+    case Op::Contains: {
+        QJsonArray arr = obj.value(key).toArray();
+        bool found = false;
+        for (const QJsonValue& v : arr) {
+            if (v == filterValue) { found = true; break; }
+        }
+        if (!found) arr.append(filterValue);
+        obj.insert(key, arr);
+        break;
+    }
+    case Op::Equals:
+        obj.insert(key, filterValue);
+        break;
+    }
+    return QJsonDocument(obj).toJson(QJsonDocument::Compact);
+}
+
 QString FilteredCollectionBackend::createRecord(const QString& collectionId,
                                                 const BackendRecord& record)
 {
-    Q_UNUSED(collectionId);
-    Q_UNUSED(record);
-    return {};  // implemented in Task 4
+    if (!m_parent || collectionId != m_virtualColId) return {};
+    BackendRecord stamped = record;
+    stamped.data = stampFilterValue(record.data);
+    return m_parent->createRecord(m_parentColId, stamped);
 }
 
 bool FilteredCollectionBackend::updateRecord(const BackendRecord& record)
 {
-    Q_UNUSED(record);
-    return false;  // implemented in Task 4
+    if (!m_parent) return false;
+    BackendRecord stamped = record;
+    stamped.data = stampFilterValue(record.data);
+    return m_parent->updateRecord(stamped);
 }
 
 bool FilteredCollectionBackend::deleteRecord(const QString& recordId)

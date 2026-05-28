@@ -172,6 +172,18 @@ private slots:
     void loadRecord_matching_returnsRecord();
     void loadRecord_nonMatching_returnsNullopt();
     void loadRecord_unknownId_returnsNullopt();
+
+    // ---- Write stamping (Task 4) -----------------------------------------
+    void createRecord_contains_appendsFilterValueIfAbsent();
+    void createRecord_contains_noDuplicateIfAlreadyPresent();
+    void createRecord_contains_preservesExistingOrder();
+    void createRecord_contains_preservesOtherCategoryValues();
+    void createRecord_contains_payloadHasNoCategoriesField_addsArrayWithFilterValue();
+    void createRecord_equals_alwaysOverwritesFilterProperty();
+    void updateRecord_contains_stampsAndUpdatesParent();
+    void updateRecord_equals_overwritesFilterProperty();
+    void createRecord_unknownCollectionId_returnsEmpty();
+    void createRecord_nonJsonPayload_passesThroughUnchanged();
 };
 
 void TestFilteredCollectionBackend::filter_contains_matchingArrayElement_returnsTrue()
@@ -429,6 +441,165 @@ void TestFilteredCollectionBackend::loadRecord_unknownId_returnsNullopt()
                                               RecordFilter::Op::Contains,
                                               QStringLiteral("Work") });
     QVERIFY(!v.loadRecord("nope").has_value());
+}
+
+void TestFilteredCollectionBackend::createRecord_contains_appendsFilterValueIfAbsent()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    BackendRecord r = makeJsonRecord("r1", withCategories({"Personal"}));
+    const QString id = v.createRecord("v1", r);
+    QCOMPARE(id, QStringLiteral("r1"));
+    const auto written = QJsonDocument::fromJson(parent.lastWritten().data).object();
+    const auto cats = written.value("categories").toArray();
+    QCOMPARE(cats.size(), 2);
+    QCOMPARE(cats.at(0).toString(), QStringLiteral("Personal"));
+    QCOMPARE(cats.at(1).toString(), QStringLiteral("Work"));
+}
+
+void TestFilteredCollectionBackend::createRecord_contains_noDuplicateIfAlreadyPresent()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    v.createRecord("v1", makeJsonRecord("r1", withCategories({"Work", "Personal"})));
+    const auto cats = QJsonDocument::fromJson(parent.lastWritten().data)
+                          .object().value("categories").toArray();
+    QCOMPARE(cats.size(), 2);  // still 2, no dup
+}
+
+void TestFilteredCollectionBackend::createRecord_contains_preservesExistingOrder()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    v.createRecord("v1", makeJsonRecord("r1",
+        withCategories({"Important", "Work", "Personal"})));
+    const auto cats = QJsonDocument::fromJson(parent.lastWritten().data)
+                          .object().value("categories").toArray();
+    QCOMPARE(cats.at(0).toString(), QStringLiteral("Important"));
+    QCOMPARE(cats.at(1).toString(), QStringLiteral("Work"));
+    QCOMPARE(cats.at(2).toString(), QStringLiteral("Personal"));
+}
+
+void TestFilteredCollectionBackend::createRecord_contains_preservesOtherCategoryValues()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    v.createRecord("v1", makeJsonRecord("r1", withCategories({"Important"})));
+    const auto cats = QJsonDocument::fromJson(parent.lastWritten().data)
+                          .object().value("categories").toArray();
+    QCOMPARE(cats.size(), 2);
+    QStringList values;
+    for (const auto& val : cats) values.append(val.toString());
+    QVERIFY(values.contains("Important"));
+    QVERIFY(values.contains("Work"));
+}
+
+void TestFilteredCollectionBackend::createRecord_contains_payloadHasNoCategoriesField_addsArrayWithFilterValue()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QJsonObject noCats;
+    noCats.insert(QStringLiteral("uid"), QStringLiteral("u1"));
+    v.createRecord("v1", makeJsonRecord("r1", noCats));
+    const auto cats = QJsonDocument::fromJson(parent.lastWritten().data)
+                          .object().value("categories").toArray();
+    QCOMPARE(cats.size(), 1);
+    QCOMPARE(cats.first().toString(), QStringLiteral("Work"));
+}
+
+void TestFilteredCollectionBackend::createRecord_equals_alwaysOverwritesFilterProperty()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"status"},
+                                              RecordFilter::Op::Equals,
+                                              QStringLiteral("Done") });
+    QJsonObject inObj;
+    inObj.insert(QStringLiteral("uid"), QStringLiteral("u1"));
+    inObj.insert(QStringLiteral("status"), QStringLiteral("InProgress"));
+    v.createRecord("v1", makeJsonRecord("r1", inObj));
+    const auto written = QJsonDocument::fromJson(parent.lastWritten().data).object();
+    QCOMPARE(written.value("status").toString(), QStringLiteral("Done"));
+}
+
+void TestFilteredCollectionBackend::updateRecord_contains_stampsAndUpdatesParent()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setRecord(makeJsonRecord("r1", withCategories({"Personal"})));
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    BackendRecord r = makeJsonRecord("r1", withCategories({"Family"}));
+    QVERIFY(v.updateRecord(r));
+    const auto cats = QJsonDocument::fromJson(parent.lastWritten().data)
+                          .object().value("categories").toArray();
+    QCOMPARE(cats.size(), 2);  // tighten: stamping must NOT duplicate or drop entries
+    QStringList values;
+    for (const auto& val : cats) values.append(val.toString());
+    QVERIFY(values.contains("Family"));
+    QVERIFY(values.contains("Work"));
+}
+
+void TestFilteredCollectionBackend::updateRecord_equals_overwritesFilterProperty()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    QJsonObject seed;
+    seed.insert(QStringLiteral("uid"), QStringLiteral("u1"));
+    seed.insert(QStringLiteral("status"), QStringLiteral("Done"));
+    parent.setRecord(makeJsonRecord("r1", seed));
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"status"},
+                                              RecordFilter::Op::Equals,
+                                              QStringLiteral("Done") });
+    QJsonObject newObj;
+    newObj.insert(QStringLiteral("uid"), QStringLiteral("u1"));
+    newObj.insert(QStringLiteral("status"), QStringLiteral("InProgress"));
+    QVERIFY(v.updateRecord(makeJsonRecord("r1", newObj)));
+    const auto written = QJsonDocument::fromJson(parent.lastWritten().data).object();
+    QCOMPARE(written.value("status").toString(), QStringLiteral("Done"));
+}
+
+void TestFilteredCollectionBackend::createRecord_unknownCollectionId_returnsEmpty()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    const QString id = v.createRecord("not-v1",
+        makeJsonRecord("r1", withCategories({"Work"})));
+    QVERIFY(id.isEmpty());
+}
+
+void TestFilteredCollectionBackend::createRecord_nonJsonPayload_passesThroughUnchanged()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    BackendRecord r;
+    r.id = QStringLiteral("r1");
+    r.data = QByteArray("not json at all");
+    const QString id = v.createRecord("v1", r);
+    QCOMPARE(id, QStringLiteral("r1"));
+    QCOMPARE(parent.lastWritten().data, QByteArray("not json at all"));
 }
 
 QTEST_MAIN(TestFilteredCollectionBackend)

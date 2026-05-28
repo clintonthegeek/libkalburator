@@ -68,6 +68,14 @@ private:
     /// (via CollectionInfo defaults) and `readOnly`.
     Kalburator::Sync::CollectionInfo composeCollectionInfo() const;
 
+    /// Apply the filter's stamp semantics to a canon-JSON payload and
+    /// return the rewritten bytes. Contains => append filter value to
+    /// the property's array if absent (preserve order); Equals =>
+    /// overwrite the property to the filter value (always).
+    /// Returns the original bytes unchanged if the payload is not a
+    /// JSON object (caller decides what to do with that).
+    QByteArray stampFilterValue(const QByteArray& payload) const;
+
     QString defaultComposedDisplayName(const QString& parentName) const;
     QString filterDescription() const;
 
