@@ -1,8 +1,10 @@
 #pragma once
 
 #include <QHash>
+#include <QMutex>
 #include <QSqlDatabase>
 #include <QString>
+#include <QStringList>
 
 #include "syncbackend.h"
 #include "shape.h"
@@ -21,6 +23,13 @@ namespace Kalburator::Sinks {
 /// Universal sinks no longer declare Shape::Any(); each collection
 /// commits to a shape at creation time so SyncEngine::dispatchSync
 /// can resolve cross-domain mappings correctly.
+///
+/// Thread safety: each call site opens a per-thread SQLite connection
+/// (unique name = base + "_" + thread-address) so the backend is safe
+/// to use from multiple QThread contexts (e.g. the SyncEngine worker
+/// thread and the main thread simultaneously). All per-thread connection
+/// names are tracked in m_openConnections (guarded by m_connMutex) for
+/// cleanup in the destructor.
 class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {
     Q_OBJECT
 public:
@@ -60,8 +69,10 @@ public:
     bool deleteRecord(const QString &recordId) override;
 
 private:
+    /// Returns (and lazily opens) the per-thread SQLite connection.
+    QSqlDatabase threadDb();
     bool ensureOpen();
-    bool ensureSchema();
+    bool ensureSchema(QSqlDatabase &db);
     bool ensureTableFor(const QString &collectionId);
     static QString tableNameFor(const QString &collectionId);
 
@@ -71,9 +82,11 @@ private:
                                QString *collectionId, QString *id);
 
     QString m_dbPath;
-    QString m_connectionName;
+    QString m_baseConnectionName; ///< unique base; thread suffix appended per call
     QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;
     QHash<QString, Kalburator::Shape::Shape> m_shapeByCollection;
+    mutable QMutex m_connMutex;       ///< guards m_openConnections
+    QStringList    m_openConnections; ///< all per-thread conn names (for destructor cleanup)
     bool m_open = false;
 };
 

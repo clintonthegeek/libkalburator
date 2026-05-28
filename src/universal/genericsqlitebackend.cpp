@@ -1,7 +1,9 @@
 #include "genericsqlitebackend.h"
 
+#include <QMutexLocker>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QThread>
 #include <QUuid>
 
 using Kalburator::Sync::BackendRecord;
@@ -14,18 +16,30 @@ static int s_connCounter = 0;
 GenericSqliteBackend::GenericSqliteBackend(QString dbPath, QObject *parent)
     : Kalburator::Sync::SyncBackend(parent)
     , m_dbPath(std::move(dbPath))
-    , m_connectionName(QStringLiteral("generic-sqlite-%1").arg(++s_connCounter))
+    , m_baseConnectionName(QStringLiteral("generic-sqlite-%1").arg(++s_connCounter))
 {
     ensureOpen();
 }
 
 GenericSqliteBackend::~GenericSqliteBackend()
 {
-    {
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        db.close();
+    // Close the per-thread connection for the current (typically main) thread.
+    // Other per-thread connections (e.g. SyncEngine worker thread) are
+    // removed by name only — calling QSqlDatabase::database() on a connection
+    // that belongs to a different thread emits a Qt warning, so we skip the
+    // close() call and let Qt's internal cleanup handle the underlying handle.
+    const QString thisThreadConnName = m_baseConnectionName
+        + QLatin1Char('_')
+        + QString::number(reinterpret_cast<quintptr>(QThread::currentThread()), 16);
+
+    QMutexLocker lock(&m_connMutex);
+    for (const QString &name : std::as_const(m_openConnections)) {
+        if (name == thisThreadConnName) {
+            QSqlDatabase db = QSqlDatabase::database(name);
+            db.close();
+        }
+        QSqlDatabase::removeDatabase(name);
     }
-    QSqlDatabase::removeDatabase(m_connectionName);
 }
 
 bool GenericSqliteBackend::isAvailable() const
@@ -53,7 +67,7 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
     if (!ensureTableFor(info.id))
         return {};
     if (!m_collections.contains(info.id)) {
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlDatabase db = threadDb();
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
             "INSERT OR IGNORE INTO _shapes "
@@ -88,7 +102,7 @@ Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectio
 void GenericSqliteBackend::deleteCollection(const QString &collectionId)
 {
     clearCollection(collectionId);
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     const QString table = tableNameFor(collectionId);
     q.exec(QStringLiteral("DROP TABLE IF EXISTS \"%1\"").arg(table));
@@ -102,7 +116,7 @@ void GenericSqliteBackend::clearCollection(const QString &collectionId)
 {
     if (!m_open)
         return;
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     q.exec(QStringLiteral("DELETE FROM \"%1\"").arg(tableNameFor(collectionId)));
 }
@@ -113,7 +127,7 @@ QList<BackendRecord> GenericSqliteBackend::loadRecords(const QString &collection
 {
     if (!m_open)
         return {};
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
         "SELECT record_id, data, content_hash, last_modified "
@@ -142,7 +156,7 @@ std::optional<BackendRecord> GenericSqliteBackend::loadRecord(const QString &rec
     if (!decodeRecordId(recordId, &collectionId, &origId))
         return std::nullopt;
 
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
         "SELECT record_id, data, content_hash, last_modified "
@@ -168,7 +182,7 @@ QString GenericSqliteBackend::createRecord(const QString &collectionId,
     if (!ensureTableFor(collectionId))
         return {};
 
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     const QString origId = record.id.isEmpty()
         ? QUuid::createUuid().toString(QUuid::WithoutBraces)
@@ -194,7 +208,7 @@ bool GenericSqliteBackend::updateRecord(const BackendRecord &record)
     if (!decodeRecordId(record.id, &collectionId, &origId))
         return false;
 
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
         "UPDATE \"%1\" SET data=?, content_hash=?, last_modified=? "
@@ -214,7 +228,7 @@ bool GenericSqliteBackend::deleteRecord(const QString &recordId)
     if (!decodeRecordId(recordId, &collectionId, &origId))
         return false;
 
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     q.prepare(QStringLiteral("DELETE FROM \"%1\" WHERE record_id=?")
         .arg(tableNameFor(collectionId)));
@@ -224,15 +238,51 @@ bool GenericSqliteBackend::deleteRecord(const QString &recordId)
 
 // ---- Private helpers ----
 
+/// Returns the per-thread SQLite connection, opening it lazily if needed.
+/// Each QThread gets its own connection (name = base + "_" + thread-address)
+/// so that multiple threads (e.g. main + SyncEngine worker) can use the
+/// backend concurrently without triggering Qt's "database does not belong
+/// to the calling thread" warning.
+QSqlDatabase GenericSqliteBackend::threadDb()
+{
+    const QString name = m_baseConnectionName
+        + QLatin1Char('_')
+        + QString::number(reinterpret_cast<quintptr>(QThread::currentThread()),
+                          16);
+
+    if (QSqlDatabase::contains(name))
+        return QSqlDatabase::database(name);
+
+    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), name);
+    db.setDatabaseName(m_dbPath);
+    if (!db.open())
+        return db; // isValid() but !isOpen() — callers check via QSqlQuery::exec()
+
+    // Ensure schema on this connection. Do it here so every per-thread
+    // connection sees the same table structure even if it opens after
+    // createCollection() already ran on another thread's connection.
+    QSqlQuery q(db);
+    q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS _shapes ("
+        "  shape_key TEXT PRIMARY KEY,"
+        "  shape_name TEXT NOT NULL,"
+        "  shape_type TEXT NOT NULL,"
+        "  created_at TEXT NOT NULL"
+        ")"));
+
+    QMutexLocker lock(&m_connMutex);
+    m_openConnections.append(name);
+    return db;
+}
+
 bool GenericSqliteBackend::ensureOpen()
 {
     if (m_open)
         return true;
-    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
-    db.setDatabaseName(m_dbPath);
-    if (!db.open())
+    QSqlDatabase db = threadDb();
+    if (!db.isOpen())
         return false;
-    if (!ensureSchema())
+    if (!ensureSchema(db))
         return false;
 
     // Load existing shapes into m_collections.
@@ -250,9 +300,8 @@ bool GenericSqliteBackend::ensureOpen()
     return true;
 }
 
-bool GenericSqliteBackend::ensureSchema()
+bool GenericSqliteBackend::ensureSchema(QSqlDatabase &db)
 {
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
     QSqlQuery q(db);
     return q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS _shapes ("
@@ -265,7 +314,7 @@ bool GenericSqliteBackend::ensureSchema()
 
 bool GenericSqliteBackend::ensureTableFor(const QString &collectionId)
 {
-    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     const QString table = tableNameFor(collectionId);
     return q.exec(QStringLiteral(
