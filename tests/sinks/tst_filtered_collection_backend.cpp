@@ -184,6 +184,11 @@ private slots:
     void updateRecord_equals_overwritesFilterProperty();
     void createRecord_unknownCollectionId_returnsEmpty();
     void createRecord_nonJsonPayload_passesThroughUnchanged();
+
+    // ---- Delete + writability delegation (Task 5) ------------------------
+    void deleteRecord_delegatesToParent();
+    void discoveredWritable_delegatesToParentForParentColId();
+    void discoveredWritable_readOnlyParentYieldsReadOnlyView();
 };
 
 void TestFilteredCollectionBackend::filter_contains_matchingArrayElement_returnsTrue()
@@ -600,6 +605,39 @@ void TestFilteredCollectionBackend::createRecord_nonJsonPayload_passesThroughUnc
     const QString id = v.createRecord("v1", r);
     QCOMPARE(id, QStringLiteral("r1"));
     QCOMPARE(parent.lastWritten().data, QByteArray("not json at all"));
+}
+
+void TestFilteredCollectionBackend::deleteRecord_delegatesToParent()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setRecord(makeJsonRecord("r1", withCategories({"Work"})));
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QVERIFY(v.deleteRecord("r1"));
+    QCOMPARE(parent.recordCount(), 0);
+}
+
+void TestFilteredCollectionBackend::discoveredWritable_delegatesToParentForParentColId()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QVERIFY(v.discoveredWritable("v1"));
+}
+
+void TestFilteredCollectionBackend::discoveredWritable_readOnlyParentYieldsReadOnlyView()
+{
+    FakeParentBackend parent("p1", "cal-1", kCalendarCanonShape);
+    parent.setReadOnly(true);
+    FilteredCollectionBackend v(&parent, "cal-1", "v1",
+                                RecordFilter{ PropertyId{"categories"},
+                                              RecordFilter::Op::Contains,
+                                              QStringLiteral("Work") });
+    QVERIFY(!v.discoveredWritable("v1"));
 }
 
 QTEST_MAIN(TestFilteredCollectionBackend)

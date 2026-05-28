@@ -117,9 +117,9 @@ QString FilteredCollectionBackend::resourceId() const
 
 bool FilteredCollectionBackend::discoveredWritable(const QString& calendarId) const
 {
-    // Implemented in Task 5.
-    Q_UNUSED(calendarId);
-    return m_parent != nullptr;
+    if (!m_parent) return false;
+    if (calendarId != m_virtualColId) return false;
+    return m_parent->discoveredWritable(m_parentColId);
 }
 
 QList<BackendRecord> FilteredCollectionBackend::loadRecords(const QString& collectionId)
@@ -194,8 +194,8 @@ bool FilteredCollectionBackend::updateRecord(const BackendRecord& record)
 
 bool FilteredCollectionBackend::deleteRecord(const QString& recordId)
 {
-    Q_UNUSED(recordId);
-    return false;  // implemented in Task 5
+    if (!m_parent) return false;
+    return m_parent->deleteRecord(recordId);
 }
 
 } // namespace Kalburator::Sinks
