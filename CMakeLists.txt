@@ -282,6 +282,7 @@ set(KALBURATOR_ENGINE_SOURCES
 set(KALBURATOR_SHAPE_HEADERS
     src/shape/shape.h
     src/shape/propertycatalogue.h
+    src/shape/recordfilter.h
     src/shape/lossprofile.h
     src/shape/transformationedge.h
     src/shape/pipeline.h
@@ -304,6 +305,7 @@ set(KALBURATOR_SHAPE_HEADERS
 set(KALBURATOR_SHAPE_SOURCES
     # shape.cpp lives in kalburator-types (exposed via KALBURATOR_SHAPE_CORE_SOURCES)
     src/shape/propertycatalogue.cpp
+    src/shape/recordfilter.cpp
     src/shape/lossprofile.cpp
     src/shape/transformationedge.cpp
     src/shape/pipeline.cpp
@@ -426,12 +428,14 @@ set(KALBURATOR_SINKS_HEADERS
     src/universal/markdownfilesbackend.h
     src/universal/genericsqlitebackend.h
     src/universal/universalstorageplugin.h
+    src/universal/filteredcollectionbackend.h
 )
 set(KALBURATOR_SINKS_SOURCES
     src/universal/rawfilesbackend.cpp
     src/universal/markdownfilesbackend.cpp
     src/universal/genericsqlitebackend.cpp
     src/universal/universalstorageplugin.cpp
+    src/universal/filteredcollectionbackend.cpp
 )
 
 # Phase K.7.1 — Qt plugin entry-point interface + manifest parser.
