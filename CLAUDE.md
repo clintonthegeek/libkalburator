@@ -5,6 +5,28 @@ standalone project shared with Wild Palms. The source of truth for the
 overall plan lives in PlanStan at
 `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
 
+## Architectural-redress campaign — START HERE if on a branch `feature/redress-N-*`
+
+If your CWD is on any branch matching `feature/redress-N-*` (N = 1..9), you are
+working the campaign opened 2026-05-29 from a fresh-eyes audit of the post-canon
+codebase. The audit found the canon-upgrade convergence (below) succeeded but the
+underlying layering, encapsulation, and naming grew leaks no one stopped to name.
+The redress is the next sustained body of work.
+
+**Before your first non-trivial change, read in this order:**
+1. `docs/campaign/architectural-redress/INVARIANTS.md` — the rules you accept by
+   working here. Non-optional.
+2. `docs/campaign/architectural-redress/AUDIT.md` — the fresh-eyes findings this
+   campaign exists to redress. The audit wins if it disagrees with a plan.
+3. `docs/campaign/architectural-redress/STATUS.md` — campaign state, the 9-plan
+   sequence, locked decisions, your next action.
+4. `docs/campaign/architectural-redress/FINDINGS.md` — the discipline log; append
+   to it (invariant 9) when you walk past a smell.
+5. The current plan in `docs/campaign/architectural-redress/plans/`.
+
+New smells go in `FINDINGS.md`; update `STATUS.md` in the same commit that
+changes plan state.
+
 ## Canon-upgrade / convergence campaign — START HERE if on branch `feature/canon-upgrade-convergence`
 
 If your CWD is on branch `feature/canon-upgrade-convergence`, you are working
