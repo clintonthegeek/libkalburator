@@ -371,7 +371,8 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
 // the single-mapping form re-entered processNextMapping (which iterated
 // from index 0 and double-dispatched the same mapping).
 void SyncEngine::processSingleMapping(const QString &mappingId,
-                                      SyncBehavior behavior)
+                                      SyncBehavior behavior,
+                                      ExecutionOverride executionOverride)
 {
     // Phase-2: clear any leftover state from a previous multi-mapping
     // runSync. The single-mapping path does not run prepareSyncFastPath,
@@ -435,10 +436,13 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             request.behavior = behavior;
             request.collectionId = m_collection ? m_collection->id() : QString();
             request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
-            // Task 9: embed the per-call override (if any) and clear it so the
-            // next no-override call doesn't accidentally inherit it.
-            request.override = m_pendingOverride;
-            m_pendingOverride = ExecutionOverride{};
+            // P1.T5: embed the per-call override passed in by the caller.
+            // Default-constructed ExecutionOverride means "no override"
+            // (Direction::Default), matching the worker Request::override
+            // convention. Previously this came from m_pendingOverride, a
+            // class member that the caller had to set before invoking us —
+            // an implicit-state-machine residue (INVARIANTS §4) now gone.
+            request.override = executionOverride;
 
             // Command-channel: QueuedConnection routes to worker thread.
             emit m_worker->processSyncRequested(request);
@@ -473,9 +477,9 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
 // point. Absorbs the bodies of the four runSyncFuture overloads:
 //
 //   - Single mapping  : request.mappingIds.size() == 1
-//                       (executionOverride, if set, is stashed in
-//                        m_pendingOverride for processSingleMapping
-//                        — Plan 1 Task 5 will inline that residue.)
+//                       (executionOverride, if set, threads through
+//                        dispatchSingleNative → processSingleMapping
+//                        as a method parameter — P1.T5).
 //   - All enabled     : request.mappingIds.isEmpty()
 //   - Subset          : request.mappingIds.size() > 1
 //
@@ -594,10 +598,11 @@ QFuture<SyncResult> SyncEngine::dispatchSingleNative(
     connect(m_singleWatcher, &QFutureWatcher<SyncResult>::canceled,
             this, &SyncEngine::onCancelObserved);
 
-    if (executionOverride.has_value())
-        m_pendingOverride = *executionOverride;
     m_isSyncing = true;
-    processSingleMapping(mappingId, behavior);
+    // P1.T5: thread the override through as a method parameter (was
+    // m_pendingOverride class-member residue before).
+    processSingleMapping(mappingId, behavior,
+                         executionOverride.value_or(ExecutionOverride{}));
     return singleFuture;
 }
 

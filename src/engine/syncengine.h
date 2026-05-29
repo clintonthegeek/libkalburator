@@ -462,7 +462,15 @@ private:
      * impossible — onWorkerSyncCompleted distinguishes Single vs Queue
      * via m_queue.dispatchMode() and finishes immediately for Single.
      */
-    void processSingleMapping(const QString &mappingId, SyncBehavior behavior);
+    /// @p executionOverride is taken by value because ExecutionOverride's
+    /// default-constructed state (Direction::Default) means "no override" —
+    /// matching the worker Request::override field's convention. Plan 1
+    /// Task 5 (2026-05-29): inlined from the former m_pendingOverride
+    /// class member to eliminate the implicit-state-machine residue
+    /// (INVARIANTS §4 — "public API answers one question").
+    void processSingleMapping(const QString &mappingId,
+                              SyncBehavior behavior,
+                              ExecutionOverride executionOverride = {});
 
     /**
      * @brief Architectural-redress Plan 1 Task 4 (2026-05-29): native
@@ -560,13 +568,6 @@ private:
     // mappingqueue.h class comment). Replaces seven scattered member
     // fields with one collaborator (INVARIANTS §4).
     MappingQueue m_queue;
-
-    // Task 9: per-call override set by runSyncFuture(mappingId, override, ...)
-    // and consumed + cleared by processSingleMapping before dispatching the
-    // worker Request. Cleared to Default after embedding in the Request so
-    // a subsequent no-override runSyncFuture(mappingId, ...) call does not
-    // inherit it.
-    ExecutionOverride m_pendingOverride;
 
     // F2 Task 21: pointers to the QFutureInterface for the current run.
     // Only one is populated at a time (matched to MappingQueue::dispatchMode);

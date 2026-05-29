@@ -46,16 +46,15 @@ using Kalburator::Sync::SyncResult;
  * `prime()` itself does not assert because the queue cannot know
  * whether the engine has already drained or is still mid-run.
  *
- * **Plan 1 Task 4 will fold this into a SyncRequest struct.** At that
- * point `prime()` will take a `SyncRequest` (mapping list + behavior
- * + filter + override) instead of three separate arguments, and the
- * engine's `m_currentSyncBehavior` and `m_pendingOverride` will move
- * onto the queue alongside the existing per-run state. The behavior
- * argument is omitted from `prime()` here — accepting it as an unused
- * parameter would invite drift, and the upcoming SyncRequest folds
- * the engine-side `m_currentSyncBehavior` field at the same time.
- * (Deviation from Plan 1 Task 3 spec text, per INVARIANTS scope rule;
- * see commit message.)
+ * **Plan 1 Task 4 + Task 5 outcome (2026-05-29):** the canonical
+ * runSync entry point now takes a `SyncRequest` (behavior + mapping
+ * filter + optional execution override); the override flows as a
+ * method parameter through `dispatchSingleNative` →
+ * `processSingleMapping`, not as queue state. Behavior remains on
+ * the engine as `m_currentSyncBehavior` (per-run, set on entry).
+ * `prime()` itself stays minimal — it does not carry behavior or
+ * override, which would be unused for the multi-mapping iteration
+ * it drives.
  */
 class MappingQueue {
 public:
