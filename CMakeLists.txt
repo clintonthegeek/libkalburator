@@ -263,6 +263,7 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/perrecorddiff.h
     src/engine/propertydiff.h
     src/engine/syncengine.h
+    src/engine/syncengine_p.h
     src/engine/syncenginefuture.h
 )
 set(KALBURATOR_ENGINE_SOURCES

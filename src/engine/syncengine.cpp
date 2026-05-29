@@ -1,4 +1,5 @@
 #include "syncengine.h"
+#include "syncengine_p.h"
 #include "baselinestore.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
