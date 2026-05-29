@@ -263,8 +263,13 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/perrecorddiff.h
     src/engine/propertydiff.h
     src/engine/syncengine.h
-    src/engine/syncengine_p.h
     src/engine/syncenginefuture.h
+)
+# Private headers — AUTOMOC needs them in the target sources so Q_OBJECT
+# is processed, but they are not part of the library's public surface.
+# Only the implementation TU (syncengine.cpp) may #include these.
+set(KALBURATOR_ENGINE_PRIVATE_HEADERS
+    src/engine/syncengine_p.h
 )
 set(KALBURATOR_ENGINE_SOURCES
     src/engine/enginediff.cpp
@@ -650,6 +655,7 @@ endif()
 add_library(kalburator STATIC
     ${KALBURATOR_SYNC_HEADERS}
     ${KALBURATOR_SYNC_SOURCES}
+    ${KALBURATOR_ENGINE_PRIVATE_HEADERS}
 )
 add_library(Kalburator::Sync ALIAS kalburator)
 

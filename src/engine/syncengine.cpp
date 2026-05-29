@@ -2579,7 +2579,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 const int proposed = static_cast<int>(batch.deletes.size());
                 const QString mappingId = m_currentRequest.mapping.id;
                 int baselineCount = 0;
-                if (m_baselineStore) {
+                if (m_baselineStore && m_baselineStoreAnchor) {
                     Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
                     QMetaObject::invokeMethod(m_baselineStoreAnchor,
                         [bbs, mappingId, &baselineCount]() {
