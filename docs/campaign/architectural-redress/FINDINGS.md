@@ -81,6 +81,18 @@ address — load-bearing knowledge, not audit restatements.
   is non-atomic across bindings: a per-backend failure leaves already-created backends in place
   with no rollback (pinned by `tst_calendar_manager::createCalendar_oneBackendFails_*`). The
   CalendarManager split must decide whether to add transactional semantics.
+- 2026-05-29 — `src/calendar/calendarmanager.cpp:270-280` — inv (correctness) —
+  `DeleteMode::DisconnectSync` calls `removeBinding()` to strip the Sync1 binding from config,
+  then immediately overwrites config via `m_configManager->updateLogicalCalendar(logCal)` using
+  the stale pre-loop `logCal` (which still carries the Sync1 binding). Net effect: the
+  Sync1 binding is NOT removed; only `syncEnabled` is cleared. The operation succeeds and
+  reports success, but the logical calendar retains the non-primary binding it was supposed
+  to drop. Pinned by
+  `tst_calendar_manager::deleteCalendar_disconnectSync_dropsSecondaryBindings_keepsPrimary`.
+- 2026-05-29 — `src/calendar/calendarmanager.cpp:766-783` — inv (correctness) —
+  `restoreFromSnapshot()` is a stub returning `false` while `captureSnapshot()` is fully
+  implemented; destructive ops therefore have capture-but-no-undo. Pinned by
+  `tst_calendar_manager::restoreFromSnapshot_currentlyUnimplemented_returnsFalse`.
 
 ## Resolved
 

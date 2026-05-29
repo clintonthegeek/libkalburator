@@ -122,6 +122,10 @@ private slots:
     void withoutBatch_eachMutationRegenerates();
     void batchGuard_defersRegenerationToSingleEmission();
 
+    // Task 8
+    void captureSnapshot_clonesPrimaryCalendarIncidences();
+    void restoreFromSnapshot_currentlyUnimplemented_returnsFalse();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -356,6 +360,34 @@ void TestCalendarManager::batchGuard_defersRegenerationToSingleEmission()
         QCOMPARE(regen.count(), 0);
     }
     QCOMPARE(regen.count(), 1);
+}
+
+// ============================================================
+// Task 8 — snapshot capture works; restore is a stub
+// ============================================================
+
+void TestCalendarManager::captureSnapshot_clonesPrimaryCalendarIncidences()
+{
+    LogicalCalendar lc = makeLogical(QString::fromLatin1(kLogicalId), QString::fromLatin1(kBackendA), QString::fromLatin1(kCalId), false);
+    m_host->configStore()->addLogicalCalendar(lc);
+    auto *mem = new KCalendarCore::MemoryCalendar(QTimeZone::utc());
+    mem->setId(QString::fromLatin1(kCalId));
+    mem->addEvent(makeEvent(QStringLiteral("snap-1"), QStringLiteral("Snap")));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalId), mem);
+    const CalendarSnapshot snap = m_mgr->captureSnapshot(QString::fromLatin1(kLogicalId));
+    QVERIFY(snap.isValid());
+    QCOMPARE(snap.logicalCalendar.id, QString::fromLatin1(kLogicalId));
+    QCOMPARE(snap.incidences.size(), 1);
+    QCOMPARE(snap.incidences.first()->uid(), QStringLiteral("snap-1"));
+}
+
+void TestCalendarManager::restoreFromSnapshot_currentlyUnimplemented_returnsFalse()
+{
+    CalendarSnapshot snap;
+    snap.logicalCalendar.id          = QString::fromLatin1(kLogicalId);
+    snap.logicalCalendar.displayName = QStringLiteral("X");
+    QVERIFY(snap.isValid());
+    QCOMPARE(m_mgr->restoreFromSnapshot(snap), false);
 }
 
 QTEST_MAIN(TestCalendarManager)
