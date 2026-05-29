@@ -115,6 +115,9 @@ private slots:
     void updateIncidence_pushesUpdate_emitsSignal();
     void deleteIncidence_removesFromBackends_emitsSignal();
 
+    // Task 6
+    void createIncidence_backendPushFails_returnsFalse_emitsOperationFailed();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -310,6 +313,21 @@ void TestCalendarManager::deleteIncidence_removesFromBackends_emitsSignal()
     QCOMPARE(deleted.count(), 1);
     QVERIFY(!m_backendA->allUids(QString::fromLatin1(kCalId)).contains(QStringLiteral("evt-1")));
     QVERIFY(!m_backendB->allUids(QString::fromLatin1(kCalIdB)).contains(QStringLiteral("evt-1")));
+}
+
+// ============================================================
+// Task 6 — incidence push failure surfaces
+// ============================================================
+
+void TestCalendarManager::createIncidence_backendPushFails_returnsFalse_emitsOperationFailed()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    m_backendA->setFailurePoint(MockBackend::FailurePoint::OnPush, 0, QStringLiteral("injected push failure"));
+    QSignalSpy failed(m_mgr.get(), &CalendarManager::operationFailed);
+    const bool ok = m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
+                                           makeEvent(QStringLiteral("evt-x"), QStringLiteral("X")));
+    QVERIFY(!ok);
+    QVERIFY(failed.count() >= 1);
 }
 
 QTEST_MAIN(TestCalendarManager)
