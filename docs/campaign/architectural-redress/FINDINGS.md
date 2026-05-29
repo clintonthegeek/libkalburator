@@ -19,13 +19,15 @@ beyond what the audit already catalogues.
 
 Quick pointer to the audit's actionable spine (see `AUDIT.md` for evidence + fix direction):
 
-- **CRITICAL** — calendar-typed sync core: `BackendRegistry` stores `SyncBackend*`;
+- ~~**CRITICAL** — calendar-typed sync core: `BackendRegistry` stores `SyncBackend*`;
   `ProviderManager` `dynamic_cast`s to it; non-calendar backends inherit calendar-typed
-  `SyncBackend`; `CalendarManager` destructive CRUD is untested.
+  `SyncBackend`~~ **RESOLVED by Plan 3** (registry/PM/engine traffic in `SyncBackendBase*`;
+  RawFiles/GenericSqlite/RemoteContacts/Filtered reparented onto the neutral base). The 4th
+  CRITICAL (`CalendarManager` destructive CRUD untested) was resolved by Plan 2's tests.
 - **MAJOR** — `RemoteCalendarBackend` god class; `types/` behavior; `shape/→conflict/`;
-  `engine/`+`contacts/`+`universal/` pull calendar headers; raw-pointer lifetimes;
-  thread-unsafe `RawFilesBackend`; silent SQLite/DELETE failures; test gaps. (The `SyncEngine`
-  god-class MAJOR is largely addressed by the merged Plan 1; see Resolved.)
+  ~~`engine/`+`contacts/`+`universal/` pull calendar headers~~ (RESOLVED by Plan 3);
+  raw-pointer lifetimes; thread-unsafe `RawFilesBackend`; silent SQLite/DELETE failures; test
+  gaps. (The `SyncEngine` god-class MAJOR is largely addressed by the merged Plan 1; see Resolved.)
 - **MODERATE/MINOR/UGLY** — see `AUDIT.md`.
 
 ## Open (new findings, post-rebaseline)
@@ -99,6 +101,25 @@ address — load-bearing knowledge, not audit restatements.
   test-only timeout). Surfaced during Plan 2's regression gate; unrelated to the test-only
   change. Candidate for the SyncEngine decomposition follow-up (cf. the `m_baselineStoreAnchor`
   / dual-iface notes above).
+
+### From Plan 3 (neutralize the calendar-typed sync core, 2026-05-29)
+
+- 2026-05-29 — `src/calendar/isynchost.h:29` — inv 1/5 — `ISyncHost::backendById()` still returns
+  the calendar-typed `SyncBackend*` (the host interface lives in `calendar/` and is consumed by
+  `CalendarManager`, which legitimately needs calendar API). The `BackendRegistry` is now neutral
+  (`SyncBackendBase*`), so every `ISyncHost` implementation bridges
+  `registry.backendInstance()` → `backendById()` with an **unchecked `static_cast<SyncBackend*>`**
+  (in libkalburator: the test stubs + `examples/reference_consumer/main.cpp` — safe ONLY because
+  those scaffolds register calendar backends). Fetching a non-calendar backend via `backendById()`
+  and using it as `SyncBackend*` would be UB. Neutralizing `ISyncHost::backendById()` (return
+  `SyncBackendBase*`; have `CalendarManager` `dynamic_cast` where it needs calendar API) is a
+  follow-up — candidate for the CalendarManager-split plan or a dedicated host-interface plan.
+- 2026-05-29 — downstream contract (INVARIANTS §10) — `BackendRegistry::backendInstance()` now
+  returns `SyncBackendBase*` (was `SyncBackend*`) and `registerBackendInstance` takes
+  `SyncBackendBase*`. Registration stays source-compatible (upcast), but PlanStan code that
+  **stores the `backendInstance()` result as `SyncBackend*`** (e.g. `CollectionController`) will
+  need a `dynamic_cast`/`static_cast` (or to store `SyncBackendBase*`) when it next builds against
+  this library. Flag for the PlanStan/WildPalms port (O7/O12).
 
 ## Resolved
 

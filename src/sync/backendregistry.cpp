@@ -1,6 +1,5 @@
 #include "backendregistry.h"
 #include "backendcontribution.h"
-#include "syncbackend.h"
 
 namespace Kalburator::Sync {
 
@@ -9,7 +8,7 @@ BackendRegistry::BackendRegistry(QObject *parent)
 {
 }
 
-void BackendRegistry::registerBackendInstance(const QString &backendId, SyncBackend *backend)
+void BackendRegistry::registerBackendInstance(const QString &backendId, SyncBackendBase *backend)
 {
     m_instances[backendId] = backend;
     emit backendInstanceRegistered(backendId);
@@ -22,7 +21,7 @@ void BackendRegistry::unregisterBackendInstance(const QString &backendId)
     }
 }
 
-SyncBackend* BackendRegistry::backendInstance(const QString &backendId) const
+SyncBackendBase* BackendRegistry::backendInstance(const QString &backendId) const
 {
     return m_instances.value(backendId, nullptr);
 }

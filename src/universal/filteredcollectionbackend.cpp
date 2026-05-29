@@ -15,7 +15,7 @@ using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
 
 FilteredCollectionBackend::FilteredCollectionBackend(
-        Kalburator::Sync::SyncBackend* parentBackend,
+        Kalburator::Sync::SyncBackendBase* parentBackend,
         QString parentBackendId,
         QString parentCollectionId,
         QString virtualCollectionId,
@@ -23,7 +23,7 @@ FilteredCollectionBackend::FilteredCollectionBackend(
         Kalburator::Sync::BackendRegistry* registry,
         QString displayNameOverride,
         QObject* parent)
-    : Kalburator::Sync::SyncBackend(parent)
+    : Kalburator::Sync::SyncBackendBase(parent)
     , m_parent(parentBackend)
     , m_parentBackendId(std::move(parentBackendId))
     , m_parentColId(std::move(parentCollectionId))
@@ -51,7 +51,7 @@ QString FilteredCollectionBackend::displayName() const
         return m_displayNameOverride;
     if (!m_parent)
         return defaultComposedDisplayName(QString());
-    const CollectionInfo info = const_cast<Kalburator::Sync::SyncBackend*>(m_parent)
+    const CollectionInfo info = const_cast<Kalburator::Sync::SyncBackendBase*>(m_parent)
                                     ->collectionInfo(m_parentColId);
     return defaultComposedDisplayName(info.name);
 }
@@ -99,7 +99,7 @@ CollectionInfo FilteredCollectionBackend::composeCollectionInfo() const
         out.name = displayName();
         return out;
     }
-    const CollectionInfo parentInfo = const_cast<Kalburator::Sync::SyncBackend*>(m_parent)
+    const CollectionInfo parentInfo = const_cast<Kalburator::Sync::SyncBackendBase*>(m_parent)
                                           ->collectionInfo(m_parentColId);
     out = parentInfo;             // inherit type, color (if any), readOnly, contentTypes
     out.id = m_virtualColId;

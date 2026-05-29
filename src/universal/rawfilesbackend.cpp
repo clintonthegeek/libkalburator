@@ -16,7 +16,7 @@ namespace Kalburator::Sinks {
 static constexpr const char *kManifestName = "_shapes.json";
 
 RawFilesBackend::RawFilesBackend(QString rootPath, QObject *parent)
-    : Kalburator::Sync::SyncBackend(parent)
+    : Kalburator::Sync::SyncBackendBase(parent)
     , m_rootPath(std::move(rootPath))
 {
     loadManifest();

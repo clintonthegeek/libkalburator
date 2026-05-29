@@ -28,7 +28,7 @@
 #include "backendconfiguration.h"
 #include "syncbackend.h"
 #include "changedetection.h"
-#include "syncoperation.h"
+#include "../sync/syncoperation.h"
 #include "conflictmanager.h"
 #include "imassdeleteguard.h"
 #include "canonenvelope.h"
@@ -735,7 +735,7 @@ void SyncEngine::prepareSyncFastPath()
     // Collect collection IDs per backend that implements Backend::ChangeDetection.
     QMap<QString, QStringList> colIdsByBackend;
     auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
-        SyncBackend *base = m_registry->backendInstance(backendId);
+        SyncBackendBase *base = m_registry->backendInstance(backendId);
         if (dynamic_cast<Backend::ChangeDetection*>(base))
             colIdsByBackend[backendId].append(colId);
     };
@@ -748,7 +748,7 @@ void SyncEngine::prepareSyncFastPath()
     // Fetch fresh revisions per backend (batched where the backend supports it).
     QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
     for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
-        SyncBackend *base = m_registry->backendInstance(it.key());
+        SyncBackendBase *base = m_registry->backendInstance(it.key());
         auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
         if (!cd) continue;
         QStringList ids = it.value();
@@ -773,7 +773,7 @@ void SyncEngine::prepareSyncFastPath()
 
         auto checkSide = [&](const QString &backendId, const QString &colId,
                               QString &outRevision, bool &covered, bool &unchanged) {
-            SyncBackend *base = m_registry->backendInstance(backendId);
+            SyncBackendBase *base = m_registry->backendInstance(backendId);
             auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
             if (!cd) return;
             covered = true;
@@ -1077,7 +1077,7 @@ static void resolveConflictDisplayNames(ConflictInfo &conflict, BackendRegistry 
 {
     auto resolveOne = [&](const QString &backendId) -> QString {
         if (backendId.isEmpty()) return {};
-        SyncBackend *backend = registry ? registry->backendInstance(backendId) : nullptr;
+        SyncBackendBase *backend = registry ? registry->backendInstance(backendId) : nullptr;
         if (backend) {
             return Sync::BackendConfiguration::friendlyTypeName(backend->backendType());
         }
@@ -1184,7 +1184,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                                            const QString &colId,
                                            const QString &revision) {
                     if (revision.isEmpty()) return;
-                    SyncBackend *base = m_registry->backendInstance(backendId);
+                    SyncBackendBase *base = m_registry->backendInstance(backendId);
                     if (auto *cd = dynamic_cast<Backend::ChangeDetection*>(base))
                         cd->primeRevisionCache({{colId, revision}});
                 };
@@ -2050,11 +2050,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // immediately-failed op; we skip the QEventLoop for those and proceed
     // directly to loadRecordsOrError().
     {
-        FetchOperation *fetchOpRaw = nullptr;
+        SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(srcBackend, [srcBackend, srcColId, &fetchOpRaw]() {
             fetchOpRaw = srcBackend->fetchItems(srcColId);
         }, Qt::BlockingQueuedConnection);
-        QPointer<FetchOperation> fetchOp = fetchOpRaw;
+        QPointer<SyncOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
             // Connect BEFORE re-checking state: op may complete between the
@@ -2124,11 +2124,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // --- Fetch target records (cross-thread) ---
     // Same cancellable gating pattern as source fetch above.
     {
-        FetchOperation *fetchOpRaw = nullptr;
+        SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtColId, &fetchOpRaw]() {
             fetchOpRaw = tgtBackend->fetchItems(tgtColId);
         }, Qt::BlockingQueuedConnection);
-        QPointer<FetchOperation> fetchOp = fetchOpRaw;
+        QPointer<SyncOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
             // Same race-fix as source fetch: connect before re-check so a
@@ -2578,7 +2578,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     //     the backend thread).
     auto applyBatch = [this, &writeFailed, &writeError](
         Kalburator::Shape::RecordWriter *writer,
-        SyncBackend *backend,
+        SyncBackendBase *backend,
         IBlobBackend *blobBackend,
         const QString &colId,
         const QList<BackendRecord> &toWrite,

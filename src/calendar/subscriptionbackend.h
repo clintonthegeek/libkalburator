@@ -10,6 +10,7 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Incidence>
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include <QDateTime>

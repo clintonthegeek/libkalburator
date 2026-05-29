@@ -3,6 +3,7 @@
 #include "isyncconfigstore.h"
 #include "synctypes.h"
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete PushOperation (calendar consumer; no longer transitive via syncengine.h)
 #include "icalendarcollection.h"
 #include "syncengine.h"
 #include <QDebug>

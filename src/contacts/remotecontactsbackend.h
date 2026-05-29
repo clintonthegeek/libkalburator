@@ -1,7 +1,7 @@
 #ifndef REMOTECONTACTSBACKEND_H
 #define REMOTECONTACTSBACKEND_H
 
-#include "syncbackend.h"
+#include "syncbackendbase.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "shape.h"
@@ -34,7 +34,7 @@ namespace Kalburator::Sync {
  * All network I/O blocks on a QEventLoop (acceptable for the blob-view /
  * engine-worker call site; Phase F revisits true async).
  */
-class RemoteContactsBackend : public SyncBackend,
+class RemoteContactsBackend : public Kalburator::Sync::SyncBackendBase,
                               public Kalburator::Backend::ChangeDetection
 {
     Q_OBJECT

@@ -1,6 +1,7 @@
 #include "stubsynchost.h"
 
 #include "backendregistry.h"
+#include "syncbackend.h"
 
 namespace Kalburator::Sync::Test {
 
@@ -16,7 +17,9 @@ StubSyncHost::~StubSyncHost() = default;
 
 SyncBackend* StubSyncHost::backendById(const QString &id)
 {
-    return m_backendRegistry ? m_backendRegistry->backendInstance(id) : nullptr;
+    return m_backendRegistry
+        ? static_cast<SyncBackend*>(m_backendRegistry->backendInstance(id))
+        : nullptr;
 }
 
 QHash<QString, SyncBackend*> StubSyncHost::backends()
@@ -24,7 +27,7 @@ QHash<QString, SyncBackend*> StubSyncHost::backends()
     QHash<QString, SyncBackend*> result;
     if (!m_backendRegistry) return result;
     for (const QString &id : m_backendRegistry->registeredInstanceIds()) {
-        result.insert(id, m_backendRegistry->backendInstance(id));
+        result.insert(id, static_cast<SyncBackend*>(m_backendRegistry->backendInstance(id)));
     }
     return result;
 }

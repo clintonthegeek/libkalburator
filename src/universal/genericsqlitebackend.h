@@ -6,7 +6,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "syncbackend.h"
+#include "syncbackendbase.h"
 #include "shape.h"
 
 namespace Kalburator::Sinks {
@@ -30,7 +30,7 @@ namespace Kalburator::Sinks {
 /// thread and the main thread simultaneously). All per-thread connection
 /// names are tracked in m_openConnections (guarded by m_connMutex) for
 /// cleanup in the destructor.
-class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {
+class GenericSqliteBackend : public Kalburator::Sync::SyncBackendBase {
     Q_OBJECT
 public:
     explicit GenericSqliteBackend(QString dbPath, QObject *parent = nullptr);

@@ -5,6 +5,7 @@
 #include "backendregistry.h"
 #include "backendcontribution.h"
 #include "syncbackend.h"
+#include "syncbackendbase.h"
 #include "backendconfiguration.h"
 
 #include <KConfigGroup>
@@ -234,15 +235,13 @@ void ProviderManager::registerProviderBackends(IProvider *provider)
         auto backend = provider->createBackend(col.id);
         if (!backend) continue;
 
-        // BackendRegistry stores SyncBackend* (which inherits IBlobBackend).
-        // For Phase H, all provider-produced backends derive SyncBackend.
-        // dynamic_cast verifies that contract; if a future provider returns
-        // a pure-IBlobBackend, registry needs an IBlobBackend-flavored API
-        // — defer that until it actually happens.
-        auto *asSync = dynamic_cast<SyncBackend*>(backend.get());
+        // BackendRegistry stores SyncBackendBase* (which inherits IBlobBackend).
+        // All provider-produced backends must derive SyncBackendBase (calendar
+        // backends via SyncBackend; non-calendar backends directly).
+        auto *asSync = dynamic_cast<SyncBackendBase*>(backend.get());
         if (!asSync) {
             qWarning() << "[ProviderManager] provider" << provider->id()
-                       << "produced a non-SyncBackend for collection" << col.id
+                       << "produced a non-SyncBackendBase for collection" << col.id
                        << "— cannot register with BackendRegistry. Skipping.";
             continue;
         }

@@ -19,7 +19,7 @@ RemoteContactsBackend::RemoteContactsBackend(const QUrl    &serverRoot,
                                              const QString &username,
                                              const QString &password,
                                              QObject       *parent)
-    : SyncBackend(parent)
+    : Kalburator::Sync::SyncBackendBase(parent)
     , m_serverRoot(serverRoot)
     , m_username(username)
     , m_password(password)

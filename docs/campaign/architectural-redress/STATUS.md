@@ -1,23 +1,23 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-05-29 (audit rebaselined; Plans 1 & 2 merged)
-**Branch:** Campaign docs live on `main`. Plan 1 (SyncEngine) is merged to `main`; each
-subsequent plan opens its own `feature/redress-N-<slug>` branch.
-**State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition) and 2 (CalendarManager
-safety net) merged to `main`.** The original 2026-05-28 audit and its nine drafted plans rested
-on material factual errors (see `AUDIT.md` provenance) and are **archived under `archive/`**.
-The new `AUDIT.md` is a verified rebuild (139-agent run, every finding adversarially checked
-against source). Plan 2 added 17 characterization tests and **pinned three real latent bugs**
-(see FINDINGS: `DisconnectSync` stale-`logCal` overwrite, non-atomic `createCalendar`,
-`restoreFromSnapshot` stub) plus a pre-existing `tst_engine_cancellation` flake — all to be
-addressed by the relevant later plans.
+**Last updated:** 2026-05-29 (audit rebaselined; Plans 1, 2 & 3 landed)
+**Branch:** Campaign docs live on `main`. Plans 1–3 landed; each subsequent plan opens its own
+`feature/redress-N-<slug>` branch.
+**State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition), 2 (CalendarManager safety
+net) and 3 (neutralize the calendar-typed sync core) landed.** The original 2026-05-28 audit and
+its nine drafted plans rested on material factual errors (see `AUDIT.md` provenance) and are
+**archived under `archive/`**. The new `AUDIT.md` is a verified rebuild (139-agent run, every
+finding adversarially checked against source). Plan 2 pinned three real latent bugs (see
+FINDINGS). **Plan 3 resolved AUDIT CRITICALs #1–#3** (the calendar-typed sync core) and the
+`engine`/`contacts`/`universal` → calendar include MAJORs — the orchestration layer no longer
+names a calendar type; 133 tests green incl. a proof-of-neutrality test.
 
 ## Next action
 
-Plans 1 and 2 are landed. **Next: detail Plan 3 — neutralize the calendar-typed sync core**
-(AUDIT CRITICALs #1–#3 + the cross-domain MAJOR include violations it generates), using the
-`writing-plans` discipline (P1–P4). This is the keystone structural plan. Re-confirm the full
-sequence below as each plan lands.
+Plans 1–3 are landed. **Next: detail Plan 4 — the correctness/ownership sweep** (raw-pointer
+lifetimes, `RawFilesBackend` thread-safety, silent SQLite/DELETE failures, `MockBlobBackend`
+false-greens — the MAJOR latent bugs), using the `writing-plans` discipline (P1–P4). Re-confirm
+the full sequence below as each plan lands.
 
 ## What changed in the rebaseline
 
@@ -86,8 +86,8 @@ severities, not the retired old plan numbers:
 |---|---|---|---|
 | 1 | SyncEngine decomposition | B1 (MAJOR, corrected) | **DONE — merged 2026-05-29** |
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
-| 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **next — being detailed** (keystone) |
-| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) | proposed |
+| 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
+| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) | **next — to be detailed** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |

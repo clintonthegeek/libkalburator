@@ -2,7 +2,7 @@
 
 #include <QString>
 
-#include "syncbackend.h"          // Kalburator::Sync::SyncBackend (calendar-typed base)
+#include "syncbackendbase.h"       // Kalburator::Sync::SyncBackendBase (neutral base)
 #include "recordfilter.h"         // Kalburator::Shape::RecordFilter
 #include "collectioninfo.h"       // Kalburator::Sync::CollectionInfo
 
@@ -29,10 +29,10 @@ namespace Kalburator::Sinks {
 /// Caller MUST pass the same `parentBackendId` that was used to register
 /// the parent in `BackendRegistry`; the default `backendId()` for
 /// production `SyncBackend`s is not unique.
-class FilteredCollectionBackend : public Kalburator::Sync::SyncBackend {
+class FilteredCollectionBackend : public Kalburator::Sync::SyncBackendBase {
     Q_OBJECT
 public:
-    FilteredCollectionBackend(Kalburator::Sync::SyncBackend* parentBackend,
+    FilteredCollectionBackend(Kalburator::Sync::SyncBackendBase* parentBackend,
                               QString parentBackendId,
                               QString parentCollectionId,
                               QString virtualCollectionId,
@@ -92,7 +92,7 @@ private:
     QString defaultComposedDisplayName(const QString& parentName) const;
     QString filterDescription() const;
 
-    Kalburator::Sync::SyncBackend*   m_parent = nullptr;
+    Kalburator::Sync::SyncBackendBase*   m_parent = nullptr;
     /// The registry key under which the parent backend was registered via
     /// `BackendRegistry::registerBackendInstance(id, ...)`. Compared against
     /// the id emitted by `BackendRegistry::backendInstanceUnregistered` so
