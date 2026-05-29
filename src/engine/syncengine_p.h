@@ -191,6 +191,22 @@ signals:
     // nested QEventLoops in await<> and the conflict-pause loop.
     void cancellationObserved();
 
+    // Plan 1 Task 2 (2026-05-29) — engine→worker command-channel signals.
+    // These replace the string-form QMetaObject::invokeMethod(m_worker,
+    // "processSync", ...) calls that previously dispatched commands from
+    // SyncEngine to the worker. SyncEngine emits these via
+    //   emit m_worker->processSyncRequested(request);
+    // which Qt routes through the engine→worker QueuedConnection set up
+    // in setupWorkerConnections(). All three are queued cross-thread
+    // (worker thread reception) and carry no return value.
+    //
+    // Q_SIGNALS access is public in Qt; engine-side emit is the
+    // intended pattern. Callers other than SyncEngine must NOT emit these.
+    void processSyncRequested(const SyncEngineWorker::Request &request);
+    void observeCancelRequested();
+    void resumeAfterConflictRequested(ConflictResolution resolution,
+                                       const QString &mergedIcal);
+
 private:
     /// F2 Task 16: run an inner QEventLoop until the operation
     /// finishes OR cancellation is observed. On cancellation, request

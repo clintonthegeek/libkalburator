@@ -132,6 +132,20 @@ void SyncEngine::setupWorkerConnections()
     connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
 
+    // Plan 1 Task 2 (2026-05-29) — engine→worker command-channel.
+    // Replaces the string-form QMetaObject::invokeMethod(m_worker, "...",
+    // QueuedConnection, Q_ARG(...)) calls. SyncEngine emits the *Requested
+    // signals on m_worker (signals are public functions in Qt); Qt routes
+    // them across the thread boundary via Qt::QueuedConnection. Self-
+    // connection on m_worker is intentional — the engine doesn't own
+    // these signals, the worker does, but the engine is the sole emitter.
+    connect(m_worker, &SyncEngineWorker::processSyncRequested,
+            m_worker, &SyncEngineWorker::processSync, Qt::QueuedConnection);
+    connect(m_worker, &SyncEngineWorker::observeCancelRequested,
+            m_worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
+    connect(m_worker, &SyncEngineWorker::resumeAfterConflictRequested,
+            m_worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
+
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
     // by the time finished is emitted.
@@ -420,10 +434,9 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             request.override = m_pendingOverride;
             m_pendingOverride = ExecutionOverride{};
 
-            // Invoke worker in its thread
-            QMetaObject::invokeMethod(m_worker, "processSync",
-                                      Qt::QueuedConnection,
-                                      Q_ARG(SyncEngineWorker::Request, request));
+            // Plan 1 Task 2 (2026-05-29): emit the command-channel
+            // signal on the worker; QueuedConnection routes to worker thread.
+            emit m_worker->processSyncRequested(request);
             return;
         }
         ++idx;
@@ -598,8 +611,8 @@ void SyncEngine::onCancelObserved()
     if (!m_worker) {
         return;
     }
-    QMetaObject::invokeMethod(m_worker, "observeCancel",
-                              Qt::QueuedConnection);
+    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
+    emit m_worker->observeCancelRequested();
 }
 
 // G.6 Task 46: resourceId-aware cancellation.
@@ -622,8 +635,7 @@ void SyncEngine::cancelWithReason(CancellationReason reason,
         // All other reasons: stop the entire queue.
         m_cancelled = true;
         if (m_worker)
-            QMetaObject::invokeMethod(m_worker, "observeCancel",
-                                     Qt::QueuedConnection);
+            emit m_worker->observeCancelRequested();
     }
 }
 
@@ -638,11 +650,8 @@ void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
     qDebug() << "SyncEngine::resumeAfterConflictResolution - resolution:"
              << static_cast<int>(resolution);
 
-    // Invoke on worker thread
-    QMetaObject::invokeMethod(m_worker, "resumeAfterConflict",
-                              Qt::QueuedConnection,
-                              Q_ARG(ConflictResolution, resolution),
-                              Q_ARG(QString, mergedIcal));
+    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
+    emit m_worker->resumeAfterConflictRequested(resolution, mergedIcal);
 }
 
 void SyncEngine::setSkipUnchangedMappings(bool enabled)
@@ -876,9 +885,8 @@ void SyncEngine::advanceQueue()
     request.collectionId = m_collection ? m_collection->id() : QString();
     request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
 
-    QMetaObject::invokeMethod(m_worker, "processSync",
-                              Qt::QueuedConnection,
-                              Q_ARG(SyncEngineWorker::Request, request));
+    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
+    emit m_worker->processSyncRequested(request);
 
     // NOTE: Do NOT recurse here!
     // The async operation will call onWorkerSyncCompleted() when done,
