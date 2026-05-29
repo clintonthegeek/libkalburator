@@ -188,11 +188,6 @@ public:
         return QString();
     }
 
-    virtual bool discoveredWritable(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return true;
-    }
-
     virtual bool createCalendar(const QString &collectionId,
                                 const QString &calendarId,
                                 const QString &name,

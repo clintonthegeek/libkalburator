@@ -75,6 +75,13 @@ public:
     /// `nativeShapes().first()` or `Shape::Any()` if empty.
     virtual Kalburator::Shape::Shape shapeFor(const QString &collectionId) const;
 
+    /// Whether the given collection is writable. Default true; calendar/remote
+    /// backends override with discovered writability.
+    virtual bool discoveredWritable(const QString &collectionId) const {
+        Q_UNUSED(collectionId);
+        return true;
+    }
+
     // ========== Operation-Based API ==========
     // BackendRecord-id-typed CRUD; the operation HANDLE types
     // (`FetchOperation`, `PushOperation`, `DeleteOperation`) are
