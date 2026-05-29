@@ -106,3 +106,23 @@ Confirm no out-of-tree consumer (PlanStan, WildPalms) before deletion.
 Append below as work uncovers them. If a finding is in scope for an existing plan, note
 the plan number; if not, it becomes a candidate for a future campaign or a STATUS
 out-of-scope entry.
+
+### From P1.T2 (Worker collapse, 2026-05-29)
+
+- 2026-05-29 — P1.T2 spec text imprecision — plan said `invokeMethod(m_engine,
+  "slot", ...)` but the actual string-form calls in pre-T2 code were
+  `invokeMethod(m_worker, "slot", ...)` (engine→worker direction). The implementer
+  correctly read the spec's intent and rewrote those. Future plan authors should grep
+  before quoting. No action; observational.
+- 2026-05-29 — `src/engine/syncengine_p.h` — inv 1/3 — `SyncEngineWorker` retains a
+  `QPointer<QObject> m_baselineStoreAnchor` whose only purpose is to be the receiver
+  for queued `BaselineStore` marshalling. Coupling reduced from typed-back-pointer to
+  opaque-thread-anchor but not eliminated. Full ablation requires thread-safe
+  `Kalburator::Storage::BaselineStore` (own mutex / per-thread connections, mirroring
+  the SQLite fix at 6579dfb). Out of scope for Plan 1; track as P2-or-later candidate.
+- 2026-05-29 — `src/engine/syncengine.h:~102` — inv 3 — forward decl `class
+  SyncEngineWorker;` remains in the public header because `SyncEngine::m_worker` is a
+  typed pointer. Class body, nested types, and API surface are all in
+  `syncengine_p.h` (spirit of invariant 3 met). Deeper PIMPL
+  (`std::unique_ptr<SyncEnginePrivate>`) would remove even the forward decl. Note as
+  future refactor candidate; not blocking Plan 1.
