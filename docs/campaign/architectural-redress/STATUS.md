@@ -1,15 +1,55 @@
 # Architectural-redress campaign — STATUS
 
 **Last updated:** 2026-05-29
-**Branch:** TBD per plan (campaign docs live on `main`; each plan opens its own
-`feature/redress-N-<slug>` branch)
-**State:** Campaign opened 2026-05-29 from audit dated 2026-05-28. Plans drafted. No
-code work has started.
+**Branch:** Plan 1 landed on `feature/redress-1-syncengine`; campaign docs live on `main`.
+Each subsequent plan opens its own `feature/redress-N-<slug>` branch.
+**State:** Plan 1 complete (2026-05-29). 131/131 ctest pass, cancellation flake check 5/5
+clean. Awaiting merge to main and Plan 2 open.
 
 ## Next action
 
-**Open Plan 1** (`plans/plan-1-syncengine-decomposition.md`). Create branch
-`feature/redress-1-syncengine`. Read INVARIANTS.md once. Begin with Task 1.
+**Merge `feature/redress-1-syncengine` to `main`** (user review), then **open Plan 2**
+(`plans/plan-2-sync-domain-cycle-break.md`). Create branch `feature/redress-2-cycle-break`.
+Read INVARIANTS.md once. Begin with Task 1.
+
+## Plan 1 outcome (2026-05-29)
+
+Six tasks completed across nine commits (T1 + qWait fix, T2 four-commit collapse + review
+fixes + FINDINGS, T3 two-commit MappingQueue + FINDINGS, T4 unified commit incl. fix-up +
+FINDINGS, T5 single commit). Final state:
+
+| Metric | Before | After | Delta |
+|---|---|---|---|
+| `syncengine.h` LOC | 840 | 632 | −208 (−25%) |
+| `syncengine.cpp` LOC | 2780 | 2846 | +66 (+2%) |
+| `syncengine_p.h` LOC | — | 365 | new (worker private impl) |
+| `mappingqueue.{h,cpp}` LOC | — | 250 + 92 | new (queue collaborator) |
+| `syncrequest.h` LOC | — | 64 | new (canonical request) |
+| **engine surface total** | 3620 | 4249 | +629 (richer structure, fewer responsibilities per file) |
+
+Structural wins:
+- `SyncEngineWorker` is private impl (`syncengine_p.h`), not publicly declared.
+- Queue state lives in `MappingQueue` (one collaborator) instead of seven sprawled fields.
+- `runSync(SyncRequest)` is the canonical entry; four overloads marked `[[deprecated]]`.
+- `m_pendingOverride` no longer an implicit state machine — flows as parameter.
+- Zero `QMetaObject::invokeMethod(m_*, "stringName", ...)` cross-class slot calls.
+
+Deferred (per FINDINGS, all to Plan 8 or later):
+- Forward decl `class SyncEngineWorker;` remains in `syncengine.h` (PIMPL deepening
+  is a separate refactor).
+- `m_baselineStoreAnchor` thread-anchor pattern (full ablation needs thread-safe
+  `BaselineStore`).
+- Dual `m_currentSingleIface` / `m_currentMultiIface` (collapses naturally when
+  deprecated shims are deleted in Plan 8).
+- `SyncRequest` cannot express "explicitly empty subset" (no canonical-API consumer
+  needs it yet; revisit during Plan 8 migration).
+- Two paper-cut overlap-rejection result shapes (pre-existing, surfaced in T4 review).
+
+The cancellation contract from F2 Task 23 (`resultCount() == 1` with
+`resultAt(0).cancelled == true` after `reportCanceled()`) is preserved across the
+consolidation via the asymmetric routing (deprecated single-mapping shims bypass the
+canonical `runSync(SyncRequest)` to keep the F2 Task 23 semantic intact — Qt6's
+`QFuture::then()` drops continuations on canceled sources).
 
 ## Plan sequence and dependencies
 
@@ -21,7 +61,7 @@ preceding refactors.
 
 | # | Plan | Audit refs | State | Depends on |
 |---|---|---|---|---|
-| 1 | `plan-1-syncengine-decomposition.md` | B1 | drafted | — |
+| 1 | `plan-1-syncengine-decomposition.md` | B1 | **complete (2026-05-29)** | — |
 | 2 | `plan-2-sync-domain-cycle-break.md` | B4 | drafted | — (parallel with 1 possible but discouraged) |
 | 3 | `plan-3-types-layer-purification.md` | B2 | drafted | 2 (so domain-typed interfaces have homes) |
 | 4 | `plan-4-remote-and-local-backend-decomposition.md` | B3 | architectural; tasks pending Plan 2 land | 2, 3 |

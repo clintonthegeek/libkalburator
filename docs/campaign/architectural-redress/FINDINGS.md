@@ -49,17 +49,26 @@
 
 ### Encapsulation (invariant 3)
 
-- 2026-05-28 — `src/engine/syncengine.h:~119-335` — inv 3 — `SyncEngineWorker` is
-  publicly declared in the consumer's header despite being meant as private impl. Plan 1.
-- 2026-05-28 — `src/engine/syncengine.cpp` — inv 3 — `QMetaObject::invokeMethod(m_engine,
-  "onWorkerSyncCompleted", ...)` cross-class slot calls by string. Plan 1.
+- ~~2026-05-28 — `src/engine/syncengine.h:~119-335` — inv 3 — `SyncEngineWorker` is
+  publicly declared in the consumer's header despite being meant as private impl. Plan 1.~~
+  **Resolved P1.T2 (05ac734, 2026-05-29):** worker moved to `src/engine/syncengine_p.h`;
+  only a forward decl remains in the public header (see P1.T2 finding below).
+- ~~2026-05-28 — `src/engine/syncengine.cpp` — inv 3 — `QMetaObject::invokeMethod(m_engine,
+  "onWorkerSyncCompleted", ...)` cross-class slot calls by string. Plan 1.~~
+  **Resolved P1.T2 (0b7c4fe, 2026-05-29):** all string-form cross-thread slot calls
+  replaced with explicit signal/slot connections at construction time.
 
 ### Public surface (invariant 4)
 
-- 2026-05-28 — `src/engine/syncengine.h` — inv 4 — four overloads of `runSyncFuture()`
-  with overlapping semantics; `m_pendingOverride` is implicit state machine. Plan 1.
-- 2026-05-28 — `src/engine/syncengine.h` — inv 4 — `SyncEngineWorker::Mode` and
-  `SyncEngine::SyncBehavior` are two enums with identical semantics. Plan 1.
+- ~~2026-05-28 — `src/engine/syncengine.h` — inv 4 — four overloads of `runSyncFuture()`
+  with overlapping semantics; `m_pendingOverride` is implicit state machine. Plan 1.~~
+  **Resolved P1.T4 + P1.T5 (7e69f1d, 5ee045f, 2026-05-29):** `runSync(SyncRequest)` is
+  the canonical entry; four overloads marked `[[deprecated]]` for Plan 8 removal;
+  `m_pendingOverride` deleted and the per-call override flows as a method parameter.
+- ~~2026-05-28 — `src/engine/syncengine.h` — inv 4 — `SyncEngineWorker::Mode` and
+  `SyncEngine::SyncBehavior` are two enums with identical semantics. Plan 1.~~
+  **Resolved P1.T2 (94cd859, 2026-05-29):** `SyncEngineWorker::Mode` deleted; the worker
+  accepts `SyncEngine::SyncBehavior` directly.
 - 2026-05-28 — `src/calendar/remotecalendarbackend.h` — inv 4 — ~58 public methods
   across 7 concerns. Plan 4.
 - 2026-05-28 — `src/calendar/remotecalendarbackend.h` — inv 4 — six `discoveredX(id)`
