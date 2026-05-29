@@ -157,6 +157,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/syncbackend.cpp
     src/calendar/syncconflictstore.cpp
     src/calendar/syncoperation.cpp
+    # Plan 3 Task 1 — neutral SyncOperation base extracted into sync/
+    src/sync/syncoperation.cpp
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.cpp
     src/calendar/calendarcanonproperties.cpp

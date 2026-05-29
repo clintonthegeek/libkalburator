@@ -1,6 +1,10 @@
 #include "syncbackendbase.h"
 
-#include "syncoperation.h"
+// Construct the calendar-typed operation subclasses (FetchOperation /
+// DeleteOperation). The bare "syncoperation.h" now resolves to the neutral
+// base in this same directory (architectural-redress Plan 3 T1), so this
+// consumer must qualify the include to reach the calendar subclasses.
+#include "../calendar/syncoperation.h"
 
 #include <QDebug>
 
