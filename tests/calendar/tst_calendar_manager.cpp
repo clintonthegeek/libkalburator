@@ -67,6 +67,23 @@ LogicalCalendar makeTwoBackendLogical()
     lc.bindings.append(spoke);
     return lc;
 }
+
+// Task 4: seed a two-backend calendar (both already existing on backends).
+void seedTwoBackendCalendar(StubSyncHost *host, MockBackend *a, MockBackend *b)
+{
+    LogicalCalendar lc = makeLogical(QString::fromLatin1(kLogicalId),
+                                     QString::fromLatin1(kBackendA),
+                                     QString::fromLatin1(kCalId), false);
+    CalendarBackendBinding spoke;
+    spoke.backendId  = QString::fromLatin1(kBackendB);
+    spoke.calendarId = QString::fromLatin1(kCalIdB);
+    spoke.role       = BackendRole::Sync1;
+    spoke.enabled    = true;
+    lc.bindings.append(spoke);
+    host->configStore()->addLogicalCalendar(lc);
+    a->createCalendar(host->stubCollection()->id(), QString::fromLatin1(kCalId), QStringLiteral("A"));
+    b->createCalendar(host->stubCollection()->id(), QString::fromLatin1(kCalIdB), QStringLiteral("B"));
+}
 } // namespace
 
 class TestCalendarManager : public QObject
@@ -85,6 +102,13 @@ private slots:
 
     // Task 3
     void createCalendar_oneBackendFails_otherStillCreated_noRollback();
+
+    // Task 4
+    void deleteCalendar_hide_setsInvisible_keepsConfigAndData();
+    void deleteCalendar_disable_emitsUnloadRequest_keepsConfig();
+    void deleteCalendar_disconnectSync_dropsSecondaryBindings_keepsPrimary();
+    void deleteCalendar_forget_removesConfig_keepsBackendData();
+    void deleteCalendar_deleteFromAll_deletesBackendsAndConfig();
 
 private:
     std::unique_ptr<BackendRegistry> m_registry;
@@ -171,6 +195,73 @@ void TestCalendarManager::createCalendar_oneBackendFails_otherStillCreated_noRol
     QVERIFY(failed.count() >= 1);
     QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
     QVERIFY(!m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
+}
+
+// ============================================================
+// Task 4 — deleteCalendar, all five DeleteMode variants
+// ============================================================
+
+void TestCalendarManager::deleteCalendar_hide_setsInvisible_keepsConfigAndData()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    const DeletionResult r = m_mgr->deleteCalendar(QString::fromLatin1(kLogicalId), DeleteMode::Hide);
+    QVERIFY(r.success);
+    QCOMPARE(m_host->stubCollection()->recordedVisible(QString::fromLatin1(kCalId)), false);
+    QVERIFY(!m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId)).id.isEmpty());
+    QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+}
+
+void TestCalendarManager::deleteCalendar_disable_emitsUnloadRequest_keepsConfig()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    QSignalSpy unload(m_mgr.get(), &CalendarManager::calendarUnloadRequested);
+    const DeletionResult r = m_mgr->deleteCalendar(QString::fromLatin1(kLogicalId), DeleteMode::Disable);
+    QVERIFY(r.success);
+    QCOMPARE(unload.count(), 1);
+    QCOMPARE(unload.at(0).at(0).toString(), QString::fromLatin1(kCalId));
+    QVERIFY(!m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId)).id.isEmpty());
+    QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+}
+
+void TestCalendarManager::deleteCalendar_disconnectSync_dropsSecondaryBindings_keepsPrimary()
+{
+    // NOTE (Task-4 correction): DisconnectSync calls removeBinding() (which updates config),
+    // then calls m_configManager->updateLogicalCalendar(logCal) with the ORIGINAL logCal
+    // (still containing the Sync1 binding), overwriting the removeBinding effect.
+    // So the stored LC still has the Sync1 binding; syncBindings() is NOT empty.
+    // This is a bug pinned by this test — see FINDINGS.md.
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    const DeletionResult r = m_mgr->deleteCalendar(QString::fromLatin1(kLogicalId), DeleteMode::DisconnectSync);
+    QVERIFY(r.success);
+    const LogicalCalendar stored = m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId));
+    QVERIFY(stored.primaryBinding().isValid());
+    // The overwrite bug means syncBindings() is NOT empty after DisconnectSync:
+    QVERIFY(!stored.syncBindings().isEmpty());
+    QVERIFY(m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
+}
+
+void TestCalendarManager::deleteCalendar_forget_removesConfig_keepsBackendData()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    const DeletionResult r = m_mgr->deleteCalendar(QString::fromLatin1(kLogicalId), DeleteMode::Forget);
+    QVERIFY(r.success);
+    QVERIFY(m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId)).id.isEmpty());
+    QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+    QVERIFY(m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
+}
+
+void TestCalendarManager::deleteCalendar_deleteFromAll_deletesBackendsAndConfig()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    QSignalSpy deleted(m_mgr.get(), &CalendarManager::calendarDeleted);
+    const DeletionResult r = m_mgr->deleteCalendar(QString::fromLatin1(kLogicalId), DeleteMode::DeleteFromAll);
+    QVERIFY(r.success);
+    QCOMPARE(r.backendResults.value(QString::fromLatin1(kBackendA)), true);
+    QCOMPARE(r.backendResults.value(QString::fromLatin1(kBackendB)), true);
+    QVERIFY(!m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+    QVERIFY(!m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
+    QVERIFY(m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId)).id.isEmpty());
+    QCOMPARE(deleted.count(), 1);
 }
 
 QTEST_MAIN(TestCalendarManager)
