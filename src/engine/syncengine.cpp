@@ -295,7 +295,8 @@ bool SyncEngine::hasSyncWork() const
 // F2 Task 42: the void runSync(behavior) form is deleted. Its body
 // is rebadged into a private helper driveQueue() invoked by
 // runSyncFuture(behavior) below — the only remaining caller.
-void SyncEngine::driveQueue(SyncBehavior behavior)
+void SyncEngine::driveQueue(SyncBehavior behavior,
+                            std::optional<QSet<QString>> filter)
 {
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
         qDebug() << "SyncEngine::driveQueue - no sync work configured";
@@ -303,7 +304,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
         m_lastResult.success = true;
         // Finish the multi-iface (the QFuture caller is waiting on it).
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
@@ -313,18 +314,16 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
 
     m_isSyncing = true;
     m_cancelled = false;
-    m_lostResources.clear();
-    m_currentMappingIndex = -1;
     m_currentSyncBehavior = behavior;
     m_pendingUnmonitoredConflicts.clear();
     m_lastResult = SyncResult{};
     m_lastResult.startTime = QDateTime::currentDateTime();
 
-    // F2 Task 21: tag this run as a queue dispatch so
-    // onWorkerSyncCompleted advances to the next mapping rather than
-    // finishing a single-mapping future.
-    m_dispatchMode = DispatchMode::Queue;
-    m_queueResults.clear();
+    // P1.T3: prime the queue collaborator (clears lost resources,
+    // result accumulator, index, and sets DispatchMode::Queue). The
+    // filter (if any) was passed through from the runSyncFuture(ids)
+    // overload via the helper parameter.
+    m_queue.prime(m_syncMappings, std::move(filter));
 
     // Run active controllers first (they're fast, synchronous)
     for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
@@ -349,13 +348,13 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
         m_lastResult.endTime = QDateTime::currentDateTime();
         // Finish the multi-iface with what we have.
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             if (m_cancelled) m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
@@ -365,11 +364,11 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
 }
 
 // F2 Task 21: single-mapping driver. Dispatches exactly one Request to
-// the worker; onWorkerSyncCompleted distinguishes via m_dispatchMode and
-// finishes immediately rather than advancing a queue. This replaces the
-// leaky path documented in FINDINGS where the single-mapping form
-// re-entered processNextMapping (which iterated from index 0 and
-// double-dispatched the same mapping).
+// the worker; onWorkerSyncCompleted distinguishes via
+// m_queue.dispatchMode() and finishes immediately rather than advancing
+// a queue. This replaces the leaky path documented in FINDINGS where
+// the single-mapping form re-entered processNextMapping (which iterated
+// from index 0 and double-dispatched the same mapping).
 void SyncEngine::processSingleMapping(const QString &mappingId,
                                       SyncBehavior behavior)
 {
@@ -408,12 +407,11 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         return;
     }
 
-    int idx = 0;
     for (const auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId && mapping.enabled) {
             m_isSyncing = true;
@@ -422,11 +420,10 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             m_lastResult = SyncResult{};
             m_lastResult.startTime = QDateTime::currentDateTime();
 
-            // F2 Task 21: tag the run mode and remember which mapping is
-            // in flight so onWorkerItemReady can resolve metadata. This
-            // is the only field shared with the Queue path.
-            m_dispatchMode = DispatchMode::Single;
-            m_currentMappingIndex = idx;
+            // P1.T3: prime the queue for a Single run (sets
+            // DispatchMode::Single; no mapping list / filter needed
+            // because single-mapping dispatch does not iterate).
+            m_queue.primeSingle();
 
             // Start worker thread if not running
             startWorkerThread();
@@ -446,7 +443,6 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             emit m_worker->processSyncRequested(request);
             return;
         }
-        ++idx;
     }
     qWarning() << "SyncEngine::runSync - mapping not found:" << mappingId;
 
@@ -463,7 +459,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
         delete m_currentSingleIface;
         m_currentSingleIface = nullptr;
     }
-    m_dispatchMode = DispatchMode::None;
+    m_queue.reset();
     // F2 Task 21 follow-up: clear m_isSyncing on the not-found path.
     // runSyncFuture sets m_isSyncing = true before calling
     // processSingleMapping; if we return here without dispatching,
@@ -474,9 +470,10 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
 
 // F2 Task 21: rewritten to populate m_currentSingleIface directly
 // (replacing the fragile signal-shim from Task 15). The engine owns the
-// iface; processSingleMapping installs m_dispatchMode = Single, and
-// onWorkerSyncCompleted reports the single result and finishes the
-// future. No connection-management gymnastics, no double-fire window.
+// iface; processSingleMapping calls m_queue.primeSingle() so
+// MappingQueue::dispatchMode is Single, and onWorkerSyncCompleted
+// reports the single result and finishes the future. No connection-
+// management gymnastics, no double-fire window.
 QFuture<SyncResult> SyncEngine::runSyncFuture(
     const QString &mappingId,
     SyncBehavior behavior)
@@ -534,9 +531,10 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
 }
 
 // F2 Task 21: rewritten to populate m_currentMultiIface directly. The
-// per-mapping results accumulate in m_queueResults (filled by
-// onWorkerSyncCompleted during a Queue run); when the queue drains,
-// processQueue's terminal branch reports them on the iface.
+// per-mapping results accumulate in MappingQueue (filled by
+// onWorkerSyncCompleted's m_queue.recordResult during a Queue run);
+// when the queue drains, advanceQueue's terminal branch reports them
+// on the iface via m_queue.drain().
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     SyncBehavior behavior)
 {
@@ -570,7 +568,8 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
 
 // G.6 Task 43: subset dispatch — run only the specified mapping IDs.
 // Uses the same Queue infrastructure as the all-mappings overload, but
-// sets m_mappingIdFilter so advanceQueue skips non-requested mappings.
+// passes the id set as a filter so MappingQueue::next() skips
+// non-requested mappings.
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     const QList<QString> &ids,
     SyncBehavior behavior)
@@ -594,9 +593,8 @@ QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
             this, &SyncEngine::onCancelObserved);
 
-    m_hasMappingFilter = true;
-    m_mappingIdFilter  = QSet<QString>(ids.constBegin(), ids.constEnd());
-    driveQueue(behavior);
+    QSet<QString> filter(ids.constBegin(), ids.constEnd());
+    driveQueue(behavior, std::optional<QSet<QString>>(std::move(filter)));
     return future;
 }
 
@@ -622,9 +620,10 @@ void SyncEngine::onCancelObserved()
 }
 
 // G.6 Task 46: resourceId-aware cancellation.
-// For ResourceLost + non-empty resourceId: adds to m_lostResources so that
-// advanceQueue skips pending mappings whose backends touch that resource with a
-// cancelled SyncResult. The in-flight mapping is NOT forcibly cancelled here —
+// For ResourceLost + non-empty resourceId: records the resource as lost on
+// the MappingQueue so advanceQueue skips pending mappings whose backends
+// touch that resource with a cancelled SyncResult. The in-flight mapping
+// is NOT forcibly cancelled here —
 // it runs to completion, then advanceQueue skips the next resource-matching
 // mapping. Mappings not touching the resource continue normally.
 //
@@ -633,10 +632,10 @@ void SyncEngine::cancelWithReason(CancellationReason reason,
                                   const QString &resourceId)
 {
     if (reason == CancellationReason::ResourceLost && !resourceId.isEmpty()) {
-        m_lostResources.insert(resourceId);
-        // advanceQueue reads m_lostResources when picking the next mapping.
-        // No m_cancelled=true here — we want the queue to continue with
-        // mappings that don't use the lost resource.
+        m_queue.markResourceLost(resourceId);
+        // advanceQueue queries m_queue.isResourceLost() when picking the
+        // next mapping. No m_cancelled=true here — we want the queue to
+        // continue with mappings that don't use the lost resource.
     } else {
         // All other reasons: stop the entire queue.
         m_cancelled = true;
@@ -755,9 +754,9 @@ void SyncEngine::prepareSyncFastPath()
 // F2 Task 21: multi-mapping driver — entry point for a queue run.
 // Initializes the index and kicks off the first iteration. Subsequent
 // iterations are driven by onWorkerSyncCompleted -> advanceQueue while
-// m_dispatchMode == Queue. This replaces processNextMapping; the
-// single-mapping form no longer participates in queue iteration, fixing
-// the FINDINGS leak structurally.
+// m_queue.dispatchMode() == Queue. This replaces processNextMapping;
+// the single-mapping form no longer participates in queue iteration,
+// fixing the FINDINGS leak structurally.
 void SyncEngine::processQueue()
 {
     advanceQueue();
@@ -768,9 +767,6 @@ void SyncEngine::advanceQueue()
     // Debug log removed - SyncEngineWorker provides detailed timing
 
     if (m_cancelled) {
-        m_hasMappingFilter = false;
-        m_mappingIdFilter.clear();
-        m_lostResources.clear();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -780,35 +776,22 @@ void SyncEngine::advanceQueue()
 
         // F2 Task 21: finish the multi-iface (if any) with what we have.
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
-    m_currentMappingIndex++;
+    // P1.T3: ask the queue for the next enabled+in-filter mapping.
+    // Returns nullopt past the end (queue exhausted).
+    std::optional<SyncMapping> nextMapping = m_queue.next();
 
-    // Find next enabled mapping; when m_hasMappingFilter is true
-    // (subset dispatch, G.6 Task 43) also skip IDs not in m_mappingIdFilter.
-    while (m_currentMappingIndex < m_syncMappings.size()) {
-        const SyncMapping &m = m_syncMappings[m_currentMappingIndex];
-        const bool enabled = m.enabled;
-        const bool inFilter = !m_hasMappingFilter ||
-                              m_mappingIdFilter.contains(m.id);
-        if (enabled && inFilter)
-            break;
-        m_currentMappingIndex++;
-    }
-
-    if (m_currentMappingIndex >= m_syncMappings.size()) {
-        // All mappings processed (or filtered)
-        m_hasMappingFilter = false;
-        m_mappingIdFilter.clear();
-        m_lostResources.clear();
+    if (!nextMapping.has_value()) {
+        // All mappings processed (or filtered out).
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -825,25 +808,25 @@ void SyncEngine::advanceQueue()
         // mapping results. The future resolves to the per-mapping
         // list; the aggregate result is observable via lastSyncResult().
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
-    const SyncMapping &mapping = m_syncMappings[m_currentMappingIndex];
+    const SyncMapping &mapping = *nextMapping;
 
     // G.6 Task 46: ResourceLost skip — if any of this mapping's backends
     // uses a resource that became unavailable, add a cancelled SyncResult
     // and advance without dispatching to the worker.
-    if (!m_lostResources.isEmpty() && m_controller) {
+    if (m_queue.hasLostResources() && m_controller) {
         auto *src = m_controller->backendById(mapping.sourceBackend);
         auto *tgt = m_controller->backendById(mapping.targetBackend);
-        const bool srcLost = src && m_lostResources.contains(src->resourceId());
-        const bool tgtLost = tgt && m_lostResources.contains(tgt->resourceId());
+        const bool srcLost = src && m_queue.isResourceLost(src->resourceId());
+        const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
         if (srcLost || tgtLost) {
             SyncResult cancelled;
             cancelled.success   = false;
@@ -851,7 +834,7 @@ void SyncEngine::advanceQueue()
             cancelled.errorMessage = QStringLiteral("Resource lost");
             cancelled.startTime    = QDateTime::currentDateTime();
             cancelled.endTime      = cancelled.startTime;
-            m_queueResults.append(cancelled);
+            m_queue.recordResult(cancelled);
             advanceQueue();
             return;
         }
@@ -862,7 +845,7 @@ void SyncEngine::advanceQueue()
     // to the worker. Append a successful no-op result to the queue so
     // the future caller sees per-mapping completion in resultAt(0).
     if (m_skippedMappingIds.contains(mapping.id)) {
-        emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
+        emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
                              tr("Skipping unchanged %1").arg(mapping.id));
 
         SyncResult skippedResult;
@@ -872,14 +855,14 @@ void SyncEngine::advanceQueue()
 
         // Aggregate into last result (no stats to add; success stays true unless
         // already false from a prior mapping failure).
-        m_queueResults.append(skippedResult);
+        m_queue.recordResult(skippedResult);
 
         // Advance to the next mapping without touching the worker.
         advanceQueue();
         return;
     }
 
-    emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
+    emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
                          tr("Syncing %1").arg(mapping.id));
 
     // Create request and invoke worker directly
@@ -1111,8 +1094,8 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         m_pendingUnmonitoredConflicts.clear();
     }
 
-    // Update current mapping result
-    m_currentMappingResult = result;
+    // P1.T3: the former m_currentMappingResult write was dead (never
+    // read by any slot or accessor) and was removed.
 
     // Aggregate stats into last result
     m_lastResult.sourceStats += result.sourceStats;
@@ -1160,7 +1143,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // processNextMapping (which iterated from index 0 for the single-
     // mapping form — see FINDINGS "SyncEngine::runSync(mappingId) is
     // leaky"). Single-mapping runs finish here; queue runs advance.
-    if (m_dispatchMode == DispatchMode::Single) {
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
         // Finish the single-mapping future and shut the run down.
         // F2 Task 23 follow-up: when cancellation was observed
         // (m_cancelled set by onCancelObserved), decorate
@@ -1191,17 +1174,16 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
         return;
     }
 
-    // Queue mode: append to the per-mapping result list and advance.
-    if (m_dispatchMode == DispatchMode::Queue) {
-        m_queueResults.append(result);
-    }
+    // Queue mode: record the per-mapping result and advance.
+    // recordResult is a no-op outside Queue mode (defensive).
+    m_queue.recordResult(result);
 
     // Continue to next mapping (queue mode only).
     advanceQueue();
@@ -1224,23 +1206,22 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
         m_lastResult.errorMessage = errorMessage;
 
     // F2 Task 21: same dispatch-on-mode pattern as onWorkerSyncCompleted.
-    if (m_dispatchMode == DispatchMode::Single) {
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
         if (m_currentSingleIface) {
             m_currentSingleIface->reportResult(failedResult);
             m_currentSingleIface->reportFinished();
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
         return;
     }
 
-    if (m_dispatchMode == DispatchMode::Queue) {
-        m_queueResults.append(failedResult);
-    }
+    // recordResult is a no-op outside Queue mode (defensive).
+    m_queue.recordResult(failedResult);
 
     // Continue to next mapping (don't fail the whole batch).
     advanceQueue();

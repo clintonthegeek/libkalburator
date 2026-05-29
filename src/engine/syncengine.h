@@ -2,6 +2,7 @@
 #define KALBURATOR_SYNCENGINE_H
 
 #include "enginediff.h"
+#include "mappingqueue.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "shape.h"
@@ -418,45 +419,36 @@ signals:
 
 private:
     /**
-     * @brief F2 Task 21: dispatch-mode tag tracking which entry path
-     * is currently driving the worker. Replaces the implicit shared
-     * state where both runSync overloads ran through processNextMapping
-     * and the single-mapping form double-dispatched after worker
-     * completion (see FINDINGS "SyncEngine::runSync(mappingId) is leaky").
-     */
-    enum class DispatchMode {
-        None,    ///< No sync in flight.
-        Single,  ///< runSyncFuture(mappingId, ...)
-        Queue    ///< runSyncFuture(behavior)
-    };
-
-    /**
      * @brief F2 Task 42: queue driver. Sets up state for a multi-mapping
      * run, runs active controllers + the fast-path pre-pass, and
      * delegates to processQueue() to start dispatching to the worker.
-     * Called only from runSyncFuture(behavior); the previous void
-     * runSync(behavior) public API was deleted in F2 Task 42.
+     * Called from both runSyncFuture(behavior) and runSyncFuture(ids,
+     * behavior); the filter argument distinguishes "all enabled" (nullopt)
+     * from "subset" (set of mapping IDs). Plan 1 Task 4 will fold the
+     * two arguments into one SyncRequest struct.
      */
-    void driveQueue(SyncBehavior behavior);
+    void driveQueue(SyncBehavior behavior,
+                    std::optional<QSet<QString>> filter = std::nullopt);
 
     /**
      * @brief F2 Task 21: single-mapping driver. Dispatches exactly the
      * named mapping to the worker once. Queue iteration is structurally
      * impossible — onWorkerSyncCompleted distinguishes Single vs Queue
-     * via m_dispatchMode and finishes immediately for Single.
+     * via m_queue.dispatchMode() and finishes immediately for Single.
      */
     void processSingleMapping(const QString &mappingId, SyncBehavior behavior);
 
     /**
-     * @brief F2 Task 21: multi-mapping driver. Iterates m_syncMappings
-     * via re-entry from onWorkerSyncCompleted; per-mapping result is
-     * forwarded to m_currentMultiIface (if populated) at the end.
+     * @brief F2 Task 21: multi-mapping driver. Iterates the queue
+     * candidate list via re-entry from onWorkerSyncCompleted; per-mapping
+     * results accumulate inside MappingQueue and are forwarded to
+     * m_currentMultiIface (if populated) at run end.
      */
     void processQueue();
 
-    /// F2 Task 21 helper: advance m_currentMappingIndex to the next
-    /// enabled mapping (or past the end) and dispatch it; called from
-    /// processQueue() and from onWorkerSyncCompleted() during a Queue run.
+    /// F2 Task 21 helper: pop the next enabled+in-filter mapping from
+    /// MappingQueue and dispatch it; called from processQueue() and
+    /// from onWorkerSyncCompleted() during a Queue run.
     void advanceQueue();
 
     /**
@@ -515,8 +507,16 @@ private:
 
     bool m_isSyncing = false;
     bool m_cancelled = false;
-    int m_currentMappingIndex = -1;
     SyncResult m_lastResult;
+
+    // Architectural-redress Plan 1 Task 3 (2026-05-29): per-run queue
+    // state moved into MappingQueue. Owns the mapping iteration cursor,
+    // the per-run SyncResult accumulator, the subset filter, the
+    // lost-resource set, and the DispatchMode tag. The engine reads
+    // and mutates the queue on its own thread (no locking; see
+    // mappingqueue.h class comment). Replaces seven scattered member
+    // fields with one collaborator (INVARIANTS §4).
+    MappingQueue m_queue;
 
     // Task 9: per-call override set by runSyncFuture(mappingId, override, ...)
     // and consumed + cleared by processSingleMapping before dispatching the
@@ -525,41 +525,19 @@ private:
     // inherit it.
     ExecutionOverride m_pendingOverride;
 
-    // F2 Task 21: which entry-path drove the current run. Read by
-    // onWorkerSyncCompleted to decide whether to advance the queue
-    // or finish the single-mapping future.
-    DispatchMode m_dispatchMode = DispatchMode::None;
-
     // F2 Task 21: pointers to the QFutureInterface for the current run.
-    // Only one is populated at a time (matched to m_dispatchMode); the
-    // unused one is nullptr. Owned by the engine — populated by the
+    // Only one is populated at a time (matched to MappingQueue::dispatchMode);
+    // the unused one is nullptr. Owned by the engine — populated by the
     // runSyncFuture overloads, cleared+deleted in onWorkerSyncCompleted
     // (Single) or after queue iteration completes (Queue). The void
     // runSync overloads leave both nullptr (legacy signal callers).
     QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
     QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
 
-    // F2 Task 21: per-mapping results accumulated during a Queue run,
-    // reported via m_currentMultiIface->reportResult() at the end.
-    QList<SyncResult> m_queueResults;
-
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
     QMap<QString, FreshSyncState> m_freshState;
-
-    // G.6 Task 43: subset filter for runSyncFuture(QList<QString>).
-    // m_hasMappingFilter distinguishes "no filter" from "empty filter".
-    // When true, advanceQueue skips mappings whose id is not in m_mappingIdFilter.
-    // An empty m_mappingIdFilter with m_hasMappingFilter=true means "run nothing".
-    bool m_hasMappingFilter = false;
-    QSet<QString> m_mappingIdFilter;
-
-    // G.6 Task 46: resource IDs that became unavailable mid-queue.
-    // advanceQueue adds a cancelled SyncResult for any pending mapping
-    // whose source or target backend's resourceId() is in this set.
-    // Cleared at queue completion or when a new queue run starts.
-    QSet<QString> m_lostResources;
 
     // G.6 Task 44: resource-aware FIFO scheduler. Tracks mapping→resource
     // sets for cancelWithReason(ResourceLost). The engine still drives
@@ -584,7 +562,9 @@ private:
 
     // Sync state tracking
     SyncPhase m_currentPhase = SyncPhase::Idle;
-    SyncResult m_currentMappingResult;
+    // P1.T3 (2026-05-29): the former m_currentMappingResult member was
+    // dead — set once in onWorkerSyncCompleted and never read by any
+    // slot or accessor. Removed rather than folded into MappingQueue.
 
     QMap<QString, DecSyncActiveController*> m_activeControllers;
 
