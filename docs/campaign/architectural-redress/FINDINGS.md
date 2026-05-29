@@ -93,6 +93,12 @@ address — load-bearing knowledge, not audit restatements.
   `restoreFromSnapshot()` is a stub returning `false` while `captureSnapshot()` is fully
   implemented; destructive ops therefore have capture-but-no-undo. Pinned by
   `tst_calendar_manager::restoreFromSnapshot_currentlyUnimplemented_returnsFalse`.
+- 2026-05-29 — `tests/engine/tst_engine_cancellation` — inv (correctness/test) — intermittent
+  **SEGFAULT** under full-parallel `ctest -jN`: failed once in a full run, then passed 5/5 on
+  isolated rerun. Indicates a threading race in the SyncEngine cancellation path (not a
+  test-only timeout). Surfaced during Plan 2's regression gate; unrelated to the test-only
+  change. Candidate for the SyncEngine decomposition follow-up (cf. the `m_baselineStoreAnchor`
+  / dual-iface notes above).
 
 ## Resolved
 
