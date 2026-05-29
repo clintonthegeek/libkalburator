@@ -1,0 +1,1451 @@
+{
+  "survivors": [
+    {
+      "refId": "G1",
+      "title": "No singletons: each session/test owns its own registry",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "Both ShapeRegistries (shape/shaperegistries.h) and BackendRegistry (sync/backendregistry.h) are plain instantiable types with no process-global singleton accessor; each session or test constructs its own instance.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/shape/shaperegistries.h", "line": 18, "quote": "no process-global default and no `::instance()` accessor — the Ambient-Context scaffolding that bridged the DI migration was removed once downstream adopted the injecting ctors"},
+        {"file": "src/shape/shaperegistries.h", "line": 21, "quote": "struct ShapeRegistries {"},
+        {"file": "src/sync/backendregistry.h", "line": 52, "quote": "// (Phase Q.1, 2026-05-21: instance() singleton removed; each\n//  session/test/embedder owns its own BackendRegistry.)"},
+        {"file": "src/sync/backendregistry.h", "line": 25, "quote": "explicit BackendRegistry(QObject *parent = nullptr);"},
+        {"file": "src/shape/transformationregistry.h", "line": 107, "quote": "/// Always obtained by injecting a ShapeRegistries&, never globally."}
+      ],
+      "assessment": "Both ShapeRegistries and BackendRegistry are correctly implemented as plain instantiable types with no process-global singleton accessors.",
+      "recommendedDirection": "No action needed; continue enforcing the injection-only ownership pattern via constructor parameters rather than global accessors."
+    },
+    {
+      "refId": "G2",
+      "title": "Consistent DI: SyncEngine ctor takes registry, host, and shape registries; no service-locator lookups inside methods",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "SyncEngine's constructor accepts all collaborators via parameters (BackendRegistry*, ISyncHost*, ShapeRegistries&) and no methods resort to service-locator patterns. The file path engine/syncengine.h is correct.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/engine/syncengine.h", "line": 390, "quote": "explicit SyncEngine(BackendRegistry *registry,\n                              ISyncHost *host,\n                              Kalburator::Shape::ShapeRegistries &shape,\n                              QObject *parent = nullptr);"},
+        {"file": "src/engine/syncengine.cpp", "line": 90, "quote": "SyncEngine::SyncEngine(BackendRegistry *registry,\n                                   ISyncHost *host,\n                                   Kalburator::Shape::ShapeRegistries &shape,\n                                   QObject *parent)\n    : QObject(parent)\n    , m_registry(registry)\n    , m_controller(host)\n    , m_shape(shape)"},
+        {"file": "src/engine/syncengine.h", "line": 738, "quote": "BackendRegistry *m_registry;\n    ISyncHost *m_controller;\n    Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;\n    SyncConflictStore *m_conflictStore = nullptr;\n    ConflictManager *m_conflictManager = nullptr;\n    Kalburator::Conflict::ConflictHandlerRegistry m_conflictRegistry;\n    Kalburator::Conflict::IMassDeleteGuard *m_massDeleteGuard = nullptr;\n    Kalburator::Shape::ShapeRegistries &m_shape;"}
+      ],
+      "assessment": "SyncEngine correctly implements consistent dependency injection across all collaborators. Zero service-locator patterns in the 2780-line implementation.",
+      "recommendedDirection": "Maintain the injected-dependency pattern as the engine grows; avoid adding any static or global accessor calls inside methods."
+    },
+    {
+      "refId": "G3",
+      "title": "No friend class declarations in the audited surface",
+      "category": "encapsulation",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "There are zero 'friend class' declarations anywhere in the audited source and test trees.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/", "quote": "grep -rn 'friend[[:space:]]*(class|struct)' returns no matches across 182 header files in src/ and 162 files in tests/"},
+        {"file": "src/sync/caldavprovider.cpp", "line": 24, "quote": "// BackendRegistry / BackendConfiguration::friendlyTypeName agree."},
+        {"file": "src/types/backendconfiguration.h", "line": 105, "quote": "static QString friendlyTypeName(const QString &type);"}
+      ],
+      "assessment": "A comprehensive grep across all headers and impls yields zero matches for friend declarations; incidental 'friend' tokens are only in friendlyTypeName() and comments.",
+      "recommendedDirection": "No action needed; continue avoiding friend declarations to maintain clean encapsulation boundaries."
+    },
+    {
+      "refId": "G4",
+      "title": "Clean POD/control-class split: value types are public-field structs with helpers; control classes properly encapsulated",
+      "category": "encapsulation",
+      "severity": "good",
+      "verdict": "corrected",
+      "claim": "The codebase maintains a consistent POD/control-class split. Value types are public-field structs with inline helpers; control classes use proper class with public: API and private: data members.",
+      "correction": "The prior finding cited only 'synctypes.h' without the full path. The actual file is src/types/synctypes.h. The substantive claim is accurate; the pattern extends well beyond synctypes.h to all of src/types/ and is consistently mirrored in control classes in src/sync/ and src/engine/.",
+      "evidence": [
+        {"file": "src/types/synctypes.h", "line": 69, "quote": "struct ConflictInfo {"},
+        {"file": "src/types/synctypes.h", "line": 111, "quote": "struct SyncStats {"},
+        {"file": "src/types/synctypes.h", "line": 151, "quote": "struct SyncResult {"},
+        {"file": "src/types/synctypes.h", "line": 224, "quote": "struct SyncMapping {"},
+        {"file": "src/types/backendrecord.h", "line": 14, "quote": "struct BackendRecord {"},
+        {"file": "src/types/collectioninfo.h", "line": 10, "quote": "struct CollectionInfo {"},
+        {"file": "src/types/logicalcalendar.h", "line": 141, "quote": "struct LogicalCalendar {"},
+        {"file": "src/types/calendarmetadatamanager.h", "line": 24, "quote": "class CalendarMetadataManager"},
+        {"file": "src/types/calendarmetadatamanager.h", "line": 63, "quote": "private:\n    QString m_calendarPath;"},
+        {"file": "src/sync/providermanager.h", "line": 44, "quote": "class ProviderManager : public QObject"},
+        {"file": "src/engine/syncengine.h", "line": 119, "quote": "class SyncEngineWorker : public QObject"}
+      ],
+      "assessment": "The codebase maintains a consistent POD/control-class split across all layers; value types are public-field structs with inline helpers, control classes use proper encapsulation. Layering verified clean (types <- shape <- domains <- sync/engine).",
+      "recommendedDirection": "No action needed; continue applying this pattern as new types and control classes are added."
+    },
+    {
+      "refId": "G5",
+      "title": "Single transformation mechanism: src/transcoding/ deleted, shape graph is sole conversion path",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "src/transcoding/ has been fully deleted (8 source files, ~845 lines). TransformationRegistry.compile() in src/shape/ is now the exclusive record-conversion mechanism, used directly by the engine. The deletion commit (88122b8) states 'campaign invariant 1 satisfied'.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/shape/transformationregistry.h", "line": 80, "quote": "std::optional<Pipeline> compile(Shape from, Shape to) const;"},
+        {"file": "src/engine/syncengine.cpp", "line": 1940, "quote": "std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 831, "quote": "// Transcoding is now the backend/shape graph's responsibility."},
+        {"file": "src/engine/enginediff.h", "line": 17, "quote": "Distinct from SyncChange (src/transcoding/syncdiff.h), which is"},
+        {"file": "src/engine/propertydiff.h", "line": 24, "quote": "the unrelated Kalburator::Sync::PropertyDiff in transcoding/incidencediff.h."}
+      ],
+      "assessment": "src/transcoding/ fully deleted (commit 88122b8); TransformationRegistry.compile() is sole record-conversion mechanism used by SyncEngine. Two stale comments still cite deleted transcoding/ paths.",
+      "recommendedDirection": "Sweep the two stale comments in src/engine/enginediff.h (line 17) and src/engine/propertydiff.h (line 24) that still cite the deleted src/transcoding/ paths, replacing them with references to the current src/diff/ location."
+    },
+    {
+      "refId": "G7",
+      "title": "Healthy modules engine/, plugin/, blob/, todo/, note/, outline/, storage/, diff/, discovery/ — mostly confirmed with minor test-coverage gaps",
+      "category": "good",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "Nine named modules have clean internal structure and appropriate dependency direction. All nine modules exist as stated. However, diff/ has no dedicated tests/diff/ directory — its tests live in tests/calendar/ — and discovery/ has no test coverage at all.",
+      "correction": "The prior finding called all nine modules 'healthy' without qualification. Structurally the claim is accurate. However 'healthy' implies testedness: diff/ is tested only via tests/calendar/tst_incidencediff.cpp and tst_syncdiff.cpp rather than a dedicated tests/diff/ suite, and discovery/ has no test files anywhere. Additionally engine/ includes syncoperation.h which physically lives in src/calendar/, an indirect cross-domain header pull that is benign in the orchestrator role but not perfectly clean.",
+      "evidence": [
+        {"file": "src/engine/syncengine.h", "line": 13, "quote": "#include \"syncoperation.h\"  // F2 Task 16: required by await<Op> template"},
+        {"file": "src/calendar/syncoperation.h", "line": 10, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/diff/syncdiff.h", "line": 4, "quote": "#include \"synctypes.h\""},
+        {"file": "src/discovery/syncthingdiscovery.h", "line": 4, "quote": "#include <QUrl>"},
+        {"file": "tests/calendar/tst_incidencediff.cpp", "line": 9, "quote": "#include \"incidencediff.h\""},
+        {"file": "tests/calendar/tst_syncdiff.cpp", "line": 4, "quote": "#include \"syncdiff.h\""}
+      ],
+      "assessment": "Nine modules confirmed; diff/ lacks dedicated suite and discovery/ has zero coverage. engine/ includes calendar-located syncoperation.h. The unqualified 'healthy' claim is only partially true.",
+      "recommendedDirection": "Add a dedicated tests/diff/ suite and at least a smoke test for tests/discovery/ to make the health claim fully accurate."
+    },
+    {
+      "refId": "G8",
+      "title": "Deprecated APIs explicitly marked [[deprecated]] with migration targets in storage/baselinestore.h",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "The legacy triple-keyed API methods in storage/baselinestore.h are annotated with [[deprecated(\"...\")]] carrying explicit migration targets pointing to the v3 mapping-keyed API.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/storage/baselinestore.h", "line": 123, "quote": "[[deprecated(\"Use setBaselineV3() / mapping-keyed API (G.4).\")]]"},
+        {"file": "src/storage/baselinestore.h", "line": 129, "quote": "[[deprecated(\"Use baselineV3() / mapping-keyed API (G.4).\")]]"},
+        {"file": "src/storage/baselinestore.h", "line": 134, "quote": "[[deprecated(\"Use setBaselineV3() / mapping-keyed API (G.4).\")]]"},
+        {"file": "src/storage/baselinestore.h", "line": 139, "quote": "[[deprecated(\"Use baselinesForMappingV3() / mapping-keyed API (G.4).\")]]"},
+        {"file": "src/storage/baselinestore.h", "line": 143, "quote": "[[deprecated(\"Use clearMappingV3() / mapping-keyed API (G.4).\")]]"}
+      ],
+      "assessment": "All five deprecated annotations carry explicit migration targets pointing to v3 mapping-keyed equivalents. Good engineering practice.",
+      "recommendedDirection": "Continue this pattern — keep the [[deprecated]] annotations until all callers have migrated to the v3 API, then remove the legacy methods and the v2 table."
+    },
+    {
+      "refId": "B1",
+      "title": "SyncEngine god class + incomplete worker unification (one factual error corrected)",
+      "category": "encapsulation",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "engine/syncengine.cpp ~2780 LOC, .h ~840 LOC. SyncEngineWorker is a separate QObject declared publicly in syncengine.h (lines 119-335) with back-pointer m_engine. Four overloads of runSyncFuture() with overlapping semantics; m_pendingOverride implicit state machine; two parallel mode enums (SyncEngineWorker::Mode vs SyncEngine::SyncBehavior).",
+      "correction": "The invokeMethod(m_engine,\"onWorkerSyncCompleted\",...) claim is false. Completion is signaled properly: the worker emits syncCompleted() and the engine connects it via Qt::QueuedConnection to onWorkerSyncCompleted() (syncengine.cpp ~line 128). The invokeMethod(m_engine,...) calls that DO exist (lines 1668, 1811, 2117, 2179, 2561, 2685, 2714) all use lambda captures for baseline-store marshaling to the engine thread — not for completion callbacks. The '~20 private members' count is understated: SyncEngine alone has ~33-36 private member variables. Everything else confirmed: LOC exact, worker at 119-335, m_engine back-pointer at 331, four runSyncFuture overloads, m_pendingOverride at 759, dual Mode/SyncBehavior enums at 127 and 381.",
+      "evidence": [
+        {"file": "src/engine/syncengine.cpp", "line": 2780, "quote": "file is exactly 2780 lines"},
+        {"file": "src/engine/syncengine.h", "line": 840, "quote": "file is exactly 840 lines"},
+        {"file": "src/engine/syncengine.h", "line": 119, "quote": "class SyncEngineWorker : public QObject"},
+        {"file": "src/engine/syncengine.h", "line": 331, "quote": "SyncEngine *m_engine = nullptr;"},
+        {"file": "src/engine/syncengine.cpp", "line": 128, "quote": "connect(m_worker, &SyncEngineWorker::syncCompleted,\n            this, &SyncEngine::onWorkerSyncCompleted, Qt::QueuedConnection);"},
+        {"file": "src/engine/syncengine.cpp", "line": 1668, "quote": "QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &hasExistingBaselines]() {"},
+        {"file": "src/engine/syncengine.h", "line": 759, "quote": "ExecutionOverride m_pendingOverride;"},
+        {"file": "src/engine/syncengine.h", "line": 127, "quote": "enum class Mode {\n        Monitored,\n        Unmonitored\n    };"},
+        {"file": "src/engine/syncengine.h", "line": 381, "quote": "enum class SyncBehavior {\n        Monitored,\n        Unmonitored\n    };"}
+      ],
+      "assessment": "God class with incomplete worker unification confirmed: 2780/840 LOC, worker QObject at 119-335 with m_engine back-pointer, four runSyncFuture overloads, m_pendingOverride implicit state, dual enums. Completion signaling is correctly wired via Qt::QueuedConnection; the invokeMethod calls marshal baseline-store access only.",
+      "recommendedDirection": "Extract SyncEngineWorker into its own header/source pair and replace the m_engine back-pointer + invokeMethod baseline marshaling with a dedicated signal/slot pair or a thread-safe BaselineStore proxy."
+    },
+    {
+      "refId": "B2",
+      "title": "types/ contains substantial behavior (JSON, I/O, lock registry) that belongs in higher layers",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "types/ is not a pure type vocabulary layer. logicalcalendar.h embeds complete JSON ser/deser inline. backendconfiguration.cpp implements full JSON round-trip. crashjournal.cpp implements JSON-lines crash-recovery I/O. calendarmetadatamanager.cpp implements atomic filesystem writes via QSaveFile. incidencelock_registry.cpp implements in-memory lock state management with QObject signals.",
+      "correction": "The prior audit's claim that the shape.h #include is a layering violation is wrong. CMakeLists.txt lines 50-68 explicitly co-bundles src/shape/shape.h/.cpp into the kalburator-types target so IIncidenceRegistry can carry Shape values without linking the full Sync library. The #include \"shape.h\" in logicalcalendar.h (line 14) is therefore intentional and not a violation. The real, confirmed issue is the behavioral bloat: JSON, atomic I/O, and lock machinery embedded in a layer the CMakeLists advertises as a 'minimal type vocabulary'.",
+      "evidence": [
+        {"file": "src/types/logicalcalendar.h", "line": 14, "quote": "#include \"shape.h\"         // For Shape::DomainId"},
+        {"file": "src/types/logicalcalendar.h", "line": 449, "quote": "// JSON Serialization"},
+        {"file": "src/types/backendconfiguration.cpp", "line": 173, "quote": "BackendConfiguration BackendConfiguration::fromJson(const QJsonObject &json)"},
+        {"file": "src/types/crashjournal.cpp", "line": 24, "quote": "void CrashJournal::append(const QString &entityId, const QJsonObject &entry)"},
+        {"file": "src/types/calendarmetadatamanager.cpp", "line": 189, "quote": "QSaveFile file(filePath);"},
+        {"file": "src/types/incidencelock_registry.cpp", "line": 33, "quote": "bool IncidenceLockRegistry::tryLock(const QString &uid, QObject *owner, const QString &description)"},
+        {"file": "CMakeLists.txt", "line": 50, "quote": "# Shape value type — pure Qt, no KCalendarCore / sync machinery.\n# Lives in src/shape/ but exposed via kalburator-types so that\n# IIncidenceSource::Entry and IIncidenceRegistry can carry Shape values\n# without consumers needing to link the full Kalburator::Sync library."},
+        {"file": "CMakeLists.txt", "line": 7, "quote": "Kalburator::Types — minimal type vocabulary (BackendConfiguration,"}
+      ],
+      "assessment": "types/ advertises itself as a minimal type vocabulary but embeds JSON codecs, crash-recovery I/O, atomic filesystem writes, and a QObject lock registry. The shape.h co-bundle is intentional, not a violation. The behavioral bloat is real.",
+      "recommendedDirection": "Split types/ into a true vocabulary sub-target (structs + enums only) and a separate helpers target for JSON codecs, I/O utilities, and lock machinery."
+    },
+    {
+      "refId": "B3",
+      "title": "RemoteCalendarBackend and LocalBackend god classes — real issue, several detail errors",
+      "category": "encapsulation",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "RemoteCalendarBackend is a 2649-LOC/.h 427-LOC god class with ~58-61 public methods spanning 7 concerns. Six (actually seven) separate discoveredX(id) getters should be one DTO. LocalBackend similar (~1300 LOC, ~55-60 public methods, 4 metadata setters).",
+      "correction": "Four errors found: (1) collectionRevision() is NOT a trivial delegate to ctag() — it calls fetchAllCtags({collectionId}), a batched network PROPFIND. The trivial ctag() delegate is cachedCollectionRevision(). (2) There are 7 discoveredX getters, not 6. (3) RemoteCalendarBackend has ~60-61 public methods, not 58. (4) LocalBackend.h is 224 LOC and the class has ~55-60 public methods, not 35. The IBlobBackend impl concern is inherited through SyncBackendBase. The god-class problem is real and confirmed.",
+      "evidence": [
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 1, "quote": "2649 lines total (wc -l)"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 158, "quote": "QString collectionRevision(const QString &collectionId) override\n    {\n        const auto map = fetchAllCtags({collectionId});\n        return map.value(collectionId);\n    }"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 168, "quote": "QString cachedCollectionRevision(const QString &collectionId) const override\n    {\n        return ctag(collectionId);\n    }"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 102, "quote": "QString discoveredUrl(const QString &calendarId) const;"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 205, "quote": "bool discoveredWritable(const QString &calendarId) const override;"},
+        {"file": "src/calendar/localbackend.h", "line": 224, "quote": "224 lines total (wc -l); ~55 public methods counted"},
+        {"file": "src/calendar/localbackend.h", "line": 124, "quote": "bool setCalendarColor(const QString &calendarId, const QColor &color);"},
+        {"file": "src/sync/syncbackendbase.h", "line": 53, "quote": "class SyncBackendBase : public QObject, public IBlobBackend"}
+      ],
+      "assessment": "Real god-class problem in both classes. 7 discoveredX getters verified; collectionRevision() is a batched PROPFIND not a delegate; cachedCollectionRevision() is the delegate. ~60 public methods each spanning 7+ concerns.",
+      "recommendedDirection": "Extract a DiscoveredCalendarInfo DTO to replace the seven discoveredX(id) getters, and split the IBlobBackend, ChangeDetection, and calendar-CRUD concerns into separate collaborator classes."
+    },
+    {
+      "refId": "B4",
+      "title": "sync/ includes domain backends (calendar/, contacts/) but no circular dependency exists",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "sync/akonadiprovider.cpp includes both ../calendar/akonadibackend.h and ../contacts/akonadicontactsbackend.h; sync/akonadibackendcontribution.cpp also includes ../contacts/akonadicontactsbackend.h. These are real sync->domain layering violations. However, there is NO circular dependency.",
+      "correction": "The prior finding made two factual errors: (1) it claimed syncoperation.h was in src/sync/ and that calendar/akonadibackend.h included it from there, closing a cycle — in reality syncoperation.h lives in src/calendar/ and is included via a plain same-directory include, so there is no cycle; (2) it wrongly attributed the contacts include solely to akonadibackendcontribution.cpp — akonadiprovider.cpp also directly includes ../contacts/akonadicontactsbackend.h. The underlying real issue is a one-way sync->domain layering violation, not a circular dependency.",
+      "evidence": [
+        {"file": "src/sync/akonadiprovider.cpp", "line": 8, "quote": "#include \"../calendar/akonadibackend.h\""},
+        {"file": "src/sync/akonadiprovider.cpp", "line": 9, "quote": "#include \"../contacts/akonadicontactsbackend.h\""},
+        {"file": "src/sync/akonadibackendcontribution.cpp", "line": 5, "quote": "#include \"../contacts/akonadicontactsbackend.h\""},
+        {"file": "src/calendar/akonadibackend.h", "line": 7, "quote": "#include \"syncoperation.h\""},
+        {"file": "src/calendar/syncoperation.h", "line": 10, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/calendar/syncbackend.h", "line": 45, "quote": "#include \"syncbackendbase.h\" // domain-neutral base (Phase K.4)"},
+        {"file": "src/calendar/syncbackend.h", "line": 120, "quote": "class SyncBackend : public SyncBackendBase"}
+      ],
+      "assessment": "Real one-way sync->domain layering violation; the prior audit's circular-dependency claim is refuted. Dependency chain is strictly one-way: sync/ -> calendar/ -> sync/syncbackendbase. syncbackend.h is 319 LOC and correctly inherits the neutral base.",
+      "recommendedDirection": "Invert the dependency by introducing provider-facing interfaces (e.g. IBlobBackend factory) in sync/ so that akonadiprovider.cpp and akonadibackendcontribution.cpp no longer include calendar/ or contacts/ backend headers directly."
+    },
+    {
+      "refId": "B5",
+      "title": "Three backend-adjacent directories lack a documented layer position and have namespace fragmentation",
+      "category": "layering",
+      "severity": "moderate",
+      "verdict": "corrected",
+      "claim": "src/backend/ (2 files), src/storage/, and src/universal/ (5 header+source pairs) each carry a distinct namespace (Kalburator::Backend, Kalburator::Storage, Kalburator::Sinks), were added in separate phases (K.1, K.5, K.7.3), and have no stated position in the layer order.",
+      "correction": "The prior audit stated backend/ contains '1 file changedetection.h' — it actually contains 2 files (changedetection.h and resourcelinearization.h). The universal/ file list omitted universalstorageplugin. The core structural concern is real but moderate: the three directories are orphaned from the layer diagram, each uses a different namespace, and their ownership relationships to engine/ and sync/ are undocumented, but none introduces an actual include-cycle or downward layering violation.",
+      "evidence": [
+        {"file": "src/backend/changedetection.h", "line": 8, "quote": "namespace Kalburator::Backend {"},
+        {"file": "src/backend/resourcelinearization.h", "line": 6, "quote": "namespace Kalburator::Backend {"},
+        {"file": "src/storage/baselinestore.h", "line": 37, "quote": "namespace Kalburator::Storage {"},
+        {"file": "src/universal/rawfilesbackend.h", "line": 9, "quote": "namespace Kalburator::Sinks {"},
+        {"file": "src/universal/universalstorageplugin.h", "line": 6, "quote": "namespace Kalburator {"},
+        {"file": "CMakeLists.txt", "line": 249, "quote": "# Phase K.1 — backend capability interfaces."},
+        {"file": "CMakeLists.txt", "line": 210, "quote": "# Phase K.5 — domain-neutral storage layer."},
+        {"file": "CMakeLists.txt", "line": 425, "quote": "# Phase K.7.3 — UniversalStoragePlugin wrapping those backends."}
+      ],
+      "assessment": "Three directories carry distinct namespaces, were added in separate phases, and are orphaned from the documented layer diagram. backend/ has 2 files; universal/ has 6 components. No include-cycles. Namespace fragmentation is real and undocumented.",
+      "recommendedDirection": "Document the layer position of each directory and unify the Sinks/Backend namespaces under a coherent scheme."
+    },
+    {
+      "refId": "B6",
+      "title": "shape/ interfaces depend on conflict/ and types/ layers — partially correct, one atom is wrong",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "shape/recordwriter.h includes backendrecord.h (a types/ concrete record type); shape/recordmerger.h and shape/canonjsonmerger.h include conflict/conflictpolicy.h.",
+      "correction": "The recordwriter.h -> types/backendrecord.h dependency is real but types/ is the LOWEST layer, so this is a valid downward dependency — NOT a violation. The recordmerger.h -> conflict/conflictpolicy.h dependency is a real upward-layering violation. However, canonjsonmerger.h does NOT directly include conflictpolicy.h — it only includes recordmerger.h, which itself includes it. The genuine violation is recordmerger.h pulling conflict/conflictpolicy.h into the shape/ interface layer.",
+      "evidence": [
+        {"file": "src/shape/recordwriter.h", "line": 7, "quote": "#include \"backendrecord.h\""},
+        {"file": "src/shape/recordmerger.h", "line": 4, "quote": "#include \"conflictpolicy.h\""},
+        {"file": "src/shape/recordmerger.h", "line": 30, "quote": "const Kalburator::Conflict::ConflictPolicy& policy) const = 0;"},
+        {"file": "src/shape/canonjsonmerger.h", "line": 6, "quote": "#include \"recordmerger.h\""},
+        {"file": "src/shape/canonjsonmerger.h", "line": 23, "quote": "const Kalburator::Conflict::ConflictPolicy& policy) const override;"},
+        {"file": "src/conflict/conflictpolicy.h", "line": 20, "quote": "namespace Kalburator::Conflict {"}
+      ],
+      "assessment": "recordwriter.h -> types/ is a valid downward dependency. recordmerger.h -> conflict/conflictpolicy.h is a genuine upward violation. canonjsonmerger.h only transitively references ConflictPolicy via its base.",
+      "recommendedDirection": "Move ConflictPolicy out of conflict/ into types/ (or shape/ itself) so that shape/ interfaces can reference it without an upward dependency on the engine-orbit conflict/ layer."
+    },
+    {
+      "refId": "B7",
+      "title": "CalendarManager: real structural issues confirmed but several detail claims are wrong",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "corrected",
+      "claim": "CalendarManager.cpp is 927 lines and mixes Calendar CRUD, Binding CRUD, and Incidence CRUD in one class. DeleteMode actually has FIVE variants, not four. There are only 17 public methods, not ~25. The repeated procedural skeleton is real, but 'check caps' and 'update baseline' do not appear as routine steps.",
+      "correction": "Three errors: (1) DeleteMode has five variants (Hide, Disable, DisconnectSync, Forget, DeleteFromAll), not four. (2) Public method count is 17, not ~25. (3) The skeleton's 'check caps' is a one-off in updateCalendar only, and 'update baseline' is completely absent. The real repeating skeleton is: resolve backend via backendById -> call backend op -> updateLogicalCalendar -> save() -> regenerateSyncMappings().",
+      "evidence": [
+        {"file": "src/calendar/calendarmanager.cpp", "line": 927, "quote": "} // namespace Kalburator::Sync"},
+        {"file": "src/calendar/calendarmanager.h", "line": 27, "quote": "enum class DeleteMode {"},
+        {"file": "src/calendar/calendarmanager.h", "line": 31, "quote": "DisconnectSync,    ///< Remove secondary bindings, keep primary"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 73, "quote": "SyncBackend *backend = m_controller->backendById(binding.backendId);"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 125, "quote": "regenerateSyncMappings();"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 128, "quote": "m_configManager->save();"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 186, "quote": "if (backend->supportsCalendarCreation()) {"}
+      ],
+      "assessment": "Real moderate issue: mixed CRUD responsibilities and a repeated procedural skeleton. Three prior detail errors corrected (5 DeleteMode variants, 17 public methods, skeleton steps).",
+      "recommendedDirection": "Extract the repeated (resolve-backend -> call-op -> updateLogicalCalendar -> save -> regenerateSyncMappings) skeleton into a single helper and split Calendar/Binding/Incidence CRUD into separate coordinator objects."
+    },
+    {
+      "refId": "B8",
+      "title": "IncidenceDiff is a pure-static namespace class; vcarddiffer/icalvtododiffer are not equivalents",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "corrected",
+      "claim": "IncidenceDiff (src/diff/incidencediff.cpp, 1160 LOC, 23 static members) is a class with no constructors, no instance methods, and no virtual interface — a pure function namespace disguised as a class. The claimed equivalents in vcarddiffer and icalvtododiffer are NOT the same pattern: they contain RecordDifferVCard/RecordDifferVTodo, both properly inheriting RecordDiffer with virtual dispatch.",
+      "correction": "The prior audit was correct that IncidenceDiff is a namespace masquerading as a class (1160 LOC exact). However it was wrong to call vcarddiffer and icalvtododiffer 'equivalents': both define properly structured polymorphic classes with virtual overrides, not static-method namespaces.",
+      "evidence": [
+        {"file": "src/diff/incidencediff.h", "line": 71, "quote": "class IncidenceDiff {"},
+        {"file": "src/diff/incidencediff.h", "line": 91, "quote": "static QList<PropertyDiff> compare("},
+        {"file": "src/diff/incidencediff.cpp", "line": 1160, "quote": "(file ends at line 1160 — exact match to prior claim)"},
+        {"file": "src/contacts/vcarddiffer.h", "line": 9, "quote": "class RecordDifferVCard : public Kalburator::Shape::RecordDiffer {"},
+        {"file": "src/todo/icalvtododiffer.h", "line": 9, "quote": "class RecordDifferVTodo : public Kalburator::Shape::RecordDiffer {"}
+      ],
+      "assessment": "IncidenceDiff is a pure-static namespace class (all 23 members static). The two domain differs are correctly designed polymorphic classes; prior 'equivalents' claim refuted.",
+      "recommendedDirection": "Convert IncidenceDiff into a free-function namespace or split it into focused structs/functions in src/diff/ — leaving vcarddiffer and icalvtododiffer untouched."
+    },
+    {
+      "refId": "U1",
+      "title": "\"Backend\" term overloaded across six unrelated constructs in four directories",
+      "category": "naming",
+      "severity": "moderate",
+      "verdict": "corrected",
+      "claim": "Six constructs bearing 'Backend' in their names serve unrelated roles scattered across four directories (blob/, sync/, types/, calendar/). Two atoms wrong: (1) SyncBackend is the calendar-typed abstract class, not the 'abstract sync iface' — the domain-neutral interface is SyncBackendBase, omitted by the prior finding; (2) ChangeDetection does not have 'Backend' in its name and belongs to Kalburator::Backend while all others live in Kalburator::Sync.",
+      "correction": "The prior finding mislabeled SyncBackend as 'abstract sync iface' — it is actually the calendar-typed abstract class; the true domain-neutral interface is SyncBackendBase, missed entirely. ChangeDetection was incorrectly framed as part of the 'Backend name overload' — it has no 'Backend' in its name and lives in a different namespace; its inclusion confuses name overloading vs. namespace fragmentation.",
+      "evidence": [
+        {"file": "src/calendar/syncbackend.h", "line": 120, "quote": "class SyncBackend : public SyncBackendBase"},
+        {"file": "src/sync/syncbackendbase.h", "line": 53, "quote": "class SyncBackendBase : public QObject, public IBlobBackend"},
+        {"file": "src/blob/iblobbackend.h", "line": 36, "quote": "class IBlobBackend {"},
+        {"file": "src/sync/backendcontribution.h", "line": 15, "quote": "class BackendContribution {"},
+        {"file": "src/types/backendconfiguration.h", "line": 81, "quote": "struct BackendConfiguration"},
+        {"file": "src/calendar/backendcapabilities.h", "line": 141, "quote": "struct BackendCapabilities"},
+        {"file": "src/backend/changedetection.h", "line": 40, "quote": "class ChangeDetection"}
+      ],
+      "assessment": "Six 'Backend'-named constructs serving unrelated roles across four directories confirmed. SyncBackend is calendar-typed; SyncBackendBase is the true neutral interface. ChangeDetection correctly excluded.",
+      "recommendedDirection": "Rename to role-specific terms (e.g. ISyncBackend, IBlobStore, ProviderRegistration, SyncConfiguration, SyncCapabilities) and consolidate into one namespace."
+    },
+    {
+      "refId": "U2",
+      "title": "\"Canon\" prefix used consistently for one concept, with minor abbreviation inconsistency vs \"Canonical\"",
+      "category": "naming",
+      "severity": "minor",
+      "verdict": "corrected",
+      "claim": "All 'canon'-prefixed identifiers refer to the same concept — the promoted, domain-native JSON canonical encoding. The prior finding's claim of 3-4 distinct meanings is not borne out. The real, narrower issue is an abbreviation inconsistency: CanonicalRecord uses the full word while all other identifiers use the abbreviated prefix 'Canon'.",
+      "correction": "The prior audit claimed 3-4 distinct meanings, but all canon-prefixed identifiers consistently refer to the same domain concept. The real issue is narrower: a mixed abbreviation ('Canon' vs 'Canonical') between CanonicalRecord and the rest of the Canon* names.",
+      "evidence": [
+        {"file": "src/shape/canonenvelope.h", "line": 15, "quote": "namespace CanonEnvelope {"},
+        {"file": "src/shape/canonicalrecord.h", "line": 13, "quote": "struct CanonicalRecord {"},
+        {"file": "src/contacts/vcardcanonstages.h", "line": 7, "quote": "/// (contacts, vcard4) → (contacts, canon)"},
+        {"file": "src/shape/domaindefinition.h", "line": 29, "quote": "virtual Shape canonicalShape() const = 0;"},
+        {"file": "src/contacts/contactscanonproperties.h", "line": 9, "quote": "/// The contacts+canon catalogue: vCard4 ∪ Google People (schema doc §3)."}
+      ],
+      "assessment": "All canon-prefixed identifiers refer to facets of one concept; no semantic overload. Real issue is the CanonicalRecord vs Canon* abbreviation inconsistency.",
+      "recommendedDirection": "Standardise on the full word 'Canonical' everywhere (or rename CanonicalRecord to CanonRecord) to eliminate the abbreviation inconsistency."
+    },
+    {
+      "refId": "U3",
+      "title": "Store/Manager naming inconsistency — claims corrected for missing classes and duplicate names",
+      "category": "naming",
+      "severity": "major",
+      "verdict": "corrected",
+      "claim": "The codebase uses 'Store', 'Manager', and 'Registry' inconsistently. TWO unrelated classes both named BaselineStore (SQLite-backed in storage/; in-memory QMap in journal/). 'ConflictStore' used for both an in-memory class (conflict/) and implicitly with SQLite-backed SyncConflictStore (calendar/). 'Manager' applied to at least five unrelated responsibilities. CalendarMetadataManager lives in types/ but is in Kalburator::Sync and does VDirSyncer atomic file I/O.",
+      "correction": "The prior finding stated each name maps to one class. In reality there are TWO BaselineStore classes with opposite persistence (the in-memory journal/ one was missed), and a second disk-persistent conflict store (SyncConflictStore in calendar/) the finding did not mention. The CalendarMetadataManager-in-types/ claim is accurate. The Manager inconsistency is accurate but incomplete — five Manager classes across five namespaces.",
+      "evidence": [
+        {"file": "src/storage/baselinestore.h", "line": 39, "quote": "class BaselineStore"},
+        {"file": "src/journal/baselinestore.h", "line": 35, "quote": "class BaselineStore : public QObject"},
+        {"file": "src/journal/baselinestore.h", "line": 30, "quote": "namespace Kalburator::Sync::QSyncCore {"},
+        {"file": "src/conflict/conflictstore.h", "line": 31, "quote": "class ConflictStore : public QObject"},
+        {"file": "src/calendar/syncconflictstore.h", "line": 24, "quote": "class SyncConflictStore : public QObject"},
+        {"file": "src/types/calendarmetadatamanager.h", "line": 8, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/types/calendarmetadatamanager.h", "line": 22, "quote": "All writes are atomic (write to temp file, then rename) per vdir spec."},
+        {"file": "src/calendar/calendarmanager.h", "line": 101, "quote": "class CalendarManager : public QObject"},
+        {"file": "src/conflict/conflictmanager.h", "line": 38, "quote": "class ConflictManager : public QObject"},
+        {"file": "src/sync/providermanager.h", "line": 44, "quote": "class ProviderManager : public QObject"},
+        {"file": "src/plugin/pluginmanager.h", "line": 19, "quote": "class PluginManager {"}
+      ],
+      "assessment": "Genuine naming inconsistency: two BaselineStore classes with opposite persistence, two conflict stores, CalendarMetadataManager layering violation, and five unrelated Manager classes.",
+      "recommendedDirection": "Rename to encode persistence and responsibility: SQLite-backed stores use a 'Db'/'Persistent' marker, in-memory maps 'Cache'/'Index', reserve 'Manager' for one clear responsibility, and relocate CalendarMetadataManager to src/calendar/."
+    },
+    {
+      "refId": "U4",
+      "title": "BackendRegistry conflates live-instance storage with factory-contribution storage in one class",
+      "category": "encapsulation",
+      "severity": "minor",
+      "verdict": "corrected",
+      "claim": "BackendRegistry holds two conceptually distinct concerns: live SyncBackend* instances and BackendContribution factories, in two separate maps and API groups. The prior finding's sub-claim that 'caller cannot tell from a method name which kind they get' is false: every instance-side method contains 'Instance' and every contribution-side method contains 'Contribution'.",
+      "correction": "The prior audit overstated the naming-clarity problem: method names are systematically suffixed and unambiguous. The genuine design issue is the single-class dual-responsibility (runtime vs. factory), not naming confusion.",
+      "evidence": [
+        {"file": "src/sync/backendregistry.h", "line": 14, "quote": "* Manages live backend instances (registered by ProviderManager) and\n * BackendContributions (registered by plugins at startup..."},
+        {"file": "src/sync/backendregistry.h", "line": 34, "quote": "void registerBackendInstance(const QString &backendId, SyncBackend *backend);"},
+        {"file": "src/sync/backendregistry.h", "line": 60, "quote": "bool registerContribution(std::shared_ptr<BackendContribution> contribution);"},
+        {"file": "src/sync/backendregistry.h", "line": 105, "quote": "QMap<QString, SyncBackend*> m_instances;\n    QMap<QString, std::shared_ptr<BackendContribution>> m_contributions;"}
+      ],
+      "assessment": "Single class carries two unrelated lifecycles in two clearly-named, separated API groups. Naming is unambiguous; the dual-responsibility coupling is the real (minor) issue.",
+      "recommendedDirection": "Split BackendRegistry into two focused classes (e.g. BackendInstanceRegistry and BackendContributionRegistry) so callers that only need one role do not depend on the other."
+    },
+    {
+      "refId": "",
+      "title": "Non-calendar backends inherit calendar-typed SyncBackend instead of neutral SyncBackendBase",
+      "category": "layering",
+      "severity": "critical",
+      "verdict": "new",
+      "claim": "RawFilesBackend, GenericSqliteBackend, and RemoteContactsBackend inherit from SyncBackend (calendar-typed), violating the Phase K.4 design which states non-calendar backends should inherit SyncBackendBase. This creates upward dependencies: universal and contacts dirs include calendar/syncbackend.h.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/rawfilesbackend.h", "line": 27, "quote": "class RawFilesBackend : public Kalburator::Sync::SyncBackend {"},
+        {"file": "src/universal/genericsqlitebackend.h", "line": 33, "quote": "class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {"},
+        {"file": "src/contacts/remotecontactsbackend.h", "line": 37, "quote": "class RemoteContactsBackend : public SyncBackend,"},
+        {"file": "src/sync/syncbackendbase.h", "line": 5, "quote": "// Phase K.4: slim, domain-neutral sync-backend base. Lifted out of\n// `src/calendar/syncbackend.h` so that non-calendar backends\n// (RawFilesBackend, GenericSqliteBackend, RemoteContactsBackend,\n// blob-only adapters) can inherit a base that does NOT pull in\n// KCalendarCore and does NOT carry calendar-typed pure virtuals."},
+        {"file": "src/calendar/syncbackend.h", "line": 25, "quote": "// Non-calendar backends (RawFilesBackend, GenericSqliteBackend,\n// RemoteContactsBackend, blob-only adapters) inherit `SyncBackendBase`"},
+        {"file": "src/calendar/syncbackend.h", "line": 40, "quote": "#include <KCalendarCore/MemoryCalendar>"}
+      ],
+      "assessment": "All three non-calendar backends inherit calendar-typed SyncBackend, contradicting the explicit Phase K.4 design in both syncbackendbase.h and syncbackend.h, pulling KCalendarCore into universal/ and contacts/.",
+      "recommendedDirection": "Refactor RawFilesBackend, GenericSqliteBackend, and RemoteContactsBackend to inherit SyncBackendBase instead of SyncBackend, importing only the interfaces they actually need."
+    },
+    {
+      "refId": "",
+      "title": "engine/syncengine.h includes calendar-specific syncoperation.h, violating layering",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "engine/syncengine.h directly includes calendar/syncoperation.h (line 13), creating an upward dependency from orchestrator to domain layer. The engine should use domain-neutral types, not calendar-specific operation types.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/engine/syncengine.h", "line": 13, "quote": "#include \"syncoperation.h\"  // F2 Task 16: required by await<Op> template"},
+        {"file": "src/calendar/syncoperation.h", "line": 10, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/calendar/syncoperation.h", "line": 40, "quote": "class SyncOperation : public QObject"},
+        {"file": "src/calendar/syncoperation.h", "line": 200, "quote": "class FetchOperation : public SyncOperation"},
+        {"file": "src/engine/syncengine.h", "line": 246, "quote": "template <typename Op>\n    Op* await(Op *op)\n    {\n        static_assert(\n            std::is_base_of_v<SyncOperation, Op>,"}
+      ],
+      "assessment": "syncoperation.h is physically in src/calendar/ and defines both the neutral SyncOperation base and calendar-specific FetchOperation/PushOperation/DeleteOperation (with KCalendarCore members). The await<Op> template requires the base. A modularity/organization problem: the neutral base belongs in sync/ or types/.",
+      "recommendedDirection": "Extract the domain-neutral SyncOperation base/interface to sync/ or types/ and have engine depend only on that, not on calendar-specific FetchOperation/PushOperation/DeleteOperation."
+    },
+    {
+      "refId": "",
+      "title": "shape/recordmerger.h includes conflict/conflictpolicy.h, violating downward-only layering",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "shape/recordmerger.h includes conflict/conflictpolicy.h (line 4), creating an upward dependency from shape layer to conflict utilities. The ConflictPolicy type should be defined in shape/ or types/ so shape does not depend on conflict.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/shape/recordmerger.h", "line": 4, "quote": "#include \"conflictpolicy.h\""},
+        {"file": "src/shape/recordmerger.h", "line": 30, "quote": "const Kalburator::Conflict::ConflictPolicy& policy) const = 0;"},
+        {"file": "src/shape/canonjsonmerger.cpp", "line": 6, "quote": "#include \"conflictpolicy.h\""},
+        {"file": "docs/campaign/architectural-redress/INVARIANTS.md", "line": 29, "quote": "### 1. Layer direction is one-way — `types/` → `shape/` → domains → `engine/`"},
+        {"file": "docs/campaign/architectural-redress/plans/plan-6-shape-decoupling.md", "line": 1, "quote": "# Plan 6 — Decouple `shape/` from `types/BackendRecord` and `conflict/ConflictPolicy`"}
+      ],
+      "assessment": "Real layering violation (same root as B6): shape/recordmerger.h pulls conflict/conflictpolicy.h upward. Known issue addressed by drafted Plan 6.",
+      "recommendedDirection": "Move ConflictPolicy type definition from conflict/ to shape/, or define it in types/ as a value type, so shape does not import from conflict."
+    },
+    {
+      "refId": "",
+      "title": "sync/syncruncoordinator.h includes engine/syncengine.h, creating upward dependency",
+      "category": "layering",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "sync/syncruncoordinator.h includes engine/syncengine.h (line 20), creating an upward dependency from sync to engine. Orchestrators should not have mutual dependencies.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/syncruncoordinator.h", "line": 15, "quote": "namespace Kalburator::Engine { class SyncEngine; }"},
+        {"file": "src/sync/syncruncoordinator.h", "line": 19, "quote": "// SyncEngine::SyncBehavior enum — used in runSync() parameter."},
+        {"file": "src/sync/syncruncoordinator.h", "line": 20, "quote": "#include \"syncengine.h\""},
+        {"file": "src/sync/syncruncoordinator.h", "line": 83, "quote": "void runSync(Kalburator::Engine::SyncEngine::SyncBehavior behavior);"},
+        {"file": "src/engine/syncengine.h", "line": 381, "quote": "enum class SyncBehavior {"}
+      ],
+      "assessment": "Factually accurate one-way include for the SyncBehavior enum; NO mutual/circular dependency (engine/ does not include sync/ headers in its public interface). Moderate, not major.",
+      "recommendedDirection": "Refactor so engine (orchestrator) invokes sync layer methods, not vice versa; use forward declarations in sync/ for SyncEngine references."
+    },
+    {
+      "refId": "",
+      "title": "contacts domain includes calendar-specific syncbackend.h and syncoperation.h",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "confirmed",
+      "claim": "contacts/akonadicontactsbackend.h and contacts/remotecontactsbackend.h include calendar/syncbackend.h and calendar/syncoperation.h, creating cross-domain dependencies.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/contacts/akonadicontactsbackend.h", "line": 6, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/contacts/akonadicontactsbackend.h", "line": 7, "quote": "#include \"syncoperation.h\""},
+        {"file": "src/contacts/remotecontactsbackend.h", "line": 4, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/contacts/akonadicontactsbackend.h", "line": 44, "quote": "class AkonadiContactsBackend : public SyncBackend,"},
+        {"file": "src/calendar/syncoperation.h", "line": 7, "quote": "#include <KCalendarCore/Incidence>"}
+      ],
+      "assessment": "Contacts backends include calendar-domain headers and inherit calendar-typed SyncBackend rather than SyncBackendBase, exposing calendar-specific operation types in the contacts domain.",
+      "recommendedDirection": "Extract domain-neutral SyncBackendBase and generic operation types to sync/, then have contacts backends inherit SyncBackendBase instead of calendar's SyncBackend."
+    },
+    {
+      "refId": "",
+      "title": "universal backends (filteredcollectionbackend, rawfilesbackend, genericsqlitebackend) include calendar/syncbackend.h",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "confirmed",
+      "claim": "Universal backends in src/universal/ include calendar/syncbackend.h, violating the principle that universal/domain-agnostic code should not depend on calendar-specific types. These should use SyncBackendBase.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/filteredcollectionbackend.h", "line": 5, "quote": "#include \"syncbackend.h\"          // Kalburator::Sync::SyncBackend (calendar-typed base)"},
+        {"file": "src/universal/rawfilesbackend.h", "line": 6, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/universal/genericsqlitebackend.h", "line": 9, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/calendar/syncbackend.h", "line": 25, "quote": "Non-calendar backends (RawFilesBackend, GenericSqliteBackend, RemoteContactsBackend, blob-only adapters) inherit `SyncBackendBase` directly and do NOT carry calendar stubs."},
+        {"file": "src/calendar/syncbackend.h", "line": 40, "quote": "#include <KCalendarCore/MemoryCalendar>"}
+      ],
+      "assessment": "All three universal backends inherit calendar-typed SyncBackend and pull in KCalendarCore, never overriding calendar-typed methods. Clear layering error contradicting the documented K.4 intent.",
+      "recommendedDirection": "Refactor universal backends to inherit SyncBackendBase (domain-neutral) instead of SyncBackend (calendar-typed)."
+    },
+    {
+      "refId": "",
+      "title": "calendar/syncbackend.h is located in calendar/ but should be in sync/ per Phase K.4 design",
+      "category": "layering",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "calendar/syncbackend.h (a calendar-typed subclass of SyncBackendBase) is physically located in calendar/ even though it is in Kalburator::Sync namespace, confusing the physical/logical separation.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/syncbackend.h", "line": 4, "quote": "// Phase K.4: this header is now a calendar-typed extension of the\n// domain-neutral `SyncBackendBase` (see `src/sync/syncbackendbase.h`)."},
+        {"file": "src/calendar/syncbackend.h", "line": 47, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/calendar/syncbackend.h", "line": 40, "quote": "#include <KCalendarCore/MemoryCalendar>"},
+        {"file": "src/calendar/syncbackend.h", "line": 285, "quote": "void calendarLoaded(KCalendarCore::MemoryCalendar* cal);"}
+      ],
+      "assessment": "Physical-logical mismatch: a Kalburator::Sync class in the calendar/ directory carrying calendar-specific signals and KCalendarCore includes.",
+      "recommendedDirection": "Consider moving calendar/syncbackend.h to sync/ (e.g. sync/calendarbackendbase.h) to align physical location with namespace and architecture."
+    },
+    {
+      "refId": "",
+      "title": "BackendRegistry stores calendar-specific type from lower layer",
+      "category": "layering",
+      "severity": "critical",
+      "verdict": "new",
+      "claim": "BackendRegistry (in sync/) stores SyncBackend* where SyncBackend is defined in calendar/syncbackend.h, violating layer hierarchy. sync/ should orchestrate domain layers, not depend on their concrete types.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/backendregistry.h", "line": 12, "quote": "class SyncBackend;"},
+        {"file": "src/sync/backendregistry.h", "line": 34, "quote": "void registerBackendInstance(const QString &backendId, SyncBackend *backend);"},
+        {"file": "src/sync/backendregistry.h", "line": 105, "quote": "QMap<QString, SyncBackend*> m_instances;"},
+        {"file": "src/sync/backendregistry.cpp", "line": 3, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/calendar/syncbackend.h", "line": 120, "quote": "class SyncBackend : public SyncBackendBase"},
+        {"file": "src/calendar/syncbackend.h", "line": 40, "quote": "#include <KCalendarCore/MemoryCalendar>"}
+      ],
+      "assessment": "BackendRegistry stores SyncBackend* and its .cpp #includes the calendar header, pulling KCalendarCore into the sync orchestration layer. Usage only calls neutral methods, but the structural dependency exists; providermanager.cpp comments acknowledge it as deferred.",
+      "recommendedDirection": "BackendRegistry should store IBlobBackend* (the neutral interface) instead, with factory/upcasting delegated to callers."
+    },
+    {
+      "refId": "",
+      "title": "ProviderManager uses dynamic_cast to calendar-specific type",
+      "category": "layering",
+      "severity": "critical",
+      "verdict": "new",
+      "claim": "ProviderManager casts IBlobBackend to SyncBackend at registration time, enforcing that all providers must return calendar-typed backends. This tightly couples the sync/ orchestration layer to calendar/ types.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/providermanager.cpp", "line": 7, "quote": "#include \"syncbackend.h\""},
+        {"file": "src/sync/providermanager.cpp", "line": 237, "quote": "// BackendRegistry stores SyncBackend* (which inherits IBlobBackend)."},
+        {"file": "src/sync/providermanager.cpp", "line": 242, "quote": "auto *asSync = dynamic_cast<SyncBackend*>(backend.get());"},
+        {"file": "src/sync/providermanager.cpp", "line": 249, "quote": "m_registry->registerBackendInstance(backendId, asSync);"},
+        {"file": "src/sync/iprovider.h", "line": 142, "quote": "virtual std::unique_ptr<IBlobBackend>\n        createBackend(const QString &collectionId) = 0;"},
+        {"file": "docs/campaign/architectural-redress/AUDIT.md", "line": 82, "quote": "### B4. Circular dependency `sync/ ↔ calendar/` and `sync/ ↔ contacts/` — **CRITICAL**"}
+      ],
+      "assessment": "ProviderManager includes calendar's syncbackend.h and casts IBlobBackend to SyncBackend, enforcing a calendar-typed contract on all providers. Code comment acknowledges this is temporary; campaign Plan 2 targets it.",
+      "recommendedDirection": "Accept IBlobBackend as the contract; defer any SyncBackend assumptions to domain-specific consumers or remove the cast if unnecessary."
+    },
+    {
+      "refId": "",
+      "title": "Implicit CMake include paths expose domain headers to sync/ layer",
+      "category": "layering",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "caldavprovider.cpp and carddavprovider.cpp include domain headers as unqualified relative includes without ../calendar or ../contacts prefixes, relying on CMake include_directories. This is brittle and obscures the dependency.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/caldavprovider.cpp", "line": 6, "quote": "#include \"caldavcapabilitydiscovery.h\""},
+        {"file": "src/sync/caldavprovider.cpp", "line": 7, "quote": "#include \"remotecalendarbackend.h\""},
+        {"file": "src/sync/carddavprovider.cpp", "line": 5, "quote": "#include \"carddavcapabilitydiscovery.h\""},
+        {"file": "src/sync/carddavprovider.cpp", "line": 7, "quote": "#include \"remotecontactsbackend.h\""},
+        {"file": "src/sync/multiprotocoldavprovider.cpp", "line": 4, "quote": "#include \"../calendar/caldavcapabilitydiscovery.h\""},
+        {"file": "CMakeLists.txt", "line": 657, "quote": "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>"}
+      ],
+      "assessment": "Unqualified includes resolved implicitly via target_include_directories (calendar, contacts, sync as PUBLIC paths). multiprotocoldavprovider.cpp uses explicit ../calendar/ paths for the same files — an inconsistency that obscures intent.",
+      "recommendedDirection": "Use explicit ../calendar/ and ../contacts/ paths to make layering dependencies explicit in the source code."
+    },
+    {
+      "refId": "",
+      "title": "Clear separation of IProvider and BackendContribution interfaces",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "IProvider and BackendContribution are cleanly separated with minimal dependencies. Both use domain-neutral types and inherit only essential types.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/iprovider.h", "line": 47, "quote": "class IProvider : public QObject"},
+        {"file": "src/sync/iprovider.h", "line": 11, "quote": "#include \"collectioninfo.h\""},
+        {"file": "src/sync/iprovider.h", "line": 13, "quote": "#include \"iblobbackend.h\""},
+        {"file": "src/sync/backendcontribution.h", "line": 15, "quote": "class BackendContribution {"},
+        {"file": "src/sync/backendcontribution.h", "line": 7, "quote": "#include \"shape.h\""},
+        {"file": "src/sync/backendcontribution.h", "line": 13, "quote": "class IProvider;"}
+      ],
+      "assessment": "IProvider inherits only QObject and includes domain-neutral types; BackendContribution is a pure interface including only shape.h with a forward-declared IProvider. No upward domain dependencies.",
+      "recommendedDirection": "Maintain this separation; any fixes to BackendRegistry should not compromise the cleanliness of these interfaces."
+    },
+    {
+      "refId": "",
+      "title": "GenericSqliteBackend and RawFilesBackend inherit from calendar-typed SyncBackend unnecessarily",
+      "category": "layering",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "GenericSqliteBackend and RawFilesBackend inherit from calendar-typed SyncBackend (pulling in KCalendarCore) instead of the domain-neutral SyncBackendBase. They are universal blob-only backends with no calendar functionality.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/genericsqlitebackend.h", "line": 33, "quote": "class GenericSqliteBackend : public Kalburator::Sync::SyncBackend {"},
+        {"file": "src/universal/rawfilesbackend.h", "line": 27, "quote": "class RawFilesBackend : public Kalburator::Sync::SyncBackend {"},
+        {"file": "src/calendar/syncbackend.h", "line": 40, "quote": "#include <KCalendarCore/MemoryCalendar>"},
+        {"file": "src/sync/syncbackendbase.h", "line": 5, "quote": "// Phase K.4: slim, domain-neutral sync-backend base. Lifted out of `src/calendar/syncbackend.h` so that non-calendar backends (RawFilesBackend, GenericSqliteBackend, RemoteContactsBackend, blob-only adapters) can inherit a base that does NOT pull in KCalendarCore"}
+      ],
+      "assessment": "Both backends override only blob/shape-level APIs and never use calendar APIs, yet inherit calendar-typed SyncBackend, contradicting the K.4 design. (Same root cause as the critical non-calendar-inheritance finding.)",
+      "recommendedDirection": "Change GenericSqliteBackend and RawFilesBackend to inherit from SyncBackendBase instead of SyncBackend."
+    },
+    {
+      "refId": "",
+      "title": "Identical nativeShapes() and shapeFor() implementations duplicated in GenericSqliteBackend and RawFilesBackend",
+      "category": "duplication",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "GenericSqliteBackend and RawFilesBackend have byte-for-byte identical implementations of nativeShapes() and shapeFor() that iterate over m_shapeByCollection. This should be factored into a common base or mixin.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 86, "quote": "QList<Kalburator::Shape::Shape> GenericSqliteBackend::nativeShapes() const {\n    QList<Kalburator::Shape::Shape> out;\n    for (auto it = m_shapeByCollection.constBegin();\n         it != m_shapeByCollection.constEnd(); ++it) {\n        if (!out.contains(it.value()))\n            out.append(it.value());\n    }\n    return out;\n}"},
+        {"file": "src/universal/rawfilesbackend.cpp", "line": 56, "quote": "QList<Kalburator::Shape::Shape> RawFilesBackend::nativeShapes() const {\n    QList<Kalburator::Shape::Shape> out;\n    for (auto it = m_shapeByCollection.constBegin();\n         it != m_shapeByCollection.constEnd(); ++it) {\n        if (!out.contains(it.value()))\n            out.append(it.value());\n    }\n    return out;\n}"},
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 97, "quote": "Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectionId) const {\n    return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());\n}"},
+        {"file": "src/universal/rawfilesbackend.cpp", "line": 67, "quote": "Kalburator::Shape::Shape RawFilesBackend::shapeFor(const QString &collectionId) const {\n    return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());\n}"}
+      ],
+      "assessment": "Byte-for-byte identical nativeShapes() and shapeFor() in both backends, both maintaining identical m_shapeByCollection members.",
+      "recommendedDirection": "Extract common shape management logic into a shared base class or protected utility in a potential UniversalBackendBase."
+    },
+    {
+      "refId": "",
+      "title": "FilteredCollectionBackend uses const_cast in const methods to call non-const parent methods",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "FilteredCollectionBackend's displayName() and composeCollectionInfo() const methods cast away const on m_parent to call the non-const collectionInfo() method. A const-correctness violation that could hide mutability.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/filteredcollectionbackend.cpp", "line": 48, "quote": "QString FilteredCollectionBackend::displayName() const\n{\n    ...\n    const CollectionInfo info = const_cast<Kalburator::Sync::SyncBackend*>(m_parent)\n                                    ->collectionInfo(m_parentColId);"},
+        {"file": "src/universal/filteredcollectionbackend.cpp", "line": 94, "quote": "const CollectionInfo parentInfo = const_cast<Kalburator::Sync::SyncBackend*>(m_parent)\n                                          ->collectionInfo(m_parentColId);"},
+        {"file": "src/blob/iblobbackend.h", "line": 47, "quote": "virtual CollectionInfo collectionInfo(const QString &collectionId) = 0;"}
+      ],
+      "assessment": "Two const methods cast away const to call the non-const collectionInfo(); the underlying flaw is that the interface method is non-const despite read-only semantics in all implementations.",
+      "recommendedDirection": "Define const-correct accessors in SyncBackendBase or SyncBackend to return CollectionInfo without requiring mutable access."
+    },
+    {
+      "refId": "",
+      "title": "RawFilesBackend lacks thread synchronization for shared collections",
+      "category": "thread-safety",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "RawFilesBackend accesses m_collections and m_shapeByCollection without any mutex protection, while GenericSqliteBackend synchronizes only its SQLite connection access. RawFilesBackend is exposed to data races when called from main + worker threads.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/rawfilesbackend.h", "line": 89, "quote": "QString m_rootPath;\n    QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;\n    QHash<QString, Kalburator::Shape::Shape> m_shapeByCollection;"},
+        {"file": "src/universal/genericsqlitebackend.h", "line": 88, "quote": "mutable QMutex m_connMutex;       ///< guards m_openConnections"},
+        {"file": "src/engine/syncengine.cpp", "line": 1439, "quote": "const auto srcShape = src->shapeFor(request.mapping.sourceCalendar);"},
+        {"file": "src/engine/syncengine.cpp", "line": 1394, "quote": "void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)"}
+      ],
+      "assessment": "RawFilesBackend has no mutex on its collection hashes, which are read from the worker thread via shapeFor(). Note: GenericSqliteBackend's m_connMutex guards only m_openConnections, NOT its collection hashes — so it shares the same race on m_collections/m_shapeByCollection.",
+      "recommendedDirection": "Add QMutex protection to RawFilesBackend's m_collections and m_shapeByCollection access (and GenericSqliteBackend's), or document that they are not thread-safe and callers must serialize."
+    },
+    {
+      "refId": "",
+      "title": "FilteredCollectionBackend creates tight coupling to BackendRegistry through parentBackendId requirement",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "FilteredCollectionBackend requires callers to provide parentBackendId explicitly and match it against BackendRegistry keys, coupling the backend to the registry's id assignment and forcing callers to track registry keys separately from the parent pointer.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/filteredcollectionbackend.h", "line": 29, "quote": "/// Caller MUST pass the same `parentBackendId` that was used to register\n/// the parent in `BackendRegistry`; the default `backendId()` for\n/// production `SyncBackend`s is not unique."},
+        {"file": "src/universal/filteredcollectionbackend.h", "line": 36, "quote": "QString parentBackendId,"},
+        {"file": "src/universal/filteredcollectionbackend.cpp", "line": 39, "quote": "connect(registry, &Kalburator::Sync::BackendRegistry::backendInstanceUnregistered,\n                this, [this](const QString& backendId) {\n            if (backendId == m_parentBackendId) {\n                m_parent = nullptr;\n            }\n        }, Qt::DirectConnection);"},
+        {"file": "src/sync/syncbackendbase.cpp", "line": 60, "quote": "QString SyncBackendBase::backendId() const\n{\n    return backendType();"}
+      ],
+      "assessment": "FCB must compare an externally-supplied parentBackendId against BackendRegistry's unregister signal because backendId() defaults to backendType() (not unique). No reverse-lookup exists; callers must track both the pointer and the key.",
+      "recommendedDirection": "Have BackendRegistry emit signals with internal reference ids or provide a lookup mechanism that doesn't require external parties to track registry keys."
+    },
+    {
+      "refId": "",
+      "title": "FilteredCollectionBackend inheritance from SyncBackend is correct for consistency",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "FilteredCollectionBackend correctly inherits from SyncBackend because it wraps a parent SyncBackend and delegates to it. The parent can be any backend type, so this is appropriate polymorphic design.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/filteredcollectionbackend.h", "line": 32, "quote": "class FilteredCollectionBackend : public Kalburator::Sync::SyncBackend {"},
+        {"file": "src/universal/filteredcollectionbackend.h", "line": 35, "quote": "FilteredCollectionBackend(Kalburator::Sync::SyncBackend* parentBackend,"},
+        {"file": "src/sync/backendregistry.h", "line": 34, "quote": "void registerBackendInstance(const QString &backendId, SyncBackend *backend);"}
+      ],
+      "assessment": "FCB wraps a SyncBackend* parent and never implements calendar-typed methods; inheritance is required because BackendRegistry registers SyncBackend* pointers. Sound and necessary for engine transparency.",
+      "recommendedDirection": "Keep FilteredCollectionBackend inheriting from SyncBackend to maintain type compatibility with all sync backends."
+    },
+    {
+      "refId": "",
+      "title": "MarkdownFilesBackend specialization pattern is clean",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "MarkdownFilesBackend correctly specializes RawFilesBackend through protected method overrides (suffixFor, recordStem), demonstrating proper template-method pattern usage without unnecessary duplication.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/markdownfilesbackend.h", "line": 12, "quote": "class MarkdownFilesBackend : public RawFilesBackend {"},
+        {"file": "src/universal/rawfilesbackend.h", "line": 77, "quote": "protected:\n    /// File suffix for a collection... Subclasses may override (e.g. \"md\").\n    virtual QString suffixFor(const QString &collectionId) const;"},
+        {"file": "src/universal/markdownfilesbackend.cpp", "line": 49, "quote": "QString MarkdownFilesBackend::suffixFor(const QString & /*collectionId*/) const\n{\n    return QStringLiteral(\"md\");\n}"}
+      ],
+      "assessment": "Clean template-method specialization: base declares protected virtuals with defaults, MarkdownFilesBackend overrides only suffixFor/recordStem. No layering violations.",
+      "recommendedDirection": "Keep the MarkdownFilesBackend specialization approach as-is; it demonstrates proper use of protected virtual methods."
+    },
+    {
+      "refId": "",
+      "title": "MockBlobBackend exposes failure injection API but doesn't implement loadRecordsOrError override",
+      "category": "dead-code",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "MockBlobBackend declares FailurePoint::OnLoadRecords and injects failure in loadRecords(), but does not override loadRecordsOrError(). If used polymorphically with OnLoadRecords enabled, the failure will be silently swallowed and the operation appears to succeed with empty results.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/blob/mockblobbackend.h", "line": 25, "quote": "OnLoadRecords,"},
+        {"file": "src/blob/mockblobbackend.cpp", "line": 48, "quote": "QList<BackendRecord> MockBlobBackend::loadRecords(const QString &collectionId)\n{\n    if (consumeFailure(FailurePoint::OnLoadRecords, QStringLiteral(\"loadRecords\"))) {\n        return {};\n    }"},
+        {"file": "src/blob/iblobbackend.h", "line": 52, "quote": "// Error-reporting overload: returns false and sets `error` on failure.\n    // Default delegates to loadRecords() with no error reporting. Override\n    // in test fakes to simulate fetch failures without changing the interface."},
+        {"file": "src/blob/iblobbackend.h", "line": 55, "quote": "virtual bool loadRecordsOrError(const QString &collectionId,\n                                    QList<BackendRecord> &records,\n                                    QString &error) {\n        records = loadRecords(collectionId);\n        error.clear();\n        return true;\n    }"}
+      ],
+      "assessment": "Documented contract violation: OnLoadRecords failure is swallowed by the base loadRecordsOrError() default. Latent defect — currently only used in isolated unit tests, not polymorphically.",
+      "recommendedDirection": "MockBlobBackend should override loadRecordsOrError() to properly report OnLoadRecords failures through the error-reporting interface."
+    },
+    {
+      "refId": "",
+      "title": "progressUpdated signal declared but never emitted by blob backends",
+      "category": "dead-code",
+      "severity": "minor",
+      "verdict": "new",
+      "claim": "IBlobBackend documents progressUpdated(int, int, QString) as an expected signal, and both MockBlobBackend and LocalBlobBackend declare it as Q_SIGNALS, but neither implementation ever emits it. The signal exists only as an unfulfilled contract.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/blob/iblobbackend.h", "line": 34, "quote": "void progressUpdated(int current, int total, const QString &message);"},
+        {"file": "src/blob/mockblobbackend.h", "line": 71, "quote": "void progressUpdated(int current, int total, const QString &message);"},
+        {"file": "src/blob/localblobbackend.h", "line": 62, "quote": "void progressUpdated(int current, int total, const QString &message);"},
+        {"file": "src/blob/localblobbackend.cpp", "line": 209, "quote": "Q_EMIT recordCreated(absPath);"}
+      ],
+      "assessment": "progressUpdated declared in the contract and both impls but never emitted (verified: only errorOccurred/recordCreated/recordUpdated/recordDeleted are emitted). The signal is used by the higher-level SyncEngine, suggesting an incomplete contract.",
+      "recommendedDirection": "Either remove progressUpdated from the IBlobBackend contract and implementations (if engine-only) or implement it in the backends for consistency."
+    },
+    {
+      "refId": "",
+      "title": "IBlobBackend/SyncBackendBase split is architecturally clean",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "The split between IBlobBackend (pure abstract, no QObject) and SyncBackendBase (QObject + IBlobBackend) is clean. IBlobBackend avoids QObject to prevent diamond inheritance. No domain layers directly include blob headers; they include through sync/.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/blob/iblobbackend.h", "line": 36, "quote": "class IBlobBackend {"},
+        {"file": "src/sync/syncbackendbase.h", "line": 53, "quote": "class SyncBackendBase : public QObject, public IBlobBackend"},
+        {"file": "src/blob/mockblobbackend.h", "line": 20, "quote": "class MockBlobBackend : public QObject, public IBlobBackend {"},
+        {"file": "src/blob/localblobbackend.h", "line": 28, "quote": "class LocalBlobBackend : public QObject, public IBlobBackend {"},
+        {"file": "src/calendar/syncbackend.h", "line": 46, "quote": "#include \"syncbackendbase.h\" // domain-neutral base (Phase K.4)"}
+      ],
+      "assessment": "Pure-interface IBlobBackend + QObject SyncBackendBase avoids diamond inheritance; concrete impls supply their own Q_OBJECT. Domain layers reach blob only through sync/. Clean layering.",
+      "recommendedDirection": "The design is sound; no changes needed for the core interface split."
+    },
+    {
+      "refId": "",
+      "title": "Blob signal contracts are only used in tests, not in production polymorphism",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "The recordCreated/recordUpdated/recordDeleted/errorOccurred signals documented in IBlobBackend are only connected to in blob subsystem tests, never in production, and never accessed polymorphically through IBlobBackend*. Correct for a test harness.",
+      "correction": "",
+      "evidence": [
+        {"file": "tests/blob/tst_mockblobbackend.cpp", "line": 160, "quote": "QSignalSpy spy(&b, &Kalburator::Sync::MockBlobBackend::recordCreated);"},
+        {"file": "tests/blob/tst_mockblobbackend.cpp", "line": 137, "quote": "QSignalSpy errSpy(&b, &Kalburator::Sync::MockBlobBackend::errorOccurred);"},
+        {"file": "src/blob/iblobbackend.h", "line": 29, "quote": "Signals expected from implementations (declare in each concrete class):"},
+        {"file": "src/blob/mockblobbackend.h", "line": 66, "quote": "Q_SIGNALS: void recordCreated(const QString &recordId);"}
+      ],
+      "assessment": "Signals declared per concrete impl and only spied on in tests; never accessed via IBlobBackend* in production. Correct architecture for a test harness.",
+      "recommendedDirection": "The signal design is appropriate for test-only code; no production polymorphism issues exist."
+    },
+    {
+      "refId": "",
+      "title": "ConflictManager namespace mismatch: in conflict/ dir but in Kalburator::Sync namespace",
+      "category": "naming",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "ConflictManager (conflict/conflictmanager.h) is declared in namespace Kalburator::Sync, not Kalburator::Conflict like all other files in that directory, breaking namespace-directory correspondence.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/conflict/conflictmanager.h", "line": 12, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/conflict/conflictrecord.h", "line": 27, "quote": "namespace Kalburator::Conflict {"},
+        {"file": "src/conflict/conflictstore.h", "line": 23, "quote": "namespace Kalburator::Conflict {"},
+        {"file": "src/engine/syncengine.h", "line": 78, "quote": "using Kalburator::Sync::ConflictManager;"}
+      ],
+      "assessment": "ConflictManager in Kalburator::Sync while five peers in the same directory are Kalburator::Conflict. Real navigation friction, reflecting a deliberate orchestration-vs-data split.",
+      "recommendedDirection": "Move ConflictManager to sync/ or rename the conflict namespace root to establish consistent ownership."
+    },
+    {
+      "refId": "",
+      "title": "Naming collision: two BaselineStore classes in different namespaces/locations",
+      "category": "naming",
+      "severity": "minor",
+      "verdict": "new",
+      "claim": "journal/baselinestore.h defines an in-memory QObject BaselineStore (Kalburator::Sync::QSyncCore), while storage/baselinestore.h defines a SQLite-backed BaselineStore (Kalburator::Storage). Same class name in different contexts is confusing.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/journal/baselinestore.h", "line": 30, "quote": "namespace Kalburator::Sync::QSyncCore {"},
+        {"file": "src/journal/baselinestore.h", "line": 35, "quote": "class BaselineStore : public QObject"},
+        {"file": "src/storage/baselinestore.h", "line": 37, "quote": "namespace Kalburator::Storage {"},
+        {"file": "src/storage/baselinestore.h", "line": 39, "quote": "class BaselineStore"},
+        {"file": "CMakeLists.txt", "line": 202, "quote": "# baselinestore.h moved to src/storage/ in K.5; old file is stale/unused"}
+      ],
+      "assessment": "Two BaselineStore classes; the journal/ one is explicitly stale/unused (not compiled). Practical impact negligible — a dead-code artifact.",
+      "recommendedDirection": "Rename journal/baselinestore.h's class to MemoryBaselineStore or JournalBaselineStore to disambiguate the two implementations."
+    },
+    {
+      "refId": "",
+      "title": "backend/ contains capability interfaces, not backends; lacks clear purpose",
+      "category": "ownership",
+      "severity": "major",
+      "verdict": "confirmed",
+      "claim": "backend/changedetection.h and backend/resourcelinearization.h are optional capability interfaces for backends to opt into via multiple inheritance, not backend implementations. The backend/ directory lacks a clear principle: a miscellaneous capability bin.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/backend/changedetection.h", "line": 40, "quote": "class ChangeDetection"},
+        {"file": "src/backend/changedetection.h", "line": 12, "quote": "@brief Capability interface — collection-level change-detection token."},
+        {"file": "src/backend/resourcelinearization.h", "line": 27, "quote": "class ResourceLinearization"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 27, "quote": "public Kalburator::Backend::ChangeDetection"},
+        {"file": "docs/campaign/architectural-redress/plans/plan-5-backend-dirs-consolidation.md", "line": 32, "quote": "- `src/capabilities/` (rename of `backend/`) — capability *interfaces* (mixin abstracts that backends implement when they can)."}
+      ],
+      "assessment": "backend/ holds two pure-virtual mixin capability interfaces, not backends. Aligns with AUDIT B5 (MAJOR) and the already-drafted Plan 5; the directory lacks a clear principle.",
+      "recommendedDirection": "Consider moving capability interfaces to sync/capabilities/ (or rename backend/ to capabilities/ per Plan 5); the backend/ directory should either hold backend base classes or be eliminated."
+    },
+    {
+      "refId": "",
+      "title": "storage/ is clean: no upward or cross-directory includes except shape/canonicalrecord.h",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "storage/baselinestore.h and storage/idmappingstore.h have no dependencies on engine/, sync/, conflict/, or domain dirs. They only depend on shape/canonicalrecord.h and Qt/stdlib. Properly isolated.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/storage/baselinestore.h", "line": 35, "quote": "#include \"canonicalrecord.h\""},
+        {"file": "src/storage/idmappingstore.h", "line": 24, "quote": "#include <QDateTime>\n#include <QList>\n#include <QString>\n#include <QStringList>"},
+        {"file": "src/shape/canonicalrecord.h", "line": 1, "quote": "#pragma once\n\n#include <QByteArray>\n#include <QString>\n\n#include \"shape.h\""}
+      ],
+      "assessment": "Both storage/ headers include only the lower shape/ layer plus Qt/stdlib; no upward dependencies. Model isolation.",
+      "recommendedDirection": "Maintain storage/ isolation as a model for other persistence modules; no changes needed."
+    },
+    {
+      "refId": "",
+      "title": "backend/ is clean: only includes Qt stdlib, no cross-dir dependencies",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "backend/changedetection.h and backend/resourcelinearization.h include only Qt types and have no cross-directory dependencies. As pure capability interfaces, they are properly minimal.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/backend/changedetection.h", "line": 4, "quote": "#include <QMap>"},
+        {"file": "src/backend/changedetection.h", "line": 52, "quote": "virtual QString collectionRevision(const QString &collectionId) = 0;"},
+        {"file": "src/backend/resourcelinearization.h", "line": 4, "quote": "#include <QString>"},
+        {"file": "src/backend/resourcelinearization.h", "line": 45, "quote": "virtual QString linearizationKey() const { return {}; }"}
+      ],
+      "assessment": "Pure-virtual capability interfaces depending only on Qt types; sound dependency-inversion examples.",
+      "recommendedDirection": "No changes needed; these files are architecturally sound."
+    },
+    {
+      "refId": "",
+      "title": "IncidenceDiff is a namespace-as-class static utility, not a proper class",
+      "category": "naming",
+      "severity": "moderate",
+      "verdict": "confirmed",
+      "claim": "IncidenceDiff contains only static methods with no instance state, making it a namespace disguised as a class. All public and private methods are static, with no constructor or instance data.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/diff/incidencediff.h", "line": 71, "quote": "class IncidenceDiff {"},
+        {"file": "src/diff/incidencediff.h", "line": 91, "quote": "static QList<PropertyDiff> compare(\n        const KCalendarCore::Incidence::Ptr &incidenceA,\n        const KCalendarCore::Incidence::Ptr &incidenceB,\n        const KCalendarCore::Incidence::Ptr &baseline = nullptr);"},
+        {"file": "src/diff/incidencediff.h", "line": 268, "quote": "private:\n    static QList<PropertyDiff> comparePropertyMaps(...)\n    static QString formatDateTime(const QString &value);"}
+      ],
+      "assessment": "All 21 methods static (16 public + 5 private), only a static const member, no instance state. Functionally a namespace of utility functions.",
+      "recommendedDirection": "Rename to IncidenceDiffEngine or move static methods to a true namespace-level module with companion functions instead of class methods."
+    },
+    {
+      "refId": "",
+      "title": "PropertyDiff struct and IncidenceDiff logic are calendar-specific despite being in Sync namespace",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "confirmed",
+      "claim": "PropertyDiff and IncidenceDiff are hard-coded to work only with KCalendarCore::Incidence and iCal format strings. Placed in Kalburator::Sync (suggesting general-purpose infrastructure) but actually calendar-domain-specific tooling.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/diff/incidencediff.h", "line": 8, "quote": "#include <KCalendarCore/Incidence>"},
+        {"file": "src/diff/incidencediff.h", "line": 10, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/calendar/icalrecordmerger.cpp", "line": 245, "quote": "QList<PropertyDiff> diffs = IncidenceDiff::compare(srcInc, tgtInc, baseInc);"},
+        {"file": "src/engine/propertydiff.h", "line": 23, "quote": "/// Note: named MapPropertyDiff (not PropertyDiff) to avoid ODR conflict with\n/// the unrelated Kalburator::Sync::PropertyDiff in transcoding/incidencediff.h."}
+      ],
+      "assessment": "Hard-coded to KCalendarCore and iCal property names; used only from calendar/ modules. The engine deliberately defines a separate MapPropertyDiff, signalling awareness of the misplacement.",
+      "recommendedDirection": "Move IncidenceDiff and PropertyDiff to the calendar domain (Kalburator::Calendar) instead of placing them under Sync namespace."
+    },
+    {
+      "refId": "",
+      "title": "IncidenceDiff/PropertyDiff not using CRTP or principled template patterns; straightforward utility class is appropriate",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "Domain differs (RecordDifferVCard, RecordDifferVTodo, OutlineDiffer, TextDiffer) properly inherit the abstract RecordDiffer interface without CRTP. IncidenceDiff is correctly kept as a separate utility module. The architecture is clean.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/shape/recorddiffer.h", "line": 14, "quote": "class RecordDiffer {\npublic:\n    virtual ~RecordDiffer() = default;\n    virtual QSet<PropertyId> diff(...) const = 0;\n    virtual bool equal(...) const = 0;\n};"},
+        {"file": "src/contacts/vcarddiffer.h", "line": 9, "quote": "class RecordDifferVCard : public Kalburator::Shape::RecordDiffer {"},
+        {"file": "src/note/textdiffer.h", "line": 9, "quote": "class TextDiffer : public Kalburator::Shape::RecordDiffer {"},
+        {"file": "src/shape/canonjsondiffer.h", "line": 16, "quote": "class CanonJsonDiffer : public RecordDiffer {"}
+      ],
+      "assessment": "RecordDiffer is a clean abstract interface; all domain differs inherit it without CRTP. IncidenceDiff is a separate static utility. Clean separation across layers.",
+      "recommendedDirection": "Keep the current polymorphic design for domain-specific differs; refactor IncidenceDiff into a proper namespace-level utility module if needed."
+    },
+    {
+      "refId": "",
+      "title": "Proper dependency injection: domain differs own their domain SDK includes, not a central utility",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "Each domain-specific differ includes only the domain SDKs it needs (KContacts, KCalendarCore) and lives in its own namespace. No central utility includes all SDKs.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/contacts/vcarddiffer.cpp", "line": 3, "quote": "#include <KContacts/VCardConverter>\n#include <KContacts/Addressee>"},
+        {"file": "src/todo/icalvtododiffer.cpp", "line": 3, "quote": "#include <KCalendarCore/ICalFormat>\n#include <KCalendarCore/Todo>"},
+        {"file": "src/note/textdiffer.cpp", "line": 3, "quote": "#include <QJsonDocument>\n#include <QJsonObject>"},
+        {"file": "src/shape/recorddiffer.h", "line": 1, "quote": "#pragma once\n\n#include <QSet>\n\n#include \"canonicalrecord.h\"\n#include \"propertycatalogue.h\""}
+      ],
+      "assessment": "Each differ owns its domain SDK includes; the shape base pulls in no domain SDKs. Well-maintained separation of concerns.",
+      "recommendedDirection": "Maintain this pattern: each domain owns its differ and its SDK dependencies."
+    },
+    {
+      "refId": "",
+      "title": "IncidenceDiff duplicates property catalogue logic already present in domain catalogs",
+      "category": "duplication",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "IncidenceDiff hard-codes iCal property-name -> display-name mappings via static lookup maps. These should be centralized in the calendar domain's property catalogue instead of embedded in this utility class.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/diff/incidencediff.cpp", "line": 20, "quote": "QString IncidenceDiff::propertyDisplayName(const QString &propertyName)\n{\n    static const QMap<QString, QString> displayNames = {\n        {\"SUMMARY\", QObject::tr(\"Summary\")},\n        {\"DTSTART\", QObject::tr(\"Start Time\")},\n        {\"DTEND\", QObject::tr(\"End Time\")},\n        {\"DUE\", QObject::tr(\"Due Date\")},"},
+        {"file": "src/diff/incidencediff.cpp", "line": 72, "quote": "IncidenceDiff::PropertyCategory IncidenceDiff::propertyCategory(const QString &propertyName)\n{\n    QString upper = propertyName.toUpper();\n    if (upper == \"SUMMARY\" || upper == \"DTSTART\" || upper == \"DTEND\" || upper == \"DUE\") {\n        return Essential;\n    }"},
+        {"file": "src/calendar/icalproperties.cpp", "line": 7, "quote": "PropertyCatalogue makeICalCatalogue()\n{\n    PropertyCatalogue cat;\n    cat.addProperty({ PropertyId{\"summary\"},       PropertyKind::String,     QStringLiteral(\"Summary\") });\n    cat.addProperty({ PropertyId{\"dtstart\"},       PropertyKind::DateTime,   QStringLiteral(\"Start Time\") });"}
+      ],
+      "assessment": "Semantic duplication of property metadata (display names especially) between IncidenceDiff and the calendar PropertyCatalogue; a sync utility hard-codes calendar-domain knowledge instead of querying it.",
+      "recommendedDirection": "Consolidate property metadata (display names, categories, priorities) into a centralized PropertyCatalogue reused across differ implementations."
+    },
+    {
+      "refId": "",
+      "title": "Multiple loose 'discovered' getters leak discovery metadata from RemoteCalendarBackend",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "RemoteCalendarBackend exposes 7 public 'discovered*' getters that expose discovery results as loose getters, bypassing encapsulation and making it unclear whether they are cached vs. fresh vs. computed.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 102, "quote": "QString discoveredUrl(const QString &calendarId) const;"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 196, "quote": "CalendarType discoveredCalendarType(const QString &calendarId) const override;"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 205, "quote": "bool discoveredWritable(const QString &calendarId) const override;"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 350, "quote": "QMap<QString, KDAV::DavUrl> m_davUrls;"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 351, "quote": "QMap<QString, QColor> m_calendarColors;  // CalendarId -> discovered color"}
+      ],
+      "assessment": "Seven discovered* getters fragment discovery metadata across methods. Three override base virtuals (legitimate interface), but discoveredSupportsEvents/Todos/Url/Ctag appear unused, suggesting incomplete API design. A DiscoveredCalendar struct already aggregates equivalent metadata.",
+      "recommendedDirection": "Consolidate discovery metadata into a single DiscoveredCalendarInfo struct returned by one method, or move these into proper authority objects."
+    },
+    {
+      "refId": "",
+      "title": "PerCalendarCapabilities struct fields accessed directly without accessors",
+      "category": "encapsulation",
+      "severity": "minor",
+      "verdict": "new",
+      "claim": "PerCalendarCapabilities and DiscoveredCapabilities are plain public structs with direct field access, bypassing encapsulation and making it hard to add validation, defaults, or computed properties later.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/types/backendconfiguration.h", "line": 20, "quote": "struct PerCalendarCapabilities\n{\n    bool supportsVEvent = true;\n    bool supportsVTodo = true;\n    bool supportsVJournal = false;\n    bool writable = true;\n    QColor serverColor;\n    QString serverDisplayName;"},
+        {"file": "src/sync/caldavprovider.cpp", "line": 99, "quote": "ci.name = it.value().serverDisplayName.isEmpty() ? it.key() : it.value().serverDisplayName;"},
+        {"file": "src/sync/caldavprovider.cpp", "line": 103, "quote": "ci.readOnly = !it.value().writable;  // thread discovered writability"}
+      ],
+      "assessment": "Plain public DTOs with direct field access; valid Qt/C++ pattern with in-class defaults and fromJson/toJson. Architectural smell rather than functional defect — minor.",
+      "recommendedDirection": "Convert structs to classes with proper accessor methods and validation (future-proofing only)."
+    },
+    {
+      "refId": "",
+      "title": "Discovery result URLs duplicated across discovery class, provider, and backend",
+      "category": "duplication",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "URL maps are maintained in parallel at three levels: CalDavCapabilityDiscovery.m_calendarUrls, CalDavProvider.m_calendarUrls, and RemoteCalendarBackend.m_davUrls. The same URLs are extracted, copied, then re-registered, creating multiple points of truth.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/caldavcapabilitydiscovery.h", "line": 158, "quote": "QMap<QString, QString> m_calendarUrls;  // calendarId -> href"},
+        {"file": "src/sync/caldavprovider.h", "line": 66, "quote": "QMap<QString, QString>               m_calendarUrls;   // collectionId -> href"},
+        {"file": "src/sync/caldavprovider.cpp", "line": 93, "quote": "m_calendarUrls = m_discovery->calendarUrls();"},
+        {"file": "src/calendar/remotecalendarbackend.h", "line": 350, "quote": "QMap<QString, KDAV::DavUrl> m_davUrls;"},
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 554, "quote": "m_davUrls[calendarId] = configuredUrl;"}
+      ],
+      "assessment": "URL maps maintained at three levels with redundancy. Not functional sync bugs (loadCalendars not called by engine; provider cache used only at createBackend), but architectural redundancy (unnecessary intermediate caching).",
+      "recommendedDirection": "Establish a single authority for discovered URLs; pass them once to backends and avoid re-copying through intermediary containers."
+    },
+    {
+      "refId": "",
+      "title": "Asymmetric placement: CalDavCapabilityDiscovery in calendar/ but CardDavCapabilityDiscovery in sync/",
+      "category": "layering",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "CalDavCapabilityDiscovery is in src/calendar/, but CardDavCapabilityDiscovery is in src/sync/. This violates consistency. MultiProtocolDavProvider has to include '../calendar/caldavcapabilitydiscovery.h' crossing domain boundaries.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/caldavcapabilitydiscovery.h", "line": 14, "quote": "namespace Kalburator::Sync {"},
+        {"file": "src/calendar/caldavcapabilitydiscovery.h", "line": 41, "quote": "class CalDavCapabilityDiscovery : public QObject"},
+        {"file": "src/sync/carddavcapabilitydiscovery.h", "line": 38, "quote": "Mirror of CalDavCapabilityDiscovery with CardDAV namespace differences:"},
+        {"file": "src/sync/multiprotocoldavprovider.cpp", "line": 4, "quote": "#include \"../calendar/caldavcapabilitydiscovery.h\""}
+      ],
+      "assessment": "CalDav discovery is physically in calendar/ but in Kalburator::Sync and used only by sync providers; CardDav mirror is correctly in sync/. The sync->calendar cross-domain include is a confirmed boundary violation.",
+      "recommendedDirection": "Move both discovery classes to a single shared location (e.g., src/discovery/) or consistently place them in sync/."
+    },
+    {
+      "refId": "",
+      "title": "DiscoveredCapabilities and PerCalendarCapabilities exposed via discoveredCapabilities() loose getter",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "CalDavCapabilityDiscovery exposes the entire DiscoveredCapabilities struct and its nested PerCalendarCapabilities map via a single discoveredCapabilities() getter returning by value, allowing callers to inspect all discovery state without a clear contract.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/caldavcapabilitydiscovery.h", "line": 76, "quote": "DiscoveredCapabilities discoveredCapabilities() const { return m_capabilities; }"},
+        {"file": "src/types/backendconfiguration.h", "line": 51, "quote": "QMap<QString, PerCalendarCapabilities> perCalendarCapabilities;"},
+        {"file": "src/sync/caldavprovider.cpp", "line": 92, "quote": "const auto caps = m_discovery->discoveredCapabilities();"},
+        {"file": "src/calendar/caldavcapabilitydiscovery.h", "line": 109, "quote": "void calendarDiscovered(const QString &calendarId, const PerCalendarCapabilities &caps);"}
+      ],
+      "assessment": "Single bulk getter returns the whole capability struct; both callers reach into .perCalendarCapabilities directly, coupling to internal shape. No specialized query methods exist.",
+      "recommendedDirection": "Define query methods for specific discovery interests (supportsCalendarCreation(), serverProduct(), etc.) rather than exposing the entire capability struct."
+    },
+    {
+      "refId": "",
+      "title": "CardDavCapabilityDiscovery exposes addressbookUrls() as loose getter returning full URL map",
+      "category": "encapsulation",
+      "severity": "minor",
+      "verdict": "new",
+      "claim": "CardDavCapabilityDiscovery.addressbookUrls() exposes the entire internal URL map to callers without encapsulation, requiring callers to know the map key structure.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/carddavcapabilitydiscovery.h", "line": 79, "quote": "QMap<QString, QString> addressbookUrls() const { return m_addressbookUrls; }"},
+        {"file": "src/sync/carddavcapabilitydiscovery.h", "line": 125, "quote": "QMap<QString, QString> m_addressbookUrls;  // id → absolute href"},
+        {"file": "src/sync/carddavprovider.cpp", "line": 111, "quote": "m_addressbookUrls = m_discovery ? m_discovery->addressbookUrls() : QMap<QString, QString>();"},
+        {"file": "src/contacts/remotecontactsbackend.h", "line": 67, "quote": "void registerAddressbookUrl(const QString &addressbookId, const QUrl &absoluteUrl);"}
+      ],
+      "assessment": "By-value getter exposes the full URL map; callers copy the whole map. Internal to sync/, no mutation risk — minor code smell.",
+      "recommendedDirection": "Hide the URL map behind query methods or provide a method to pre-register URLs directly on backends."
+    },
+    {
+      "refId": "",
+      "title": "God-class dimension is clean across non-identified classes",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "Classes with 20+ public methods beyond those already identified are legitimate interface implementations, not god classes. AkonadiBackend, DecSyncBackend, OrgBackend, SyncBackend, SubscriptionBackend all follow proper inheritance with clear separation of concerns.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/akonadibackend.h", "line": 37, "quote": "class AkonadiBackend : public SyncBackend, public Kalburator::Backend::ChangeDetection"},
+        {"file": "src/calendar/decsyncbackend.h", "line": 36, "quote": "class DecSyncBackend : public SyncBackend"},
+        {"file": "src/calendar/syncbackend.h", "line": 120, "quote": "class SyncBackend : public SyncBackendBase"},
+        {"file": "src/calendar/subscriptionbackend.h", "line": 46, "quote": "class SubscriptionBackend : public SyncBackend"}
+      ],
+      "assessment": "Each backend has a single clear domain focus, clean inheritance, and capability-mixin composition. Method counts reflect interface contracts (actual counts 29-45), not god-class antipatterns.",
+      "recommendedDirection": "No action required for god-class concerns in public-surface dimension beyond already-identified violations."
+    },
+    {
+      "refId": "",
+      "title": "Backend class method counts reflect legitimate interface implementation, not bloat",
+      "category": "good",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "All calendar backends inherit well-designed base classes and implement standard interface contracts. Method counts come from implementing multiple concerned interfaces, not mixing unrelated responsibilities.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/syncbackendbase.h", "line": 53, "quote": "class SyncBackendBase : public QObject, public IBlobBackend"},
+        {"file": "src/calendar/syncbackend.h", "line": 110, "quote": "/**\n * @brief Calendar-typed sync-backend base.\n * Inherits the domain-neutral `SyncBackendBase` and adds calendar-typed\n * pure virtuals... */"},
+        {"file": "src/calendar/akonadibackend.h", "line": 37, "quote": "class AkonadiBackend : public SyncBackend,\n                       public Kalburator::Backend::ChangeDetection"},
+        {"file": "src/blob/iblobbackend.h", "line": 36, "quote": "class IBlobBackend {"}
+      ],
+      "assessment": "Sound inheritance and dependency inversion: neutral base pulls in no domain types, calendar typing added only in the SyncBackend extension. Method counts (actual ~23-33) reflect multi-interface contracts.",
+      "recommendedDirection": "Maintain current architecture where backends inherit from domain-neutral base classes and implement standard multi-interface contracts."
+    },
+    {
+      "refId": "",
+      "title": "Dangling pointer risk from raw bool* in lambda capture",
+      "category": "ownership",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "CardDavProvider::connect() allocates a raw bool* without ownership tracking, captured in a lambda that accesses it after an unknown delay. If the provider is destroyed while the future is pending, accessing *errorSeen triggers use-after-free.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/carddavprovider.cpp", "line": 79, "quote": "bool *errorSeen = new bool(false);\n    QObject::connect(m_discovery, &CardDavCapabilityDiscovery::error,\n                     this, [this, errorSeen](const QString &msg) {\n        *errorSeen = true;"},
+        {"file": "src/sync/carddavprovider.cpp", "line": 93, "quote": "QObject::connect(watcher, &QFutureWatcher<QList<CollectionInfo>>::finished,\n                     this, [this, watcher, errorSeen]() {\n        const bool hadError = *errorSeen;\n        delete errorSeen;"},
+        {"file": "src/sync/carddavcapabilitydiscovery.cpp", "line": 469, "quote": "emit error(msg);\n\n    if (m_promise) {\n        m_promise->addResult(QList<CollectionInfo>{});"}
+      ],
+      "assessment": "Raw bool* captured by two lambdas with one deleting it; relies on undocumented Qt synchronous signal-firing order. Mitigated in practice but fragile and unsafe — a MAJOR code-quality defect.",
+      "recommendedDirection": "Use std::make_shared<bool> or a member variable instead of raw new; or ensure lifetime via a guard object passed to the lambda."
+    },
+    {
+      "refId": "",
+      "title": "Raw QFutureInterface pointers without proper lifecycle management",
+      "category": "ownership",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "SyncEngine allocates m_currentSingleIface and m_currentMultiIface as raw new without parent. If destroyed while a sync is in flight, or on an exception, these pointers leak or dangle. Manual deletion in onWorkerSyncCompleted is fragile.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/engine/syncengine.cpp", "line": 477, "quote": "m_currentSingleIface = new QFutureInterface<SyncResult>;"},
+        {"file": "src/engine/syncengine.cpp", "line": 530, "quote": "m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;"},
+        {"file": "src/engine/syncengine.h", "line": 772, "quote": "QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;"},
+        {"file": "src/engine/syncengine.cpp", "line": 105, "quote": "SyncEngine::~SyncEngine()\n{\n    stopWorkerThread();\n}"}
+      ],
+      "assessment": "Raw QFutureInterface pointers deleted only in conditional completion paths; destructor does not clean them up. Leak if destroyed mid-sync; no exception safety.",
+      "recommendedDirection": "Wrap m_currentSingleIface and m_currentMultiIface in std::unique_ptr or use stack-allocated QFutureInterface with move semantics."
+    },
+    {
+      "refId": "",
+      "title": "Manual memory management without Q_DISABLE_COPY on QObject subclasses",
+      "category": "encapsulation",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "QObject-derived classes (BackendRegistry, ConflictManager, AsyncFileWriter, etc.) lack Q_DISABLE_COPY declarations. Explicit declarations improve safety and catch copy-construction at compile time.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/backendregistry.h", "line": 21, "quote": "class BackendRegistry : public QObject\n{\n    Q_OBJECT\npublic:"},
+        {"file": "src/journal/asyncfilewriter.h", "line": 74, "quote": "class AsyncFileWriter : public QObject\n{\n    Q_OBJECT"},
+        {"file": "src/conflict/conflictmanager.h", "line": 38, "quote": "class ConflictManager : public QObject\n{\n    Q_OBJECT"},
+        {"file": "src/types/incidencelock_registry.h", "line": 37, "quote": "class IncidenceLockRegistry : public QObject\n{\n    Q_OBJECT"}
+      ],
+      "assessment": "25+ QObject subclasses lack Q_DISABLE_COPY (zero uses in the codebase). No copies are attempted, but explicit deletion would enforce intent at compile time.",
+      "recommendedDirection": "Add Q_DISABLE_COPY(ClassName) after Q_OBJECT in all QObject subclass headers to enforce non-copyability at compile time."
+    },
+    {
+      "refId": "",
+      "title": "CardDavCapabilityDiscovery promise raw-pointer fragmentation",
+      "category": "ownership",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "m_promise is allocated as raw new in discover() and manually deleted in multiple places (discover() guard, destructor, resolveWithError, resolveWithSuccess). This pattern is error-prone; a missing path could leak or double-delete.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/sync/carddavcapabilitydiscovery.cpp", "line": 74, "quote": "m_promise = new QPromise<QList<CollectionInfo>>();"},
+        {"file": "src/sync/carddavcapabilitydiscovery.cpp", "line": 62, "quote": "if (m_promise) {\n        m_promise->addResult(QList<CollectionInfo>{});\n        m_promise->finish();\n        delete m_promise;\n        m_promise = nullptr;\n    }"},
+        {"file": "src/sync/carddavcapabilitydiscovery.cpp", "line": 471, "quote": "if (m_promise) {\n        m_promise->addResult(QList<CollectionInfo>{});\n        m_promise->finish();\n        delete m_promise;\n        m_promise = nullptr;\n    }"},
+        {"file": "src/sync/carddavcapabilitydiscovery.cpp", "line": 485, "quote": "if (m_promise) {\n        m_promise->addResult(books);\n        m_promise->finish();\n        delete m_promise;\n        m_promise = nullptr;\n    }"}
+      ],
+      "assessment": "Raw m_promise allocated once and manually deleted in four locations; fragmented ownership prone to leak if a new error path forgets cleanup.",
+      "recommendedDirection": "Wrap m_promise in std::unique_ptr<QPromise<QList<CollectionInfo>>> to centralize deletion logic and prevent leaks."
+    },
+    {
+      "refId": "",
+      "title": "AsyncFileWriter worker without parent (acceptable pattern documented)",
+      "category": "ownership",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "AsyncFileWriter::m_worker is created as raw new without a parent because it must be moved to a separate thread. This is an acceptable Qt pattern; the destructor properly deletes the worker after the thread stops, and the code is well-documented.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/journal/asyncfilewriter.cpp", "line": 171, "quote": "m_worker = new AsyncFileWriterWorker();\n    m_worker->moveToThread(&m_workerThread);"},
+        {"file": "src/journal/asyncfilewriter.cpp", "line": 186, "quote": "// Note: Worker is NOT deleted when thread finishes - we reuse it across multiple batches\n    // Worker is deleted in AsyncFileWriter destructor"},
+        {"file": "src/journal/asyncfilewriter.cpp", "line": 190, "quote": "AsyncFileWriter::~AsyncFileWriter()"}
+      ],
+      "assessment": "Correct Qt threading pattern: parentless QObject moved to a worker thread, destructor stops the thread then deletes the worker. Safe and well-commented.",
+      "recommendedDirection": "Pattern is correct; document clearly (already done) that parent=nullptr is required for thread-moving QObjects."
+    },
+    {
+      "refId": "",
+      "title": "DecSyncBackend raw pointer members properly managed",
+      "category": "ownership",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "DecSyncBackend creates m_dir and m_controllerStore as raw new without parents, but properly deletes them in the destructor with qDeleteAll for collections. The pattern is safe — deterministic cleanup.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/decsyncbackend.cpp", "line": 37, "quote": "m_dir(new DecSyncDir(decsyncDir))"},
+        {"file": "src/calendar/decsyncbackend.cpp", "line": 43, "quote": "m_controllerStore = new DecSyncControllerStore(\n        decsyncDir + QStringLiteral(\"/.planstan-controller.db\"));"},
+        {"file": "src/calendar/decsyncbackend.cpp", "line": 50, "quote": "qDeleteAll(m_controllers);\n    delete m_controllerStore;\n    qDeleteAll(m_collections);\n    delete m_dir;"}
+      ],
+      "assessment": "Deterministic, leak-free manual ownership: all raw members deleted in the destructor, containers cleaned with qDeleteAll.",
+      "recommendedDirection": "Pattern is sound; ownership is clear and cleanup is deterministic. Could migrate to std::unique_ptr for stronger guarantees."
+    },
+    {
+      "refId": "",
+      "title": "Repeated synchronous event loop blocking pattern in CalendarManager incidence operations",
+      "category": "duplication",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "createIncidence, updateIncidence, and deleteIncidence in CalendarManager all contain identical QEventLoop synchronization boilerplate with only the operation type and signal differing.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/calendarmanager.cpp", "line": 582, "quote": "auto *pushOp = backend->pushItems(binding.calendarId, {incidence});\n            if (pushOp) {\n                QEventLoop loop;\n                connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);\n                loop.exec();\n                if (pushOp->state() != SyncOperation::Succeeded) {\n                    allSucceeded = false;\n                    emit operationFailed(...);\n                }\n                pushOp->deleteLater();"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 627, "quote": "auto *pushOp = backend->pushItems(binding.calendarId, {incidence});\n            if (pushOp) {\n                QEventLoop loop;\n                connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);\n                loop.exec();"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 674, "quote": "auto *deleteOp = backend->deleteItems(binding.calendarId, {uid});\n            if (deleteOp) {\n                QEventLoop loop;\n                connect(deleteOp, &SyncOperation::finished, &loop, &QEventLoop::quit);\n                loop.exec();"},
+        {"file": "src/calendar/calendarmanager.h", "line": 338, "quote": "bool executeOnAllBindings(const LogicalCalendar &logCal,\n                              std::function<bool(SyncBackend*, const CalendarBackendBinding&)> operation);"}
+      ],
+      "assessment": "Three incidence CRUD methods duplicate identical QEventLoop wait/check/cleanup. A suitable executeOnAllBindings helper already exists and is used elsewhere; these methods duplicate inline.",
+      "recommendedDirection": "Extract the synchronous wait pattern to a private helper that takes operation type, operation pointer, and error context."
+    },
+    {
+      "refId": "",
+      "title": "Repeated QEventLoop synchronous blocking in RemoteCalendarBackend and RemoteContactsBackend",
+      "category": "duplication",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "RemoteCalendarBackend uses QEventLoop synchronous blocking in 11+ methods to wait for QNetworkReply completion, with identical connect-exec-cleanup boilerplate across discovery and CRUD; RemoteContactsBackend has 4+ similar instances.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 626, "quote": "QEventLoop loop; ... QNetworkReply *reply = nam.sendCustomRequest(request, \"PROPFIND\", body); connect(reply, &QNetworkReply::finished, &loop, [...]() { ... reply->deleteLater(); loop.quit(); }); loop.exec();"},
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 1278, "quote": "QEventLoop loop; ... QNetworkReply *reply = manager.sendCustomRequest(request, \"MKCALENDAR\", requestBody.toUtf8()); ... loop.exec();"},
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 1502, "quote": "QEventLoop loop; ... QNetworkReply *reply = manager.deleteResource(request); ... loop.exec();"},
+        {"file": "src/contacts/remotecontactsbackend.cpp", "line": 284, "quote": "QEventLoop loop; ... QNetworkReply *reply = nam.sendCustomRequest(request, \"PROPFIND\", body); m_currentReply = reply; ... loop.exec();"},
+        {"file": "src/contacts/remotecontactsbackend.cpp", "line": 350, "quote": "QEventLoop loop; ... QNetworkReply *reply = nam.get(request); m_currentReply = reply; ... loop.exec();"}
+      ],
+      "assessment": "11 QEventLoop blocking sites in RemoteCalendarBackend and 4 in RemoteContactsBackend, all with identical connect-exec-cleanup boilerplate. Strong extraction candidate.",
+      "recommendedDirection": "Extract a private helper (e.g., sendCustomRequestSync) encapsulating QNetworkReply waiting and error handling, reused across all synchronous network operations."
+    },
+    {
+      "refId": "",
+      "title": "Plugin boilerplate is principled and not duplicative",
+      "category": "duplication",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "Plugin implementations follow a consistent two-method pattern (domainDefinitions, shapeContributions) that is intentional symmetry, not copy-paste debt. CalendarPlugin extends with domainOperations and backendContributions reflecting its richer role.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/plugin/plugin.h", "line": 17, "quote": "class Plugin {\npublic:\n    virtual ~Plugin() = default;\n    virtual QList<std::shared_ptr<Shape::DomainDefinition>>\n        domainDefinitions() const { return {}; }\n    virtual QList<std::shared_ptr<Shape::ShapeContribution>>\n        shapeContributions() const { return {}; }"},
+        {"file": "src/todo/todoplugin.cpp", "line": 7, "quote": "QList<std::shared_ptr<Shape::DomainDefinition>> TodoPlugin::domainDefinitions() const {\n    return { std::make_shared<TodoDomainDefinition>() };\n}"},
+        {"file": "src/calendar/calendarplugin.h", "line": 6, "quote": "class CalendarPlugin : public Kalburator::Plugin {\npublic:\n    QList<std::shared_ptr<Kalburator::Shape::DomainDefinition>>    domainDefinitions()  const override;\n    ... QList<std::shared_ptr<Kalburator::Sync::BackendContribution>>  backendContributions() const override;"}
+      ],
+      "assessment": "Template-method pattern over a common Plugin base with default empty implementations; each domain returns its own classes. CalendarPlugin overrides all four. Principled symmetry.",
+      "recommendedDirection": "No action needed; this is template-method-pattern symmetry reflecting domain parity, not copy-paste."
+    },
+    {
+      "refId": "",
+      "title": "JSON serialization and deserialization are individually implemented without excessive duplication",
+      "category": "duplication",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "toJson/fromJson implementations in ConflictRecord, RecordSnapshot, BaselineStore, and config classes are each tailored to their data structure and do not exhibit wholesale copy-paste; principled symmetry for serialization contracts.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/conflict/conflictrecord.cpp", "line": 10, "quote": "QJsonObject RecordSnapshot::toJson() const {\n    QJsonObject obj;\n    obj[\"id\"] = id;\n    obj[\"description\"] = description;\n    obj[\"content\"] = QString::fromUtf8(content.toBase64());"},
+        {"file": "src/conflict/conflictrecord.cpp", "line": 112, "quote": "QJsonObject ConflictRecord::toJson() const {\n    QJsonObject obj;\n    obj[\"conflictId\"] = conflictId;\n    obj[\"type\"] = conflictTypeToString(type);\n    obj[\"source\"] = source.toJson();"},
+        {"file": "src/types/backendconfiguration.cpp", "line": 31, "quote": "QJsonObject PerCalendarCapabilities::toJson() const {\n    QJsonObject json;\n    if (!writable) {\n        json[QStringLiteral(\"writable\")] = false;"},
+        {"file": "src/journal/baselinestore.cpp", "line": 52, "quote": "QJsonObject BaselineStore::toJson() const {\n    QJsonObject obj;\n    for (auto it = m_hashes.constBegin(); it != m_hashes.constEnd(); ++it) {\n        obj[it.key()] = it.value();"}
+      ],
+      "assessment": "Each toJson/fromJson is domain-specific in approach (flat maps, selective output, nested structures, enum conversion); no wholesale copy-paste while maintaining symmetric contracts.",
+      "recommendedDirection": "No action needed; JSON serialization implementations are appropriately domain-specific."
+    },
+    {
+      "refId": "",
+      "title": "Silent PRAGMA failures in SyncConflictStore::initDatabase",
+      "category": "error-handling",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "PRAGMA foreign_keys and PRAGMA journal_mode exec calls are not checked for success, silencing potential database configuration failures.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/syncconflictstore.cpp", "line": 64, "quote": "query.exec(QStringLiteral(\"PRAGMA foreign_keys = ON\"));"},
+        {"file": "src/calendar/syncconflictstore.cpp", "line": 65, "quote": "query.exec(QStringLiteral(\"PRAGMA journal_mode = WAL\"));"},
+        {"file": "src/calendar/syncconflictstore.cpp", "line": 105, "quote": "query.exec(QStringLiteral(\"ALTER TABLE sync_conflicts ADD COLUMN conflict_type INTEGER DEFAULT 0\"));"},
+        {"file": "src/calendar/syncconflictstore.cpp", "line": 315, "quote": "if (!query.exec()) { qWarning() << \"SyncConflictStore::clearBackendData - failed:\" << query.lastError().text(); }"}
+      ],
+      "assessment": "Lines 64-65 PRAGMAs and lines 105-108 ALTER TABLE migrations exec unchecked; failures leave the DB in an unsafe/non-WAL state silently. Other methods do check exec(), so the gap is inconsistent.",
+      "recommendedDirection": "Check return values of pragma exec() calls and log failures, or wrap in explicit error handling path."
+    },
+    {
+      "refId": "",
+      "title": "Ignored CREATE INDEX return value in RemoteCalendarBackend::initializeContentCache",
+      "category": "error-handling",
+      "severity": "minor",
+      "verdict": "new",
+      "claim": "CREATE INDEX query result ignored; index creation failure goes unlogged despite successful table creation.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 374, "quote": "query.exec(QStringLiteral(\"CREATE INDEX IF NOT EXISTS idx_cached_items_etag ON cached_items(etag)\"));"},
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 376, "quote": "m_cacheInitialized = true;"},
+        {"file": "src/calendar/remotecalendarbackend.cpp", "line": 368, "quote": "if (!success) {"}
+      ],
+      "assessment": "CREATE INDEX exec() result ignored; m_cacheInitialized set unconditionally. Table creation above does check return values — inconsistent.",
+      "recommendedDirection": "Log index creation failures or verify success before setting m_cacheInitialized=true."
+    },
+    {
+      "refId": "",
+      "title": "Void GenericSqliteBackend::clearCollection silently ignores DELETE failure",
+      "category": "error-handling",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "DELETE operation on collection has no error checking; failure is undetected and the caller gets no feedback.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 121, "quote": "q.exec(QStringLiteral(\"DELETE FROM \\\"%1\\\"\").arg(tableNameFor(collectionId)));"},
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 115, "quote": "void GenericSqliteBackend::clearCollection(const QString &collectionId)"},
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 108, "quote": "q.exec(QStringLiteral(\"DROP TABLE IF EXISTS \\\"%1\\\"\").arg(table));"},
+        {"file": "src/universal/genericsqlitebackend.cpp", "line": 236, "quote": "return q.exec();"}
+      ],
+      "assessment": "clearCollection (void) and deleteCollection exec DELETE/DROP without checking results, unlike deleteRecord/createRecord/loadRecords in the same class which do check. Tests cover only the happy path.",
+      "recommendedDirection": "Either return bool from clearCollection or emit a signal on error, or log and return early on exec() failure."
+    },
+    {
+      "refId": "",
+      "title": "Silent PRAGMA failures in IDMappingStore::open",
+      "category": "error-handling",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "PRAGMA foreign_keys and journal_mode are set without checking return values, same pattern as SyncConflictStore.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/storage/idmappingstore.cpp", "line": 97, "quote": "pragma.exec(QStringLiteral(\"PRAGMA foreign_keys = ON\"));"},
+        {"file": "src/storage/idmappingstore.cpp", "line": 98, "quote": "pragma.exec(QStringLiteral(\"PRAGMA journal_mode = WAL\"));"},
+        {"file": "src/storage/idmappingstore.cpp", "line": 90, "quote": "if (!db.open()) {"},
+        {"file": "src/storage/idmappingstore.cpp", "line": 185, "quote": "if (!probe.exec(QStringLiteral(\"PRAGMA table_info(sync_id_mappings)\"))) {"}
+      ],
+      "assessment": "Lines 97-98 PRAGMAs unchecked while db.open(), ensureSchemaAndVersion(), and PRAGMA table_info are checked. Systematic across stores (SyncConflictStore, BaselineStore too).",
+      "recommendedDirection": "Wrap pragma calls in conditional checks; log warnings if pragmas fail, as they affect database safety guarantees."
+    },
+    {
+      "refId": "",
+      "title": "Inconsistent error reporting: bool returns vs void + logging",
+      "category": "error-handling",
+      "severity": "moderate",
+      "verdict": "new",
+      "claim": "CalendarMetadataManager uses bool returns for errors (atomicWrite, removeFile), while SyncConflictStore uses void + logging; inconsistent API channels make error propagation unpredictable.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/types/calendarmetadatamanager.h", "line": 67, "quote": "bool atomicWrite(const QString &filePath, const QByteArray &data);"},
+        {"file": "src/types/calendarmetadatamanager.h", "line": 68, "quote": "bool removeFile(const QString &filePath);"},
+        {"file": "src/calendar/syncconflictstore.h", "line": 64, "quote": "void removeConflict(const QString &conflictId);"},
+        {"file": "src/calendar/syncconflictstore.h", "line": 74, "quote": "void clearBackendData(const QString &backendId);"},
+        {"file": "src/calendar/syncconflictstore.cpp", "line": 271, "quote": "void SyncConflictStore::removeConflict(const QString &conflictId)"}
+      ],
+      "assessment": "CalendarMetadataManager mutators return bool; SyncConflictStore removal/mutation methods are void + internal logging (lastError() post-hoc). Real inconsistency in error channels.",
+      "recommendedDirection": "Choose one error channel: bool returns (preferred) or signals+logging; apply uniformly across all backends."
+    },
+    {
+      "refId": "",
+      "title": "IncidenceSyncAdapter header-only class never instantiated",
+      "category": "dead-code",
+      "severity": "minor",
+      "verdict": "confirmed",
+      "claim": "IncidenceSyncAdapter is a header-only class implementing ISyncRecord but is never instantiated or used anywhere in libkalburator, PlanStan, or WildPalms.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/incidencesyncadapter.h", "line": 17, "quote": "class IncidenceSyncAdapter : public ISyncRecord {"},
+        {"file": "src/calendar/isyncrecord.h", "line": 16, "quote": "Designed for future extraction to qsynccore shared library."}
+      ],
+      "assessment": "Header-only IncidenceSyncAdapter and its ISyncRecord interface have zero callers anywhere; scaffolding from commit 05986ba never developed. A separate SyncRecord struct handles actual sync.",
+      "recommendedDirection": "Remove IncidenceSyncAdapter or retain explicitly as scaffolding for future qsynccore extraction if planned."
+    },
+    {
+      "refId": "",
+      "title": "ResourceLinearization interface never implemented or inherited",
+      "category": "dead-code",
+      "severity": "minor",
+      "verdict": "confirmed",
+      "claim": "ResourceLinearization is a capability interface, but no backend inherits or implements it anywhere in libkalburator, PlanStan, or WildPalms.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/backend/resourcelinearization.h", "line": 27, "quote": "class ResourceLinearization"},
+        {"file": "src/backend/resourcelinearization.h", "line": 45, "quote": "virtual QString linearizationKey() const { return {}; }"},
+        {"file": "docs/phase0/04ab-phase-k1-plan.md", "line": 18, "quote": "T7: No backend implements `Backend::ResourceLinearization` yet (interface exists; future Palm backend will adopt)."}
+      ],
+      "assessment": "Zero implementers; intentional scaffolding per Phase K.1 plan (future Palm backend). Not accidental dead code but currently unused.",
+      "recommendedDirection": "Remove ResourceLinearization or retain explicitly as scaffolding for future Palm backend integration if planned."
+    },
+    {
+      "refId": "",
+      "title": "CalendarManager entirely untested (god class with destructive CRUD operations)",
+      "category": "testing",
+      "severity": "critical",
+      "verdict": "new",
+      "claim": "CalendarManager exposes 14+ critical IMMEDIATE mutation methods executing destructively across ALL backends without staging, plus savepoint/undo operations. Zero test files exist for this class.",
+      "correction": "",
+      "evidence": [
+        {"file": "src/calendar/calendarmanager.h", "line": 101, "quote": "class CalendarManager : public QObject"},
+        {"file": "src/calendar/calendarmanager.h", "line": 145, "quote": "DeletionResult deleteCalendar(const QString &logicalCalendarId, DeleteMode mode);"},
+        {"file": "src/calendar/calendarmanager.h", "line": 213, "quote": "bool deleteIncidence(const QString &logicalCalendarId,"},
+        {"file": "src/calendar/calendarmanager.h", "line": 249, "quote": "bool restoreFromSnapshot(const CalendarSnapshot &snapshot);"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 776, "quote": "// For now, this is a placeholder - full implementation would:"},
+        {"file": "src/calendar/calendarmanager.cpp", "line": 782, "quote": "return false;"}
+      ],
+      "assessment": "Critical untested QObject with 14 IMMEDIATE destructive mutation methods executing across all bindings synchronously via QEventLoop, no transactional rollback, and a stub restoreFromSnapshot returning false. Zero tst_calendarmanager*.cpp.",
+      "recommendedDirection": "Add comprehensive unit and integration tests for CalendarManager's CRUD surface: success paths, partial-failure recovery, batch semantics, and snapshot/restore."
+    },
+    {
+      "refId": "",
+      "title": "Critical SyncEngine public APIs untested (hasSyncWork, loadSyncMappings, setMappingEnabled, registerActiveController)",
+      "category": "testing",
+      "severity": "major",
+      "verdict": "new",
+      "claim": "SyncEngine exposes configuration/control APIs (loadSyncMappings, setMappingEnabled, registerActiveController, unregisterActiveController, setSkipUnchangedMappings, hasSyncWork) called in production but with zero explicit test coverage.",
+      "correction": "Evidence-quote error in the original: line 477 is hasSyncMappings(), not hasSyncWork(); hasSyncWork() is declared at line 499 with impl at syncengine.cpp:265 returning !m_syncMappings.isEmpty() || !m_activeControllers.isEmpty(). The testing gap is real: hasSyncWork() has only indirect coverage via SyncRunCoordinator; the other five APIs are completely uncovered.",
+      "evidence": [
+        {"file": "src/engine/syncengine.h", "line": 457, "quote": "void loadSyncMappings(ICalendarCollection *collection);"},
+        {"file": "src/engine/syncengine.h", "line": 499, "quote": "bool hasSyncWork() const;"},
+        {"file": "src/engine/syncengine.cpp", "line": 265, "quote": "bool SyncEngine::hasSyncWork() const { return !m_syncMappings.isEmpty() || !m_activeControllers.isEmpty(); }"},
+        {"file": "src/engine/syncengine.h", "line": 515, "quote": "void setMappingEnabled(const QString &mappingId, bool enabled);"},
+        {"file": "src/sync/syncruncoordinator.cpp", "line": 37, "quote": "if (!m_engine->hasSyncWork())"},
+        {"file": "tests/sync/tst_syncruncoordinator.cpp", "line": 70, "quote": "void runSync_noMappings_isNoOp()"}
+      ],
+      "assessment": "hasSyncWork() called in production with only indirect test coverage; loadSyncMappings/setMappingEnabled/registerActiveController/unregisterActiveController/setSkipUnchangedMappings are uncovered. Original evidence conflated line 477 (hasSyncMappings) with hasSyncWork (line 499).",
+      "recommendedDirection": "Add unit tests for SyncEngine's configuration APIs verifying they correctly enable/disable/queue work."
+    },
+    {
+      "refId": "",
+      "title": "Test coverage confirms production SyncEngine API and cancellation contracts are thoroughly exercised end-to-end",
+      "category": "testing",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "SyncEngine's primary runSyncFuture() variants and cancellation contract are extensively tested via tst_engine_cancellation.cpp (C1-C7), tst_calendar_sync_full.cpp, tst_calendar_sync_error_recovery.cpp, and tst_engine_write_gate.cpp. Worker-thread QEventLoop safety is validated.",
+      "correction": "",
+      "evidence": [
+        {"file": "tests/calendar/tst_engine_cancellation.cpp", "line": 84, "quote": "void cancelBeforeStart();          // C1"},
+        {"file": "tests/calendar/tst_calendar_sync_full.cpp", "line": 79, "quote": "void fullSync_bothEmpty_doesNothing();"},
+        {"file": "tests/calendar/tst_calendar_sync_error_recovery.cpp", "line": 96, "quote": "void targetStoreItemsFailure_propagatesAsSyncResultFailure();"},
+        {"file": "tests/engine/tst_engine_write_gate.cpp", "line": 231, "quote": "void firstSyncMirrorSkipsReadOnlyTarget();"},
+        {"file": "src/engine/syncengine.cpp", "line": 1994, "quote": "QEventLoop loop;"},
+        {"file": "src/engine/syncengine.cpp", "line": 2002, "quote": "connect(this, &SyncEngineWorker::cancellationObserved,"}
+      ],
+      "assessment": "32+ test methods across four suites cover all 7 cancellation scenarios, bidirectional sync, error recovery, and the write-gate guard. Worker-thread QEventLoop synchronization and cancellation channel are exercised. (Note: the await<> template is defined but the live path uses explicit QEventLoop loops.)",
+      "recommendedDirection": "Maintain current coverage; worker thread lifecycle and thread-safety are well-validated."
+    },
+    {
+      "refId": "",
+      "title": "Shape transformation and diff/merge infrastructure has comprehensive unit test coverage",
+      "category": "testing",
+      "severity": "good",
+      "verdict": "confirmed",
+      "claim": "The shape/ directory has 11 dedicated test files. IncidenceDiff and SyncDiff have dedicated unit tests covering property comparison, 3-way merge state machines, and conflict detection. PropertyDiff state transitions tested in tst_property_phase.cpp.",
+      "correction": "",
+      "evidence": [
+        {"file": "tests/shape/tst_shape.cpp", "line": 8, "quote": "class TestShape : public QObject {"},
+        {"file": "tests/calendar/tst_incidencediff.cpp", "line": 15, "quote": "class TestIncidenceDiff : public QObject"},
+        {"file": "tests/calendar/tst_incidencediff.cpp", "line": 243, "quote": "void testCompare_ThreeWay_AMatchesBaseline()"},
+        {"file": "tests/calendar/tst_syncdiff.cpp", "line": 50, "quote": "void testSyncRecordFromIncidence();"},
+        {"file": "tests/engine/tst_property_phase.cpp", "line": 105, "quote": "void TestPropertyPhase::computeMapDiff_bothChangedDifferently_yieldsConflict()"}
+      ],
+      "assessment": "11 shape/ test files; IncidenceDiff (28 methods) and SyncDiff (27 methods) thoroughly cover comparison, 3-way merge, and conflict detection; PropertyDiff state machine tested in tst_property_phase.cpp.",
+      "recommendedDirection": "Continue maintaining this comprehensive coverage; these are load-bearing infrastructure components."
+    }
+  ],
+  "rejected": [
+    {"refId": "G6", "title": "Per-domain consistency: four-component pattern confirmed across all five domains", "category": "good", "refutation": "The claim that outline domain has both makeOutlineCanonCatalogue() and outlineCanonPropertyIds() is FALSE. Outline's outlinecanonproperties.h contains only makeOutlineCanonCatalogue() with no PropertyIds companion — identical to note's deviation. Only 3 of 5 domains (calendar, contacts, todo) have the PropertyIds pair; outline and note do not."},
+    {"refId": "B9", "title": "Dead/unused interfaces and unconnected signals: finding substantially incorrect on multiple atom-level claims", "category": "dead-code", "refutation": "The correction's 'three headers actively used by out-of-tree consumers' defense misdirects: within libkalburator, ICommandDispatcher, IIncidenceSource, IncidenceRef, IncidenceSyncAdapter, and ResourceLinearization have zero in-library callers, but IConflictPresenter IS used in conflictmanager.cpp. The out-of-tree usage argument is valid for library design but does not refute the in-library scope, and the only genuinely-wrong atom is IConflictPresenter."},
+    {"refId": "U5", "title": "Misleading method names: collectionRevision/cachedCollectionRevision conflated; CalendarManager has no updateLogicalCalendar; isValid() count overstated", "category": "naming", "refutation": "Three factual errors corrected: (1) collectionRevision() calls fetchAllCtags (network PROPFIND); cachedCollectionRevision() is the in-memory read — the original swapped them. (2) CalendarManager exposes updateCalendar(), not updateLogicalCalendar() (that's on the config manager). (3) isValid() count is 18, not '20+'. The storeCalendars/loadCalendars plural naming observation is accurate but minor."},
+    {"refId": "", "title": "conflict/conflictmanager.h includes calendar/iconflictresolver.h", "category": "layering", "refutation": "Treats file location as a calendar-domain dependency, but the interface is neutral (Kalburator::Sync) and designed for DI of resolution strategies. Location does not determine layer classification; namespace and design intent do. No upward dependency."},
+    {"refId": "", "title": "Dependency graph is fundamentally healthy with clean lower-level structure", "category": "good", "refutation": "Partially supported but materially incomplete: shape/recordmerger.h includes conflictpolicy.h (conflict/), a real cross-layer dependency the finding omits. The cited evidence misquotes recordmerger.h line 1 (which is #pragma once). The 'lower layers isolating cleanly' verdict is contradicted by the shape->conflict dependency."},
+    {"refId": "", "title": "multiprotocoldavprovider.cpp uses mixed include styles for domain headers", "category": "layering", "refutation": "Evidence is correct but interpretation is wrong: unqualified includes for same-directory files and relative paths for cross-directory files is standard and correct. No layering violation and no style problem to fix."},
+    {"refId": "", "title": "IProvider API and BackendRegistry contract mismatch", "category": "encapsulation", "refutation": "Mischaracterizes intentional API design as a bug. createBackend() returns IBlobBackend (deliberate dependency inversion); the header documents that implementations return SyncBackend-derived backends so callers can register them; ProviderManager validates with dynamic_cast and a documented deferral comment. Working as designed."},
+    {"refId": "", "title": "akonadibackendcontribution.cpp includes domain header in implementation", "category": "layering", "refutation": "This is genuinely a sub-instance of B4 (the confirmed sync->domain layering violation), but as a standalone candidate it duplicates B4 and the malformed payload (embedded tool-call XML) made it non-actionable as a separate finding; the substance is already captured by B4 and the new sync/ critical findings."},
+    {"refId": "", "title": "SyncBackendBase provides proper neutral base for non-calendar backends", "category": "good", "refutation": "RemoteContactsBackend does NOT directly inherit SyncBackendBase as claimed — it inherits SyncBackend (pulling in KCalendarCore). The affirmation is false; the real state is the confirmed critical inheritance violation."},
+    {"refId": "", "title": "SyncConflictStore location: persistence class in calendar/ but in Kalburator::Sync namespace", "category": "ownership", "refutation": "The cross-directory include is in the .cpp only with a forward declaration in the header — correct encapsulation. CMakeLists makes subdirectories mutually visible; the authoritative AUDIT.md does not list this location as a problem."},
+    {"refId": "", "title": "B5 claim verified: three backend-adjacent dirs lack principled separation", "category": "encapsulation", "refutation": "Contradicts the verified B5: the code DOES show clear separation (storage=persistence/Kalburator::Storage, backend=capabilities/Kalburator::Backend, universal=Sinks implementations) with no cross-includes. The 'lacks ownership model' framing is too strong; the real (moderate) issue is undocumented layer position and namespace fragmentation, already captured by B5."},
+    {"refId": "", "title": "conflict/ has no upward dependencies (on engine/sync) but internal namespace inconsistency", "category": "good", "refutation": "The 'good' framing understates real issues: ConflictManager's namespace mismatch and include-guard inconsistency are structural problems (captured separately as the ConflictManager namespace-mismatch finding), so this is not a clean affirmation."},
+    {"refId": "", "title": "RecordDifferICal and RecordMergerICal are dead code: defined but never instantiated", "category": "dead-code", "refutation": "FALSE: RecordDifferICal is instantiated in tests/calendar/differs/tst_ical_record_differ.cpp (lines 68, 80, 93, 114, 136) and RecordMergerICal in tst_ical_record_merger.cpp (lines 64-144); both are in the library build with non-trivial iCal implementations."},
+    {"refId": "", "title": "IncidenceDiff exports internal domain helper methods as public static utilities", "category": "public-surface", "refutation": "The methods are declared in the private section — already hidden. The finding conflates a header-cleanliness preference with an interface-exposure issue. No interface principle is violated."},
+    {"refId": "", "title": "QPointer usage is correct for NetworkReply tracking", "category": "ownership", "refutation": "Two false claims: RemoteCalendarBackend has no m_currentReply (uses KDAV DavJobBase); RemoteContactsBackend uses QPointer but explicitly clears m_currentReply=nullptr before deleteLater(), so QPointer's auto-nulling never engages. The affirmation's premise is wrong."},
+    {"refId": "", "title": "IncidenceRef::isOccurrence uses multi-check without atomic semantics", "category": "error-handling", "refutation": "The method is const, performs no external calls between member checks, and operates on a value-type instance — no race window. The method is also unused. Purely theoretical with no practical impact."},
+    {"refId": "", "title": "Dead code audit dimension is essentially clean beyond prior findings", "category": "good", "refutation": "Contradicted by the unimplemented progressUpdated signal (declared in blob backends, never emitted) — additional dead code beyond prior findings exists, so the 'clean' affirmation is false."},
+    {"refId": "", "title": "Three unused/dead interfaces with no implementations or test references (IConflictPresenter, ICommandDispatcher, IIncidenceRegistry, IIncidenceSource)", "category": "dead-code", "refutation": "SUBSTANTIALLY INCORRECT: IConflictPresenter is used by ConflictManager; ICommandDispatcher is an intentional app-shell interface; IIncidenceRegistry has a full test implementation (StubIncidenceRegistry). Only IIncidenceSource may warrant review. Three of four are actively used or tested."},
+    {"refId": "", "title": "waitForFinished() anti-pattern partially mitigated but tst_iprovider_applyconfig.cpp still uses it unsafely", "category": "testing", "refutation": "Factually inaccurate: the cited tests use custom QFutureWatcher+QSignalSpy helpers (not QTRY_VERIFY_WITH_TIMEOUT as claimed), and tst_iprovider_applyconfig.cpp's waitForFinished() is documented as safe (synchronously-resolved future). The pattern characterization is wrong."},
+    {"refId": "", "title": "No end-to-end integration tests for production sync workflows with real remote backends (only mocks or stubs)", "category": "testing", "refutation": "Refuted by tst_carddav_engine_integration.cpp: a full production callpath with a real HTTP server (FakeCardDavServer) -> RemoteContactsBackend -> SyncEngine::runSyncFuture(). The absolute 'no such tests exist' claim is false; the precise gap is only a calendar-domain equivalent."},
+    {"refId": "", "title": "Test isolation smell: DecSync backend tests create real files in QTemporaryDir but cleanup not explicitly verified per-test", "category": "testing", "refutation": "Cited line 34 does not match the claimed content (it is string-literal data, not a QTemporaryDir declaration). QTemporaryDir auto-cleans on destruction and the tests follow Qt conventions; no actual isolation issue."},
+    {"refId": "", "title": "Integration tests for user-facing conflict resolution workflows (monitored sync mode) are limited in scope", "category": "testing", "refutation": "Omits tst_engine_cancellation.cpp's cancelDuringConflictPause, which covers the 'rapid cancel-during-pause' edge case claimed missing. The network-failure/timeout-during-pause gap is real, but the cancel-during-pause claim is incorrect."},
+    {"refId": "", "title": "Backend infrastructure and IBlobBackend interface have comprehensive smoke/integration test coverage across all backend types", "category": "testing", "refutation": "Overstated: several backend types lack _blob_view or non-blob test variants (AkonadiBackend non-blob, SubscriptionBackend non-blob, several contacts/universal backends lack blob_view), and the cited evidence line numbers/quotes are factually wrong (class declarations not at line 1). Coverage is NOT comprehensive across all 10 backend types as claimed."}
+  ],
+  "refutedExisting": []
+}

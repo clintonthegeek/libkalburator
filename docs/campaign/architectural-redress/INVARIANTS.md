@@ -3,9 +3,10 @@
 > This campaign exists because the canon-upgrade convergence (now complete) **changed the
 > tissue but not the bones**. The shape graph won, `src/transcoding/` is gone, the domain
 > spines are healthy — and *underneath* that, the layering grew leaks no one stopped to
-> name. `types/` quietly became a behaviour layer. `sync/` and the domain dirs grew a
-> circular include relationship. `SyncEngine` ate a Worker that was supposed to be
-> separate. The audit at `AUDIT.md` is the evidence.
+> name. `types/` quietly became a behaviour layer. The orchestration layer (`sync/`) reaches
+> down into concrete domain backends — a calendar-typed sync core that drags KCalendarCore
+> through `sync/`. `SyncEngine` ate a Worker that was supposed to be separate. The audit at
+> `AUDIT.md` (verified rebuild, 2026-05-29) is the evidence.
 >
 > The invariants below are how we keep the next round of churn from cementing the same
 > shape. You accept them by working on this campaign — in your own code *and* by noting
@@ -31,14 +32,16 @@ the next refactor inherits both the leak and the assumption that "this is normal
 A lower layer never `#include`s an upper one. `types/` (and any new `models/`/`services/`
 that emerge from Plan 3) is the foundation; `shape/` is the abstract transformation
 layer; domain dirs (`calendar/`, `contacts/`, `todo/`, `note/`, `outline/`) layer on
-shape; `engine/` and `sync/` orchestrate above the domains. **The cycle break in Plan 2
-is the proof of work; do not reintroduce it.**
+shape; `engine/` and `sync/` orchestrate above the domains. **Breaking the calendar-typed
+sync core (AUDIT CRITICALs 1–3) is the proof of work: `sync/` must traffic in neutral
+interfaces, never a domain-typed backend; do not reintroduce the coupling.**
 
 - If a layer "needs" something from above, the something is in the wrong layer. Move it
   down, not the include up.
-- `sync/` does not `#include` any concrete domain backend header. It works through
-  `sync/syncbackendbase.h` (the neutral base) and `IBackendProvider`. Domain backends
-  register themselves via the existing plugin contribution mechanism.
+- `sync/` does not `#include` any concrete domain backend header, and its registry/provider
+  machinery stores the neutral `IBlobBackend` (or `sync/syncbackendbase.h`'s `SyncBackendBase`),
+  never the calendar-typed `SyncBackend`. Concrete backends are produced behind the
+  `IProvider`/plugin-contribution mechanism and never named in `sync/`.
 - New cross-layer needs go through interfaces declared in the lower layer, not concrete
   types passed across.
 

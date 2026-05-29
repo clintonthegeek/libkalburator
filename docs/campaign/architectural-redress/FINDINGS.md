@@ -1,108 +1,36 @@
 # Discipline log — architectural-redress campaign
 
-> Per INVARIANTS §9. Append one line per smell observed in code you pass through, even
-> when off-topic from your current task. Format:
+> Per INVARIANTS §9. Append one line per smell observed in code you pass through, even when
+> off-topic from your current task. Format:
 >
 > `YYYY-MM-DD` — `file:line` — inv N — one phrase of context. (commit/PR if fixed)
 >
 > No fix is required this session. The point is that the next agent sees the same smell
-> named, not stumbles across it fresh.
->
-> The seed entries below restate the audit findings the campaign exists for, so the log
-> begins where the work begins. Resolved findings are crossed out, not deleted.
+> named, not stumbles across it fresh. Resolved findings are crossed out, not deleted.
 
-## Open
+## Baseline
 
-### Layering (invariant 1)
+**The finding baseline is `AUDIT.md` (verified rebuild, 2026-05-29), not this file.** All
+22 prior seed entries (which restated the 2026-05-28 audit) are superseded: several were
+factually wrong and are corrected or refuted in `AUDIT.md` ("Corrected from the prior audit"
+and "Refuted / non-issues" sections). Do **not** re-enter audit findings here — they live in
+`AUDIT.md` with `file:line` evidence. This log is for **new** smells discovered while working,
+beyond what the audit already catalogues.
 
-- 2026-05-28 — `src/sync/akonadiprovider.cpp` — inv 1 — sync/ `#include`s
-  `../calendar/akonadibackend.h` directly; resolution in Plan 2.
-- 2026-05-28 — `src/sync/akonadibackendcontribution.cpp` — inv 1 — sync/ `#include`s
-  `../contacts/akonadicontactsbackend.h`; resolution in Plan 2.
-- 2026-05-28 — `src/calendar/akonadibackend.h` — inv 1 — calendar/ pulls
-  `syncoperation.h` from sync/; closes the cycle. Plan 2.
-- 2026-05-28 — `src/calendar/syncbackend.h` — inv 1 — `SyncBackend` base lives in
-  calendar/ but is consumed by sync/; competing with `sync/syncbackendbase.h`. Plan 2.
-- 2026-05-28 — `src/types/logicalcalendar.h:14` — inv 1 — types/ `#include`s
-  `shape.h`. Plan 3.
-- 2026-05-28 — `src/types/iincidenceregistry.h` — inv 1 — types/ `#include`s
-  `shape.h`. Plan 3.
-- 2026-05-28 — `src/shape/recordwriter.h` — inv 1 — shape/ `#include`s
-  `backendrecord.h` from types/. Plan 6.
-- 2026-05-28 — `src/shape/recordmerger.h` and `src/shape/canonjsonmerger.h` — inv 1 —
-  shape/ `#include`s `conflict/conflictpolicy.h`. Plan 6.
+Quick pointer to the audit's actionable spine (see `AUDIT.md` for evidence + fix direction):
 
-### `types/` purity (invariant 2)
+- **CRITICAL** — calendar-typed sync core: `BackendRegistry` stores `SyncBackend*`;
+  `ProviderManager` `dynamic_cast`s to it; non-calendar backends inherit calendar-typed
+  `SyncBackend`; `CalendarManager` destructive CRUD is untested.
+- **MAJOR** — `SyncEngine`/`RemoteCalendarBackend` god classes; `types/` behavior;
+  `shape/→conflict/`; `engine/`+`contacts/`+`universal/` pull calendar headers; raw-pointer
+  lifetimes; thread-unsafe `RawFilesBackend`; silent SQLite/DELETE failures; test gaps.
+- **MODERATE/MINOR/UGLY** — see `AUDIT.md`.
 
-- 2026-05-28 — `src/types/logicalcalendar.h` — inv 2 — 658-LOC value type carrying JSON
-  ser/deser, validation, binding-promotion logic. Plan 3.
-- 2026-05-28 — `src/types/calendarmetadatamanager.cpp` — inv 2 — atomic file writes
-  (VDir spec) in a "type". Plan 3.
-- 2026-05-28 — `src/types/crashjournal.cpp` — inv 2 — JSON crash-recovery persistence
-  in a "type". Plan 3.
-- 2026-05-28 — `src/types/backendconfiguration.cpp` — inv 2 — 200+ LOC JSON in a
-  "type". Plan 3.
-- 2026-05-28 — `src/types/incidencelock_registry.cpp` — inv 2 — lock state mgmt in a
-  "type". Plan 3.
-- 2026-05-28 — `src/types/iincidenceregistry.h` — inv 2 — `#include
-  <KCalendarCore/Incidence>`; KCalendarCore leaks into every consumer of types/. Plan 3.
+## Open (new findings, post-rebaseline)
 
-### Encapsulation (invariant 3)
-
-- 2026-05-28 — `src/engine/syncengine.h:~119-335` — inv 3 — `SyncEngineWorker` is
-  publicly declared in the consumer's header despite being meant as private impl. Plan 1.
-- 2026-05-28 — `src/engine/syncengine.cpp` — inv 3 — `QMetaObject::invokeMethod(m_engine,
-  "onWorkerSyncCompleted", ...)` cross-class slot calls by string. Plan 1.
-
-### Public surface (invariant 4)
-
-- 2026-05-28 — `src/engine/syncengine.h` — inv 4 — four overloads of `runSyncFuture()`
-  with overlapping semantics; `m_pendingOverride` is implicit state machine. Plan 1.
-- 2026-05-28 — `src/engine/syncengine.h` — inv 4 — `SyncEngineWorker::Mode` and
-  `SyncEngine::SyncBehavior` are two enums with identical semantics. Plan 1.
-- 2026-05-28 — `src/calendar/remotecalendarbackend.h` — inv 4 — ~58 public methods
-  across 7 concerns. Plan 4.
-- 2026-05-28 — `src/calendar/remotecalendarbackend.h` — inv 4 — six `discoveredX(id)`
-  getters that should be one DTO. Plan 4.
-- 2026-05-28 — `src/calendar/remotecalendarbackend.h` — inv 4 — `collectionRevision(id)`
-  is a trivial delegate to `ctag(id)`; duplicated API. Plan 4.
-- 2026-05-28 — `src/calendar/localbackend.h` — inv 4 — ~35 public methods, four separate
-  metadata setters. Plan 4.
-- 2026-05-28 — `src/calendar/calendarmanager.h` — inv 4 — `DeleteMode {Hide, Disable,
-  Forget, DeleteFromAll}` hides four different operations behind one method. Plan 7.
-
-### Vocabulary (invariant 5)
-
-- 2026-05-28 — repo-wide — inv 5 — "Backend" overloaded across `SyncBackend`,
-  `IBlobBackend`, `BackendContribution`, `BackendConfiguration`, `BackendCapabilities`,
-  `ChangeDetection` mixin. Plan 8.
-- 2026-05-28 — repo-wide — inv 5 — "Canon" overloaded across `CanonEnvelope`,
-  `CanonicalRecord`, `*CanonStages`, `canonicalShape()`, `*CanonProperties`. Plan 8.
-- 2026-05-28 — `src/sync/backendregistry.h` — inv 5 — `BackendRegistry` holds both live
-  instances and factory contributions; same method namespace, two meanings. Plan 8.
-- 2026-05-28 — `src/types/calendarmetadatamanager.h` — inv 5 — "Manager" in `types/`,
-  calendar-specific. Plan 3 moves it; Plan 8 may rename.
-
-### Dead-code candidates (Plan 9)
-
-Confirm no out-of-tree consumer (PlanStan, WildPalms) before deletion.
-
-- 2026-05-28 — `src/types/icommanddispatcher.h` — Plan 9.
-- 2026-05-28 — `src/types/iincidencesource.h` — Plan 9.
-- 2026-05-28 — `src/types/incidenceref.h` — Plan 9.
-- 2026-05-28 — `src/calendar/incidencesyncadapter.h` — Plan 9.
-- 2026-05-28 — `src/backend/resourcelinearization.h` — Plan 9.
-- 2026-05-28 — `src/calendar/iconflictpresenter.h` — Plan 9.
-- 2026-05-28 — `src/blob/mockblobbackend.h` and `localblobbackend.h` — 5 signals
-  (`recordCreated`, `recordUpdated`, `recordDeleted`, `errorOccurred`,
-  `progressUpdated`) declared but never connected. Plan 9.
+_(none yet — append below as work uncovers smells the audit did not already name.)_
 
 ## Resolved
 
 (none yet)
-
-## New findings (post-campaign-open)
-
-Append below as work uncovers them. If a finding is in scope for an existing plan, note
-the plan number; if not, it becomes a candidate for a future campaign or a STATUS
-out-of-scope entry.
