@@ -7,8 +7,11 @@
 #include <QList>
 #include <QMap>
 #include <QObject>
+#include <QPromise>
 #include <QString>
 #include <QUrl>
+
+#include <memory>
 
 class QNetworkAccessManager;
 class QNetworkReply;
@@ -118,8 +121,8 @@ private:
     QString m_homeHref;
 
     // Promise held for the duration of an in-flight discover() call.
-    // Reset (to nullptr) once resolved.
-    class QPromise<QList<CollectionInfo>> *m_promise = nullptr;
+    // Reset (to null) once resolved.
+    std::unique_ptr<QPromise<QList<CollectionInfo>>> m_promise;
 
     // Results accumulated across a successful discovery pass.
     QMap<QString, QString> m_addressbookUrls;  // id → absolute href
