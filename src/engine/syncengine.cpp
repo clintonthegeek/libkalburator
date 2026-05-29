@@ -28,7 +28,7 @@
 #include "backendconfiguration.h"
 #include "syncbackend.h"
 #include "changedetection.h"
-#include "syncoperation.h"
+#include "../sync/syncoperation.h"
 #include "conflictmanager.h"
 #include "imassdeleteguard.h"
 #include "canonenvelope.h"

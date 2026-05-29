@@ -16,7 +16,7 @@
 #include "recordmerger.h"
 #include "shape.h"
 #include "synctypes.h"
-#include "syncoperation.h"
+#include "../sync/syncoperation.h"
 #include "shaperegistries.h"
 #include "syncengine.h"
 

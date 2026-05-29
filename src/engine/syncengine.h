@@ -11,7 +11,7 @@
 #include "conflicthandlerregistry.h"
 #include "mappingscheduler.h"
 #include "syncenginefuture.h"
-#include "syncoperation.h"  // F2 Task 16: required by await<Op> template
+#include "../sync/syncoperation.h"  // neutral SyncOperation base; required by await<Op> template
 #include "shaperegistries.h"
 #include <QObject>
 #include <QList>
@@ -64,10 +64,7 @@ using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::SyncDiff;
 using Kalburator::Sync::SyncChange;
 using Kalburator::Sync::SyncResult;
-using Kalburator::Sync::SyncOperation;  // base class for FetchOperation, etc.
-using Kalburator::Sync::FetchOperation;
-using Kalburator::Sync::PushOperation;
-using Kalburator::Sync::DeleteOperation;
+using Kalburator::Sync::SyncOperation;  // neutral op base; engine depends only on this (P3.T4)
 
 // Using declarations for pointer/reference types from Kalburator::Sync
 using Kalburator::Sync::BackendRegistry;
