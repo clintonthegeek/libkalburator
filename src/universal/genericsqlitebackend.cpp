@@ -1,5 +1,6 @@
 #include "genericsqlitebackend.h"
 
+#include <QDebug>
 #include <QMutexLocker>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -99,26 +100,46 @@ Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectio
     return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());
 }
 
-void GenericSqliteBackend::deleteCollection(const QString &collectionId)
+bool GenericSqliteBackend::deleteCollection(const QString &collectionId)
 {
-    clearCollection(collectionId);
+    if (!m_open)
+        return false;
+    bool ok = clearCollection(collectionId);
     QSqlDatabase db = threadDb();
     QSqlQuery q(db);
     const QString table = tableNameFor(collectionId);
-    q.exec(QStringLiteral("DROP TABLE IF EXISTS \"%1\"").arg(table));
+    if (!q.exec(QStringLiteral("DROP TABLE IF EXISTS \"%1\"").arg(table))) {
+        qWarning() << "GenericSqliteBackend::deleteCollection: DROP failed for"
+                   << collectionId << ":" << q.lastError().text();
+        ok = false;
+    }
     q.prepare(QStringLiteral("DELETE FROM _shapes WHERE shape_key = ?"));
     q.addBindValue(collectionId);
-    q.exec();
+    if (!q.exec()) {
+        qWarning() << "GenericSqliteBackend::deleteCollection: _shapes cleanup failed for"
+                   << collectionId << ":" << q.lastError().text();
+        ok = false;
+    }
+    // Best-effort eviction: drop the in-memory entry even on partial DB-cleanup
+    // failure so the cache reflects the caller's delete intent. The bool return
+    // signals partial failure; on false the on-disk _shapes row or table may
+    // persist (named in architectural-redress FINDINGS, P4.T2 review).
     m_collections.remove(collectionId);
+    return ok;
 }
 
-void GenericSqliteBackend::clearCollection(const QString &collectionId)
+bool GenericSqliteBackend::clearCollection(const QString &collectionId)
 {
     if (!m_open)
-        return;
+        return false;  // not open = not operable; caller treats as failure
     QSqlDatabase db = threadDb();
     QSqlQuery q(db);
-    q.exec(QStringLiteral("DELETE FROM \"%1\"").arg(tableNameFor(collectionId)));
+    if (!q.exec(QStringLiteral("DELETE FROM \"%1\"").arg(tableNameFor(collectionId)))) {
+        qWarning() << "GenericSqliteBackend::clearCollection: DELETE failed for"
+                   << collectionId << ":" << q.lastError().text();
+        return false;
+    }
+    return true;
 }
 
 // ---- Record I/O ----

@@ -58,6 +58,7 @@ private slots:
     void deleteRecord_removesRow();
     void loadRecords_returnsAll();
     void clearCollection_emptiesTable();
+    void clearCollection_reportsFailure_whenTableMissing();
     void multipleCollections_separateTables();
     void persistsAcrossInstances();
 };
@@ -186,6 +187,25 @@ void TestGenericSqliteBackend::clearCollection_emptiesTable()
     b.clearCollection(colId);
 
     QCOMPARE(b.loadRecords(colId).size(), 0);
+}
+
+void TestGenericSqliteBackend::clearCollection_reportsFailure_whenTableMissing()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    GenericSqliteBackend be(dir.filePath(QStringLiteral("test.sqlite")));
+
+    // No collection "ghost" was ever created, so its table does not exist;
+    // DELETE FROM "ghost" must fail and clearCollection must report it.
+    QVERIFY(!be.clearCollection(QStringLiteral("ghost")));
+    QVERIFY(!be.deleteCollection(QStringLiteral("ghost")));  // clearCollection leg fails -> false
+
+    // Sanity: clearing a real, empty collection succeeds, and deleting it succeeds.
+    be.createCollection(
+        makeCollection(QStringLiteral("real"), QStringLiteral("Real"), QStringLiteral("memo")),
+        kTestShape);
+    QVERIFY(be.clearCollection(QStringLiteral("real")));
+    QVERIFY(be.deleteCollection(QStringLiteral("real")));
 }
 
 void TestGenericSqliteBackend::multipleCollections_separateTables()
