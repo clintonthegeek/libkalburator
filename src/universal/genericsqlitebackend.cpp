@@ -52,11 +52,13 @@ bool GenericSqliteBackend::isAvailable() const
 
 QList<CollectionInfo> GenericSqliteBackend::availableCollections()
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_collections.values();
 }
 
 CollectionInfo GenericSqliteBackend::collectionInfo(const QString &collectionId)
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_collections.value(collectionId);
 }
 
@@ -67,7 +69,18 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
         return {};
     if (!ensureTableFor(info.id))
         return {};
-    if (!m_collections.contains(info.id)) {
+    bool needShapeRow = false;
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        if (!m_collections.contains(info.id)) {
+            m_collections[info.id] = info;
+            needShapeRow = true;
+        }
+        m_shapeByCollection.insert(info.id, shape);
+    }
+    if (needShapeRow) {
+        // DB write outside the hash lock: threadDb() may take m_connMutex on first
+        // use per thread, and m_collectionsMutex must never be held across it.
         QSqlDatabase db = threadDb();
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -78,14 +91,13 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
         q.addBindValue(info.name);
         q.addBindValue(info.type);
         q.exec();
-        m_collections[info.id] = info;
     }
-    m_shapeByCollection.insert(info.id, shape);
     return info.id;
 }
 
 QList<Kalburator::Shape::Shape> GenericSqliteBackend::nativeShapes() const
 {
+    QMutexLocker lock(&m_collectionsMutex);
     QList<Kalburator::Shape::Shape> out;
     for (auto it = m_shapeByCollection.constBegin();
          it != m_shapeByCollection.constEnd(); ++it) {
@@ -97,6 +109,7 @@ QList<Kalburator::Shape::Shape> GenericSqliteBackend::nativeShapes() const
 
 Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectionId) const
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());
 }
 
@@ -124,7 +137,10 @@ bool GenericSqliteBackend::deleteCollection(const QString &collectionId)
     // failure so the cache reflects the caller's delete intent. The bool return
     // signals partial failure; on false the on-disk _shapes row or table may
     // persist (named in architectural-redress FINDINGS, P4.T2 review).
-    m_collections.remove(collectionId);
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        m_collections.remove(collectionId);
+    }
     return ok;
 }
 
@@ -309,6 +325,7 @@ bool GenericSqliteBackend::ensureOpen()
     // Load existing shapes into m_collections.
     QSqlQuery q(db);
     if (q.exec(QStringLiteral("SELECT shape_key, shape_name, shape_type FROM _shapes"))) {
+        QMutexLocker lock(&m_collectionsMutex);
         while (q.next()) {
             CollectionInfo ci;
             ci.id = q.value(0).toString();

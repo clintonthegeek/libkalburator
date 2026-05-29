@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QMutex>
 #include <QString>
 
 #include "syncbackendbase.h"
@@ -86,6 +87,7 @@ protected:
 private:
 
     QString m_rootPath;
+    mutable QMutex m_collectionsMutex;  ///< guards m_collections + m_shapeByCollection
     QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;
     QHash<QString, Kalburator::Shape::Shape> m_shapeByCollection;
 };

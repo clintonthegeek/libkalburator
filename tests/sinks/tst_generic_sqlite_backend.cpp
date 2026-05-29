@@ -3,6 +3,9 @@
 #include <QtTest/QtTest>
 #include <QCryptographicHash>
 #include <QTemporaryDir>
+#include <QtConcurrent>
+
+#include <atomic>
 
 #include "genericsqlitebackend.h"
 #include "collectioninfo.h"
@@ -61,6 +64,7 @@ private slots:
     void clearCollection_reportsFailure_whenTableMissing();
     void multipleCollections_separateTables();
     void persistsAcrossInstances();
+    void concurrentShapeForVsCreateCollection();
 };
 
 void TestGenericSqliteBackend::isAvailable_falseForUnopenedDb()
@@ -251,6 +255,30 @@ void TestGenericSqliteBackend::persistsAcrossInstances()
     const auto records = b2.loadRecords(QStringLiteral("memo+plaintext"));
     QCOMPARE(records.size(), 1);
     QCOMPARE(records.first().data, QByteArrayLiteral("persisted"));
+}
+
+void TestGenericSqliteBackend::concurrentShapeForVsCreateCollection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    GenericSqliteBackend be(dir.filePath(QStringLiteral("test.sqlite")));
+
+    std::atomic<bool> stop{false};
+    QFuture<void> reader = QtConcurrent::run([&] {
+        while (!stop.load(std::memory_order_acquire)) {
+            be.shapeFor(QStringLiteral("c-7"));
+            be.nativeShapes();
+        }
+    });
+    for (int i = 0; i < 200; ++i) {
+        be.createCollection(
+            makeCollection(QStringLiteral("c-%1").arg(i), QStringLiteral("C"),
+                           QStringLiteral("memo")),
+            Shape::Any());
+    }
+    stop.store(true, std::memory_order_release);
+    reader.waitForFinished();
+    QVERIFY(true);  // reaching here without crash/TSan report is the assertion
 }
 
 QTEST_MAIN(TestGenericSqliteBackend)

@@ -7,6 +7,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
@@ -31,11 +33,13 @@ bool RawFilesBackend::isAvailable() const
 
 QList<CollectionInfo> RawFilesBackend::availableCollections()
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_collections.values();
 }
 
 CollectionInfo RawFilesBackend::collectionInfo(const QString &collectionId)
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_collections.value(collectionId);
 }
 
@@ -45,16 +49,23 @@ QString RawFilesBackend::createCollection(const CollectionInfo &info,
     QDir dir(m_rootPath);
     if (!dir.exists() && !dir.mkpath(QLatin1String(".")))
         return {};
-    if (!m_collections.contains(info.id)) {
-        m_collections[info.id] = info;
-        saveManifest();
+    bool added = false;
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        if (!m_collections.contains(info.id)) {
+            m_collections[info.id] = info;
+            added = true;
+        }
+        m_shapeByCollection.insert(info.id, shape);
     }
-    m_shapeByCollection.insert(info.id, shape);
+    if (added)
+        saveManifest();  // locks internally to snapshot; not nested with the block above
     return info.id;
 }
 
 QList<Kalburator::Shape::Shape> RawFilesBackend::nativeShapes() const
 {
+    QMutexLocker lock(&m_collectionsMutex);
     QList<Kalburator::Shape::Shape> out;
     for (auto it = m_shapeByCollection.constBegin();
          it != m_shapeByCollection.constEnd(); ++it) {
@@ -66,13 +77,17 @@ QList<Kalburator::Shape::Shape> RawFilesBackend::nativeShapes() const
 
 Kalburator::Shape::Shape RawFilesBackend::shapeFor(const QString &collectionId) const
 {
+    QMutexLocker lock(&m_collectionsMutex);
     return m_shapeByCollection.value(collectionId, Kalburator::Shape::Shape::Any());
 }
 
 void RawFilesBackend::deleteCollection(const QString &collectionId)
 {
-    clearCollection(collectionId);
-    m_collections.remove(collectionId);
+    clearCollection(collectionId);  // filesystem only — touches neither hash
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        m_collections.remove(collectionId);
+    }
     saveManifest();
 }
 
@@ -113,8 +128,11 @@ std::optional<BackendRecord> RawFilesBackend::loadRecord(const QString &recordId
 QString RawFilesBackend::createRecord(const QString &collectionId,
                                       const BackendRecord &record)
 {
-    if (!m_collections.contains(collectionId))
-        return {};
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        if (!m_collections.contains(collectionId))
+            return {};
+    }
     QDir dir(m_rootPath);
     if (!dir.exists() && !dir.mkpath(QLatin1String(".")))
         return {};
@@ -173,6 +191,7 @@ void RawFilesBackend::loadManifest()
     if (!doc.isObject())
         return;
     const QJsonObject collections = doc.object().value(QStringLiteral("collections")).toObject();
+    QMutexLocker lock(&m_collectionsMutex);
     for (auto it = collections.begin(); it != collections.end(); ++it) {
         const QJsonObject obj = it.value().toObject();
         CollectionInfo ci;
@@ -185,8 +204,13 @@ void RawFilesBackend::loadManifest()
 
 void RawFilesBackend::saveManifest() const
 {
+    QHash<QString, CollectionInfo> snapshot;
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        snapshot = m_collections;
+    }
     QJsonObject collectionsObj;
-    for (auto it = m_collections.begin(); it != m_collections.end(); ++it) {
+    for (auto it = snapshot.begin(); it != snapshot.end(); ++it) {
         QJsonObject obj;
         obj[QStringLiteral("name")] = it.value().name;
         obj[QStringLiteral("type")] = it.value().type;
