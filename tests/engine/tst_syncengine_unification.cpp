@@ -444,11 +444,11 @@ void TstSyncEngineUnification::cancellationPropagates()
 
     future.cancel();
 
-    // Pump so QFutureWatcher::canceled → onCancelObserved → queued
-    // observeCancel → cancellationObserved → onCancelDuringConflictPause
-    // reaches the worker thread.
-    QTest::qWait(100);
-
+    // QFutureWatcher::canceled → onCancelObserved → queued observeCancel
+    // → cancellationObserved → onCancelDuringConflictPause reaches the
+    // worker thread asynchronously. QTRY_VERIFY_WITH_TIMEOUT spins the
+    // event loop and is the synchronization point — no fixed-duration
+    // qWait needed (avoids flakiness on slow CI).
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
 
     QVERIFY(future.isCanceled());
