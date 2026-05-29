@@ -118,6 +118,10 @@ private slots:
     // Task 6
     void createIncidence_backendPushFails_returnsFalse_emitsOperationFailed();
 
+    // Task 7
+    void withoutBatch_eachMutationRegenerates();
+    void batchGuard_defersRegenerationToSingleEmission();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -328,6 +332,30 @@ void TestCalendarManager::createIncidence_backendPushFails_returnsFalse_emitsOpe
                                            makeEvent(QStringLiteral("evt-x"), QStringLiteral("X")));
     QVERIFY(!ok);
     QVERIFY(failed.count() >= 1);
+}
+
+// ============================================================
+// Task 7 — batch mode defers regeneration
+// ============================================================
+
+void TestCalendarManager::withoutBatch_eachMutationRegenerates()
+{
+    QSignalSpy regen(m_mgr.get(), &CalendarManager::syncMappingRegenerationRequested);
+    m_mgr->createCalendar(makeLogical(QStringLiteral("lc-a"), QString::fromLatin1(kBackendA), QStringLiteral("ca"), true));
+    m_mgr->createCalendar(makeLogical(QStringLiteral("lc-b"), QString::fromLatin1(kBackendA), QStringLiteral("cb"), true));
+    QCOMPARE(regen.count(), 2);
+}
+
+void TestCalendarManager::batchGuard_defersRegenerationToSingleEmission()
+{
+    QSignalSpy regen(m_mgr.get(), &CalendarManager::syncMappingRegenerationRequested);
+    {
+        CalendarManager::BatchGuard guard(m_mgr.get());
+        m_mgr->createCalendar(makeLogical(QStringLiteral("lc-a"), QString::fromLatin1(kBackendA), QStringLiteral("ca"), true));
+        m_mgr->createCalendar(makeLogical(QStringLiteral("lc-b"), QString::fromLatin1(kBackendA), QStringLiteral("cb"), true));
+        QCOMPARE(regen.count(), 0);
+    }
+    QCOMPARE(regen.count(), 1);
 }
 
 QTEST_MAIN(TestCalendarManager)
