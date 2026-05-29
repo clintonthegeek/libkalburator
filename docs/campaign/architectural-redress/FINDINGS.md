@@ -107,6 +107,19 @@ Append below as work uncovers them. If a finding is in scope for an existing pla
 the plan number; if not, it becomes a candidate for a future campaign or a STATUS
 out-of-scope entry.
 
+### From P1.T3 (MappingQueue extraction, 2026-05-29)
+
+- 2026-05-29 — `src/engine/mappingqueue.h:97-98` — P1.T3 deviation — Plan 1 Task 3
+  spec text shows `prime(mappings, behavior, filter)`. Implementation drops
+  `behavior` because `MappingQueue` does not consume it (zero `SyncBehavior`
+  references in mappingqueue.{h,cpp}), including it would force
+  `mappingqueue.h` to `#include "syncengine.h"` for the nested `Q_ENUM`
+  (`syncengine.h` already includes `mappingqueue.h` — cycle), and Plan 1 Task 4
+  immediately introduces `SyncRequest` which folds the queue's prime() params
+  and the engine's `m_currentSyncBehavior` together. Engine retains
+  `m_currentSyncBehavior` until T4. Class comment at mappingqueue.h:42-58
+  documents the rationale.
+
 ### From P1.T2 (Worker collapse, 2026-05-29)
 
 - 2026-05-29 — P1.T2 spec text imprecision — plan said `invokeMethod(m_engine,
