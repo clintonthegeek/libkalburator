@@ -153,6 +153,15 @@ out-of-scope entry.
   contract intact; the wrap-then-unwrap chain across types loses cancellation results
   in Qt6. Once the deprecated shims are removed (Plan 8), the dual surface collapses
   naturally to multi-iface only.
+- 2026-05-29 — `src/engine/syncengine.cpp:493-497` — pre-existing — `runSync(SyncRequest)`
+  reports `QList<SyncResult>{}` on overlap rejection, indistinguishable from a legitimate
+  "no enabled mappings" result. The pre-T4 overloads had the same behavior; not a T4
+  regression. Plan 8 should report a failed future (or a single error-marked
+  `SyncResult`) instead of an empty list. Surfaced during P1.T4 spec review.
+- 2026-05-29 — `src/engine/syncengine.cpp:~577` — pre-existing — `dispatchSingleNative`
+  overlap-rejection produces a default-constructed `SyncResult{}` with neither error nor
+  cancelled flag set. Same paper cut as the multi-iface case above; same Plan 8 cleanup
+  window.
 
 ### From P1.T2 (Worker collapse, 2026-05-29)
 
