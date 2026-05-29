@@ -63,6 +63,10 @@ private slots:
 
     void construct_doesNotCrash_exposesHostAndConfig();
 
+    // Task 2
+    void createCalendar_needsCreation_createsOnBackend_emitsSignal();
+    void createCalendar_registersInConfig_clearsNeedsCreation();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -96,6 +100,39 @@ void TestCalendarManager::construct_doesNotCrash_exposesHostAndConfig()
 {
     QVERIFY(m_mgr->host() == m_host.get());
     QVERIFY(m_mgr->configManager() == m_host->configStore());
+}
+
+// ============================================================
+// Task 2 — createCalendar success path
+// ============================================================
+
+void TestCalendarManager::createCalendar_needsCreation_createsOnBackend_emitsSignal()
+{
+    QSignalSpy created(m_mgr.get(), &CalendarManager::calendarCreated);
+    QVERIFY(created.isValid());
+    const LogicalCalendar lc = makeLogical(QString::fromLatin1(kLogicalId),
+                                           QString::fromLatin1(kBackendA),
+                                           QString::fromLatin1(kCalId), true);
+    const CreationResult r = m_mgr->createCalendar(lc);
+    QVERIFY(r.success);
+    QCOMPARE(r.logicalCalendarId, QString::fromLatin1(kLogicalId));
+    QVERIFY(r.errors.isEmpty());
+    QCOMPARE(r.backendResults.value(QString::fromLatin1(kBackendA)), true);
+    QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+    QCOMPARE(created.count(), 1);
+    QCOMPARE(created.at(0).at(0).toString(), QString::fromLatin1(kLogicalId));
+}
+
+void TestCalendarManager::createCalendar_registersInConfig_clearsNeedsCreation()
+{
+    const LogicalCalendar lc = makeLogical(QString::fromLatin1(kLogicalId),
+                                           QString::fromLatin1(kBackendA),
+                                           QString::fromLatin1(kCalId), true);
+    m_mgr->createCalendar(lc);
+    const LogicalCalendar stored = m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId));
+    QCOMPARE(stored.id, QString::fromLatin1(kLogicalId));
+    QCOMPARE(stored.primaryBinding().needsCreation, false);
+    QVERIFY(m_host->stubConfig()->saveCount() >= 1);
 }
 
 QTEST_MAIN(TestCalendarManager)
