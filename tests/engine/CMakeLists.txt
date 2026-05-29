@@ -29,6 +29,12 @@ endfunction()
 # Task 44 — MappingScheduler unit tests
 kalburator_add_engine_test(tst_mapping_scheduler)
 
+# Architectural-redress Plan 1 Task 3 — MappingQueue unit tests.
+# Fast inner-loop guard for the queue collaborator extracted from
+# SyncEngine. Engine-level protection lives in
+# tst_syncengine_unification (INVARIANTS §6).
+kalburator_add_engine_test(tst_mappingqueue)
+
 # Task 46 — CancellationReason integration tests
 kalburator_add_engine_integration_test(tst_cancellation_reason)
 
