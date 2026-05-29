@@ -110,6 +110,11 @@ private slots:
     void deleteCalendar_forget_removesConfig_keepsBackendData();
     void deleteCalendar_deleteFromAll_deletesBackendsAndConfig();
 
+    // Task 5
+    void createIncidence_pushesToAllEnabledBindings_emitsSignal();
+    void updateIncidence_pushesUpdate_emitsSignal();
+    void deleteIncidence_removesFromBackends_emitsSignal();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -262,6 +267,49 @@ void TestCalendarManager::deleteCalendar_deleteFromAll_deletesBackendsAndConfig(
     QVERIFY(!m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
     QVERIFY(m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId)).id.isEmpty());
     QCOMPARE(deleted.count(), 1);
+}
+
+// ============================================================
+// Task 5 — incidence create/update/delete propagate
+// ============================================================
+
+void TestCalendarManager::createIncidence_pushesToAllEnabledBindings_emitsSignal()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    QSignalSpy created(m_mgr.get(), &CalendarManager::incidenceCreated);
+    const bool ok = m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
+                                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QVERIFY(ok);
+    QVERIFY(m_backendA->allUids(QString::fromLatin1(kCalId)).contains(QStringLiteral("evt-1")));
+    QVERIFY(m_backendB->allUids(QString::fromLatin1(kCalIdB)).contains(QStringLiteral("evt-1")));
+    QCOMPARE(created.count(), 1);
+    QCOMPARE(created.at(0).at(1).toString(), QStringLiteral("evt-1"));
+}
+
+void TestCalendarManager::updateIncidence_pushesUpdate_emitsSignal()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    m_mgr->createIncidence(QString::fromLatin1(kLogicalId), makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QSignalSpy updated(m_mgr.get(), &CalendarManager::incidenceUpdated);
+    const bool ok = m_mgr->updateIncidence(QString::fromLatin1(kLogicalId),
+                                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One (edited)")));
+    QVERIFY(ok);
+    QCOMPARE(updated.count(), 1);
+    auto fetched = m_backendA->incidence(QString::fromLatin1(kCalId), QStringLiteral("evt-1"));
+    QVERIFY(fetched);
+    QCOMPARE(fetched->summary(), QStringLiteral("One (edited)"));
+}
+
+void TestCalendarManager::deleteIncidence_removesFromBackends_emitsSignal()
+{
+    seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    m_mgr->createIncidence(QString::fromLatin1(kLogicalId), makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QSignalSpy deleted(m_mgr.get(), &CalendarManager::incidenceDeleted);
+    const bool ok = m_mgr->deleteIncidence(QString::fromLatin1(kLogicalId), QStringLiteral("evt-1"));
+    QVERIFY(ok);
+    QCOMPARE(deleted.count(), 1);
+    QVERIFY(!m_backendA->allUids(QString::fromLatin1(kCalId)).contains(QStringLiteral("evt-1")));
+    QVERIFY(!m_backendB->allUids(QString::fromLatin1(kCalIdB)).contains(QStringLiteral("evt-1")));
 }
 
 QTEST_MAIN(TestCalendarManager)
