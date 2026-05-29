@@ -265,6 +265,7 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/propertydiff.h
     src/engine/syncengine.h
     src/engine/syncenginefuture.h
+    src/engine/syncrequest.h
 )
 # Private headers — AUTOMOC needs them in the target sources so Q_OBJECT
 # is processed, but they are not part of the library's public surface.

@@ -1,5 +1,6 @@
 #include "syncengine.h"
 #include "syncengine_p.h"
+#include "syncrequest.h"
 #include "baselinestore.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
@@ -468,53 +469,148 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     m_isSyncing = false;
 }
 
-// F2 Task 21: rewritten to populate m_currentSingleIface directly
-// (replacing the fragile signal-shim from Task 15). The engine owns the
-// iface; processSingleMapping calls m_queue.primeSingle() so
-// MappingQueue::dispatchMode is Single, and onWorkerSyncCompleted
-// reports the single result and finishes the future. No connection-
-// management gymnastics, no double-fire window.
-QFuture<SyncResult> SyncEngine::runSyncFuture(
+// Architectural-redress Plan 1 Task 4 (2026-05-29): canonical entry
+// point. Absorbs the bodies of the four runSyncFuture overloads:
+//
+//   - Single mapping  : request.mappingIds.size() == 1
+//                       (executionOverride, if set, is stashed in
+//                        m_pendingOverride for processSingleMapping
+//                        — Plan 1 Task 5 will inline that residue.)
+//   - All enabled     : request.mappingIds.isEmpty()
+//   - Subset          : request.mappingIds.size() > 1
+//
+// All three dispatch shapes return QFuture<QList<SyncResult>>. The
+// single-mapping shim wraps this with QFuture::then() to expose the
+// single-result type its callers expect.
+//
+// The overlap guard (m_isSyncing / m_currentSingleIface /
+// m_currentMultiIface) and the QFutureWatcher cancellation channel
+// are unified here too — previously each overload duplicated them.
+QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
+{
+    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
+        // Reject overlapping runs cleanly with a finished failed future.
+        QFutureInterface<QList<SyncResult>> rejected;
+        rejected.reportStarted();
+        rejected.reportResult(QList<SyncResult>{});
+        rejected.reportFinished();
+        return rejected.future();
+    }
+
+    if (request.isSingleMapping()) {
+        // Single-mapping path uses m_currentSingleIface natively (see
+        // dispatchSingleNative()), then wraps via .then() to expose the
+        // QList<SyncResult> public shape uniformly with the multi-
+        // mapping paths.
+        //
+        // Caveat (FINDINGS "single-shim bypasses canonical runSync"):
+        // QFuture::then() does not run its continuation when the source
+        // future is canceled in Qt6, so canonical-API single-mapping
+        // consumers reading resultAt(0) after a cancel will see an
+        // empty result list. The deprecated runSyncFuture(mappingId, …)
+        // shims sidestep this by calling dispatchSingleNative directly
+        // and returning the single-iface future, which preserves the
+        // F2 Task 23 contract (resultCount() == 1 after cancel) natively.
+        std::optional<ExecutionOverride> ov;
+        if (request.executionOverride.has_value())
+            ov = *request.executionOverride;
+        QFuture<SyncResult> singleFuture =
+            dispatchSingleNative(request.mappingIds.first(),
+                                 request.behavior, ov);
+        return singleFuture.then([](const SyncResult &r) {
+            return QList<SyncResult>{ r };
+        });
+    }
+
+    // Multi-mapping path (all-enabled or subset).
+    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
+    m_currentMultiIface->reportStarted();
+    // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
+    // reach future.results() even after reportCanceled().
+    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
+    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
+
+    delete m_multiWatcher;
+    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
+    m_multiWatcher->setFuture(future);
+    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
+            this, &SyncEngine::onCancelObserved);
+
+    if (request.isAllEnabled()) {
+        driveQueue(request.behavior);
+    } else {
+        // Subset path.
+        QSet<QString> filter(request.mappingIds.constBegin(),
+                             request.mappingIds.constEnd());
+        driveQueue(request.behavior,
+                   std::optional<QSet<QString>>(std::move(filter)));
+    }
+    return future;
+}
+
+// Architectural-redress Plan 1 Task 4 (2026-05-29): native single-
+// mapping dispatcher. Sets up m_currentSingleIface + watcher and calls
+// processSingleMapping. Returns the single-iface future directly,
+// preserving the F2 Task 23 cancellation contract
+// (setAddResultsIfCanceledEnabled + reportResult-before-reportCanceled,
+// read via resultCount() + resultAt(0)). Used by:
+//
+//  - The deprecated runSyncFuture(mappingId, …) shims, which return
+//    this future verbatim — single-shape contract preserved natively.
+//
+//  - The canonical runSync(SyncRequest) single-mapping branch, which
+//    wraps the returned future via .then() to expose the uniform
+//    QFuture<QList<SyncResult>> shape. The .then() wrapper loses the
+//    cancellation-result preservation (Qt6 semantics — see FINDINGS
+//    "single-shim bypasses canonical runSync(SyncRequest)"), so
+//    canonical-API consumers must add their own onCanceled handler if
+//    they need cancellation-result access on the single-mapping path.
+QFuture<SyncResult> SyncEngine::dispatchSingleNative(
     const QString &mappingId,
-    SyncBehavior behavior)
+    SyncBehavior behavior,
+    const std::optional<ExecutionOverride> &executionOverride)
 {
     if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
         // Reject overlapping runs cleanly with a finished failed future.
         QFutureInterface<SyncResult> rejected;
         rejected.reportStarted();
-        SyncResult err;
-        err.success = false;
-        err.errorMessage = QStringLiteral("Sync already in progress");
-        rejected.reportResult(err);
+        rejected.reportResult(SyncResult{});
         rejected.reportFinished();
         return rejected.future();
     }
 
-    // Allocate iface; processSingleMapping → onWorkerSyncCompleted will
-    // populate / finalise it.
     m_currentSingleIface = new QFutureInterface<SyncResult>;
     m_currentSingleIface->reportStarted();
-    // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
-    // reach future.results() even after reportCanceled(). Per Qt6
-    // QFutureInterface, reportResult is silently dropped once
-    // cancellation is reported unless this opt-in is set. The F2
-    // contract delivers a cancelled SyncResult on the future for
-    // cancel-before/after-start; without this opt-in, consumers
-    // see future.results() as empty.
+    // F2 Task 23: ensure cancellation-marker SyncResult reaches
+    // resultAt(0) even after reportCanceled().
     m_currentSingleIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<SyncResult> future = m_currentSingleIface->future();
+    QFuture<SyncResult> singleFuture = m_currentSingleIface->future();
 
-    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
-    // to the worker via onCancelObserved slot.
+    // F2 Task 17 cancellation channel — watcher fires onCancelObserved
+    // when the caller invokes future.cancel().
     delete m_singleWatcher;
     m_singleWatcher = new QFutureWatcher<SyncResult>(this);
-    m_singleWatcher->setFuture(future);
+    m_singleWatcher->setFuture(singleFuture);
     connect(m_singleWatcher, &QFutureWatcher<SyncResult>::canceled,
             this, &SyncEngine::onCancelObserved);
 
+    if (executionOverride.has_value())
+        m_pendingOverride = *executionOverride;
     m_isSyncing = true;
     processSingleMapping(mappingId, behavior);
-    return future;
+    return singleFuture;
+}
+
+// Deprecated shim — bypasses runSync(SyncRequest) to return the native
+// single-iface future, preserving the F2 Task 23 cancellation contract
+// that the .then() wrapper used by runSync(SyncRequest) loses
+// (Qt6 QFuture::then doesn't propagate the source result on cancel).
+// See dispatchSingleNative() for the rationale.
+QFuture<SyncResult> SyncEngine::runSyncFuture(
+    const QString &mappingId,
+    SyncBehavior behavior)
+{
+    return dispatchSingleNative(mappingId, behavior, std::nullopt);
 }
 
 QFuture<SyncResult> SyncEngine::runSyncFuture(
@@ -522,80 +618,40 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     const ExecutionOverride &executionOverride,
     SyncBehavior behavior)
 {
-    // Safe: the m_isSyncing guard in the no-override overload ensures only
-    // one runSyncFuture call is in flight at a time. m_pendingOverride is
-    // read synchronously by processSingleMapping on this same thread before
-    // returning, then cleared.
-    m_pendingOverride = executionOverride;
-    return runSyncFuture(mappingId, behavior);
+    return dispatchSingleNative(mappingId, behavior, executionOverride);
 }
 
-// F2 Task 21: rewritten to populate m_currentMultiIface directly. The
-// per-mapping results accumulate in MappingQueue (filled by
-// onWorkerSyncCompleted's m_queue.recordResult during a Queue run);
-// when the queue drains, advanceQueue's terminal branch reports them
-// on the iface via m_queue.drain().
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     SyncBehavior behavior)
 {
-    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
-        QFutureInterface<QList<SyncResult>> rejected;
-        rejected.reportStarted();
-        rejected.reportResult(QList<SyncResult>{});
-        rejected.reportFinished();
-        return rejected.future();
-    }
-
-    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
-    m_currentMultiIface->reportStarted();
-    // F2 Task 23 follow-up: see runSyncFuture(mappingId) overload —
-    // cancellation-marker results must reach future.results() even
-    // after reportCanceled().
-    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
-
-    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
-    // to the worker via onCancelObserved slot.
-    delete m_multiWatcher;
-    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
-    m_multiWatcher->setFuture(future);
-    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
-            this, &SyncEngine::onCancelObserved);
-
-    driveQueue(behavior);
-    return future;
+    SyncRequest req;
+    req.behavior = behavior;
+    return runSync(req);
 }
 
 // G.6 Task 43: subset dispatch — run only the specified mapping IDs.
-// Uses the same Queue infrastructure as the all-mappings overload, but
-// passes the id set as a filter so MappingQueue::next() skips
-// non-requested mappings.
+//
+// Empty-list semantics: the historical subset overload treated an
+// empty `ids` as "empty subset → zero mappings dispatched" (distinct
+// from runSyncFuture() with no args, which means "all enabled"). The
+// canonical SyncRequest collapses both into mappingIds.isEmpty() and
+// runs all enabled; this shim preserves the historical distinction by
+// short-circuiting on empty input.
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     const QList<QString> &ids,
     SyncBehavior behavior)
 {
-    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
-        QFutureInterface<QList<SyncResult>> rejected;
-        rejected.reportStarted();
-        rejected.reportResult(QList<SyncResult>{});
-        rejected.reportFinished();
-        return rejected.future();
+    if (ids.isEmpty()) {
+        QFutureInterface<QList<SyncResult>> empty;
+        empty.reportStarted();
+        empty.reportResult(QList<SyncResult>{});
+        empty.reportFinished();
+        return empty.future();
     }
-
-    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
-    m_currentMultiIface->reportStarted();
-    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
-
-    delete m_multiWatcher;
-    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
-    m_multiWatcher->setFuture(future);
-    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
-            this, &SyncEngine::onCancelObserved);
-
-    QSet<QString> filter(ids.constBegin(), ids.constEnd());
-    driveQueue(behavior, std::optional<QSet<QString>>(std::move(filter)));
-    return future;
+    SyncRequest req;
+    req.mappingIds = ids;
+    req.behavior = behavior;
+    return runSync(req);
 }
 
 // F2 Task 17: forwards QFutureWatcher::canceled to the worker thread.

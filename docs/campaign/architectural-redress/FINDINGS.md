@@ -120,6 +120,40 @@ out-of-scope entry.
   `m_currentSyncBehavior` until T4. Class comment at mappingqueue.h:42-58
   documents the rationale.
 
+### From P1.T4 (runSync(SyncRequest) consolidation, 2026-05-29)
+
+- 2026-05-29 — `src/engine/syncengine.cpp:578-616` — inv 4/discipline — the deprecated
+  `runSyncFuture(mappingId, …)` shims bypass the canonical `runSync(SyncRequest)` and
+  call `dispatchSingleNative()` directly, returning the `m_currentSingleIface->future()`
+  verbatim. Rationale: `runSync(SyncRequest)` is uniformly `QFuture<QList<SyncResult>>`,
+  but the single-mapping wrap (`singleFuture.then([](r){return QList{r};})`) drops
+  cancellation results in Qt6 — `QFuture::then()` does not run its continuation when
+  the source is canceled, so the F2 Task 23 contract (`resultCount() == 1` with
+  `resultAt(0).cancelled == true` after cancel) is lost on the wrapped future. The
+  bypass preserves the contract natively for the deprecated single-shim consumers
+  (cancel tests, contacts witness). Canonical-API single-mapping consumers must add
+  their own `onCanceled` handler if they need a SyncResult on cancel — but no
+  canonical-API consumers exist yet (P1.T4 introduced `runSync(SyncRequest)`; Plan 8
+  will migrate consumers and remove the shims). Asymmetry vanishes when the shims
+  are deleted.
+- 2026-05-29 — `src/engine/syncrequest.h:35-56` — inv 4 — `SyncRequest` cannot
+  express "explicitly empty subset" (zero mappings dispatched) — `mappingIds.isEmpty()`
+  collapses both "all enabled" and "empty subset" into the same dispatch shape (runs
+  all enabled). The deprecated `runSyncFuture(ids, …)` subset shim preserves the
+  historical empty-list-means-zero-mappings semantics by short-circuiting on
+  `ids.isEmpty()` before constructing the request. If Plan 8 ever wants this
+  distinction on the canonical API, add an explicit `bool allEnabled` field (or a
+  sentinel value) to `SyncRequest`. Currently no canonical-API consumer needs it.
+- 2026-05-29 — `src/engine/syncengine.h:~445-501` — inv 3 — the engine retains two
+  `QFutureInterface*` members (`m_currentSingleIface`, `m_currentMultiIface`) and two
+  watchers (`m_singleWatcher`, `m_multiWatcher`), mirroring the dual return-type
+  surface. Approach A (collapse to multi-iface only, redirect single writes to
+  `m_currentMultiIface` with `QList{r}` wrap) was considered but rejected because the
+  deprecated single-shim must return `QFuture<SyncResult>` with the F2 Task 23
+  contract intact; the wrap-then-unwrap chain across types loses cancellation results
+  in Qt6. Once the deprecated shims are removed (Plan 8), the dual surface collapses
+  naturally to multi-iface only.
+
 ### From P1.T2 (Worker collapse, 2026-05-29)
 
 - 2026-05-29 — P1.T2 spec text imprecision — plan said `invokeMethod(m_engine,

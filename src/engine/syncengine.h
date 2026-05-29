@@ -27,6 +27,7 @@
 #include <QFutureWatcher>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace Kalburator::Storage {
@@ -101,6 +102,12 @@ namespace Kalburator::Engine {
 // the private header. External consumers (PlanStan, WildPalms, tests)
 // should use the public SyncEngine API below.
 class SyncEngineWorker;
+
+// Architectural-redress Plan 1 Task 4 (2026-05-29): canonical request
+// type for SyncEngine::runSync. Defined in syncrequest.h, which the
+// implementation (syncengine.cpp) includes; only forward-declared
+// here because the public surface takes it by const-reference.
+struct SyncRequest;
 
 /**
  * @brief Coordinates sync operations between backends according to sync mappings.
@@ -283,6 +290,21 @@ public:
     void setMappingEnabled(const QString &mappingId, bool enabled);
 
     /**
+     * @brief Canonical entry point — run sync per the request.
+     *
+     * Architectural-redress Plan 1 Task 4 (2026-05-29): the four
+     * `runSyncFuture()` overloads were collapsed into this single
+     * struct-parameterized form. See `engine/syncrequest.h` for the
+     * three dispatch shapes (all-enabled / subset / single) and how
+     * `mappingIds.size()` selects between them.
+     *
+     * The future completes with one SyncResult per dispatched mapping
+     * (empty list if no work). The future supports cancel() to request
+     * cancellation via the existing QFutureWatcher channel.
+     */
+    QFuture<QList<SyncResult>> runSync(const SyncRequest &request);
+
+    /**
      * @brief Run sync for one mapping. Future completes with the result.
      *
      * The QFuture supports cancel() to request cancellation; the
@@ -294,6 +316,7 @@ public:
      * is the load-bearing detail at call sites; renaming would churn
      * every Group 3 consumer migration without a clarity gain.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
@@ -306,6 +329,7 @@ public:
      * callers run temporary direction overrides without modifying
      * persistent sync configuration.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
         const ExecutionOverride &executionOverride,
@@ -315,6 +339,7 @@ public:
      * @brief Run sync for all enabled mappings. Future completes with
      *        the per-mapping result list (one entry per enabled mapping).
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<QList<SyncResult>> runSyncFuture(
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
@@ -324,6 +349,7 @@ public:
      *        Future completes with one SyncResult per dispatched mapping.
      *        G.6 Task 43.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<QList<SyncResult>> runSyncFuture(
         const QList<QString> &ids,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
@@ -437,6 +463,23 @@ private:
      * via m_queue.dispatchMode() and finishes immediately for Single.
      */
     void processSingleMapping(const QString &mappingId, SyncBehavior behavior);
+
+    /**
+     * @brief Architectural-redress Plan 1 Task 4 (2026-05-29): native
+     * single-mapping dispatcher. Sets up m_currentSingleIface +
+     * m_singleWatcher and calls processSingleMapping. Returns the
+     * single-iface future directly so callers see the F2 Task 23
+     * cancellation contract natively (resultCount() == 1 after cancel
+     * with cancelled=true). Used by the deprecated runSyncFuture(
+     * mappingId, …) shims (which return the future verbatim) and by
+     * the canonical runSync(SyncRequest) single-mapping branch (which
+     * .then()-wraps it; that wrapping loses cancellation-result
+     * preservation in Qt6 — documented in FINDINGS).
+     */
+    QFuture<SyncResult> dispatchSingleNative(
+        const QString &mappingId,
+        SyncBehavior behavior,
+        const std::optional<ExecutionOverride> &executionOverride);
 
     /**
      * @brief F2 Task 21: multi-mapping driver. Iterates the queue
