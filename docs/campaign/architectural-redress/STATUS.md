@@ -11,10 +11,10 @@ sequence is being re-derived from it.
 
 ## Next action
 
-Plan 1 is merged. **Detail the next plan — the `CalendarManager` safety net** (protective tests
-for its untested destructive CRUD; AUDIT CRITICAL #4), using the `writing-plans` discipline
-(P1–P4). The calendar-typed-sync-core CRITICALs (#1–#3) are the keystone structural plan that
-follows. Re-confirm the full sequence below as each plan lands.
+Plans 1 and 2 are landed. **Next: detail Plan 3 — neutralize the calendar-typed sync core**
+(AUDIT CRITICALs #1–#3 + the cross-domain MAJOR include violations it generates), using the
+`writing-plans` discipline (P1–P4). This is the keystone structural plan. Re-confirm the full
+sequence below as each plan lands.
 
 ## What changed in the rebaseline
 
@@ -80,8 +80,8 @@ severities, not the retired old plan numbers:
 | # | Plan | AUDIT refs | State |
 |---|---|---|---|
 | 1 | SyncEngine decomposition | B1 (MAJOR, corrected) | **DONE — merged 2026-05-29** |
-| 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **next — being detailed** |
-| 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | proposed (keystone) |
+| 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
+| 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **next — being detailed** (keystone) |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) | proposed |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
