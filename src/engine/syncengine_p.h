@@ -25,6 +25,7 @@
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QPointer>
 #include <QString>
 #include <QVariantMap>
 #include <atomic>
@@ -34,6 +35,10 @@
 namespace Kalburator::Storage {
 class BaselineStore;
 } // namespace Kalburator::Storage
+
+namespace Kalburator::Conflict {
+class IMassDeleteGuard;
+} // namespace Kalburator::Conflict
 
 namespace Kalburator::Sync {
 class SyncBackend;
@@ -111,17 +116,46 @@ public:
     /**
      * @brief Set dependencies before moving to thread.
      * Must be called before moveToThread().
+     *
+     * @param host                  Sync host (controller).
+     * @param collection            Calendar collection.
+     * @param baselineStore         Baseline store (SQLite-backed, thread-
+     *                              affine to its creator thread).
+     * @param baselineStoreAnchor   QObject living on the same thread as
+     *                              baselineStore — used as a thread anchor
+     *                              for QMetaObject::invokeMethod(...,
+     *                              BlockingQueuedConnection). Typically the
+     *                              owning SyncEngine. Plan 1 Task 2
+     *                              (2026-05-29) replaces the previous
+     *                              SyncEngine* back-pointer with this
+     *                              narrower role-typed handle.
+     * @param massDeleteGuard       Optional mass-delete guard. nullptr = no
+     *                              guard (deletes proceed unconditionally).
+     *                              Previously reached via the back-pointer
+     *                              as m_engine->massDeleteGuard().
      */
     void setDependencies(ISyncHost *host,
                          ICalendarCollection *collection,
                          Kalburator::Storage::BaselineStore *baselineStore = nullptr,
-                         SyncEngine *engine = nullptr);
+                         QObject *baselineStoreAnchor = nullptr,
+                         Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard = nullptr);
 
 public slots:
     /**
      * @brief Process a sync operation (called from worker thread).
      */
     void processSync(const SyncEngineWorker::Request &request);
+
+    /**
+     * @brief Plan 1 Task 2 (2026-05-29): update the mass-delete guard
+     * after construction. Previously the worker reached the live guard
+     * via SyncEngine::massDeleteGuard() through the back-pointer; now
+     * SyncEngine pushes updates here via a queued connection so the
+     * worker sees a consistent snapshot per sync cycle. Queued from the
+     * engine thread (where SyncEngine::setMassDeleteGuard is called) to
+     * the worker thread (where dispatchSync reads the value).
+     */
+    void setMassDeleteGuardFromEngine(Kalburator::Conflict::IMassDeleteGuard *guard);
 
     /**
      * @brief Resume after user resolves a conflict (monitored mode).
@@ -304,10 +338,19 @@ private:
     ISyncHost *m_controller = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
     ICalendarCollection *m_collection = nullptr;
-    // Back-pointer to the owning SyncEngine. dispatchSync uses
-    // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
-    // access back to the engine thread.
-    SyncEngine *m_engine = nullptr;
+
+    // Plan 1 Task 2 (2026-05-29): thread anchor used to marshal
+    // BaselineStore access back to the thread that owns it (BaselineStore
+    // wraps SQLite and is thread-affine to its creator). Replaces the
+    // previous SyncEngine *m_engine back-pointer. The worker no longer
+    // knows it is owned by a SyncEngine — it only knows there is a
+    // QObject living on the right thread.
+    QPointer<QObject> m_baselineStoreAnchor;
+
+    // Plan 1 Task 2 (2026-05-29): mass-delete guard, previously reached
+    // through m_engine->massDeleteGuard(). Non-owning; consumer must
+    // outlive the worker. nullptr = no guard.
+    Kalburator::Conflict::IMassDeleteGuard *m_massDeleteGuard = nullptr;
 
     Request m_currentRequest;
     SyncResult m_currentResult;

@@ -157,9 +157,15 @@ void SyncEngine::startWorkerThread()
         return;
     }
 
-    // Set dependencies before moving to thread
+    // Set dependencies before moving to thread.
+    // Plan 1 Task 2 (2026-05-29): pass `this` as the baseline-store
+    // thread anchor (engine thread owns BaselineStore), and pass the
+    // mass-delete guard explicitly — previously the worker reached
+    // both via a back-pointer.
     m_worker->setDependencies(m_controller, m_collection,
-                              m_baselineStore, this);
+                              m_baselineStore,
+                              this,
+                              m_massDeleteGuard);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -212,6 +218,17 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
 {
     m_massDeleteGuard = guard;
+    // Plan 1 Task 2 (2026-05-29): push to worker via queued invocation
+    // so updates take effect on the worker thread without sharing
+    // unsynchronized state. Replaces the previous pattern where the
+    // worker reached the live guard through a SyncEngine back-pointer.
+    if (m_worker) {
+        QMetaObject::invokeMethod(m_worker,
+            [w = m_worker, guard]() {
+                w->setMassDeleteGuardFromEngine(guard);
+            },
+            Qt::QueuedConnection);
+    }
 }
 
 Kalburator::Conflict::IMassDeleteGuard *SyncEngine::massDeleteGuard() const
@@ -1375,12 +1392,23 @@ SyncEngineWorker::~SyncEngineWorker()
 void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         ICalendarCollection *collection,
                                         Kalburator::Storage::BaselineStore *baselineStore,
-                                        SyncEngine *engine)
+                                        QObject *baselineStoreAnchor,
+                                        Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard)
 {
     m_controller = host;
     m_baselineStore = baselineStore;
     m_collection = collection;
-    m_engine = engine;
+    m_baselineStoreAnchor = baselineStoreAnchor;
+    m_massDeleteGuard = massDeleteGuard;
+}
+
+// Plan 1 Task 2 (2026-05-29): queued-connection setter for the
+// mass-delete guard. SyncEngine::setMassDeleteGuard pushes updates
+// here so the worker thread sees a consistent snapshot per sync cycle.
+void SyncEngineWorker::setMassDeleteGuardFromEngine(
+    Kalburator::Conflict::IMassDeleteGuard *guard)
+{
+    m_massDeleteGuard = guard;
 }
 
 void SyncEngineWorker::cancel()
@@ -1670,11 +1698,11 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // Even if target is empty, blob baselines from a prior sync mean this
     // is NOT a true first sync — the target may be empty due to a deletion
     // or conflict resolution. Run the normal diff path instead of mirroring.
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         bool hasExistingBaselines = false;
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         const QString mappingId = request.mapping.id;
-        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &hasExistingBaselines]() {
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &hasExistingBaselines]() {
             hasExistingBaselines = !bbs->baselinesForMappingV3(mappingId).isEmpty();
         }, Qt::BlockingQueuedConnection);
         if (hasExistingBaselines) {
@@ -1814,10 +1842,10 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         uidToIcal.insert(r.id, ical);
     }
     const QDateTime now = QDateTime::currentDateTime();
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         // Marshal to engine thread — BaselineStore (SQLite) is not thread-safe.
-        QMetaObject::invokeMethod(m_engine,
+        QMetaObject::invokeMethod(m_baselineStoreAnchor,
             [bbs, mappingId, uidToIcal, now]() {
                 for (auto it = uidToIcal.constBegin(); it != uidToIcal.constEnd(); ++it) {
                     bbs->setBaselineV3(mappingId, makeCalendarRec(it.key(), it.value()));
@@ -2121,9 +2149,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     // --- Load baselines (run on engine thread — BaselineStore is not thread-safe) ---
     QList<BackendRecord> baselineRecords;
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
                 // The unified engine persists EVERY baseline as blob/raw with
                 // data = contentHash bytes (see the two setBaselineV3 sites
@@ -2163,7 +2191,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // new record the source never knew about". The legacy calendar path saved
     // every known record after each successful sync; we replicate that
     // guarantee here for BaselineStore-backed paths.
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         QHash<QString, BackendRecord> srcById;
         for (const auto &r : sourceRecords) srcById.insert(r.id, r);
         QHash<QString, BackendRecord> baselineById;
@@ -2185,7 +2213,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }
         if (!implicitBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-            QMetaObject::invokeMethod(m_engine, [bbs, mappingId, implicitBaselines]() {
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, implicitBaselines]() {
                 for (const auto &c : implicitBaselines)
                     bbs->setBaselineV3(mappingId, c);
             }, Qt::BlockingQueuedConnection);
@@ -2561,13 +2589,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         auto applyWithGuard = [this, writer, &colId, &backendRegistryId]
             (WriterBatch &batch) -> bool
         {
-            if (!batch.deletes.isEmpty() && m_engine && m_engine->massDeleteGuard()) {
+            if (!batch.deletes.isEmpty() && m_massDeleteGuard) {
                 const int proposed = static_cast<int>(batch.deletes.size());
                 const QString mappingId = m_currentRequest.mapping.id;
                 int baselineCount = 0;
                 if (m_baselineStore) {
                     Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-                    QMetaObject::invokeMethod(m_engine,
+                    QMetaObject::invokeMethod(m_baselineStoreAnchor,
                         [bbs, mappingId, &baselineCount]() {
                             baselineCount = static_cast<int>(
                                 bbs->baselinesForMappingV3(mappingId).size());
@@ -2578,7 +2606,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 const bool overRel = baselineCount > 0
                     && (proposed * 100 / baselineCount) > 25;
                 if (overAbs || overRel) {
-                    const bool allow = m_engine->massDeleteGuard()
+                    const bool allow = m_massDeleteGuard
                         ->confirmMassDelete(mappingId, backendRegistryId,
                                             proposed, baselineCount);
                     if (!allow) {
@@ -2610,7 +2638,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         } else {
             // BackendThread: classify on backend thread, then guard check +
             // apply on worker thread to avoid re-entering the backend thread
-            // while invoking m_engine (which lives on the engine thread).
+            // while invoking m_baselineStoreAnchor (which lives on the
+            // engine thread — see setDependencies docs in syncengine_p.h).
             WriterBatch batch;
             QString classifyErr2;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
@@ -2685,13 +2714,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // partial write failure would cause "phantom deletions" on retry: the
         // next sync sees the baseline + no target record → wrongly tells source
         // to delete the record the target never actually committed.
-        if (m_baselineStore && m_engine && !m_unifiedMerge.updatedBaselines.isEmpty()) {
+        if (m_baselineStore && m_baselineStoreAnchor && !m_unifiedMerge.updatedBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             const Kalburator::Shape::Shape blobShape{
                 Kalburator::Shape::DomainId{QStringLiteral("blob")},
                 Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
             const QList<BackendRecord> updated = m_unifiedMerge.updatedBaselines;
-            QMetaObject::invokeMethod(m_engine, [bbs, mappingId, blobShape, updated]() {
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, blobShape, updated]() {
                 for (const auto &rec : updated) {
                     if (rec.id.isEmpty() || rec.isDeleted)
                         continue;
@@ -2704,7 +2733,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             }, Qt::BlockingQueuedConnection);
         }
         // T9: persist property-baseline snapshot after successful write.
-        if (m_baselineStore && m_engine && opsUCC) {
+        if (m_baselineStore && m_baselineStoreAnchor && opsUCC) {
             // baselineProperties is on DomainDefinition, not DomainOperations.
             // Re-look up via DomainRegistry using the same domain the ops cover.
             auto *ddUCC = m_shape.domain
@@ -2720,7 +2749,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
                 if (!snapshot.isEmpty()) {
                     Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-                    QMetaObject::invokeMethod(m_engine,
+                    QMetaObject::invokeMethod(m_baselineStoreAnchor,
                         [bbs, mappingId, srcColId, snapshot]() {
                             bbs->setCollectionBaseline(mappingId, srcColId, snapshot);
                         }, Qt::BlockingQueuedConnection);
