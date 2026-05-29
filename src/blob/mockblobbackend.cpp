@@ -53,6 +53,22 @@ QList<BackendRecord> MockBlobBackend::loadRecords(const QString &collectionId)
     return m_records.value(collectionId).values();
 }
 
+bool MockBlobBackend::loadRecordsOrError(const QString &collectionId,
+                                         QList<BackendRecord> &records,
+                                         QString &error)
+{
+    if (consumeFailure(FailurePoint::OnLoadRecords, QStringLiteral("loadRecords"))) {
+        records.clear();
+        // Mirrors the message emitted by consumeFailure so callers can match
+        // the out-param error string against the errorOccurred signal argument.
+        error = QStringLiteral("injected failure: loadRecords");
+        return false;
+    }
+    records = loadRecords(collectionId);  // no failure pending -> will not re-consume
+    error.clear();
+    return true;
+}
+
 std::optional<BackendRecord> MockBlobBackend::loadRecord(const QString &recordId)
 {
     if (consumeFailure(FailurePoint::OnLoadRecord, QStringLiteral("loadRecord"))) {
