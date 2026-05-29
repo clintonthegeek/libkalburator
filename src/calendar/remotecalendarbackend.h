@@ -2,6 +2,7 @@
 #define REMOTECALENDARBACKEND_H
 
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "../backend/changedetection.h"

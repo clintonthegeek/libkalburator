@@ -8,6 +8,7 @@
 #include "propertycatalogue.h"
 #include "shape.h"
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 
 using Kalburator::Calendar::CalendarDomainDefinition;
 using Kalburator::Calendar::CalendarStockShapes;

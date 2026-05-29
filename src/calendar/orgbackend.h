@@ -2,6 +2,7 @@
 #define ORGBACKEND_H
 
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "orgfilemanager.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"

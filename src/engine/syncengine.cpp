@@ -2050,11 +2050,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // immediately-failed op; we skip the QEventLoop for those and proceed
     // directly to loadRecordsOrError().
     {
-        FetchOperation *fetchOpRaw = nullptr;
+        SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(srcBackend, [srcBackend, srcColId, &fetchOpRaw]() {
             fetchOpRaw = srcBackend->fetchItems(srcColId);
         }, Qt::BlockingQueuedConnection);
-        QPointer<FetchOperation> fetchOp = fetchOpRaw;
+        QPointer<SyncOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
             // Connect BEFORE re-checking state: op may complete between the
@@ -2124,11 +2124,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // --- Fetch target records (cross-thread) ---
     // Same cancellable gating pattern as source fetch above.
     {
-        FetchOperation *fetchOpRaw = nullptr;
+        SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtColId, &fetchOpRaw]() {
             fetchOpRaw = tgtBackend->fetchItems(tgtColId);
         }, Qt::BlockingQueuedConnection);
-        QPointer<FetchOperation> fetchOp = fetchOpRaw;
+        QPointer<SyncOperation> fetchOp = fetchOpRaw;
         if (fetchOp && fetchOp->state() == SyncOperation::Running) {
             QEventLoop loop;
             // Same race-fix as source fetch: connect before re-check so a

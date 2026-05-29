@@ -1,10 +1,6 @@
 #include "syncbackendbase.h"
 
-// Construct the calendar-typed operation subclasses (FetchOperation /
-// DeleteOperation). The bare "syncoperation.h" now resolves to the neutral
-// base in this same directory (architectural-redress Plan 3 T1), so this
-// consumer must qualify the include to reach the calendar subclasses.
-#include "../calendar/syncoperation.h"
+#include "syncoperation.h"
 
 #include <QDebug>
 
@@ -37,19 +33,20 @@ Kalburator::Shape::Shape SyncBackendBase::shapeFor(const QString &) const
 // Operation-Based API (default implementations)
 // ============================================================================
 
-FetchOperation* SyncBackendBase::fetchItems(const QString &calendarId)
+SyncOperation* SyncBackendBase::fetchItems(const QString &calendarId)
 {
-    auto *op = new FetchOperation(calendarId, this);
-    QString errorMsg = QStringLiteral("fetchItems() not implemented by this backend");
+    auto *op = new SyncOperation(calendarId, this);
+    const QString errorMsg = QStringLiteral("fetchItems() not implemented by this backend");
     op->fail(errorMsg);
     emit fetchFinished(calendarId, false, errorMsg);
     return op;
 }
 
-DeleteOperation* SyncBackendBase::deleteItems(const QString &calendarId,
-                                              const QStringList &uids)
+SyncOperation* SyncBackendBase::deleteItems(const QString &calendarId,
+                                            const QStringList &uids)
 {
-    auto *op = new DeleteOperation(calendarId, uids, this);
+    Q_UNUSED(uids);
+    auto *op = new SyncOperation(calendarId, this);
     op->fail(QStringLiteral("deleteItems() not implemented by this backend"));
     return op;
 }

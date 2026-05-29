@@ -2,6 +2,7 @@
 #define MOCKBACKEND_H
 
 #include "syncbackend.h"
+#include "syncoperation.h"  // complete FetchOperation/PushOperation/DeleteOperation for covariant overrides
 #include <optional>
 #include <QHash>
 #include <QList>

@@ -22,13 +22,9 @@
 
 #include "iblobbackend.h"   // pure interface (no QObject)
 #include "shape.h"          // Kalburator::Shape::Shape
+#include "syncoperation.h"  // neutral SyncOperation base (same dir)
 
 namespace Kalburator::Sync {
-
-class SyncOperation;
-class FetchOperation;
-class PushOperation;
-class DeleteOperation;
 
 /**
  * @brief Domain-neutral abstract sync-backend base.
@@ -94,9 +90,9 @@ public:
     // calendar-typed `SyncBackend` subclass (would require pulling
     // KCalendarCore::Incidence into the base header).
 
-    virtual FetchOperation* fetchItems(const QString &calendarId);
-    virtual DeleteOperation* deleteItems(const QString &calendarId,
-                                         const QStringList &uids);
+    virtual SyncOperation* fetchItems(const QString &calendarId);
+    virtual SyncOperation* deleteItems(const QString &calendarId,
+                                       const QStringList &uids);
 
     // ========== Operation Tracking ==========
 
