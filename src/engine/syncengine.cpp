@@ -1,4 +1,6 @@
 #include "syncengine.h"
+#include "syncengine_p.h"
+#include "syncrequest.h"
 #include "baselinestore.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
@@ -131,6 +133,17 @@ void SyncEngine::setupWorkerConnections()
     connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
 
+    // Engine→worker command channel (replaces string-form invokeMethod).
+    // SyncEngine emits these *Requested signals on m_worker; Qt's
+    // QueuedConnection routes them across the thread boundary to the
+    // matching slots. Signals are public in Qt, so external emit is fine.
+    connect(m_worker, &SyncEngineWorker::processSyncRequested,
+            m_worker, &SyncEngineWorker::processSync, Qt::QueuedConnection);
+    connect(m_worker, &SyncEngineWorker::observeCancelRequested,
+            m_worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
+    connect(m_worker, &SyncEngineWorker::resumeAfterConflictRequested,
+            m_worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
+
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
     // by the time finished is emitted.
@@ -142,9 +155,13 @@ void SyncEngine::startWorkerThread()
         return;
     }
 
-    // Set dependencies before moving to thread
+    // Set dependencies before moving to thread. `this` is the thread
+    // anchor for BaselineStore access; m_massDeleteGuard is pushed in
+    // directly (no back-pointer).
     m_worker->setDependencies(m_controller, m_collection,
-                              m_baselineStore, this);
+                              m_baselineStore,
+                              this,
+                              m_massDeleteGuard);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -197,6 +214,15 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
 {
     m_massDeleteGuard = guard;
+    // Propagate to the worker thread via queued invocation so updates
+    // take effect on the next sync cycle without unsynchronized state.
+    if (m_worker) {
+        QMetaObject::invokeMethod(m_worker,
+            [w = m_worker, guard]() {
+                w->setMassDeleteGuardFromEngine(guard);
+            },
+            Qt::QueuedConnection);
+    }
 }
 
 Kalburator::Conflict::IMassDeleteGuard *SyncEngine::massDeleteGuard() const
@@ -270,7 +296,8 @@ bool SyncEngine::hasSyncWork() const
 // F2 Task 42: the void runSync(behavior) form is deleted. Its body
 // is rebadged into a private helper driveQueue() invoked by
 // runSyncFuture(behavior) below — the only remaining caller.
-void SyncEngine::driveQueue(SyncBehavior behavior)
+void SyncEngine::driveQueue(SyncBehavior behavior,
+                            std::optional<QSet<QString>> filter)
 {
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
         qDebug() << "SyncEngine::driveQueue - no sync work configured";
@@ -278,7 +305,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
         m_lastResult.success = true;
         // Finish the multi-iface (the QFuture caller is waiting on it).
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
@@ -288,18 +315,16 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
 
     m_isSyncing = true;
     m_cancelled = false;
-    m_lostResources.clear();
-    m_currentMappingIndex = -1;
     m_currentSyncBehavior = behavior;
     m_pendingUnmonitoredConflicts.clear();
     m_lastResult = SyncResult{};
     m_lastResult.startTime = QDateTime::currentDateTime();
 
-    // F2 Task 21: tag this run as a queue dispatch so
-    // onWorkerSyncCompleted advances to the next mapping rather than
-    // finishing a single-mapping future.
-    m_dispatchMode = DispatchMode::Queue;
-    m_queueResults.clear();
+    // P1.T3: prime the queue collaborator (clears lost resources,
+    // result accumulator, index, and sets DispatchMode::Queue). The
+    // filter (if any) was passed through from the runSyncFuture(ids)
+    // overload via the helper parameter.
+    m_queue.prime(m_syncMappings, std::move(filter));
 
     // Run active controllers first (they're fast, synchronous)
     for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
@@ -324,13 +349,13 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
         m_lastResult.endTime = QDateTime::currentDateTime();
         // Finish the multi-iface with what we have.
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             if (m_cancelled) m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
@@ -340,13 +365,14 @@ void SyncEngine::driveQueue(SyncBehavior behavior)
 }
 
 // F2 Task 21: single-mapping driver. Dispatches exactly one Request to
-// the worker; onWorkerSyncCompleted distinguishes via m_dispatchMode and
-// finishes immediately rather than advancing a queue. This replaces the
-// leaky path documented in FINDINGS where the single-mapping form
-// re-entered processNextMapping (which iterated from index 0 and
-// double-dispatched the same mapping).
+// the worker; onWorkerSyncCompleted distinguishes via
+// m_queue.dispatchMode() and finishes immediately rather than advancing
+// a queue. This replaces the leaky path documented in FINDINGS where
+// the single-mapping form re-entered processNextMapping (which iterated
+// from index 0 and double-dispatched the same mapping).
 void SyncEngine::processSingleMapping(const QString &mappingId,
-                                      SyncBehavior behavior)
+                                      SyncBehavior behavior,
+                                      ExecutionOverride executionOverride)
 {
     // Phase-2: clear any leftover state from a previous multi-mapping
     // runSync. The single-mapping path does not run prepareSyncFastPath,
@@ -383,12 +409,11 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         return;
     }
 
-    int idx = 0;
     for (const auto &mapping : m_syncMappings) {
         if (mapping.id == mappingId && mapping.enabled) {
             m_isSyncing = true;
@@ -397,11 +422,10 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             m_lastResult = SyncResult{};
             m_lastResult.startTime = QDateTime::currentDateTime();
 
-            // F2 Task 21: tag the run mode and remember which mapping is
-            // in flight so onWorkerItemReady can resolve metadata. This
-            // is the only field shared with the Queue path.
-            m_dispatchMode = DispatchMode::Single;
-            m_currentMappingIndex = idx;
+            // P1.T3: prime the queue for a Single run (sets
+            // DispatchMode::Single; no mapping list / filter needed
+            // because single-mapping dispatch does not iterate).
+            m_queue.primeSingle();
 
             // Start worker thread if not running
             startWorkerThread();
@@ -409,23 +433,21 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // Create request and invoke worker
             SyncEngineWorker::Request request;
             request.mapping = mapping;
-            request.mode = (behavior == SyncBehavior::Monitored)
-                ? SyncEngineWorker::Mode::Monitored
-                : SyncEngineWorker::Mode::Unmonitored;
+            request.behavior = behavior;
             request.collectionId = m_collection ? m_collection->id() : QString();
             request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
-            // Task 9: embed the per-call override (if any) and clear it so the
-            // next no-override call doesn't accidentally inherit it.
-            request.override = m_pendingOverride;
-            m_pendingOverride = ExecutionOverride{};
+            // P1.T5: embed the per-call override passed in by the caller.
+            // Default-constructed ExecutionOverride means "no override"
+            // (Direction::Default), matching the worker Request::override
+            // convention. Previously this came from m_pendingOverride, a
+            // class member that the caller had to set before invoking us —
+            // an implicit-state-machine residue (INVARIANTS §4) now gone.
+            request.override = executionOverride;
 
-            // Invoke worker in its thread
-            QMetaObject::invokeMethod(m_worker, "processSync",
-                                      Qt::QueuedConnection,
-                                      Q_ARG(SyncEngineWorker::Request, request));
+            // Command-channel: QueuedConnection routes to worker thread.
+            emit m_worker->processSyncRequested(request);
             return;
         }
-        ++idx;
     }
     qWarning() << "SyncEngine::runSync - mapping not found:" << mappingId;
 
@@ -442,7 +464,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
         delete m_currentSingleIface;
         m_currentSingleIface = nullptr;
     }
-    m_dispatchMode = DispatchMode::None;
+    m_queue.reset();
     // F2 Task 21 follow-up: clear m_isSyncing on the not-found path.
     // runSyncFuture sets m_isSyncing = true before calling
     // processSingleMapping; if we return here without dispatching,
@@ -451,52 +473,149 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     m_isSyncing = false;
 }
 
-// F2 Task 21: rewritten to populate m_currentSingleIface directly
-// (replacing the fragile signal-shim from Task 15). The engine owns the
-// iface; processSingleMapping installs m_dispatchMode = Single, and
-// onWorkerSyncCompleted reports the single result and finishes the
-// future. No connection-management gymnastics, no double-fire window.
-QFuture<SyncResult> SyncEngine::runSyncFuture(
+// Architectural-redress Plan 1 Task 4 (2026-05-29): canonical entry
+// point. Absorbs the bodies of the four runSyncFuture overloads:
+//
+//   - Single mapping  : request.mappingIds.size() == 1
+//                       (executionOverride, if set, threads through
+//                        dispatchSingleNative → processSingleMapping
+//                        as a method parameter — P1.T5).
+//   - All enabled     : request.mappingIds.isEmpty()
+//   - Subset          : request.mappingIds.size() > 1
+//
+// All three dispatch shapes return QFuture<QList<SyncResult>>. The
+// single-mapping shim wraps this with QFuture::then() to expose the
+// single-result type its callers expect.
+//
+// The overlap guard (m_isSyncing / m_currentSingleIface /
+// m_currentMultiIface) and the QFutureWatcher cancellation channel
+// are unified here too — previously each overload duplicated them.
+QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
+{
+    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
+        // Reject overlapping runs cleanly with a finished failed future.
+        QFutureInterface<QList<SyncResult>> rejected;
+        rejected.reportStarted();
+        rejected.reportResult(QList<SyncResult>{});
+        rejected.reportFinished();
+        return rejected.future();
+    }
+
+    if (request.isSingleMapping()) {
+        // Single-mapping path uses m_currentSingleIface natively (see
+        // dispatchSingleNative()), then wraps via .then() to expose the
+        // QList<SyncResult> public shape uniformly with the multi-
+        // mapping paths.
+        //
+        // Caveat (FINDINGS "single-shim bypasses canonical runSync"):
+        // QFuture::then() does not run its continuation when the source
+        // future is canceled in Qt6, so canonical-API single-mapping
+        // consumers reading resultAt(0) after a cancel will see an
+        // empty result list. The deprecated runSyncFuture(mappingId, …)
+        // shims sidestep this by calling dispatchSingleNative directly
+        // and returning the single-iface future, which preserves the
+        // F2 Task 23 contract (resultCount() == 1 after cancel) natively.
+        std::optional<ExecutionOverride> ov;
+        if (request.executionOverride.has_value())
+            ov = *request.executionOverride;
+        QFuture<SyncResult> singleFuture =
+            dispatchSingleNative(request.mappingIds.first(),
+                                 request.behavior, ov);
+        return singleFuture.then([](const SyncResult &r) {
+            return QList<SyncResult>{ r };
+        });
+    }
+
+    // Multi-mapping path (all-enabled or subset).
+    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
+    m_currentMultiIface->reportStarted();
+    // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
+    // reach future.results() even after reportCanceled().
+    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
+    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
+
+    delete m_multiWatcher;
+    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
+    m_multiWatcher->setFuture(future);
+    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
+            this, &SyncEngine::onCancelObserved);
+
+    if (request.isAllEnabled()) {
+        driveQueue(request.behavior);
+    } else {
+        // Subset path.
+        QSet<QString> filter(request.mappingIds.constBegin(),
+                             request.mappingIds.constEnd());
+        driveQueue(request.behavior,
+                   std::optional<QSet<QString>>(std::move(filter)));
+    }
+    return future;
+}
+
+// Architectural-redress Plan 1 Task 4 (2026-05-29): native single-
+// mapping dispatcher. Sets up m_currentSingleIface + watcher and calls
+// processSingleMapping. Returns the single-iface future directly,
+// preserving the F2 Task 23 cancellation contract
+// (setAddResultsIfCanceledEnabled + reportResult-before-reportCanceled,
+// read via resultCount() + resultAt(0)). Used by:
+//
+//  - The deprecated runSyncFuture(mappingId, …) shims, which return
+//    this future verbatim — single-shape contract preserved natively.
+//
+//  - The canonical runSync(SyncRequest) single-mapping branch, which
+//    wraps the returned future via .then() to expose the uniform
+//    QFuture<QList<SyncResult>> shape. The .then() wrapper loses the
+//    cancellation-result preservation (Qt6 semantics — see FINDINGS
+//    "single-shim bypasses canonical runSync(SyncRequest)"), so
+//    canonical-API consumers must add their own onCanceled handler if
+//    they need cancellation-result access on the single-mapping path.
+QFuture<SyncResult> SyncEngine::dispatchSingleNative(
     const QString &mappingId,
-    SyncBehavior behavior)
+    SyncBehavior behavior,
+    const std::optional<ExecutionOverride> &executionOverride)
 {
     if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
         // Reject overlapping runs cleanly with a finished failed future.
         QFutureInterface<SyncResult> rejected;
         rejected.reportStarted();
-        SyncResult err;
-        err.success = false;
-        err.errorMessage = QStringLiteral("Sync already in progress");
-        rejected.reportResult(err);
+        rejected.reportResult(SyncResult{});
         rejected.reportFinished();
         return rejected.future();
     }
 
-    // Allocate iface; processSingleMapping → onWorkerSyncCompleted will
-    // populate / finalise it.
     m_currentSingleIface = new QFutureInterface<SyncResult>;
     m_currentSingleIface->reportStarted();
-    // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
-    // reach future.results() even after reportCanceled(). Per Qt6
-    // QFutureInterface, reportResult is silently dropped once
-    // cancellation is reported unless this opt-in is set. The F2
-    // contract delivers a cancelled SyncResult on the future for
-    // cancel-before/after-start; without this opt-in, consumers
-    // see future.results() as empty.
+    // F2 Task 23: ensure cancellation-marker SyncResult reaches
+    // resultAt(0) even after reportCanceled().
     m_currentSingleIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<SyncResult> future = m_currentSingleIface->future();
+    QFuture<SyncResult> singleFuture = m_currentSingleIface->future();
 
-    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
-    // to the worker via onCancelObserved slot.
+    // F2 Task 17 cancellation channel — watcher fires onCancelObserved
+    // when the caller invokes future.cancel().
     delete m_singleWatcher;
     m_singleWatcher = new QFutureWatcher<SyncResult>(this);
-    m_singleWatcher->setFuture(future);
+    m_singleWatcher->setFuture(singleFuture);
     connect(m_singleWatcher, &QFutureWatcher<SyncResult>::canceled,
             this, &SyncEngine::onCancelObserved);
 
     m_isSyncing = true;
-    processSingleMapping(mappingId, behavior);
-    return future;
+    // P1.T5: thread the override through as a method parameter (was
+    // m_pendingOverride class-member residue before).
+    processSingleMapping(mappingId, behavior,
+                         executionOverride.value_or(ExecutionOverride{}));
+    return singleFuture;
+}
+
+// Deprecated shim — bypasses runSync(SyncRequest) to return the native
+// single-iface future, preserving the F2 Task 23 cancellation contract
+// that the .then() wrapper used by runSync(SyncRequest) loses
+// (Qt6 QFuture::then doesn't propagate the source result on cancel).
+// See dispatchSingleNative() for the rationale.
+QFuture<SyncResult> SyncEngine::runSyncFuture(
+    const QString &mappingId,
+    SyncBehavior behavior)
+{
+    return dispatchSingleNative(mappingId, behavior, std::nullopt);
 }
 
 QFuture<SyncResult> SyncEngine::runSyncFuture(
@@ -504,79 +623,40 @@ QFuture<SyncResult> SyncEngine::runSyncFuture(
     const ExecutionOverride &executionOverride,
     SyncBehavior behavior)
 {
-    // Safe: the m_isSyncing guard in the no-override overload ensures only
-    // one runSyncFuture call is in flight at a time. m_pendingOverride is
-    // read synchronously by processSingleMapping on this same thread before
-    // returning, then cleared.
-    m_pendingOverride = executionOverride;
-    return runSyncFuture(mappingId, behavior);
+    return dispatchSingleNative(mappingId, behavior, executionOverride);
 }
 
-// F2 Task 21: rewritten to populate m_currentMultiIface directly. The
-// per-mapping results accumulate in m_queueResults (filled by
-// onWorkerSyncCompleted during a Queue run); when the queue drains,
-// processQueue's terminal branch reports them on the iface.
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     SyncBehavior behavior)
 {
-    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
-        QFutureInterface<QList<SyncResult>> rejected;
-        rejected.reportStarted();
-        rejected.reportResult(QList<SyncResult>{});
-        rejected.reportFinished();
-        return rejected.future();
-    }
-
-    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
-    m_currentMultiIface->reportStarted();
-    // F2 Task 23 follow-up: see runSyncFuture(mappingId) overload —
-    // cancellation-marker results must reach future.results() even
-    // after reportCanceled().
-    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
-
-    // F2 Task 17: install QFutureWatcher to forward QFuture::cancel()
-    // to the worker via onCancelObserved slot.
-    delete m_multiWatcher;
-    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
-    m_multiWatcher->setFuture(future);
-    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
-            this, &SyncEngine::onCancelObserved);
-
-    driveQueue(behavior);
-    return future;
+    SyncRequest req;
+    req.behavior = behavior;
+    return runSync(req);
 }
 
 // G.6 Task 43: subset dispatch — run only the specified mapping IDs.
-// Uses the same Queue infrastructure as the all-mappings overload, but
-// sets m_mappingIdFilter so advanceQueue skips non-requested mappings.
+//
+// Empty-list semantics: the historical subset overload treated an
+// empty `ids` as "empty subset → zero mappings dispatched" (distinct
+// from runSyncFuture() with no args, which means "all enabled"). The
+// canonical SyncRequest collapses both into mappingIds.isEmpty() and
+// runs all enabled; this shim preserves the historical distinction by
+// short-circuiting on empty input.
 QFuture<QList<SyncResult>> SyncEngine::runSyncFuture(
     const QList<QString> &ids,
     SyncBehavior behavior)
 {
-    if (m_isSyncing || m_currentSingleIface || m_currentMultiIface) {
-        QFutureInterface<QList<SyncResult>> rejected;
-        rejected.reportStarted();
-        rejected.reportResult(QList<SyncResult>{});
-        rejected.reportFinished();
-        return rejected.future();
+    if (ids.isEmpty()) {
+        QFutureInterface<QList<SyncResult>> empty;
+        empty.reportStarted();
+        empty.reportResult(QList<SyncResult>{});
+        empty.reportFinished();
+        return empty.future();
     }
-
-    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
-    m_currentMultiIface->reportStarted();
-    m_currentMultiIface->setAddResultsIfCanceledEnabled(true);
-    QFuture<QList<SyncResult>> future = m_currentMultiIface->future();
-
-    delete m_multiWatcher;
-    m_multiWatcher = new QFutureWatcher<QList<SyncResult>>(this);
-    m_multiWatcher->setFuture(future);
-    connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
-            this, &SyncEngine::onCancelObserved);
-
-    m_hasMappingFilter = true;
-    m_mappingIdFilter  = QSet<QString>(ids.constBegin(), ids.constEnd());
-    driveQueue(behavior);
-    return future;
+    SyncRequest req;
+    req.mappingIds = ids;
+    req.behavior = behavior;
+    return runSync(req);
 }
 
 // F2 Task 17: forwards QFutureWatcher::canceled to the worker thread.
@@ -597,14 +677,14 @@ void SyncEngine::onCancelObserved()
     if (!m_worker) {
         return;
     }
-    QMetaObject::invokeMethod(m_worker, "observeCancel",
-                              Qt::QueuedConnection);
+    emit m_worker->observeCancelRequested();
 }
 
 // G.6 Task 46: resourceId-aware cancellation.
-// For ResourceLost + non-empty resourceId: adds to m_lostResources so that
-// advanceQueue skips pending mappings whose backends touch that resource with a
-// cancelled SyncResult. The in-flight mapping is NOT forcibly cancelled here —
+// For ResourceLost + non-empty resourceId: records the resource as lost on
+// the MappingQueue so advanceQueue skips pending mappings whose backends
+// touch that resource with a cancelled SyncResult. The in-flight mapping
+// is NOT forcibly cancelled here —
 // it runs to completion, then advanceQueue skips the next resource-matching
 // mapping. Mappings not touching the resource continue normally.
 //
@@ -613,16 +693,15 @@ void SyncEngine::cancelWithReason(CancellationReason reason,
                                   const QString &resourceId)
 {
     if (reason == CancellationReason::ResourceLost && !resourceId.isEmpty()) {
-        m_lostResources.insert(resourceId);
-        // advanceQueue reads m_lostResources when picking the next mapping.
-        // No m_cancelled=true here — we want the queue to continue with
-        // mappings that don't use the lost resource.
+        m_queue.markResourceLost(resourceId);
+        // advanceQueue queries m_queue.isResourceLost() when picking the
+        // next mapping. No m_cancelled=true here — we want the queue to
+        // continue with mappings that don't use the lost resource.
     } else {
         // All other reasons: stop the entire queue.
         m_cancelled = true;
         if (m_worker)
-            QMetaObject::invokeMethod(m_worker, "observeCancel",
-                                     Qt::QueuedConnection);
+            emit m_worker->observeCancelRequested();
     }
 }
 
@@ -637,11 +716,7 @@ void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
     qDebug() << "SyncEngine::resumeAfterConflictResolution - resolution:"
              << static_cast<int>(resolution);
 
-    // Invoke on worker thread
-    QMetaObject::invokeMethod(m_worker, "resumeAfterConflict",
-                              Qt::QueuedConnection,
-                              Q_ARG(ConflictResolution, resolution),
-                              Q_ARG(QString, mergedIcal));
+    emit m_worker->resumeAfterConflictRequested(resolution, mergedIcal);
 }
 
 void SyncEngine::setSkipUnchangedMappings(bool enabled)
@@ -740,9 +815,9 @@ void SyncEngine::prepareSyncFastPath()
 // F2 Task 21: multi-mapping driver — entry point for a queue run.
 // Initializes the index and kicks off the first iteration. Subsequent
 // iterations are driven by onWorkerSyncCompleted -> advanceQueue while
-// m_dispatchMode == Queue. This replaces processNextMapping; the
-// single-mapping form no longer participates in queue iteration, fixing
-// the FINDINGS leak structurally.
+// m_queue.dispatchMode() == Queue. This replaces processNextMapping;
+// the single-mapping form no longer participates in queue iteration,
+// fixing the FINDINGS leak structurally.
 void SyncEngine::processQueue()
 {
     advanceQueue();
@@ -753,9 +828,6 @@ void SyncEngine::advanceQueue()
     // Debug log removed - SyncEngineWorker provides detailed timing
 
     if (m_cancelled) {
-        m_hasMappingFilter = false;
-        m_mappingIdFilter.clear();
-        m_lostResources.clear();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -765,35 +837,22 @@ void SyncEngine::advanceQueue()
 
         // F2 Task 21: finish the multi-iface (if any) with what we have.
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
-    m_currentMappingIndex++;
+    // P1.T3: ask the queue for the next enabled+in-filter mapping.
+    // Returns nullopt past the end (queue exhausted).
+    std::optional<SyncMapping> nextMapping = m_queue.next();
 
-    // Find next enabled mapping; when m_hasMappingFilter is true
-    // (subset dispatch, G.6 Task 43) also skip IDs not in m_mappingIdFilter.
-    while (m_currentMappingIndex < m_syncMappings.size()) {
-        const SyncMapping &m = m_syncMappings[m_currentMappingIndex];
-        const bool enabled = m.enabled;
-        const bool inFilter = !m_hasMappingFilter ||
-                              m_mappingIdFilter.contains(m.id);
-        if (enabled && inFilter)
-            break;
-        m_currentMappingIndex++;
-    }
-
-    if (m_currentMappingIndex >= m_syncMappings.size()) {
-        // All mappings processed (or filtered)
-        m_hasMappingFilter = false;
-        m_mappingIdFilter.clear();
-        m_lostResources.clear();
+    if (!nextMapping.has_value()) {
+        // All mappings processed (or filtered out).
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -810,25 +869,25 @@ void SyncEngine::advanceQueue()
         // mapping results. The future resolves to the per-mapping
         // list; the aggregate result is observable via lastSyncResult().
         if (m_currentMultiIface) {
-            m_currentMultiIface->reportResult(m_queueResults);
+            m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
             delete m_currentMultiIface;
             m_currentMultiIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         return;
     }
 
-    const SyncMapping &mapping = m_syncMappings[m_currentMappingIndex];
+    const SyncMapping &mapping = *nextMapping;
 
     // G.6 Task 46: ResourceLost skip — if any of this mapping's backends
     // uses a resource that became unavailable, add a cancelled SyncResult
     // and advance without dispatching to the worker.
-    if (!m_lostResources.isEmpty() && m_controller) {
+    if (m_queue.hasLostResources() && m_controller) {
         auto *src = m_controller->backendById(mapping.sourceBackend);
         auto *tgt = m_controller->backendById(mapping.targetBackend);
-        const bool srcLost = src && m_lostResources.contains(src->resourceId());
-        const bool tgtLost = tgt && m_lostResources.contains(tgt->resourceId());
+        const bool srcLost = src && m_queue.isResourceLost(src->resourceId());
+        const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
         if (srcLost || tgtLost) {
             SyncResult cancelled;
             cancelled.success   = false;
@@ -836,7 +895,7 @@ void SyncEngine::advanceQueue()
             cancelled.errorMessage = QStringLiteral("Resource lost");
             cancelled.startTime    = QDateTime::currentDateTime();
             cancelled.endTime      = cancelled.startTime;
-            m_queueResults.append(cancelled);
+            m_queue.recordResult(cancelled);
             advanceQueue();
             return;
         }
@@ -847,7 +906,7 @@ void SyncEngine::advanceQueue()
     // to the worker. Append a successful no-op result to the queue so
     // the future caller sees per-mapping completion in resultAt(0).
     if (m_skippedMappingIds.contains(mapping.id)) {
-        emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
+        emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
                              tr("Skipping unchanged %1").arg(mapping.id));
 
         SyncResult skippedResult;
@@ -857,27 +916,24 @@ void SyncEngine::advanceQueue()
 
         // Aggregate into last result (no stats to add; success stays true unless
         // already false from a prior mapping failure).
-        m_queueResults.append(skippedResult);
+        m_queue.recordResult(skippedResult);
 
         // Advance to the next mapping without touching the worker.
         advanceQueue();
         return;
     }
 
-    emit progressUpdated(m_currentMappingIndex + 1, m_syncMappings.size(),
+    emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
                          tr("Syncing %1").arg(mapping.id));
 
     // Create request and invoke worker directly
     SyncEngineWorker::Request request;
     request.mapping = mapping;
-    request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
-        ? SyncEngineWorker::Mode::Monitored : SyncEngineWorker::Mode::Unmonitored;
+    request.behavior = m_currentSyncBehavior;
     request.collectionId = m_collection ? m_collection->id() : QString();
     request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
 
-    QMetaObject::invokeMethod(m_worker, "processSync",
-                              Qt::QueuedConnection,
-                              Q_ARG(SyncEngineWorker::Request, request));
+    emit m_worker->processSyncRequested(request);
 
     // NOTE: Do NOT recurse here!
     // The async operation will call onWorkerSyncCompleted() when done,
@@ -1099,8 +1155,8 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         m_pendingUnmonitoredConflicts.clear();
     }
 
-    // Update current mapping result
-    m_currentMappingResult = result;
+    // P1.T3: the former m_currentMappingResult write was dead (never
+    // read by any slot or accessor) and was removed.
 
     // Aggregate stats into last result
     m_lastResult.sourceStats += result.sourceStats;
@@ -1148,7 +1204,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // processNextMapping (which iterated from index 0 for the single-
     // mapping form — see FINDINGS "SyncEngine::runSync(mappingId) is
     // leaky"). Single-mapping runs finish here; queue runs advance.
-    if (m_dispatchMode == DispatchMode::Single) {
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
         // Finish the single-mapping future and shut the run down.
         // F2 Task 23 follow-up: when cancellation was observed
         // (m_cancelled set by onCancelObserved), decorate
@@ -1179,17 +1235,16 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
         return;
     }
 
-    // Queue mode: append to the per-mapping result list and advance.
-    if (m_dispatchMode == DispatchMode::Queue) {
-        m_queueResults.append(result);
-    }
+    // Queue mode: record the per-mapping result and advance.
+    // recordResult is a no-op outside Queue mode (defensive).
+    m_queue.recordResult(result);
 
     // Continue to next mapping (queue mode only).
     advanceQueue();
@@ -1212,23 +1267,22 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
         m_lastResult.errorMessage = errorMessage;
 
     // F2 Task 21: same dispatch-on-mode pattern as onWorkerSyncCompleted.
-    if (m_dispatchMode == DispatchMode::Single) {
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
         if (m_currentSingleIface) {
             m_currentSingleIface->reportResult(failedResult);
             m_currentSingleIface->reportFinished();
             delete m_currentSingleIface;
             m_currentSingleIface = nullptr;
         }
-        m_dispatchMode = DispatchMode::None;
+        m_queue.reset();
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
         return;
     }
 
-    if (m_dispatchMode == DispatchMode::Queue) {
-        m_queueResults.append(failedResult);
-    }
+    // recordResult is a no-op outside Queue mode (defensive).
+    m_queue.recordResult(failedResult);
 
     // Continue to next mapping (don't fail the whole batch).
     advanceQueue();
@@ -1330,7 +1384,6 @@ WriterBatch classifyForWriter(
 // Register metatypes for cross-thread signal/slot.
 const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<SyncEngineWorker::Request>("SyncEngineWorker::Request");
-    qRegisterMetaType<SyncEngineWorker::Mode>("SyncEngineWorker::Mode");
     qRegisterMetaType<ConflictResolution>("ConflictResolution");
     qRegisterMetaType<ConflictInfo>("ConflictInfo");
     qRegisterMetaType<SyncResult>("SyncResult");
@@ -1366,12 +1419,23 @@ SyncEngineWorker::~SyncEngineWorker()
 void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         ICalendarCollection *collection,
                                         Kalburator::Storage::BaselineStore *baselineStore,
-                                        SyncEngine *engine)
+                                        QObject *baselineStoreAnchor,
+                                        Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard)
 {
     m_controller = host;
     m_baselineStore = baselineStore;
     m_collection = collection;
-    m_engine = engine;
+    m_baselineStoreAnchor = baselineStoreAnchor;
+    m_massDeleteGuard = massDeleteGuard;
+}
+
+// Queued-connection setter for the mass-delete guard. Pushed from
+// SyncEngine::setMassDeleteGuard so the worker thread sees a consistent
+// snapshot per sync cycle (no shared mutable state).
+void SyncEngineWorker::setMassDeleteGuardFromEngine(
+    Kalburator::Conflict::IMassDeleteGuard *guard)
+{
+    m_massDeleteGuard = guard;
 }
 
 void SyncEngineWorker::cancel()
@@ -1408,7 +1472,8 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
              request.mapping.targetBackend, request.mapping.targetCalendar);
     qDebug() << "  mapping:" << request.mapping.id
              << "mode:" << syncModeStr(request.mapping.mode)
-             << (request.mode == Mode::Monitored ? "(monitored)" : "(unmonitored)");
+             << (request.behavior == SyncEngine::SyncBehavior::Monitored
+                     ? "(monitored)" : "(unmonitored)");
 
     m_totalTimer.start();
 
@@ -1661,11 +1726,11 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // Even if target is empty, blob baselines from a prior sync mean this
     // is NOT a true first sync — the target may be empty due to a deletion
     // or conflict resolution. Run the normal diff path instead of mirroring.
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         bool hasExistingBaselines = false;
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         const QString mappingId = request.mapping.id;
-        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &hasExistingBaselines]() {
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &hasExistingBaselines]() {
             hasExistingBaselines = !bbs->baselinesForMappingV3(mappingId).isEmpty();
         }, Qt::BlockingQueuedConnection);
         if (hasExistingBaselines) {
@@ -1805,10 +1870,10 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         uidToIcal.insert(r.id, ical);
     }
     const QDateTime now = QDateTime::currentDateTime();
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         // Marshal to engine thread — BaselineStore (SQLite) is not thread-safe.
-        QMetaObject::invokeMethod(m_engine,
+        QMetaObject::invokeMethod(m_baselineStoreAnchor,
             [bbs, mappingId, uidToIcal, now]() {
                 for (auto it = uidToIcal.constBegin(); it != uidToIcal.constEnd(); ++it) {
                     bbs->setBaselineV3(mappingId, makeCalendarRec(it.key(), it.value()));
@@ -2112,9 +2177,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     // --- Load baselines (run on engine thread — BaselineStore is not thread-safe) ---
     QList<BackendRecord> baselineRecords;
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-        QMetaObject::invokeMethod(m_engine, [bbs, mappingId, &baselineRecords]() {
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
                 // The unified engine persists EVERY baseline as blob/raw with
                 // data = contentHash bytes (see the two setBaselineV3 sites
@@ -2154,7 +2219,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // new record the source never knew about". The legacy calendar path saved
     // every known record after each successful sync; we replicate that
     // guarantee here for BaselineStore-backed paths.
-    if (m_baselineStore && m_engine) {
+    if (m_baselineStore && m_baselineStoreAnchor) {
         QHash<QString, BackendRecord> srcById;
         for (const auto &r : sourceRecords) srcById.insert(r.id, r);
         QHash<QString, BackendRecord> baselineById;
@@ -2176,7 +2241,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }
         if (!implicitBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-            QMetaObject::invokeMethod(m_engine, [bbs, mappingId, implicitBaselines]() {
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, implicitBaselines]() {
                 for (const auto &c : implicitBaselines)
                     bbs->setBaselineV3(mappingId, c);
             }, Qt::BlockingQueuedConnection);
@@ -2284,7 +2349,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
 
         // Conflict op.
         if (effectivePolicy == ConflictResolution::AskUser) {
-            if (m_currentRequest.mode == Mode::Monitored) {
+            if (m_currentRequest.behavior == SyncEngine::SyncBehavior::Monitored) {
                 // Yield: store position, set flag, emit signal, return.
                 // resumeAfterConflict will re-enter this method from index i.
                 m_unifiedConflictIdx = i;
@@ -2552,13 +2617,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         auto applyWithGuard = [this, writer, &colId, &backendRegistryId]
             (WriterBatch &batch) -> bool
         {
-            if (!batch.deletes.isEmpty() && m_engine && m_engine->massDeleteGuard()) {
+            if (!batch.deletes.isEmpty() && m_massDeleteGuard) {
                 const int proposed = static_cast<int>(batch.deletes.size());
                 const QString mappingId = m_currentRequest.mapping.id;
                 int baselineCount = 0;
-                if (m_baselineStore) {
+                if (m_baselineStore && m_baselineStoreAnchor) {
                     Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-                    QMetaObject::invokeMethod(m_engine,
+                    QMetaObject::invokeMethod(m_baselineStoreAnchor,
                         [bbs, mappingId, &baselineCount]() {
                             baselineCount = static_cast<int>(
                                 bbs->baselinesForMappingV3(mappingId).size());
@@ -2569,7 +2634,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 const bool overRel = baselineCount > 0
                     && (proposed * 100 / baselineCount) > 25;
                 if (overAbs || overRel) {
-                    const bool allow = m_engine->massDeleteGuard()
+                    const bool allow = m_massDeleteGuard
                         ->confirmMassDelete(mappingId, backendRegistryId,
                                             proposed, baselineCount);
                     if (!allow) {
@@ -2601,7 +2666,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         } else {
             // BackendThread: classify on backend thread, then guard check +
             // apply on worker thread to avoid re-entering the backend thread
-            // while invoking m_engine (which lives on the engine thread).
+            // while invoking m_baselineStoreAnchor (which lives on the
+            // engine thread — see setDependencies docs in syncengine_p.h).
             WriterBatch batch;
             QString classifyErr2;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
@@ -2676,13 +2742,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // partial write failure would cause "phantom deletions" on retry: the
         // next sync sees the baseline + no target record → wrongly tells source
         // to delete the record the target never actually committed.
-        if (m_baselineStore && m_engine && !m_unifiedMerge.updatedBaselines.isEmpty()) {
+        if (m_baselineStore && m_baselineStoreAnchor && !m_unifiedMerge.updatedBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             const Kalburator::Shape::Shape blobShape{
                 Kalburator::Shape::DomainId{QStringLiteral("blob")},
                 Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
             const QList<BackendRecord> updated = m_unifiedMerge.updatedBaselines;
-            QMetaObject::invokeMethod(m_engine, [bbs, mappingId, blobShape, updated]() {
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, blobShape, updated]() {
                 for (const auto &rec : updated) {
                     if (rec.id.isEmpty() || rec.isDeleted)
                         continue;
@@ -2695,7 +2761,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             }, Qt::BlockingQueuedConnection);
         }
         // T9: persist property-baseline snapshot after successful write.
-        if (m_baselineStore && m_engine && opsUCC) {
+        if (m_baselineStore && m_baselineStoreAnchor && opsUCC) {
             // baselineProperties is on DomainDefinition, not DomainOperations.
             // Re-look up via DomainRegistry using the same domain the ops cover.
             auto *ddUCC = m_shape.domain
@@ -2711,7 +2777,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
                 if (!snapshot.isEmpty()) {
                     Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-                    QMetaObject::invokeMethod(m_engine,
+                    QMetaObject::invokeMethod(m_baselineStoreAnchor,
                         [bbs, mappingId, srcColId, snapshot]() {
                             bbs->setCollectionBaseline(mappingId, srcColId, snapshot);
                         }, Qt::BlockingQueuedConnection);

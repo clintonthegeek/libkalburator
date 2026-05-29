@@ -2,6 +2,7 @@
 #define KALBURATOR_SYNCENGINE_H
 
 #include "enginediff.h"
+#include "mappingqueue.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "shape.h"
@@ -26,6 +27,7 @@
 #include <QFutureWatcher>
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace Kalburator::Storage {
@@ -94,245 +96,18 @@ class DomainOperations;
 
 namespace Kalburator::Engine {
 
-/**
- * @brief Internal worker class — runs sync operations on a background thread.
- *
- * Phase F1 Task 8 (2026-04-29): Formerly a standalone worker class in
- * src/calendar/ (deleted in this task). Folded into the engine's translation
- * unit. SyncEngine instantiates one of these and moves it to its
- * private QThread; the worker reaches collaborators (baseline stores, host,
- * calendar collection) via setDependencies.
- *
- * Sync phases handled here:
- * - Fetching records from source and target backends
- * - Computing 3-way diff via the unified dispatchSync path
- * - Handling conflicts based on mode (monitored/unmonitored)
- * - Applying changes to backends via the RecordWriter / IBlobBackend path
- * - Updating baselines
- *
- * Two sync modes are supported:
- * - Unmonitored: Conflicts are queued for later resolution, sync continues
- * - Monitored: Worker pauses on each conflict until user resolves it
- *
- * Signals use Qt::QueuedConnection for thread-safe cross-thread communication.
- */
-class SyncEngineWorker : public QObject
-{
-    Q_OBJECT
+// SyncEngineWorker has been moved to src/engine/syncengine_p.h as part
+// of Architectural-redress Plan 1 Task 2 (2026-05-29). It is a private
+// implementation detail of SyncEngine; only syncengine.cpp may include
+// the private header. External consumers (PlanStan, WildPalms, tests)
+// should use the public SyncEngine API below.
+class SyncEngineWorker;
 
-public:
-    /**
-     * @brief Sync mode determining conflict handling behavior.
-     */
-    enum class Mode {
-        Monitored,      ///< Pause on each conflict for user resolution
-        Unmonitored     ///< Queue conflicts and continue (deferred resolution)
-    };
-    Q_ENUM(Mode)
-
-    /**
-     * @brief Request for a sync operation.
-     */
-    struct Request {
-        SyncMapping mapping;        ///< The sync mapping to execute
-        Mode mode = Mode::Unmonitored;  ///< How to handle conflicts
-        bool useQuickPath = false;  ///< Use fast 2-way diff (no baselines)
-        QString collectionId;       ///< Collection ID for backend operations
-        ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
-    };
-
-    explicit SyncEngineWorker(const Kalburator::Shape::ShapeRegistries &shape,
-                              QObject *parent = nullptr);
-    ~SyncEngineWorker() override;
-
-    /**
-     * @brief Set dependencies before moving to thread.
-     * Must be called before moveToThread().
-     */
-    void setDependencies(ISyncHost *host,
-                         ICalendarCollection *collection,
-                         Kalburator::Storage::BaselineStore *baselineStore = nullptr,
-                         SyncEngine *engine = nullptr);
-
-public slots:
-    /**
-     * @brief Process a sync operation (called from worker thread).
-     */
-    void processSync(const SyncEngineWorker::Request &request);
-
-    /**
-     * @brief Resume after user resolves a conflict (monitored mode).
-     * Called from main thread when user completes conflict resolution dialog.
-     */
-    void resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal);
-
-    /**
-     * @brief Cancel the current sync operation.
-     */
-    void cancel();
-
-    /**
-     * @brief F2 Task 16: invoked via queued connection from
-     * SyncEngine::onCancelObserved when a QFutureWatcher::canceled
-     * fires on the engine side. Sets m_cancelled and emits
-     * cancellationObserved.
-     */
-    void observeCancel();
-
-private slots:
-    /**
-     * @brief F2 Task 20: handle cancellation that arrives while the
-     * worker is yielded for a monitored AskUser conflict.
-     *
-     * The conflict pause is not a QEventLoop — it's a state-machine
-     * yield (`m_yieldedForConflict = true; return;` in
-     * handleConflicts()). When cancellation observation fires while
-     * yielded, this slot tears the sync down via the cancelled-result
-     * path and emits syncCompleted. The conflict that was waiting on
-     * user resolution is left untouched in the persistent
-     * SyncConflictStore so the next run picks it up.
-     *
-     * Connected to `cancellationObserved` via DirectConnection in the
-     * worker constructor; both signal and slot run on the worker
-     * thread (observeCancel() is itself queued onto the worker
-     * thread), so direct invocation is safe.
-     */
-    void onCancelDuringConflictPause();
-
-public:
-    /// F2 Task 19: lock-free observation of the cancellation flag,
-    /// for use by the cancel oracle installed on the domain adapter.
-    /// Reads with acquire ordering — paired with the release store
-    /// in observeCancel().
-    bool isCancelled() const noexcept
-    {
-        return m_cancelled.load(std::memory_order_acquire);
-    }
-
-signals:
-    void syncStarted(const QString &mappingId);
-    void phaseChanged(const QString &mappingId, int phase);
-    void fetchProgress(const QString &calendarId, int current, int total);
-    void writeProgress(const QString &calendarId, int current, int total);
-    void conflictDetected(const ConflictInfo &conflict);
-    void conflictPauseRequested(const ConflictInfo &conflict);
-    void syncCompleted(const QString &mappingId, const SyncResult &result);
-    void syncError(const QString &mappingId, const QString &errorMessage);
-    void transcodingWarning(const QString &calendarId,
-                            const QString &uid,
-                            const QStringList &warnings);
-
-    // F2 Task 16: emitted from observeCancel() slot when cancellation
-    // is forwarded from the engine side (via Task 17's queued
-    // connection). Internal to the engine/worker pair. Used to wake
-    // nested QEventLoops in await<> and the conflict-pause loop.
-    void cancellationObserved();
-
-private:
-    /// F2 Task 16: run an inner QEventLoop until the operation
-    /// finishes OR cancellation is observed. On cancellation, request
-    /// the operation's own cancel() and re-enter the loop briefly
-    /// waiting for the operation to actually settle (operations are
-    /// not pre-emptible at the per-record level once started).
-    ///
-    /// Returns the same op pointer (caller still owns; typical
-    /// idiom: `auto *op = await(backend->fetchItems(id));` then
-    /// inspect op->state(), then op->deleteLater()).
-    ///
-    /// CRITICAL: must be called from the worker thread. Calling
-    /// from any other thread will run the inner QEventLoop on
-    /// that thread, defeating the cancellation observation
-    /// mechanism.
-    template <typename Op>
-    Op* await(Op *op)
-    {
-        static_assert(
-            std::is_base_of_v<SyncOperation, Op>,
-            "await<Op> requires Op to derive from SyncOperation");
-
-        if (!op) return op;
-        if (op->isFinished()) return op;
-
-        QEventLoop loop;
-        QObject::connect(op, &SyncOperation::finished,
-                         &loop, &QEventLoop::quit);
-        QObject::connect(this, &SyncEngineWorker::cancellationObserved,
-                         &loop, &QEventLoop::quit);
-        loop.exec();
-
-        if (m_cancelled.load(std::memory_order_acquire) && !op->isFinished()) {
-            op->cancel();
-            // Re-enter briefly waiting for the operation's own
-            // teardown (operations are not pre-emptible at the
-            // per-record level once started).
-            if (!op->isFinished()) {
-                QEventLoop teardownLoop;
-                QObject::connect(op, &SyncOperation::finished,
-                                 &teardownLoop, &QEventLoop::quit);
-                teardownLoop.exec();
-            }
-        }
-
-        return op;
-    }
-
-    void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
-                          SyncBackend *src,
-                          SyncBackend *tgt,
-                          const QString &srcCollectionId,
-                          const QString &tgtCollectionId,
-                          const QVariantMap &baseline,
-                          const SyncMapping &mapping);
-
-    // First-sync dispatch via the engine's blob mirror (Phase D Task 21)
-    bool dispatchFirstSync(const Request &request);
-    void harvestBaselinesAfterFirstSync(const Request &request);
-
-    // Unified domain dispatch (Phase Ia.5 Task 8). Compiles per-mapping
-    // shape pipelines and runs the diff/merge/apply path.
-    bool dispatchSync(const Request &request);
-
-    // Unified-path AskUser pause/resume helpers.
-    void unifiedHandleConflicts();
-    void unifiedContinueAfterConflicts();
-
-    QMutex m_mutex;
-
-    // F2 Task 14: cancellation observation flag. Set by observeCancel()
-    // slot (added in Task 17) when QFutureWatcher::canceled fires on the
-    // engine side and the engine forwards via queued connection.
-    // Upgraded from plain bool so concurrent observers see writes
-    // without taking m_mutex.
-    std::atomic<bool> m_cancelled{false};
-    bool m_yieldedForConflict = false;
-
-    // Unified-path pause/resume state (valid while m_yieldedForConflict is true).
-    EngineDiff m_unifiedDiff;
-    EngineMerge m_unifiedMerge;
-    int m_unifiedConflictIdx = 0;
-    ConflictResolution m_unifiedPolicy = ConflictResolution::SourceWins;
-    ExecutionOverride m_unifiedOverride;
-    Kalburator::Shape::Shape m_unifiedCanonical;
-    // Phase N.1: domain plugin's canonical differ + merger, acquired once per
-    // dispatchSync and retained across AskUser pause/resume.
-    std::unique_ptr<Kalburator::Shape::RecordDiffer> m_unifiedDiffer;
-    std::unique_ptr<Kalburator::Shape::RecordMerger> m_unifiedMerger;
-
-    QElapsedTimer m_totalTimer;
-    QElapsedTimer m_phaseTimer;
-
-    const Kalburator::Shape::ShapeRegistries &m_shape;
-    ISyncHost *m_controller = nullptr;
-    Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
-    ICalendarCollection *m_collection = nullptr;
-    // Back-pointer to the owning SyncEngine. dispatchSync uses
-    // QMetaObject::invokeMethod(m_engine, ...) to marshal baseline-store
-    // access back to the engine thread.
-    SyncEngine *m_engine = nullptr;
-
-    Request m_currentRequest;
-    SyncResult m_currentResult;
-};
+// Architectural-redress Plan 1 Task 4 (2026-05-29): canonical request
+// type for SyncEngine::runSync. Defined in syncrequest.h, which the
+// implementation (syncengine.cpp) includes; only forward-declared
+// here because the public surface takes it by const-reference.
+struct SyncRequest;
 
 /**
  * @brief Coordinates sync operations between backends according to sync mappings.
@@ -515,6 +290,21 @@ public:
     void setMappingEnabled(const QString &mappingId, bool enabled);
 
     /**
+     * @brief Canonical entry point — run sync per the request.
+     *
+     * Architectural-redress Plan 1 Task 4 (2026-05-29): the four
+     * `runSyncFuture()` overloads were collapsed into this single
+     * struct-parameterized form. See `engine/syncrequest.h` for the
+     * three dispatch shapes (all-enabled / subset / single) and how
+     * `mappingIds.size()` selects between them.
+     *
+     * The future completes with one SyncResult per dispatched mapping
+     * (empty list if no work). The future supports cancel() to request
+     * cancellation via the existing QFutureWatcher channel.
+     */
+    QFuture<QList<SyncResult>> runSync(const SyncRequest &request);
+
+    /**
      * @brief Run sync for one mapping. Future completes with the result.
      *
      * The QFuture supports cancel() to request cancellation; the
@@ -526,6 +316,7 @@ public:
      * is the load-bearing detail at call sites; renaming would churn
      * every Group 3 consumer migration without a clarity gain.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
@@ -538,6 +329,7 @@ public:
      * callers run temporary direction overrides without modifying
      * persistent sync configuration.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<SyncResult> runSyncFuture(
         const QString &mappingId,
         const ExecutionOverride &executionOverride,
@@ -547,6 +339,7 @@ public:
      * @brief Run sync for all enabled mappings. Future completes with
      *        the per-mapping result list (one entry per enabled mapping).
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<QList<SyncResult>> runSyncFuture(
         SyncBehavior behavior = SyncBehavior::Unmonitored);
 
@@ -556,6 +349,7 @@ public:
      *        Future completes with one SyncResult per dispatched mapping.
      *        G.6 Task 43.
      */
+    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
     QFuture<QList<SyncResult>> runSyncFuture(
         const QList<QString> &ids,
         SyncBehavior behavior = SyncBehavior::Unmonitored);
@@ -651,45 +445,61 @@ signals:
 
 private:
     /**
-     * @brief F2 Task 21: dispatch-mode tag tracking which entry path
-     * is currently driving the worker. Replaces the implicit shared
-     * state where both runSync overloads ran through processNextMapping
-     * and the single-mapping form double-dispatched after worker
-     * completion (see FINDINGS "SyncEngine::runSync(mappingId) is leaky").
-     */
-    enum class DispatchMode {
-        None,    ///< No sync in flight.
-        Single,  ///< runSyncFuture(mappingId, ...)
-        Queue    ///< runSyncFuture(behavior)
-    };
-
-    /**
      * @brief F2 Task 42: queue driver. Sets up state for a multi-mapping
      * run, runs active controllers + the fast-path pre-pass, and
      * delegates to processQueue() to start dispatching to the worker.
-     * Called only from runSyncFuture(behavior); the previous void
-     * runSync(behavior) public API was deleted in F2 Task 42.
+     * Called from both runSyncFuture(behavior) and runSyncFuture(ids,
+     * behavior); the filter argument distinguishes "all enabled" (nullopt)
+     * from "subset" (set of mapping IDs). Plan 1 Task 4 will fold the
+     * two arguments into one SyncRequest struct.
      */
-    void driveQueue(SyncBehavior behavior);
+    void driveQueue(SyncBehavior behavior,
+                    std::optional<QSet<QString>> filter = std::nullopt);
 
     /**
      * @brief F2 Task 21: single-mapping driver. Dispatches exactly the
      * named mapping to the worker once. Queue iteration is structurally
      * impossible — onWorkerSyncCompleted distinguishes Single vs Queue
-     * via m_dispatchMode and finishes immediately for Single.
+     * via m_queue.dispatchMode() and finishes immediately for Single.
      */
-    void processSingleMapping(const QString &mappingId, SyncBehavior behavior);
+    /// @p executionOverride is taken by value because ExecutionOverride's
+    /// default-constructed state (Direction::Default) means "no override" —
+    /// matching the worker Request::override field's convention. Plan 1
+    /// Task 5 (2026-05-29): inlined from the former m_pendingOverride
+    /// class member to eliminate the implicit-state-machine residue
+    /// (INVARIANTS §4 — "public API answers one question").
+    void processSingleMapping(const QString &mappingId,
+                              SyncBehavior behavior,
+                              ExecutionOverride executionOverride = {});
 
     /**
-     * @brief F2 Task 21: multi-mapping driver. Iterates m_syncMappings
-     * via re-entry from onWorkerSyncCompleted; per-mapping result is
-     * forwarded to m_currentMultiIface (if populated) at the end.
+     * @brief Architectural-redress Plan 1 Task 4 (2026-05-29): native
+     * single-mapping dispatcher. Sets up m_currentSingleIface +
+     * m_singleWatcher and calls processSingleMapping. Returns the
+     * single-iface future directly so callers see the F2 Task 23
+     * cancellation contract natively (resultCount() == 1 after cancel
+     * with cancelled=true). Used by the deprecated runSyncFuture(
+     * mappingId, …) shims (which return the future verbatim) and by
+     * the canonical runSync(SyncRequest) single-mapping branch (which
+     * .then()-wraps it; that wrapping loses cancellation-result
+     * preservation in Qt6 — documented in FINDINGS).
+     */
+    QFuture<SyncResult> dispatchSingleNative(
+        const QString &mappingId,
+        SyncBehavior behavior,
+        const std::optional<ExecutionOverride> &executionOverride);
+
+    /**
+     * @brief F2 Task 21: multi-mapping driver. Iterates the queue
+     * candidate list via re-entry from onWorkerSyncCompleted; per-mapping
+     * results accumulate inside MappingQueue and are forwarded to
+     * m_currentMultiIface (if populated) at run end.
      */
     void processQueue();
 
-    /// F2 Task 21 helper: advance m_currentMappingIndex to the next
-    /// enabled mapping (or past the end) and dispatch it; called from
-    /// processQueue() and from onWorkerSyncCompleted() during a Queue run.
+    /// F2 Task 21 helper: pop the next enabled+in-filter mapping from
+    /// MappingQueue and dispatch it; called from processQueue() and
+    /// from onWorkerSyncCompleted() during a Queue run.
     void advanceQueue();
 
     /**
@@ -748,51 +558,30 @@ private:
 
     bool m_isSyncing = false;
     bool m_cancelled = false;
-    int m_currentMappingIndex = -1;
     SyncResult m_lastResult;
 
-    // Task 9: per-call override set by runSyncFuture(mappingId, override, ...)
-    // and consumed + cleared by processSingleMapping before dispatching the
-    // worker Request. Cleared to Default after embedding in the Request so
-    // a subsequent no-override runSyncFuture(mappingId, ...) call does not
-    // inherit it.
-    ExecutionOverride m_pendingOverride;
-
-    // F2 Task 21: which entry-path drove the current run. Read by
-    // onWorkerSyncCompleted to decide whether to advance the queue
-    // or finish the single-mapping future.
-    DispatchMode m_dispatchMode = DispatchMode::None;
+    // Architectural-redress Plan 1 Task 3 (2026-05-29): per-run queue
+    // state moved into MappingQueue. Owns the mapping iteration cursor,
+    // the per-run SyncResult accumulator, the subset filter, the
+    // lost-resource set, and the DispatchMode tag. The engine reads
+    // and mutates the queue on its own thread (no locking; see
+    // mappingqueue.h class comment). Replaces seven scattered member
+    // fields with one collaborator (INVARIANTS §4).
+    MappingQueue m_queue;
 
     // F2 Task 21: pointers to the QFutureInterface for the current run.
-    // Only one is populated at a time (matched to m_dispatchMode); the
-    // unused one is nullptr. Owned by the engine — populated by the
+    // Only one is populated at a time (matched to MappingQueue::dispatchMode);
+    // the unused one is nullptr. Owned by the engine — populated by the
     // runSyncFuture overloads, cleared+deleted in onWorkerSyncCompleted
     // (Single) or after queue iteration completes (Queue). The void
     // runSync overloads leave both nullptr (legacy signal callers).
     QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
     QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
 
-    // F2 Task 21: per-mapping results accumulated during a Queue run,
-    // reported via m_currentMultiIface->reportResult() at the end.
-    QList<SyncResult> m_queueResults;
-
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
     QMap<QString, FreshSyncState> m_freshState;
-
-    // G.6 Task 43: subset filter for runSyncFuture(QList<QString>).
-    // m_hasMappingFilter distinguishes "no filter" from "empty filter".
-    // When true, advanceQueue skips mappings whose id is not in m_mappingIdFilter.
-    // An empty m_mappingIdFilter with m_hasMappingFilter=true means "run nothing".
-    bool m_hasMappingFilter = false;
-    QSet<QString> m_mappingIdFilter;
-
-    // G.6 Task 46: resource IDs that became unavailable mid-queue.
-    // advanceQueue adds a cancelled SyncResult for any pending mapping
-    // whose source or target backend's resourceId() is in this set.
-    // Cleared at queue completion or when a new queue run starts.
-    QSet<QString> m_lostResources;
 
     // G.6 Task 44: resource-aware FIFO scheduler. Tracks mapping→resource
     // sets for cancelWithReason(ResourceLost). The engine still drives
@@ -817,7 +606,9 @@ private:
 
     // Sync state tracking
     SyncPhase m_currentPhase = SyncPhase::Idle;
-    SyncResult m_currentMappingResult;
+    // P1.T3 (2026-05-29): the former m_currentMappingResult member was
+    // dead — set once in onWorkerSyncCompleted and never read by any
+    // slot or accessor. Removed rather than folded into MappingQueue.
 
     QMap<QString, DecSyncActiveController*> m_activeControllers;
 
@@ -831,10 +622,11 @@ private:
 // K.5.5 compatibility: consumers use Sync::SyncEngine
 namespace Kalburator::Sync {
 using SyncEngine = Kalburator::Engine::SyncEngine;
-using SyncEngineWorker = Kalburator::Engine::SyncEngineWorker;
+// Note: SyncEngineWorker moved to src/engine/syncengine_p.h (Plan 1 Task 2).
+// It is no longer part of the public API surface.
 } // namespace Kalburator::Sync
 
-Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Request)
-Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Mode)
+// Metatype declarations for SyncEngineWorker::Request / ::Mode live in
+// the private header syncengine_p.h alongside the class.
 
 #endif // KALBURATOR_SYNCENGINE_H

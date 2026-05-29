@@ -1,48 +1,98 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-05-29 (audit rebaselined)
-**Branch:** `docs/audit-v2-rebaseline` for this re-baseline; each plan later opens its own
-`feature/redress-N-<slug>` branch. Campaign docs live on `main`.
-**State:** **Audit rebaselined.** The original 2026-05-28 audit and its nine drafted plans
-were found to rest on material factual errors (see `AUDIT.md` provenance) and have been
-**archived under `archive/`**. The new `AUDIT.md` is a verified rebuild (139-agent run,
-every finding adversarially checked against source). The fix-plan sequence has **not** yet
-been re-derived from it.
+**Last updated:** 2026-05-29 (audit rebaselined; Plan 1 merged)
+**Branch:** Campaign docs live on `main`. Plan 1 (SyncEngine) is merged to `main`; each
+subsequent plan opens its own `feature/redress-N-<slug>` branch.
+**State:** **Audit rebaselined** and **Plan 1 (SyncEngine decomposition) merged.** The original
+2026-05-28 audit and its nine drafted plans rested on material factual errors (see `AUDIT.md`
+provenance) and are **archived under `archive/`**. The new `AUDIT.md` is a verified rebuild
+(139-agent run, every finding adversarially checked against source). The remaining fix-plan
+sequence is being re-derived from it.
 
 ## Next action
 
-**Re-derive the plan sequence** from the verified `AUDIT.md`. The root cause (the
-calendar-typed sync core — two CRITICALs plus the cluster of cross-domain MAJORs it
-generates) is the natural Plan 1; sequencing of the rest is open. Do this with the
-`writing-plans` discipline (P1–P4 below) before opening any `feature/redress-N` branch.
+Plan 1 is merged. **Detail the next plan — the `CalendarManager` safety net** (protective tests
+for its untested destructive CRUD; AUDIT CRITICAL #4), using the `writing-plans` discipline
+(P1–P4). The calendar-typed-sync-core CRITICALs (#1–#3) are the keystone structural plan that
+follows. Re-confirm the full sequence below as each plan lands.
 
 ## What changed in the rebaseline
 
 - `AUDIT.md` ← verified rebuild (was the 2026-05-28 four-agent audit).
 - `archive/AUDIT-2026-05-28-original.md` ← the superseded audit, preserved (invariant 7).
-- `archive/plans-2026-05-28-original/` ← the nine drafted plans, preserved. **They are
-  superseded, not authoritative.** Mine them for task ideas only after checking the new
-  audit agrees.
-- `archive/audit-v2-findings.json` ← the raw verified payload (80 survivors, 23 rejected)
-  behind `AUDIT.md`.
+- `archive/plans-2026-05-28-original/` ← the nine drafted plans, preserved. **Superseded, not
+  authoritative.** Mine for task ideas only after checking the new audit agrees.
+- `archive/audit-v2-findings.json` ← the raw verified payload (80 survivors, 23 rejected).
 
-## Prior code work to reconcile
+## Prior code work reconciled
 
-- **Plan 1 (SyncEngine decomposition)** was completed on branch
-  `feature/redress-1-syncengine` (closed at `6d77bdd`), **not merged to `main`**. The
-  verified audit downgrades the old B1 from CRITICAL to MAJOR (worker completion is
-  correctly wired via `Qt::QueuedConnection`; the prior `invokeMethod` claim was false) but
-  confirms `SyncEngine` is still a god class. Decide during re-sequencing whether to merge
-  that branch as-is, rebase it, or fold its goals into the new sequence.
-- **Plan 2 (cycle break)** branch `feature/redress-2-cycle-break` exists but is empty
-  (scaffolding only). Its premise — a `sync/↔calendar/` *cycle* — was refuted; the real
-  defect is the one-way calendar-typed-core violation. Re-scope or delete the branch.
+- **Plan 1 (SyncEngine decomposition) — MERGED to `main` 2026-05-29** (verified green on merge:
+  incremental build clean, ctest 131/131). Under the verified audit this resolves most of the
+  corrected B1 (now MAJOR); `SyncEngine` remains a god class, tracked for the later
+  decomposition plan. Outcome detail below.
+- **`feature/redress-2-cycle-break`** is empty scaffolding. Its premise — a `sync/↔calendar/`
+  *cycle* — was refuted; the real defect is the one-way calendar-typed-core violation. Re-scope
+  or delete the branch.
+
+## Plan 1 outcome (2026-05-29, merged)
+
+Six tasks completed across nine commits (T1 + qWait fix, T2 four-commit collapse + review fixes
++ FINDINGS, T3 two-commit MappingQueue + FINDINGS, T4 unified commit incl. fix-up + FINDINGS, T5
+single commit). Final state:
+
+| Metric | Before | After | Delta |
+|---|---|---|---|
+| `syncengine.h` LOC | 840 | 632 | −208 (−25%) |
+| `syncengine.cpp` LOC | 2780 | 2846 | +66 (+2%) |
+| `syncengine_p.h` LOC | — | 365 | new (worker private impl) |
+| `mappingqueue.{h,cpp}` LOC | — | 250 + 92 | new (queue collaborator) |
+| `syncrequest.h` LOC | — | 64 | new (canonical request) |
+| **engine surface total** | 3620 | 4249 | +629 (richer structure, fewer responsibilities per file) |
+
+Structural wins:
+- `SyncEngineWorker` is private impl (`syncengine_p.h`), not publicly declared.
+- Queue state lives in `MappingQueue` (one collaborator) instead of seven sprawled fields.
+- `runSync(SyncRequest)` is the canonical entry; four overloads marked `[[deprecated]]`.
+- `m_pendingOverride` no longer an implicit state machine — flows as parameter.
+- Zero `QMetaObject::invokeMethod(m_*, "stringName", ...)` cross-class slot calls.
+
+Deferred (per FINDINGS, all to a later plan):
+- Forward decl `class SyncEngineWorker;` remains in `syncengine.h` (PIMPL deepening is a
+  separate refactor).
+- `m_baselineStoreAnchor` thread-anchor pattern (full ablation needs thread-safe `BaselineStore`).
+- Dual `m_currentSingleIface` / `m_currentMultiIface` (collapses naturally when deprecated shims
+  are deleted in the vocabulary/cleanup plan).
+- `SyncRequest` cannot express "explicitly empty subset" (no canonical-API consumer needs it
+  yet).
+- Two paper-cut overlap-rejection result shapes (pre-existing, surfaced in T4 review).
+
+The F2 Task 23 cancellation contract (`resultCount() == 1` with `resultAt(0).cancelled == true`
+after `reportCanceled()`) is preserved via asymmetric routing (deprecated single-mapping shims
+bypass the canonical `runSync(SyncRequest)` because Qt6's `QFuture::then()` drops continuations
+on canceled sources).
 
 ## Plan sequence and dependencies
 
-**To be re-derived.** (The old table referenced the archived plans and the wrong B4; it is
-intentionally removed rather than left to mislead.) When re-derived, restate the order and
-each plan's audit refs + dependencies here.
+**Being re-derived from the verified `AUDIT.md`.** Proposed backbone (sequencing open to
+revision; only the next plan is detailed at any time, per invariant P1). Items map to AUDIT
+severities, not the retired old plan numbers:
+
+| # | Plan | AUDIT refs | State |
+|---|---|---|---|
+| 1 | SyncEngine decomposition | B1 (MAJOR, corrected) | **DONE — merged 2026-05-29** |
+| 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **next — being detailed** |
+| 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | proposed (keystone) |
+| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) | proposed |
+| 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
+| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
+| 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
+| 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
+| 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
+| 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
+| 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
+
+Per invariant P1, only the next plan carries task-level detail; later plans get detail once
+their prerequisites land.
 
 ## Locked decisions
 
@@ -56,6 +106,8 @@ the invariant or audit finding. Format:
 - **2026-05-29 — Audit rebaselined; the 2026-05-28 audit + 9 plans are archived, not
   authoritative.** They contained factual errors that survived four-agent cross-validation;
   the verified rebuild added an adversarial gate. (See `AUDIT.md` provenance.)
+- **2026-05-29 — Plan 1 (SyncEngine decomposition) merged to `main`** after verified-green
+  build + ctest 131/131. (Corrected B1.)
 - **2026-05-29 — REVISED: the SyncBackend ownership decision.** The old decision ("`SyncBackend`
   base moves to `sync/`; calendar/ has a competing base") rested on the wrong B4. Reality:
   the neutral base `SyncBackendBase` **already lives in `sync/`** and `calendar/SyncBackend`
