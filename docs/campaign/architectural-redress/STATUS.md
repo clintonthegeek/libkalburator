@@ -14,10 +14,14 @@ names a calendar type; 133 tests green incl. a proof-of-neutrality test.
 
 ## Next action
 
-Plans 1–3 are landed. **Next: detail Plan 4 — the correctness/ownership sweep** (raw-pointer
-lifetimes, `RawFilesBackend` thread-safety, silent SQLite/DELETE failures, `MockBlobBackend`
-false-greens — the MAJOR latent bugs), using the `writing-plans` discipline (P1–P4). Re-confirm
-the full sequence below as each plan lands.
+Plans 1–3 are landed; **Plan 4 is now detailed** at
+`plans/plan-4-correctness-ownership-sweep.md` (7 tasks). **Next: execute Plan 4** on branch
+`feature/redress-4-correctness-ownership-sweep` — fix the five MAJOR correctness/ownership bugs
+(`MockBlobBackend` false-greens, silent SQLite DELETE/DROP, RawFiles/GenericSqlite collection-hash
+race, raw `bool*` UAF in `CardDavProvider`, raw `QFutureInterface*` leak in `SyncEngine`) plus the
+folded same-file `QPromise*` MODERATE. Two scope decisions were locked while detailing (see ledger:
+folded the `QPromise*` MODERATE per a documented INVARIANTS §8 deviation; thread-safety fix = add a
+`QMutex`). Re-confirm the full sequence below as each plan lands.
 
 ## What changed in the rebaseline
 
@@ -87,7 +91,7 @@ severities, not the retired old plan numbers:
 | 1 | SyncEngine decomposition | B1 (MAJOR, corrected) | **DONE — merged 2026-05-29** |
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
-| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) | **next — to be detailed** |
+| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **detailed — ready to execute (`plans/plan-4-correctness-ownership-sweep.md`)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
