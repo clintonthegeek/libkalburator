@@ -90,20 +90,19 @@ class SyncEngineWorker final : public QObject
 
 public:
     /**
-     * @brief Sync mode determining conflict handling behavior.
-     */
-    enum class Mode {
-        Monitored,      ///< Pause on each conflict for user resolution
-        Unmonitored     ///< Queue conflicts and continue (deferred resolution)
-    };
-    Q_ENUM(Mode)
-
-    /**
      * @brief Request for a sync operation.
+     *
+     * Plan 1 Task 2 (2026-05-29): the worker's own Mode enum was
+     * deleted in favour of SyncEngine::SyncBehavior — the public API
+     * already exposed an identical 2-value enum (Monitored /
+     * Unmonitored), so the worker's parallel definition was a
+     * duplicate. The field name is `behavior` to match the public
+     * API verb.
      */
     struct Request {
         SyncMapping mapping;        ///< The sync mapping to execute
-        Mode mode = Mode::Unmonitored;  ///< How to handle conflicts
+        SyncEngine::SyncBehavior behavior =
+            SyncEngine::SyncBehavior::Unmonitored;  ///< Conflict handling mode
         bool useQuickPath = false;  ///< Use fast 2-way diff (no baselines)
         QString collectionId;       ///< Collection ID for backend operations
         ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
@@ -359,6 +358,8 @@ private:
 } // namespace Kalburator::Engine
 
 Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Request)
-Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Mode)
+// SyncEngineWorker::Mode was collapsed into SyncEngine::SyncBehavior in
+// Plan 1 Task 2 (2026-05-29). SyncBehavior already has Q_ENUM in
+// syncengine.h; no separate Q_DECLARE_METATYPE needed for the worker.
 
 #endif // KALBURATOR_SYNCENGINE_P_H

@@ -132,13 +132,10 @@ void SyncEngine::setupWorkerConnections()
     connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
 
-    // Plan 1 Task 2 (2026-05-29) — engine→worker command-channel.
-    // Replaces the string-form QMetaObject::invokeMethod(m_worker, "...",
-    // QueuedConnection, Q_ARG(...)) calls. SyncEngine emits the *Requested
-    // signals on m_worker (signals are public functions in Qt); Qt routes
-    // them across the thread boundary via Qt::QueuedConnection. Self-
-    // connection on m_worker is intentional — the engine doesn't own
-    // these signals, the worker does, but the engine is the sole emitter.
+    // Engine→worker command channel (replaces string-form invokeMethod).
+    // SyncEngine emits these *Requested signals on m_worker; Qt's
+    // QueuedConnection routes them across the thread boundary to the
+    // matching slots. Signals are public in Qt, so external emit is fine.
     connect(m_worker, &SyncEngineWorker::processSyncRequested,
             m_worker, &SyncEngineWorker::processSync, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::observeCancelRequested,
@@ -157,11 +154,9 @@ void SyncEngine::startWorkerThread()
         return;
     }
 
-    // Set dependencies before moving to thread.
-    // Plan 1 Task 2 (2026-05-29): pass `this` as the baseline-store
-    // thread anchor (engine thread owns BaselineStore), and pass the
-    // mass-delete guard explicitly — previously the worker reached
-    // both via a back-pointer.
+    // Set dependencies before moving to thread. `this` is the thread
+    // anchor for BaselineStore access; m_massDeleteGuard is pushed in
+    // directly (no back-pointer).
     m_worker->setDependencies(m_controller, m_collection,
                               m_baselineStore,
                               this,
@@ -218,10 +213,8 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
 {
     m_massDeleteGuard = guard;
-    // Plan 1 Task 2 (2026-05-29): push to worker via queued invocation
-    // so updates take effect on the worker thread without sharing
-    // unsynchronized state. Replaces the previous pattern where the
-    // worker reached the live guard through a SyncEngine back-pointer.
+    // Propagate to the worker thread via queued invocation so updates
+    // take effect on the next sync cycle without unsynchronized state.
     if (m_worker) {
         QMetaObject::invokeMethod(m_worker,
             [w = m_worker, guard]() {
@@ -441,9 +434,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // Create request and invoke worker
             SyncEngineWorker::Request request;
             request.mapping = mapping;
-            request.mode = (behavior == SyncBehavior::Monitored)
-                ? SyncEngineWorker::Mode::Monitored
-                : SyncEngineWorker::Mode::Unmonitored;
+            request.behavior = behavior;
             request.collectionId = m_collection ? m_collection->id() : QString();
             request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
             // Task 9: embed the per-call override (if any) and clear it so the
@@ -451,8 +442,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             request.override = m_pendingOverride;
             m_pendingOverride = ExecutionOverride{};
 
-            // Plan 1 Task 2 (2026-05-29): emit the command-channel
-            // signal on the worker; QueuedConnection routes to worker thread.
+            // Command-channel: QueuedConnection routes to worker thread.
             emit m_worker->processSyncRequested(request);
             return;
         }
@@ -628,7 +618,6 @@ void SyncEngine::onCancelObserved()
     if (!m_worker) {
         return;
     }
-    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
     emit m_worker->observeCancelRequested();
 }
 
@@ -667,7 +656,6 @@ void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
     qDebug() << "SyncEngine::resumeAfterConflictResolution - resolution:"
              << static_cast<int>(resolution);
 
-    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
     emit m_worker->resumeAfterConflictRequested(resolution, mergedIcal);
 }
 
@@ -897,12 +885,10 @@ void SyncEngine::advanceQueue()
     // Create request and invoke worker directly
     SyncEngineWorker::Request request;
     request.mapping = mapping;
-    request.mode = (m_currentSyncBehavior == SyncBehavior::Monitored)
-        ? SyncEngineWorker::Mode::Monitored : SyncEngineWorker::Mode::Unmonitored;
+    request.behavior = m_currentSyncBehavior;
     request.collectionId = m_collection ? m_collection->id() : QString();
     request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
 
-    // Plan 1 Task 2 (2026-05-29): emit command-channel signal.
     emit m_worker->processSyncRequested(request);
 
     // NOTE: Do NOT recurse here!
@@ -1356,7 +1342,6 @@ WriterBatch classifyForWriter(
 // Register metatypes for cross-thread signal/slot.
 const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<SyncEngineWorker::Request>("SyncEngineWorker::Request");
-    qRegisterMetaType<SyncEngineWorker::Mode>("SyncEngineWorker::Mode");
     qRegisterMetaType<ConflictResolution>("ConflictResolution");
     qRegisterMetaType<ConflictInfo>("ConflictInfo");
     qRegisterMetaType<SyncResult>("SyncResult");
@@ -1402,9 +1387,9 @@ void SyncEngineWorker::setDependencies(ISyncHost *host,
     m_massDeleteGuard = massDeleteGuard;
 }
 
-// Plan 1 Task 2 (2026-05-29): queued-connection setter for the
-// mass-delete guard. SyncEngine::setMassDeleteGuard pushes updates
-// here so the worker thread sees a consistent snapshot per sync cycle.
+// Queued-connection setter for the mass-delete guard. Pushed from
+// SyncEngine::setMassDeleteGuard so the worker thread sees a consistent
+// snapshot per sync cycle (no shared mutable state).
 void SyncEngineWorker::setMassDeleteGuardFromEngine(
     Kalburator::Conflict::IMassDeleteGuard *guard)
 {
@@ -1445,7 +1430,8 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
              request.mapping.targetBackend, request.mapping.targetCalendar);
     qDebug() << "  mapping:" << request.mapping.id
              << "mode:" << syncModeStr(request.mapping.mode)
-             << (request.mode == Mode::Monitored ? "(monitored)" : "(unmonitored)");
+             << (request.behavior == SyncEngine::SyncBehavior::Monitored
+                     ? "(monitored)" : "(unmonitored)");
 
     m_totalTimer.start();
 
@@ -2321,7 +2307,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
 
         // Conflict op.
         if (effectivePolicy == ConflictResolution::AskUser) {
-            if (m_currentRequest.mode == Mode::Monitored) {
+            if (m_currentRequest.behavior == SyncEngine::SyncBehavior::Monitored) {
                 // Yield: store position, set flag, emit signal, return.
                 // resumeAfterConflict will re-enter this method from index i.
                 m_unifiedConflictIdx = i;
