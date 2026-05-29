@@ -51,6 +51,22 @@ LogicalCalendar makeLogical(const QString &logicalId,
     lc.bindings.append(b);
     return lc;
 }
+
+// Task 3: helper — two-backend logical with both needing creation.
+LogicalCalendar makeTwoBackendLogical()
+{
+    LogicalCalendar lc = makeLogical(QString::fromLatin1(kLogicalId),
+                                     QString::fromLatin1(kBackendA),
+                                     QString::fromLatin1(kCalId), true);
+    CalendarBackendBinding spoke;
+    spoke.backendId     = QString::fromLatin1(kBackendB);
+    spoke.calendarId    = QString::fromLatin1(kCalIdB);
+    spoke.role          = BackendRole::Sync1;
+    spoke.enabled       = true;
+    spoke.needsCreation = true;
+    lc.bindings.append(spoke);
+    return lc;
+}
 } // namespace
 
 class TestCalendarManager : public QObject
@@ -66,6 +82,9 @@ private slots:
     // Task 2
     void createCalendar_needsCreation_createsOnBackend_emitsSignal();
     void createCalendar_registersInConfig_clearsNeedsCreation();
+
+    // Task 3
+    void createCalendar_oneBackendFails_otherStillCreated_noRollback();
 
 private:
     std::unique_ptr<BackendRegistry> m_registry;
@@ -133,6 +152,25 @@ void TestCalendarManager::createCalendar_registersInConfig_clearsNeedsCreation()
     QCOMPARE(stored.id, QString::fromLatin1(kLogicalId));
     QCOMPARE(stored.primaryBinding().needsCreation, false);
     QVERIFY(m_host->stubConfig()->saveCount() >= 1);
+}
+
+// ============================================================
+// Task 3 — createCalendar partial failure is non-atomic
+// ============================================================
+
+void TestCalendarManager::createCalendar_oneBackendFails_otherStillCreated_noRollback()
+{
+    m_backendB->setFailurePoint(MockBackend::FailurePoint::OnCreateCalendar, 0,
+                                QStringLiteral("injected create failure"));
+    QSignalSpy failed(m_mgr.get(), &CalendarManager::operationFailed);
+    const CreationResult r = m_mgr->createCalendar(makeTwoBackendLogical());
+    QVERIFY(!r.success);
+    QVERIFY(!r.errors.isEmpty());
+    QCOMPARE(r.backendResults.value(QString::fromLatin1(kBackendA)), true);
+    QCOMPARE(r.backendResults.value(QString::fromLatin1(kBackendB)), false);
+    QVERIFY(failed.count() >= 1);
+    QVERIFY(m_backendA->calendarIds().contains(QString::fromLatin1(kCalId)));
+    QVERIFY(!m_backendB->calendarIds().contains(QString::fromLatin1(kCalIdB)));
 }
 
 QTEST_MAIN(TestCalendarManager)

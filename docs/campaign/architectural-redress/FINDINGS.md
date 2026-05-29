@@ -75,6 +75,13 @@ address — load-bearing knowledge, not audit restatements.
   PIMPL (`std::unique_ptr<SyncEnginePrivate>`) would remove even the forward decl. Future
   refactor candidate.
 
+### From Plan 2 (CalendarManager safety net, 2026-05-29)
+
+- 2026-05-29 — `src/calendar/calendarmanager.cpp:43-139` — inv (correctness) — `createCalendar`
+  is non-atomic across bindings: a per-backend failure leaves already-created backends in place
+  with no rollback (pinned by `tst_calendar_manager::createCalendar_oneBackendFails_*`). The
+  CalendarManager split must decide whether to add transactional semantics.
+
 ## Resolved
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)
