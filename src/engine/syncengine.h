@@ -568,14 +568,12 @@ private:
     // fields with one collaborator (INVARIANTS §4).
     MappingQueue m_queue;
 
-    // F2 Task 21: pointers to the QFutureInterface for the current run.
-    // Only one is populated at a time (matched to MappingQueue::dispatchMode);
-    // the unused one is nullptr. Owned by the engine — populated by the
-    // runSyncFuture overloads, cleared+deleted in onWorkerSyncCompleted
-    // (Single) or after queue iteration completes (Queue). The void
-    // runSync overloads leave both nullptr (legacy signal callers).
-    QFutureInterface<SyncResult>* m_currentSingleIface = nullptr;
-    QFutureInterface<QList<SyncResult>>* m_currentMultiIface = nullptr;
+    // Only one is populated at a time (single vs. queue run); the other is
+    // null. Owned by unique_ptr so the destructor frees any in-flight iface
+    // automatically (Plan 4 leak fix — AUDIT MAJOR "raw QFutureInterface*
+    // without lifecycle management").
+    std::unique_ptr<QFutureInterface<SyncResult>> m_currentSingleIface;
+    std::unique_ptr<QFutureInterface<QList<SyncResult>>> m_currentMultiIface;
 
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
