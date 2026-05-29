@@ -1,13 +1,16 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-05-29 (audit rebaselined; Plan 1 merged)
+**Last updated:** 2026-05-29 (audit rebaselined; Plans 1 & 2 merged)
 **Branch:** Campaign docs live on `main`. Plan 1 (SyncEngine) is merged to `main`; each
 subsequent plan opens its own `feature/redress-N-<slug>` branch.
-**State:** **Audit rebaselined** and **Plan 1 (SyncEngine decomposition) merged.** The original
-2026-05-28 audit and its nine drafted plans rested on material factual errors (see `AUDIT.md`
-provenance) and are **archived under `archive/`**. The new `AUDIT.md` is a verified rebuild
-(139-agent run, every finding adversarially checked against source). The remaining fix-plan
-sequence is being re-derived from it.
+**State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition) and 2 (CalendarManager
+safety net) merged to `main`.** The original 2026-05-28 audit and its nine drafted plans rested
+on material factual errors (see `AUDIT.md` provenance) and are **archived under `archive/`**.
+The new `AUDIT.md` is a verified rebuild (139-agent run, every finding adversarially checked
+against source). Plan 2 added 17 characterization tests and **pinned three real latent bugs**
+(see FINDINGS: `DisconnectSync` stale-`logCal` overwrite, non-atomic `createCalendar`,
+`restoreFromSnapshot` stub) plus a pre-existing `tst_engine_cancellation` flake — all to be
+addressed by the relevant later plans.
 
 ## Next action
 
@@ -30,9 +33,11 @@ sequence below as each plan lands.
   incremental build clean, ctest 131/131). Under the verified audit this resolves most of the
   corrected B1 (now MAJOR); `SyncEngine` remains a god class, tracked for the later
   decomposition plan. Outcome detail below.
-- **`feature/redress-2-cycle-break`** is empty scaffolding. Its premise — a `sync/↔calendar/`
-  *cycle* — was refuted; the real defect is the one-way calendar-typed-core violation. Re-scope
-  or delete the branch.
+- **Plan 2 (CalendarManager safety net) — MERGED to `main` 2026-05-29** (`feature/redress-2-calendarmanager-tests`,
+  17 tests, verified green, code-reviewed). Test-only; pinned three latent bugs (above) without
+  touching production code.
+- **`feature/redress-2-cycle-break`** (original empty scaffolding, premise refuted) was
+  **deleted** 2026-05-29.
 
 ## Plan 1 outcome (2026-05-29, merged)
 
