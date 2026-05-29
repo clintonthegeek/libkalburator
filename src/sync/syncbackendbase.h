@@ -79,16 +79,15 @@ public:
     }
 
     // ========== Operation-Based API ==========
-    // BackendRecord-id-typed CRUD; the operation HANDLE types
-    // (`FetchOperation`, `PushOperation`, `DeleteOperation`) are
-    // forward-declared here — their headers include KCalendarCore but
-    // their use-points (engine, calendar plugin) include them
-    // explicitly. The base API exposes:
-    //   - fetchItems(colId)               -> FetchOperation*
-    //   - deleteItems(colId, uids)        -> DeleteOperation*
-    // The Incidence::Ptr-typed `pushItems(...)` overload lives on the
-    // calendar-typed `SyncBackend` subclass (would require pulling
-    // KCalendarCore::Incidence into the base header).
+    // BackendRecord-id-typed CRUD. The base API returns the neutral
+    // `SyncOperation` handle (sync/syncoperation.h, no KCalendarCore):
+    //   - fetchItems(colId)               -> SyncOperation*
+    //   - deleteItems(colId, uids)        -> SyncOperation*
+    // Calendar backends override these covariantly to return the
+    // calendar-typed `FetchOperation`/`DeleteOperation` subclasses; the
+    // Incidence::Ptr-typed `pushItems(...)` overload lives only on the
+    // calendar-typed `SyncBackend` subclass. (Plan 3: this base no longer
+    // names any KCalendarCore-bearing type.)
 
     virtual SyncOperation* fetchItems(const QString &calendarId);
     virtual SyncOperation* deleteItems(const QString &calendarId,
