@@ -1,5 +1,6 @@
 build/
 build-*/
+.worktrees/
 compile_commands.json
 *.swp
 *.o
