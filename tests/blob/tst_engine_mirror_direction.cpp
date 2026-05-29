@@ -198,12 +198,12 @@ public:
         : m_reg(reg) {}
 
     SyncBackend *backendById(const QString &id) override
-        { return m_reg->backendInstance(id); }
+        { return static_cast<SyncBackend*>(m_reg->backendInstance(id)); }
     QHash<QString, SyncBackend*> backends() override
     {
         QHash<QString, SyncBackend*> result;
         for (const QString &id : m_reg->registeredInstanceIds())
-            result.insert(id, m_reg->backendInstance(id));
+            result.insert(id, static_cast<SyncBackend*>(m_reg->backendInstance(id)));
         return result;
     }
     Kalburator::Sync::ISyncConfigStore *configStore() override

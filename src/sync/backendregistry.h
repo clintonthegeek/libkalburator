@@ -6,6 +6,7 @@
 #include <QString>
 #include <memory>
 #include "backendcontribution.h"
+#include "syncbackendbase.h"
 
 namespace Kalburator::Sync {
 
@@ -31,7 +32,7 @@ public:
      * Used by CollectionController to make backends accessible
      * to the SyncRouter by their configured ID.
      */
-    void registerBackendInstance(const QString &backendId, SyncBackend *backend);
+    void registerBackendInstance(const QString &backendId, SyncBackendBase *backend);
 
     /**
      * @brief Unregister a backend instance.
@@ -41,7 +42,7 @@ public:
     /**
      * @brief Get a registered backend instance by ID.
      */
-    SyncBackend* backendInstance(const QString &backendId) const;
+    SyncBackendBase* backendInstance(const QString &backendId) const;
 
     /**
      * @brief Get all registered backend instance IDs.
@@ -102,7 +103,7 @@ signals:
     void contributionUnregistered(const QString &backendType);
 
 private:
-    QMap<QString, SyncBackend*> m_instances;
+    QMap<QString, SyncBackendBase*> m_instances;
     QMap<QString, std::shared_ptr<BackendContribution>> m_contributions;
 };
 

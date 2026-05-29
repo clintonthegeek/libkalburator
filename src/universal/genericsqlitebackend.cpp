@@ -14,7 +14,7 @@ namespace Kalburator::Sinks {
 static int s_connCounter = 0;
 
 GenericSqliteBackend::GenericSqliteBackend(QString dbPath, QObject *parent)
-    : Kalburator::Sync::SyncBackend(parent)
+    : Kalburator::Sync::SyncBackendBase(parent)
     , m_dbPath(std::move(dbPath))
     , m_baseConnectionName(QStringLiteral("generic-sqlite-%1").arg(++s_connCounter))
 {

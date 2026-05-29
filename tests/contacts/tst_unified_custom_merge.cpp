@@ -186,14 +186,14 @@ public:
 
     SyncBackend *backendById(const QString &id) override
     {
-        return m_registry ? m_registry->backendInstance(id) : nullptr;
+        return m_registry ? static_cast<SyncBackend*>(m_registry->backendInstance(id)) : nullptr;
     }
     QHash<QString, SyncBackend *> backends() override
     {
         QHash<QString, SyncBackend *> out;
         if (!m_registry) return out;
         for (const auto &id : m_registry->registeredInstanceIds())
-            out.insert(id, m_registry->backendInstance(id));
+            out.insert(id, static_cast<SyncBackend*>(m_registry->backendInstance(id)));
         return out;
     }
     ISyncConfigStore *configStore() override { return nullptr; }

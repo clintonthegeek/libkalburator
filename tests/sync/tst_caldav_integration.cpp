@@ -216,7 +216,7 @@ void TstCalDavIntegration::registered_backend_is_a_remote_backend()
     const QString backendId =
         QStringLiteral("acct-type:%1").arg(cols.first().id);
 
-    SyncBackend *sb = registry.backendInstance(backendId);
+    SyncBackend *sb = static_cast<SyncBackend*>(registry.backendInstance(backendId));
     QVERIFY2(sb != nullptr,
              qPrintable(QStringLiteral("registry has no backend for ") + backendId));
 

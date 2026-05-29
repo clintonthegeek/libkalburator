@@ -3,7 +3,7 @@
 #include <QHash>
 #include <QString>
 
-#include "syncbackend.h"
+#include "syncbackendbase.h"
 #include "shape.h"
 
 namespace Kalburator::Sinks {
@@ -24,7 +24,7 @@ namespace Kalburator::Sinks {
 /// (PalmRuntime does this on every device connect). The on-disk
 /// _shapes.json manifest still persists CollectionInfo (name/type)
 /// for discovery, but not shape.
-class RawFilesBackend : public Kalburator::Sync::SyncBackend {
+class RawFilesBackend : public Kalburator::Sync::SyncBackendBase {
     Q_OBJECT
 public:
     explicit RawFilesBackend(QString rootPath, QObject *parent = nullptr);
