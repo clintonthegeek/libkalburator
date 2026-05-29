@@ -8,3 +8,13 @@ compile_commands.json
 *.a
 .clangd/
 .cache/
+
+# In-source CMake build artifacts (builds belong in build/ — see CLAUDE.md)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+_deps/
+.qt/
+Testing/
