@@ -101,3 +101,13 @@ kalburator_add_engine_test(tst_perrecorddiff)
 # writer (Task 6). Integration test (StubSyncHost + MockBackend).
 kalburator_add_engine_integration_test(tst_engine_write_gate)
 target_link_libraries(tst_engine_write_gate PRIVATE Qt6::Sql)
+
+# Architectural-redress Plan 1 Task 1 — SyncEngine/SyncEngineWorker
+# unification protective tests. Pins queue iteration order, conflict
+# pause/resume round trip, and cancellation propagation through the
+# worker yield path. These are the contract the decomposition in
+# Tasks 2-6 must preserve (INVARIANTS §6).
+kalburator_add_engine_integration_test(tst_syncengine_unification)
+target_link_libraries(tst_syncengine_unification PRIVATE Qt6::Sql Qt6::Widgets)
+target_include_directories(tst_syncengine_unification
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)
