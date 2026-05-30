@@ -80,6 +80,15 @@ QFuture<bool> MultiProtocolDavProvider::connect()
         return fut;
     }
 
+    // Idempotent: if a connect is already in flight, return its future.
+    // Overwriting m_connectPromise would destroy the previous QPromise
+    // unfinished, whose destructor cancels+reportFinished the underlying
+    // QFutureInterface without a result — crashing any watcher::result()
+    // observer (e.g. ProviderManager's per-provider connectAll watcher).
+    if (m_connectPromise) {
+        return m_connectPromise->future();
+    }
+
     qCInfo(lcMultiDav).nospace()
         << "connect: probing " << m_serverUrl.toString()
         << " as user '" << m_username << "' (CalDAV + CardDAV)";
