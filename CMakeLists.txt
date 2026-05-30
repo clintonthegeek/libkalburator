@@ -86,6 +86,8 @@ set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_library(kalburator-typesupport STATIC
     src/typesupport/backendconfiguration.h
     src/typesupport/backendconfiguration.cpp
+    src/typesupport/crashjournal.h
+    src/typesupport/crashjournal.cpp
 )
 add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
 
