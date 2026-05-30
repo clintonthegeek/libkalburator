@@ -90,6 +90,8 @@ add_library(kalburator-typesupport STATIC
     src/typesupport/crashjournal.cpp
     src/typesupport/incidencelock_registry.h
     src/typesupport/incidencelock_registry.cpp
+    src/typesupport/logicalcalendarjson.h
+    src/typesupport/logicalcalendarjson.cpp
 )
 add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
 
