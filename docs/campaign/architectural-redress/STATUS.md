@@ -17,12 +17,12 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-Plans 1–4 are landed. **Next: detail Plan 5 — `types/` purification** (AUDIT B2-corrected: split
-the pure value-type vocabulary from the behavioral offenders — JSON ser/deser, atomic `QSaveFile`
-I/O, the QObject lock registry, crash-journal I/O — that `types/` accreted). Re-decide the target
-shape (`types/` + `helpers/`/`services/`) when writing the plan, per the locked decision below;
-the `types/→shape.h` co-bundle is NOT a violation. Use the `writing-plans` discipline (P1–P4).
-Re-confirm the full sequence below as each plan lands.
+Plans 1–4 are landed. **Plan 5 — `types/` purification — is now in progress on
+`feature/redress-5-types-purification`.** See `plans/plan-5-types-purification.md` for the full
+task sequence. Phase 1 (libkalburator): create `Kalburator::TypeSupport`, move behavioral surfaces
+out of `types/` into it, gate purity. Phase 2 (downstream relinks): libkalcal, PlanStan, WildPalms
+consumers update to link `Kalburator::TypeSupport` where needed. Phase 3 (integrate): merge to
+`main`, confirm PlanStan + WildPalms ctest baselines green.
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
@@ -141,7 +141,7 @@ severities, not the retired old plan numbers:
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
-| 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
+| 5 | `types/` purification | B2 (MAJOR, corrected) | **in progress (feature/redress-5-types-purification)** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
@@ -196,6 +196,7 @@ the invariant or audit finding. Format:
   the in-memory `m_collections` entry even on partial DB-cleanup failure (returning `false`), so
   the cache reflects delete intent. Behavior-preserving vs. the old `void` impl; the bool return
   signals the partial failure. (Plan 4 T2 review; named in `FINDINGS.md`.)
+- **2026-05-30 — Plan 5 target shape = a NEW light `kalburator-typesupport` target (Types + Qt, no Sync), NOT distribute-to-domains.** The distribute-to-domains shape (first draft, reset at `6010ee2`) broke deliberately-light Types-only downstream consumers (libkalcal `KalCal::Core`/`Models`, PlanStan tests, PlanEngine) that reach into `types/` for behavior; relocating that behavior behind the heavy `Kalburator::Sync` target removes the symbols from them and cannot be shimmed at link time. A light helpers target reachable by Types-only consumers is what AUDIT B2's fix direction actually prescribed. (AUDIT B2; user decisions 2026-05-30; supersedes the earlier "distribute to domain homes" entry, which is withdrawn.)
 
 ## Acceptance gates
 

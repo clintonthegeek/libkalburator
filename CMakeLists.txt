@@ -77,6 +77,30 @@ target_link_libraries(kalburator-types
 
 set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# --- Kalburator::TypeSupport ------------------------------------------------
+# Light behavioural companion to Kalburator::Types: JSON codecs, crash-journal
+# I/O, and the incidence lock registry that used to sit in the "minimal type
+# vocabulary" (AUDIT B2). Depends ONLY on Kalburator::Types + Qt — NOT on the
+# heavy Kalburator::Sync engine — so deliberately-light downstream consumers
+# (libkalcal, PlanStan tests, PlanEngine) can link it without DAV/KIO/Network.
+add_library(kalburator-typesupport STATIC
+    src/typesupport/backendconfiguration.h
+    src/typesupport/backendconfiguration.cpp
+)
+add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
+
+target_include_directories(kalburator-typesupport
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/typesupport>
+)
+
+target_link_libraries(kalburator-typesupport
+    PUBLIC
+        kalburator-types
+)
+
+set_target_properties(kalburator-typesupport PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- Kalburator::Sync -------------------------------------------------------
 # Sync sources are layered across sub-directories per docs/phase0/05-repo-strategy.md:
 #   calendar/   — backends, coordination, CRUD items, ISyncHost
@@ -688,6 +712,7 @@ target_include_directories(kalburator
 
 target_link_libraries(kalburator
     PUBLIC
+        kalburator-typesupport
         kalburator-types
         Qt6::Sql
         Qt6::Network
