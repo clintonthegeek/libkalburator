@@ -44,7 +44,7 @@ stale clangd compile-DB) are logged in `FINDINGS.md`. The T3 plan code carried a
 bug (mutex acquired before `threadDb()` which takes `m_connMutex`); the plan doc + code were both
 corrected in the same commit (INVARIANTS §7).
 
-## Parallel downstream fix — v0.61 (`9f8a220`), INTEGRATION PENDING
+## Parallel downstream fix — v0.61 (`9f8a220`), INTEGRATED (merged `04a9876`, pushed)
 
 A provider-connect crash fix landed **outside** the campaign while Plan 4 was in flight (authored
 by the PlanStan-side dev, 2026-05-29, tagged **v0.61**, on `origin/fix/provider-connect-idempotent`).
@@ -63,14 +63,14 @@ by the PlanStan-side dev, 2026-05-29, tagged **v0.61**, on `origin/fix/provider-
 - **Topology:** branched off `6579dfb` (v0.60 sqlite fix) — i.e. **behind `origin/main` (cd798b3,
   Plan 3); contains neither Plan 3 nor Plan 4.** It is one commit; `merge-base` with our `main` is
   `6579dfb`.
-- **Integration:** **`git merge-tree main 9f8a220` is CLEAN (no conflicts).** The CardDav `connect()`
-  idempotency guard (lands ~line 66, between `m_connected` and the `m_discovery` reset) does not
-  overlap Plan 4 T4's `errorSeen`/discovery-watcher region (~line 81+); `providermanager.cpp`'s
-  `connectAll` watcher edit does not overlap Plan 3's `registerProviderBackends`. **Action: merge
-  `9f8a220` into the campaign `main` (clean) when the campaign `main` is next reconciled/pushed.**
-  Relation to Plan 4: Plan 4 fixed the discovery's `QPromise` (T5) and `CardDavProvider`'s
-  `errorSeen` `bool*` (T4) but NOT the provider `m_connectPromise` overwrite — this fix completes
-  that corner. (Logged in `FINDINGS.md`.)
+- **Integration: DONE.** Merged `--no-ff` into `main` as `04a9876` (clean, as the pre-merge
+  `merge-tree` predicted: the CardDav `connect()` idempotency guard at ~line 66 did not overlap Plan
+  4 T4's `errorSeen` region at ~line 81+; the `connectAll` watcher edit did not overlap Plan 3's
+  `registerProviderBackends`). Merged tree rebuilt + 133/133 ctest green; `main` pushed to
+  `origin/main` (was at Plan 3 `cd798b3` → now `04a9876`). Relation to Plan 4: Plan 4 fixed the
+  discovery's `QPromise` (T5) and `CardDavProvider`'s `errorSeen` `bool*` (T4); this fix adds the
+  provider `m_connectPromise` overwrite guard — the three together close the `sync/` provider-future
+  ownership corner. (Logged in `FINDINGS.md`.)
 
 ## What changed in the rebaseline
 
