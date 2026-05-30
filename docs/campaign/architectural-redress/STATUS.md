@@ -44,6 +44,34 @@ stale clangd compile-DB) are logged in `FINDINGS.md`. The T3 plan code carried a
 bug (mutex acquired before `threadDb()` which takes `m_connMutex`); the plan doc + code were both
 corrected in the same commit (INVARIANTS §7).
 
+## Parallel downstream fix — v0.61 (`9f8a220`), INTEGRATION PENDING
+
+A provider-connect crash fix landed **outside** the campaign while Plan 4 was in flight (authored
+by the PlanStan-side dev, 2026-05-29, tagged **v0.61**, on `origin/fix/provider-connect-idempotent`).
+**It is the same ownership-bug family Plan 4 swept** but a distinct site Plan 4 did not cover.
+
+- **Bug:** SIGSEGV at `providermanager.cpp:154` when a second `connect()` lands on an `IProvider`
+  whose previous `connect()` future is still in flight (e.g. `ProviderManager::connectAll` racing
+  `CalendarDiscoveryStep::startConnect` in the new-collection / Akonadi wizard). Overwriting
+  `m_connectPromise` dropped the last ref to the old `QPromise`, whose dtor `cancel()`+`reportFinished()`s
+  the underlying interface with no result → any `QFutureWatcher::result()` observer crashes in
+  `QFutureInterface::resultReference`.
+- **Fix (2 parts):** (1) all four async providers (Akonadi/CalDav/CardDav/MultiProtocolDav)
+  `connect()` is now idempotent — returns the in-flight `m_connectPromise->future()` instead of
+  overwriting; (2) `ProviderManager::connectAll`'s watcher short-circuits `result()` on a canceled
+  future. `NeutralProvider` unchanged. Sync/provider suite 24/24.
+- **Topology:** branched off `6579dfb` (v0.60 sqlite fix) — i.e. **behind `origin/main` (cd798b3,
+  Plan 3); contains neither Plan 3 nor Plan 4.** It is one commit; `merge-base` with our `main` is
+  `6579dfb`.
+- **Integration:** **`git merge-tree main 9f8a220` is CLEAN (no conflicts).** The CardDav `connect()`
+  idempotency guard (lands ~line 66, between `m_connected` and the `m_discovery` reset) does not
+  overlap Plan 4 T4's `errorSeen`/discovery-watcher region (~line 81+); `providermanager.cpp`'s
+  `connectAll` watcher edit does not overlap Plan 3's `registerProviderBackends`. **Action: merge
+  `9f8a220` into the campaign `main` (clean) when the campaign `main` is next reconciled/pushed.**
+  Relation to Plan 4: Plan 4 fixed the discovery's `QPromise` (T5) and `CardDavProvider`'s
+  `errorSeen` `bool*` (T4) but NOT the provider `m_connectPromise` overwrite — this fix completes
+  that corner. (Logged in `FINDINGS.md`.)
+
 ## What changed in the rebaseline
 
 - `AUDIT.md` ← verified rebuild (was the 2026-05-28 four-agent audit).

@@ -190,6 +190,22 @@ address — load-bearing knowledge, not audit restatements.
 - ~~`SyncEngineWorker::Mode` vs `SyncEngine::SyncBehavior` duplicate enums (inv 4).~~
   `Mode` deleted; the worker accepts `SyncEngine::SyncBehavior` directly. (94cd859)
 
+### Fixed downstream, integration pending (not campaign work)
+
+- 2026-05-29 — `src/sync/{akonadi,caldav,carddav,multiprotocoldav}provider.cpp` `connect()` +
+  `src/sync/providermanager.cpp` `connectAll` — inv (correctness, same family as Plan 4) —
+  **provider `connect()` was not idempotent: a re-entrant call overwrote an in-flight
+  `m_connectPromise`, destroying the old `QPromise` unfinished → its dtor `cancel()`+`reportFinished()`
+  with no result → a `QFutureWatcher::result()` observer SIGSEGVs** (`providermanager.cpp:154`, hit via
+  the Akonadi / new-collection wizard, `connectAll` racing `CalendarDiscoveryStep::startConnect`).
+  **Fixed OUTSIDE the campaign** by the PlanStan-side dev: v0.61 / `9f8a220` on
+  `origin/fix/provider-connect-idempotent` — `connect()` now returns the in-flight future; `connectAll`'s
+  watcher guards `result()` on canceled futures. The commit branched off `6579dfb` (pre-Plan-3) and
+  is **not yet on the campaign `main`**; `git merge-tree main 9f8a220` is CLEAN. **Action: merge into
+  `main` at next reconcile** (see STATUS "Parallel downstream fix — v0.61"). Plan 4's sweep covered
+  the discovery `QPromise` (T5) and the `errorSeen` `bool*` (T4) but not this provider-promise
+  overwrite — the three together close the `sync/` provider-future ownership corner.
+
 ### By Plan 4 (correctness/ownership sweep, 2026-05-29)
 
 - ~~`MockBlobBackend` swallows injected `OnLoadRecords` failures via the base
