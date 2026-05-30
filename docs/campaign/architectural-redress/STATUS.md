@@ -17,12 +17,12 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-Plans 1–4 are landed. **Plan 5 — `types/` purification — is now in progress on
-`feature/redress-5-types-purification`.** See `plans/plan-5-types-purification.md` for the full
-task sequence. Phase 1 (libkalburator): create `Kalburator::TypeSupport`, move behavioral surfaces
-out of `types/` into it, gate purity. Phase 2 (downstream relinks): libkalcal, PlanStan, WildPalms
-consumers update to link `Kalburator::TypeSupport` where needed. Phase 3 (integrate): merge to
-`main`, confirm PlanStan + WildPalms ctest baselines green.
+Execute **Plan 5 Phase 2 (downstream relinks)**: libkalcal, PlanStan, and PlanEngine consumers that
+currently link only `Kalburator::Types` but use `IncidenceLockRegistry`, `BackendConfiguration`,
+`CrashJournal`, or `LogicalCalendarJson` must be updated to also link `Kalburator::TypeSupport`.
+WildPalms include paths need updating for any moved headers. Branch
+`feature/redress-5-types-purification` is held **unmerged** until those downstream builds are
+green (INVARIANTS §10).
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
@@ -43,6 +43,25 @@ use-after-free / iface leak over the full sync lifecycle). New FINDINGS surfaced
 stale clangd compile-DB) are logged in `FINDINGS.md`. The T3 plan code carried a latent lock-order
 bug (mutex acquired before `threadDb()` which takes `m_connMutex`); the plan doc + code were both
 corrected in the same commit (INVARIANTS §7).
+
+## Plan 5 Phase 1 outcome (2026-05-30, on `feature/redress-5-types-purification`)
+
+Five tasks, one commit each (T1–T5), purity gate + close-out (T6):
+
+- **New light `Kalburator::TypeSupport` target** (`src/typesupport/`): depends only on
+  `Kalburator::Types` + Qt — NOT the Sync engine — so light downstream foundation libs can link it
+  without dragging in sync machinery.
+- **Moved into `TypeSupport`:** `backendconfiguration` (T1), `crashjournal` (T2),
+  `incidencelock_registry` (T3), `LogicalCalendarJson` codec (T4). All four were behavioral
+  surfaces in `types/` that the AUDIT (B2) flagged.
+- **Moved into `calendar/`:** `calendarmetadatamanager` (T5). Already belonged in the calendar
+  layer; moving it clears the last file-I/O surface from `types/`.
+- **`types/` passes the purity grep** (no `Q_OBJECT`, no `QJsonDocument`/`toJson`/`fromJson`, no
+  `QSaveFile`/`QFile`/`QDir`/`QTextStream`). Redundant `QJsonObject`/`QJsonArray` includes removed
+  from `logicalcalendar.h`.
+- **133 ctest green after every task** (same baseline as Plans 1–4).
+- **Branch UNMERGED** pending Phase 2 (libkalcal, PlanStan, PlanEngine relinks + WildPalms include
+  updates) per INVARIANTS §10.
 
 ## Parallel downstream fix — v0.61 (`9f8a220`), INTEGRATED (merged `04a9876`, pushed)
 
@@ -141,7 +160,7 @@ severities, not the retired old plan numbers:
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
-| 5 | `types/` purification | B2 (MAJOR, corrected) | **in progress (feature/redress-5-types-purification)** |
+| 5 | `types/` purification | B2 (MAJOR, corrected) | **Phase 1 done (typesupport/ landed); Phase 2 downstream relinks next** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |

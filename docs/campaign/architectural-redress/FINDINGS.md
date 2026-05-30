@@ -24,7 +24,7 @@ Quick pointer to the audit's actionable spine (see `AUDIT.md` for evidence + fix
   `SyncBackend`~~ **RESOLVED by Plan 3** (registry/PM/engine traffic in `SyncBackendBase*`;
   RawFiles/GenericSqlite/RemoteContacts/Filtered reparented onto the neutral base). The 4th
   CRITICAL (`CalendarManager` destructive CRUD untested) was resolved by Plan 2's tests.
-- **MAJOR** — `RemoteCalendarBackend` god class; `types/` behavior; `shape/→conflict/`;
+- **MAJOR** — `RemoteCalendarBackend` god class; ~~`types/` behavior (B2) — RESOLVED by Plan 5 P1: 5 behavioural surfaces → `typesupport/` + `calendar/`; types/ passes purity grep (2026-05-30)~~; `shape/→conflict/`;
   ~~`engine/`+`contacts/`+`universal/` pull calendar headers~~ (RESOLVED by Plan 3);
   ~~raw-pointer lifetimes~~ (RESOLVED by Plan 4: `CardDavProvider` `bool*`→`shared_ptr`,
   `SyncEngine` `QFutureInterface*`→`unique_ptr`); ~~thread-unsafe `RawFilesBackend`~~ (RESOLVED by
@@ -175,6 +175,10 @@ address — load-bearing knowledge, not audit restatements.
   C++ memory model. Benign in practice (`ensureOpen` runs in the ctor before any other thread can
   reach the object) and pre-existing; Plan 4's mutex guards the hashes, not `m_open`. Make it
   `std::atomic<bool>` if a real concurrent-open path ever appears. Surfaced by the P4 final review.
+
+### From Plan 5 (types/ purification, 2026-05-30)
+
+- 2026-05-30 — `src/typesupport/incidencelock_registry.{h,cpp}` — inv 1 — `IncidenceLockRegistry` is LIVE: used downstream by libkalcal (view-infrastructure/calendar-views), PlanStan (libs/editor, views, controllers, tests) and PlanEngine via Types-only links; relocated to the light TypeSupport target in Plan 5 P1.T3 (NOT dead code). Downstream relinks to Kalburator::TypeSupport in Plan 5 Phase 2.
 
 ## Resolved
 

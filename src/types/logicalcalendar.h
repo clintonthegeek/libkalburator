@@ -3,8 +3,6 @@
 
 #include <QString>
 #include <QColor>
-#include <QJsonObject>
-#include <QJsonArray>
 #include <QList>
 #include <QVariantMap>
 #include <QSet>
