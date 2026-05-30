@@ -83,7 +83,7 @@ Kalburator::Shape::Shape RawFilesBackend::shapeFor(const QString &collectionId) 
 
 void RawFilesBackend::deleteCollection(const QString &collectionId)
 {
-    clearCollection(collectionId);  // filesystem only — touches neither hash
+    clearCollection(collectionId);  // filesystem only; no hash access (so no lock needed here)
     {
         QMutexLocker lock(&m_collectionsMutex);
         m_collections.remove(collectionId);

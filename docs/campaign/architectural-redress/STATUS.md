@@ -1,27 +1,48 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-05-29 (audit rebaselined; Plans 1, 2 & 3 landed)
-**Branch:** Campaign docs live on `main`. Plans 1–3 landed; each subsequent plan opens its own
+**Last updated:** 2026-05-29 (audit rebaselined; Plans 1, 2, 3 & 4 landed)
+**Branch:** Campaign docs live on `main`. Plans 1–4 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition), 2 (CalendarManager safety
-net) and 3 (neutralize the calendar-typed sync core) landed.** The original 2026-05-28 audit and
-its nine drafted plans rested on material factual errors (see `AUDIT.md` provenance) and are
-**archived under `archive/`**. The new `AUDIT.md` is a verified rebuild (139-agent run, every
-finding adversarially checked against source). Plan 2 pinned three real latent bugs (see
-FINDINGS). **Plan 3 resolved AUDIT CRITICALs #1–#3** (the calendar-typed sync core) and the
-`engine`/`contacts`/`universal` → calendar include MAJORs — the orchestration layer no longer
-names a calendar type; 133 tests green incl. a proof-of-neutrality test.
+net), 3 (neutralize the calendar-typed sync core) and 4 (correctness/ownership sweep) landed.**
+The original 2026-05-28 audit and its nine drafted plans rested on material factual errors (see
+`AUDIT.md` provenance) and are **archived under `archive/`**. The new `AUDIT.md` is a verified
+rebuild (139-agent run, every finding adversarially checked against source). Plan 2 pinned three
+real latent bugs (see FINDINGS). **Plan 3 resolved AUDIT CRITICALs #1–#3** (the calendar-typed sync
+core) and the `engine`/`contacts`/`universal` → calendar include MAJORs — the orchestration layer no
+longer names a calendar type. **Plan 4 resolved the five MAJOR correctness/ownership bugs** (mock
+false-green, silent SQLite DELETE/DROP, RawFiles/GenericSqlite collection-hash race, `CardDavProvider`
+raw-`bool*` UAF, `SyncEngine` raw-`QFutureInterface*` leak) + the folded `QPromise*` MODERATE; 133
+tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-Plans 1–3 are landed; **Plan 4 is now detailed** at
-`plans/plan-4-correctness-ownership-sweep.md` (7 tasks). **Next: execute Plan 4** on branch
-`feature/redress-4-correctness-ownership-sweep` — fix the five MAJOR correctness/ownership bugs
-(`MockBlobBackend` false-greens, silent SQLite DELETE/DROP, RawFiles/GenericSqlite collection-hash
-race, raw `bool*` UAF in `CardDavProvider`, raw `QFutureInterface*` leak in `SyncEngine`) plus the
-folded same-file `QPromise*` MODERATE. Two scope decisions were locked while detailing (see ledger:
-folded the `QPromise*` MODERATE per a documented INVARIANTS §8 deviation; thread-safety fix = add a
-`QMutex`). Re-confirm the full sequence below as each plan lands.
+Plans 1–4 are landed. **Next: detail Plan 5 — `types/` purification** (AUDIT B2-corrected: split
+the pure value-type vocabulary from the behavioral offenders — JSON ser/deser, atomic `QSaveFile`
+I/O, the QObject lock registry, crash-journal I/O — that `types/` accreted). Re-decide the target
+shape (`types/` + `helpers/`/`services/`) when writing the plan, per the locked decision below;
+the `types/→shape.h` co-bundle is NOT a violation. Use the `writing-plans` discipline (P1–P4).
+Re-confirm the full sequence below as each plan lands.
+
+## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
+
+Seven tasks, one commit each (T1–T7), full suite 133 green after every task. Resolved:
+
+| Fix | AUDIT | Commit |
+|---|---|---|
+| `MockBlobBackend::loadRecordsOrError` reports injected `OnLoadRecords` failure | MAJOR (mock false-green) | P4.T1 |
+| `GenericSqliteBackend::clear/deleteCollection` → `bool`, check DELETE/DROP | MAJOR (silent SQLite) | P4.T2 |
+| `QMutex` guard on `RawFiles`/`GenericSqlite` collection hashes (deadlock-free) | MAJOR (thread-unsafe) | P4.T3 |
+| `CardDavProvider` raw `bool*` → `std::make_shared<bool>` | MAJOR (UAF) | P4.T4 |
+| `CardDavCapabilityDiscovery` raw `QPromise*` → `std::unique_ptr` | MODERATE (folded) | P4.T5 |
+| `SyncEngine` raw `QFutureInterface*` → `std::unique_ptr` + documented dtor | MAJOR (leak) | P4.T6 |
+
+Verification beyond ctest: T3 ran ThreadSanitizer (no races on the hashes); T6 ran ASAN (no
+use-after-free / iface leak over the full sync lifecycle). New FINDINGS surfaced during the work
+(eviction tradeoff, RawFiles sibling silent-failure, the mid-blocking-fetch teardown deadlock, the
+stale clangd compile-DB) are logged in `FINDINGS.md`. The T3 plan code carried a latent lock-order
+bug (mutex acquired before `threadDb()` which takes `m_connMutex`); the plan doc + code were both
+corrected in the same commit (INVARIANTS §7).
 
 ## What changed in the rebaseline
 
@@ -91,7 +112,7 @@ severities, not the retired old plan numbers:
 | 1 | SyncEngine decomposition | B1 (MAJOR, corrected) | **DONE — merged 2026-05-29** |
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
-| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **detailed — ready to execute (`plans/plan-4-correctness-ownership-sweep.md`)** |
+| 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | proposed |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
@@ -134,6 +155,19 @@ the invariant or audit finding. Format:
   "What not to touch".)
 - **2026-05-29 — The `[[deprecated]]` baseline v2 surface stays.** Intentional migration
   scaffolding for PlanStan/WildPalms; not dead code. (AUDIT G8 / "What not to touch".)
+- **2026-05-29 — Plan 4 folded the same-file `QPromise*` MODERATE into the MAJOR `bool*` fix.**
+  Fixing `CardDavProvider`'s raw `bool*` while leaving its collaborator
+  `CardDavCapabilityDiscovery`'s raw `QPromise*` is a half-fix of one file family's ownership
+  story. The PRAGMA-silent-failure MODERATEs (`SyncConflictStore`/`IDMappingStore`) stay deferred.
+  (Deviation from INVARIANTS §8, documented per §"Scope and exceptions".)
+- **2026-05-29 — Plan 4 thread-safety fix = add a `QMutex`** (vs. document-and-serialize). The
+  `RawFiles`/`GenericSqlite` collection hashes are now guarded by a dedicated `m_collectionsMutex`
+  (separate from GenericSqlite's `m_connMutex`), making the backends genuinely thread-safe rather
+  than relying on a caller contract. (AUDIT MAJOR; the worker reads `shapeFor()` off-thread.)
+- **2026-05-29 — `GenericSqliteBackend::deleteCollection` keeps best-effort eviction.** It removes
+  the in-memory `m_collections` entry even on partial DB-cleanup failure (returning `false`), so
+  the cache reflects delete intent. Behavior-preserving vs. the old `void` impl; the bool return
+  signals the partial failure. (Plan 4 T2 review; named in `FINDINGS.md`.)
 
 ## Acceptance gates
 
