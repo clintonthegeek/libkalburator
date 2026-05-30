@@ -66,6 +66,14 @@ QFuture<bool> CalDavProvider::connect() {
         return fi.future();
     }
 
+    // Idempotent: if a connect is in flight, return its future. Overwriting
+    // m_connectPromise would destroy the previous QPromise unfinished, whose
+    // destructor would cancel+reportFinished the underlying QFutureInterface
+    // without a result — crashing any watcher::result() observer.
+    if (m_connectPromise) {
+        return m_connectPromise->future();
+    }
+
     // Drop any abandoned in-flight discovery before starting fresh.
     if (m_discovery) {
         m_discovery->disconnect(this);

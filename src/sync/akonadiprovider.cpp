@@ -66,6 +66,15 @@ QFuture<bool> AkonadiProvider::connect()
         return fi.future();
     }
 
+    // Idempotent: if a connect is already in flight, return its future. A
+    // second connect() call must NOT overwrite m_connectPromise — the assignment
+    // would drop the last strong ref to the previous QPromise, whose destructor
+    // would then cancel+reportFinished the underlying QFutureInterface without
+    // a result. Any watcher::result() observer on that earlier future crashes.
+    if (m_connectPromise) {
+        return m_connectPromise->future();
+    }
+
     m_connectPromise = std::make_shared<QPromise<bool>>();
     auto fut = m_connectPromise->future();
     m_connectPromise->start();

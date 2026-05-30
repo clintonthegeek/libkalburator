@@ -151,7 +151,17 @@ QFuture<void> ProviderManager::connectAll()
         const QString pid = p->id();
         QObject::connect(watcher, &QFutureWatcher<bool>::finished, this,
             [this, watcher, pid]() {
-                if (!watcher->result()) {
+                // Defensive: a future canceled before a result was reported has
+                // no entry in its result store; calling result() in that state
+                // is UB and crashes inside QFutureInterface::resultReference.
+                // This can happen if a second connect() call on the same
+                // provider replaced its QPromise unfinished — providers must
+                // be idempotent (return the in-flight future on re-entry), but
+                // we still guard here so a buggy provider can't take the
+                // manager down.
+                const bool ok = !watcher->future().isCanceled()
+                             && watcher->result();
+                if (!ok) {
                     // Connect failed — reset state so retries are possible.
                     m_providerStates[pid] = ProviderConnectionState::Disconnected;
                     emit providerStateChanged(pid, ProviderConnectionState::Disconnected);
