@@ -107,6 +107,14 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
 SyncEngine::~SyncEngine()
 {
     stopWorkerThread();
+    // Architectural-redress Plan 4: the in-flight QFutureInterfaces are owned by
+    // unique_ptr members and are freed automatically after this body, fixing the
+    // mid-sync memory leak (AUDIT MAJOR "raw QFutureInterface* without lifecycle
+    // management"). We deliberately do NOT reportFinished() here: the watchers
+    // (m_singleWatcher/m_multiWatcher, parented to this) are torn down by ~QObject
+    // immediately after, so emitting finished() now would re-enter the completion
+    // slots during teardown. Unblocking a caller that still holds a future while its
+    // engine is destroyed mid-sync is a misuse out of Plan 4's scope (see FINDINGS).
 }
 
 void SyncEngine::setupWorkerConnections()
@@ -307,8 +315,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         if (m_currentMultiIface) {
             m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
-            delete m_currentMultiIface;
-            m_currentMultiIface = nullptr;
+            m_currentMultiIface.reset();
         }
         return;
     }
@@ -352,8 +359,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
             m_currentMultiIface->reportResult(m_queue.drain());
             if (m_cancelled) m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
-            delete m_currentMultiIface;
-            m_currentMultiIface = nullptr;
+            m_currentMultiIface.reset();
         }
         m_queue.reset();
         return;
@@ -406,8 +412,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             m_currentSingleIface->reportResult(cancelled);
             m_currentSingleIface->reportCanceled();
             m_currentSingleIface->reportFinished();
-            delete m_currentSingleIface;
-            m_currentSingleIface = nullptr;
+            m_currentSingleIface.reset();
         }
         m_queue.reset();
         m_isSyncing = false;
@@ -461,8 +466,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     if (m_currentSingleIface) {
         m_currentSingleIface->reportResult(err);
         m_currentSingleIface->reportFinished();
-        delete m_currentSingleIface;
-        m_currentSingleIface = nullptr;
+        m_currentSingleIface.reset();
     }
     m_queue.reset();
     // F2 Task 21 follow-up: clear m_isSyncing on the not-found path.
@@ -527,7 +531,7 @@ QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
     }
 
     // Multi-mapping path (all-enabled or subset).
-    m_currentMultiIface = new QFutureInterface<QList<SyncResult>>;
+    m_currentMultiIface = std::make_unique<QFutureInterface<QList<SyncResult>>>();
     m_currentMultiIface->reportStarted();
     // F2 Task 23 follow-up: ensure cancellation-marker SyncResults
     // reach future.results() even after reportCanceled().
@@ -583,7 +587,7 @@ QFuture<SyncResult> SyncEngine::dispatchSingleNative(
         return rejected.future();
     }
 
-    m_currentSingleIface = new QFutureInterface<SyncResult>;
+    m_currentSingleIface = std::make_unique<QFutureInterface<SyncResult>>();
     m_currentSingleIface->reportStarted();
     // F2 Task 23: ensure cancellation-marker SyncResult reaches
     // resultAt(0) even after reportCanceled().
@@ -840,8 +844,7 @@ void SyncEngine::advanceQueue()
             m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportCanceled();
             m_currentMultiIface->reportFinished();
-            delete m_currentMultiIface;
-            m_currentMultiIface = nullptr;
+            m_currentMultiIface.reset();
         }
         m_queue.reset();
         return;
@@ -871,8 +874,7 @@ void SyncEngine::advanceQueue()
         if (m_currentMultiIface) {
             m_currentMultiIface->reportResult(m_queue.drain());
             m_currentMultiIface->reportFinished();
-            delete m_currentMultiIface;
-            m_currentMultiIface = nullptr;
+            m_currentMultiIface.reset();
         }
         m_queue.reset();
         return;
@@ -1232,8 +1234,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                 m_currentSingleIface->reportCanceled();
             }
             m_currentSingleIface->reportFinished();
-            delete m_currentSingleIface;
-            m_currentSingleIface = nullptr;
+            m_currentSingleIface.reset();
         }
         m_queue.reset();
         m_isSyncing = false;
@@ -1271,8 +1272,7 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
         if (m_currentSingleIface) {
             m_currentSingleIface->reportResult(failedResult);
             m_currentSingleIface->reportFinished();
-            delete m_currentSingleIface;
-            m_currentSingleIface = nullptr;
+            m_currentSingleIface.reset();
         }
         m_queue.reset();
         m_isSyncing = false;

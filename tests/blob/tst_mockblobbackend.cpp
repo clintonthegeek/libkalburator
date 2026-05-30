@@ -45,6 +45,7 @@ private slots:
     void failureInjectionOnLoadRecords();
     void failureInjectionOnCreateRecord();
     void recordCreatedSignalFires();
+    void loadRecordsOrError_reportsInjectedFailure();
 };
 
 void TestMockBlobBackend::identityAndAvailability()
@@ -161,6 +162,33 @@ void TestMockBlobBackend::recordCreatedSignalFires()
     b.createRecord(QStringLiteral("memos"), makeRecord(QStringLiteral("r-1"), QStringLiteral("x")));
     QCOMPARE(spy.size(), 1);
     QCOMPARE(spy.first().first().toString(), QStringLiteral("r-1"));
+}
+
+void TestMockBlobBackend::loadRecordsOrError_reportsInjectedFailure()
+{
+    MockBlobBackend b;
+    b.createCollection(makeCollection(QStringLiteral("memos")));
+    b.createRecord(QStringLiteral("memos"),
+                   makeRecord(QStringLiteral("r-1"), QStringLiteral("x")));
+
+    QSignalSpy errSpy(&b, &Kalburator::Sync::MockBlobBackend::errorOccurred);
+    b.setFailNext(MockBlobBackend::FailurePoint::OnLoadRecords, 1);
+
+    QList<BackendRecord> records;
+    QString error;
+    const bool ok = b.loadRecordsOrError(QStringLiteral("memos"), records, error);
+
+    // Before the fix: ok == true, error empty, records empty — a silent false-green.
+    QVERIFY(!ok);
+    QVERIFY(!error.isEmpty());
+    QVERIFY(records.isEmpty());
+    QCOMPARE(errSpy.size(), 1); // failure path must emit errorOccurred
+
+    // Failure was one-shot: the next call succeeds and returns the record.
+    QVERIFY(b.loadRecordsOrError(QStringLiteral("memos"), records, error));
+    QVERIFY(error.isEmpty());
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(errSpy.size(), 1); // success path emits no new signal
 }
 
 QTEST_MAIN(TestMockBlobBackend)

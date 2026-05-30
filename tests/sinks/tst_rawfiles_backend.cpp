@@ -4,6 +4,9 @@
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
+#include <QtConcurrent>
+
+#include <atomic>
 
 #include "rawfilesbackend.h"
 #include "collectioninfo.h"
@@ -62,6 +65,7 @@ private slots:
     void clearCollection_deletesAllRecords();
     void multipleCollections_noInterference();
     void manifestPersists_acrossInstances();
+    void concurrentShapeForVsCreateCollection();
 };
 
 void TestRawFilesBackend::isAvailable_falseForMissingDir()
@@ -234,6 +238,30 @@ void TestRawFilesBackend::manifestPersists_acrossInstances()
     const auto records = b2.loadRecords(QStringLiteral("memo+plaintext"));
     QCOMPARE(records.size(), 1);
     QCOMPARE(records.first().data, QByteArrayLiteral("persisted"));
+}
+
+void TestRawFilesBackend::concurrentShapeForVsCreateCollection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    RawFilesBackend be(dir.path());
+
+    std::atomic<bool> stop{false};
+    QFuture<void> reader = QtConcurrent::run([&] {
+        while (!stop.load(std::memory_order_acquire)) {
+            be.shapeFor(QStringLiteral("c-7"));
+            be.nativeShapes();
+        }
+    });
+    for (int i = 0; i < 200; ++i) {
+        be.createCollection(
+            makeCollection(QStringLiteral("c-%1").arg(i), QStringLiteral("C"),
+                           QStringLiteral("memo")),
+            Shape::Any());
+    }
+    stop.store(true, std::memory_order_release);
+    reader.waitForFinished();
+    QVERIFY(true);  // reaching here without crash/TSan report is the assertion
 }
 
 QTEST_MAIN(TestRawFilesBackend)

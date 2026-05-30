@@ -58,8 +58,8 @@ public:
     QString createCollection(const Kalburator::Sync::CollectionInfo &info,
                              const Kalburator::Shape::Shape &shape);
 
-    void deleteCollection(const QString &collectionId);
-    void clearCollection(const QString &collectionId);
+    bool deleteCollection(const QString &collectionId);
+    bool clearCollection(const QString &collectionId);
 
     QList<Kalburator::Sync::BackendRecord> loadRecords(const QString &collectionId) override;
     std::optional<Kalburator::Sync::BackendRecord> loadRecord(const QString &recordId) override;
@@ -85,8 +85,9 @@ private:
     QString m_baseConnectionName; ///< unique base; thread suffix appended per call
     QHash<QString, Kalburator::Sync::CollectionInfo> m_collections;
     QHash<QString, Kalburator::Shape::Shape> m_shapeByCollection;
-    mutable QMutex m_connMutex;       ///< guards m_openConnections
-    QStringList    m_openConnections; ///< all per-thread conn names (for destructor cleanup)
+    mutable QMutex m_connMutex;         ///< guards m_openConnections
+    mutable QMutex m_collectionsMutex;  ///< guards m_collections + m_shapeByCollection (separate from m_connMutex)
+    QStringList    m_openConnections;   ///< all per-thread conn names (for destructor cleanup)
     bool m_open = false;
 };
 

@@ -38,8 +38,7 @@ CardDavCapabilityDiscovery::~CardDavCapabilityDiscovery()
     if (m_promise) {
         m_promise->addResult(QList<CollectionInfo>{});
         m_promise->finish();
-        delete m_promise;
-        m_promise = nullptr;
+        m_promise.reset();
     }
 }
 
@@ -62,8 +61,7 @@ QFuture<QList<CollectionInfo>> CardDavCapabilityDiscovery::discover()
     if (m_promise) {
         m_promise->addResult(QList<CollectionInfo>{});
         m_promise->finish();
-        delete m_promise;
-        m_promise = nullptr;
+        m_promise.reset();
     }
 
     m_principalHref.clear();
@@ -71,7 +69,7 @@ QFuture<QList<CollectionInfo>> CardDavCapabilityDiscovery::discover()
     m_addressbookUrls.clear();
     m_baseUrl = m_serverRoot;
 
-    m_promise = new QPromise<QList<CollectionInfo>>();
+    m_promise = std::make_unique<QPromise<QList<CollectionInfo>>>();
     m_promise->start();
 
     // Manual override: skip both the well-known bootstrap and the principal
@@ -471,8 +469,7 @@ void CardDavCapabilityDiscovery::resolveWithError(const QString &msg)
     if (m_promise) {
         m_promise->addResult(QList<CollectionInfo>{});
         m_promise->finish();
-        delete m_promise;
-        m_promise = nullptr;
+        m_promise.reset();
     }
 }
 
@@ -485,8 +482,7 @@ void CardDavCapabilityDiscovery::resolveWithSuccess(
     if (m_promise) {
         m_promise->addResult(books);
         m_promise->finish();
-        delete m_promise;
-        m_promise = nullptr;
+        m_promise.reset();
     }
 }
 

@@ -567,9 +567,12 @@ Kalburator::Shape::Shape GenericSqliteBackend::shapeFor(const QString &collectio
 
 - [ ] **Step 7: Lock the writers.** In `createCollection`, the `ensureOpen()`/`ensureTableFor()`
   calls stay **outside** the lock (they run before the hash region; `ensureOpen` takes the lock
-  itself in Step 8). Wrap only the hash region (the `if (!m_collections.contains(info.id)) {...}`
-  block through `m_shapeByCollection.insert(...)`) — note the DB `INSERT` stays inside since it is
-  cheap and guarded data, and `threadDb()` does not take `m_collectionsMutex`:
+  itself in Step 8). Wrap only the hash mutation in a short `m_collectionsMutex` block, capture a
+  `needShapeRow` flag, then do the `threadDb()`/INSERT **after** the lock block closes. This is
+  mandatory: `threadDb()` may take `m_connMutex` on its first-call-per-thread path, and
+  `m_collectionsMutex` must never be held across it (lock-order invariant: the two mutexes are
+  never held simultaneously). The semantics are preserved: the INSERT happens exactly when the
+  collection was newly added (the `!contains` gate is captured by `needShapeRow`):
 
 ```cpp
 QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
@@ -579,8 +582,18 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
         return {};
     if (!ensureTableFor(info.id))
         return {};
-    QMutexLocker lock(&m_collectionsMutex);
-    if (!m_collections.contains(info.id)) {
+    bool needShapeRow = false;
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        if (!m_collections.contains(info.id)) {
+            m_collections[info.id] = info;
+            needShapeRow = true;
+        }
+        m_shapeByCollection.insert(info.id, shape);
+    }
+    if (needShapeRow) {
+        // DB write outside the hash lock: threadDb() may take m_connMutex on first
+        // use per thread, and m_collectionsMutex must never be held across it.
         QSqlDatabase db = threadDb();
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -591,9 +604,7 @@ QString GenericSqliteBackend::createCollection(const CollectionInfo &info,
         q.addBindValue(info.name);
         q.addBindValue(info.type);
         q.exec();
-        m_collections[info.id] = info;
     }
-    m_shapeByCollection.insert(info.id, shape);
     return info.id;
 }
 ```

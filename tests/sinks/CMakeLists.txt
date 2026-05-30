@@ -20,3 +20,6 @@ kalburator_add_sink_test(tst_universal_sink_as_source)
 kalburator_add_sink_test(tst_markdownfiles_backend)
 kalburator_add_sink_test(tst_filtered_collection_backend)
 kalburator_add_sink_test(tst_neutral_sync_core)
+
+target_link_libraries(tst_rawfiles_backend PRIVATE Qt6::Concurrent)
+target_link_libraries(tst_generic_sqlite_backend PRIVATE Qt6::Concurrent)

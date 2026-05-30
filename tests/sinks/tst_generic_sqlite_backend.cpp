@@ -3,6 +3,9 @@
 #include <QtTest/QtTest>
 #include <QCryptographicHash>
 #include <QTemporaryDir>
+#include <QtConcurrent>
+
+#include <atomic>
 
 #include "genericsqlitebackend.h"
 #include "collectioninfo.h"
@@ -58,8 +61,10 @@ private slots:
     void deleteRecord_removesRow();
     void loadRecords_returnsAll();
     void clearCollection_emptiesTable();
+    void clearCollection_reportsFailure_whenTableMissing();
     void multipleCollections_separateTables();
     void persistsAcrossInstances();
+    void concurrentShapeForVsCreateCollection();
 };
 
 void TestGenericSqliteBackend::isAvailable_falseForUnopenedDb()
@@ -188,6 +193,25 @@ void TestGenericSqliteBackend::clearCollection_emptiesTable()
     QCOMPARE(b.loadRecords(colId).size(), 0);
 }
 
+void TestGenericSqliteBackend::clearCollection_reportsFailure_whenTableMissing()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    GenericSqliteBackend be(dir.filePath(QStringLiteral("test.sqlite")));
+
+    // No collection "ghost" was ever created, so its table does not exist;
+    // DELETE FROM "ghost" must fail and clearCollection must report it.
+    QVERIFY(!be.clearCollection(QStringLiteral("ghost")));
+    QVERIFY(!be.deleteCollection(QStringLiteral("ghost")));  // clearCollection leg fails -> false
+
+    // Sanity: clearing a real, empty collection succeeds, and deleting it succeeds.
+    be.createCollection(
+        makeCollection(QStringLiteral("real"), QStringLiteral("Real"), QStringLiteral("memo")),
+        kTestShape);
+    QVERIFY(be.clearCollection(QStringLiteral("real")));
+    QVERIFY(be.deleteCollection(QStringLiteral("real")));
+}
+
 void TestGenericSqliteBackend::multipleCollections_separateTables()
 {
     QTemporaryDir tmp;
@@ -231,6 +255,30 @@ void TestGenericSqliteBackend::persistsAcrossInstances()
     const auto records = b2.loadRecords(QStringLiteral("memo+plaintext"));
     QCOMPARE(records.size(), 1);
     QCOMPARE(records.first().data, QByteArrayLiteral("persisted"));
+}
+
+void TestGenericSqliteBackend::concurrentShapeForVsCreateCollection()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    GenericSqliteBackend be(dir.filePath(QStringLiteral("test.sqlite")));
+
+    std::atomic<bool> stop{false};
+    QFuture<void> reader = QtConcurrent::run([&] {
+        while (!stop.load(std::memory_order_acquire)) {
+            be.shapeFor(QStringLiteral("c-7"));
+            be.nativeShapes();
+        }
+    });
+    for (int i = 0; i < 200; ++i) {
+        be.createCollection(
+            makeCollection(QStringLiteral("c-%1").arg(i), QStringLiteral("C"),
+                           QStringLiteral("memo")),
+            Shape::Any());
+    }
+    stop.store(true, std::memory_order_release);
+    reader.waitForFinished();
+    QVERIFY(true);  // reaching here without crash/TSan report is the assertion
 }
 
 QTEST_MAIN(TestGenericSqliteBackend)

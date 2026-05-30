@@ -26,9 +26,14 @@ Quick pointer to the audit's actionable spine (see `AUDIT.md` for evidence + fix
   CRITICAL (`CalendarManager` destructive CRUD untested) was resolved by Plan 2's tests.
 - **MAJOR** — `RemoteCalendarBackend` god class; `types/` behavior; `shape/→conflict/`;
   ~~`engine/`+`contacts/`+`universal/` pull calendar headers~~ (RESOLVED by Plan 3);
-  raw-pointer lifetimes; thread-unsafe `RawFilesBackend`; silent SQLite/DELETE failures; test
+  ~~raw-pointer lifetimes~~ (RESOLVED by Plan 4: `CardDavProvider` `bool*`→`shared_ptr`,
+  `SyncEngine` `QFutureInterface*`→`unique_ptr`); ~~thread-unsafe `RawFilesBackend`~~ (RESOLVED by
+  Plan 4: `QMutex` guard on RawFiles + GenericSqlite hashes); ~~silent SQLite/DELETE failures~~
+  (RESOLVED by Plan 4: `GenericSqliteBackend::clear/deleteCollection`→`bool` + checks); test
   gaps. (The `SyncEngine` god-class MAJOR is largely addressed by the merged Plan 1; see Resolved.)
-- **MODERATE/MINOR/UGLY** — see `AUDIT.md`.
+- **MODERATE/MINOR/UGLY** — see `AUDIT.md`. (Plan 4 also resolved the `CardDavCapabilityDiscovery`
+  raw-`QPromise*` MODERATE; the `SyncConflictStore`/`IDMappingStore` silent-PRAGMA MODERATEs
+  remain open — see "From Plan 4" below.)
 
 ## Open (new findings, post-rebaseline)
 
@@ -121,6 +126,56 @@ address — load-bearing knowledge, not audit restatements.
   need a `dynamic_cast`/`static_cast` (or to store `SyncBackendBase*`) when it next builds against
   this library. Flag for the PlanStan/WildPalms port (O7/O12).
 
+### From Plan 4 (correctness/ownership sweep, 2026-05-29)
+
+- 2026-05-29 — `src/engine/syncengine.cpp` (`~SyncEngine`/`stopWorkerThread` vs.
+  `dispatchSync`) — inv (correctness) — **destroying a `SyncEngine` while a fetch is in-flight
+  deadlocks.** `dispatchSync` invokes `fetchItems` on the backend's (main) thread via
+  `Qt::BlockingQueuedConnection`; `~SyncEngine`→`stopWorkerThread()` calls `m_workerThread.wait()`
+  on that same main thread. If the main thread is blocked inside the queued `fetchItems` when the
+  dtor runs, the worker waits for the main thread and the main thread waits for the worker —
+  classic deadlock (reproduced as a 300 s ASAN timeout while writing the P4.T6 test). Plan 4's
+  leak fix (unique_ptr ifaces) is orthogonal and correct; this teardown constraint is why the
+  T6 test pins the post-completion teardown path, not a true mid-flight destroy. Candidate for the
+  SyncEngine decomposition follow-up: make teardown cancel + drain the in-flight op without a
+  blocking round-trip.
+- 2026-05-29 — `src/universal/genericsqlitebackend.cpp` (`deleteCollection`) — inv (correctness) —
+  best-effort eviction: `m_collections.remove()` runs even when the DROP / `_shapes` DELETE failed
+  (the method returns `false` to signal it). On failure the on-disk table or `_shapes` row may
+  persist while the in-memory cache no longer lists the collection — a reopen would resurrect it.
+  Deliberate + documented in code (P4.T2); named here. A future transactional-delete pass could
+  make it atomic.
+- 2026-05-29 — `src/universal/rawfilesbackend.cpp:79-88` — inv (correctness) — sibling silent
+  failure the AUDIT did not flag: `RawFilesBackend::clearCollection`/`deleteCollection` are still
+  `void` and call `QFile::remove(...)` without checking the result (same bug class Plan 4 fixed in
+  `GenericSqliteBackend`). Left out of Plan 4 scope (audit didn't list it; INVARIANTS §8). Fold
+  into a later correctness pass or the vocabulary plan.
+- 2026-05-29 — tooling — inv (discipline) — the worktree's clangd compile DB / `.clangd` resolves
+  `compile_commands.json` against the **deleted** `.worktrees/redress-3` path, so the editor emits
+  spurious `cannot_open_file`/stale-signature diagnostics that the real `build/` does not. Not a
+  build problem (ctest is green); re-point `compile_commands.json` at the active build dir per the
+  global clangd-setup convention. Cosmetic but misleading to future readers.
+- 2026-05-29 — `src/universal/rawfilesbackend.cpp:84` + `src/universal/genericsqlitebackend.cpp`
+  (`deleteCollection`) — inv (correctness) — `deleteCollection` removes `m_collections[id]` but
+  **leaves `m_shapeByCollection[id]` populated**, so `shapeFor(id)` keeps returning the deleted
+  collection's shape. Pre-existing (present on `main`, not a Plan 4 regression); the AUDIT did not
+  flag it and it is out of Plan 4 scope (INVARIANTS §8). The Plan 4 `m_collectionsMutex` now makes
+  the cleanup safe to add — a one-liner (`m_shapeByCollection.remove(id)` inside the lock) for a
+  later correctness pass. Surfaced by the P4 final whole-branch review.
+- 2026-05-29 — `src/universal/genericsqlitebackend.cpp` (`createCollection`) — inv (correctness) —
+  TOCTOU between the in-memory insert (under `m_collectionsMutex`) and the `_shapes` DB INSERT
+  (after the lock, to avoid the `m_connMutex` deadlock). A concurrent `deleteCollection` in that
+  window could leave a ghost in-memory entry or an orphan DB row. No worse than `main` (which did
+  the whole block unlocked) and benign under the current single-writer usage; `INSERT OR IGNORE`
+  keeps the DB self-consistent. Logged for the eventual transactional-collection pass. Surfaced by
+  the P4 final whole-branch review.
+- 2026-05-29 — `src/universal/genericsqlitebackend.h` `m_open` (and RawFiles equivalents) — inv
+  (correctness) — `m_open` is a plain `bool` read as a fast-path guard in every I/O method but
+  written in `ensureOpen()`; concurrent construct-to-use overlap is a technical data race under the
+  C++ memory model. Benign in practice (`ensureOpen` runs in the ctor before any other thread can
+  reach the object) and pre-existing; Plan 4's mutex guards the hashes, not `m_open`. Make it
+  `std::atomic<bool>` if a real concurrent-open path ever appears. Surfaced by the P4 final review.
+
 ## Resolved
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)
@@ -134,3 +189,26 @@ address — load-bearing knowledge, not audit restatements.
   `m_pendingOverride` deleted, the per-call override flows as a parameter. (7e69f1d, 5ee045f)
 - ~~`SyncEngineWorker::Mode` vs `SyncEngine::SyncBehavior` duplicate enums (inv 4).~~
   `Mode` deleted; the worker accepts `SyncEngine::SyncBehavior` directly. (94cd859)
+
+### By Plan 4 (correctness/ownership sweep, 2026-05-29)
+
+- ~~`MockBlobBackend` swallows injected `OnLoadRecords` failures via the base
+  `loadRecordsOrError` default (test false-green); production reaches the backend through that
+  surface (AUDIT MAJOR).~~ Override added that reports the injected failure (`false` + error);
+  pinned by a new `tst_mockblobbackend` slot with an `errorOccurred` spy. (P4.T1)
+- ~~`GenericSqliteBackend::clearCollection`/`deleteCollection` (void) silently ignore
+  DELETE/DROP failures (AUDIT MAJOR).~~ Now return `bool`, check every `exec()`, `qWarning` on
+  failure; `deleteCollection` gained the missing `!m_open` guard. Pinned by a missing-table test. (P4.T2)
+- ~~`RawFilesBackend`/`GenericSqliteBackend` race: worker-thread `shapeFor()` reads vs.
+  main-thread `createCollection` writes on unguarded collection hashes (AUDIT MAJOR).~~ Dedicated
+  `m_collectionsMutex` guards both hashes in both backends, deadlock-free (helpers called outside
+  the lock; `saveManifest` snapshots then writes unlocked). TSan-clean; concurrency stress test
+  added. (P4.T3)
+- ~~Raw `bool*` captured by two `CardDavProvider` lambdas with undefined firing order; one
+  deletes it (use-after-free) (AUDIT MAJOR).~~ Converted to `std::make_shared<bool>` captured by
+  value in both lambdas; manual `delete` removed. (P4.T4)
+- ~~Raw `QPromise*` in `CardDavCapabilityDiscovery` with four hand-maintained `delete` sites
+  (AUDIT MODERATE, folded).~~ Converted to `std::unique_ptr`; `.reset()` at each site. (P4.T5)
+- ~~Raw `QFutureInterface*` in `SyncEngine` leaked when destroyed mid-sync (dtor freed neither)
+  (AUDIT MAJOR).~~ Both members are `std::unique_ptr`; 8 delete sites → `.reset()`; dtor documents
+  why it does not `reportFinished()`. ASAN-clean over the sync lifecycle. (P4.T6)

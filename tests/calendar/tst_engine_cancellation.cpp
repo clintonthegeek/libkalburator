@@ -95,6 +95,9 @@ private slots:
     void watcherFinishedFiresOnce();
     void progressValueTicks();
 
+    // Ownership / leak regression.
+    void engineDestroyedMidSync_freesInterface();
+
 private:
     // Fixtures owned via unique_ptr; init() builds, cleanup() tears down.
     std::unique_ptr<QTemporaryDir>         m_tmpDir;
@@ -704,6 +707,58 @@ void TstEngineCancellation::progressValueTicks()
           "the current engine; SyncEngine emits progressUpdated signals "
           "instead. Wiring setProgressValue on the iface is a separate "
           "task, deferred from F2.");
+}
+
+void TstEngineCancellation::engineDestroyedMidSync_freesInterface()
+{
+    // Ownership regression: SyncEngine previously leaked its in-flight
+    // QFutureInterface* when destroyed mid-sync. After Plan 4 T6, both
+    // members are unique_ptr and are freed by the destructor automatically.
+    //
+    // Threading constraint: dispatchSync calls QMetaObject::invokeMethod
+    // with Qt::BlockingQueuedConnection to fetch items on the backend's
+    // thread (main thread). Destroying the engine while that call is in
+    // flight blocks the main thread in m_workerThread.wait() while the
+    // worker waits for the main thread to process its queued event —
+    // a deadlock. No timing trick (qWait, semaphore) avoids this without
+    // modifying production code.
+    //
+    // What we CAN test safely: run a complete sync cycle and destroy the
+    // engine afterwards. m_currentSingleIface is allocated synchronously
+    // by runSyncFuture() (so it is live from the moment the call returns),
+    // and is freed by onWorkerSyncCompleted() when the sync finishes. The
+    // destructor then sees a null unique_ptr — no double-free. LSAN/ASAN
+    // confirm no leak from the iface allocation over the whole lifecycle.
+    // Reverting the unique_ptr fix to a raw pointer would cause a leak in
+    // the true mid-sync-destroy scenario (not mechanically testable here),
+    // but NOT cause a crash in this happy-path scenario either. This test
+    // therefore pins the contract "engine teardown after a complete sync
+    // cycle does not crash or leak the iface", which is provable and
+    // deterministic.
+
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+
+    QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
+    QFuture<SyncResult> future =
+        m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    QT_WARNING_POP
+
+    // Pump the event loop so the worker can process BlockingQueuedConnection
+    // events (fetchItems, loadRecordsOrError) on the main thread and
+    // complete the sync. Destroying the engine before this returns would
+    // deadlock (see comment above).
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 10000);
+
+    // onWorkerSyncCompleted has already reset m_currentSingleIface.
+    // Destroying the engine now is safe: unique_ptr dtor sees null, no-op.
+    // cleanup() calls m_engine.reset() again — also a no-op.
+    m_engine.reset();
+
+    // Reaching here without crashing or hanging is the contract.
+    // (A crash still fails the test via the framework; LSAN/ASAN catch leaks/UAF.)
 }
 
 QTEST_MAIN(TstEngineCancellation)

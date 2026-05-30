@@ -76,7 +76,9 @@ QFuture<bool> CardDavProvider::connect() {
     m_discovery->setCredentials(m_serverUrl, m_username, m_password);
 
     // Track whether the discovery emitted an error before the future finished.
-    bool *errorSeen = new bool(false);
+    // shared_ptr so both lambdas (error + watcher-finished) hold a refcount and the
+    // bool outlives whichever fires last — the error/finished firing order is undefined.
+    auto errorSeen = std::make_shared<bool>(false);
     QObject::connect(m_discovery, &CardDavCapabilityDiscovery::error,
                      this, [this, errorSeen](const QString &msg) {
         *errorSeen = true;
@@ -92,7 +94,6 @@ QFuture<bool> CardDavProvider::connect() {
     QObject::connect(watcher, &QFutureWatcher<QList<CollectionInfo>>::finished,
                      this, [this, watcher, errorSeen]() {
         const bool hadError = *errorSeen;
-        delete errorSeen;
         const QList<CollectionInfo> books = watcher->result();
         watcher->deleteLater();
         onDiscoveryFinished(books, hadError);
