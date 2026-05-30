@@ -88,6 +88,8 @@ add_library(kalburator-typesupport STATIC
     src/typesupport/backendconfiguration.cpp
     src/typesupport/crashjournal.h
     src/typesupport/crashjournal.cpp
+    src/typesupport/incidencelock_registry.h
+    src/typesupport/incidencelock_registry.cpp
 )
 add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
 
