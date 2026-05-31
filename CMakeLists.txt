@@ -3,11 +3,15 @@ project(Kalburator VERSION 0.1.0 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # libkalburator — a reusable sync substrate for Qt6/KF6 calendar apps.
-# Two targets:
-#   Kalburator::Types — minimal type vocabulary (BackendConfiguration,
-#     LogicalCalendar, ICalendarCollection, etc.). Depends only on Qt6::Core,
-#     Qt6::Gui, and KF6::CalendarCore. Link this from host foundation libs
-#     that need the shared types but not the sync engine.
+# Three targets:
+#   Kalburator::Types — minimal type vocabulary (value types, enums, pure
+#     interfaces: LogicalCalendar, BackendRecord, ICalendarCollection, SyncMapping,
+#     etc.). Carries NO JSON, NO file I/O, NO QObject machinery (Plan 5 / AUDIT B2
+#     moved those out). Depends only on Qt6::Core, Qt6::Gui, KF6::CalendarCore.
+#   Kalburator::TypeSupport — light behavioural companion to Types (config JSON,
+#     crash-journal I/O, incidence lock registry, LogicalCalendar JSON codec).
+#     Depends only on Kalburator::Types + Qt — NOT the Sync engine — so light
+#     downstream foundation libs can link it.
 #   Kalburator::Sync — sync backends + coordination. Depends on
 #     Kalburator::Types plus KF6::DAV/KIO/Holidays. Link this from host
 #     applications that embed the sync engine.
@@ -77,6 +81,36 @@ target_link_libraries(kalburator-types
 
 set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# --- Kalburator::TypeSupport ------------------------------------------------
+# Light behavioural companion to Kalburator::Types: JSON codecs, crash-journal
+# I/O, and the incidence lock registry that used to sit in the "minimal type
+# vocabulary" (AUDIT B2). Depends ONLY on Kalburator::Types + Qt — NOT on the
+# heavy Kalburator::Sync engine — so deliberately-light downstream consumers
+# (libkalcal, PlanStan tests, PlanEngine) can link it without DAV/KIO/Network.
+add_library(kalburator-typesupport STATIC
+    src/typesupport/backendconfiguration.h
+    src/typesupport/backendconfiguration.cpp
+    src/typesupport/crashjournal.h
+    src/typesupport/crashjournal.cpp
+    src/typesupport/incidencelock_registry.h
+    src/typesupport/incidencelock_registry.cpp
+    src/typesupport/logicalcalendarjson.h
+    src/typesupport/logicalcalendarjson.cpp
+)
+add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
+
+target_include_directories(kalburator-typesupport
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/typesupport>
+)
+
+target_link_libraries(kalburator-typesupport
+    PUBLIC
+        kalburator-types
+)
+
+set_target_properties(kalburator-typesupport PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # --- Kalburator::Sync -------------------------------------------------------
 # Sync sources are layered across sub-directories per docs/phase0/05-repo-strategy.md:
 #   calendar/   — backends, coordination, CRUD items, ISyncHost
@@ -99,6 +133,9 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/sync/backendregistry.h
     src/calendar/caldavcapabilitydiscovery.h
     src/calendar/calendarmanager.h
+    # calendarmetadatamanager moved from src/types/ in Plan 5 (atomic QSaveFile Vdir
+    # metadata I/O; no downstream consumer, so calendar/ not TypeSupport; AUDIT B2).
+    src/calendar/calendarmetadatamanager.h
     src/calendar/decsyncactivecontroller.h
     src/calendar/decsyncbackend.h
     src/calendar/decsynccontrollerstore.h
@@ -141,6 +178,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/sync/backendregistry.cpp
     src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/calendarmanager.cpp
+    src/calendar/calendarmetadatamanager.cpp
     src/calendar/decsyncactivecontroller.cpp
     src/calendar/decsyncbackend.cpp
     src/calendar/decsynccontrollerstore.cpp
@@ -688,6 +726,7 @@ target_include_directories(kalburator
 
 target_link_libraries(kalburator
     PUBLIC
+        kalburator-typesupport
         kalburator-types
         Qt6::Sql
         Qt6::Network
