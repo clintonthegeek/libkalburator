@@ -17,12 +17,16 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-Execute **Plan 5 Phase 2 (downstream relinks)**: libkalcal, PlanStan, and PlanEngine consumers that
-currently link only `Kalburator::Types` but use `IncidenceLockRegistry`, `BackendConfiguration`,
-`CrashJournal`, or `LogicalCalendarJson` must be updated to also link `Kalburator::TypeSupport`.
-WildPalms include paths need updating for any moved headers. Branch
-`feature/redress-5-types-purification` is held **unmerged** until those downstream builds are
-green (INVARIANTS §10).
+**Plan 5 libkalburator side is MERGED to `main` and pushed** (`7d8a4ef`, 2026-05-31; merged
+`feature/redress-5-types-purification`; merged-tree ctest 133/133). Phase 2 downstream relinks are
+**done and verified green locally** but **held unpushed** on clinton-desktop pending integration:
+libkalcal `b4ef4ae0`, PlanStan `69e7df90`, WildPalms `3afc074` (PlanEngine needed no change — it
+gets `Kalburator::TypeSupport` transitively via `KalCal::Core`). Because downstream repos pin a
+libkalburator **tag** for CI/standalone (libkalcal pins `v0.53`), cut a libkalburator tag containing
+`Kalburator::TypeSupport` and bump the downstream pins **before/with** pushing those relink commits,
+else their standalone/CI builds fetch a TypeSupport-less libkalburator (INVARIANTS §10). See
+[[plan5-typesupport-pending-integration]] in auto-memory. After that lands, the campaign **Next
+action** is **Plan 6 — `shape/` decoupling (move `ConflictPolicy` down, AUDIT B6)**.
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
@@ -160,7 +164,7 @@ severities, not the retired old plan numbers:
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
-| 5 | `types/` purification | B2 (MAJOR, corrected) | **Phase 1 done (typesupport/ landed); Phase 2 downstream relinks next** |
+| 5 | `types/` purification | B2 (MAJOR, corrected) | **libkalburator MERGED to main (7d8a4ef, TypeSupport target); downstream relinks done+verified, held unpushed pending tag+pin bump** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
