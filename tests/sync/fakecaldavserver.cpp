@@ -65,7 +65,13 @@ FakeCalDavServer::~FakeCalDavServer() = default;
 
 bool FakeCalDavServer::startListening()
 {
+    m_requestCounts.clear();
     return listen(QHostAddress::LocalHost, 0);
+}
+
+int FakeCalDavServer::requestCount(const QByteArray &method) const
+{
+    return m_requestCounts.value(method);
 }
 
 QUrl FakeCalDavServer::baseUrl() const
@@ -195,6 +201,10 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
 
     const QByteArray method = parts.at(0);
     const QString path = QString::fromUtf8(parts.at(1));
+
+    // Count well-formed requests per method so tests can assert request shape
+    // (e.g. "the primed loadCalendars path issues zero additional PROPFINDs").
+    ++m_requestCounts[method];
 
     const int headerEnd = fullRequest.indexOf("\r\n\r\n");
     const QByteArray body = (headerEnd > 0)

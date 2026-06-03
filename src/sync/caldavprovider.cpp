@@ -11,6 +11,19 @@
 
 namespace Kalburator::Sync {
 
+namespace {
+// Synthesize KDAV's content-type flags from the discovered per-component bools.
+// The discovery walk records supportsVEvent/VTodo as booleans; the backend's
+// internal maps and the network loadCalendars path use a KDAV bitmask.
+KDAV::DavCollection::ContentTypes contentTypesFromCaps(const PerCalendarCapabilities &c)
+{
+    KDAV::DavCollection::ContentTypes types;
+    if (c.supportsVEvent) types |= KDAV::DavCollection::Events;
+    if (c.supportsVTodo)  types |= KDAV::DavCollection::Todos;
+    return types;
+}
+} // namespace
+
 CalDavProvider::CalDavProvider(QObject *parent)
     : IProvider(parent)
     , m_id(QUuid::createUuid().toString(QUuid::WithoutBraces))
@@ -99,6 +112,7 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
     if (success) {
         const auto caps = m_discovery->discoveredCapabilities();
         m_calendarUrls = m_discovery->calendarUrls();
+        m_perCalendarCaps = caps.perCalendarCapabilities;  // retained for createBackend() priming
         m_collections.clear();
         for (auto it = caps.perCalendarCapabilities.constBegin();
              it != caps.perCalendarCapabilities.constEnd(); ++it) {
@@ -147,6 +161,7 @@ void CalDavProvider::disconnect() {
     m_connected = false;
     m_collections.clear();
     m_calendarUrls.clear();
+    m_perCalendarCaps.clear();
     emit connectionStateChanged(false);
 }
 
@@ -164,6 +179,18 @@ CalDavProvider::createBackend(const QString &collectionId) {
     // the unique_ptr<IBlobBackend> upcast is implicit.
     auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
     backend->registerCalendarUrl(collectionId, urlIt.value());
+
+    // Seed the bound calendar from connect-time discovery so the backend's
+    // loadCalendars() short-circuits its server-wide PROPFIND (v0.63). For plain
+    // CalDav the collectionId IS the discovery key.
+    const auto capIt = m_perCalendarCaps.constFind(collectionId);
+    if (capIt != m_perCalendarCaps.constEnd()) {
+        backend->primeCalendars({ RemoteCalendarBackend::PrimedCalendar{
+            collectionId,
+            urlIt.value(),
+            capIt.value().serverColor,
+            contentTypesFromCaps(capIt.value()) } });
+    }
     return backend;
 }
 

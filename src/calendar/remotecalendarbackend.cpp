@@ -229,6 +229,11 @@ void RemoteCalendarBackend::setDbPath(const QString &dbPath)
     }
 }
 
+void RemoteCalendarBackend::setCacheDir(const QString &dir)
+{
+    m_cacheDirOverride = dir;
+}
+
 QString RemoteCalendarBackend::ctag(const QString &calendarId) const
 {
     if (m_ctags)
@@ -330,21 +335,45 @@ QMap<QString, QString> RemoteCalendarBackend::currentEtags() const
 // Content Cache for Delta Sync
 // ============================================================================
 
+namespace {
+// Process-stable 64-bit hash (FNV-1a) over a string's UTF-8 bytes. Unlike
+// qHash(QString), this does NOT incorporate the per-process random QHashSeed,
+// so the derived cache filename is identical across launches for the same
+// account — the property the content cache requires to persist.
+quint64 stableContentCacheHash(const QString &s)
+{
+    const QByteArray bytes = s.toUtf8();
+    quint64 hash = 1469598103934665603ULL;          // FNV offset basis
+    for (const char ch : bytes) {
+        hash ^= static_cast<quint64>(static_cast<unsigned char>(ch));
+        hash *= 1099511628211ULL;                    // FNV prime
+    }
+    return hash;
+}
+} // namespace
+
 void RemoteCalendarBackend::initContentCache()
 {
     if (m_cacheInitialized) {
         return;
     }
 
-    // Create cache in app's cache directory
-    QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    // Cache directory: caller-chosen (per-collection profile folder) when set,
+    // otherwise the app's shared cache location.
+    QString cacheDir = m_cacheDirOverride.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        : m_cacheDirOverride;
     if (cacheDir.isEmpty()) {
         cacheDir = QDir::tempPath();
     }
     QDir().mkpath(cacheDir);
 
-    // Create a host-specific cache file to avoid collisions between servers
-    QString hostHash = QString::number(qHash(m_url.host() + m_url.path()));
+    // Create a host-specific cache file to avoid collisions between servers.
+    // NOTE: must be a *stable* hash — qHash(QString) mixes in a per-process
+    // random seed (QHashSeed), so it yields a different filename every launch,
+    // orphaning the previous run's cache (libkalburator content-cache handoff,
+    // 2026-05-27). Use a fixed FNV-1a over the UTF-8 bytes instead.
+    QString hostHash = QString::number(stableContentCacheHash(m_url.host() + m_url.path()));
     QString dbPath = cacheDir + QStringLiteral("/caldav-cache-%1.db").arg(hostHash);
 
     QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_cacheConnectionName);
@@ -472,6 +501,21 @@ void RemoteCalendarBackend::clearCachedContentForCalendar(const QString &calenda
 // Calendar list loading
 void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
 {
+    // Primed fast-path: the provider already discovered this calendar at
+    // connect() and seeded our maps via primeCalendars(). Replay the cached
+    // discovery instead of re-PROPFINDing the whole server (the per-backend
+    // redundancy fixed in v0.63). Mirrors the fetchItems() primed-CTag pattern.
+    if (!m_primedCalendarIds.isEmpty()) {
+        qDebug() << "RemoteCalendarBackend: loadCalendars served from primed cache for"
+                 << collectionId << "(" << m_primedCalendarIds.size()
+                 << "calendar(s), 0 PROPFIND)";
+        for (const QString &calId : m_primedCalendarIds) {
+            emit calendarDiscovered(collectionId, calId);
+        }
+        emit loadCalendarsFinished(collectionId, true);
+        return;
+    }
+
     qDebug() << "RemoteCalendarBackend: Loading calendars for collection:" << collectionId;
     KDAV::DavUrl davUrl(m_url, KDAV::CalDav);
     auto *fetchJob = new KDAV::DavCollectionsFetchJob(davUrl, this);
@@ -583,6 +627,31 @@ void RemoteCalendarBackend::primeCtagCache(const QMap<QString, QString> &ctags)
     }
     qDebug() << "RemoteCalendarBackend::primeCtagCache: primed" << ctags.size()
              << "ctags (total cache size now" << m_primedCtags.size() << ")";
+}
+
+void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendars)
+{
+    for (const PrimedCalendar &c : calendars) {
+        if (c.calendarId.isEmpty()) {
+            qWarning() << "RemoteCalendarBackend::primeCalendars: skipping entry with empty calendarId";
+            continue;
+        }
+        // Configure the URL with credentials, exactly as registerCalendarUrl /
+        // the network discovery path do, so a primed backend can sync without
+        // any further PROPFIND.
+        if (!c.davUrl.isEmpty()) {
+            m_davUrls[c.calendarId] = configuredDavUrl(c.davUrl);
+        }
+        if (c.color.isValid()) {
+            m_calendarColors[c.calendarId] = c.color;
+        }
+        m_calendarContentTypes[c.calendarId] = c.contentTypes;
+        if (!m_primedCalendarIds.contains(c.calendarId)) {
+            m_primedCalendarIds.append(c.calendarId);
+        }
+    }
+    qDebug() << "RemoteCalendarBackend::primeCalendars: primed" << calendars.size()
+             << "calendar(s) (total primed now" << m_primedCalendarIds.size() << ")";
 }
 
 QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &calendarIds)

@@ -56,6 +56,16 @@ public:
      */
     void setDbPath(const QString &dbPath);
 
+    /**
+     * @brief Override the directory used for the delta-sync content cache.
+     *
+     * When set (non-empty), initContentCache() places the cache DB under @p dir
+     * instead of QStandardPaths::CacheLocation. The host app uses this to keep
+     * the cache inside a per-collection profile folder. Must be called before
+     * the first fetchItems() (which lazily initialises the cache).
+     */
+    void setCacheDir(const QString &dir);
+
     // ---- Per-backend CTag access (CalDAV sync optimisation) ----
     /**
      * @brief Get the stored CTag for a calendar.
@@ -151,6 +161,35 @@ public:
      * @param ctags Map of calendarId -> fresh CTag (typically returned by fetchAllCtags).
      */
     void primeCtagCache(const QMap<QString, QString> &ctags);
+
+    /**
+     * @brief Per-calendar metadata the provider already discovered at connect().
+     *
+     * Carries exactly what loadCalendars() would otherwise re-fetch per backend
+     * (minus the CTag, which is not part of the discovery walk and stays on the
+     * primeCtagCache() path). The raw @ref davUrl is configured with credentials
+     * internally, so a primed backend is self-sufficient.
+     */
+    struct PrimedCalendar {
+        QString calendarId;   ///< Discovery key (== server display name); the id emitted by loadCalendars
+        QString davUrl;       ///< Raw calendar DAV URL (credentials added internally)
+        QColor  color;        ///< apple:calendar-color, may be invalid
+        KDAV::DavCollection::ContentTypes contentTypes;  ///< synthesized from supported components
+    };
+
+    /**
+     * @brief Seed per-calendar metadata the provider already discovered.
+     *
+     * Populates the same internal maps loadCalendars() fills (davUrls, colors,
+     * content types) directly from connect-time discovery, and marks the listed
+     * calendars as primed. After priming, the next loadCalendars(collectionId)
+     * skips its DavCollectionsFetchJob entirely and emits calendarDiscovered for
+     * each primed calendar, then loadCalendarsFinished — zero PROPFINDs.
+     *
+     * Re-priming overwrites. Priming nothing is a no-op and loadCalendars falls
+     * back to the network walk (standalone backends, tests).
+     */
+    void primeCalendars(const QList<PrimedCalendar> &calendars);
 
     // ---- Backend::ChangeDetection (Phase K.1) ----
     // Thin delegations to the existing CTag surface above. The engine
@@ -361,6 +400,10 @@ private:
     };
     QMap<QString, PrimedCtag> m_primedCtags;
     static constexpr int kPrimedCtagFreshnessMs = 60'000;
+    // Calendars seeded via primeCalendars(); when non-empty, loadCalendars()
+    // short-circuits the server walk and replays these directly (insertion
+    // order preserved for deterministic calendarDiscovered emission).
+    QStringList m_primedCalendarIds;
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
     // Our own local etag cache: map from remote URL string to ETag
     QMap<QString, QString> m_localEtags;
@@ -369,6 +412,7 @@ private:
     // SQLite cache for item content to avoid re-fetching unchanged items
     QString m_cacheConnectionName;
     bool m_cacheInitialized = false;
+    QString m_cacheDirOverride;  // when non-empty, overrides CacheLocation (setCacheDir)
 
     // Initialize the cache database (lazy, called on first fetchItems)
     void initContentCache();

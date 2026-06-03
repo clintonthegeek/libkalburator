@@ -2,6 +2,7 @@
 #define KALBURATOR_SYNC_CALDAVPROVIDER_H
 
 #include "iprovider.h"
+#include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
 
 #include <QMap>
 #include <QPromise>
@@ -64,6 +65,10 @@ private:
 
     CalDavCapabilityDiscovery           *m_discovery = nullptr;
     QMap<QString, QString>               m_calendarUrls;   // collectionId -> href
+    // Per-calendar capabilities copied out of the discovery before it is
+    // deleteLater()'d, so createBackend() can prime each backend (color +
+    // content types) without keeping the discovery object alive.
+    QMap<QString, PerCalendarCapabilities> m_perCalendarCaps;  // collectionId -> caps
     std::unique_ptr<QPromise<bool>>      m_connectPromise;
 };
 
