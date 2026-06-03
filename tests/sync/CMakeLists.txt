@@ -238,3 +238,13 @@ if(KALBURATOR_HAVE_AKONADI)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
 endif()
+
+# Manual live-server probe (NOT a CI test). Drives CalDavProvider against a real
+# Radicale instance to trace the v0.63 discovery primer end-to-end. Off by
+# default; enable with -DKALBURATOR_BUILD_LIVE_PROBES=ON.
+option(KALBURATOR_BUILD_LIVE_PROBES "Build manual live-server probes (not CI tests)" OFF)
+if(KALBURATOR_BUILD_LIVE_PROBES)
+    add_executable(live_radicale_primer_probe live_radicale_primer_probe.cpp)
+    target_link_libraries(live_radicale_primer_probe
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test Kalburator::Sync)
+endif()
