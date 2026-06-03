@@ -2,6 +2,7 @@
 #define KALBURATOR_SYNC_MULTIPROTOCOLDAVPROVIDER_H
 
 #include "iprovider.h"
+#include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
 
 #include <QFutureWatcher>
 #include <QMap>
@@ -95,6 +96,9 @@ private:
     QString m_cardDavError;
     QMap<QString, QString> m_calDavUrlMap;   // inner calendarId → URL href
     QMap<QString, QString> m_cardDavUrlMap;  // inner collectionId → URL href
+    // Per-calendar capabilities retained from CalDAV discovery so createBackend()
+    // can prime each RemoteCalendarBackend (keyed by inner calendarId).
+    QMap<QString, PerCalendarCapabilities> m_calDavCaps;
 
     std::shared_ptr<QPromise<bool>> m_connectPromise;
 };

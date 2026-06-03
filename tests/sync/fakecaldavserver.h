@@ -46,6 +46,12 @@ public:
     /// e.g. "http://127.0.0.1:<port>/"
     QUrl baseUrl() const;
 
+    /// Number of well-formed requests received for @p method (e.g. "PROPFIND",
+    /// "REPORT", "PUT") since the last startListening(). Lets tests assert
+    /// request shape — e.g. that a primed loadCalendars issues zero additional
+    /// PROPFINDs beyond the connect-time discovery walk.
+    int requestCount(const QByteArray &method) const;
+
     void setReturn401(bool on)   { m_return401 = on; }
     void setReturn500(bool on)   { m_return500 = on; }
 
@@ -119,6 +125,7 @@ private:
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
     QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
+    QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()
 
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
     /// then by UID.

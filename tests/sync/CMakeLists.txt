@@ -57,6 +57,25 @@ set_tests_properties(tst_caldav_provider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# v0.63 RemoteCalendarBackend convergence: discovery primer (zero redundant
+# PROPFINDs) + content-cache filename determinism. Reuses FakeCalDavServer.
+add_executable(tst_remotecalendarbackend_convergence
+    tst_remotecalendarbackend_convergence.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_remotecalendarbackend_convergence
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_remotecalendarbackend_convergence COMMAND tst_remotecalendarbackend_convergence)
+set_tests_properties(tst_remotecalendarbackend_convergence PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Phase H Task 7 — CalDavConfigWidget UI tests. Reuses FakeCalDavServer
 # from Task 6 for the Test-Connection button workflow.
 add_executable(tst_caldav_config_widget

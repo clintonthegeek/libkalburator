@@ -14,6 +14,18 @@ Q_LOGGING_CATEGORY(lcMultiDav, "kalburator.sync.multidav")
 
 namespace Kalburator::Sync {
 
+namespace {
+// Synthesize KDAV's content-type flags from the discovered per-component bools
+// (mirrors CalDavProvider's helper).
+KDAV::DavCollection::ContentTypes contentTypesFromCaps(const PerCalendarCapabilities &c)
+{
+    KDAV::DavCollection::ContentTypes types;
+    if (c.supportsVEvent) types |= KDAV::DavCollection::Events;
+    if (c.supportsVTodo)  types |= KDAV::DavCollection::Todos;
+    return types;
+}
+} // namespace
+
 MultiProtocolDavProvider::MultiProtocolDavProvider(QObject *parent)
     : IProvider(parent)
     , m_id(QUuid::createUuid().toString(QUuid::WithoutBraces))
@@ -162,6 +174,7 @@ void MultiProtocolDavProvider::disconnect()
     m_connected = false;
     m_collections.clear();
     m_urlByCollectionId.clear();
+    m_calDavCaps.clear();
     emit connectionStateChanged(false);
 }
 
@@ -179,6 +192,20 @@ MultiProtocolDavProvider::createBackend(const QString &collectionId)
         auto backend = std::make_unique<RemoteCalendarBackend>(
             m_serverUrl, m_username, m_password);
         backend->registerCalendarUrl(collectionId, href);
+
+        // Seed the bound calendar from connect-time discovery so loadCalendars()
+        // skips its server-wide PROPFIND (v0.63). The prefixed collectionId is
+        // "multiproto-dav:<id>:cal:<innerKey>"; the discovery caps + the emitted
+        // calendarId use the inner (unprefixed) key.
+        const QString innerKey = collectionId.mid(calPrefix.length());
+        const auto capIt = m_calDavCaps.constFind(innerKey);
+        if (capIt != m_calDavCaps.constEnd()) {
+            backend->primeCalendars({ RemoteCalendarBackend::PrimedCalendar{
+                innerKey,
+                href,
+                capIt.value().serverColor,
+                contentTypesFromCaps(capIt.value()) } });
+        }
         return backend;
     }
     if (collectionId.startsWith(contactsPrefix)) {
@@ -195,6 +222,7 @@ void MultiProtocolDavProvider::onCalDavFinished(bool success)
     if (success) {
         const auto caps = m_caldavDiscovery->discoveredCapabilities();
         m_calDavUrlMap = m_caldavDiscovery->calendarUrls();
+        m_calDavCaps = caps.perCalendarCapabilities;  // retained for createBackend() priming
         for (auto it = caps.perCalendarCapabilities.constBegin();
              it != caps.perCalendarCapabilities.constEnd(); ++it) {
             CollectionInfo ci;
