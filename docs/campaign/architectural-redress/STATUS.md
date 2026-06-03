@@ -21,12 +21,15 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 `feature/redress-5-types-purification`; merged-tree ctest 133/133). Phase 2 downstream relinks are
 **done and verified green locally** but **held unpushed** on clinton-desktop pending integration:
 libkalcal `b4ef4ae0`, PlanStan `69e7df90`, WildPalms `3afc074` (PlanEngine needed no change — it
-gets `Kalburator::TypeSupport` transitively via `KalCal::Core`). Because downstream repos pin a
-libkalburator **tag** for CI/standalone (libkalcal pins `v0.53`), cut a libkalburator tag containing
-`Kalburator::TypeSupport` and bump the downstream pins **before/with** pushing those relink commits,
-else their standalone/CI builds fetch a TypeSupport-less libkalburator (INVARIANTS §10). See
-[[plan5-typesupport-pending-integration]] in auto-memory. After that lands, the campaign **Next
-action** is **Plan 6 — `shape/` decoupling (move `ConflictPolicy` down, AUDIT B6)**.
+gets `Kalburator::TypeSupport` transitively via `KalCal::Core`). The gating libkalburator **tag was
+cut 2026-06-03: `v0.62`** (annotated `b6483ca` → `8a35e54`, pushed) — it contains
+`Kalburator::TypeSupport` plus redress Plans 1–4. **Remaining manual step:** bump the downstream
+pins to `v0.62` (or later) and push the libkalcal/WildPalms relink commits; PlanStan is bumping its
+pin as part of its own master wave. See [[plan5-typesupport-pending-integration]] and
+[[caldav-primer-coordination-v063]] in auto-memory. (Out of campaign, same day: `v0.63` cut for the
+RemoteCalendarBackend CalDAV-primer + content-cache convergence — downstream coordination, not a
+redress plan.) The campaign **Next action** remains **Plan 6 — `shape/` decoupling (move
+`ConflictPolicy` down, AUDIT B6)**.
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
