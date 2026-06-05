@@ -287,6 +287,12 @@ void TestCalendarSyncErrorRecovery::targetUpdateItemFailure_propagatesAsSyncResu
     // updateItem on target.
     auto eventA = makeEvent(QStringLiteral("evt-1"), QStringLiteral("New Summary"));
     auto eventB = makeEvent(QStringLiteral("evt-1"), QStringLiteral("Old Summary"));
+    // Make source genuinely newer than target (the test's stated intent: "target
+    // has the older copy"). Without explicit stamps these tie, and the result
+    // would hinge on the LWW tie-break direction rather than the update path
+    // under test — see lastWriteWins.h.
+    eventB->setLastModified(QDateTime(QDate(2026, 6, 1), QTime(10, 0, 0), QTimeZone::utc()));
+    eventA->setLastModified(QDateTime(QDate(2026, 6, 1), QTime(12, 0, 0), QTimeZone::utc()));
     m_source->addIncidence(QString::fromLatin1(kCalendarId), eventA);
     m_target->addIncidence(QString::fromLatin1(kCalendarId), eventB);
 

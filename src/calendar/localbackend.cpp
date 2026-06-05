@@ -1036,16 +1036,27 @@ static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
 
     const QDateTime icalLastMod = extractICalLastModified(bytes);
     const QDateTime fileMtime   = QFileInfo(filePath).lastModified();
-    // Use the maximum of iCal LAST-MODIFIED and file mtime:
-    // - iCal LAST-MODIFIED captures explicit timestamps from calendar apps
-    //   (may be seconds-precision but can be far in the past/future).
-    // - File mtime has sub-second precision and correctly orders rapid
-    //   writes (e.g., two test writes 50ms apart in the same second).
-    // Taking the max preserves both: explicit iCal stamps dominate when
-    // they're genuinely newer; file mtime's sub-second precision wins
-    // when both timestamps are in the same second.
-    const QDateTime bestMod = (icalLastMod.isValid() && icalLastMod > fileMtime)
-                              ? icalLastMod : fileMtime;
+    // Pick the record's lastModified from the explicit iCal LAST-MODIFIED stamp
+    // and the file mtime, preserving BOTH intents (PlanStan bug doc
+    // sync-conflicts-lastwritewins-tie-bias.md, fix A2):
+    // - An explicit iCal LAST-MODIFIED is authoritative: a calendar app's edit
+    //   time must not be overridden just because the file was later re-saved /
+    //   format-normalized / imported (which bumps mtime to "now"). The old
+    //   max(ical, mtime) silently let mtime win for any past-dated stamp.
+    // - iCal LAST-MODIFIED is only whole-second precise; when the file mtime is
+    //   in the SAME second as the stamp, fold mtime's sub-second part in so
+    //   rapid back-to-back writes within that second still order correctly.
+    // - With no explicit stamp, the file mtime is all we have.
+    QDateTime bestMod;
+    if (!icalLastMod.isValid()) {
+        bestMod = fileMtime;
+    } else {
+        bestMod = icalLastMod;
+        if (fileMtime.isValid()
+            && fileMtime.toSecsSinceEpoch() == icalLastMod.toSecsSinceEpoch()) {
+            bestMod = icalLastMod.addMSecs(fileMtime.time().msec());
+        }
+    }
 
     Kalburator::Sync::BackendRecord rec;
     rec.id          = uid;

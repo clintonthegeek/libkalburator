@@ -1,6 +1,7 @@
 #include "syncengine.h"
 #include "syncengine_p.h"
 #include "syncrequest.h"
+#include "lastwritewins.h"
 #include "baselinestore.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
@@ -2408,9 +2409,12 @@ void SyncEngineWorker::unifiedHandleConflicts()
             case ConflictResolution::TargetWins:
                 sourceWins = false; resolved = true; break;
             case ConflictResolution::LastWriteWins:
-                // For modify-delete, the deleted side has a null/invalid
-                // lastModified, so the modifier always wins via >= comparison.
-                sourceWins = op.record.lastModified >= op.targetRecord.lastModified;
+                // Modify-delete: the deleted side has an invalid lastModified, so
+                // the modifier wins (valid > invalid). A true modify-modify tie
+                // resolves to the target (not source) — see lastWriteWins.h. One
+                // shared comparator with ConflictManager so the two sites agree.
+                sourceWins = Kalburator::Sync::lastWriteWinsPrefersSource(
+                                 op.record.lastModified, op.targetRecord.lastModified);
                 resolved = true; break;
             case ConflictResolution::Duplicate: {
                 const bool srcDeleted = op.record.id.isEmpty();
