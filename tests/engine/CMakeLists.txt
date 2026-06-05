@@ -27,6 +27,7 @@ function(kalburator_add_engine_integration_test TEST_NAME)
 endfunction()
 
 # Task 44 — MappingScheduler unit tests
+kalburator_add_engine_test(tst_lastwritewins)
 kalburator_add_engine_test(tst_mapping_scheduler)
 
 # Architectural-redress Plan 1 Task 3 — MappingQueue unit tests.

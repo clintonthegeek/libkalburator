@@ -55,6 +55,24 @@ static QByteArray makeIcsBytesWithSummary(const QString &uid, const QString &sum
         "END:VCALENDAR\r\n").arg(uid, summary).toUtf8();
 }
 
+/// Build an ICS byte string with an explicit LAST-MODIFIED stamp
+/// (@p lastMod in iCal "yyyyMMddTHHmmssZ" form).
+static QByteArray makeIcsBytesWithLastModified(const QString &uid, const QString &lastMod)
+{
+    return QStringLiteral(
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//test//test//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:%1\r\n"
+        "SUMMARY:Test event %1\r\n"
+        "LAST-MODIFIED:%2\r\n"
+        "DTSTART:20250101T120000Z\r\n"
+        "DTEND:20250101T130000Z\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n").arg(uid, lastMod).toUtf8();
+}
+
 // ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
@@ -70,6 +88,11 @@ private slots:
     void modifiedSince_shortCircuitsOnFingerprint();
     void updateRecord_modifies_existing_record();
     void updateRecord_nonexistent_id_returns_error();
+
+    // lastModified derivation (PlanStan LWW tie-bias fix A2)
+    void lastModified_explicitStamp_authoritativeOverFileMtime();
+    void lastModified_fileMtime_subsecondTiebreakWithinSameSecond();
+    void lastModified_fileMtime_whenNoExplicitStamp();
 };
 
 // ---------------------------------------------------------------------------
@@ -350,6 +373,110 @@ void TestLocalBackendBlobView::updateRecord_nonexistent_id_returns_error()
     const BackendRecord ghost = makeRecord(QStringLiteral("uid-ghost-L"), ghostData);
     bool ok = blob->updateRecord(ghost);
     QVERIFY(!ok);
+}
+
+// ---------------------------------------------------------------------------
+// lastModified derivation — PlanStan LWW tie-bias fix A2.
+// An explicit iCal LAST-MODIFIED is authoritative; file mtime only folds in its
+// sub-second part when it lands in the same second; and is the sole source when
+// no explicit stamp exists.
+// ---------------------------------------------------------------------------
+
+void TestLocalBackendBlobView::lastModified_explicitStamp_authoritativeOverFileMtime()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString calPath = root.filePath(QStringLiteral("cal-lm"));
+    QVERIFY(QDir().mkpath(calPath));
+    const QString filePath = calPath + QStringLiteral("/uid-lm1.ics");
+
+    // Explicit historical stamp; file written/touched "now" (a different second).
+    const QDateTime stamp = QDateTime(QDate(2020, 1, 1), QTime(0, 0, 0), QTimeZone::utc());
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(makeIcsBytesWithLastModified(QStringLiteral("uid-lm1"),
+                                             QStringLiteral("20200101T000000Z")));
+    }
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(QDateTime::currentDateTimeUtc(), QFileDevice::FileModificationTime));
+        f.close();
+    }
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    auto rec = blob->loadRecord(QStringLiteral("uid-lm1"));
+    QVERIFY(rec.has_value());
+
+    // The explicit stamp wins — NOT the much-later file mtime (the old bug).
+    QCOMPARE(rec->lastModified.toUTC(), stamp);
+}
+
+void TestLocalBackendBlobView::lastModified_fileMtime_subsecondTiebreakWithinSameSecond()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString calPath = root.filePath(QStringLiteral("cal-lm"));
+    QVERIFY(QDir().mkpath(calPath));
+    const QString filePath = calPath + QStringLiteral("/uid-lm2.ics");
+
+    const QDateTime stampSecond = QDateTime(QDate(2026, 6, 4), QTime(12, 0, 0), QTimeZone::utc());
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(makeIcsBytesWithLastModified(QStringLiteral("uid-lm2"),
+                                             QStringLiteral("20260604T120000Z")));
+    }
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        // Same wall-clock second as the stamp, but with a sub-second part.
+        QVERIFY(f.setFileTime(stampSecond.addMSecs(500), QFileDevice::FileModificationTime));
+        f.close();
+    }
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    auto rec = blob->loadRecord(QStringLiteral("uid-lm2"));
+    QVERIFY(rec.has_value());
+
+    // Expected = the stamp's second + whatever sub-second the filesystem stored
+    // (robust to filesystems that round mtime precision).
+    const int storedMs = QFileInfo(filePath).lastModified().time().msec();
+    QCOMPARE(rec->lastModified.toUTC(), stampSecond.addMSecs(storedMs));
+}
+
+void TestLocalBackendBlobView::lastModified_fileMtime_whenNoExplicitStamp()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+    const QString calPath = root.filePath(QStringLiteral("cal-lm"));
+    QVERIFY(QDir().mkpath(calPath));
+    const QString filePath = calPath + QStringLiteral("/uid-lm3.ics");
+
+    // makeIcsBytes carries no LAST-MODIFIED.
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(makeIcsBytes(QStringLiteral("uid-lm3")));
+    }
+    const QDateTime mtime = QDateTime(QDate(2024, 3, 3), QTime(9, 0, 0), QTimeZone::utc());
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::ReadWrite));
+        QVERIFY(f.setFileTime(mtime, QFileDevice::FileModificationTime));
+        f.close();
+    }
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    auto rec = blob->loadRecord(QStringLiteral("uid-lm3"));
+    QVERIFY(rec.has_value());
+
+    // No stamp → file mtime is authoritative.
+    QCOMPARE(rec->lastModified.toUTC(), QFileInfo(filePath).lastModified().toUTC());
 }
 
 // ---------------------------------------------------------------------------
