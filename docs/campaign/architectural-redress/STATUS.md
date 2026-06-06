@@ -195,7 +195,7 @@ severities, not the retired old plan numbers:
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
-| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **NEXT — plan doc in progress (see "Next action": file must be split, not moved wholesale)** |
+| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **IN PROGRESS — feature/redress-6-shape-decoupling** |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3; **replan against post-v0.63 tree — target grew, audit figures stale**) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
@@ -250,6 +250,17 @@ the invariant or audit finding. Format:
   the cache reflects delete intent. Behavior-preserving vs. the old `void` impl; the bool return
   signals the partial failure. (Plan 4 T2 review; named in `FINDINGS.md`.)
 - **2026-05-30 — Plan 5 target shape = a NEW light `kalburator-typesupport` target (Types + Qt, no Sync), NOT distribute-to-domains.** The distribute-to-domains shape (first draft, reset at `6010ee2`) broke deliberately-light Types-only downstream consumers (libkalcal `KalCal::Core`/`Models`, PlanStan tests, PlanEngine) that reach into `types/` for behavior; relocating that behavior behind the heavy `Kalburator::Sync` target removes the symbols from them and cannot be shimmed at link time. A light helpers target reachable by Types-only consumers is what AUDIT B2's fix direction actually prescribed. (AUDIT B2; user decisions 2026-05-30; supersedes the earlier "distribute to domain homes" entry, which is withdrawn.)
+- **2026-06-06 — Plan 6 fix shape = narrow `RecordMerger::merge()` to
+  `Shape::AutoResolveStrategy`, NOT move `ConflictPolicy` down.** Verified evidence: all 9
+  merger implementations read only `policy.autoResolve`; both production callsites
+  (`syncengine.cpp:1665/:2529`) pass the constant `deferAll()`; zero downstream
+  `RecordMerger` implementors or `merge()` callers exist (PlanStan/WildPalms grep, 2026-06-06);
+  the audit-literal move would break the Plan 5 purity gate (the policy struct carries
+  JSON + behavior + `ConflictRecord` coupling). The enum lands in `src/shape/`
+  (NOT `types/` — `types/synctypes.h` already holds the rival `ConflictResolution` enum;
+  a second near-synonym conflict enum there would deepen the U3-family collision Plan 10
+  must untangle). `Kalburator::Conflict::AutoResolveStrategy` survives as an alias for
+  source compatibility. (AUDIT B6, corrected from code; user decisions 2026-06-06.)
 
 ## Acceptance gates
 
