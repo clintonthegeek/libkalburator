@@ -337,6 +337,7 @@ set(KALBURATOR_SHAPE_HEADERS
     src/shape/pipeline.h
     src/shape/transformationregistry.h
     src/shape/canonicalrecord.h
+    src/shape/autoresolvestrategy.h
     src/shape/recorddiffer.h
     src/shape/recordmerger.h
     src/shape/recordwriter.h
