@@ -386,9 +386,9 @@ inline QList<SyncMapping> syncMappingsFromJson(const QJsonArray &arr) {
     return mappings;
 }
 
-/// Per-call execution override for runSyncFuture(). Lets callers
-/// request one-way mirror semantics for a mapping that's
-/// otherwise configured for bidirectional sync.
+/// Per-call execution override for runSync(). Lets callers request
+/// one-way mirror semantics for a mapping that's otherwise configured
+/// for bidirectional sync, or a clobber (wipe target + re-push).
 struct ExecutionOverride {
     enum class Direction {
         Default,      ///< Use the mapping's stored direction (today: bidirectional).
@@ -396,6 +396,23 @@ struct ExecutionOverride {
         MirrorBToA,   ///< One-way: target overwrites source; source-only records deleted.
     };
     Direction direction = Direction::Default;
+
+    /// When true, the engine treats this mapping as a clobber:
+    ///   1. Skip baseline load (treat as first sync).
+    ///   2. Skip the mass-delete-guard hook (no deletes will be computed —
+    ///      the wipe replaces the diff; clobber IS the user's authorization).
+    ///   3. Call targetBackend->wipeCollection(targetCollectionId) after the
+    ///      source fetch succeeds (a target is never wiped when the source
+    ///      can't be read) and before the target fetch.
+    ///   4. Push source records to the now-empty target.
+    ///   5. Write a fresh baseline at end-of-sync as normal.
+    ///
+    /// `direction` is silently ignored when `clobber == true`; effective
+    /// direction is always source → target.
+    ///
+    /// Unlike `direction`, this flag also applies on multi-mapping (subset
+    /// and all-enabled) dispatch — see SyncRequest::executionOverride.
+    bool clobber = false;
 };
 
 // Declare metatypes for Qt signal/slot usage

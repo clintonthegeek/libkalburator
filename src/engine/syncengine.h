@@ -452,8 +452,14 @@ private:
      * from "subset" (set of mapping IDs). Plan 1 Task 4 will fold the
      * two arguments into one SyncRequest struct.
      */
+    /// @p queueOverride threads the multi-mapping-applicable subset of a
+    /// per-call ExecutionOverride (today: only `clobber`; `direction`
+    /// stays a single-mapping concept) to every mapping the queue
+    /// dispatches. Callers pass a SANITIZED override — runSync() copies
+    /// only the clobber flag, leaving direction at Default.
     void driveQueue(SyncBehavior behavior,
-                    std::optional<QSet<QString>> filter = std::nullopt);
+                    std::optional<QSet<QString>> filter = std::nullopt,
+                    ExecutionOverride queueOverride = {});
 
     /**
      * @brief F2 Task 21: single-mapping driver. Dispatches exactly the
@@ -578,6 +584,13 @@ private:
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
+
+    // Multi-mapping per-call override (v0.65 clobber). Assigned by
+    // driveQueue() at the start of every queue run (so no stale state
+    // survives between runs) and stamped onto each per-mapping worker
+    // Request in advanceQueue(). Only the clobber flag ever reaches here
+    // — runSync() sanitizes direction to Default for multi dispatch.
+    ExecutionOverride m_queueOverride;
     QMap<QString, FreshSyncState> m_freshState;
 
     // G.6 Task 44: resource-aware FIFO scheduler. Tracks mapping→resource
