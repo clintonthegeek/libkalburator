@@ -180,6 +180,25 @@ address — load-bearing knowledge, not audit restatements.
 
 - 2026-05-30 — `src/typesupport/incidencelock_registry.{h,cpp}` — inv 1 — `IncidenceLockRegistry` is LIVE: used downstream by libkalcal (view-infrastructure/calendar-views), PlanStan (libs/editor, views, controllers, tests) and PlanEngine via Types-only links; relocated to the light TypeSupport target in Plan 5 P1.T3 (NOT dead code). Downstream relinks to Kalburator::TypeSupport in Plan 5 Phase 2.
 
+### From the v0.63–v0.65 reconciliation sweep (2026-06-06, between Plans 5 and 6)
+
+- 2026-06-06 — `src/engine/syncengine.cpp` (2915 LOC, was 2846 post-Plan-1) — inv 4 — the v0.65
+  clobber path regrew the engine by ~70 lines; legitimate orchestration logic, but the trend runs
+  against the Plan 1 decomposition. The SyncEngine follow-up (vocabulary/cleanup plan) should
+  check whether the clobber dispatch belongs in a collaborator.
+- 2026-06-06 — `docs/campaign/architectural-redress/AUDIT.md` B3 — inv 7 — audit evidence for
+  `RemoteCalendarBackend` is stale post-v0.63 (2649→2718 LOC, header 427→472, new primer/cache
+  surface); annotated in AUDIT.md in this commit. Plan 7 must re-derive `file:line` evidence.
+- 2026-06-06 — `conflict/conflictpolicy.h` vs AUDIT B6 fix direction — inv 2/7 — "move
+  `ConflictPolicy` into `types/`" is incompatible as written with the Plan 5 purity gate: the
+  header carries `fromJson`/`toJson` + abstract resolver machinery, and PlanStan (5 files) /
+  WildPalms (~10 files) include it. Plan 6 must split the file and keep a forwarding header
+  (recorded in STATUS "Next action").
+- 2026-06-06 — verification notes (negative findings, kept cheap): `types/` purity gate intact
+  after v0.65 (`ExecutionOverride::clobber` is a pure flag); `engine/lastwritewins.h` (v0.64) is
+  engine-internal — only `syncengine.cpp` includes it; `wipeCollection` (v0.65) landed on the
+  neutral `IBlobBackend`, consistent with Plan 3. Baseline 136/136 on a clean rebuild.
+
 ## Resolved
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)

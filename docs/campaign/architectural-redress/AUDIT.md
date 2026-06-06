@@ -172,6 +172,10 @@ target for codecs/I/O/lock machinery.
 - **Corrected:** `collectionRevision()` is a batched network PROPFIND via `fetchAllCtags`
   (`:158`), not a delegate — `cachedCollectionRevision()` is the `ctag()` delegate (`:168`);
   there are 7 (not 6) `discoveredX` getters; method counts higher than the prior audit stated.
+- **Updated 2026-06-06:** the out-of-campaign v0.63 release (CalDAV discovery primer +
+  content-cache determinism + `setCacheDir`) grew this target to **2718 LOC / 472-LOC header**
+  and expanded the discovery-state surface the MODERATEs below catalogue. Line-number evidence
+  above is from the 2026-05-29 tree; **re-derive locations when Plan 7 is written.**
 
 **Fix direction:** extract a `DiscoveredCalendarInfo` DTO for the getters; split IBlobBackend /
 ChangeDetection / calendar-CRUD into collaborators.

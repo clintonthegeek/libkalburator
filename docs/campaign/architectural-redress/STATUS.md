@@ -1,6 +1,6 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-05-29 (audit rebaselined; Plans 1, 2, 3 & 4 landed)
+**Last updated:** 2026-06-06 (Plans 1–5 landed; v0.63–v0.65 consumer releases reconciled; baseline 136)
 **Branch:** Campaign docs live on `main`. Plans 1–4 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition), 2 (CalendarManager safety
@@ -17,19 +17,46 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Plan 5 libkalburator side is MERGED to `main` and pushed** (`7d8a4ef`, 2026-05-31; merged
-`feature/redress-5-types-purification`; merged-tree ctest 133/133). Phase 2 downstream relinks are
-**done and verified green locally** but **held unpushed** on clinton-desktop pending integration:
-libkalcal `b4ef4ae0`, PlanStan `69e7df90`, WildPalms `3afc074` (PlanEngine needed no change — it
-gets `Kalburator::TypeSupport` transitively via `KalCal::Core`). The gating libkalburator **tag was
-cut 2026-06-03: `v0.62`** (annotated `b6483ca` → `8a35e54`, pushed) — it contains
-`Kalburator::TypeSupport` plus redress Plans 1–4. **Remaining manual step:** bump the downstream
-pins to `v0.62` (or later) and push the libkalcal/WildPalms relink commits; PlanStan is bumping its
-pin as part of its own master wave. See [[plan5-typesupport-pending-integration]] and
-[[caldav-primer-coordination-v063]] in auto-memory. (Out of campaign, same day: `v0.63` cut for the
-RemoteCalendarBackend CalDAV-primer + content-cache convergence — downstream coordination, not a
-redress plan.) The campaign **Next action** remains **Plan 6 — `shape/` decoupling (move
-`ConflictPolicy` down, AUDIT B6)**.
+**Plan 6 — `shape/` decoupling (AUDIT B6).** The plan doc is being written against the
+**current tree** (post-v0.65), not against the audit's fix-direction sentence alone, because the
+audit's "move `ConflictPolicy` into `types/`" direction is **incompatible as written with the
+Plan 5 purity gate**: `conflict/conflictpolicy.h` is not a bare enum — it carries
+`fromJson`/`toJson` and abstract resolver machinery. The plan must split the file (value type
+down; JSON codec to `typesupport/` per the Plan 5 T4 `LogicalCalendarJson` precedent; resolver
+interfaces stay in `conflict/`), and keep a forwarding header at the old path — PlanStan (5
+files) and WildPalms (~10 files) include it (INVARIANTS §10).
+
+**Plan 5 close-out state:** libkalburator side MERGED to `main` and pushed (`7d8a4ef`,
+2026-05-31; merged-tree ctest 133/133). Phase 2 downstream relinks are **done and verified green
+locally** but **held unpushed** on clinton-desktop: libkalcal `b4ef4ae0`, PlanStan `69e7df90`,
+WildPalms `3afc074` (PlanEngine needed no change — it gets `Kalburator::TypeSupport` transitively
+via `KalCal::Core`). The gating libkalburator **tag `v0.62` was cut 2026-06-03** (annotated
+`b6483ca` → `8a35e54`, pushed). **Remaining manual step (user):** bump the downstream pins to
+`v0.62`+ and push the libkalcal/WildPalms relink commits; PlanStan bumps its pin in its own
+master wave. The WildPalms v0.65 pin bump is also outstanding. **Do these pushes before Plan 6
+merges** so the invariant-10 downstream gates run against current pins. See
+[[plan5-typesupport-pending-integration]] and [[caldav-primer-coordination-v063]] in auto-memory.
+
+## Out-of-campaign consumer releases reconciled (2026-06-06)
+
+Three consumer-driven releases landed on `main` between Plan 5 and Plan 6 (none are redress
+plans; all reconciled against the campaign invariants on 2026-06-06):
+
+- **v0.63 (2026-06-03)** — RemoteCalendarBackend convergence: CalDAV discovery primer,
+  content-cache FNV determinism, `setCacheDir`. **Grows Plan 7's target:**
+  `remotecalendarbackend.cpp` is now 2718 LOC / header 472 (audit B3 said 2649/427), and the new
+  primer surface expands the discovery-state cluster (the 7 `discoveredX` getters + URL-map
+  triplication MODERATEs). AUDIT B3 figures annotated in the same commit; **Plan 7 must be
+  planned against the current tree.**
+- **v0.64 (2026-06-04)** — LastWriteWins tie-bias fix. New `src/engine/lastwritewins.h` shared
+  comparator — verified engine-internal (only `syncengine.cpp` includes it; no layering leak).
+- **v0.65 (2026-06-06)** — clobber sync (WildPalms RFC): `ExecutionOverride::clobber` in
+  `types/synctypes.h` (pure value flag — **`types/` purity gate verified intact**) +
+  `IBlobBackend::wipeCollection` (added to the **neutral** interface — consistent with Plan 3).
+  `syncengine.cpp` regrew 2846 → 2915 LOC (logged in FINDINGS as an inv-4 watch item).
+
+Baseline after the three releases: **136/136 ctest green** (was 133 at Plan 5 close; +3 from the
+new v0.63–v0.65 tests). Verified 2026-06-06 on a clean rebuild.
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
@@ -167,9 +194,9 @@ severities, not the retired old plan numbers:
 | 2 | `CalendarManager` safety net (protective tests) | CRITICAL #4 | **DONE — feature/redress-2-calendarmanager-tests (17 tests)** |
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
-| 5 | `types/` purification | B2 (MAJOR, corrected) | **libkalburator MERGED to main (7d8a4ef, TypeSupport target); downstream relinks done+verified, held unpushed pending tag+pin bump** |
-| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | proposed |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3) |
+| 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
+| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **NEXT — plan doc in progress (see "Next action": file must be split, not moved wholesale)** |
+| 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3; **replan against post-v0.63 tree — target grew, audit figures stale**) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
