@@ -17,14 +17,13 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Plan 6 — `shape/` decoupling (AUDIT B6).** The plan doc is being written against the
-**current tree** (post-v0.65), not against the audit's fix-direction sentence alone, because the
-audit's "move `ConflictPolicy` into `types/`" direction is **incompatible as written with the
-Plan 5 purity gate**: `conflict/conflictpolicy.h` is not a bare enum — it carries
-`fromJson`/`toJson` and abstract resolver machinery. The plan must split the file (value type
-down; JSON codec to `typesupport/` per the Plan 5 T4 `LogicalCalendarJson` precedent; resolver
-interfaces stay in `conflict/`), and keep a forwarding header at the old path — PlanStan (5
-files) and WildPalms (~10 files) include it (INVARIANTS §10).
+**Plan 6 is code-complete on `feature/redress-6-shape-decoupling`** (T1 `bcca4ff` enum
+extraction, T2 `137a836` signature narrowing; 136/136 after each). What remains is Task 4:
+downstream gates (PlanStan via its build-dev override; WildPalms via a TEMP CLONE — the live
+tree has concurrent in-flight v0.65-adoption work, user decision 2026-06-06) and the
+`--no-ff` merge to `main`. After that, **next action = Plan 7 — Remote/Local backend
+decomposition (AUDIT B3), replanned against the post-v0.63 tree** (the audit's figures are
+stale; see "Out-of-campaign consumer releases reconciled").
 
 **Plan 5 close-out state:** libkalburator side MERGED to `main` and pushed (`7d8a4ef`,
 2026-05-31; merged-tree ctest 133/133). Phase 2 downstream relinks are **done and verified green
@@ -195,7 +194,7 @@ severities, not the retired old plan numbers:
 | 3 | Neutralize the calendar-typed sync core | CRITICAL #1–#3 + cross-domain MAJORs | **DONE — feature/redress-3-neutralize-sync-core (133 tests)** |
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
-| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **IN PROGRESS — feature/redress-6-shape-decoupling** |
+| 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — feature/redress-6-shape-decoupling (downstream gates + merge pending Task 4)** |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3; **replan against post-v0.63 tree — target grew, audit figures stale**) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
