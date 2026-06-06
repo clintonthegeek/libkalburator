@@ -3,7 +3,6 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "propertycatalogue.h"
-#include "conflictpolicy.h"
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
@@ -39,7 +38,7 @@ public:
         const CanonicalRecord& source,
         const CanonicalRecord& target,
         const CanonicalRecord& baseline,
-        const Kalburator::Conflict::ConflictPolicy& policy) const override
+        Kalburator::Shape::AutoResolveStrategy strategy) const override
     {
         const bool sChanged = (source.data != baseline.data);
         const bool tChanged = (target.data != baseline.data);
@@ -49,9 +48,9 @@ public:
             return source;
         if (!sChanged && tChanged)
             return target;
-        // Both changed — conflict; resolve by policy
-        using AR = Kalburator::Conflict::AutoResolveStrategy;
-        if (policy.autoResolve == AR::TargetAlwaysWins)
+        // Both changed — conflict; resolve by strategy
+        using AR = Kalburator::Shape::AutoResolveStrategy;
+        if (strategy == AR::TargetAlwaysWins)
             return target;
         return source; // SourceAlwaysWins or any other auto-resolve strategy
     }

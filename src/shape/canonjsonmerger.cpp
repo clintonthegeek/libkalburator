@@ -3,9 +3,6 @@
 #include <QJsonObject>
 
 #include "canonenvelope.h"
-#include "conflictpolicy.h"
-
-using Kalburator::Conflict::AutoResolveStrategy;
 
 namespace Kalburator::Shape {
 
@@ -15,7 +12,7 @@ CanonJsonMerger::CanonJsonMerger(QString domain, QList<PropertyId> properties)
 CanonicalRecord CanonJsonMerger::merge(const CanonicalRecord& source,
                                        const CanonicalRecord& target,
                                        const CanonicalRecord& baseline,
-                                       const Kalburator::Conflict::ConflictPolicy& policy) const
+                                       AutoResolveStrategy strategy) const
 {
     const QJsonObject s = CanonEnvelope::parse(source.data);
     const QJsonObject t = CanonEnvelope::parse(target.data);
@@ -27,7 +24,7 @@ CanonicalRecord CanonJsonMerger::merge(const CanonicalRecord& source,
     // has no per-domain revision() field to compare (the vCard merger's NewerWins
     // path is domain-specific). No canon-level test exercises NewerWins field-merge.
     const bool preferSource =
-        policy.autoResolve == AutoResolveStrategy::TargetAlwaysWins ? false : true;
+        strategy == AutoResolveStrategy::TargetAlwaysWins ? false : true;
 
     QJsonObject out = t;  // start from target; override per-property below
     bool tookSourceForAny = false;

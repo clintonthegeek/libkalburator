@@ -8,9 +8,9 @@ namespace Kalburator::Outline {
 CanonicalRecord OutlineMerger::merge(const CanonicalRecord& source,
                                      const CanonicalRecord& target,
                                      const CanonicalRecord& baseline,
-                                     const Kalburator::Conflict::ConflictPolicy& policy) const
+                                     Kalburator::Shape::AutoResolveStrategy strategy) const
 {
-    Q_UNUSED(policy);
+    Q_UNUSED(strategy);
     OutlineDiffer d;
     // If only one side changed since baseline, take that side. If both changed,
     // prefer source (the conflict-policy-aware structural merge is a follow-on).

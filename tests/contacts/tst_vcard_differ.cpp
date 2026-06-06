@@ -3,7 +3,7 @@
 #include "vcarddiffer.h"
 #include "vcardmerger.h"
 #include "canonicalrecord.h"
-#include "conflictpolicy.h"
+#include "autoresolvestrategy.h"
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>
@@ -15,8 +15,7 @@ using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
 using Kalburator::Contacts::RecordDifferVCard;
 using Kalburator::Contacts::RecordMergerVCard;
-using Kalburator::Conflict::ConflictPolicy;
-using Kalburator::Conflict::AutoResolveStrategy;
+using Kalburator::Shape::AutoResolveStrategy;
 
 namespace {
 
@@ -138,10 +137,8 @@ private slots:
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nGENDER:F\r\nEND:VCARD\r\n"; // tgt changed
 
         RecordMergerVCard merger;
-        ConflictPolicy policy;
-        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
-        const auto out = merger.merge(src, tgt, base, policy);
+        const auto out = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
         QVERIFY2(out.data.contains("GENDER:F"),
                  qPrintable("merger should have propagated target's GENDER:F; got:\n"
                             + QString::fromUtf8(out.data)));
@@ -156,10 +153,8 @@ private slots:
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nANNIVERSARY:20200716\r\nEND:VCARD\r\n"; // tgt changed
 
         RecordMergerVCard merger;
-        ConflictPolicy policy;
-        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
-        const auto out = merger.merge(src, tgt, base, policy);
+        const auto out = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
         QVERIFY2(out.data.contains("20200716"),
                  qPrintable("merger should have propagated target's anniversary; got:\n"
                             + QString::fromUtf8(out.data)));
@@ -174,10 +169,8 @@ private slots:
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Acme\r\nKIND:org\r\nEND:VCARD\r\n";        // tgt changed
 
         RecordMergerVCard merger;
-        ConflictPolicy policy;
-        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
-        const auto out = merger.merge(src, tgt, base, policy);
+        const auto out = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
         QVERIFY2(out.data.contains("KIND:org"),
                  qPrintable("merger should have propagated target's KIND:org; got:\n"
                             + QString::fromUtf8(out.data)));
@@ -192,10 +185,8 @@ private slots:
         tgt.data  = "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:C\r\nLANG:fr\r\nEND:VCARD\r\n"; // tgt changed
 
         RecordMergerVCard merger;
-        ConflictPolicy policy;
-        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
-        const auto out = merger.merge(src, tgt, base, policy);
+        const auto out = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
         QVERIFY2(out.data.contains("LANG:fr"),
                  qPrintable("merger should have propagated target's LANG:fr; got:\n"
                             + QString::fromUtf8(out.data)));
@@ -211,10 +202,8 @@ private slots:
         base.shape = src.shape;
 
         RecordMergerVCard merger;
-        ConflictPolicy policy;
-        policy.autoResolve = AutoResolveStrategy::SourceAlwaysWins;
 
-        const auto out = merger.merge(src, tgt, base, policy);
+        const auto out = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
         QVERIFY2(out.data.contains("VERSION:4.0"),
                  qPrintable("Expected VERSION:4.0 in merger output, got:\n"
                             + QString::fromUtf8(out.data)));

@@ -20,7 +20,7 @@ public:
     CanonicalRecord merge(const CanonicalRecord& source,
                           const CanonicalRecord& target,
                           const CanonicalRecord& baseline,
-                          const Kalburator::Conflict::ConflictPolicy& policy) const override;
+                          AutoResolveStrategy strategy) const override;
 
 private:
     QString m_domain;

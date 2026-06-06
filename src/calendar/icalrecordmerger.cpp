@@ -7,7 +7,6 @@
 
 using namespace Kalburator::Shape;
 using namespace Kalburator::Sync;
-using namespace Kalburator::Conflict;
 
 namespace {
 
@@ -35,7 +34,7 @@ CanonicalRecord RecordMergerICal::merge(
     const CanonicalRecord& source,
     const CanonicalRecord& target,
     const CanonicalRecord& baseline,
-    const ConflictPolicy& policy) const
+    AutoResolveStrategy strategy) const
 {
     const auto srcInc  = parseIcal(source.data);
     const auto tgtInc  = parseIcal(target.data);
@@ -89,7 +88,7 @@ CanonicalRecord RecordMergerICal::merge(
         case PropertyDiff::BothDifferent:
         case PropertyDiff::BothChangedDifferent: {
             // True conflict — consult policy
-            switch (policy.autoResolve) {
+            switch (strategy) {
             case AutoResolveStrategy::SourceAlwaysWins:
                 d.resolution = PropertyDiff::UseA;
                 break;
