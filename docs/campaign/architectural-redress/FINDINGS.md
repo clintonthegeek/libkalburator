@@ -198,6 +198,13 @@ address — load-bearing knowledge, not audit restatements.
   after v0.65 (`ExecutionOverride::clobber` is a pure flag); `engine/lastwritewins.h` (v0.64) is
   engine-internal — only `syncengine.cpp` includes it; `wipeCollection` (v0.65) landed on the
   neutral `IBlobBackend`, consistent with Plan 3. Baseline 136/136 on a clean rebuild.
+- 2026-06-06 — `src/types/synctypes.h:332-388` — inv 2 — **Plan 5 purity-gate hole, found while
+  writing Plan 6:** `synctypes.h` carries a full inline JSON codec (`syncMappingToJson`,
+  `syncMappingFromJson`, `syncMappingsToJson`, `syncMappingsFromJson`) that the Plan 5 purity
+  grep missed by case (`toJson`/`fromJson` lowercase patterns don't match `*ToJson`/`*FromJson`).
+  Same B2 family Plan 5 swept; fix direction mirrors P1.T4 (`LogicalCalendarJson`): extract to
+  `typesupport/syncmappingjson.h`. NOT Plan 6 scope (inv 8) — fold into a later plan and tighten
+  the gate grep to case-insensitive when it lands.
 
 ## Resolved
 
