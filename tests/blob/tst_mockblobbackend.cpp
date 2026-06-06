@@ -46,6 +46,7 @@ private slots:
     void failureInjectionOnCreateRecord();
     void recordCreatedSignalFires();
     void loadRecordsOrError_reportsInjectedFailure();
+    void wipeCollection_defaultImpl_emptiesCollection();
 };
 
 void TestMockBlobBackend::identityAndAvailability()
@@ -189,6 +190,31 @@ void TestMockBlobBackend::loadRecordsOrError_reportsInjectedFailure()
     QVERIFY(error.isEmpty());
     QCOMPARE(records.size(), 1);
     QCOMPARE(errSpy.size(), 1); // success path emits no new signal
+}
+
+// v0.65 — IBlobBackend::wipeCollection default implementation
+// (loadRecords + deleteRecord). MockBlobBackend does not override it, so
+// this exercises the interface-provided default: N records in, empty out,
+// collection itself still present and usable.
+void TestMockBlobBackend::wipeCollection_defaultImpl_emptiesCollection()
+{
+    MockBlobBackend b;
+    b.createCollection(makeCollection(QStringLiteral("memos")));
+    for (int i = 0; i < 5; ++i) {
+        b.createRecord(QStringLiteral("memos"),
+                       makeRecord(QStringLiteral("r-%1").arg(i),
+                                  QStringLiteral("data-%1").arg(i)));
+    }
+    QCOMPARE(b.loadRecords(QStringLiteral("memos")).size(), 5);
+
+    QVERIFY(b.wipeCollection(QStringLiteral("memos")));
+
+    // Records gone; collection still exists and accepts new records.
+    QVERIFY(b.loadRecords(QStringLiteral("memos")).isEmpty());
+    QCOMPARE(b.collectionInfo(QStringLiteral("memos")).id, QStringLiteral("memos"));
+    QCOMPARE(b.createRecord(QStringLiteral("memos"),
+                            makeRecord(QStringLiteral("fresh"), QStringLiteral("x"))),
+             QStringLiteral("fresh"));
 }
 
 QTEST_MAIN(TestMockBlobBackend)

@@ -306,8 +306,14 @@ bool SyncEngine::hasSyncWork() const
 // is rebadged into a private helper driveQueue() invoked by
 // runSyncFuture(behavior) below — the only remaining caller.
 void SyncEngine::driveQueue(SyncBehavior behavior,
-                            std::optional<QSet<QString>> filter)
+                            std::optional<QSet<QString>> filter,
+                            ExecutionOverride queueOverride)
 {
+    // v0.65 clobber: stamp the (sanitized) multi-mapping override for this
+    // run. Assigned unconditionally so a previous run's clobber can never
+    // leak into a later plain sync.
+    m_queueOverride = queueOverride;
+
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
         qDebug() << "SyncEngine::driveQueue - no sync work configured";
         m_lastResult = SyncResult{};
@@ -345,8 +351,14 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // Phase-1 + Phase-2 perf: prime fresh CTags and fingerprints, decide
     // per-mapping skip eligibility. Best-effort; on failure we simply fall
     // back to per-call PROPFIND inside SyncEngineWorker.
-    if (!m_cancelled && !m_syncMappings.isEmpty()) {
+    //
+    // Clobber runs must NOT skip "unchanged" mappings — the user asked for
+    // a forced wipe+repush, and "unchanged" is judged against state the
+    // clobber deliberately discards.
+    if (!m_cancelled && !m_syncMappings.isEmpty() && !m_queueOverride.clobber) {
         prepareSyncFastPath();
+    } else {
+        m_skippedMappingIds.clear();
     }
 
     if (m_syncMappings.isEmpty() || m_cancelled) {
@@ -545,14 +557,23 @@ QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
     connect(m_multiWatcher, &QFutureWatcher<QList<SyncResult>>::canceled,
             this, &SyncEngine::onCancelObserved);
 
+    // v0.65: thread the multi-mapping-applicable part of the override to
+    // the queue. Only `clobber` broadens to multi dispatch; `direction`
+    // stays a single-mapping concept (SyncRequest doc), so it is sanitized
+    // to Default here regardless of what the caller set.
+    ExecutionOverride queueOverride;
+    if (request.executionOverride.has_value())
+        queueOverride.clobber = request.executionOverride->clobber;
+
     if (request.isAllEnabled()) {
-        driveQueue(request.behavior);
+        driveQueue(request.behavior, std::nullopt, queueOverride);
     } else {
         // Subset path.
         QSet<QString> filter(request.mappingIds.constBegin(),
                              request.mappingIds.constEnd());
         driveQueue(request.behavior,
-                   std::optional<QSet<QString>>(std::move(filter)));
+                   std::optional<QSet<QString>>(std::move(filter)),
+                   queueOverride);
     }
     return future;
 }
@@ -935,6 +956,9 @@ void SyncEngine::advanceQueue()
     request.behavior = m_currentSyncBehavior;
     request.collectionId = m_collection ? m_collection->id() : QString();
     request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
+    // v0.65: per-run multi-mapping override (clobber only; direction was
+    // sanitized to Default by runSync before reaching the queue).
+    request.override = m_queueOverride;
 
     emit m_worker->processSyncRequested(request);
 
@@ -1946,7 +1970,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // transform (e.g. contacts/vcard3 → contacts/vcard4 would land untransformed).
     // dispatchFirstSync returns false if the target is not empty, in which case
     // we fall through to the full diff path below.
-    if (request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload
+    // Clobber bypasses the first-sync fast path so the wipe + repush run as
+    // ONE deterministic flow through the unified diff path below (wipe after
+    // source fetch, empty baseline, all-creates push).
+    if (!request.override.clobber
+            && request.useQuickPath && request.mapping.mode == SyncMode::OneWayUpload
             && srcShape == tgtShape) {
         if (dispatchFirstSync(request))
             return true;
@@ -2122,6 +2150,30 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     emit phaseChanged(mappingId, 2);
 
+    // --- Clobber: wipe the target collection (v0.65) ---
+    // Deliberately placed AFTER the source fetch succeeded (a target is
+    // never destroyed when the source can't be read) and BEFORE the target
+    // fetch (which then observes the emptied collection). On wipe failure
+    // the mapping fails in isolation — other mappings in the request run
+    // normally, same per-mapping isolation as every other failure here.
+    if (request.override.clobber) {
+        bool wipeOk = false;
+        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &wipeOk]() {
+            wipeOk = tgtBlob->wipeCollection(tgtColId);
+        }, Qt::BlockingQueuedConnection);
+        if (!wipeOk) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral(
+                "clobber: wipeCollection failed for target collection %1 "
+                "(collection is in an indeterminate state)").arg(tgtColId);
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+        qDebug() << "SyncEngineWorker: clobber wiped target collection"
+                 << tgtColId << "for mapping" << mappingId;
+    }
+
     // --- Fetch target records (cross-thread) ---
     // Same cancellable gating pattern as source fetch above.
     {
@@ -2177,8 +2229,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     emit phaseChanged(mappingId, 3);
 
     // --- Load baselines (run on engine thread — BaselineStore is not thread-safe) ---
+    // Clobber skips the load entirely: the diff must see a first sync (all
+    // source records become Creates against the wiped target). A fresh
+    // baseline is still written at end-of-sync as normal.
     QList<BackendRecord> baselineRecords;
-    if (m_baselineStore && m_baselineStoreAnchor) {
+    if (!request.override.clobber && m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineRecords]() {
             for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
@@ -2262,8 +2317,13 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     // Mirror override: compute the full merge immediately via the
     // mirror-aware helper and skip the conflict-walk entirely.
+    // `direction` is silently ignored on a clobber (the wipe already
+    // fixed the effective direction to source → target; honoring
+    // MirrorBToA here would mirror the freshly-emptied target back
+    // over the source — i.e. destroy the source).
     using Direction = ExecutionOverride::Direction;
-    const Direction dir = request.override.direction;
+    const Direction dir = request.override.clobber
+        ? Direction::Default : request.override.direction;
     if (dir == Direction::MirrorAToB) {
         m_unifiedMerge = mergeMirrorAToB(m_unifiedDiff);
         unifiedContinueAfterConflicts();
@@ -2621,7 +2681,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         auto applyWithGuard = [this, writer, &colId, &backendRegistryId]
             (WriterBatch &batch) -> bool
         {
-            if (!batch.deletes.isEmpty() && m_massDeleteGuard) {
+            // Clobber never consults the guard: no deletes are computed (the
+            // wipe replaced the diff) and the clobber call IS the user's
+            // authorization. Belt-and-braces — the empty-baseline/empty-target
+            // diff cannot produce deletes anyway.
+            const bool guardApplies = !m_unifiedOverride.clobber;
+            if (guardApplies && !batch.deletes.isEmpty() && m_massDeleteGuard) {
                 const int proposed = static_cast<int>(batch.deletes.size());
                 const QString mappingId = m_currentRequest.mapping.id;
                 int baselineCount = 0;

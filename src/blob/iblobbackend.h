@@ -65,6 +65,26 @@ public:
     virtual bool    updateRecord(const BackendRecord &record) = 0;
     virtual bool    deleteRecord(const QString &recordId) = 0;
 
+    /// Delete every record in the collection, leaving it empty but usable.
+    /// The default implementation iterates loadRecords + deleteRecord (slow
+    /// but always works). Backends MAY override with a fast path
+    /// (drop+recreate, TRUNCATE, etc.). The collection itself MUST still
+    /// exist after this call returns successfully — only its records are
+    /// gone.
+    ///
+    /// Returns true on success, false if any per-record delete failed (in
+    /// which case the collection is in an indeterminate state).
+    ///
+    /// Used by the engine's clobber path (ExecutionOverride::clobber).
+    virtual bool wipeCollection(const QString &collectionId) {
+        bool ok = true;
+        const QList<BackendRecord> records = loadRecords(collectionId);
+        for (const auto &rec : records) {
+            ok = deleteRecord(rec.id) && ok;
+        }
+        return ok;
+    }
+
     // --- Change detection ---
     virtual QList<BackendRecord> modifiedSince(const QString &collectionId,
                                                const QDateTime &since) = 0;
