@@ -170,7 +170,8 @@ void SyncEngine::startWorkerThread()
     m_worker->setDependencies(m_controller, m_collection,
                               m_baselineStore,
                               this,
-                              m_massDeleteGuard);
+                              m_massDeleteGuard,
+                              m_registry);
 
     // Move worker to thread
     m_worker->moveToThread(&m_workerThread);
@@ -907,9 +908,12 @@ void SyncEngine::advanceQueue()
     // G.6 Task 46: ResourceLost skip — if any of this mapping's backends
     // uses a resource that became unavailable, add a cancelled SyncResult
     // and advance without dispatching to the worker.
-    if (m_queue.hasLostResources() && m_controller) {
-        auto *src = m_controller->backendById(mapping.sourceBackend);
-        auto *tgt = m_controller->backendById(mapping.targetBackend);
+    if (m_queue.hasLostResources() && m_registry) {
+        // v0.66: fetch via the registry (neutral SyncBackendBase*) — the
+        // host's calendar-typed backendById() cannot represent base-only
+        // backends post-Plan-3 (WildPalms dispatchSync RFC).
+        auto *src = m_registry->backendInstance(mapping.sourceBackend);
+        auto *tgt = m_registry->backendInstance(mapping.targetBackend);
         const bool srcLost = src && m_queue.isResourceLost(src->resourceId());
         const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
         if (srcLost || tgtLost) {
@@ -1365,7 +1369,10 @@ QString syncRecordKey(const SyncRecord &rec)
     return rec.uid;
 }
 
-inline IBlobBackend *asBlob(SyncBackend *b) { return static_cast<IBlobBackend *>(b); }
+// v0.66: takes the neutral base — every backend the engine dispatches is a
+// SyncBackendBase, which implements IBlobBackend (calendar-typed SyncBackend
+// still converts implicitly via upcast).
+inline IBlobBackend *asBlob(SyncBackendBase *b) { return static_cast<IBlobBackend *>(b); }
 
 // Phase Ia.5 Task 11: classification helper for the writer-based apply
 // path. Mirrors the inline classification the old direct-IBlobBackend
@@ -1445,9 +1452,11 @@ void SyncEngineWorker::setDependencies(ISyncHost *host,
                                         ICalendarCollection *collection,
                                         Kalburator::Storage::BaselineStore *baselineStore,
                                         QObject *baselineStoreAnchor,
-                                        Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard)
+                                        Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard,
+                                        Kalburator::Sync::BackendRegistry *registry)
 {
     m_controller = host;
+    m_registry = registry;
     m_baselineStore = baselineStore;
     m_collection = collection;
     m_baselineStoreAnchor = baselineStoreAnchor;
@@ -1523,8 +1532,10 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     // nativeShapes().first() would pick arbitrarily).
     if (m_controller) {
         Kalburator::Shape::LossProfile loss;
-        SyncBackend *src = m_controller->backendById(request.mapping.sourceBackend);
-        SyncBackend *tgt = m_controller->backendById(request.mapping.targetBackend);
+        SyncBackendBase *src = m_registry
+            ? m_registry->backendInstance(request.mapping.sourceBackend) : nullptr;
+        SyncBackendBase *tgt = m_registry
+            ? m_registry->backendInstance(request.mapping.targetBackend) : nullptr;
         if (src && tgt) {
             const auto srcShape = src->shapeFor(request.mapping.sourceCalendar);
             const auto tgtShape = tgt->shapeFor(request.mapping.targetCalendar);
@@ -1706,8 +1717,10 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     qDebug() << "SyncEngineWorker::dispatchFirstSync - checking if target is empty for"
              << request.mapping.id;
 
-    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
-    SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
+    SyncBackendBase *srcBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.sourceBackend) : nullptr;
+    SyncBackendBase *tgtBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.targetBackend) : nullptr;
 
     if (!srcBackend || !tgtBackend) {
         SyncResult result;
@@ -1865,7 +1878,8 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         return;
     }
 
-    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
+    SyncBackendBase *srcBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.sourceBackend) : nullptr;
     if (!srcBackend) {
         qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - source backend not found";
         return;
@@ -1928,8 +1942,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         return true;
     }
 
-    SyncBackend *srcBackend = m_controller->backendById(request.mapping.sourceBackend);
-    SyncBackend *tgtBackend = m_controller->backendById(request.mapping.targetBackend);
+    SyncBackendBase *srcBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.sourceBackend) : nullptr;
+    SyncBackendBase *tgtBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.targetBackend) : nullptr;
     if (!srcBackend || !tgtBackend) {
         m_currentResult.success = false;
         m_currentResult.errorMessage = QStringLiteral("dispatchSync: backend not found");
@@ -2589,8 +2605,10 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     const QString srcColId  = m_currentRequest.mapping.sourceCalendar;
     const QString tgtColId  = m_currentRequest.mapping.targetCalendar;
 
-    SyncBackend *srcBackend = m_controller->backendById(m_currentRequest.mapping.sourceBackend);
-    SyncBackend *tgtBackend = m_controller->backendById(m_currentRequest.mapping.targetBackend);
+    SyncBackendBase *srcBackend = m_registry
+        ? m_registry->backendInstance(m_currentRequest.mapping.sourceBackend) : nullptr;
+    SyncBackendBase *tgtBackend = m_registry
+        ? m_registry->backendInstance(m_currentRequest.mapping.targetBackend) : nullptr;
     if (!srcBackend || !tgtBackend) {
         m_currentResult.success = false;
         m_currentResult.errorMessage = QStringLiteral(
@@ -2867,8 +2885,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
 // ----------------------------------------------------------------------------
 
 void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
-                                        SyncBackend *src,
-                                        SyncBackend *tgt,
+                                        SyncBackendBase *src,
+                                        SyncBackendBase *tgt,
                                         const QString &srcCollectionId,
                                         const QString &tgtCollectionId,
                                         const QVariantMap &baseline,

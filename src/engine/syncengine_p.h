@@ -42,6 +42,8 @@ class IMassDeleteGuard;
 
 namespace Kalburator::Sync {
 class SyncBackend;
+class SyncBackendBase;
+class BackendRegistry;
 class ISyncHost;
 class ICalendarCollection;
 } // namespace Kalburator::Sync
@@ -59,6 +61,8 @@ using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Sync::SyncOperation;
 using Kalburator::Sync::SyncBackend;
+using Kalburator::Sync::SyncBackendBase;
+using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::ICalendarCollection;
 
@@ -132,12 +136,21 @@ public:
      *                              guard (deletes proceed unconditionally).
      *                              Previously reached via the back-pointer
      *                              as m_engine->massDeleteGuard().
+     * @param registry              Backend registry — the worker fetches
+     *                              backends from it as neutral
+     *                              `SyncBackendBase*` (v0.66, WildPalms
+     *                              dispatchSync RFC). Replaces the previous
+     *                              `m_controller->backendById()` lookups,
+     *                              whose calendar-typed `SyncBackend*`
+     *                              return could not represent base-only
+     *                              backends post-Plan-3.
      */
     void setDependencies(ISyncHost *host,
                          ICalendarCollection *collection,
                          Kalburator::Storage::BaselineStore *baselineStore = nullptr,
                          QObject *baselineStoreAnchor = nullptr,
-                         Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard = nullptr);
+                         Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard = nullptr,
+                         Kalburator::Sync::BackendRegistry *registry = nullptr);
 
 public slots:
     /**
@@ -289,8 +302,8 @@ private:
     }
 
     void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
-                          SyncBackend *src,
-                          SyncBackend *tgt,
+                          SyncBackendBase *src,
+                          SyncBackendBase *tgt,
                           const QString &srcCollectionId,
                           const QString &tgtCollectionId,
                           const QVariantMap &baseline,
@@ -335,6 +348,12 @@ private:
 
     const Kalburator::Shape::ShapeRegistries &m_shape;
     ISyncHost *m_controller = nullptr;
+    // v0.66 (WildPalms dispatchSync RFC): backend lookups go through the
+    // registry (neutral SyncBackendBase*), not ISyncHost::backendById
+    // (calendar-typed SyncBackend*, which cannot represent base-only
+    // backends post-Plan-3). Same read pattern hosts already used from
+    // this thread, so no new threading semantics.
+    BackendRegistry *m_registry = nullptr;
     Kalburator::Storage::BaselineStore *m_baselineStore = nullptr;
     ICalendarCollection *m_collection = nullptr;
 
