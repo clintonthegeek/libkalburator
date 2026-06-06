@@ -119,6 +119,15 @@ address — load-bearing knowledge, not audit restatements.
   and using it as `SyncBackend*` would be UB. Neutralizing `ISyncHost::backendById()` (return
   `SyncBackendBase*`; have `CalendarManager` `dynamic_cast` where it needs calendar API) is a
   follow-up — candidate for the CalendarManager-split plan or a dedicated host-interface plan.
+  **PARTIALLY RESOLVED 2026-06-06 (v0.66, `16afeb0`, out-of-campaign WildPalms RFC):** this
+  exact hazard shipped as a consumer regression — WildPalms' type-correct `dynamic_cast` host
+  returned nullptr for its base-only hub and the engine bailed ("dispatchSync: backend not
+  found"). The ENGINE half is fixed: all six dispatch-path lookups (incl. `advanceQueue`'s
+  ResourceLost skip, which the RFC missed) now fetch `SyncBackendBase*` from `BackendRegistry`
+  (worker gained the registry via `setDependencies`); `asBlob()`/`runPropertyPhase()` narrowed;
+  pinned by `tst_engine_baseonly_backend` (base-only backends + dynamic_cast host). STILL OPEN:
+  the interface itself — `ISyncHost::backendById()` remains calendar-typed and its remaining
+  consumers (`CalendarManager`, calendar paths) still rely on host impls' casts.
 - 2026-05-29 — downstream contract (INVARIANTS §10) — `BackendRegistry::backendInstance()` now
   returns `SyncBackendBase*` (was `SyncBackend*`) and `registerBackendInstance` takes
   `SyncBackendBase*`. Registration stays source-compatible (upcast), but PlanStan code that
