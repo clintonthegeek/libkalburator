@@ -230,6 +230,18 @@ address — load-bearing knowledge, not audit restatements.
   `Kalburator::Shape` vs class `Kalburator::Shape::Shape`); GCC accepts it, so the build is
   green while clangd shows hard errors. Surfaced when Plan 6 T2 touched the file. Fix
   (drop one directive or qualify) is out of Plan 6 scope (inv 8) — fold into a cleanup pass.
+- 2026-06-06 — WildPalms `tests/runtime` `tst_palm_mass_delete_guard_e2e` — downstream gate
+  evidence (not a libkalburator issue) — heap-teardown abort ("corrupted double-linked list"
+  AFTER all 4 subtests pass, during post-`cleanupTestCase()` heap teardown) is a
+  **pre-existing WildPalms-side flake**: A/B over 15 isolated runs each on the same temp
+  clone — pre-Plan-6 `main` failed 5/15, Plan 6 failed 4/15. Recorded here because the Plan 6
+  Task 4 gate surfaced it; the WildPalms dev should chase it (likely a double-free in a test
+  fixture or runtime teardown path, load/layout-dependent).
+- 2026-06-06 — WildPalms `tests/runtime/CMakeLists.txt` — downstream gate evidence — hardcodes
+  `${CMAKE_SOURCE_DIR}/../libkalburator/tests/sync/fakecaldavserver.cpp`, i.e. assumes the flat
+  sibling layout even for clones elsewhere; the temp-clone gate needed a `/tmp/libkalburator`
+  symlink to satisfy it. Flag for WildPalms: resolve the helper via the (overridable)
+  `WILDPALMS_LIBKALBURATOR_SOURCE_DIR` instead of a relative sibling path.
 
 ## Resolved
 
