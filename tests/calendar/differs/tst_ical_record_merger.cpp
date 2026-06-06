@@ -5,11 +5,11 @@
 
 #include "icalrecordmerger.h"
 #include "canonicalrecord.h"
+#include "autoresolvestrategy.h"
 #include "shape.h"
-#include "conflictpolicy.h"
 
 using namespace Kalburator::Calendar;
-using namespace Kalburator::Conflict;
+using Kalburator::Shape::AutoResolveStrategy;
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
@@ -62,7 +62,7 @@ private slots:
         const auto tgt    = makeRecord(uid, QStringLiteral("Meeting"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);
@@ -78,7 +78,7 @@ private slots:
         const auto tgt    = makeRecord(uid, QStringLiteral("Original"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);
@@ -94,14 +94,14 @@ private slots:
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Updated"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);
         QCOMPARE(inc->summary(), QStringLiteral("Target Updated"));
     }
 
-    /// both changed summary differently, policy autoSourceWins → result has source summary
+    /// both changed summary differently, strategy SourceAlwaysWins → result has source summary
     void bothChangedSourceWins()
     {
         const QString uid = QStringLiteral("uid-conflict-src");
@@ -110,14 +110,14 @@ private slots:
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Version"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);
         QCOMPARE(inc->summary(), QStringLiteral("Source Version"));
     }
 
-    /// both changed summary differently, policy autoTargetWins → result has target summary
+    /// both changed summary differently, strategy TargetAlwaysWins → result has target summary
     void bothChangedTargetWins()
     {
         const QString uid = QStringLiteral("uid-conflict-tgt");
@@ -126,7 +126,7 @@ private slots:
         const auto tgt    = makeRecord(uid, QStringLiteral("Target Version"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoTargetWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::TargetAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);
@@ -142,7 +142,7 @@ private slots:
         const auto tgt     = makeRecord(uid, QStringLiteral("Original"),   QStringLiteral("New desc"));
 
         RecordMergerICal merger;
-        const auto result = merger.merge(src, tgt, base, ConflictPolicy::autoSourceWins());
+        const auto result = merger.merge(src, tgt, base, AutoResolveStrategy::SourceAlwaysWins);
 
         const auto inc = parseResult(result);
         QVERIFY(inc);

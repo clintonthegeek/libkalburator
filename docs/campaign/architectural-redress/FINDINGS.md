@@ -206,6 +206,31 @@ address — load-bearing knowledge, not audit restatements.
   `typesupport/syncmappingjson.h`. NOT Plan 6 scope (inv 8) — fold into a later plan and tighten
   the gate grep to case-insensitive when it lands.
 
+### From Plan 6 (shape/ decoupling, 2026-06-06)
+
+- 2026-06-06 — `src/types/synctypes.h:32` vs `src/shape/autoresolvestrategy.h` — inv 5 —
+  DUAL conflict vocabulary: `Sync::ConflictResolution` (what `SyncMapping.conflictPolicy`
+  holds and the engine switches on) vs `Shape::AutoResolveStrategy` (what mergers consume);
+  the `SyncMapping.conflictPolicy` FIELD is named after the OTHER type
+  (`Conflict::ConflictPolicy`, which never flows into the engine). Unification +
+  field rename = Plan 10 (vocabulary) input; the AUDIT missed this entirely.
+- 2026-06-06 — `src/engine/syncengine.cpp:1665/:2529` (pre-Plan-6 shape) — inv 4 — the rich
+  `ConflictPolicy` never flowed into `merge()`: both production callsites passed constant
+  `deferAll()`; the engine resolves LastWriteWins itself (`lastwritewins.h`, v0.64) and
+  consults mergers only on the CustomMerge/unified-merge paths. Plan 6's narrowing makes the
+  real dataflow explicit; the prompt/batch/safety knobs in `ConflictPolicy` are consumed only
+  by the `ConflictHandler` UI path (downstream WildPalms/PlanStan).
+- 2026-06-06 — `src/outline/outlinemerger.cpp:13` — inv (capability) — `OutlineMerger`
+  ignores its strategy parameter (`Q_UNUSED`): structural outline merge is a documented
+  follow-on (in-code comment); strategy-aware merge needs a design before Plan 11 closes
+  test gaps over it.
+- 2026-06-06 — `tests/plugin/scenarios/fake_docstogo_plugin.cpp:8-9` — inv (tooling) —
+  pre-existing dual using-directives (`using namespace Kalburator;` + `using namespace
+  Kalburator::Shape;`) make every bare `Shape::` reference ambiguous under clang (namespace
+  `Kalburator::Shape` vs class `Kalburator::Shape::Shape`); GCC accepts it, so the build is
+  green while clangd shows hard errors. Surfaced when Plan 6 T2 touched the file. Fix
+  (drop one directive or qualify) is out of Plan 6 scope (inv 8) — fold into a cleanup pass.
+
 ## Resolved
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)

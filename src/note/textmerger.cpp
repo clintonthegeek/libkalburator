@@ -1,13 +1,10 @@
 #include "textmerger.h"
 
-#include "conflictpolicy.h"
-
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 
 using namespace Kalburator::Shape;
-using namespace Kalburator::Conflict;
 
 namespace {
 
@@ -59,7 +56,7 @@ CanonicalRecord TextMerger::merge(
     const CanonicalRecord &source,
     const CanonicalRecord &target,
     const CanonicalRecord &baseline,
-    const ConflictPolicy &policy) const
+    AutoResolveStrategy strategy) const
 {
     const auto src  = parseMemo(source.data);
     const auto tgt  = parseMemo(target.data);
@@ -74,7 +71,7 @@ CanonicalRecord TextMerger::merge(
 
     const QString srcMod = src.value(QStringLiteral("lastModified")).toString();
     const QString tgtMod = tgt.value(QStringLiteral("lastModified")).toString();
-    const bool preferSrc = srcWins(policy.autoResolve, srcMod, tgtMod);
+    const bool preferSrc = srcWins(strategy, srcMod, tgtMod);
 
     const QString baseBody = base.value(QStringLiteral("body")).toString();
     const QString srcBody  = src.value(QStringLiteral("body")).toString();

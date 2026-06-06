@@ -1662,7 +1662,7 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
                     m_unifiedCanonical, op.baselineRecord.data, op.record.id};
                 const auto merged = m_unifiedMerger->merge(
                     srcRec, tgtRec, baseRec,
-                    Kalburator::Conflict::ConflictPolicy::deferAll());
+                    Kalburator::Shape::AutoResolveStrategy::None);
                 BackendRecord mergedRecord = op.record;
                 mergedRecord.data = merged.data;
                 m_unifiedMerge.finalTarget.append(mergedRecord);
@@ -2526,7 +2526,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
                     m_unifiedCanonical, op.baselineRecord.data, op.record.id};
                 const auto merged = m_unifiedMerger->merge(
                     srcRec, tgtRec, baseRec,
-                    Kalburator::Conflict::ConflictPolicy::deferAll());
+                    Kalburator::Shape::AutoResolveStrategy::None);
                 BackendRecord mergedRecord = op.record;
                 mergedRecord.data = merged.data;
                 m_unifiedMerge.finalTarget.append(mergedRecord);

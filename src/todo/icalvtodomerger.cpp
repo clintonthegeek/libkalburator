@@ -1,13 +1,11 @@
 #include "icalvtodomerger.h"
 
-#include "conflictpolicy.h"
 #include "icalvtododiffer.h"
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Todo>
 
 using namespace Kalburator::Shape;
-using namespace Kalburator::Conflict;
 
 namespace {
 
@@ -53,7 +51,7 @@ CanonicalRecord RecordMergerVTodo::merge(
     const CanonicalRecord &source,
     const CanonicalRecord &target,
     const CanonicalRecord &baseline,
-    const ConflictPolicy &policy) const
+    AutoResolveStrategy strategy) const
 {
     const auto src  = parseTodo(source.data);
     const auto tgt  = parseTodo(target.data);
@@ -67,7 +65,7 @@ CanonicalRecord RecordMergerVTodo::merge(
         return source;
 
     // Which side wins on true conflict?
-    const bool preferSrc = srcWinsOnPolicy(src, tgt, policy.autoResolve);
+    const bool preferSrc = srcWinsOnPolicy(src, tgt, strategy);
 
     // Build merged todo from src (authoritative side for conflicts).
     KCalendarCore::Todo::Ptr merged(new KCalendarCore::Todo(*src));

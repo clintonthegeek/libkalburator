@@ -13,6 +13,7 @@
  */
 
 #include "conflictrecord.h"
+#include "../shape/autoresolvestrategy.h"
 
 #include <QObject>
 #include <QJsonObject>
@@ -22,19 +23,10 @@ namespace Kalburator::Conflict {
 // Forward declaration
 class ConflictStore;
 
-/**
- * @brief Automatic resolution strategy
- */
-enum class AutoResolveStrategy
-{
-    None,               ///< Never auto-resolve, always defer or ask
-    SourceAlwaysWins,   ///< Source overwrites target automatically
-    TargetAlwaysWins,   ///< Target overwrites source automatically
-    NewerWins,          ///< Most recently modified version wins
-    OlderWins,          ///< Preserve the older version (conservative)
-    LargerWins,         ///< Keep the version with more content
-    DuplicateAll        ///< Always create duplicates (never lose data)
-};
+/// AutoResolveStrategy moved to the shape layer (architectural-redress
+/// Plan 6) — RecordMerger consumes it there. Alias preserved so existing
+/// Kalburator::Conflict::AutoResolveStrategy references keep compiling.
+using AutoResolveStrategy = Kalburator::Shape::AutoResolveStrategy;
 
 /**
  * @brief When to prompt user for conflict resolution

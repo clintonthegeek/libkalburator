@@ -207,6 +207,12 @@ dependency from the abstract transformation layer into the engine-orbit `conflic
 
 **Fix direction:** move `ConflictPolicy` into `types/` (or `shape/`) so `shape/` references it
 without depending on `conflict/`.
+- **RESOLVED 2026-06-06 (Plan 6) — by narrowing, not moving.** Code verification showed all
+  9 merger impls read only `policy.autoResolve` and production passes constant `deferAll()`;
+  `merge()` now takes `Shape::AutoResolveStrategy` (enum extracted to
+  `shape/autoresolvestrategy.h`; `Conflict::` alias preserved). `ConflictPolicy` stays in
+  `conflict/` — the audit's "move ConflictPolicy" direction would have violated the Plan 5
+  purity gate and dragged `ConflictRecord` down. shape/→conflict/ edge count: 0.
 
 ### MAJOR — `engine/syncengine.h` includes calendar-specific `syncoperation.h`
 

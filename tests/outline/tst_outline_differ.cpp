@@ -3,13 +3,12 @@
 #include <QJsonObject>
 #include "outlinediffer.h"
 #include "outlinemerger.h"
+#include "autoresolvestrategy.h"
 #include "canonenvelope.h"
-#include "conflictpolicy.h"
 
 using namespace Kalburator::Shape;
 using Kalburator::Outline::OutlineDiffer;
 using Kalburator::Outline::OutlineMerger;
-using Kalburator::Conflict::ConflictPolicy;
 
 static CanonicalRecord rec(const QJsonObject& body, const QString& id = "r1")
 {
@@ -56,18 +55,17 @@ void TestOutlineDiffer::mergerPicksChangedSide()
     const CanonicalRecord targetOnly = rec(tgtBody);   // target changed, source == baseline
 
     OutlineMerger merger;
-    const ConflictPolicy policy{};
 
     // Only target changed: result should carry target's data.
-    CanonicalRecord r1 = merger.merge(baseline, targetOnly, baseline, policy);
+    CanonicalRecord r1 = merger.merge(baseline, targetOnly, baseline, AutoResolveStrategy::None);
     QCOMPARE(r1.data, targetOnly.data);
 
     // Only source changed: result should carry source's data.
-    CanonicalRecord r2 = merger.merge(sourceOnly, baseline, baseline, policy);
+    CanonicalRecord r2 = merger.merge(sourceOnly, baseline, baseline, AutoResolveStrategy::None);
     QCOMPARE(r2.data, sourceOnly.data);
 
     // Both changed (conflict): source wins per deferred-policy first cut.
-    CanonicalRecord r3 = merger.merge(sourceOnly, targetOnly, baseline, policy);
+    CanonicalRecord r3 = merger.merge(sourceOnly, targetOnly, baseline, AutoResolveStrategy::None);
     QCOMPARE(r3.data, sourceOnly.data);
 }
 

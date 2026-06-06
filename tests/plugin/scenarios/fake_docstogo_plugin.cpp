@@ -2,7 +2,6 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "lossprofile.h"
-#include "conflictpolicy.h"
 #include "manifest.h"
 #include "transformationedge.h"
 
@@ -22,7 +21,7 @@ public:
 class TrivialMerger : public Shape::RecordMerger {
 public:
     Shape::CanonicalRecord merge(const Shape::CanonicalRecord &s, const Shape::CanonicalRecord&, const Shape::CanonicalRecord&,
-                          const Kalburator::Conflict::ConflictPolicy&) const override { return s; }
+                          Shape::AutoResolveStrategy) const override { return s; }
 };
 
 // Reverse-bytes stage — any deterministic non-trivial transform.

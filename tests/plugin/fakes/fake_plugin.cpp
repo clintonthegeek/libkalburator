@@ -2,7 +2,6 @@
 #include "recorddiffer.h"
 #include "recordmerger.h"
 #include "transformationedge.h"
-#include "conflictpolicy.h"
 #include "iprovider.h"
 
 using namespace Kalburator;
@@ -19,7 +18,7 @@ class TrivialMerger : public Shape::RecordMerger {
 public:
     Shape::CanonicalRecord merge(const Shape::CanonicalRecord &s,
                                   const Shape::CanonicalRecord&, const Shape::CanonicalRecord&,
-                                  const Kalburator::Conflict::ConflictPolicy&) const override { return s; }
+                                  Shape::AutoResolveStrategy) const override { return s; }
 };
 
 class TrivialDD : public Shape::DomainDefinition {

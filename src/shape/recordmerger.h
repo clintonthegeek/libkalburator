@@ -1,7 +1,7 @@
 #pragma once
 
+#include "autoresolvestrategy.h"
 #include "canonicalrecord.h"
-#include "conflictpolicy.h"
 
 namespace Kalburator::Shape {
 
@@ -21,13 +21,13 @@ public:
 
     /// 3-way merge. For each property in the union of source/target/
     /// baseline catalogues, decide TakeSource/TakeTarget/TakeBaseline
-    /// per the supplied conflict policy. Result is a fully-realised
+    /// per the supplied auto-resolve strategy. Result is a fully-realised
     /// CanonicalRecord ready for push-back to the target.
     virtual CanonicalRecord merge(
         const CanonicalRecord& source,
         const CanonicalRecord& target,
         const CanonicalRecord& baseline,
-        const Kalburator::Conflict::ConflictPolicy& policy) const = 0;
+        AutoResolveStrategy strategy) const = 0;
 };
 
 }  // namespace Kalburator::Shape

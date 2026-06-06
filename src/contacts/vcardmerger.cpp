@@ -1,12 +1,9 @@
 #include "vcardmerger.h"
 
-#include "conflictpolicy.h"
-
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>
 
 using namespace Kalburator::Shape;
-using namespace Kalburator::Conflict;
 
 namespace {
 
@@ -49,7 +46,7 @@ CanonicalRecord RecordMergerVCard::merge(
     const CanonicalRecord &source,
     const CanonicalRecord &target,
     const CanonicalRecord &baseline,
-    const ConflictPolicy &policy) const
+    AutoResolveStrategy strategy) const
 {
     const auto src  = parseVCard(source.data);
     const auto tgt  = parseVCard(target.data);
@@ -62,7 +59,7 @@ CanonicalRecord RecordMergerVCard::merge(
     if (tgt.isEmpty())
         return source;
 
-    const bool preferSrc = srcWins(src, tgt, policy.autoResolve);
+    const bool preferSrc = srcWins(src, tgt, strategy);
 
     // Start from source; apply target-only changes.
     KContacts::Addressee merged = src;

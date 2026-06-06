@@ -13,7 +13,7 @@ public:
         const Kalburator::Shape::CanonicalRecord& source,
         const Kalburator::Shape::CanonicalRecord& target,
         const Kalburator::Shape::CanonicalRecord& baseline,
-        const Kalburator::Conflict::ConflictPolicy& policy) const override;
+        Kalburator::Shape::AutoResolveStrategy strategy) const override;
 };
 
 } // namespace Kalburator::Calendar
