@@ -1,5 +1,11 @@
 # libkalburator — honest assessment, 2026-04-28
 
+> **HISTORICAL — describes the pre-F1 architecture (2026-04-28).** The tree described here
+> predates the engine-merger campaign (Phases D–K), the canon-upgrade/convergence campaign
+> (Plans 1–4, `src/transcoding/` deleted), and the architectural-redress campaign (Plans 1–6).
+> The observation notes are preserved for design-history reference; do not treat them as
+> describing the current tree.
+
 A read-through of the whole tree (calendar + blob + conflict + journal +
 transcoding + types) plus how PlanStan and Wild Palms actually consume
 it. Written as a sanity check, not a proposal — though it ends with a

@@ -1,5 +1,8 @@
 # Handoff: two test regressions on `main` (O7 ShapeRegistries removal) — fix before v0.57
 
+> **CLOSED (2026-05-27):** Both regressions fixed; `tst_note_shapes` now registers the
+> canonical catalogue. Resolved before the v0.57 tag. See MEMORY note `tst-note-shapes-preexisting-fail`.
+
 **Date:** 2026-05-27
 **From:** PlanStan (reviewing the merged sync-topology Phase 1 work)
 **To:** libkalburator maintainer

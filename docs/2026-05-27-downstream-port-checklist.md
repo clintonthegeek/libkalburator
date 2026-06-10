@@ -1,5 +1,10 @@
 # Downstream port checklist — PlanStan & WildPalms
 
+> **CLOSED (2026-05-27 / 2026-06-10):** All three items (O7 ShapeRegistries ctor, O12
+> TranscodingPlan drop, O15 write-path convergence) ported downstream. O7 resolved
+> 2026-05-27; O12 effectively closed after the canon-upgrade branch merged to `main`;
+> O15 shipped on `feature/o15-calendar-write-convergence` and merged.
+
 **Date:** 2026-05-27
 **From:** libkalburator
 **To:** PlanStan and WildPalms maintainers (downstream `SyncBackend` / `SyncEngine` consumers)

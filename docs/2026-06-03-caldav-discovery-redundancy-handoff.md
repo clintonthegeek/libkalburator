@@ -1,5 +1,9 @@
 # Handoff → libkalburator: redundant per-backend calendar-list discovery on collection open
 
+> **CLOSED (2026-06-03):** Resolved by the v0.63 RemoteCalendarBackend convergence: the
+> CalDAV discovery primer (`PrimedCalendar`) short-circuits the per-backend server-wide
+> PROPFIND on collection open. Zero redundant PROPFINDs verified live against Radicale.
+
 **Date:** 2026-06-03
 **From:** PlanStan dev (via an autonomous engineering agent working in the
 PlanStan tree)
