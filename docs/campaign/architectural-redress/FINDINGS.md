@@ -521,3 +521,25 @@ invariant 9:
   adoption; ship as public API or remove when webcal/subscription features are deferred. (WP-C4)
 - 2026-06-10 — `src/calendar/logicalcalendarbuilder.h` — DECIDE: lib-internal only, zero consumer
   adoption; promote to supported API or remove. (WP-C4)
+
+### By Plan 8 (ISyncHost neutralization + runSyncFuture retirement, consumer wave)
+
+- 2026-06-10 — `src/sync/providermanager.cpp` `~ProviderManager → disconnectAll →
+  unregisterProviderBackends` — inv 4 (lifetime / teardown ordering) — **observation from
+  PlanStan's Plan 8 step-2 wave** (their closing note
+  `docs/2026-06-10-plan8-step2-planstan-wave-complete.md`): a host whose `BackendRegistry`
+  and controller/manager are QObject siblings under one parent gets creation-order child
+  destruction — the registry (created first) dies before the controller, so any
+  destructor interaction with the registry must tolerate a dead pointer (PlanStan nulls via
+  a `destroyed()` connection on their side). `~ProviderManager` unregistering provider
+  backends has the same shape **if** a provider is still connected at app exit and the
+  manager outlives the registry. Not a confirmed lib bug — worth an audit-supplement glance
+  at ProviderManager/registry ownership lifetimes. (NOT FIXED)
+- 2026-06-10 — `src/engine/syncengine.h:486-488` (`runSync(SyncRequest)` single-mapping
+  branch) — inv 4 — the canonical single-mapping path `.then()`-wraps `dispatchSingleNative`,
+  and Qt6 drops `.then()` continuations on a canceled source, so the native F2 Task 23
+  cancellation result (`resultCount()==1`, `cancelled==true`) is LOST through the wrapper.
+  The deprecated `runSyncFuture(mappingId, …)` shims return the native future verbatim and
+  do NOT have this loss. Surfaces in the WildPalms handoff (`runMirror`, `06fd77c`). Step 3
+  must collapse the dual future-interface members (see "From Plan 1") so the canonical path
+  preserves cancellation natively. (NOT FIXED — step 3.)

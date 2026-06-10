@@ -148,3 +148,48 @@ polymorphic public-header class layout requires relinking PlanStan's
 
 Steps 2–3 remain open per the plan: PlanStan wave by 2026-06-14, then the lib-side
 `runSyncFuture` retirement. Tag **v0.69** marks step 1 for their pin.
+
+## Outcome (step 2) — PlanStan consumer wave COMPLETE (2026-06-10)
+
+PlanStan executed and merged the step-2 wave to `master` (`58bd4835`, pushed) on a
+shared-checkout branch `feature/plan8-step2-consumer-wave` that also carried the
+v0.69 pin bump (`1ee48249`). Commits:
+
+- **A1** `939d3047` — config-declared backends register with `BackendRegistry`
+  unconditionally at creation (`loadAndCreateBackends`), no longer gated behind
+  `initializeSyncInfrastructure`'s `>1`-backend check; CC's dtor unregisters them
+  (the registry outlives CC). Closes the ack's registration asymmetry — registry
+  content now ≡ CC's `m_backends` for calendar backends.
+- **A2/A3** `ba02815d` — `mirrorProviderBackends` `static_cast`→`dynamic_cast`
+  (FINDINGS "From Plan 3" hazard, host-side closed); CC-internal `backendById()`
+  calls → direct `m_backends.value()` reads (zero CC-internal consumers of the
+  virtual remain).
+- **B** `37e3a1ed` + `6767e724` — all live `runSyncFuture` call sites →
+  `runSync(SyncRequest)`; `grep -rn runSyncFuture src/ tests/` is **empty**
+  (independently verified). 2 stale `EXCLUDE_FROM_ALL tst_sync_dialog` sites migrated
+  textually (file has pre-existing API drift; grep-level, stated honestly); 3 prod +
+  1 test doc-comment reworded.
+
+CC KEEPS its `backendById`/`backends()` overrides (v0.69's "hosts with their own
+backend storage keep their overrides" blessing); deleting them later is a contained,
+PlanStan-side call. Closing note:
+`docs/2026-06-10-plan8-step2-planstan-wave-complete.md`.
+
+**The WildPalms half was NOT part of this wave** — issued as a separate handoff
+(`docs/2026-06-10-plan8-wildpalms-consumer-wave-handoff.md`, `06fd77c`): collapse
+`PalmSyncHost`'s overrides into `setBackendRegistry` (optional; its logic == the new
+lib default), KEEP the local-hash `SyncHost_WP`, and migrate the **2 PROD**
+`runSyncFuture` callers (`runAllMappings` :916 subset = mechanical; `runMirror` :1031
+single-mapping = return-type change + the `.then()`-on-cancel caveat,
+`syncengine.h:486-488`). Not yet done.
+
+## Step 3 (next plan — detail per P1)
+
+Step 3 (lib `runSyncFuture` retirement) is the next plan to write. The lib-internal
+migration (`syncruncoordinator.cpp:60` + ~87 test sites + `examples/reference_consumer`)
+may proceed now (PlanStan grep-clean), but **deletion of the four `[[deprecated]]`
+overloads is gated on WildPalms** completing its 2 PROD-call migration. The single-mapping
+caller's `.then()`-on-cancel result loss (`syncengine.h:486-488`) means step 3 should also
+collapse the engine's dual future-interface members (FINDINGS "From Plan 1") so the
+canonical single-mapping path preserves the native cancellation result. See STATUS Locked
+decisions (2026-06-10).

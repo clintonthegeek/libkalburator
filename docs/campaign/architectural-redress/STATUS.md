@@ -1,7 +1,8 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (Plan 7 COMPLETE on its branch; baseline **145/145** —
-+1 from the T1 write-paths pin)
+**Last updated:** 2026-06-10 (Plan 8 step 2 — PlanStan consumer wave — COMPLETE +
+WildPalms handoff issued; step 3 is next, gated on WildPalms for the overload deletion.
+Lib baseline unchanged at **147/147** — step 2 touched no lib code, only PlanStan's)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
@@ -55,13 +56,28 @@ additive — every existing override untouched). Suite **147/147**; PlanStan gat
 after relinking their `EXCLUDE_FROM_ALL` fixtures (vtable-change runbook rule, see
 FINDINGS). Tag **v0.69**.
 
-**Next action = WAIT for PlanStan's step-2 closing note (window 2026-06-14), then
-Plan 8 step 3** (lib-side `runSyncFuture` retirement: migrate
-`syncruncoordinator.cpp:60` + ~87 lib test sites + `examples/reference_consumer`,
-delete the four deprecated overloads, collapse the engine's dual future-interface
-members per FINDINGS "From Plan 1"). Meanwhile the next unblocked lib-only plan is
-**Plan 9** (backend-adjacent dir consolidation + discovery placement) — plan file
-first, per P1.
+**Plan 8 step 2 (PlanStan consumer wave) is COMPLETE (2026-06-10).** PlanStan merged
+the wave to `master` (`58bd4835`, pushed; commits A1 unconditional registry
+registration + dtor unregister `939d3047`, A2/A3 `dynamic_cast` provider mirror +
+CC-internal decoupling `ba02815d`, B `runSyncFuture`→`runSync(SyncRequest)` `37e3a1ed`
++ `6767e724`); `grep -rn runSyncFuture src/ tests/` in PlanStan is **empty**
+(independently verified). PlanStan adopted the **v0.69** pin (our `1ee48249` rode in on
+the shared-checkout wave branch). CC keeps its `backendById`/`backends()` overrides but
+they now have zero CC-internal consumers (deletable later, their call). Their closing
+note: `docs/2026-06-10-plan8-step2-planstan-wave-complete.md`. **WildPalms' half is a
+separate handoff** (`docs/2026-06-10-plan8-wildpalms-consumer-wave-handoff.md`,
+`06fd77c`): 2 PROD `runSyncFuture` calls (`palmruntime.cpp` `runAllMappings`/`runMirror`)
++ the optional `PalmSyncHost` shim collapse — **NOT yet done**.
+
+**Next action = Plan 8 step 3 — write the plan file first (P1).** Step 3 is the
+lib-side `runSyncFuture` retirement: migrate `syncruncoordinator.cpp:60` + ~87 lib test
+sites + `examples/reference_consumer` to `runSync(SyncRequest)`, then **delete the four
+`[[deprecated]]` overloads** and collapse the engine's dual future-interface members
+(FINDINGS "From Plan 1"). **Gate:** the lib-internal migration can proceed now (PlanStan
+is grep-clean), but **deleting the four overloads is gated on WildPalms** completing its
+2 PROD-call migration — the only remaining external consumer (see Locked decisions
+2026-06-10). If step 3 waits on WildPalms, the alternative next plan is **Plan 9**
+(backend-adjacent dir consolidation + discovery placement) — plan file first, per P1.
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -337,7 +353,7 @@ severities, not the retired old plan numbers:
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
 | 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
 | 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
-| 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
+| 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **step 1 DONE** (v0.69) + **step 2 PlanStan wave DONE** 2026-06-10 (`58bd4835`, grep-clean); **step 3** (lib `runSyncFuture` deletion) next — plan file first, overload deletion gated on WildPalms handoff `06fd77c`. (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
 | 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
@@ -401,6 +417,18 @@ the invariant or audit finding. Format:
   a second near-synonym conflict enum there would deepen the U3-family collision Plan 10
   must untangle). `Kalburator::Conflict::AutoResolveStrategy` survives as an alias for
   source compatibility. (AUDIT B6, corrected from code; user decisions 2026-06-06.)
+- **2026-06-10 — Plan 8 step-3 overload deletion is gated on WildPalms, not PlanStan.**
+  PlanStan's step-2 wave is `runSyncFuture`-grep-clean (merged `58bd4835`, pushed), so the
+  lib-internal step-3 migration (`syncruncoordinator.cpp:60` + ~87 test sites +
+  `examples/reference_consumer`) may proceed now; but the four `[[deprecated]]`
+  `runSyncFuture` overloads STAY until WildPalms migrates its **2 PROD callers**
+  (`palmruntime.cpp` `runAllMappings`/`runMirror`; handoff `06fd77c`) — the last external
+  consumer. Deleting earlier is a hard compile break for WildPalms by design (that break is
+  the gate). PlanStan adopted the **v0.69** pin and KEEPS its CC `backendById`/`backends()`
+  overrides (now zero-internal-consumer; their later call). The single-mapping caller faces
+  the `.then()`-on-cancel result-loss (`syncengine.h:486-488`); step 3's dual future-interface
+  collapse (FINDINGS "From Plan 1") is the proper fix and may be pulled forward if WildPalms
+  needs it. (Plan 8 consumer-wave closing notes; INVARIANTS §10.)
 
 ## Acceptance gates
 
