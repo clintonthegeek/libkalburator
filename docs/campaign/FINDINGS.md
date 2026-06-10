@@ -113,18 +113,6 @@ changes during downtime (which the digest already handles). The digest fetch is 
 local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
 shows the digest fetch is hot. (Decided 2026-05-26.)
 
-### O12 — Downstream backend port required before this branch compiles downstream (OPEN)
-Plan 4 dropped the `TranscodingPlan` parameter entirely from `SyncBackend::pushItems`/`startSync`
-(and the deprecated `storeItems`/`updateItem`) per the locked human decision (drop-entirely,
-port-post-merge — mirrors O7's ctor change). **PlanStan and WildPalms `SyncBackend` subclasses that
-override these methods with the old 3-arg signature will NOT compile against this branch** until they
-drop the param. Combined with O7 (the injecting `ShapeRegistries` ctor), this is the downstream-port
-work that must happen after merge. Also: the org backend (`KALBURATOR_HAVE_ORG_IO=ON`, not built in
-the default profile here) should declare its backend shape as `{calendar, org-ical}` so the engine
-routes `canon → org-ical` (applying RRULE simplification via the edge) — Plan 4 landed the edge + the
-warning re-sourcing org sync consumes, but wiring the org backend's `nativeShapes()`/`shapeFor()` to
-org-ical is org-on/downstream work (invariant 8). (Seeded 2026-05-24, Plan 4 Task 9.)
-
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)
@@ -141,6 +129,12 @@ Internal callers updated: `tst_calendar_sync_oneway`, `tst_syncruncoordinator`,
 `tst_akonadiprovider_plugin_registration`, `tst_multiprotocoldavprovider`, and
 `examples/reference_consumer` (now models the injecting pattern with no global
 cleanup). Build clean, suite 124/124. (Resolved 2026-05-27.)
+
+### O12 — Downstream backend port (RESOLVED 2026-06-10)
+Plan 4 dropped the `TranscodingPlan` parameter from `SyncBackend::pushItems`/`startSync`.
+All downstream `SyncBackend` subclasses (PlanStan + WildPalms) ported after merge; the
+canon-upgrade branch merged to `main`. Org-on wiring (`KALBURATOR_HAVE_ORG_IO=ON`) also
+resolved under that build profile. (Seeded 2026-05-24; closed 2026-06-10.)
 
 ### O13 — baseline-load filters to blob domain (RESOLVED — was a misdiagnosis, 2026-05-26)
 

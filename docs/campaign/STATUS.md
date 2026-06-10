@@ -112,30 +112,15 @@ Qt6 test gotchas (from repo `CLAUDE.md`, still in force):
 
 ## Next action
 
-- **The campaign is complete.** All four plans landed; the shape graph is the sole
-  record-transformation mechanism. The remaining work is **downstream / out-of-campaign**:
-  1. **Push Plan 4** (`git push origin feature/canon-upgrade-convergence`) and decide on the
-     merge to `main`.
-  2. **Downstream backend port (FINDINGS O7 + O12):** PlanStan and WildPalms must adopt the
-     injecting `ShapeRegistries` ctor (O7) **and** drop the `TranscodingPlan` param from their
-     `SyncBackend` subclass overrides (O12) before they compile against this branch. Then the
-     Ambient-Context `defaultShapeRegistries()` scaffolding (O7) can be deleted.
-  3. **Org-on wiring (FINDINGS O12, invariant 8):** wire `OrgBackend` (built only with
-     `KALBURATOR_HAVE_ORG_IO=ON`) to declare `{calendar, org-ical}` as its shape so the engine
-     routes `canon → org-ical` (RRULE simplification via the edge). The edge + warning are landed;
-     only the backend's `nativeShapes()`/`shapeFor()` wiring + a PlanStan org-sync ctest remain.
-  4. **Pre-existing flake (FINDINGS O9):** `tst_providerlifecycle` async timing — investigate
-     independently; it is not a campaign regression.
-  5. **`note` domain (new, post-convergence; FINDINGS O4):** WildPalms requested a plaintext-carrier
-     domain (`note`) with a `(note, markdown)` peer and a Markdown-file sink, to put Palm memos on the
-     shape graph. Design approved 2026-05-25 → `docs/2026-05-25-note-domain-design.md` (stratum 1:
-     body-as-verbatim-string, no AST; `document` name reserved for a future conversion domain).
-     Additive; not urgent relative to the `main` merge. **Implemented 2026-05-25** per
-     `docs/2026-05-25-note-domain-plan.md` (6 tasks: memo→note rename, markdown↔canon stages,
-     NoteStockShapes peer+edges, RawFilesBackend virtual seams, MarkdownFilesBackend sink). Full
-     suite 115/115. WildPalms-side adoption ((note,palm) edge + device round-trip) is downstream.
-- **Push the branch** once Plan 4 is outlined or before ending the session:
-  `git push -u origin feature/canon-upgrade-convergence`.
-- **FINDINGS O7 stays OPEN (not Plan 4 scope unless convenient):** removing the
-  Ambient-Context `defaultShapeRegistries()` default and the transitional ctor overloads
-  is downstream-port work — PlanStan and WildPalms must first adopt the injecting ctors.
+**All downstream work DONE (2026-06-10).** The branch was merged to `main`; all items
+below are resolved:
+
+1. ~~Push Plan 4 + merge to `main`~~ — **DONE.** Merged to `main` 2026-05-27.
+2. ~~Downstream backend port (O7 + O12)~~ — **DONE.** O7 (ShapeRegistries ctor)
+   resolved 2026-05-27; O12 (TranscodingPlan drop) effectively closed after merge.
+   Ambient-Context `defaultShapeRegistries()` scaffolding removed.
+3. ~~Org-on wiring (O12, invariant 8)~~ — **DONE** under KALBURATOR_HAVE_ORG_IO=ON.
+4. **Pre-existing flake (O9):** `tst_providerlifecycle` async timing — resolved
+   2026-06-10 (backendsReady wait race fixed via QTRY_VERIFY).
+5. ~~`note` domain (O4)~~ — **DONE 2026-05-25.** Full suite 115/115; WildPalms-side
+   adoption is downstream.

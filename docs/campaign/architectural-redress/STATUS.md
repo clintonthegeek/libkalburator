@@ -18,14 +18,14 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = the 2026-06-10 audit follow-up work packages, then Plan 7.** A five-agent
+**Next action = WP-B doc-truth sweep (in progress), then WP-C/D, then Plan 7.** A five-agent
 audit supplement (`AUDIT-2026-06-10-supplement.md`) re-baselined everything that grew since
 the 2026-05-29 audit; its implementation sequencing lives in
-`2026-06-10-audit-follow-up-specs.md` (**WP-A** correctness/contract quick wins → **WP-B**
-doc-truth sweep → **WP-C** dead-code removal → **WP-D** test-gap closure → **Plan 7**
-RemoteCalendarBackend decomposition, replan inputs now CURRENT in the specs doc → **Plan 8
-prep**, resequenced PlanStan-first by consumer evidence). A fresh agent should start at
-WP-A1 (calendarsOnly mode design, ⚠RFC) after reading INVARIANTS → supplement → specs.
+`2026-06-10-audit-follow-up-specs.md` (**WP-A** DONE — correctness/contract quick wins →
+**WP-B** doc-truth sweep **← current** → **WP-C** dead-code removal → **WP-D** test-gap
+closure → **Plan 7** RemoteCalendarBackend decomposition → **Plan 8 prep**, resequenced
+PlanStan-first). A fresh agent should read INVARIANTS → supplement → specs then pick up at
+the first incomplete WP-B item.
 
 Same-day fixes already landed (2026-06-10, all merged to `main`, 137/137): the
 `calendarsOnly` ctor-argument swallow (`b47d75e`, audit C1), the §4.4 dialog-test contract
@@ -225,7 +225,7 @@ severities, not the retired old plan numbers:
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
-| 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **next** — specs at `2026-06-10-audit-follow-up-specs.md` |
+| 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
 | 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | proposed (after WP-A; **replan inputs now CURRENT** — figures + concern inventory in specs §Plan 7) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |

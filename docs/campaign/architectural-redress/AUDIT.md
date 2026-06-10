@@ -6,6 +6,11 @@
 > (e.g. it located `syncoperation.h` in `sync/` when it lives in `calendar/`, and called a
 > one-way include a "circular dependency").
 >
+> **Anchor-drift warning (2026-06-10):** The 2026-05-29 line-number anchors below have drifted.
+> Notable: `syncengine.h` ctor :390→:164; G5 :1940 is no longer present; several resolved-finding
+> anchors now show the **fixed** code, not the smell. Do NOT rewrite the audit; treat the quoted
+> code as the original evidence, not the current state. Re-verify against HEAD before citing.
+>
 > **Method.** Every finding in the prior audit (G1–G8, B1–B9, U1–U5) was re-checked against
 > the actual source at HEAD, alongside an independent 13-dimension gap sweep. Then **every
 > surviving candidate — old and new — was put through an adversarial verifier whose job was to
