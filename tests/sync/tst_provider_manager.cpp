@@ -79,6 +79,16 @@ public:
             emit error(QStringLiteral("fake: failure injected"));
             return fi.future();
         }
+        // Mirror the real providers' v0.61 idempotency fast-path: an
+        // already-connected provider returns a finished future WITHOUT
+        // re-emitting connectionStateChanged(true).
+        if (m_connected) {
+            QFutureInterface<bool> fi;
+            fi.reportStarted();
+            fi.reportResult(true);
+            fi.reportFinished();
+            return fi.future();
+        }
         m_connected = true;
         m_collections = m_collectionsSeed;
         emit collectionsChanged();
@@ -170,6 +180,7 @@ private slots:
     void default_factory_creates_caldav_provider();
     void default_factory_creates_carddav_provider();
     void providerState_transitionsThroughLifecycle();
+    void addProvider_registersBackendsForPreConnectedProvider();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -534,6 +545,38 @@ void TstProviderManager::providerState_transitionsThroughLifecycle()
     // Unknown provider: queries return Disconnected (safe default).
     QCOMPARE(mgr.providerState(QStringLiteral("does-not-exist")),
              ProviderConnectionState::Disconnected);
+}
+
+void TstProviderManager::addProvider_registersBackendsForPreConnectedProvider()
+{
+    // The Add Account flow (ProviderConfigDialog) connects the provider to
+    // discover its calendars BEFORE the manager ever sees it — the
+    // connectionStateChanged(true) emission happens with no subscribers.
+    // A subsequent connectAll() hits the provider's idempotency fast-path
+    // (finished future, no re-emission), so addProvider() itself must
+    // register the backends and seed the Connected state.
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p1"));
+    CollectionInfo c; c.id = QStringLiteral("cal-pre"); c.name = QStringLiteral("Pre");
+    p->seedCollections({c});
+
+    // Dialog-style pre-connect, unmanaged.
+    QVERIFY(waitForFuture(p->connect()
+        .then([](bool) {}))); // adapt QFuture<bool> -> QFuture<void> for the helper
+    QVERIFY(p->isConnected());
+
+    mgr.addProvider(std::move(p));
+
+    // Backends must be registered immediately — connectAll() won't do it.
+    QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("p1:cal-pre")));
+    QCOMPARE(mgr.providerState(QStringLiteral("p1")),
+             ProviderConnectionState::Connected);
+
+    // And connectAll() afterwards must remain harmless.
+    QVERIFY(waitForFuture(mgr.connectAll()));
+    QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("p1:cal-pre")));
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)
