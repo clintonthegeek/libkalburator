@@ -158,7 +158,7 @@ Merge `--no-ff`, push.
 | `localbackend.cpp` | 1311 | 1239 | ≤ 1230 | miss (+9, <1%) |
 | `localbackend.h` | 224 | 210 | ≤ 215 | **met** |
 | LocalBackend pair net | 1535 | **1449 (−86)** | ≤ −100 | miss (14 LOC) |
-| LB-specific publics (non-interface) | 13 | **3** (ctor, `setcalendarRootPath`, `setDbPath`) | ≤ 4 | **met** |
+| LB-specific publics (non-interface) | 13 | **4** (ctor, `setcalendarRootPath`, `setDbPath`, `setCalendarColor`) | ≤ 4 | **met** |
 | `remotecalendarbackend.cpp` (codec move-out) | 2164 | 2128 | — | −36 |
 | new `icalcodec.h` (shared) | — | 58 | — | — |
 | all-touched net incl. shared header | 3699 | **3635 (−64)** | — | — |
@@ -174,6 +174,18 @@ per-property VDir metadata accessors privatized (`updateCalendar(QVariantMap)` i
 public form); `metadataDirFor`/`icsPathFor`/`recordPathFor` killed the 8×/3×/3×
 duplications; the iCal codec now has ONE shared home (`icalcodec.h`) serving both
 decomposed backends.
+
+**Downstream gate catch (the reason the gates exist):** the first T3 cut privatized
+`setCalendarColor` too — the PlanStan build then failed on two PROD calls
+(`backenddiscoverycoordinator.cpp:199`, `collectioncontroller.cpp:397`, both behind
+`qobject_cast<LocalBackend*>`) that the verification sweep missed because its match
+list was `head`-truncated before classification (grep lesson #3: never truncate a
+deletion-warrant listing). `setCalendarColor` restored to public with the consumer
+named at the declaration; the other five accessors re-verified untruncated and stay
+private. PlanStan gate after the fix: failed-set = exactly the 21 Not-Run headless
+GUI binaries (their dev had meanwhile realigned `tst_loader_empty_backends` to their
+own O.5 removal — commit `91774225`, which also bumps their pin to v0.68 and ACKs
+the Plan 8 wave).
 
 **Verification-method correction #2 (recorded in FINDINGS):** the first per-symbol
 grep batch excluded matches with `-v "localbackend.h\|localbackend.cpp"`, which also

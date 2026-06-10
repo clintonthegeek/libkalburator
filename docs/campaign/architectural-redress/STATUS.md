@@ -33,9 +33,20 @@ decomposed backends, LB-specific publics 13→3, new default-lane
 `LocalBackend::setDbPath` (fingerprint store dark in PROD — one-liner on their side);
 grep-discipline lesson #2 (exact-path exclusions).
 
-**Next action = Plan 8 lib-side, GATED on PlanStan's ack of the RFC** (above). While
-waiting: Plan 9 (backend-adjacent dir consolidation + discovery placement) is the next
-unblocked lib-only plan — write its plan file first, per P1.
+**Plan 8 is ACKED (2026-06-10): lib-side step 1 is UNGATED.** PlanStan's response
+landed on our `main` (`c873032`; their commit `91774225` bumps their pin to v0.68,
+realigns `tst_loader_empty_backends` to their own O.5 removal, and commits to a
+step-2 window by 2026-06-14, tracked in their
+`docs/todo/plan8-isynchost-runsyncfuture-migration-wave.md`). **Prerequisite they
+flagged for the step-1 plan file:** PlanStan's `CollectionController` registry
+registration is gated (`maybeInitSyncInfrastructure` requires >1 backend), so the
+lib-default `backendById` would return nullptr on single-backend collections — their
+override stays until their wave makes registration unconditional; the lib default
+must therefore be additive, not a behavior swap.
+
+**Next action = Plan 8 lib-side step 1** (write
+`plans/plan-8-isynchost-neutralization.md` first, per P1; the RFC + PlanStan response
+are the inputs).
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 

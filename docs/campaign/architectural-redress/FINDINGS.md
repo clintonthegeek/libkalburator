@@ -411,6 +411,12 @@ invariant 9:
   `tst_localbackend*.cpp` match (substring!); `calendarFingerprint`'s test caller only
   surfaced on the exact-path re-run. Deletion-warrant greps: one plain pattern per
   symbol AND exact-path exclusions only.
+- 2026-06-10 — verification discipline, lesson #3 — the same batch `head`-truncated
+  each symbol's match list before classification, hiding PlanStan's two PROD
+  `LocalBackend::setCalendarColor` calls; the breakage surfaced only in the
+  downstream build gate (inv 10 doing its job). Never truncate a deletion-warrant
+  listing — read ALL matches. Full discipline now: one plain pattern per symbol,
+  exact-path exclusions, untruncated output, then classify each hit.
 
 ## Resolved
 

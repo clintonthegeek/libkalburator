@@ -100,10 +100,14 @@ public:
     bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
 
     // VDirSyncer-compatible calendar metadata (stored as files in the
-    // calendar folder). Public surface = the interface overrides; writes go
-    // through updateCalendar(QVariantMap). The per-property accessors are
-    // private since Plan 7b T3 (zero external callers).
+    // calendar folder). Public surface = the interface overrides +
+    // setCalendarColor (PlanStan PROD: backenddiscoverycoordinator.cpp:199,
+    // collectioncontroller.cpp:397 — caught by the Plan 7b downstream gate);
+    // writes otherwise go through updateCalendar(QVariantMap). The remaining
+    // per-property accessors are private since Plan 7b T3 (zero external
+    // callers).
     QColor calendarColor(const QString &calendarId) const override;
+    bool setCalendarColor(const QString &calendarId, const QColor &color);
     QString calendarDescription(const QString &calendarId) const override;
 
     // Debug/Raw ICS access
@@ -170,7 +174,6 @@ private:
     void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
 
     // ---- Per-property VDir metadata accessors (updateCalendar's backend) ----
-    bool setCalendarColor(const QString &calendarId, const QColor &color);
     QString calendarDisplayName(const QString &calendarId) const;
     bool setCalendarDisplayName(const QString &calendarId, const QString &name);
     bool setCalendarDescription(const QString &calendarId, const QString &description);
