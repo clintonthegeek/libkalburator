@@ -38,11 +38,15 @@ landed on our `main` (`c873032`; their commit `91774225` bumps their pin to v0.6
 realigns `tst_loader_empty_backends` to their own O.5 removal, and commits to a
 step-2 window by 2026-06-14, tracked in their
 `docs/todo/plan8-isynchost-runsyncfuture-migration-wave.md`). **Prerequisite they
-flagged for the step-1 plan file:** PlanStan's `CollectionController` registry
-registration is gated (`maybeInitSyncInfrastructure` requires >1 backend), so the
-lib-default `backendById` would return nullptr on single-backend collections — their
-override stays until their wave makes registration unconditional; the lib default
-must therefore be additive, not a behavior swap.
+flagged for the step-1 plan file:** PlanStan's `CollectionController` override bridges
+the legacy `m_backends` hash, while the lib default walks the registry — NOT
+equivalent in PlanStan today: config-declared backends only reach the registry inside
+`initializeSyncInfrastructure()`, gated on `m_backends.size() > 1`, so the lib-default
+`backendById` would return nullptr on single-backend collections. Their override
+therefore stays through step 2; whether it then goes (registration made
+unconditional) or stays as a permanent cache is **their in-wave decision** — do not
+assume either in the step-1 plan. The lib default must be additive, not a behavior
+swap.
 
 **Next action = Plan 8 lib-side step 1** (write
 `plans/plan-8-isynchost-neutralization.md` first, per P1; the RFC + PlanStan response
