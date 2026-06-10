@@ -1,6 +1,7 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (WP-A–WP-D audit-follow-up wave complete; baseline **144/144**)
+**Last updated:** 2026-06-10 (Plan 7 opened: plan written, branch
+`feature/redress-7-remotecalendarbackend-decomposition`; baseline **144/144**)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
@@ -16,7 +17,17 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = Plan 7 (RemoteCalendarBackend decomposition).**
+**Next action = execute Plan 7 (RemoteCalendarBackend decomposition) — plan file
+WRITTEN 2026-06-10** at `plans/plan-7-remotecalendarbackend-decomposition.md`, on
+branch `feature/redress-7-remotecalendarbackend-decomposition`. Scope decision
+recorded in the plan: RCB only; LocalBackend (the other half of AUDIT B3) deferred
+with a FINDINGS mirror-sketch at close-out. Headline design: subtract-first (≈170 LOC
+verified-dead incl. the never-called `primeCtagCache` 60s path; the engine primes via
+`ChangeDetection` only), consolidate the 11× QEventLoop/QNAM boilerplate into one
+`davSyncRequest` helper, extract ONE collaborator (`CalDavContentCache`, also fixing
+a per-instance QSqlDatabase connection leak), unify the 4 parallel discovery maps
+into `QMap<QString, CalendarFacts>`, privatize the zero-external-caller ctag cluster.
+Net-LOC ≤ −350 is an acceptance gate (the anti-Plan-1-bloat requirement).
 
 All audit-follow-up work packages are complete:
 
@@ -246,7 +257,7 @@ severities, not the retired old plan numbers:
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | proposed (after WP-A; **replan inputs now CURRENT** — figures + concern inventory in specs §Plan 7) |
+| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | **in progress** — plan written 2026-06-10 (`plans/plan-7-remotecalendarbackend-decomposition.md`); scope = RCB only, LocalBackend deferred (documented in plan) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
