@@ -65,6 +65,8 @@ private slots:
     void multipleCollections_separateTables();
     void persistsAcrossInstances();
     void concurrentShapeForVsCreateCollection();
+    void wipeCollection_emptiesTable_leavesCollectionIntact();
+    void wipeCollection_survivorIsolation();
 };
 
 void TestGenericSqliteBackend::isAvailable_falseForUnopenedDb()
@@ -279,6 +281,45 @@ void TestGenericSqliteBackend::concurrentShapeForVsCreateCollection()
     stop.store(true, std::memory_order_release);
     reader.waitForFinished();
     QVERIFY(true);  // reaching here without crash/TSan report is the assertion
+}
+
+void TestGenericSqliteBackend::wipeCollection_emptiesTable_leavesCollectionIntact()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
+
+    b.createRecord(colId, makeRecord(QStringLiteral("w1"), QByteArrayLiteral("x")));
+    b.createRecord(colId, makeRecord(QStringLiteral("w2"), QByteArrayLiteral("y")));
+    QCOMPARE(b.loadRecords(colId).size(), 2);
+
+    QVERIFY(b.wipeCollection(colId));
+    QCOMPARE(b.loadRecords(colId).size(), 0);
+    // Collection itself must still exist (wipe ≠ delete).
+    const auto cols = b.availableCollections();
+    QVERIFY(std::any_of(cols.begin(), cols.end(),
+                        [&](const CollectionInfo &c){ return c.id == colId; }));
+}
+
+void TestGenericSqliteBackend::wipeCollection_survivorIsolation()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString wiped   = QStringLiteral("col+a");
+    const QString survivor = QStringLiteral("col+b");
+    b.createCollection(makeCollection(wiped,    QStringLiteral("A")), kTestShape);
+    b.createCollection(makeCollection(survivor, QStringLiteral("B")), kTestShape);
+
+    b.createRecord(wiped,    makeRecord(QStringLiteral("w1"), QByteArrayLiteral("gone")));
+    b.createRecord(survivor, makeRecord(QStringLiteral("s1"), QByteArrayLiteral("safe")));
+
+    QVERIFY(b.wipeCollection(wiped));
+    QCOMPARE(b.loadRecords(wiped).size(),    0);
+    QCOMPARE(b.loadRecords(survivor).size(), 1);
+    QCOMPARE(b.loadRecords(survivor).first().data, QByteArrayLiteral("safe"));
 }
 
 QTEST_MAIN(TestGenericSqliteBackend)

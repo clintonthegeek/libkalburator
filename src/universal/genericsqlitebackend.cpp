@@ -144,6 +144,11 @@ bool GenericSqliteBackend::deleteCollection(const QString &collectionId)
     return ok;
 }
 
+bool GenericSqliteBackend::wipeCollection(const QString &collectionId)
+{
+    return clearCollection(collectionId);
+}
+
 bool GenericSqliteBackend::clearCollection(const QString &collectionId)
 {
     if (!m_open)

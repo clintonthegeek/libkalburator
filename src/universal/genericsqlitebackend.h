@@ -60,6 +60,8 @@ public:
 
     bool deleteCollection(const QString &collectionId);
     bool clearCollection(const QString &collectionId);
+    // Fast path: single DELETE FROM instead of per-record deletes.
+    bool wipeCollection(const QString &collectionId) override;
 
     QList<Kalburator::Sync::BackendRecord> loadRecords(const QString &collectionId) override;
     std::optional<Kalburator::Sync::BackendRecord> loadRecord(const QString &recordId) override;

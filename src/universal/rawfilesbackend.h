@@ -57,6 +57,8 @@ public:
 
     void deleteCollection(const QString &collectionId);
     void clearCollection(const QString &collectionId);
+    // Fast path: remove all files for the collection in one pass.
+    bool wipeCollection(const QString &collectionId) override;
 
     QList<Kalburator::Sync::BackendRecord> loadRecords(const QString &collectionId) override;
     std::optional<Kalburator::Sync::BackendRecord> loadRecord(const QString &recordId) override;

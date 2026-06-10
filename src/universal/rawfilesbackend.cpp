@@ -91,6 +91,12 @@ void RawFilesBackend::deleteCollection(const QString &collectionId)
     saveManifest();
 }
 
+bool RawFilesBackend::wipeCollection(const QString &collectionId)
+{
+    clearCollection(collectionId);
+    return true;
+}
+
 void RawFilesBackend::clearCollection(const QString &collectionId)
 {
     const QString suffix = QLatin1Char('.') + suffixFor(collectionId);
