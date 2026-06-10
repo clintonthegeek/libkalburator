@@ -18,7 +18,6 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QTimer>
-#include <QCoreApplication>
 
 namespace Kalburator::Sync {
 
@@ -97,30 +96,6 @@ public:
             return false;
         }
         return true;
-    }
-
-    bool clear(const QString &calendarId)
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM local_fingerprints "
-            "WHERE backend_id = ? AND calendar_id = ?"));
-        q.addBindValue(m_backendId);
-        q.addBindValue(calendarId);
-        return q.exec();
-    }
-
-    bool clearAll()
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM local_fingerprints WHERE backend_id = ?"));
-        q.addBindValue(m_backendId);
-        return q.exec();
     }
 
 private:
@@ -283,30 +258,9 @@ void LocalBackend::loadCalendars(const QString &collectionId)
     emit loadCalendarsFinished(collectionId, true);
 }
 
-void LocalBackend::buildHierarchy(KCalendarCore::MemoryCalendar* cal)
+void LocalBackend::storeCalendars(const QString &, const QList<KCalendarCore::MemoryCalendar*> &)
 {
-    // This function can be used to process incidences and ensure parent-child links
-    // are recognized in your model if you maintain explicit pointers.
-    // KCalendarCore::MemoryCalendar and Incidence do not maintain explicit parent pointers,
-    // but your model can use RELATED-TO to build the tree.
-    Q_UNUSED(cal);
-    // No action needed here if your model builds tree from RELATED-TO.
-}
-
-void LocalBackend::storeCalendars(const QString &someArg, const QList<KCalendarCore::MemoryCalendar*> &calendars) {
-    // Your implementation here
-}
-
-void LocalBackend::writeIncidenceWithHierarchy(KCalendarCore::MemoryCalendar* cal, const KCalendarCore::Incidence::Ptr &incidence)
-{
-    // This is a placeholder for any processing needed before serialization,
-    // e.g., ensuring RELATED-TO properties are set correctly for parent-child.
-
-    Q_UNUSED(cal);
-    Q_UNUSED(incidence);
-
-    // Typically, the incidence already has RELATED-TO properties set by your commands or model.
-    // If you maintain explicit parent pointers, update RELATED-TO here accordingly.
+    // Deliberate no-op — no calendar-level save (mirrors RemoteCalendarBackend).
 }
 
 void LocalBackend::removeItem(const QString &calId, const QString &itemUid)
@@ -526,20 +480,17 @@ void LocalBackend::startSync(const QString &collectionId,
     }
 
     m_pendingSyncCollectionId = collectionId;
-    m_pendingWriteCount = allWrites.size();
 
     emit writeStarted(calId, allWrites.size());
 
     for (const KCalendarCore::Incidence::Ptr &incidence : allWrites) {
         if (incidence.isNull()) {
-            m_pendingWriteCount--;
             continue;
         }
 
         QString uid = incidence->uid();
         if (uid.isEmpty()) {
             qWarning() << "LocalBackend::startSync: Incidence with empty UID skipped";
-            m_pendingWriteCount--;
             continue;
         }
 

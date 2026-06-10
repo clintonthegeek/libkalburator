@@ -204,14 +204,6 @@ private:
     // Async file writer for non-blocking writes
     AsyncFileWriter *m_asyncWriter = nullptr;
     QString m_pendingSyncCollectionId;
-    int m_pendingWriteCount = 0;
-
-    // Helpers to load/save hierarchy
-    void buildHierarchy(KCalendarCore::MemoryCalendar* cal);
-    void writeIncidenceWithHierarchy(KCalendarCore::MemoryCalendar* cal, const KCalendarCore::Incidence::Ptr &incidence);
-
-    // Utility to find parent UID from RELATED-TO with RELTYPE=CHILD
-    QString findParentUid(const KCalendarCore::Incidence::Ptr &incidence) const;
 
     QString filePathForCalendar(const QString &calendarId) const;
 
