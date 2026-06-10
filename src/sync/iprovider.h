@@ -149,9 +149,16 @@ public:
     /// Non-fatal warning from the last connect(). Empty = no warning.
     virtual QString lastWarning() const { return {}; }
 
+    /// Last error from a failed connect(), or empty if the last connect()
+    /// succeeded. Complement to the error() signal for callers that need to
+    /// poll the failure reason after the fact (e.g., after future completion).
+    virtual QString lastError() const { return {}; }
+
 signals:
-    /// Emitted when connect() completes (true) or disconnect() runs
-    /// (false), or when a runtime connection loss is detected.
+    /// Emitted when connect() succeeds (true) or when disconnect() is called
+    /// / a runtime connection loss is detected (false). NOT emitted when
+    /// connect() fails — use the future result or lastError() / error() for
+    /// failure feedback.
     void connectionStateChanged(bool connected);
 
     /// Emitted when collections() result changes (typically just once

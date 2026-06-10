@@ -106,6 +106,7 @@ QFuture<bool> MultiProtocolDavProvider::connect()
     m_calDavUrlMap.clear();
     m_cardDavUrlMap.clear();
     m_lastWarning.clear();
+    m_lastError.clear();
 
     // CalDAV half — signal-based
     if (m_caldavDiscovery) {
@@ -306,8 +307,9 @@ void MultiProtocolDavProvider::maybeResolveConnect()
     // In calendarsOnly mode only CalDAV matters — CardDAV success/failure is
     // not surfaced as a warning and does not contribute to anyOk.
     if (m_calendarsOnly) {
-        if (!calOk) {
-            if (!m_calDavError.isEmpty()) emit error(m_calDavError);
+        if (!calOk && !m_calDavError.isEmpty()) {
+            m_lastError = m_calDavError;
+            emit error(m_calDavError);
         }
     } else {
         if (!calOk && cardOk)
@@ -323,7 +325,10 @@ void MultiProtocolDavProvider::maybeResolveConnect()
                 if (!combined.isEmpty()) combined += QStringLiteral("; ");
                 combined += m_cardDavError;
             }
-            if (!combined.isEmpty()) emit error(combined);
+            if (!combined.isEmpty()) {
+                m_lastError = combined;
+                emit error(combined);
+            }
         }
     }
 
@@ -334,8 +339,13 @@ void MultiProtocolDavProvider::maybeResolveConnect()
     m_connectPromise->finish();
     m_connectPromise.reset();
 
-    if (anyOk) emit collectionsChanged();
-    emit connectionStateChanged(anyOk);
+    if (anyOk) {
+        emit collectionsChanged();
+        emit connectionStateChanged(true);
+    }
+    // connectionStateChanged(false) is NOT emitted on connect failure —
+    // only emitted from disconnect() when leaving a connected state.
+    // Callers check the future result or lastError() for failure feedback.
 }
 
 } // namespace Kalburator::Sync

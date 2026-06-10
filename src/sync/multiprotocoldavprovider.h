@@ -60,6 +60,7 @@ public:
         createBackend(const QString &collectionId) override;
 
     QString lastWarning() const override { return m_lastWarning; }
+    QString lastError()   const override { return m_lastError; }
 
 private slots:
     void onCalDavFinished(bool success);
@@ -81,6 +82,7 @@ private:
     bool                  m_calendarsOnly = true;
     bool                  m_connected = false;
     QString               m_lastWarning;
+    QString               m_lastError;
     QList<CollectionInfo> m_collections;
     QMap<QString, QString> m_urlByCollectionId;
 

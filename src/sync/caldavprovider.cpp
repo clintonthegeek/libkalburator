@@ -81,6 +81,7 @@ QFuture<bool> CalDavProvider::connect() {
         m_discovery->deleteLater();
         m_discovery = nullptr;
     }
+    m_lastError.clear();
     m_connectPromise.reset(new QPromise<bool>);
     m_connectPromise->start();
 
@@ -120,9 +121,10 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
         emit connectionStateChanged(true);
     } else {
         const QString errMsg = m_discovery->errorMessage();
-        emit error(errMsg.isEmpty()
-                   ? QStringLiteral("CalDavProvider: discovery failed")
-                   : errMsg);
+        m_lastError = errMsg.isEmpty()
+                      ? QStringLiteral("CalDavProvider: discovery failed")
+                      : errMsg;
+        emit error(m_lastError);
     }
 
     if (m_connectPromise) {

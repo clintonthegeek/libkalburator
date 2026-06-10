@@ -51,6 +51,8 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
+    QString lastError() const override { return m_lastError; }
+
 private slots:
     void onDiscoveryFinished(bool success);
 
@@ -61,6 +63,7 @@ private:
     QString                              m_username;
     QString                              m_password;
     bool                                 m_connected = false;
+    QString                              m_lastError;
     QList<CollectionInfo>                m_collections;
 
     CalDavCapabilityDiscovery           *m_discovery = nullptr;
