@@ -54,12 +54,12 @@ QFuture<bool> CardDavProvider::connect() {
         return fi.future();
     }
 
-    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid()) {
+    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid() || m_serverUrl.scheme().isEmpty()) {
         QFutureInterface<bool> fi;
         fi.reportStarted();
         fi.reportResult(false);
         fi.reportFinished();
-        emit error(QStringLiteral("CardDavProvider: server URL is empty or invalid"));
+        emit error(QStringLiteral("CardDavProvider: server URL is empty, invalid, or missing a scheme"));
         return fi.future();
     }
 

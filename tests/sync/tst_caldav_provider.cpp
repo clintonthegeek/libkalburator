@@ -78,6 +78,7 @@ private slots:
     void createBackend_when_not_connected_returns_nullptr();
     void createBackend_after_disconnect_returns_nullptr();
     void manual_principal_override_skips_autodiscovery();
+    void connect_while_inflight_is_idempotent();
 };
 
 void TstCalDavProvider::manual_principal_override_skips_autodiscovery()
@@ -430,15 +431,7 @@ void TstCalDavProvider::connect_with_invalid_url_emits_error_immediately()
     QSignalSpy errSpy(&provider, &IProvider::error);
     QFuture<bool> fut = provider.connect();
 
-    // Bug: CalDavProvider does not validate the URL scheme/format before
-    // dispatching to QNAM. A relative/scheme-less string like "not-a-url"
-    // is passed to QNAM which treats it as a (broken) relative URL and
-    // starts an async network request instead of rejecting synchronously.
-    // Only a truly empty URL is caught early. See FINDINGS.md.
-    QEXPECT_FAIL("", "connect() with non-scheme URL is not synchronous (CalDavProvider does not pre-validate URL scheme)", Continue);
     QVERIFY(fut.isFinished());
-    if (!fut.isFinished())
-        return; // future is in-flight; remaining assertions would block — skip them
     QCOMPARE(fut.result(), false);
     QVERIFY(!provider.isConnected());
     QCOMPARE(errSpy.count(), 1);
@@ -498,6 +491,37 @@ void TstCalDavProvider::createBackend_after_disconnect_returns_nullptr()
 
     auto backend = provider.createBackend(collId);
     QVERIFY(backend == nullptr);
+}
+
+void TstCalDavProvider::connect_while_inflight_is_idempotent()
+{
+    // v0.61: second connect() while in-flight must return the in-flight future,
+    // not start a second discovery and overwrite m_connectPromise (which would
+    // cancel the first future and crash any watcher::result() observer).
+    QTcpServer hungServer;
+    QVERIFY(hungServer.listen(QHostAddress::LocalHost, 0));
+    const QUrl hungUrl(
+        QStringLiteral("http://127.0.0.1:%1/").arg(hungServer.serverPort()));
+
+    CalDavProvider provider;
+    provider.load(makeConfig(hungUrl));
+
+    QFuture<bool> fut1 = provider.connect();
+    QVERIFY(!fut1.isFinished());
+
+    // Second connect() while in-flight: must return the same future.
+    QFuture<bool> fut2 = provider.connect();
+    QVERIFY(!fut2.isFinished());
+
+    // Both futures share the same state: finishing one finishes both.
+    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    provider.disconnect();
+    QVERIFY(fut1.isFinished());
+    QVERIFY(fut2.isFinished());
+    QCOMPARE(fut1.result(), false);
+    QCOMPARE(fut2.result(), false);
+    // connectionStateChanged must NOT fire: disconnect from non-connected state.
+    QCOMPARE(stateSpy.count(), 0);
 }
 
 QTEST_GUILESS_MAIN(TstCalDavProvider)

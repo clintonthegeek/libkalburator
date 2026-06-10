@@ -58,12 +58,13 @@ QFuture<bool> CalDavProvider::connect() {
         return fi.future();
     }
 
-    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid()) {
+    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid() || m_serverUrl.scheme().isEmpty()) {
         QFutureInterface<bool> fi;
         fi.reportStarted();
         fi.reportResult(false);
         fi.reportFinished();
-        emit error(QStringLiteral("CalDavProvider: server URL is empty or invalid"));
+        m_lastError = QStringLiteral("CalDavProvider: server URL is empty, invalid, or missing a scheme");
+        emit error(m_lastError);
         return fi.future();
     }
 

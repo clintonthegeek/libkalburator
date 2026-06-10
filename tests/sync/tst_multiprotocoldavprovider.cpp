@@ -34,6 +34,7 @@ private slots:
     void connectPopulatesContentTypesOnCalDavCollections();
     void pluginRegistersMultiProtoDavContribution();
     void contributionCreateProviderHonorsParent();
+    void connect_while_inflight_is_idempotent();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -250,6 +251,38 @@ void TstMultiProtocolDavProvider::contributionCreateProviderHonorsParent()
     // Reparented onto `owner` — hand ownership to the parent to avoid the
     // unique_ptr/QObject-parent double delete.
     (void)provider.release();
+}
+
+void TstMultiProtocolDavProvider::connect_while_inflight_is_idempotent()
+{
+    QTcpServer hungServer;
+    QVERIFY(hungServer.listen(QHostAddress::LocalHost, 0));
+    const QUrl hungUrl(
+        QStringLiteral("http://127.0.0.1:%1/").arg(hungServer.serverPort()));
+
+    MultiProtocolDavProvider p;
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("test");
+    cfg.connectionParams[QStringLiteral("url")]      = hungUrl.toString();
+    cfg.connectionParams[QStringLiteral("username")] = QStringLiteral("u");
+    cfg.connectionParams[QStringLiteral("password")] = QStringLiteral("p");
+    p.load(cfg);
+
+    QFuture<bool> fut1 = p.connect();
+    QVERIFY(!fut1.isFinished());
+
+    // Second connect() in-flight: must return the same (shared) future.
+    QFuture<bool> fut2 = p.connect();
+    QVERIFY(!fut2.isFinished());
+
+    QSignalSpy stateSpy(&p, &IProvider::connectionStateChanged);
+    p.disconnect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut1.isFinished(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(fut2.isFinished(), 5000);
+    QCOMPARE(fut1.resultAt(0), false);
+    QCOMPARE(fut2.resultAt(0), false);
+    // No connectionStateChanged: was never connected.
+    QCOMPARE(stateSpy.count(), 0);
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)
