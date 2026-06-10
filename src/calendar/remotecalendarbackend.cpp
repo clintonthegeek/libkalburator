@@ -20,7 +20,6 @@
 #include <QDebug>
 #include <QTimer>
 #include <QEventLoop>
-#include <QCoreApplication>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -139,17 +138,6 @@ public:
             "WHERE backend_id = ? AND calendar_id = ?"));
         q.addBindValue(m_backendId);
         q.addBindValue(calendarId);
-        return q.exec();
-    }
-
-    bool clearAll()
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM remote_ctags WHERE backend_id = ?"));
-        q.addBindValue(m_backendId);
         return q.exec();
     }
 
@@ -820,8 +808,6 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
 }
 
 
-// ... other includes if needed...
-
 KDAV::DavUrl RemoteCalendarBackend::configuredDavUrl(const QString &rawUrl)
 {
     QUrl url(rawUrl);
@@ -873,13 +859,10 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
         return;
     }
 
-    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
-    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
-
     const KDAV::DavUrl baseDavUrl = *davUrlFor(calId);
 
     // Count total jobs for completion tracking
-    const int totalJobs = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();
+    const int totalJobs = stagedCreations.size() + stagedUpdates.size() + stagedDeletions.size();
     if (totalJobs == 0) {
         emit syncCompleted(collectionId);
         return;
@@ -910,7 +893,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
 
     // Launch create jobs. A 412 means the item already exists on the server
     // (DavItemCreateJob PUTs with If-None-Match: *); retry as a normal update.
-    for (const auto &inc : finalCreations) {
+    for (const auto &inc : stagedCreations) {
         if (!inc) {
             checkDone();
             continue;
@@ -952,7 +935,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
     }
 
     // Launch update jobs (modify with the cached ETag; 412 retries as force).
-    for (const auto &inc : finalUpdates) {
+    for (const auto &inc : stagedUpdates) {
         if (!inc) {
             checkDone();
             continue;
@@ -1693,9 +1676,31 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
         // Initialize content cache so we can store pushed items for subsequent fetches
         m_contentCache->ensureOpen();
 
+        // Shared accounting tail for every per-item outcome. When the last
+        // item lands: invalidate the stored CTag (our push changed it
+        // server-side) and settle the op — fail only when nothing succeeded;
+        // partial success completes with failedUids tracked (the F2 operation
+        // contract). Pre-T4 the three accounting sites disagreed (a trailing
+        // null item never settled the op at all; a trailing serialization
+        // failure failed a partly-successful push).
+        auto settleIfDone = [this, op, remaining, anyError]() {
+            if (--(*remaining) != 0) {
+                return;
+            }
+            if (!op->succeededUids().isEmpty()) {
+                clearCtag(op->calendarId());
+            }
+            if ((*anyError || !op->failedUids().isEmpty())
+                && op->succeededUids().isEmpty()) {
+                op->fail(QStringLiteral("All items failed to push"));
+            } else {
+                op->complete();
+            }
+        };
+
         for (const auto &incidence : items) {
             if (incidence.isNull()) {
-                (*remaining)--;
+                settleIfDone();
                 continue;
             }
 
@@ -1704,14 +1709,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
             if (icalData.isEmpty()) {
                 qWarning() << "RemoteCalendarBackend::pushItems: Failed to convert incidence to iCal:" << incidence->uid();
                 op->addFailedUid(incidence->uid());
-                (*remaining)--;
-                if (*remaining == 0) {
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        op->fail(QStringLiteral("Some items failed to push"));
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
                 continue;
             }
 
@@ -1726,7 +1724,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
             QString uid = incidence->uid();
 
             connect(createJob, &KDAV::DavItemCreateJob::result, this,
-                    [this, op, createJob, uid, remaining, anyError, icalData](KJob *job) {
+                    [this, op, createJob, uid, anyError, icalData, settleIfDone](KJob *job) {
                 if (op->state() == SyncOperation::Cancelled) {
                     return;
                 }
@@ -1743,24 +1741,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                     qDebug() << "RemoteCalendarBackend::pushItems: Created" << uid << "ETag:" << createdItem.etag();
                 }
 
-                (*remaining)--;
-                if (*remaining == 0) {
-                    // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty()) {
-                        clearCtag(op->calendarId());
-                    }
-
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        if (op->succeededUids().isEmpty()) {
-                            op->fail(QStringLiteral("All items failed to push"));
-                        } else {
-                            // Partial success - still complete but with failed UIDs tracked
-                            op->complete();
-                        }
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
             });
 
             createJob->start();
