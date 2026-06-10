@@ -53,6 +53,17 @@ the plan file's Outcome section. Headlines:
   default lane (FakeCalDavServer grew MKCALENDAR/PROPPATCH/collection-DELETE);
   falsifiability demonstrated. Convergence + blob_view contracts preserved verbatim
   (files untouched). The live-Radicale lane ran green throughout.
+- **Downstream gates (inv 10):** PlanStan `build-dev` consumes this working tree
+  (`PLANSTAN_LIBKALBURATOR_SOURCE_DIR` override) — suite run against the branch:
+  93/115 with failed-set = 21 Not-Run headless-GUI binaries +
+  `tst_loader_empty_backends`, and that single real failure **A/B-verified
+  pre-existing** (fails identically against libkalburator `main`; it expects an
+  empty-backends/no-providers load to FAIL and the load now succeeds — likely the
+  v0.67 `f170139` preconnected-provider change or PlanStan-side drift; flag for the
+  PlanStan dev, not a Plan 7 effect). WildPalms: grep-verified per-symbol
+  non-consumer of every changed/removed RemoteCalendarBackend symbol (its only
+  reference is a comment), so the five invariants hold by construction; the
+  96-commits-behind clone gate was not run (per plan).
 
 All audit-follow-up work packages are complete:
 
