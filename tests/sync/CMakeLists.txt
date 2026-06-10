@@ -204,8 +204,25 @@ set_tests_properties(tst_iprovider_accessors PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
-# M.2 — MultiProtocolDavProvider skeleton smoke test
-kalburator_add_sync_test(tst_multiprotocoldavprovider)
+# M.2 — MultiProtocolDavProvider smoke tests + fake-server CalDAV-leg
+# projection tests (contentTypes, WildPalms RFC 2026-06-09).
+add_executable(tst_multiprotocoldavprovider
+    tst_multiprotocoldavprovider.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_multiprotocoldavprovider
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::ConfigCore
+        Kalburator::Sync
+)
+add_test(NAME tst_multiprotocoldavprovider COMMAND tst_multiprotocoldavprovider)
+set_tests_properties(tst_multiprotocoldavprovider PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
 
 # M.6 — MultiProtocolDavConfigWidget UI test
 add_executable(tst_multiprotocoldavconfigwidget tst_multiprotocoldavconfigwidget.cpp)

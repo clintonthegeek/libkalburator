@@ -123,6 +123,8 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
             ci.type = QStringLiteral("calendar");
             ci.isDefault = false;
             ci.readOnly = !it.value().writable;  // thread discovered writability (Phase 2C authority seed)
+            if (it.value().supportsVEvent) ci.contentTypes << QStringLiteral("VEVENT");
+            if (it.value().supportsVTodo)  ci.contentTypes << QStringLiteral("VTODO");
             m_collections.append(ci);
         }
         m_connected = true;

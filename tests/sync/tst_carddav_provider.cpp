@@ -65,6 +65,10 @@ private slots:
     void connect_succeeds_against_fake_server();
     // Test 3: collections() returns discovered list after connect
     void connect_populates_collections();
+
+    // Collection rows advertise the VCARD content type (WildPalms RFC
+    // 2026-06-09 symmetry: CalDAV rows carry VEVENT/VTODO, CardDAV VCARD).
+    void connect_populates_vcard_contenttype();
     // Test 4: createBackend returns non-null RemoteContactsBackend configured with correct URL
     void createBackend_returns_remote_backend_for_known_collection();
     // Additional: createBackend returns nullptr for unknown collection
@@ -164,6 +168,27 @@ void TstCardDavProvider::connect_populates_collections()
     }
     std::sort(names.begin(), names.end());
     QCOMPARE(names, (QStringList{ QStringLiteral("Personal"), QStringLiteral("Work") }));
+}
+
+void TstCardDavProvider::connect_populates_vcard_contenttype()
+{
+    FakeCardDavServer server;
+    server.setAddressbooks({
+        { QStringLiteral("personal"), QStringLiteral("Personal") }
+    });
+    QVERIFY(server.startListening());
+
+    CardDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 1);
+    QCOMPARE(cols.first().contentTypes,
+             (QStringList{ QStringLiteral("VCARD") }));
 }
 
 // --- Test 4 ------------------------------------------------------------------

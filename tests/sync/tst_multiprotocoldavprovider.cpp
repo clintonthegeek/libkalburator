@@ -1,7 +1,10 @@
 #include <QObject>
 #include <QtTest/QtTest>
+#include <QFutureWatcher>
 #include <QSignalSpy>
 #include <QUuid>
+
+#include "fakecaldavserver.h"
 
 #include "../../src/sync/multiprotocoldavprovider.h"
 #include "../../src/plugin/pluginmanager.h"
@@ -28,6 +31,7 @@ private slots:
     void connectPartialSuccessSkipped();
     void createBackendUnknownIdReturnsNullptr();
     void createBackendNotConnectedReturnsNullptr();
+    void connectPopulatesContentTypesOnCalDavCollections();
     void pluginRegistersMultiProtoDavContribution();
 };
 
@@ -161,6 +165,57 @@ void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
     // Even with a valid-looking id, not connected → nullptr
     QVERIFY(!p.isConnected());
     QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:test:cal:some-calendar")) == nullptr);
+}
+
+void TstMultiProtocolDavProvider::connectPopulatesContentTypesOnCalDavCollections()
+{
+    // The CalDAV-leg CollectionInfo rows must carry the discovered
+    // per-calendar component capabilities as contentTypes (WildPalms RFC
+    // 2026-06-09). Same fake-server pattern as the v0.63 convergence test:
+    // one base URL serves CalDAV; the CardDAV half is pointed at a bogus
+    // principal so it fails fast and the provider connects via CalDAV alone.
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Events"), QStringLiteral("/calendars/testuser/events/") },
+        { QStringLiteral("Tasks"),  QStringLiteral("/calendars/testuser/tasks/") },
+        { QStringLiteral("Mixed"),  QStringLiteral("/calendars/testuser/mixed/") }
+    });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/events/"),
+                                 { QStringLiteral("VEVENT") });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/tasks/"),
+                                 { QStringLiteral("VTODO") });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/mixed/"),
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("mpdav-ct-test");
+    cfg.type = QStringLiteral("multiproto-dav");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider;
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    QHash<QString, QStringList> typesByName;
+    for (const auto &c : provider.collections()) {
+        if (c.id.contains(QStringLiteral(":cal:")))
+            typesByName.insert(c.name, c.contentTypes);
+    }
+    QCOMPARE(typesByName.size(), 3);
+    QCOMPARE(typesByName.value(QStringLiteral("Events")),
+             (QStringList{ QStringLiteral("VEVENT") }));
+    QCOMPARE(typesByName.value(QStringLiteral("Tasks")),
+             (QStringList{ QStringLiteral("VTODO") }));
+    QCOMPARE(typesByName.value(QStringLiteral("Mixed")),
+             (QStringList{ QStringLiteral("VEVENT"), QStringLiteral("VTODO") }));
 }
 
 void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()

@@ -64,6 +64,7 @@ private slots:
     void connect_succeeds_via_wellknown_against_nextcloud_style_server();
     void connect_populates_collections();
     void connect_populates_readonly_from_discovered_writability();
+    void connect_populates_contenttypes_from_component_sets();
     void createBackend_returns_remote_backend_for_known_collection();
     void createBackend_returns_nullptr_for_unknown_collection();
     void connect_fails_on_401();
@@ -207,6 +208,49 @@ void TstCalDavProvider::connect_populates_readonly_from_discovered_writability()
     }
     QVERIFY(sawPersonal);
     QVERIFY(sawShared);
+}
+
+void TstCalDavProvider::connect_populates_contenttypes_from_component_sets()
+{
+    // Discovery records supportsVEvent/supportsVTodo per calendar; the
+    // CollectionInfo rows exposed via collections() must carry them as
+    // contentTypes ("VEVENT"/"VTODO") so consumers can bind task lists to
+    // todo conduits (WildPalms RFC 2026-06-09). One events-only, one
+    // tasks-only, one mixed calendar.
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Events"), QStringLiteral("/calendars/testuser/events/") },
+        { QStringLiteral("Tasks"),  QStringLiteral("/calendars/testuser/tasks/") },
+        { QStringLiteral("Mixed"),  QStringLiteral("/calendars/testuser/mixed/") }
+    });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/events/"),
+                                 { QStringLiteral("VEVENT") });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/tasks/"),
+                                 { QStringLiteral("VTODO") });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/mixed/"),
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 3);
+
+    QHash<QString, QStringList> typesByName;
+    for (const auto &c : cols)
+        typesByName.insert(c.name, c.contentTypes);
+
+    QCOMPARE(typesByName.value(QStringLiteral("Events")),
+             (QStringList{ QStringLiteral("VEVENT") }));
+    QCOMPARE(typesByName.value(QStringLiteral("Tasks")),
+             (QStringList{ QStringLiteral("VTODO") }));
+    QCOMPARE(typesByName.value(QStringLiteral("Mixed")),
+             (QStringList{ QStringLiteral("VEVENT"), QStringLiteral("VTODO") }));
 }
 
 void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collection()
