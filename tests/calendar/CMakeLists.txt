@@ -36,7 +36,31 @@ kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
-kalburator_add_calendar_test(tst_remotecalendarbackend_blob_view)
+
+# WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
+add_executable(tst_remotecalendarbackend_blob_view
+    tst_remotecalendarbackend_blob_view.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_compile_definitions(tst_remotecalendarbackend_blob_view
+    PRIVATE KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+)
+target_include_directories(tst_remotecalendarbackend_blob_view
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_remotecalendarbackend_blob_view
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_remotecalendarbackend_blob_view COMMAND tst_remotecalendarbackend_blob_view)
+set_tests_properties(tst_remotecalendarbackend_blob_view PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 kalburator_add_calendar_test(tst_remotecalendarbackend)
 
 if(KALBURATOR_HAVE_ORG_IO)

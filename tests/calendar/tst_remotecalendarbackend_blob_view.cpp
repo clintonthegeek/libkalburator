@@ -1,23 +1,27 @@
 // tests/calendar/tst_remotebackend_blob_view.cpp
-// Phase D Task 13 — compile-only / cast-only smoke test for RemoteCalendarBackend IBlobBackend.
+// Phase D Task 13 — IBlobBackend smoke tests for RemoteCalendarBackend.
 //
-// A live CalDAV test server is NOT available in the default libkalburator build
-// profile, so this test is limited to verifying:
+// Static/cast tests (no network):
 //   1. RemoteCalendarBackend compiles with the IBlobBackend overrides.
 //   2. A RemoteCalendarBackend* can be successfully upcast to IBlobBackend*.
 //   3. Identity methods (backendId, displayName, isAvailable) return non-trivial
 //      values without touching the network.
 //   4. availableCollections() returns empty (no calendars registered — no network).
 //
-// Full round-trip tests against a live CalDAV server are gated on
-// KALBURATOR_ENABLE_CALDAV_TESTS=ON (a future addition mirroring PlanStan's
-// pattern).  The library-code change (IBlobBackend overrides) is the
-// load-bearing part of Task 13; the test proves the cast and static shape.
+// Network tests (WP-D9 — revived; FakeCalDavServer PUT added in v0.63):
+//   5. updateRecord with an existing UID issues a CalDAV PUT and returns true.
+//   6. updateRecord with no registered calendars returns false (no-op).
 
 #include <QtTest>
+#include <QSignalSpy>
+#include <QTemporaryDir>
 
 #include "remotecalendarbackend.h"
 #include "iblobbackend.h"
+#include "backendrecord.h"
+#include "syncoperation.h"
+
+#include "fakecaldavserver.h"
 
 using namespace Kalburator::Sync;
 
@@ -68,19 +72,87 @@ void TestRemoteCalendarBackendBlobView::availableCollections_emptyWithoutRegiste
 
 void TestRemoteCalendarBackendBlobView::updateRecord_modifies_existing_record()
 {
-    // RemoteCalendarBackend::updateRecord issues a CalDAV PUT with conditional headers.
-    // This requires a live (or fake) CalDAV server responding to item-level
-    // verbs, which is not available in the default test profile.
-    // Full coverage is gated on KALBURATOR_ENABLE_CALDAV_TESTS=ON — see FINDINGS.md.
-    QSKIP("RemoteCalendarBackend updateRecord requires item-level CalDAV verbs not yet in FakeCalDavServer — see FINDINGS.md");
+    // Verifies that updateRecord() issues a CalDAV PUT and returns true when
+    // a matching calendar is registered.
+    //
+    // Flow: seed the server → loadCalendars → fetchItems (populates ETag cache)
+    // → updateRecord (uses cached ETag in If-Match, server returns 204).
+    // FakeCalDavServer has handled PUT since the v0.63 convergence work.
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString uid = QStringLiteral("test-event-uid-1");
+    const QByteArray origIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:test-event-uid-1\r\n"
+        "SUMMARY:Original\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, {origIcs});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString()
+                              + calHref.mid(1); // strip leading '/'
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    // loadCalendars discovers the calendar before we fetchItems.
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(),
+             "loadCalendars must succeed before we can fetchItems");
+
+    // fetchItems populates m_localEtags (needed for conditional PUT).
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(fetchOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
+    QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
+
+    // updateRecord with a modified SUMMARY — must PUT to server and return true.
+    BackendRecord rec;
+    rec.id   = uid;
+    rec.type = QStringLiteral("event");
+    rec.data =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:test-event-uid-1\r\n"
+        "SUMMARY:Modified\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    QVERIFY2(backend.updateRecord(rec), "updateRecord must return true for a known UID");
+
+    // Server must still hold the event (PUT updated it in-place).
+    QVERIFY2(server.hasEvent(calHref, uid),
+             "event must still exist on server after updateRecord PUT");
 }
 
 void TestRemoteCalendarBackendBlobView::updateRecord_nonexistent_id_returns_error()
 {
-    // Same constraint as updateRecord_modifies_existing_record: requires a
-    // live CalDAV server to exercise the 404-on-missing-item path.
-    QSKIP("RemoteCalendarBackend updateRecord requires item-level CalDAV verbs not yet in FakeCalDavServer — see FINDINGS.md");
+    // When the backend has NO registered calendar URLs (m_davUrls is empty),
+    // updateRecord has nowhere to route the PUT and must return false.
+    // This exercises the "uid not found in any calendar" warning path.
+    RemoteCalendarBackend backend(QUrl(QStringLiteral("https://caldav.example.com/")),
+                                  QStringLiteral("user"),
+                                  QStringLiteral("pass"));
+    // Deliberately do NOT call registerCalendarUrl — m_davUrls stays empty.
+
+    BackendRecord rec;
+    rec.id   = QStringLiteral("ghost-uid");
+    rec.type = QStringLiteral("event");
+    rec.data =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:ghost-uid\r\nSUMMARY:Ghost\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    QVERIFY2(!backend.updateRecord(rec),
+             "updateRecord must return false when no calendars are registered");
 }
 
-QTEST_GUILESS_MAIN(TestRemoteCalendarBackendBlobView)
+QTEST_MAIN(TestRemoteCalendarBackendBlobView)
 #include "tst_remotecalendarbackend_blob_view.moc"
