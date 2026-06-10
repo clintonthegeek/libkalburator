@@ -1,5 +1,6 @@
 #include "localbackend.h"
 #include "calendarmetadatamanager.h"
+#include "icalcodec.h"
 #include "asyncfilewriter.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -18,7 +19,6 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QTimer>
-#include <QCoreApplication>
 
 namespace Kalburator::Sync {
 
@@ -99,30 +99,6 @@ public:
         return true;
     }
 
-    bool clear(const QString &calendarId)
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM local_fingerprints "
-            "WHERE backend_id = ? AND calendar_id = ?"));
-        q.addBindValue(m_backendId);
-        q.addBindValue(calendarId);
-        return q.exec();
-    }
-
-    bool clearAll()
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM local_fingerprints WHERE backend_id = ?"));
-        q.addBindValue(m_backendId);
-        return q.exec();
-    }
-
 private:
     bool ensureSchema()
     {
@@ -183,6 +159,24 @@ void LocalBackend::setCachedFingerprint(const QString &calendarId, const QString
 {
     if (m_fingerprints)
         m_fingerprints->set(calendarId, fingerprint);
+}
+
+// ---- Backend::ChangeDetection ----------------------------------------------
+
+QString LocalBackend::collectionRevision(const QString &collectionId)
+{
+    return calendarFingerprint(collectionId);
+}
+
+QString LocalBackend::cachedCollectionRevision(const QString &collectionId) const
+{
+    return cachedFingerprint(collectionId);
+}
+
+void LocalBackend::primeRevisionCache(const QMap<QString, QString> &cache)
+{
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+        setCachedFingerprint(it.key(), it.value());
 }
 
 BackendCapabilities LocalBackend::capabilities() const
@@ -283,30 +277,9 @@ void LocalBackend::loadCalendars(const QString &collectionId)
     emit loadCalendarsFinished(collectionId, true);
 }
 
-void LocalBackend::buildHierarchy(KCalendarCore::MemoryCalendar* cal)
+void LocalBackend::storeCalendars(const QString &, const QList<KCalendarCore::MemoryCalendar*> &)
 {
-    // This function can be used to process incidences and ensure parent-child links
-    // are recognized in your model if you maintain explicit pointers.
-    // KCalendarCore::MemoryCalendar and Incidence do not maintain explicit parent pointers,
-    // but your model can use RELATED-TO to build the tree.
-    Q_UNUSED(cal);
-    // No action needed here if your model builds tree from RELATED-TO.
-}
-
-void LocalBackend::storeCalendars(const QString &someArg, const QList<KCalendarCore::MemoryCalendar*> &calendars) {
-    // Your implementation here
-}
-
-void LocalBackend::writeIncidenceWithHierarchy(KCalendarCore::MemoryCalendar* cal, const KCalendarCore::Incidence::Ptr &incidence)
-{
-    // This is a placeholder for any processing needed before serialization,
-    // e.g., ensuring RELATED-TO properties are set correctly for parent-child.
-
-    Q_UNUSED(cal);
-    Q_UNUSED(incidence);
-
-    // Typically, the incidence already has RELATED-TO properties set by your commands or model.
-    // If you maintain explicit parent pointers, update RELATED-TO here accordingly.
+    // Deliberate no-op — no calendar-level save (mirrors RemoteCalendarBackend).
 }
 
 void LocalBackend::removeItem(const QString &calId, const QString &itemUid)
@@ -324,13 +297,13 @@ void LocalBackend::removeItem(const QString &calId, const QString &itemUid)
         return;
     }
 
-    QDir calDir(m_calendarRootPath + "/" + calId);
+    const QDir calDir(filePathForCalendar(calId));
     if (!calDir.exists()) {
         qWarning() << "LocalBackend::removeItem: Calendar directory does not exist" << calDir.path();
         return;
     }
 
-    QString fileName = calDir.filePath(itemUid + ".ics");
+    QString fileName = icsPathFor(calId, itemUid);
     QFile file(fileName);
 
     if (!file.exists()) {
@@ -495,9 +468,6 @@ void LocalBackend::startSync(const QString &collectionId,
 
     const QString calId = calendar->id();
 
-    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
-    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
-
     // Apply deletions synchronously (fast operation)
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
         removeItem(calendar->id(), it.key());
@@ -505,8 +475,8 @@ void LocalBackend::startSync(const QString &collectionId,
 
     // Combine creations and updates for async writing
     QList<KCalendarCore::Incidence::Ptr> allWrites;
-    allWrites.append(finalCreations);
-    allWrites.append(finalUpdates);
+    allWrites.append(stagedCreations);
+    allWrites.append(stagedUpdates);
 
     if (allWrites.isEmpty()) {
         emit syncCompleted(collectionId);
@@ -526,20 +496,17 @@ void LocalBackend::startSync(const QString &collectionId,
     }
 
     m_pendingSyncCollectionId = collectionId;
-    m_pendingWriteCount = allWrites.size();
 
     emit writeStarted(calId, allWrites.size());
 
     for (const KCalendarCore::Incidence::Ptr &incidence : allWrites) {
         if (incidence.isNull()) {
-            m_pendingWriteCount--;
             continue;
         }
 
         QString uid = incidence->uid();
         if (uid.isEmpty()) {
             qWarning() << "LocalBackend::startSync: Incidence with empty UID skipped";
-            m_pendingWriteCount--;
             continue;
         }
 
@@ -602,6 +569,28 @@ QString LocalBackend::filePathForCalendar(const QString &calendarId) const
     return QDir(m_calendarRootPath).filePath(calendarId);
 }
 
+QString LocalBackend::icsPathFor(const QString &calendarId, const QString &uid) const
+{
+    return QDir(filePathForCalendar(calendarId)).filePath(uid + QStringLiteral(".ics"));
+}
+
+std::optional<QString> LocalBackend::recordPathFor(const QString &recordId) const
+{
+    if (recordId.isEmpty() || m_calendarRootPath.isEmpty()) return std::nullopt;
+
+    const QDir rootDir(m_calendarRootPath);
+    if (!rootDir.exists()) return std::nullopt;
+
+    const QStringList subdirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QString &calId : subdirs) {
+        QString filePath = icsPathFor(calId, recordId);
+        if (QFile::exists(filePath)) {
+            return filePath;
+        }
+    }
+    return std::nullopt;
+}
+
 QString LocalBackend::calendarFingerprint(const QString &calendarId) const
 {
     const QString calendarPath = filePathForCalendar(calendarId);
@@ -627,84 +616,60 @@ QString LocalBackend::calendarFingerprint(const QString &calendarId) const
 // VDirSyncer-compatible calendar metadata methods
 // ============================================================================
 
-QColor LocalBackend::calendarColor(const QString &calendarId) const
+std::optional<QString> LocalBackend::metadataDirFor(const QString &calendarId) const
 {
     if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QColor();
+        return std::nullopt;
     }
+    return filePathForCalendar(calendarId);
+}
 
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.color();
+QColor LocalBackend::calendarColor(const QString &calendarId) const
+{
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).color() : QColor();
 }
 
 bool LocalBackend::setCalendarColor(const QString &calendarId, const QColor &color)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setColor(color);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setColor(color);
 }
 
 QString LocalBackend::calendarDisplayName(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QString();
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.displayName();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).displayName() : QString();
 }
 
 bool LocalBackend::setCalendarDisplayName(const QString &calendarId, const QString &name)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setDisplayName(name);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setDisplayName(name);
 }
 
 QString LocalBackend::calendarDescription(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QString();
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.description();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).description() : QString();
 }
 
 bool LocalBackend::setCalendarDescription(const QString &calendarId, const QString &description)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setDescription(description);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setDescription(description);
 }
 
 int LocalBackend::calendarOrder(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return 0;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.order();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).order() : 0;
 }
 
 bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setOrder(order);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setOrder(order);
 }
 
 // ============================================================================
@@ -752,7 +717,6 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             return;
         }
 
-        KCalendarCore::ICalFormat icalFormat;
         int currentFile = 0;
 
         for (const QString &fileName : files) {
@@ -772,11 +736,8 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             QByteArray data = file.readAll();
             file.close();
 
-            auto tempCal = QSharedPointer<KCalendarCore::MemoryCalendar>(
-                new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone())
-            );
-
-            if (!icalFormat.fromRawString(tempCal, data)) {
+            const auto incidences = incidencesFromIcal(data);
+            if (incidences.isEmpty()) {
                 qWarning() << "LocalBackend::fetchItems: Failed to parse" << filePath;
                 currentFile++;
                 emit fetchProgressChanged(calendarId, currentFile, totalFiles);
@@ -784,7 +745,7 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             }
 
             // Emit itemFetched for EACH incidence as we parse it
-            for (const auto &inc : tempCal->incidences()) {
+            for (const auto &inc : incidences) {
                 items.append(inc);
                 emit itemFetched(calendarId, inc);
             }
@@ -834,7 +795,6 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
 
         QStringList succeededUids;
         QStringList failedUids;
-        KCalendarCore::ICalFormat icalFormat;
 
         for (const auto &item : items) {
             if (item.isNull()) {
@@ -850,13 +810,7 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
                 continue;
             }
 
-            auto tempCal = QSharedPointer<KCalendarCore::MemoryCalendar>(
-                new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone())
-            );
-            tempCal->addIncidence(item);
-            QString icalData = icalFormat.toString(tempCal);
-
-            if (file.write(icalData.toUtf8()) == -1) {
+            if (file.write(icalFromIncidence(item)) == -1) {
                 file.cancelWriting();
                 failedUids.append(item->uid());
                 continue;
@@ -953,7 +907,7 @@ QString LocalBackend::getRawIcs(const QString &calendarId, const QString &uid) c
         return QString();
     }
 
-    QString filePath = m_calendarRootPath + "/" + calendarId + "/" + uid + ".ics";
+    QString filePath = icsPathFor(calendarId, uid);
     QFile file(filePath);
 
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -974,7 +928,7 @@ bool LocalBackend::setRawIcs(const QString &calendarId, const QString &uid,
         return false;
     }
 
-    QString filePath = m_calendarRootPath + "/" + calendarId + "/" + uid + ".ics";
+    QString filePath = icsPathFor(calendarId, uid);
     QSaveFile file(filePath);
 
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -1163,19 +1117,9 @@ QList<BackendRecord> LocalBackend::loadRecords(const QString &collectionId)
 std::optional<BackendRecord> LocalBackend::loadRecord(const QString &recordId)
 {
     // recordId == uid; search all calendar sub-directories
-    if (recordId.isEmpty() || m_calendarRootPath.isEmpty()) return std::nullopt;
-
-    const QDir rootDir(m_calendarRootPath);
-    if (!rootDir.exists()) return std::nullopt;
-
-    const QStringList subdirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QString &calId : subdirs) {
-        const QString filePath = filePathForCalendar(calId) + QLatin1Char('/') + recordId + QStringLiteral(".ics");
-        if (QFile::exists(filePath)) {
-            return recordFromFile(filePath, recordId);
-        }
-    }
-    return std::nullopt;
+    const auto path = recordPathFor(recordId);
+    if (!path) return std::nullopt;
+    return recordFromFile(*path, recordId);
 }
 
 QString LocalBackend::createRecord(const QString &collectionId,
@@ -1207,45 +1151,29 @@ QString LocalBackend::createRecord(const QString &collectionId,
 
 bool LocalBackend::updateRecord(const BackendRecord &record)
 {
-    if (record.id.isEmpty() || m_calendarRootPath.isEmpty()) return false;
-
     // Find the calendar directory that owns this uid
-    const QDir rootDir(m_calendarRootPath);
-    const QStringList subdirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QString &calId : subdirs) {
-        const QString filePath = filePathForCalendar(calId) + QLatin1Char('/')
-                                 + record.id + QStringLiteral(".ics");
-        if (QFile::exists(filePath)) {
-            QSaveFile f(filePath);
-            if (!f.open(QIODevice::WriteOnly)) {
-                qWarning() << "LocalBackend: updateRecord: cannot open" << filePath;
-                return false;
-            }
-            if (f.write(record.data) == -1 || !f.commit()) {
-                qWarning() << "LocalBackend: updateRecord: write failed for" << filePath;
-                return false;
-            }
-            return true;
-        }
+    const auto path = recordPathFor(record.id);
+    if (!path) {
+        qWarning() << "LocalBackend: updateRecord: uid not found:" << record.id;
+        return false;
     }
-    qWarning() << "LocalBackend: updateRecord: uid not found:" << record.id;
-    return false;
+
+    QSaveFile f(*path);
+    if (!f.open(QIODevice::WriteOnly)) {
+        qWarning() << "LocalBackend: updateRecord: cannot open" << *path;
+        return false;
+    }
+    if (f.write(record.data) == -1 || !f.commit()) {
+        qWarning() << "LocalBackend: updateRecord: write failed for" << *path;
+        return false;
+    }
+    return true;
 }
 
 bool LocalBackend::deleteRecord(const QString &recordId)
 {
-    if (recordId.isEmpty() || m_calendarRootPath.isEmpty()) return false;
-
-    const QDir rootDir(m_calendarRootPath);
-    const QStringList subdirs = rootDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QString &calId : subdirs) {
-        const QString filePath = filePathForCalendar(calId) + QLatin1Char('/')
-                                 + recordId + QStringLiteral(".ics");
-        if (QFile::exists(filePath)) {
-            return QFile::remove(filePath);
-        }
-    }
-    return false;
+    const auto path = recordPathFor(recordId);
+    return path && QFile::remove(*path);
 }
 
 // --- Change detection -------------------------------------------------------

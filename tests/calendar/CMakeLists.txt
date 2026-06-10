@@ -36,6 +36,10 @@ kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
+# Plan 7b T1 — default-lane pins for LocalBackend's write paths (startSync
+# via AsyncFileWriter, removeItem, updateCalendar metadata round-trip,
+# readonly marker) ahead of the T3/T4 internal rewrites.
+kalburator_add_calendar_test(tst_localbackend_writepaths)
 
 # WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
 add_executable(tst_remotecalendarbackend_blob_view

@@ -195,8 +195,15 @@ ChangeDetection / calendar-CRUD into collaborators.
   base-mandated or PlanStan-called (full DTO collapse blocked on consumers → Plan 8).
   The DTO direction is honored internally (`CalendarFacts` + the public v0.63
   `PrimedCalendar` seed). Three latent bugs found & fixed (412-retry dangling-ref UB,
-  pushItems trailing-null hang, content-cache connection leak). **LocalBackend half
-  still OPEN** — deferred with a FINDINGS mirror-sketch (Plan 7b / Plan 11).
+  pushItems trailing-null hang, content-cache connection leak).
+- **RESOLVED for LocalBackend 2026-06-10 (Plan 7b)** — same subtract-first method
+  (`plans/plan-7b-localbackend-decomposition.md`): pair net −86 (1311/224 →
+  1239/210); no-op hierarchy helpers + never-defined `findParentUid` +
+  `FingerprintStore::clear/clearAll` + write-only `m_pendingWriteCount` deleted;
+  fingerprint cluster privatized behind `Backend::ChangeDetection` and the four
+  metadata setters (plus two getters) privatized behind `updateCalendar(QVariantMap)`
+  — the audit's "one would do" form; shared `calendar/icalcodec.h` extracted (both
+  decomposed backends use it). **B3 CLOSED — both halves.**
 
 ### MAJOR — `sync/` includes domain backends, but there is NO cycle (B4, corrected)
 

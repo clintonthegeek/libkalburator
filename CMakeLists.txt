@@ -144,6 +144,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/decsynclib.h
     src/calendar/discoveredcalendar.h
     src/calendar/holidaysubscriptionbackend.h
+    src/calendar/icalcodec.h
     src/calendar/iconflictpresenter.h
     src/calendar/iconflictresolver.h
     src/calendar/icsfeedfetcher.h

@@ -17,10 +17,36 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = Plan 8** (PlanStan-first `backendById` neutralization +
-`runSyncFuture` consumer wave — see "Plan 8 prep" below; it is a consumer wave, open
-with a joint handoff doc). The LocalBackend half of AUDIT B3 is deferred to Plan 7b /
-Plan 11 with a FINDINGS mirror-sketch.
+**Plan 8 is OPENED as a consumer wave**: the joint RFC/handoff is written and
+delivered — `docs/2026-06-10-plan8-isynchost-runsyncfuture-consumer-wave-rfc.md`
+(canonical) + a copy committed into PlanStan `docs/handoffs/` (their `master`, local
+commit `85274c95`; deliberately not pushed — their tree carries their own unpushed
+`203744a4`). **Lib-side Plan 8 work waits on PlanStan's ack** of the step-1 shape.
+Tag **v0.68** cut (post-Plan-7, carries the API-removal release notes).
+
+**Plan 7b is DONE (2026-06-10)** — LocalBackend decomposed; **AUDIT B3 closed, both
+halves**. Outcome in `plans/plan-7b-localbackend-decomposition.md`: pair net −86
+(1535→1449), dead no-op/never-read surface deleted, fingerprint + metadata clusters
+privatized behind their interface faces, shared `calendar/icalcodec.h` now serves both
+decomposed backends, LB-specific publics 13→3, new default-lane
+`tst_localbackend_writepaths` (suite **146/146**). FINDINGS adds: PlanStan never wires
+`LocalBackend::setDbPath` (fingerprint store dark in PROD — one-liner on their side);
+grep-discipline lesson #2 (exact-path exclusions).
+
+**Plan 8 is ACKED (2026-06-10): lib-side step 1 is UNGATED.** PlanStan's response
+landed on our `main` (`c873032`; their commit `91774225` bumps their pin to v0.68,
+realigns `tst_loader_empty_backends` to their own O.5 removal, and commits to a
+step-2 window by 2026-06-14, tracked in their
+`docs/todo/plan8-isynchost-runsyncfuture-migration-wave.md`). **Prerequisite they
+flagged for the step-1 plan file:** PlanStan's `CollectionController` registry
+registration is gated (`maybeInitSyncInfrastructure` requires >1 backend), so the
+lib-default `backendById` would return nullptr on single-backend collections — their
+override stays until their wave makes registration unconditional; the lib default
+must therefore be additive, not a behavior swap.
+
+**Next action = Plan 8 lib-side step 1** (write
+`plans/plan-8-isynchost-neutralization.md` first, per P1; the RFC + PlanStan response
+are the inputs).
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -294,7 +320,8 @@ severities, not the retired old plan numbers:
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | **DONE (RCB half) 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized; LocalBackend half deferred to 7b/11 (FINDINGS sketch) |
+| 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
+| 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
