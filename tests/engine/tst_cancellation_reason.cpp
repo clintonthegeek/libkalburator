@@ -196,7 +196,7 @@ void TstCancellationReason::resourceLostBeforeStart_skipsAffectedMappings()
     //   m2: src-b(res-b) → tgt-b(res-c)  — no res-x    → RUN and SUCCEED
     //   m3: src-c(res-x) → tgt-c(res-x)  — uses res-x  → SKIPPED (cancelled result)
     //
-    // cancelWithReason(ResourceLost, "res-x") is called after runSyncFuture().
+    // cancelWithReason(ResourceLost, "res-x") is called after runSync().
     // Since v1 is sequential, m1 and m2 may already be done or in-flight by
     // the time the engine processes m3; m3's backends use res-x so it is
     // skipped with a cancelled SyncResult. All 3 results appear in the future.

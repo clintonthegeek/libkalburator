@@ -41,6 +41,7 @@
 #include "syncbackend.h"
 #include "syncbackendbase.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 using Kalburator::Sync::BackendRecord;
@@ -51,6 +52,7 @@ using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncBackendBase;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -326,13 +328,15 @@ void TstEngineBaseOnlyBackend::twoWay_baseOnlyBackends_succeeds()
     m_src->createRecord(QString::fromLatin1(kColId),
                         makeRecord(QStringLiteral("a"), QStringLiteral("payload-a")));
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // The record must have reached the target through the neutral pointers.
@@ -348,13 +352,15 @@ void TstEngineBaseOnlyBackend::firstSync_baseOnlyBackends_seedsTarget()
     m_src->createRecord(QString::fromLatin1(kColId),
                         makeRecord(QStringLiteral("b"), QStringLiteral("payload-b")));
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     const auto tgtRecords = m_tgt->recordsIn(QString::fromLatin1(kColId));

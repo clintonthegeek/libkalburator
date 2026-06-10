@@ -169,7 +169,7 @@ void TestCalendarSyncFull::cleanup()
 
 bool TestCalendarSyncFull::runOneSync()
 {
-    // Use the multi-mapping form (runSyncFuture() with no mappingId).
+    // Use the multi-mapping form (runSync(SyncRequest{}) — all enabled).
     // The single-mapping form does not cleanly exit the post-sync
     // processNextMapping loop in SyncEngine, leading to a second
     // queued sync that interferes with cleanup.
@@ -184,12 +184,12 @@ bool TestCalendarSyncFull::runOneSync()
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within"
+        qWarning() << "runSync did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     return true;

@@ -116,7 +116,7 @@ kalburator_add_calendar_integration_test(tst_engine_unified_boundary)
 # Group 2 lands the QFuture-based runSync and cancellation wiring).
 kalburator_add_calendar_integration_test(tst_engine_cancellation)
 
-# Phase G.6 Task 43 — subset dispatch via runSyncFuture(QList<QString>)
+# Phase G.6 Task 43 — subset dispatch via runSync(SyncRequest) subset
 kalburator_add_calendar_integration_test(tst_engine_subset_dispatch)
 
 # Plan 2 (architectural-redress) — CalendarManager characterization suite

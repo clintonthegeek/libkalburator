@@ -49,8 +49,8 @@ using Kalburator::Sync::SyncResult;
  * **Plan 1 Task 4 + Task 5 outcome (2026-05-29):** the canonical
  * runSync entry point now takes a `SyncRequest` (behavior + mapping
  * filter + optional execution override); the override flows as a
- * method parameter through `dispatchSingleNative` →
- * `processSingleMapping`, not as queue state. Behavior remains on
+ * method parameter through `processSingleMapping`, not as queue
+ * state. Behavior remains on
  * the engine as `m_currentSyncBehavior` (per-run, set on entry).
  * `prime()` itself stays minimal — it does not carry behavior or
  * override, which would be unused for the multi-mapping iteration
@@ -68,8 +68,8 @@ public:
      */
     enum class DispatchMode {
         None,    ///< No sync in flight.
-        Single,  ///< runSyncFuture(mappingId, ...)
-        Queue    ///< runSyncFuture(behavior) or runSyncFuture(ids, ...)
+        Single,  ///< runSync(SyncRequest) — single mapping
+        Queue    ///< runSync(SyncRequest) — all-enabled or subset
     };
 
     MappingQueue() = default;

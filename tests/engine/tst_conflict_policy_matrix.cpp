@@ -48,6 +48,7 @@
 #include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 #include "stubs/stubsynchost.h"
@@ -226,13 +227,15 @@ void TstConflictPolicyMatrix::conflictResolution_duplicate_keepsBothSides()
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::Duplicate);
     m_engine->setConflictManager(m_conflictManager.get());
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                           SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeout);
     QVERIFY2(!future.isCanceled(), "future cancelled — Duplicate resolution did not complete");
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
     QVERIFY(r.unresolvedConflicts.isEmpty());
 
@@ -298,13 +301,15 @@ void TstConflictPolicyMatrix::conflictResolution_targetWins_writesTargetVersionT
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::TargetWins);
     m_engine->setConflictManager(m_conflictManager.get());
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                           SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeout);
     QVERIFY2(!future.isCanceled(), "future cancelled — TargetWins resolution did not complete");
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
     QVERIFY(r.unresolvedConflicts.isEmpty());
 
@@ -355,13 +360,15 @@ void TstConflictPolicyMatrix::conflictResolution_skip_leavesConflictUnresolved()
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::Skip);
     m_engine->setConflictManager(m_conflictManager.get());
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                           SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeout);
     QVERIFY2(!future.isCanceled(), "future cancelled — Skip resolution did not complete");
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     // success == false when unresolved conflicts exist:
     // unifiedContinueAfterConflicts sets success = !hasUnresolvedConflicts()
     QVERIFY2(!r.success, "expected success==false with unresolved conflicts");

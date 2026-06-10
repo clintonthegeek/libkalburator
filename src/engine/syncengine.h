@@ -302,56 +302,6 @@ public:
     QFuture<QList<SyncResult>> runSync(const SyncRequest &request);
 
     /**
-     * @brief Run sync for one mapping. Future completes with the result.
-     *
-     * The QFuture supports cancel() to request cancellation; the
-     * cancellation channel is wired in Group 2 Task 17.
-     *
-     * F2 Task 42 deleted the void runSync overloads in favor of these
-     * QFuture-returning forms. The name `runSyncFuture` is kept (rather
-     * than renaming back to `runSync`) because the QFuture return type
-     * is the load-bearing detail at call sites; renaming would churn
-     * every Group 3 consumer migration without a clarity gain.
-     */
-    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
-    QFuture<SyncResult> runSyncFuture(
-        const QString &mappingId,
-        SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
-     * @brief Run a single mapping with a per-call execution override.
-     *
-     * Runs a mapping as a one-way mirror (per the ExecutionOverride)
-     * without persisting that direction on the mapping itself. Lets
-     * callers run temporary direction overrides without modifying
-     * persistent sync configuration.
-     */
-    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
-    QFuture<SyncResult> runSyncFuture(
-        const QString &mappingId,
-        const ExecutionOverride &executionOverride,
-        SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
-     * @brief Run sync for all enabled mappings. Future completes with
-     *        the per-mapping result list (one entry per enabled mapping).
-     */
-    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
-    QFuture<QList<SyncResult>> runSyncFuture(
-        SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
-     * @brief Run sync for a subset of mappings identified by their IDs.
-     *        Only mappings in `ids` that are enabled are dispatched.
-     *        Future completes with one SyncResult per dispatched mapping.
-     *        G.6 Task 43.
-     */
-    [[deprecated("Use runSync(SyncRequest). Removed in architectural-redress Plan 8.")]]
-    QFuture<QList<SyncResult>> runSyncFuture(
-        const QList<QString> &ids,
-        SyncBehavior behavior = SyncBehavior::Unmonitored);
-
-    /**
      * @brief Resume sync after user resolves a conflict (monitored mode only).
      *
      * Called by UI when user completes the conflict resolution dialog.
@@ -445,8 +395,8 @@ private:
      * @brief F2 Task 42: queue driver. Sets up state for a multi-mapping
      * run, runs active controllers + the fast-path pre-pass, and
      * delegates to processQueue() to start dispatching to the worker.
-     * Called from both runSyncFuture(behavior) and runSyncFuture(ids,
-     * behavior); the filter argument distinguishes "all enabled" (nullopt)
+     * Called from runSync()'s all-enabled and subset branches; the
+     * filter argument distinguishes "all enabled" (nullopt)
      * from "subset" (set of mapping IDs). Plan 1 Task 4 will fold the
      * two arguments into one SyncRequest struct.
      */
@@ -476,27 +426,21 @@ private:
                               ExecutionOverride executionOverride = {});
 
     /**
-     * @brief Architectural-redress Plan 1 Task 4 (2026-05-29): native
-     * single-mapping dispatcher. Sets up m_currentSingleIface +
-     * m_singleWatcher and calls processSingleMapping. Returns the
-     * single-iface future directly so callers see the F2 Task 23
-     * cancellation contract natively (resultCount() == 1 after cancel
-     * with cancelled=true). Used by the deprecated runSyncFuture(
-     * mappingId, …) shims (which return the future verbatim) and by
-     * the canonical runSync(SyncRequest) single-mapping branch (which
-     * .then()-wraps it; that wrapping loses cancellation-result
-     * preservation in Qt6 — documented in FINDINGS).
+     * @brief Architectural-redress Plan 8 step 3 (2026-06-10): shared
+     * per-run setup. Creates the sole QFutureInterface (m_currentIface)
+     * and its cancellation watcher (m_currentWatcher) and returns the
+     * future callers observe. Used by both runSync() branches — the
+     * single-mapping branch then dispatches via processSingleMapping(),
+     * the multi-mapping branch via driveQueue(). Replaces the former
+     * dual single/multi interface pair (FINDINGS "From Plan 1").
      */
-    QFuture<SyncResult> dispatchSingleNative(
-        const QString &mappingId,
-        SyncBehavior behavior,
-        const std::optional<ExecutionOverride> &executionOverride);
+    QFuture<QList<SyncResult>> beginRun();
 
     /**
      * @brief F2 Task 21: multi-mapping driver. Iterates the queue
      * candidate list via re-entry from onWorkerSyncCompleted; per-mapping
      * results accumulate inside MappingQueue and are forwarded to
-     * m_currentMultiIface (if populated) at run end.
+     * m_currentIface (if populated) at run end.
      */
     void processQueue();
 
@@ -543,8 +487,8 @@ private slots:
     void onWorkerTranscodingWarning(const QString &calendarId, const QString &uid,
                                      const QStringList &warnings);
 
-    // F2 Task 17: invoked when m_singleWatcher or m_multiWatcher
-    // fires canceled. Forwards to the worker via queued connection.
+    // F2 Task 17: invoked when m_currentWatcher fires canceled.
+    // Forwards to the worker via queued connection.
     void onCancelObserved();
 
 private:
@@ -572,12 +516,12 @@ private:
     // fields with one collaborator (INVARIANTS §4).
     MappingQueue m_queue;
 
-    // Only one is populated at a time (single vs. queue run); the other is
-    // null. Owned by unique_ptr so the destructor frees any in-flight iface
-    // automatically (Plan 4 leak fix — AUDIT MAJOR "raw QFutureInterface*
-    // without lifecycle management").
-    std::unique_ptr<QFutureInterface<SyncResult>> m_currentSingleIface;
-    std::unique_ptr<QFutureInterface<QList<SyncResult>>> m_currentMultiIface;
+    // The single per-run interface (Plan 8 step 3 collapsed the former
+    // single/multi pair — every public entry now returns
+    // QFuture<QList<SyncResult>>). Owned by unique_ptr so the destructor
+    // frees any in-flight iface automatically (Plan 4 leak fix — AUDIT
+    // MAJOR "raw QFutureInterface* without lifecycle management").
+    std::unique_ptr<QFutureInterface<QList<SyncResult>>> m_currentIface;
 
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
@@ -597,13 +541,10 @@ private:
     // resource-based selective cancellation.
     MappingScheduler m_scheduler;
 
-    // F2 Task 17: watchers tracking the in-flight QFuture from
-    // runSyncFuture. Only one is populated at a time (one for
-    // single-mapping, one for multi-mapping). On QFuture::cancel(),
-    // QFutureWatcher::canceled fires on the engine thread, and
-    // we forward to the worker via queued connection.
-    QFutureWatcher<SyncResult>* m_singleWatcher = nullptr;
-    QFutureWatcher<QList<SyncResult>>* m_multiWatcher = nullptr;
+    // F2 Task 17: watcher tracking the in-flight QFuture from runSync.
+    // On QFuture::cancel(), QFutureWatcher::canceled fires on the engine
+    // thread, and we forward to the worker via queued connection.
+    QFutureWatcher<QList<SyncResult>>* m_currentWatcher = nullptr;
 
     // Worker thread infrastructure
     QThread m_workerThread;

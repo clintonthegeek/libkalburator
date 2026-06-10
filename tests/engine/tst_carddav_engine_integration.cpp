@@ -2,7 +2,7 @@
 //
 // End-to-end integration of:
 //   FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
-//   → SyncEngine::runSyncFuture → ShapedTestBackend (peer, vcard4)
+//   → SyncEngine::runSync → ShapedTestBackend (peer, vcard4)
 //
 // What this pins:
 //
@@ -64,6 +64,7 @@
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 using Kalburator::Sync::BackendConfiguration;
 using Kalburator::Sync::BackendRecord;
@@ -78,6 +79,7 @@ using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::RemoteContactsBackend;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -392,11 +394,13 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
 
     // ── Run sync.
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("ib-task9-a"), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("ib-task9-a") };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // ── Assert: 2 records arrived on peer.
@@ -523,11 +527,13 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
 
     // ── Run sync.
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("ib-task9-b"), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("ib-task9-b") };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // ── Assert: exactly 1 record arrived.

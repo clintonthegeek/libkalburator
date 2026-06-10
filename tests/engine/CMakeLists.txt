@@ -67,7 +67,7 @@ target_link_libraries(tst_engine_universal_sink_dispatch
 
 # Phase Ib Task 9 — CardDAV engine integration test.
 # FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
-# → SyncEngine::runSyncFuture → ShapedTestBackend (peer, vcard4).
+# → SyncEngine::runSync → ShapedTestBackend (peer, vcard4).
 # Pins 2-record round-trip and vCard 3.0 passthrough behavior.
 # Uses --whole-archive so the contacts domain plugin's static initializer
 # registers the vcard3↔vcard4 edges in TransformationRegistry.

@@ -50,6 +50,7 @@
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -61,6 +62,7 @@ using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -353,11 +355,13 @@ void TestEngineUnifiedRouting::unifiedPath_transformsBytesAtEdge()
     engine.setSyncMappings({ mapping });
 
     // ── Act ───────────────────────────────────────────────────────────
-    auto future = engine.runSyncFuture(
-        mappingId, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { mappingId };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // ── Assert: Pipeline was compiled (host received LossProfile) ─────

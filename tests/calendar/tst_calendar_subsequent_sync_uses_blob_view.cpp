@@ -225,11 +225,11 @@ bool TestCalendarSubsequentSyncUsesBlobView::runOneSync()
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within" << kSyncTimeoutMs << "ms";
+        qWarning() << "runSync did not finish within" << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     return true;

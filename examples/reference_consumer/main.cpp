@@ -1,7 +1,7 @@
 // Reference consumer for libkalburator's K.8 plugin surface.
 // Demonstrates: in-process plugin load via registerStockPlugins(),
 // backend contribution enumeration, and end-to-end calendar+contacts
-// sync between SyncBackend instances using SyncEngine::runSyncFuture.
+// sync between SyncBackend instances using SyncEngine::runSync.
 //
 // Usage: reference_consumer --smoke <tmpdir>
 //   --smoke runs the smoke scenario in <tmpdir> and exits 0 on success.

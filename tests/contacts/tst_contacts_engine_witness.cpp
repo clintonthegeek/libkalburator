@@ -47,6 +47,7 @@
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 using Kalburator::Shape::CanonicalRecord;
@@ -64,6 +65,7 @@ using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncConflictStore;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -333,11 +335,13 @@ void TstContactsEngineWitness::bidirectionalAdd_bothSidesGetEachOthersContact()
         QStringLiteral("tgt"), QStringLiteral("col"),
         QStringLiteral("m")) });
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("m"), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m") };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // Both sides now have both contacts.
@@ -384,10 +388,12 @@ void TstContactsEngineWitness::contentHashSkip_secondSyncProducesNoWrites()
 
     // First sync: propagates alice from src → tgt.
     {
-        auto f = engine.runSyncFuture(
-            QStringLiteral("m"), SyncEngine::SyncBehavior::Unmonitored);
+        SyncRequest req;
+        req.mappingIds = { QStringLiteral("m") };
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto f = engine.runSync(req);
         QTRY_VERIFY_WITH_TIMEOUT(f.isFinished(), kSyncTimeoutMs);
-        QVERIFY(f.resultAt(0).success);
+        QVERIFY(f.resultAt(0).first().success);
     }
     QCOMPARE(tgt->createCalls(), 1);
     QCOMPARE(tgt->updateCalls(), 0);
@@ -395,10 +401,12 @@ void TstContactsEngineWitness::contentHashSkip_secondSyncProducesNoWrites()
     // Second sync: nothing changed — contentHash in baselines matches fetched
     // records on both sides. No new writes expected.
     {
-        auto f = engine.runSyncFuture(
-            QStringLiteral("m"), SyncEngine::SyncBehavior::Unmonitored);
+        SyncRequest req;
+        req.mappingIds = { QStringLiteral("m") };
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto f = engine.runSync(req);
         QTRY_VERIFY_WITH_TIMEOUT(f.isFinished(), kSyncTimeoutMs);
-        QVERIFY(f.resultAt(0).success);
+        QVERIFY(f.resultAt(0).first().success);
     }
     QCOMPARE(tgt->createCalls(), 1);  // still 1, no new create
     QCOMPARE(tgt->updateCalls(), 0);
@@ -456,10 +464,12 @@ void TstContactsEngineWitness::conflict_askUserAutoResolves_sourceWins()
         QStringLiteral("tgt"), QStringLiteral("col"),
         QStringLiteral("m"), ConflictResolution::AskUser) });
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("m"), SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m") };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = engine.runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
-    QVERIFY(future.resultAt(0).success);
+    QVERIFY(future.resultAt(0).first().success);
 
     // SourceWins: target should have the source version.
     const QList<BackendRecord> tgtSnap = tgt->snapshot();
@@ -491,14 +501,16 @@ void TstContactsEngineWitness::cancelBeforeSync_futureCompletesCleanly()
         QStringLiteral("tgt"), QStringLiteral("col"),
         QStringLiteral("m")) });
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("m"), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m") };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
     future.cancel();
 
     // The future must complete (cancelled or succeeded) — no hang.
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     // Either cancelled or ran to completion before the cancel was observed.
-    QVERIFY(future.isCanceled() || future.resultAt(0).success);
+    QVERIFY(future.isCanceled() || future.resultAt(0).first().success);
 }
 
 void TstContactsEngineWitness::vcard3To4Transform_targetBytesContainVersion4()
@@ -531,11 +543,13 @@ void TstContactsEngineWitness::vcard3To4Transform_targetBytesContainVersion4()
     mapping.mode = SyncMode::OneWayUpload;
     engine.setSyncMappings({ mapping });
 
-    auto future = engine.runSyncFuture(
-        QStringLiteral("m"), SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m") };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
-    QVERIFY2(future.resultAt(0).success,
-             qUtf8Printable(future.resultAt(0).errorMessage));
+    QVERIFY2(future.resultAt(0).first().success,
+             qUtf8Printable(future.resultAt(0).first().errorMessage));
 
     const QList<BackendRecord> tgtSnap = tgt->snapshot();
     QCOMPARE(tgtSnap.size(), 1);

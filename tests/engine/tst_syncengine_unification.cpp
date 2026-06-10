@@ -15,7 +15,7 @@
 //
 //   1. multiMappingSequentialCompletesInOrder
 //      Exercises the queue path. Multiple enabled mappings dispatched
-//      via runSyncFuture(SyncBehavior). Per-mapping results land in
+//      via runSync(SyncRequest). Per-mapping results land in
 //      the order the engine iterated m_syncMappings. Falsifiability:
 //      reversing the iteration order in advanceQueue makes the test
 //      fail on the order assertion.
@@ -335,8 +335,10 @@ void TstSyncEngineUnification::conflictPauseResumeRoundTrip()
 
     QSignalSpy conflictSpy(m_engine.get(), &SyncEngine::conflictDetected);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                           SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
 
     // The round trip:
     //   worker emits conflictPauseRequested → engine slot fires
@@ -353,7 +355,7 @@ void TstSyncEngineUnification::conflictPauseResumeRoundTrip()
                             .arg(conflictSpy.count())));
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
     QVERIFY(!r.cancelled);
 
@@ -436,8 +438,10 @@ void TstSyncEngineUnification::cancellationPropagates()
 
     QSignalSpy conflictSpy(m_engine.get(), &SyncEngine::conflictDetected);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                           SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
 
     // Wait for the conflict signal — proves the worker reached the
     // yield. Without observing the signal first, cancel() could race
@@ -462,7 +466,7 @@ void TstSyncEngineUnification::cancellationPropagates()
     // QFuture<T>::results() / resultList accessor returns empty
     // after cancel in Qt6; resultAt(0) bypasses that quirk.
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY2(r.cancelled,
              "SyncResult.cancelled == false — cancellation did not propagate");
 

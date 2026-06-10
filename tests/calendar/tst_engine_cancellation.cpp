@@ -186,13 +186,15 @@ void TstEngineCancellation::cancelBeforeStart()
     // Block the source fetch so the worker cannot complete the run
     // before our cancel propagates. This makes the cancel-wins
     // outcome deterministic on fast machines (the simple
-    // "runSyncFuture then cancel" form races with the worker thread
+    // "runSync then cancel" form races with the worker thread
     // dispatching processSync). The contract C1 pins is "cancel
     // observed before start"; blocking the fetch ensures the worker
     // does not race past the cancellation check.
     m_src->setFetchBlocking(true);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
 
     // Cancel immediately — before the worker thread can dispatch
     // processSync past the cancellation pre-check.
@@ -231,9 +233,9 @@ void TstEngineCancellation::cancelBeforeStart()
     //   1. SyncEngine::processSingleMapping now has a top-level
     //      cancel-precheck (defensive, symmetric to advanceQueue).
     //
-    //   2. Both runSyncFuture overloads call
-    //      setAddResultsIfCanceledEnabled(true) on the iface so
-    //      reportResult is not silently dropped after reportCanceled.
+    //   2. beginRun() calls setAddResultsIfCanceledEnabled(true) on
+    //      the iface so reportResult is not silently dropped after
+    //      reportCanceled.
     //
     //   3. SyncEngine::onCancelObserved sets the engine-side
     //      m_cancelled flag, and onWorkerSyncCompleted decorates the
@@ -246,7 +248,7 @@ void TstEngineCancellation::cancelBeforeStart()
     // setAddResultsIfCanceledEnabled. Use resultCount() + resultAt()
     // to read cancellation-marker results from the underlying store.
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY(r.cancelled);
     QVERIFY(r.skipped);
 }
@@ -273,7 +275,9 @@ void TstEngineCancellation::cancelDuringFetch()
 
     m_src->setFetchBlocking(true);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
 
     // Let the worker dispatch processSync and reach the source fetch.
     QTest::qWait(100);
@@ -296,7 +300,7 @@ void TstEngineCancellation::cancelDuringFetch()
     QCOMPARE(m_dst->allUids(QString::fromLatin1(kCalendarId)).size(), 0);
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY(r.cancelled);
 }
 
@@ -332,7 +336,9 @@ void TstEngineCancellation::cancelDuringApply()
 
     m_dst->setFetchBlocking(true);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
 
     // Let the source fetch complete and the worker reach the
     // target-fetch await.
@@ -357,7 +363,7 @@ void TstEngineCancellation::cancelDuringApply()
                             .arg(written)));
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY(r.cancelled);
 }
 
@@ -417,8 +423,10 @@ void TstEngineCancellation::cancelDuringConflictPause()
     QSignalSpy conflictSpy(m_engine.get(),
                            &SyncEngine::conflictDetected);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId),
-                                          SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
 
     // Wait for the conflict signal — proves the worker has
     // yielded with m_yieldedForConflict = true.
@@ -437,7 +445,7 @@ void TstEngineCancellation::cancelDuringConflictPause()
     QVERIFY(future.isCanceled());
 
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY(r.cancelled);
 
     // Detach the conflict store before destruction so the engine
@@ -576,7 +584,9 @@ void TstEngineCancellation::idempotentCancel()
                                   QStringLiteral("Event One")));
     m_src->setFetchBlocking(true);
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
     future.cancel();
     future.cancel();  // double cancel — must not crash or assert
 
@@ -605,14 +615,16 @@ void TstEngineCancellation::cancelAfterFinished()
                         makeEvent(QStringLiteral("evt-1"),
                                   QStringLiteral("Event One")));
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     // Read the result first (before cancel), then cancel, then
     // verify the result is unchanged and the future is still
     // marked finished.
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult before = future.resultAt(0);
+    const SyncResult before = future.resultAt(0).first();
     QVERIFY(before.success);
     QVERIFY(!before.cancelled);
 
@@ -622,14 +634,14 @@ void TstEngineCancellation::cancelAfterFinished()
     // resultAt(0) must still return the success result regardless
     // of whether Qt6 flips isCanceled() post-finish.
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult after = future.resultAt(0);
+    const SyncResult after = future.resultAt(0).first();
     QVERIFY(after.success);
     QVERIFY(!after.cancelled);
 }
 
 void TstEngineCancellation::singleMappingFutureCompletes()
 {
-    // Positive smoke — non-cancelled run via runSyncFuture(mappingId).
+    // Positive smoke — non-cancelled single-mapping run via runSync.
     // Source has 3 events; target empty. After waitForFinished, the
     // future is finished, not canceled, and resultAt(0) carries a
     // successful SyncResult. The destination has the 3 items.
@@ -640,13 +652,15 @@ void TstEngineCancellation::singleMappingFutureCompletes()
                                       QStringLiteral("Event %1").arg(i)));
     }
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 
     QVERIFY(!future.isCanceled());
     QCOMPARE(future.resultCount(), 1);
-    const SyncResult r = future.resultAt(0);
+    const SyncResult r = future.resultAt(0).first();
     QVERIFY(r.success);
     QVERIFY(!r.cancelled);
 
@@ -655,7 +669,7 @@ void TstEngineCancellation::singleMappingFutureCompletes()
 
 void TstEngineCancellation::multiMappingFutureReturnsList()
 {
-    // Positive smoke — runSyncFuture() (no mappingId) returns a
+    // Positive smoke — runSync(SyncRequest{}) (all-enabled) returns a
     // QFuture<QList<SyncResult>>. With one enabled mapping in the
     // fixture, the list has one entry.
     m_src->addIncidence(QString::fromLatin1(kCalendarId),
@@ -676,17 +690,19 @@ void TstEngineCancellation::multiMappingFutureReturnsList()
 void TstEngineCancellation::watcherFinishedFiresOnce()
 {
     // Positive smoke — QFutureWatcher::finished must fire exactly
-    // once for a single runSyncFuture call. (The engine installs
+    // once for a single runSync call. (The engine installs
     // its own internal watcher for cancel forwarding; this tests
     // a *consumer-side* watcher attached to the returned future.)
     m_src->addIncidence(QString::fromLatin1(kCalendarId),
                         makeEvent(QStringLiteral("evt-1"),
                                   QStringLiteral("Event One")));
 
-    auto future = m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto future = m_engine->runSync(req);
 
-    QFutureWatcher<SyncResult> watcher;
-    QSignalSpy finishedSpy(&watcher, &QFutureWatcher<SyncResult>::finished);
+    QFutureWatcher<QList<SyncResult>> watcher;
+    QSignalSpy finishedSpy(&watcher, &QFutureWatcher<QList<SyncResult>>::finished);
     watcher.setFuture(future);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
@@ -725,8 +741,8 @@ void TstEngineCancellation::engineDestroyedMidSync_freesInterface()
     // modifying production code.
     //
     // What we CAN test safely: run a complete sync cycle and destroy the
-    // engine afterwards. m_currentSingleIface is allocated synchronously
-    // by runSyncFuture() (so it is live from the moment the call returns),
+    // engine afterwards. m_currentIface is allocated synchronously
+    // by runSync() (so it is live from the moment the call returns),
     // and is freed by onWorkerSyncCompleted() when the sync finishes. The
     // destructor then sees a null unique_ptr — no double-free. LSAN/ASAN
     // confirm no leak from the iface allocation over the whole lifecycle.
@@ -741,11 +757,9 @@ void TstEngineCancellation::engineDestroyedMidSync_freesInterface()
                         makeEvent(QStringLiteral("evt-1"),
                                   QStringLiteral("Event One")));
 
-    QT_WARNING_PUSH
-    QT_WARNING_DISABLE_DEPRECATED
-    QFuture<SyncResult> future =
-        m_engine->runSyncFuture(QString::fromLatin1(kMappingId));
-    QT_WARNING_POP
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     // Pump the event loop so the worker can process BlockingQueuedConnection
     // events (fetchItems, loadRecordsOrError) on the main thread and
@@ -753,7 +767,7 @@ void TstEngineCancellation::engineDestroyedMidSync_freesInterface()
     // deadlock (see comment above).
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 10000);
 
-    // onWorkerSyncCompleted has already reset m_currentSingleIface.
+    // onWorkerSyncCompleted has already reset m_currentIface.
     // Destroying the engine now is safe: unique_ptr dtor sees null, no-op.
     // cleanup() calls m_engine.reset() again — also a no-op.
     m_engine.reset();

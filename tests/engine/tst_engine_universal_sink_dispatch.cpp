@@ -40,6 +40,7 @@
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;
@@ -50,6 +51,7 @@ using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -276,12 +278,14 @@ void TestEngineUniversalSinkDispatch::typedSourceToRawFilesTarget_succeeds()
     mapping.enabled         = true;
     engine.setSyncMappings({ mapping });
 
-    auto future = engine.runSyncFuture(
-        mappingId, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { mappingId };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success,
              qUtf8Printable(QStringLiteral("sync failed: ") + result.errorMessage));
 

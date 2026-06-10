@@ -50,7 +50,7 @@ void SyncRunCoordinator::runSync(Kalburator::Engine::SyncEngine::SyncBehavior be
                  ? "Monitored" : "Unmonitored")
              << ")";
 
-    // F2 (Task 37): use runSyncFuture(behavior) + QFutureWatcher rather than
+    // F2 (Task 37): use runSync(SyncRequest) + QFutureWatcher rather than
     // the void runSync() overload + allSyncsCompleted signal.
     if (m_watcher) {
         m_watcher->disconnect(this);
