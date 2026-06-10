@@ -1,5 +1,6 @@
 #include "remotecalendarbackend.h"
 #include "caldavcontentcache.h"
+#include "icalcodec.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -281,43 +282,6 @@ const QByteArray kCtagPropfindBody = QByteArrayLiteral(
     "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
     "  <D:prop><CS:getctag/></D:prop>"
     "</D:propfind>");
-
-// Incidence <-> iCal codec via a throwaway in-memory calendar. Free functions
-// (no captures), so async job callbacks can use them without the
-// dangling-reference hazard the old per-method lambdas carried.
-QByteArray icalFromIncidence(const KCalendarCore::Incidence::Ptr &inc)
-{
-    KCalendarCore::Calendar::Ptr tmpCal(
-        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
-    tmpCal->addIncidence(inc);
-    KCalendarCore::ICalFormat format;
-    return format.toString(tmpCal).toUtf8();
-}
-
-// Empty on parse failure (or on a VCALENDAR with no incidences). The returned
-// shared pointers stay valid after the temporary calendar dies.
-QList<KCalendarCore::Incidence::Ptr> incidencesFromIcal(const QString &ical)
-{
-    KCalendarCore::Calendar::Ptr tmpCal(
-        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
-    KCalendarCore::ICalFormat format;
-    if (!format.fromString(tmpCal, ical)) {
-        return {};
-    }
-    return tmpCal->incidences();
-}
-
-/// Raw-bytes variant (ICalFormat::fromRawString handles encoding sniffing).
-QList<KCalendarCore::Incidence::Ptr> incidencesFromIcal(const QByteArray &raw)
-{
-    KCalendarCore::Calendar::Ptr tmpCal(
-        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
-    KCalendarCore::ICalFormat format;
-    if (!format.fromRawString(tmpCal, raw)) {
-        return {};
-    }
-    return tmpCal->incidences();
-}
 
 // Block on a SyncOperation's finished signal (the worker-thread blob-view
 // adapters). Returns true iff the operation Succeeded.

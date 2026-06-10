@@ -193,6 +193,14 @@ private:
 
     QString filePathForCalendar(const QString &calendarId) const;
 
+    /// <root>/<calendarId>/<uid>.ics (the path every item operation builds).
+    QString icsPathFor(const QString &calendarId, const QString &uid) const;
+
+    /// First calendar subdirectory owning @p recordId, as the full .ics path;
+    /// nullopt when not found (the scan loadRecord/updateRecord/deleteRecord
+    /// used to triplicate).
+    std::optional<QString> recordPathFor(const QString &recordId) const;
+
     // Helper for async write setup
     void ensureAsyncWriterReady();
 };
