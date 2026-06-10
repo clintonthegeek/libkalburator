@@ -187,6 +187,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/decsynclib.cpp
     src/calendar/holidaysubscriptionbackend.cpp
     src/calendar/icsfeedfetcher.cpp
+    src/calendar/isynchost.cpp
     src/calendar/localbackend.cpp
     src/calendar/logicalcalendarbuilder.cpp
     src/calendar/mockbackend.cpp

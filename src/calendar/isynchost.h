@@ -10,6 +10,7 @@
 
 namespace Kalburator::Sync {
 
+class BackendRegistry;
 class SyncBackend;
 class ISyncConfigStore;
 
@@ -25,9 +26,36 @@ class ISyncHost
 public:
     virtual ~ISyncHost() = default;
 
-    // ---- Registry access (kept) ----
-    virtual SyncBackend* backendById(const QString &id) = 0;
-    virtual QHash<QString, SyncBackend*> backends() = 0;
+    // ---- Registry access ----
+    // Plan 8 step 1 (RFC 2026-06-10, PlanStan-acked): non-pure, with
+    // registry-backed defaults. ADDITIVE — hosts that carry their own backend
+    // storage (PlanStan CC's m_backends bridge) keep their overrides
+    // unchanged; hosts without can inject the registry and drop theirs.
+
+    /**
+     * @brief Inject the registry backing the default lookups below.
+     *
+     * Non-owning: the host app owns the registry and must keep it alive for
+     * this host's lifetime (or inject nullptr first). Never required — a
+     * host that overrides backendById()/backends() can ignore this entirely.
+     */
+    virtual void setBackendRegistry(BackendRegistry *registry);
+
+    /**
+     * @brief Default: registry lookup + dynamic_cast<SyncBackend*>.
+     *
+     * nullptr when no registry is injected, the id is unknown, or the
+     * registered instance is not a calendar-typed backend — a clean miss,
+     * never UB (retires the unchecked static_cast bridges; v0.66 precedent).
+     */
+    virtual SyncBackend* backendById(const QString &id);
+
+    /**
+     * @brief Default: registry walk with the same cast. Non-calendar
+     * instances are OMITTED (not inserted as nullptr).
+     */
+    virtual QHash<QString, SyncBackend*> backends();
+
     virtual ISyncConfigStore* configStore() = 0;
 
     // ---- Generic lifecycle events (G.9.a — new in Task 63) ----
@@ -63,6 +91,9 @@ public:
 
     virtual void errorOccurred(const QString &mappingId, const QString &msg) {}
 
+protected:
+    /// Non-owning; see setBackendRegistry().
+    BackendRegistry *m_backendRegistry = nullptr;
 };
 
 } // namespace Kalburator::Sync

@@ -34,6 +34,10 @@ kalburator_add_sync_test(tst_backendregistry_signals)
 # O.1.3 — IProvider::applyConfig default impl + edit-account path.
 kalburator_add_sync_test(tst_iprovider_applyconfig)
 
+# Plan 8 step 1 — ISyncHost registry-backed defaults (non-pure
+# backendById/backends + setBackendRegistry; dynamic_cast clean-miss).
+kalburator_add_sync_test(tst_isynchost_defaults)
+
 # K.7.1 Task 8 — NeutralProvider account-neutral IProvider adapter.
 kalburator_add_sync_test(tst_neutral_provider)
 
