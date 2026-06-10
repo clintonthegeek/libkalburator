@@ -70,11 +70,18 @@ separate handoff** (`docs/2026-06-10-plan8-wildpalms-consumer-wave-handoff.md`,
 `06fd77c`): 2 PROD `runSyncFuture` calls (`palmruntime.cpp` `runAllMappings`/`runMirror`)
 + the optional `PalmSyncHost` shim collapse — **NOT yet done**.
 
-**Next action = Plan 8 step 3 — write the plan file first (P1).** Step 3 is the
-lib-side `runSyncFuture` retirement: migrate `syncruncoordinator.cpp:60` + ~87 lib test
+**Plan 8 step 3 plan is WRITTEN (2026-06-10) and execution is IN PROGRESS** on branch
+`feature/redress-8-runsyncfuture-retirement` (off `main` @ `348aec9`, baseline 147/147
+re-confirmed green). Plan file:
+`plans/plan-8-step3-runsyncfuture-retirement.md`. Scope (user decision 2026-06-10):
+**collapse the dual future-interface in this plan**, not a follow-up. Step 3 is the
+lib-side `runSyncFuture` retirement: migrate `syncruncoordinator.cpp:60` + ~85 lib test
 sites + `examples/reference_consumer` to `runSync(SyncRequest)`, then **delete the four
 `[[deprecated]]` overloads** and collapse the engine's dual future-interface members
-(FINDINGS "From Plan 1"). **Gate CLEARED (2026-06-10):** BOTH external consumers are now
+(FINDINGS "From Plan 1") — making the canonical single-mapping path preserve the cancel
+result natively (retires the `resultCount()>0` workaround). Tasks: T1 multi-mapping
+migration · T2 engine collapse + single-mapping migration + overload deletion · T3
+gates + close-out + tag v0.70. **Gate CLEARED (2026-06-10):** BOTH external consumers are now
 `runSyncFuture`-clean — PlanStan (`58bd4835`) and **WildPalms** (Part A+B done:
 `d68fa5d`/`e5d2820`/`4dc3537`, ctest 120/120; response
 `docs/2026-06-10-plan8-consumer-wave-response-wildpalms.md`). The ONLY remaining
