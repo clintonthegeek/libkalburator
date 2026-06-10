@@ -258,6 +258,9 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
     } else if (method == "PUT") {
         handlePut(socket, path, body);
 
+    } else if (method == "DELETE") {
+        handleDelete(socket, path);
+
     } else {
         writeResponse(socket, 405, "Method Not Allowed", QByteArray());
     }
@@ -333,6 +336,35 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
     } else {
         writeResponse(socket, 204, "No Content", QByteArray(), etagHeader);
     }
+}
+
+void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
+{
+    if (!path.endsWith(QStringLiteral(".ics"))) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+
+    const int lastSlash = path.lastIndexOf('/');
+    if (lastSlash <= 0) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+    const QString collectionHref = path.left(lastSlash + 1);
+    const QString uid = uidFromPath(path);
+    if (uid.isEmpty()) {
+        writeResponse(socket, 400, "Bad Request", QByteArray());
+        return;
+    }
+
+    auto colIt = m_store.find(collectionHref);
+    if (colIt == m_store.end() || !colIt->contains(uid)) {
+        writeResponse(socket, 404, "Not Found", QByteArray());
+        return;
+    }
+
+    colIt->remove(uid);
+    writeResponse(socket, 204, "No Content", QByteArray());
 }
 
 QString FakeCalDavServer::xmlForPrincipal() const

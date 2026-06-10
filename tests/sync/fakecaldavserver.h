@@ -111,6 +111,7 @@ private:
                       const QByteArray &body);
     void handlePut(QTcpSocket *socket, const QString &path,
                    const QByteArray &body);
+    void handleDelete(QTcpSocket *socket, const QString &path);
     void writeResponse(QTcpSocket *socket,
                        int statusCode,
                        const QByteArray &reasonPhrase,
