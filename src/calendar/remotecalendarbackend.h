@@ -9,15 +9,14 @@
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
-#include <KDAV/DavJobBase>
 #include <QUrl>
 #include <QMap>
-#include <QPointer>
 #include <QColor>
 #include <QDateTime>
 #include <QStringList>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace Kalburator::Sync {
 
@@ -67,27 +66,6 @@ public:
      */
     void setCacheDir(const QString &dir);
 
-    // ---- Per-backend CTag access (CalDAV sync optimisation) ----
-    /**
-     * @brief Get the stored CTag for a calendar.
-     * @param calendarId The calendar ID
-     * @return Stored CTag, or empty string if not cached
-     */
-    QString ctag(const QString &calendarId) const;
-
-    /**
-     * @brief Store a CTag for a calendar.
-     * @param calendarId The calendar ID
-     * @param ctag The CTag value from the server
-     */
-    void setCtag(const QString &calendarId, const QString &ctag);
-
-    /**
-     * @brief Remove the stored CTag for a calendar.
-     * @param calendarId The calendar ID
-     */
-    void clearCtag(const QString &calendarId);
-
     void loadCalendars(const QString &collectionId) override;
 
     /**
@@ -125,22 +103,6 @@ public:
     QColor discoveredColor(const QString &calendarId) const override;
 
     /**
-     * @brief Fetch fresh CTags for multiple calendars in a single network operation.
-     *
-     * Groups the requested calendars by parent URL (e.g. all calendars under
-     * /cal.php/calendars/user/) and issues one Depth:1 PROPFIND per group,
-     * collapsing N round-trips into K (K ≤ N, typically K = 1).
-     *
-     * @param calendarIds List of discovered calendar IDs to query.
-     * @return Map of calendarId -> fresh CTag. Calendars whose CTag the server
-     *         did not return are absent from the map. Network failures yield
-     *         an empty result (caller should treat as "fall back to per-call PROPFIND").
-     *
-     * Synchronous; runs an internal QEventLoop. Safe to call before sync starts.
-     */
-    QMap<QString, QString> fetchAllCtags(const QStringList &calendarIds);
-
-    /**
      * @brief Per-calendar metadata the provider already discovered at connect().
      *
      * Carries exactly what loadCalendars() would otherwise re-fetch per backend
@@ -169,29 +131,15 @@ public:
      */
     void primeCalendars(const QList<PrimedCalendar> &calendars);
 
-    // ---- Backend::ChangeDetection (Phase K.1) ----
-    // Thin delegations to the existing CTag surface above. The engine
-    // consumes these via dynamic_cast<Backend::ChangeDetection*> in K.2;
-    // the qobject_cast<RemoteCalendarBackend*> path retires there.
-    QString collectionRevision(const QString &collectionId) override
-    {
-        const auto map = fetchAllCtags({collectionId});
-        return map.value(collectionId);
-    }
+    // ---- Backend::ChangeDetection ----
+    // The engine's ONLY ctag entry points (consumed via
+    // dynamic_cast<Backend::ChangeDetection*>). The backend's own ctag
+    // accessors are private since Plan 7 T6 — one public face per concept.
+    QString collectionRevision(const QString &collectionId) override;
     QMap<QString, QString>
-    collectionRevisions(const QStringList &collectionIds) override
-    {
-        return fetchAllCtags(collectionIds);
-    }
-    QString cachedCollectionRevision(const QString &collectionId) const override
-    {
-        return ctag(collectionId);
-    }
-    void primeRevisionCache(const QMap<QString, QString> &cache) override
-    {
-        for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-            setCtag(it.key(), it.value());
-    }
+    collectionRevisions(const QStringList &collectionIds) override;
+    QString cachedCollectionRevision(const QString &collectionId) const override;
+    void primeRevisionCache(const QMap<QString, QString> &cache) override;
 
     /**
      * @brief Check if discovered calendar supports VEVENT components.
@@ -359,21 +307,64 @@ signals:
     void calendarOperationError(const QString &calendarId, const QString &errorMessage);
 
 private:
+    // ---- Stored-CTag store (persisted change-detection tokens) ----
+    // Private since Plan 7 T6: the engine reaches these only through the
+    // Backend::ChangeDetection overrides above; nothing else ever called them.
+    QString ctag(const QString &calendarId) const;
+    void setCtag(const QString &calendarId, const QString &ctag);
+    void clearCtag(const QString &calendarId);
+
+    /**
+     * @brief Fetch fresh CTags for multiple calendars in a single network operation.
+     *
+     * Groups the requested calendars by parent URL and issues one Depth:1
+     * PROPFIND per group, collapsing N round-trips into K (K ≤ N, typically 1).
+     * Calendars whose CTag the server did not return are absent from the
+     * result; network failures yield an empty map. Synchronous (QEventLoop).
+     */
+    QMap<QString, QString> fetchAllCtags(const QStringList &calendarIds);
+
     // No SyncStore member — CTags have their own CTagStore below
-    std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setSyncStore()
+    std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setDbPath()
     QUrl m_url;
     QString m_username;
     QString m_password;
-    QMap<QString, KDAV::DavUrl> m_davUrls;
-    QMap<QString, QColor> m_calendarColors;  // CalendarId -> discovered color
-    QMap<QString, KDAV::DavCollection::ContentTypes> m_calendarContentTypes;  // CalendarId -> content types
-    QMap<QString, QString> m_calendarCtags;  // CalendarId -> CTag from discovery
+
+    /**
+     * @brief One row of per-calendar discovery/registration state.
+     *
+     * Replaces four parallel maps (davUrl / color / contentTypes / pending
+     * ctag — the backend-internal half of audit-supplement S2's "one href in
+     * five maps"): one calendarId, one facts row.
+     */
+    struct CalendarFacts {
+        KDAV::DavUrl davUrl;   ///< empty url == not registered (see davUrlFor)
+        QColor color;          ///< invalid == undiscovered
+        KDAV::DavCollection::ContentTypes contentTypes = {};
+        /// False == never discovered/registered; the component getters then
+        /// assume events+todos (the historical map-miss default).
+        bool hasContentTypes = false;
+        /// Discovery/fetch ctag awaiting persist-after-successful-fetch.
+        QString pendingCtag;
+    };
+    // QMap keeps key-sorted iteration: availableCollections() ordering and
+    // the first-match-wins scans in loadRecord/updateRecord/deleteRecord
+    // stay deterministic (same as the old QMap m_davUrls).
+    QMap<QString, CalendarFacts> m_calendars;
+
+    /// The registered DAV URL, or nullopt when the calendar has none.
+    std::optional<KDAV::DavUrl> davUrlFor(const QString &calendarId) const;
+
     // Calendars seeded via primeCalendars(); when non-empty, loadCalendars()
     // short-circuits the server walk and replays these directly (insertion
     // order preserved for deterministic calendarDiscovered emission).
     QStringList m_primedCalendarIds;
+
+    // ETag pair, both load-bearing: KDAV's EtagCache feeds DavItemsListJob's
+    // delta detection but exposes NO etag(url) getter, so m_localEtags is the
+    // only readable store (If-Match headers, ownership probing). Every write
+    // path updates both via noteItemWritten/noteItemErased.
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
-    // Our own local etag cache: map from remote URL string to ETag
     QMap<QString, QString> m_localEtags;
 
     // Persistent delta-sync payload cache (own SQLite connection; see
