@@ -20,10 +20,11 @@
 
 namespace Kalburator::Sync {
 
-AkonadiProvider::AkonadiProvider(QObject *parent)
+AkonadiProvider::AkonadiProvider(bool calendarsOnly, QObject *parent)
     : IProvider(parent)
     , m_id(QUuid::createUuid().toString(QUuid::WithoutBraces))
     , m_displayName(QStringLiteral("Local Akonadi"))
+    , m_calendarsOnly(calendarsOnly)
 {
 }
 
@@ -89,11 +90,13 @@ QFuture<bool> AkonadiProvider::connect()
         Akonadi::Collection::root(),
         Akonadi::CollectionFetchJob::Recursive,
         m_session);
-    job->fetchScope().setContentMimeTypes({
+    QList<QString> mimes{
         KCalendarCore::Event::eventMimeType(),
         KCalendarCore::Todo::todoMimeType(),
-        KContacts::Addressee::mimeType(),
-    });
+    };
+    if (!m_calendarsOnly)
+        mimes.append(KContacts::Addressee::mimeType());
+    job->fetchScope().setContentMimeTypes(mimes);
     QObject::connect(job, &KJob::result,
         this, &AkonadiProvider::onCollectionsFetched);
     return fut;
@@ -126,6 +129,9 @@ void AkonadiProvider::onCollectionsFetched(KJob *kjob)
         } else {
             continue; // skip unknown collection types
         }
+
+        if (m_calendarsOnly && type != QStringLiteral("calendar"))
+            continue;
 
         CollectionInfo info;
         info.id   = QStringLiteral("akonadi-%1").arg(col.id());

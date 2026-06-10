@@ -35,7 +35,7 @@ class AkonadiProvider : public IProvider
 {
     Q_OBJECT
 public:
-    explicit AkonadiProvider(QObject *parent = nullptr);
+    explicit AkonadiProvider(bool calendarsOnly = true, QObject *parent = nullptr);
     ~AkonadiProvider() override;
 
     QString id() const override { return m_id; }
@@ -64,6 +64,7 @@ private:
 
     QString               m_id;           // stable UUID
     QString               m_displayName;
+    bool                  m_calendarsOnly = true;
     bool                  m_connected = false;
     QList<CollectionInfo> m_collections;
 
