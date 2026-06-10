@@ -26,10 +26,11 @@ KDAV::DavCollection::ContentTypes contentTypesFromCaps(const PerCalendarCapabili
 }
 } // namespace
 
-MultiProtocolDavProvider::MultiProtocolDavProvider(QObject *parent)
+MultiProtocolDavProvider::MultiProtocolDavProvider(bool calendarsOnly, QObject *parent)
     : IProvider(parent)
     , m_id(QUuid::createUuid().toString(QUuid::WithoutBraces))
     , m_displayName(QStringLiteral("DAV account"))
+    , m_calendarsOnly(calendarsOnly)
 {
 }
 
@@ -279,14 +280,16 @@ void MultiProtocolDavProvider::maybeResolveConnect()
         info.id = prefixedId;
         m_collections.append(info);
     }
-    for (auto info : m_cardDavResult) {
-        const QString innerKey = info.id;
-        const QString prefixedId =
-            QStringLiteral("multiproto-dav:%1:contacts:%2").arg(m_id, innerKey);
-        if (m_cardDavUrlMap.contains(innerKey))
-            m_urlByCollectionId[prefixedId] = m_cardDavUrlMap[innerKey];
-        info.id = prefixedId;
-        m_collections.append(info);
+    if (!m_calendarsOnly) {
+        for (auto info : m_cardDavResult) {
+            const QString innerKey = info.id;
+            const QString prefixedId =
+                QStringLiteral("multiproto-dav:%1:contacts:%2").arg(m_id, innerKey);
+            if (m_cardDavUrlMap.contains(innerKey))
+                m_urlByCollectionId[prefixedId] = m_cardDavUrlMap[innerKey];
+            info.id = prefixedId;
+            m_collections.append(info);
+        }
     }
 
     const bool calOk  = m_calDavError.isEmpty()  && !m_calDavResult.isEmpty();
@@ -300,29 +303,40 @@ void MultiProtocolDavProvider::maybeResolveConnect()
         qCWarning(lcMultiDav).noquote()
             << "CalDAV: no calendars —" << (m_calDavError.isEmpty()
                 ? QStringLiteral("empty result") : m_calDavError);
-    if (cardOk)
-        qCInfo(lcMultiDav) << "CardDAV: discovered" << m_cardDavResult.size() << "addressbook(s)";
-    else
-        qCWarning(lcMultiDav).noquote()
-            << "CardDAV: no addressbooks —" << (m_cardDavError.isEmpty()
-                ? QStringLiteral("empty result") : m_cardDavError);
-
-    if (!calOk && cardOk)
-        m_lastWarning = QStringLiteral("Calendar discovery failed: %1")
-                            .arg(m_calDavError);
-    else if (calOk && !cardOk)
-        m_lastWarning = QStringLiteral("Addressbook discovery failed: %1")
-                            .arg(m_cardDavError);
-
-    const bool anyOk = calOk || cardOk;
-    if (!anyOk) {
-        QString combined = m_calDavError;
-        if (!m_cardDavError.isEmpty()) {
-            if (!combined.isEmpty()) combined += QStringLiteral("; ");
-            combined += m_cardDavError;
-        }
-        if (!combined.isEmpty()) emit error(combined);
+    if (!m_calendarsOnly) {
+        if (cardOk)
+            qCInfo(lcMultiDav) << "CardDAV: discovered" << m_cardDavResult.size() << "addressbook(s)";
+        else
+            qCWarning(lcMultiDav).noquote()
+                << "CardDAV: no addressbooks —" << (m_cardDavError.isEmpty()
+                    ? QStringLiteral("empty result") : m_cardDavError);
     }
+
+    // In calendarsOnly mode only CalDAV matters — CardDAV success/failure is
+    // not surfaced as a warning and does not contribute to anyOk.
+    if (m_calendarsOnly) {
+        if (!calOk) {
+            if (!m_calDavError.isEmpty()) emit error(m_calDavError);
+        }
+    } else {
+        if (!calOk && cardOk)
+            m_lastWarning = QStringLiteral("Calendar discovery failed: %1")
+                                .arg(m_calDavError);
+        else if (calOk && !cardOk)
+            m_lastWarning = QStringLiteral("Addressbook discovery failed: %1")
+                                .arg(m_cardDavError);
+
+        if (!calOk && !cardOk) {
+            QString combined = m_calDavError;
+            if (!m_cardDavError.isEmpty()) {
+                if (!combined.isEmpty()) combined += QStringLiteral("; ");
+                combined += m_cardDavError;
+            }
+            if (!combined.isEmpty()) emit error(combined);
+        }
+    }
+
+    const bool anyOk = m_calendarsOnly ? calOk : (calOk || cardOk);
 
     m_connected = anyOk;
     m_connectPromise->addResult(anyOk);
