@@ -16,6 +16,9 @@
 //      seed) and must honor setCacheDir().
 
 #include <QtTest/QtTest>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QFutureWatcher>
 #include <QObject>
 #include <QSignalSpy>
@@ -95,6 +98,7 @@ private slots:
     void multiproto_primed_loadCalendars_issues_zero_additional_propfinds();
     void unprimed_loadCalendars_falls_back_to_network_propfind();
     void content_cache_filename_is_deterministic_and_honors_setCacheDir();
+    void cancellation_during_unprimed_fallback_leaves_cache_intact();
 };
 
 void TstRemoteCalendarBackendConvergence::primed_loadCalendars_issues_zero_additional_propfinds()
@@ -284,6 +288,76 @@ void TstRemoteCalendarBackendConvergence::content_cache_filename_is_deterministi
     const auto entries = QDir(dir.path()).entryList({ QStringLiteral("caldav-cache-*.db") }, QDir::Files);
     QCOMPARE(entries.size(), 1);
     QCOMPARE(entries.first(), expectedName);
+}
+
+void TstRemoteCalendarBackendConvergence::cancellation_during_unprimed_fallback_leaves_cache_intact()
+{
+    // WP-D8: cancel an in-flight fetchItems while the unprimed fallback REPORT is
+    // on the wire.  Verifies two invariants:
+    //  (A) The operation ends in Cancelled state.
+    //  (B) The content-cache DB is not corrupted by a partial write.
+    //
+    // Mechanics: fetchItems() runs its setup lambda synchronously (same-thread
+    // QMetaObject::invokeMethod → direct connection), so initContentCache() and
+    // DavItemsListJob::start() both fire before fetchItems() returns.  The
+    // DavItemsListJob's REPORT is now in-flight.  cancel() transitions the op to
+    // Cancelled before the event loop has a chance to deliver the reply; when the
+    // reply arrives the result handler sees Cancelled and returns early — no writes.
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"),
+                          QStringLiteral("/calendars/testuser/personal/")}});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(
+        QStringLiteral("Personal"),
+        server.baseUrl().toString() + QStringLiteral("calendars/testuser/personal/"));
+
+    // Start fetch — DavItemsListJob REPORT is in-flight; no event loop iteration yet.
+    FetchOperation *op = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(op != nullptr);
+
+    // Cancel before the reply is delivered.
+    op->cancel();
+    QCOMPARE(op->state(), SyncOperation::Cancelled);
+
+    // Let the event loop drain so the in-flight job completes and its result handler
+    // fires.  The handler observes Cancelled and returns without writing any items.
+    QTest::qWait(500);
+
+    // (A) Op must still be Cancelled (no late Succeeded override).
+    QCOMPARE(op->state(), SyncOperation::Cancelled);
+
+    // (B) initContentCache() created the DB before cancel() was called.
+    //     Verify the file exists and is not zero-length (valid empty schema).
+    const auto cacheFiles = QDir(cacheDir.path()).entryList(
+        QStringList{QStringLiteral("caldav-cache-*.db")}, QDir::Files);
+    QVERIFY2(!cacheFiles.isEmpty(),
+             "initContentCache() must have created the DB before cancel()");
+    const QString dbPath = cacheDir.filePath(cacheFiles.first());
+    QVERIFY2(QFileInfo(dbPath).size() > 0,
+             "DB file must not be zero-length (SQLite header must be intact)");
+
+    // (B cont.) A subsequent fetch on a fresh backend reusing the same cache dir
+    //           must succeed — the schema left by the cancelled fetch is valid.
+    RemoteCalendarBackend verifyBackend(server.baseUrl(),
+                                        QStringLiteral("testuser"),
+                                        QStringLiteral("testpass"));
+    verifyBackend.setCacheDir(cacheDir.path());
+    verifyBackend.registerCalendarUrl(
+        QStringLiteral("Personal"),
+        server.baseUrl().toString() + QStringLiteral("calendars/testuser/personal/"));
+
+    FetchOperation *verifyOp = verifyBackend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(verifyOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(verifyOp->isFinished(), 8000);
+    QCOMPARE(verifyOp->state(), SyncOperation::Succeeded);
 }
 
 QTEST_GUILESS_MAIN(TstRemoteCalendarBackendConvergence)
