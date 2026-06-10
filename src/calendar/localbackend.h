@@ -54,33 +54,13 @@ public:
      */
     void setDbPath(const QString &dbPath);
 
-    /**
-     * @brief Get the persisted fingerprint for a calendar.
-     * @return Stored fingerprint, or empty string if not present or store not set.
-     */
-    QString cachedFingerprint(const QString &calendarId) const;
-
-    /**
-     * @brief Persist a fingerprint for a calendar.
-     */
-    void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
-
-    // ---- Backend::ChangeDetection (Phase K.1) ----
-    // Thin delegations to the existing fingerprint surface. Engine
-    // consumes these via dynamic_cast<Backend::ChangeDetection*> in K.2.
-    QString collectionRevision(const QString &collectionId) override
-    {
-        return calendarFingerprint(collectionId);
-    }
-    QString cachedCollectionRevision(const QString &collectionId) const override
-    {
-        return cachedFingerprint(collectionId);
-    }
-    void primeRevisionCache(const QMap<QString, QString> &cache) override
-    {
-        for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-            setCachedFingerprint(it.key(), it.value());
-    }
+    // ---- Backend::ChangeDetection ----
+    // The engine's ONLY fingerprint entry points (consumed via
+    // dynamic_cast<Backend::ChangeDetection*>). The backend's own fingerprint
+    // accessors are private since Plan 7b T3 — one public face per concept.
+    QString collectionRevision(const QString &collectionId) override;
+    QString cachedCollectionRevision(const QString &collectionId) const override;
+    void primeRevisionCache(const QMap<QString, QString> &cache) override;
 
     /**
      * @brief Check if a calendar directory is writable.
@@ -119,18 +99,12 @@ public:
     bool updateCalendar(const QString &collectionId, const QString &calendarId, const QVariantMap &properties) override;
     bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
 
-    // VDirSyncer-compatible calendar metadata (stored as files in calendar folder)
+    // VDirSyncer-compatible calendar metadata (stored as files in the
+    // calendar folder). Public surface = the interface overrides; writes go
+    // through updateCalendar(QVariantMap). The per-property accessors are
+    // private since Plan 7b T3 (zero external callers).
     QColor calendarColor(const QString &calendarId) const override;
-    bool setCalendarColor(const QString &calendarId, const QColor &color);
-
-    QString calendarDisplayName(const QString &calendarId) const;
-    bool setCalendarDisplayName(const QString &calendarId, const QString &name);
-
     QString calendarDescription(const QString &calendarId) const override;
-    bool setCalendarDescription(const QString &calendarId, const QString &description);
-
-    int calendarOrder(const QString &calendarId) const;
-    bool setCalendarOrder(const QString &calendarId, int order);
 
     // Debug/Raw ICS access
     QString getRawIcs(const QString &calendarId, const QString &uid) const override;
@@ -177,18 +151,6 @@ public:
     void rollbackBatch() override {}
     bool supportsBatch() const override { return false; }
 
-    /**
-     * @brief Phase-2 perf: cheap fingerprint of a calendar's on-disk state.
-     *
-     * Returns sha256 hex digest of the sorted list of (filename | mtime | size)
-     * tuples for *.ics files in the calendar directory. Detects adds, removes,
-     * and modifications. Returns empty string if the calendar directory does
-     * not exist.
-     *
-     * Cost: O(N) stat calls; ~100 ms for ~600 files.
-     */
-    QString calendarFingerprint(const QString &calendarId) const;
-
 private slots:
     void onAsyncWriteCompleted(const QString &filePath, const QString &identifier,
                                 bool success, const QString &errorMessage);
@@ -196,6 +158,30 @@ private slots:
     void onAsyncWriteProgress(int completed, int total);
 
 private:
+    // ---- Fingerprint store (persisted change-detection tokens) ----
+    // Private since Plan 7b T3: the engine reaches these only through the
+    // Backend::ChangeDetection overrides above (mirrors Plan 7's ctag move).
+
+    /// Cheap fingerprint of a calendar's on-disk state: sha256 over the
+    /// sorted (filename | mtime | size) tuples of *.ics files. Empty when the
+    /// directory does not exist. O(N) stat calls; ~100 ms for ~600 files.
+    QString calendarFingerprint(const QString &calendarId) const;
+    QString cachedFingerprint(const QString &calendarId) const;
+    void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
+
+    // ---- Per-property VDir metadata accessors (updateCalendar's backend) ----
+    bool setCalendarColor(const QString &calendarId, const QColor &color);
+    QString calendarDisplayName(const QString &calendarId) const;
+    bool setCalendarDisplayName(const QString &calendarId, const QString &name);
+    bool setCalendarDescription(const QString &calendarId, const QString &description);
+    int calendarOrder(const QString &calendarId) const;
+    bool setCalendarOrder(const QString &calendarId, int order);
+
+    /// Validated metadata directory for a calendar, or nullopt when the
+    /// calendarId or root path is empty (the guard every per-property
+    /// accessor used to duplicate).
+    std::optional<QString> metadataDirFor(const QString &calendarId) const;
+
     QString m_calendarRootPath;
 
     // Private per-backend fingerprint store (persisted to .kalburator-sync.db)

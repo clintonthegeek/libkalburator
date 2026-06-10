@@ -422,8 +422,10 @@ void LocalBackendTest::testCalendarFingerprintDeterminism()
     const QString calendarId = QStringLiteral("test-cal");
     QVERIFY(backend.createCalendar(collectionId, calendarId, QStringLiteral("Test")));
 
-    const QString fp1 = backend.calendarFingerprint(calendarId);
-    const QString fp2 = backend.calendarFingerprint(calendarId);
+    // Through the production surface: the engine consumes the fingerprint as
+    // ChangeDetection::collectionRevision (calendarFingerprint went private, P7b.T3).
+    const QString fp1 = backend.collectionRevision(calendarId);
+    const QString fp2 = backend.collectionRevision(calendarId);
     QCOMPARE(fp1, fp2);
     QVERIFY(!fp1.isEmpty());
 
@@ -437,9 +439,9 @@ void LocalBackendTest::testCalendarFingerprintDeterminism()
     QTRY_VERIFY_WITH_TIMEOUT(push->isFinished(), 5000);
     QCOMPARE(push->state(), SyncOperation::Succeeded);
 
-    const QString fp3 = backend.calendarFingerprint(calendarId);
+    const QString fp3 = backend.collectionRevision(calendarId);
     QVERIFY(fp3 != fp1);
-    QCOMPARE(fp3, backend.calendarFingerprint(calendarId));
+    QCOMPARE(fp3, backend.collectionRevision(calendarId));
 }
 
 QTEST_GUILESS_MAIN(LocalBackendTest)

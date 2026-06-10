@@ -160,6 +160,24 @@ void LocalBackend::setCachedFingerprint(const QString &calendarId, const QString
         m_fingerprints->set(calendarId, fingerprint);
 }
 
+// ---- Backend::ChangeDetection ----------------------------------------------
+
+QString LocalBackend::collectionRevision(const QString &collectionId)
+{
+    return calendarFingerprint(collectionId);
+}
+
+QString LocalBackend::cachedCollectionRevision(const QString &collectionId) const
+{
+    return cachedFingerprint(collectionId);
+}
+
+void LocalBackend::primeRevisionCache(const QMap<QString, QString> &cache)
+{
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+        setCachedFingerprint(it.key(), it.value());
+}
+
 BackendCapabilities LocalBackend::capabilities() const
 {
     return BackendCapabilities::localDefaults();
@@ -578,84 +596,60 @@ QString LocalBackend::calendarFingerprint(const QString &calendarId) const
 // VDirSyncer-compatible calendar metadata methods
 // ============================================================================
 
-QColor LocalBackend::calendarColor(const QString &calendarId) const
+std::optional<QString> LocalBackend::metadataDirFor(const QString &calendarId) const
 {
     if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QColor();
+        return std::nullopt;
     }
+    return filePathForCalendar(calendarId);
+}
 
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.color();
+QColor LocalBackend::calendarColor(const QString &calendarId) const
+{
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).color() : QColor();
 }
 
 bool LocalBackend::setCalendarColor(const QString &calendarId, const QColor &color)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setColor(color);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setColor(color);
 }
 
 QString LocalBackend::calendarDisplayName(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QString();
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.displayName();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).displayName() : QString();
 }
 
 bool LocalBackend::setCalendarDisplayName(const QString &calendarId, const QString &name)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setDisplayName(name);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setDisplayName(name);
 }
 
 QString LocalBackend::calendarDescription(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return QString();
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.description();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).description() : QString();
 }
 
 bool LocalBackend::setCalendarDescription(const QString &calendarId, const QString &description)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setDescription(description);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setDescription(description);
 }
 
 int LocalBackend::calendarOrder(const QString &calendarId) const
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return 0;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.order();
+    const auto dir = metadataDirFor(calendarId);
+    return dir ? CalendarMetadataManager(*dir).order() : 0;
 }
 
 bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 {
-    if (calendarId.isEmpty() || m_calendarRootPath.isEmpty()) {
-        return false;
-    }
-
-    CalendarMetadataManager metadata(filePathForCalendar(calendarId));
-    return metadata.setOrder(order);
+    const auto dir = metadataDirFor(calendarId);
+    return dir && CalendarMetadataManager(*dir).setOrder(order);
 }
 
 // ============================================================================
