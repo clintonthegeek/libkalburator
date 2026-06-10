@@ -29,6 +29,7 @@ private slots:
     void connectWithoutUrlReturnsFalseQuickly();
     void connectInvalidCredentialsEmitsErrorAndResolvesFalse();
     void connectPartialSuccessSkipped();
+    void calendarsOnly_mode_excludes_contacts();
     void createBackendUnknownIdReturnsNullptr();
     void createBackendNotConnectedReturnsNullptr();
     void connectPopulatesContentTypesOnCalDavCollections();
@@ -149,7 +150,81 @@ void TstMultiProtocolDavProvider::connectInvalidCredentialsEmitsErrorAndResolves
 
 void TstMultiProtocolDavProvider::connectPartialSuccessSkipped()
 {
-    QSKIP("Requires composed FakeCalDav+FakeCardDav harness; follow-up task");
+    // CalDAV succeeds; CardDAV pointed at "/bogus-carddav/" (404) so it fails.
+    // In full mode (calendarsOnly = false): partial success — provider reports
+    // connected=true with only calendar collections; lastWarning() names the
+    // failed protocol.
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id   = QStringLiteral("partial-test");
+    cfg.type = QStringLiteral("multiproto-dav");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider(false);   // full mode: CardDAV failure = partial
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+    QVERIFY(provider.isConnected());
+
+    // Calendar collections present; no contact collections.
+    bool hasCalCol     = false;
+    bool hasContactCol = false;
+    for (const auto &c : provider.collections()) {
+        if (c.id.contains(QStringLiteral(":cal:")))      hasCalCol     = true;
+        if (c.id.contains(QStringLiteral(":contacts:"))) hasContactCol = true;
+    }
+    QVERIFY2(hasCalCol,      "expected at least one calendar collection after partial connect");
+    QVERIFY2(!hasContactCol, "expected no contact collections: CardDAV failed");
+
+    // A warning about the CardDAV failure must be surfaced.
+    QVERIFY2(!provider.lastWarning().isEmpty(),
+             "expected lastWarning() to name the CardDAV failure");
+}
+
+void TstMultiProtocolDavProvider::calendarsOnly_mode_excludes_contacts()
+{
+    // WP-A1 regression: in calendarsOnly mode (ctor default) CalDAV succeeds,
+    // CardDAV is irrelevant — connect() resolves true and collections() returns
+    // only :cal: entries even if CardDAV would also fail.
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id   = QStringLiteral("co-test");
+    cfg.type = QStringLiteral("multiproto-dav");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider(true);    // calendarsOnly = true (ctor explicit)
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+    QVERIFY(provider.isConnected());
+
+    // Only calendar collections — no contacts regardless of CardDAV outcome.
+    for (const auto &c : provider.collections()) {
+        QVERIFY2(!c.id.contains(QStringLiteral(":contacts:")),
+                 qPrintable("Expected no contact collection in calendarsOnly mode, got: " + c.id));
+    }
+    QVERIFY2(!provider.collections().isEmpty(),
+             "expected at least one calendar collection");
+
+    // In calendarsOnly mode CardDAV failure does NOT produce a warning.
+    QVERIFY2(provider.lastWarning().isEmpty(),
+             "expected no warning: CardDAV failure is irrelevant in calendarsOnly mode");
 }
 
 void TstMultiProtocolDavProvider::createBackendUnknownIdReturnsNullptr()
