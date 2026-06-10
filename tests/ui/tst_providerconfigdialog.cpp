@@ -2,6 +2,8 @@
 #include <QtTest/QtTest>
 #include <QComboBox>
 #include <QLabel>
+#include <QPlainTextEdit>
+#include <QToolButton>
 #include <QLayout>
 #include <QMenu>
 #include <QPromise>
@@ -212,11 +214,22 @@ void TstProviderConfigDialog::failedTestConnection_surfacesErrorMessage()
     // Trigger the Test-connection flow.
     QMetaObject::invokeMethod(&dlg, "onTestClicked");
 
-    // A status label must exist and display the provider's error message,
-    // not just an opaque "Failed".
+    // §4.4 error-details contract: the status label shows a human failure
+    // summary, and the provider's raw error message is exposed through the
+    // collapsible Details disclosure — not just an opaque "Failed".
     auto *status = dlg.findChild<QLabel*>(QStringLiteral("testStatusLabel"));
     QVERIFY2(status != nullptr, "dialog must expose a testStatusLabel");
-    QTRY_VERIFY_WITH_TIMEOUT(status->text().contains(kMsg), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        status->text().contains(QStringLiteral("Connection failed")), 3000);
+
+    auto *detailsBtn = dlg.findChild<QToolButton*>(QStringLiteral("testDetailsButton"));
+    QVERIFY2(detailsBtn != nullptr, "dialog must expose a testDetailsButton");
+    QVERIFY2(!detailsBtn->isHidden(), "Details disclosure must be offered on failure");
+
+    auto *detailsText = dlg.findChild<QPlainTextEdit*>(QStringLiteral("testDetailsText"));
+    QVERIFY2(detailsText != nullptr, "dialog must expose a testDetailsText");
+    QVERIFY2(detailsText->toPlainText().contains(kMsg),
+             "raw provider error must be surfaced in the details view");
 }
 
 void TstProviderConfigDialog::comboPopulatedFromRegistry()
