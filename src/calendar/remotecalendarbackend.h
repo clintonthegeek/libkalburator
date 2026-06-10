@@ -59,10 +59,10 @@ public:
     /**
      * @brief Override the directory used for the delta-sync content cache.
      *
-     * When set (non-empty), initContentCache() places the cache DB under @p dir
-     * instead of QStandardPaths::CacheLocation. The host app uses this to keep
-     * the cache inside a per-collection profile folder. Must be called before
-     * the first fetchItems() (which lazily initialises the cache).
+     * When set (non-empty), the cache DB lives under @p dir instead of
+     * QStandardPaths::CacheLocation (see CalDavContentCache). The host app
+     * uses this to keep the cache inside a per-collection profile folder.
+     * Must be called before the first fetchItems() (which lazily opens it).
      */
     void setCacheDir(const QString &dir);
 

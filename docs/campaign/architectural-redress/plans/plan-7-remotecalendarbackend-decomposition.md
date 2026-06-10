@@ -427,4 +427,58 @@ Suite 145/145.
 
 ## Outcome
 
-_To be filled at T7._
+**Landed 2026-06-10**, commits `c67941f` (T1) … `f5f089a` (T6b), all gates run per task,
+suite **145/145 after every task** (144 baseline + the new T1 write-paths pin). The
+live-Radicale lane (`tst_remotecalendarbackend`, server up on :5232 throughout) covered
+the 412-retry and CRUD rewrites against a real server on every run.
+
+| Metric | Before | After | Gate | Verdict |
+|---|---|---|---|---|
+| `remotecalendarbackend.cpp` | 2718 | 2164 | ≤ 2100 | miss (+64, 3%) |
+| `remotecalendarbackend.h` | 472 | 425 | ≤ 410 | miss (+15, 4%) |
+| new `caldavcontentcache.{h,cpp}` | — | 75 + 204 | — | — |
+| **net LOC, touched src files** | 3190 | **2868 (−322)** | ≤ −350 | miss (28 LOC, 8%) |
+| `QEventLoop` sites in rcb.cpp | 11 | **2** | ≤ 2 | **met** |
+| RCB-specific publics (non-interface) | 16 | **9** | 9 | **met** (each consumer-verified) |
+| stateful private members | 13 | **6** | ≤ 6 | **met** |
+
+**LOC-gate misses, documented per INVARIANTS §Scope-and-exceptions:** the duplication
+ledger's estimates were close but the `davSyncRequest`/`DavResponse`/`parseCtagMultistatus`
+infrastructure cost ~115 LOC against the ~45 estimated, and the facts-map unification was
+LOC-neutral (structure swap) rather than −15. The remaining gap was not closed by
+comment-stripping on principle — every deletion in this plan removed *code*, not
+documentation. All structural gates met; the misses are size estimates, not scope cuts.
+
+**Bugs found and fixed by the consolidation (none were known before):**
+
+1. **412-retry dangling-reference UB (T4).** `forceUpdateIncidence`/
+   `startUpdateJobForIncidence` captured stack locals (`serializeIncidence`, `checkDone`)
+   *by reference*, and copies of those lambdas were captured into async job callbacks that
+   run after `startSync` returns — any 412 retry dereferenced dead stack frames. Fixed by
+   construction (private member fn + by-value `std::function`).
+2. **`pushItems` trailing-null hang (T6b).** The null-incidence branch decremented the
+   completion counter without the settle block: a null item accounted last left the
+   `PushOperation` unfinished forever (and `createRecord`'s `awaitOperation` would hang).
+   One `settleIfDone` lambda now owns the accounting tail; it also fixes the
+   inconsistent partial-success semantics between the serialization-failure and
+   network-callback paths.
+3. **Per-instance QSqlDatabase connection leak (T5).** The backend never closed its
+   content-cache connection; `CalDavContentCache`'s dtor does.
+
+**Verification-method correction (T6, logged for discipline):** the original
+zero-caller sweep ran one grep with an alternation pattern that ugrep (aliased over
+grep here) mis-parsed — a silent false negative that hid the live test's
+`fetchAllCtags` call until the compiler caught the privatization. Every zero-caller
+verdict was re-verified with plain single-symbol greps: all T2 deletions stood;
+`fetchAllCtags`'s one caller migrated to the production `collectionRevisions()`
+surface (better per inv 6 anyway). Lesson recorded in FINDINGS: deletion-warrant
+greps must be one plain pattern per symbol.
+
+**Consumer impact:** public-symbol removals `primeCtagCache` / `discoveredCtag` /
+`currentEtags` (+ ctag-cluster privatization) — PlanStan and WildPalms re-verified
+non-consumers, symbol by symbol. Everything PlanStan production calls
+(ctor/create/setDbPath/setCacheDir/createCalendar/discoveredUrl/
+discoveredSupportsEvents/Todos/startSync/getRawIcs/setRawIcs) is intact and pinned by
+the T1 default-lane tests.
+
+**Deferred:** `LocalBackend` (the other half of AUDIT B3) — mirror sketch in FINDINGS.
