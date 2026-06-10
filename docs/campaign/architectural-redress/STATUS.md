@@ -17,10 +17,20 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = Plan 8** (PlanStan-first `backendById` neutralization +
-`runSyncFuture` consumer wave — see "Plan 8 prep" below; it is a consumer wave, open
-with a joint handoff doc). The LocalBackend half of AUDIT B3 is deferred to Plan 7b /
-Plan 11 with a FINDINGS mirror-sketch.
+**Plan 8 is OPENED as a consumer wave**: the joint RFC/handoff is written and
+delivered — `docs/2026-06-10-plan8-isynchost-runsyncfuture-consumer-wave-rfc.md`
+(canonical) + a copy committed into PlanStan `docs/handoffs/` (their `master`, local
+commit `85274c95`; deliberately not pushed — their tree carries their own unpushed
+`203744a4`). **Lib-side Plan 8 work waits on PlanStan's ack** of the step-1 shape.
+Tag **v0.68** cut (post-Plan-7, carries the API-removal release notes).
+
+**Next action here = Plan 7b (LocalBackend decomposition — AUDIT B3's second half)**,
+plan written 2026-06-10 at `plans/plan-7b-localbackend-decomposition.md`, branch
+`feature/redress-7b-localbackend-decomposition`. Subtract-first mirror of Plan 7:
+verified-dead deletions (no-op hierarchy helpers, FingerprintStore::clear/clearAll,
+write-only m_pendingWriteCount), fingerprint + metadata clusters privatized behind
+their interface faces, shared `calendar/icalcodec.h` extraction (also slims
+remotecalendarbackend.cpp), net-LOC ≤ −100 gate.
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
