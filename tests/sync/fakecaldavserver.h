@@ -75,6 +75,15 @@ public:
     /// match those set via setCalendars() (e.g. "/calendars/testuser/work/").
     void setReadOnlyCalendars(const QStringList &hrefs) { m_readOnlyHrefs = hrefs; }
 
+    /// Override the <cal:supported-calendar-component-set> advertised for one
+    /// calendar href (e.g. {"VTODO"} for a tasks-only list). Calendars without
+    /// an override keep the default VEVENT-only set. href must match one set
+    /// via setCalendars().
+    void setCalendarComponents(const QString &href, const QStringList &components)
+    {
+        m_componentsByHref.insert(href, components);
+    }
+
     /// Pre-populate a calendar collection with iCal event blobs.
     /// Each blob must be a full VCALENDAR containing a UID property.
     /// collectionHref must match one of the hrefs set via setCalendars()
@@ -125,6 +134,7 @@ private:
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
     QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
+    QHash<QString, QStringList> m_componentsByHref;  // component-set overrides
     QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()
 
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")

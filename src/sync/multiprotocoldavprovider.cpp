@@ -232,6 +232,8 @@ void MultiProtocolDavProvider::onCalDavFinished(bool success)
                           ? it.key() : it.value().serverDisplayName;
             ci.type = QStringLiteral("calendar");
             ci.readOnly = !it.value().writable;  // thread discovered writability (Phase 2C authority seed)
+            if (it.value().supportsVEvent) ci.contentTypes << QStringLiteral("VEVENT");
+            if (it.value().supportsVTodo)  ci.contentTypes << QStringLiteral("VTODO");
             m_calDavResult.append(ci);
         }
     } else {

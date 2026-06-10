@@ -385,6 +385,7 @@ void CardDavCapabilityDiscovery::onAddressbooksReplyFinished()
         ci.id   = id;
         ci.name = displayName;
         ci.type = QStringLiteral("contacts");
+        ci.contentTypes << QStringLiteral("VCARD");
 
         books.append(ci);
         m_addressbookUrls.insert(id, absoluteHref);

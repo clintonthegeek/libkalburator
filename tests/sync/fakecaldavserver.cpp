@@ -389,10 +389,12 @@ QString FakeCalDavServer::xmlForCalendars() const
             "        <d:resourcetype><d:collection/><cal:calendar/></d:resourcetype>\n");
         xml += QStringLiteral(
             "        <d:displayname>%1</d:displayname>\n").arg(cal.first);
-        xml += QStringLiteral(
-            "        <cal:supported-calendar-component-set>"
-            "<cal:comp name=\"VEVENT\"/>"
-            "</cal:supported-calendar-component-set>\n");
+        const QStringList comps = m_componentsByHref.value(
+            cal.second, { QStringLiteral("VEVENT") });
+        xml += QStringLiteral("        <cal:supported-calendar-component-set>");
+        for (const QString &comp : comps)
+            xml += QStringLiteral("<cal:comp name=\"%1\"/>").arg(comp);
+        xml += QStringLiteral("</cal:supported-calendar-component-set>\n");
         if (m_readOnlyHrefs.contains(cal.second)) {
             // Advertise only the <read/> privilege so discovery reports
             // writable=false (no write/write-content/bind/unbind).
