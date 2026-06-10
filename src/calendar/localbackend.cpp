@@ -468,9 +468,6 @@ void LocalBackend::startSync(const QString &collectionId,
 
     const QString calId = calendar->id();
 
-    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
-    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
-
     // Apply deletions synchronously (fast operation)
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
         removeItem(calendar->id(), it.key());
@@ -478,8 +475,8 @@ void LocalBackend::startSync(const QString &collectionId,
 
     // Combine creations and updates for async writing
     QList<KCalendarCore::Incidence::Ptr> allWrites;
-    allWrites.append(finalCreations);
-    allWrites.append(finalUpdates);
+    allWrites.append(stagedCreations);
+    allWrites.append(stagedUpdates);
 
     if (allWrites.isEmpty()) {
         emit syncCompleted(collectionId);

@@ -345,8 +345,10 @@ invariant 9:
 
 ### From Plan 7 (RemoteCalendarBackend decomposition, 2026-06-10)
 
-- 2026-06-10 — `src/calendar/localbackend.{h,cpp}` (~1300 LOC, ~55 methods) — inv 4 —
-  **AUDIT B3's second half, deferred out of Plan 7** (scope decision in the plan file).
+- ~~2026-06-10 — `src/calendar/localbackend.{h,cpp}` (~1300 LOC, ~55 methods) — inv 4 —
+  **AUDIT B3's second half, deferred out of Plan 7** (scope decision in the plan file).~~
+  **RESOLVED same day by Plan 7b** (see Resolved). Original mirror sketch kept below
+  for the record:
   Mirror sketch against Plan 7 idioms: (a) grep-verify then delete dead fingerprint/
   metadata surface (one plain pattern per symbol — see the grep lesson below); (b) the
   four metadata setters (`setCalendarColor/DisplayName/Description/Order`) collapse to one
@@ -387,7 +389,44 @@ invariant 9:
   `Backend::ChangeDetection`). PlanStan + WildPalms grep-verified non-consumers,
   per-symbol.
 
+### From Plan 7b (LocalBackend decomposition, 2026-06-10)
+
+- 2026-06-10 — PlanStan `collectioncontroller.cpp` (backend wiring) — PROD gap, theirs —
+  **`LocalBackend::setDbPath` has zero production callers**: PlanStan wires the sync-DB
+  path only for `RemoteCalendarBackend` (the `qobject_cast<RemoteCalendarBackend*>`
+  loop at ~:1625), so LocalBackend's FingerprintStore never initializes in production —
+  `ChangeDetection` always reports "changed" (correct but the fingerprint fast-path is
+  dark) and `modifiedSince`'s short-circuit never engages. One-liner on their side
+  (wire `setDbPath` for local backends too); referenced from the Plan 8 RFC thread.
+- 2026-06-10 — `src/calendar/{decsyncbackend,subscriptionbackend,mockbackend,orgbackend}.cpp`
+  — inv 8 — still hand-roll the temp-calendar iCal dance that `calendar/icalcodec.h`
+  now centralizes (Plan 7b T4 rewired only the two decomposed backends). Mechanical
+  adoption candidates for Plan 11.
+- 2026-06-10 — `src/calendar/localbackend.h:33` — inv 5 — `setcalendarRootPath`
+  (lower-case c) survives because PlanStan PROD calls it (`collectioncontroller.cpp:1100`,
+  redundantly right after the ctor that takes the same path). Rename + redundancy
+  cleanup = Plan 10 vocabulary material.
+- 2026-06-10 — verification discipline, lesson #2 — the Plan 7b per-symbol grep batch
+  used `-v "localbackend.h\|localbackend.cpp"` exclusions, which also swallowed every
+  `tst_localbackend*.cpp` match (substring!); `calendarFingerprint`'s test caller only
+  surfaced on the exact-path re-run. Deletion-warrant greps: one plain pattern per
+  symbol AND exact-path exclusions only.
+
 ## Resolved
+
+### By Plan 7b (LocalBackend decomposition, 2026-06-10)
+
+- ~~`LocalBackend` god-class half of AUDIT B3 (1311/224, four metadata setters where
+  one would do, fingerprint surface duplicated next to ChangeDetection).~~ Decomposed
+  subtract-first (plan + Outcome in `plans/plan-7b-localbackend-decomposition.md`):
+  net −86 on the pair; dead no-op hierarchy helpers / never-defined `findParentUid` /
+  `FingerprintStore::clear+clearAll` / write-only `m_pendingWriteCount` deleted;
+  fingerprint + per-property metadata clusters privatized behind their interface faces
+  (`updateCalendar(QVariantMap)` is the public collapsed form); shared
+  `calendar/icalcodec.h` extracted (also −36 in remotecalendarbackend.cpp);
+  `metadataDirFor`/`icsPathFor`/`recordPathFor` dedup. New default-lane
+  `tst_localbackend_writepaths` pins startSync/removeItem/updateCalendar first
+  (falsifiability shown). **AUDIT B3 closed — both halves.**
 
 ### By Plan 7 (RemoteCalendarBackend decomposition, 2026-06-10)
 

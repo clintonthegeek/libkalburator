@@ -24,13 +24,18 @@ commit `85274c95`; deliberately not pushed — their tree carries their own unpu
 `203744a4`). **Lib-side Plan 8 work waits on PlanStan's ack** of the step-1 shape.
 Tag **v0.68** cut (post-Plan-7, carries the API-removal release notes).
 
-**Next action here = Plan 7b (LocalBackend decomposition — AUDIT B3's second half)**,
-plan written 2026-06-10 at `plans/plan-7b-localbackend-decomposition.md`, branch
-`feature/redress-7b-localbackend-decomposition`. Subtract-first mirror of Plan 7:
-verified-dead deletions (no-op hierarchy helpers, FingerprintStore::clear/clearAll,
-write-only m_pendingWriteCount), fingerprint + metadata clusters privatized behind
-their interface faces, shared `calendar/icalcodec.h` extraction (also slims
-remotecalendarbackend.cpp), net-LOC ≤ −100 gate.
+**Plan 7b is DONE (2026-06-10)** — LocalBackend decomposed; **AUDIT B3 closed, both
+halves**. Outcome in `plans/plan-7b-localbackend-decomposition.md`: pair net −86
+(1535→1449), dead no-op/never-read surface deleted, fingerprint + metadata clusters
+privatized behind their interface faces, shared `calendar/icalcodec.h` now serves both
+decomposed backends, LB-specific publics 13→3, new default-lane
+`tst_localbackend_writepaths` (suite **146/146**). FINDINGS adds: PlanStan never wires
+`LocalBackend::setDbPath` (fingerprint store dark in PROD — one-liner on their side);
+grep-discipline lesson #2 (exact-path exclusions).
+
+**Next action = Plan 8 lib-side, GATED on PlanStan's ack of the RFC** (above). While
+waiting: Plan 9 (backend-adjacent dir consolidation + discovery placement) is the next
+unblocked lib-only plan — write its plan file first, per P1.
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -304,7 +309,8 @@ severities, not the retired old plan numbers:
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | **DONE (RCB half) 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized; LocalBackend half deferred to 7b/11 (FINDINGS sketch) |
+| 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
+| 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |

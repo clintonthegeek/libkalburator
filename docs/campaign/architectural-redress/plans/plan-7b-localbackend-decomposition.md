@@ -29,7 +29,7 @@ boilerplate, no parallel-map triplication — so this is a smaller, surgical pas
 | `setDbPath` | `tst_localbackend_blob_view.cpp:300` only — **zero PROD callers** | keep (fingerprint store's only init); FINDINGS: PlanStan never wires it, so the store is dark in production |
 | `startSync` / `removeItem` / `loadCalendars` / `storeCalendars` | `SyncBackend` pure virtuals; PlanStan staging reaches `startSync` through `SyncBackend*` | keep; T1 pins the signal contract |
 | `calendarColor` / `calendarDescription` / `discoveredWritable` / `capabilities` / binding metadata / operations API / IBlobBackend / ChangeDetection | interface overrides | keep |
-| `calendarFingerprint`, `cachedFingerprint`, `setCachedFingerprint` | zero external callers (engine uses `ChangeDetection`) | **privatize** (mirror of Plan 7's ctag cluster) |
+| `calendarFingerprint`, `cachedFingerprint`, `setCachedFingerprint` | one test caller (`tst_localbackend::testCalendarFingerprintDeterminism` → migrates to the production `collectionRevision()` surface, exactly Plan 7's `fetchAllCtags` precedent); zero other external callers (engine uses `ChangeDetection`) | **privatize** (mirror of Plan 7's ctag cluster). *Correction during verification: the first grep's `-v "localbackend.h\|localbackend.cpp"` exclusion also swallowed `tst_localbackend*` matches — exclusions must be exact paths; FINDINGS lesson extended.* |
 | `calendarDisplayName`, `setCalendarDisplayName`, `setCalendarColor`, `setCalendarDescription`, `calendarOrder`, `setCalendarOrder` | zero external callers (PlanStan's similarly-named calls are on its own collection type; the plugin test's are on its own `MinimalBackend` mock; `types/icalendarcollection.h` is an unrelated interface) | **privatize** — `updateCalendar(QVariantMap)` (an override, PlanStan-reachable) is already the public collapsed form the archived plan asked for |
 
 Zero-caller verdicts (deletion warrant; lib + PlanStan + WildPalms, src and tests,
@@ -150,4 +150,36 @@ Merge `--no-ff`, push.
 
 ## Outcome
 
-_To be filled at T5._
+**Landed 2026-06-10**, commits `f2f052f` (T1) … T5, suite **146/146 after every task**
+(145 baseline + the new T1 write-paths pin).
+
+| Metric | Before | After | Gate | Verdict |
+|---|---|---|---|---|
+| `localbackend.cpp` | 1311 | 1239 | ≤ 1230 | miss (+9, <1%) |
+| `localbackend.h` | 224 | 210 | ≤ 215 | **met** |
+| LocalBackend pair net | 1535 | **1449 (−86)** | ≤ −100 | miss (14 LOC) |
+| LB-specific publics (non-interface) | 13 | **3** (ctor, `setcalendarRootPath`, `setDbPath`) | ≤ 4 | **met** |
+| `remotecalendarbackend.cpp` (codec move-out) | 2164 | 2128 | — | −36 |
+| new `icalcodec.h` (shared) | — | 58 | — | — |
+| all-touched net incl. shared header | 3699 | **3635 (−64)** | — | — |
+
+LOC-gate near-misses documented per INVARIANTS §Scope-and-exceptions: the same
+estimate-variance shape as Plan 7 (helper decl/doc lines cost more than the ledger
+guessed), and the same principled stance — nothing was closed by stripping comments.
+The class was simply in better shape than RemoteCalendarBackend: less to delete.
+
+Structure delivered: fingerprint cluster privatized behind `Backend::ChangeDetection`
+(the test migrated to the production `collectionRevision()` surface); the six
+per-property VDir metadata accessors privatized (`updateCalendar(QVariantMap)` is the
+public form); `metadataDirFor`/`icsPathFor`/`recordPathFor` killed the 8×/3×/3×
+duplications; the iCal codec now has ONE shared home (`icalcodec.h`) serving both
+decomposed backends.
+
+**Verification-method correction #2 (recorded in FINDINGS):** the first per-symbol
+grep batch excluded matches with `-v "localbackend.h\|localbackend.cpp"`, which also
+swallowed every `tst_localbackend*.cpp` hit — `calendarFingerprint`'s test caller
+surfaced only on the re-run with exact-path exclusions. Combined with Plan 7's ugrep
+alternation lesson: deletion-warrant greps = one plain pattern per symbol AND
+exact-path exclusions only.
+
+**AUDIT B3 is now fully resolved** (both halves).
