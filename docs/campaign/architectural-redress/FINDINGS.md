@@ -252,6 +252,63 @@ address — load-bearing knowledge, not audit restatements.
   symlink to satisfy it. Flag for WildPalms: resolve the helper via the (overridable)
   `WILDPALMS_LIBKALBURATOR_SOURCE_DIR` instead of a relative sibling path.
 
+### From the 2026-06-10 audit supplement (five-agent sweep + v0.67 wave)
+
+Full detail in `AUDIT-2026-06-10-supplement.md`; implementation sequencing in
+`2026-06-10-audit-follow-up-specs.md`. The supplement's headline items, logged here per
+invariant 9:
+
+- 2026-06-10 — `src/sync/{akonadi,multiprotocoldav}backendcontribution.h` — inv 6 —
+  **RESOLVED same day** (`fac8522`, merged `b47d75e`): ctor-argument swallow
+  (`make_unique<Provider>(parent)` bound QObject* to `bool calendarsOnly`, dropping the
+  parent; mode never engaged in production; `5c063c1`'s dialog filter was masking it).
+  Fixed behavior-preserving (`(false, parent)`); per-account mode selection = WP-A1
+  design decision (⚠RFC).
+- 2026-06-10 — `tests/ui/tst_providerconfigdialog.cpp:219` — inv (testing) — **RESOLVED
+  same day** (`d1e924b`): `failedTestConnection_surfacesErrorMessage` asserted the
+  pre-§4.4 contract (raw error in status label) and was red on main since `bb98ef9`;
+  realigned to the §4.4 details-disclosure contract. Suite 136→137 green.
+- 2026-06-10 — `src/engine/syncengine.cpp` — inv 4 — watch item updated: 2915 → **2933**
+  LOC (clobber orchestration, LWW include, 10 registry-lookup sites since v0.63);
+  decomposition trend from Plan 1 has reversed; collaborator extraction candidates listed
+  in the supplement (S1).
+- 2026-06-10 — `src/sync/providermanager.cpp:7`, `src/engine/syncengine.cpp:30` — inv 2 —
+  dead `#include "syncbackend.h"` in the neutralized core (KCalendarCore pulled into
+  sync/+engine/ for comments only) + dead fwd-decls syncengine.h:46/74, syncengine_p.h:44/63.
+  → WP-A4.
+- 2026-06-10 — `src/sync/caldavprovider.cpp:18` / `multiprotocoldavprovider.cpp:20` —
+  inv 8 — `contentTypesFromCaps` duplicated verbatim ("mirrors CalDavProvider's helper");
+  capability data now has 4 representations and one href can live in 5 maps across
+  discovery→provider→backend (supplement S2). → WP-A5 / Plan 7.
+- 2026-06-10 — `src/sync/iprovider.h:150/:165` — inv 5 — error/warning channels
+  transport-asymmetric (push-only signal vs pull-only accessor); CalDav/Akonadi never emit
+  `connectionStateChanged(false)` on connect failure while MultiProto always does,
+  contradicting the iprovider.h:153 doc; future-vs-signal ordering flips per impl. → WP-A7.
+- 2026-06-10 — `src/universal/{genericsqlite,rawfiles}backend.*` — inv 8 —
+  neither overrides `wipeCollection` though GenericSqlite's `clearCollection` already has
+  the exact semantics; engine clobber against them runs the per-record default. → WP-A6.
+- 2026-06-10 — `src/journal/baselinestore.{h,cpp}` + `src/todo/icalvtodomerger.{h,cpp}` —
+  inv 9 — verified dead (zero refs anywhere incl. consumers; the journal one also shadows
+  `storage/baselinestore.h` behind include-dir ordering). → WP-C1/C2.
+- 2026-06-10 — root `CLAUDE.md` — inv 7 — test-guidance bullets instructed using DELETED
+  machinery (`TranscodingRegistry`, `storeItems`/`TranscodingPlan` write path, nonexistent
+  `SyncStore::setBaseline`); worst bullets hot-fixed 2026-06-10, full doc-truth sweep =
+  WP-B (the doc agent's list covers ~15 more stale claims across CLAUDE.md, phase0,
+  handoffs, and public-header comments).
+- 2026-06-10 — test gaps with teeth (supplement S10) — inv (testing) — v0.61 in-flight
+  connect idempotency untested in all four providers (the actual SIGSEGV path);
+  `ConflictResolution::Duplicate` ZERO tests (TargetWins/Skip never engine-exercised);
+  `wipeCollection` untested on every concrete backend; Akonadi+Org backends contribute 0
+  of 137 green tests (~2.7k LOC dark under the default profile); `incidencelock_registry`
+  (225 LOC) and `discovery/` (519 LOC, PlanStan-load-bearing) zero coverage; AUDIT's
+  SyncEngine-config-API gap still open. → WP-D.
+- 2026-06-10 — consumer reality corrections — (campaign bookkeeping) — PlanStan relink
+  `69e7df90` IS pushed (pin v0.66-provider-dialog-polish, pushed); libkalcal `b4ef4ae0` IS
+  pushed (stale local tracking refs); WildPalms pins committed locally but origin/main is
+  96 commits behind. Plan 8 blocker INVERTED: WildPalms has 0 `backendById` lookups,
+  PlanStan ~20 sites; `runSyncFuture` has 2 WildPalms PROD callers — Plan 8 is a
+  PlanStan-first consumer wave (specs §Plan 8 prep).
+
 ## Resolved
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)

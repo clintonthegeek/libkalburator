@@ -124,14 +124,14 @@ When writing or modifying tests in this directory:
   `kalburator_add_calendar_integration_test()` in
   `tests/calendar/CMakeLists.txt`.
 
-- **`SyncEngine::runSyncFuture(behavior)`** returning
-  `QFuture<QList<SyncResult>>`. Wait via
-  `QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000)` (NOT
-  `waitForFinished` — Qt6's `waitForFinished` does NOT spin the
+- **Canonical engine entry: `SyncEngine::runSync(SyncRequest)`**
+  returning `QFuture<QList<SyncResult>>` (redress Plan 1). The four
+  `runSyncFuture(...)` overloads are `[[deprecated]]` shims slated
+  for removal in redress Plan 8 — do not write new calls against
+  them. Wait via `QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000)`
+  (NOT `waitForFinished` — Qt6's `waitForFinished` does NOT spin the
   test event loop). Read results via `future.resultAt(0)` (NOT
   `future.results()` — empty after cancel due to a Qt6 quirk).
-  The single-mapping form `runSyncFuture(mappingId, …)` is now
-  safe (the FINDINGS leak was structurally fixed by F2 Task 21).
   The void `runSync` overloads, `cancelSync`, and the
   `syncCompleted`/`allSyncsCompleted` signals were deleted in
   F2 Task 42.
@@ -142,21 +142,20 @@ When writing or modifying tests in this directory:
   SyncEngineWorker::observeCancel` and wakes any nested
   `QEventLoop` (via `await<Op>` and the conflict-pause slot).
 
-- **Write path** — `SyncBackend::storeItems()` /
-  `updateItem()` / `writeFinished` still exist on the abstract
-  base but are deprecated. New code should use the 3-arg
-  `pushItems(id, items, TranscodingPlan)` returning a
-  `PushOperation*` and read `op->state()` / `op->errorString()`
-  for error reporting (per the F2 SyncOperation contract).
+- **Write path** — `SyncBackend::storeItems()` / `updateItem()` /
+  `writeFinished` were DELETED (canon-upgrade campaign; only stale
+  comments mention them). The write API is the 2-arg
+  `pushItems(calendarId, items)` returning a `PushOperation*`;
+  read `op->state()` / `op->errorString()` for error reporting
+  (per the F2 SyncOperation contract). `TranscodingPlan` no longer
+  exists — transformation flows through the shape graph.
 
 - **Conflict tests** — set `mapping.conflictPolicy = AskUser` AND
-  seed a baseline via `SyncStore::setBaseline()`. Other policies
-  resolve silently without signals; the quick-path (no baseline)
-  downgrades AskUser to SourceWins.
-
-- **Transcoding tests** — `cleanup()` must call
-  `TranscodingRegistry::instance().clear()`. The registry is a
-  process-wide singleton and leaks state across tests otherwise.
+  seed a baseline via `BaselineStore::setBaselineV3()` (the
+  mapping-keyed v3 API in `storage/baselinestore.h`; there is no
+  `SyncStore` class). Other policies resolve silently without
+  signals; the quick-path (no baseline) downgrades AskUser to
+  SourceWins.
 
 - **`StubCalendarCollection`** must hold a `MemoryCalendar` with
   `setId(calendarId)` matching the `SyncMapping`'s calendar id, or

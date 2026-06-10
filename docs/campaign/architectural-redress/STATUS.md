@@ -1,6 +1,6 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-06 (Plan 6 MERGED to `main` `806392c`; baseline 136)
+**Last updated:** 2026-06-10 (audit supplement + v0.67 wave landed; baseline **137/137**)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition), 2 (CalendarManager safety
@@ -18,16 +18,23 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Plan 6 is MERGED to `main`** (`806392c`, 2026-06-06; T1 `bcca4ff` enum extraction, T2
-`137a836` signature narrowing; 136/136 after each task and on the merged tree). Downstream
-gates passed: PlanStan 98/118 with a failed-set **identical** to the pre-change baseline (20
-headless Not-Run GUI tests, zero diff); WildPalms via a TEMP CLONE (the live tree had
-concurrent in-flight v0.65-adoption work, user decision 2026-06-06) 116/120 vs 117/120
-baseline — the single delta (`tst_palm_mass_delete_guard_e2e` heap-teardown abort) was
-**A/B-verified pre-existing** (fails ~5/15 isolated runs against pre-Plan-6 `main`, ~4/15
-against Plan 6; logged in FINDINGS for the WildPalms dev). **Next action = Plan 7 —
-Remote/Local backend decomposition (AUDIT B3), replanned against the post-v0.63 tree** (the
-audit's figures are stale; see "Out-of-campaign consumer releases reconciled").
+**Next action = the 2026-06-10 audit follow-up work packages, then Plan 7.** A five-agent
+audit supplement (`AUDIT-2026-06-10-supplement.md`) re-baselined everything that grew since
+the 2026-05-29 audit; its implementation sequencing lives in
+`2026-06-10-audit-follow-up-specs.md` (**WP-A** correctness/contract quick wins → **WP-B**
+doc-truth sweep → **WP-C** dead-code removal → **WP-D** test-gap closure → **Plan 7**
+RemoteCalendarBackend decomposition, replan inputs now CURRENT in the specs doc → **Plan 8
+prep**, resequenced PlanStan-first by consumer evidence). A fresh agent should start at
+WP-A1 (calendarsOnly mode design, ⚠RFC) after reading INVARIANTS → supplement → specs.
+
+Same-day fixes already landed (2026-06-10, all merged to `main`, 137/137): the
+`calendarsOnly` ctor-argument swallow (`b47d75e`, audit C1), the §4.4 dialog-test contract
+realignment (`d1e924b`), and the v0.67 consumer wave (below).
+
+Plan 6 record (2026-06-06, kept for reference): merged `806392c`; downstream gates passed
+— PlanStan 98/118 failed-set identical to baseline (20 headless GUI tests); WildPalms temp
+clone 116/120 vs 117/120 with the single delta A/B-verified pre-existing
+(`tst_palm_mass_delete_guard_e2e`, FINDINGS).
 
 **Plan 5 close-out state:** libkalburator side MERGED to `main` and pushed (`7d8a4ef`,
 2026-05-31; merged-tree ctest 133/133). Phase 2 downstream relinks are **done and verified green
@@ -60,6 +67,25 @@ plans; all reconciled against the campaign invariants on 2026-06-06):
 
 Baseline after the three releases: **136/136 ctest green** (was 133 at Plan 5 close; +3 from the
 new v0.63–v0.65 tests). Verified 2026-06-06 on a clean rebuild.
+
+## Out-of-campaign consumer releases reconciled, second wave (2026-06-10)
+
+- **v0.66 (2026-06-08)** — dispatch backends fetched from BackendRegistry as neutral
+  `SyncBackendBase*` (WildPalms RFC); +1 test (`tst_engine_baseonly_backend`) → baseline 137.
+- **v0.66-provider-dialog-polish + calendarsOnly (2026-06-08/09)** — ProviderConfigDialog
+  §4.3/§4.4 + provider-side calendarsOnly mode. Two defects discovered by the 2026-06-10
+  audit, both fixed same day: the mode never engaged (ctor-argument swallow, `b47d75e`) and
+  the §4.4 polish landed with a red pre-polish dialog test (`d1e924b`).
+- **v0.67 (2026-06-10)** — two consumer fixes merged: `CollectionInfo.contentTypes`
+  populated by the DAV providers (WildPalms RFC `3474c30`; + CardDAV VCARD symmetry) and
+  `ProviderManager::addProvider` registering backends for pre-connected providers
+  (PlanStan, v0.61 precedent, `f170139`). Both TDD'd; suite 137/137.
+- **Pin/push reality check (corrects the Plan-5 close-out claims above):** PlanStan relink
+  `69e7df90` IS pushed and PlanStan pins `v0.66-provider-dialog-polish` (pushed); libkalcal
+  `b4ef4ae0` IS pushed (the "unpushed" claim came from stale local tracking refs); WildPalms
+  pin bumps v0.65→v0.66 are committed locally but **WildPalms origin/main is 96 commits
+  behind** (origin still pins raw hash `948dce88`). The remaining manual push is
+  WildPalms-side only.
 
 ## Plan 4 outcome (2026-05-29, landed on `feature/redress-4-correctness-ownership-sweep`)
 
@@ -199,8 +225,9 @@ severities, not the retired old plan numbers:
 | 4 | Correctness/ownership sweep | MAJOR (raw ptrs, RawFiles thread-safety, silent SQLite/DELETE, mock false-greens) + folded QPromise* MODERATE | **DONE — feature/redress-4-correctness-ownership-sweep (7 tasks)** |
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) | proposed (after 3; **replan against post-v0.63 tree — target grew, audit figures stale**) |
-| 8 | `CalendarManager` split + `IncidenceDiff`→free fns | B7/B8 | proposed (after 2, 7) |
+| 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **next** — specs at `2026-06-10-audit-follow-up-specs.md` |
+| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | proposed (after WP-A; **replan inputs now CURRENT** — figures + concern inventory in specs §Plan 7) |
+| 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
 | 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
