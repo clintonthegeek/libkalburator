@@ -334,6 +334,14 @@ invariant 9:
   contract and the re-acquirability invariant; a follow-up fix should iterate `m_locks`
   looking for null QPointers inside `onOwnerDestroyed` rather than relying on the raw
   pointer comparison.
+- 2026-06-10 — `tests/{calendar,contacts,sync,plugin}/CMakeLists.txt` (KALBURATOR_HAVE_AKONADI /
+  KALBURATOR_HAVE_ORG_IO gates) — **[D1] Akonadi/Org backends contribute 0 tests in the default
+  build lane.** 11 test sources (~2.7k LOC of backends) are gated out of the default profile.
+  The Akonadi backend is PlanStan's only production path to the system calendar; breakage is
+  silent unless the `build-akonadi/` lane is run. **Decision (WP-D10):** periodic manual lane
+  — not automated CI. Run before any release tag, after changes to `src/calendar/akonadi*`,
+  `src/calendar/org*`, `src/sync/akonadi*`, or `src/contacts/akonadi*`, and when PlanStan
+  reports an Akonadi regression. Runbook: `docs/2026-06-10-akonadi-org-dark-coverage-lane.md`.
 
 ## Resolved
 
