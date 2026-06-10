@@ -9,7 +9,10 @@
 #include <memory>
 
 class QComboBox;
+class QFrame;
 class QHBoxLayout;
+class QPlainTextEdit;
+class QToolButton;
 class QWidget;
 class QPushButton;
 class QLabel;
@@ -105,6 +108,13 @@ private:
     // connection, so onConnectFinished can display the reason on failure.
     QString                 m_lastTestError;
     QMetaObject::Connection m_errorConn;
+
+    // §4.3 — 0-calendars help panel (built lazily, inserted above m_picker)
+    QFrame                 *m_noCalendarsPanel = nullptr;
+
+    // §4.4 — expandable error-details disclosure (built in ctor, below status label)
+    QToolButton            *m_detailsBtn  = nullptr;
+    QPlainTextEdit         *m_detailsText = nullptr;
 };
 
 } // namespace Ui
