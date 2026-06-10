@@ -413,6 +413,15 @@ private:
 
     QUrl generateItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
     KDAV::DavUrl configuredDavUrl(const QString &rawUrl);
+
+    // Fresh CS:getctag via a Depth:0 PROPFIND on the calendar's URL (shared
+    // by fetchItems and modifiedSince). Empty when unregistered or on failure.
+    QString fetchFreshCtag(const QString &calendarId);
+
+    // Principal-path collection URL for MKCALENDAR / PROPPATCH / DELETE
+    // (Radicale-style /<username>/<calendarId>/ when the base URL has no
+    // path; credentials stripped — they travel in the auth header).
+    QUrl calendarUrlForCrud(const QString &calendarId) const;
 };
 
 } // namespace Kalburator::Sync
