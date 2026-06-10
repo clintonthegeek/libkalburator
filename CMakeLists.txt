@@ -239,7 +239,6 @@ set(KALBURATOR_DIFF_SOURCES
 
 set(KALBURATOR_JOURNAL_HEADERS
     src/journal/asyncfilewriter.h
-    # baselinestore.h moved to src/storage/ in K.5; old file is stale/unused
     src/journal/calendarjournal.h
 )
 set(KALBURATOR_JOURNAL_SOURCES
@@ -247,10 +246,6 @@ set(KALBURATOR_JOURNAL_SOURCES
     src/journal/calendarjournal.cpp
 )
 
-# Phase K.5 — domain-neutral storage layer.
-# BlobBaselineStore (renamed BaselineStore) and IDMappingStore moved here
-# from src/journal/. Forwarding shims at old journal/ locations stay until
-# Task 13 (PlanStan + WildPalms fully cut over).
 set(KALBURATOR_STORAGE_HEADERS
     src/storage/baselinestore.h
     src/storage/idmappingstore.h
