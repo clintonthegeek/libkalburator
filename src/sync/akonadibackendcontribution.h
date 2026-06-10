@@ -16,7 +16,11 @@ public:
     QList<Shape::Shape> nativeShapes() const override;
     std::unique_ptr<IProvider> createProvider(QObject *parent) const override
     {
-        return std::make_unique<AkonadiProvider>(parent);
+        // calendarsOnly=false preserves the pre-mode behavior for
+        // registry-created providers; passing `parent` alone would bind the
+        // QObject* to the bool parameter and drop the parent (2026-06-10
+        // audit). Per-account mode selection is a pending design decision.
+        return std::make_unique<AkonadiProvider>(false, parent);
     }
 };
 

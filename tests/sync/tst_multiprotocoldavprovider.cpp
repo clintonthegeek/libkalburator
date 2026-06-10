@@ -33,6 +33,7 @@ private slots:
     void createBackendNotConnectedReturnsNullptr();
     void connectPopulatesContentTypesOnCalDavCollections();
     void pluginRegistersMultiProtoDavContribution();
+    void contributionCreateProviderHonorsParent();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -226,6 +227,29 @@ void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()
     registerStockPlugins(pm);
     QVERIFY(reg.contributionFor(
         QStringLiteral("multiproto-dav")) != nullptr);
+}
+
+void TstMultiProtocolDavProvider::contributionCreateProviderHonorsParent()
+{
+    // Pins the ctor-argument swallow found by the 2026-06-10 audit: the
+    // contribution called make_unique<MultiProtocolDavProvider>(parent),
+    // binding the QObject* to the bool calendarsOnly parameter (pointer→bool
+    // conversion) and dropping the parent entirely — so the provider was
+    // unparented and the mode flag tracked the parent's null-ness.
+    BackendRegistry reg;
+    Shape::ShapeRegistries shape;
+    PluginManager pm(&reg, shape);
+    registerStockPlugins(pm);
+    auto *contrib = reg.contributionFor(QStringLiteral("multiproto-dav"));
+    QVERIFY(contrib != nullptr);
+
+    QObject owner;
+    auto provider = contrib->createProvider(&owner);
+    QVERIFY(provider != nullptr);
+    QCOMPARE(provider->parent(), &owner);
+    // Reparented onto `owner` — hand ownership to the parent to avoid the
+    // unique_ptr/QObject-parent double delete.
+    (void)provider.release();
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)
