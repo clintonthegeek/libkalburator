@@ -111,7 +111,7 @@ struct SyncRequest;
  *
  * SyncEngine implements the core sync algorithm:
  *
- * 1. Load sync mappings from KalbConfigManager
+ * 1. Load sync mappings from the host's ISyncConfigStore
  * 2. For each enabled mapping:
  *    a. Load records from source backend
  *    b. Load records from target backend

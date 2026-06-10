@@ -6,7 +6,7 @@
 
 namespace Kalburator::Sync {
 
-/// Lower-layer collection description. Unchanged from WP donor shape.
+/// Lower-layer collection description.
 struct CollectionInfo {
     QString id;                ///< Unique identifier.
     QString name;              ///< Display name.

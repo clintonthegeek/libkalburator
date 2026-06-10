@@ -98,9 +98,9 @@ public:
     // ── Config UI ──────────────────────────────────────────────────
     /// Build a widget for editing this provider's config (server URL,
     /// credentials, display name, etc.). Caller takes ownership.
-    /// Widget should call the provider's load() with the user's
-    /// edited config when the user clicks "Apply" / "Save"; the
-    /// widget owns the unsaved state until then.
+    /// Apply/Save is brokered through IProviderConfigWidget (see
+    /// iproviderconfigwidget.h); the widget calls the bridge, not
+    /// the provider's load() directly.
     virtual QWidget *createConfigWidget(QWidget *parent) = 0;
 
     // ── Lifecycle ──────────────────────────────────────────────────

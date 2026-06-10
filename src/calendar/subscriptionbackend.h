@@ -36,7 +36,7 @@ struct BackendCapabilities;
  * their specific source type.
  *
  * ## Read-Only Enforcement
- * All write operations (storeItems, updateItem, removeItem, etc.) are
+ * All write operations (pushItems, removeItem, etc.) are
  * no-ops or return errors. The backend always reports calendars as
  * read-only via discoveredWritable().
  *

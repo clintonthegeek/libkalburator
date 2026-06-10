@@ -14,7 +14,7 @@ using Kalburator::Sync::BackendRecord;
 /// engine inspects DiffOp at the control-flow level (kind counts,
 /// conflict presence) but does not interpret payload bytes.
 ///
-/// Distinct from SyncChange (src/transcoding/syncdiff.h), which is
+/// Distinct from SyncChange (src/diff/syncdiff.h), which is
 /// calendar-typed (carries KCalendarCore::Incidence::Ptr). Engine
 /// types stay BackendRecord-shaped per the F1 design decision.
 struct EngineDiffOp

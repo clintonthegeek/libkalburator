@@ -21,7 +21,7 @@ namespace Kalburator::Engine {
 /// will revisit this when the calendar-typed path is deleted.
 ///
 /// Note: named MapPropertyDiff (not PropertyDiff) to avoid ODR conflict with
-/// the unrelated Kalburator::Sync::PropertyDiff in transcoding/incidencediff.h.
+/// the unrelated Kalburator::Sync::PropertyDiff in diff/incidencediff.h.
 struct MapPropertyDiff {
     QVariantMap toApplyToTarget;  ///< Changes that should propagate to target.
     QVariantMap toApplyToSource;  ///< Changes that should propagate to source (TwoWay only).

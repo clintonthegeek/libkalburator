@@ -80,7 +80,7 @@ void MockBackend::startSync(const QString &collectionId,
 
     // Use calendar->id() consistent with all other MockBackend methods.
     // (Previously used calendar->name() which was inconsistent with
-    //  loadItems/storeItems/updateItem which all use cal->id().)
+    //  loadItems/pushItems which all use cal->id().)
     const QString calendarId = calendar->id();
     logOperation(QStringLiteral("START_SYNC"), calendarId);
 
@@ -243,9 +243,8 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
 
     // Unified failure injection: OnPush || OnStoreItems both drive
     // the operation to Failed symmetrically. Per FINDINGS
-    // ("MockBackend missing failure injection on updateItem and OnPush
-    //  in storeItems"), the sync and async paths once disagreed about
-    //  which point to honour; F2 Task 6 collapses them onto this path.
+    // ("MockBackend missing failure injection on pushItems"), the sync
+    //  and async paths once disagreed; F2 Task 6 collapses them here.
     if (shouldFail(FailurePoint::OnPush) || shouldFail(FailurePoint::OnStoreItems)) {
         QTimer::singleShot(m_operationDelayMs, this, [op, this]() {
             op->fail(m_failureMessage.isEmpty()

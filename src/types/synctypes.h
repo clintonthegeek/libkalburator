@@ -202,7 +202,7 @@ enum class SyncMode {
  */
 enum class WhenLossWouldOccur {
     Abort,    ///< Refuse to sync if the composed pipeline is lossy
-    Warn,     ///< Sync but emit ISyncHost::transcodingWarning (default)
+    Warn,     ///< Sync but emit SyncBackendBase/SyncEngine::transcodingWarning (default)
     Proceed,  ///< Sync silently even if data would be dropped
 };
 
