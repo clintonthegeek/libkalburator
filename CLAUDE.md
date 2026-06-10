@@ -7,7 +7,7 @@ overall plan lives in PlanStan at
 
 ## Architectural-redress campaign — START HERE if on a branch `feature/redress-N-*`
 
-If your CWD is on any branch matching `feature/redress-N-*` (N = 1..9), you are
+If your CWD is on any branch matching `feature/redress-N-*` (N = 1..11), you are
 working the campaign opened 2026-05-29 from a fresh-eyes audit of the post-canon
 codebase. The audit found the canon-upgrade convergence (below) succeeded but the
 underlying layering, encapsulation, and naming grew leaks no one stopped to name.
@@ -18,7 +18,7 @@ The redress is the next sustained body of work.
    working here. Non-optional.
 2. `docs/campaign/architectural-redress/AUDIT.md` — the fresh-eyes findings this
    campaign exists to redress. The audit wins if it disagrees with a plan.
-3. `docs/campaign/architectural-redress/STATUS.md` — campaign state, the 9-plan
+3. `docs/campaign/architectural-redress/STATUS.md` — campaign state, the 11-plan
    sequence, locked decisions, your next action.
 4. `docs/campaign/architectural-redress/FINDINGS.md` — the discipline log; append
    to it (invariant 9) when you walk past a smell.
@@ -35,15 +35,15 @@ the campaign that (a) retires `src/transcoding/` into the shape graph and
 behind a **versioned canonical spine** with a four-kind loss model.
 
 **Status (2026-05-24): the campaign is COMPLETE — all four plans landed; `src/transcoding/`
-is deleted and the shape graph is the sole transformation mechanism (invariant 1).** What
-remains is downstream / out-of-campaign: the PlanStan/WildPalms backend port (FINDINGS O7/O12)
-and the eventual merge to `main`. Read `docs/campaign/STATUS.md` "Next action" first.
+is deleted and the shape graph is the sole transformation mechanism (invariant 1).**
+Downstream port (FINDINGS O7/O12) DONE; O7 resolved 2026-05-27, O12 effectively closed;
+branch merged to `main`. See `docs/campaign/STATUS.md` for the full history.
 
 **Before your first non-trivial change, read in this order:**
 1. `docs/campaign/INVARIANTS.md` — the rules you accept by working here. Non-optional.
 2. `docs/campaign/STATUS.md` — campaign state (now: converged), the 4-plan sequence, locked
    decisions, and the remaining downstream next actions.
-3. `docs/campaign/FINDINGS.md` — open watch items (esp. O7, O9, O12) and the discipline log.
+3. `docs/campaign/FINDINGS.md` — open watch items (esp. O9) and the discipline log.
 4. The plans, all complete: `docs/2026-05-23-plan-1-shape-core-foundations.md`,
    `docs/2026-05-23-plan-2-per-engine-registries.md`, `docs/2026-05-24-plan-3-canon-encodings.md`,
    `docs/2026-05-24-plan-4-calendar-convergence.md`.
@@ -55,19 +55,6 @@ this campaign collapses them into one (the shape graph) and modernizes the canon
 The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a third
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
-
-## Refactor-branch worktree
-
-If your CWD is `~/dev/refactor-engine-merger/libkalburator/`, you are
-in a worktree on branch `refactor/engine-merger` participating in
-the **engine-merger refactor**. The cross-repo coordination doc set
-lives one directory up at `~/dev/refactor-engine-merger/`. Read its
-`CLAUDE.md` first — that file is the canonical entry point for
-refactor work.
-
-The phase plan is in `docs/phase0/04k-engine-merger-roadmap.md`
-(library-side restatement). Cross-cutting findings go in
-`~/dev/refactor-engine-merger/FINDINGS.md`, not in this directory.
 
 ## Phase-status docs are living documents
 
@@ -85,13 +72,6 @@ the same commit that lands the code change. In particular:
 Do not leave a status doc saying "paused" after work has resumed, or
 "WIP" after it has landed. Future sessions start from these docs — if
 they lie, work gets redone or skipped.
-
-## Cross-repo coordination
-
-Phase 3b (PlanStan FetchContent cutover) is PlanStan-side work. When
-doing Phase 3b, also update this repo's `04b-phase3-status.md` and
-PlanStan's sync-library-extraction proposal "Status" line in the same
-session, even though the code change is in PlanStan.
 
 ## Build
 
