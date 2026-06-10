@@ -1,6 +1,8 @@
 #include <QObject>
 #include <QtTest/QtTest>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QToolButton>
@@ -165,6 +167,72 @@ public:
     { return std::make_unique<CapturingProvider>(); }
 };
 
+// §4.3 — provider whose connect() succeeds but returns 0 calendar collections.
+class ZeroCalendarsProvider : public IProvider {
+    Q_OBJECT
+public:
+    QString id() const override { return QStringLiteral("zero-cal"); }
+    QString kind() const override { return QStringLiteral("zero-cal"); }
+    QString displayName() const override { return QStringLiteral("Zero Calendars"); }
+    void load(const BackendConfiguration &) override {}
+    BackendConfiguration save() const override {
+        BackendConfiguration c; c.type = kind(); return c;
+    }
+    QWidget *createConfigWidget(QWidget *) override { return nullptr; }
+    QFuture<bool> connect() override {
+        QPromise<bool> p; auto f = p.future(); p.start(); p.addResult(true); p.finish(); return f;
+    }
+    void disconnect() override {}
+    bool isConnected() const override { return false; }
+    QList<CollectionInfo> collections() const override { return {}; }
+    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+};
+
+class ZeroCalendarsContribution : public BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("zero-cal"); }
+    QString displayName() const override { return QStringLiteral("Zero Calendars"); }
+    QList<Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override
+    { return std::make_unique<ZeroCalendarsProvider>(); }
+};
+
+// §4.3 — provider whose connect() succeeds and returns calendar collections.
+class WithCalendarsProvider : public IProvider {
+    Q_OBJECT
+public:
+    QString id() const override { return QStringLiteral("with-cal"); }
+    QString kind() const override { return QStringLiteral("with-cal"); }
+    QString displayName() const override { return QStringLiteral("With Calendars"); }
+    void load(const BackendConfiguration &) override {}
+    BackendConfiguration save() const override {
+        BackendConfiguration c; c.type = kind(); return c;
+    }
+    QWidget *createConfigWidget(QWidget *) override { return nullptr; }
+    QFuture<bool> connect() override {
+        QPromise<bool> p; auto f = p.future(); p.start(); p.addResult(true); p.finish(); return f;
+    }
+    void disconnect() override {}
+    bool isConnected() const override { return false; }
+    QList<CollectionInfo> collections() const override {
+        CollectionInfo a; a.id = QStringLiteral("cal-work");   a.name = QStringLiteral("Work");
+        a.type = QStringLiteral("calendar");
+        CollectionInfo b; b.id = QStringLiteral("cal-home");   b.name = QStringLiteral("Home");
+        b.type = QStringLiteral("calendar");
+        return { a, b };
+    }
+    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+};
+
+class WithCalendarsContribution : public BackendContribution {
+public:
+    QString backendType() const override { return QStringLiteral("with-cal"); }
+    QString displayName() const override { return QStringLiteral("With Calendars"); }
+    QList<Shape::Shape> nativeShapes() const override { return {}; }
+    std::unique_ptr<IProvider> createProvider(QObject * = nullptr) const override
+    { return std::make_unique<WithCalendarsProvider>(); }
+};
+
 class TstProviderConfigDialog : public QObject
 {
     Q_OBJECT
@@ -179,6 +247,10 @@ private slots:
     void testConnection_bridgesWidgetConfigIntoProvider();
     void autofillButtonAbsentWithoutProfiles();
     void autofillAppliesProfileToEmbeddedWidget();
+
+    // WP-D7: §4.3 dialog coverage
+    void zeroCalendars_showsPanelAndDisablesSave();
+    void happyPath_result_and_selectedCollectionIds_roundTrip();
 };
 
 void TstProviderConfigDialog::testConnection_bridgesWidgetConfigIntoProvider()
@@ -364,6 +436,81 @@ void TstProviderConfigDialog::autofillAppliesProfileToEmbeddedWidget()
     QVERIFY2(cw != nullptr, "embedded capturing widget expected after combo selects cap-dav");
     QCOMPARE(cw->configuration().connectionParams.value(QStringLiteral("url")).toString(),
              QStringLiteral("http://localhost:5232/testuser1/"));
+}
+
+// ---------------------------------------------------------------------------
+// WP-D7: §4.3 coverage
+// ---------------------------------------------------------------------------
+
+void TstProviderConfigDialog::zeroCalendars_showsPanelAndDisablesSave()
+{
+    // §4.3: when connect() succeeds but no calendars are returned, the dialog
+    // must show the noCalendarsPanel and disable the Save button.
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<ZeroCalendarsContribution>());
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
+
+    QMetaObject::invokeMethod(&dlg, "onTestClicked");
+
+    // Wait for the synchronous connect() result to be processed
+    auto *status = dlg.findChild<QLabel*>(QStringLiteral("testStatusLabel"));
+    QVERIFY(status != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        status->text().contains(QStringLiteral("no calendars")), 3000);
+
+    // noCalendarsPanel must not be hidden (dialog itself isn't show()'n;
+    // use !isHidden() which reflects the widget's own visibility flag).
+    auto *panel = dlg.findChild<QFrame*>(QStringLiteral("noCalendarsPanel"));
+    QVERIFY2(panel != nullptr, "noCalendarsPanel must be created after 0-calendar connect");
+    QVERIFY2(!panel->isHidden(), "noCalendarsPanel must not be hidden");
+
+    // Save button must be disabled
+    auto *bb = dlg.findChild<QDialogButtonBox*>();
+    QPushButton *saveBtn = nullptr;
+    if (bb) saveBtn = bb->button(QDialogButtonBox::Save);
+    QVERIFY2(saveBtn != nullptr, "dialog must have a Save button");
+    QVERIFY2(!saveBtn->isEnabled(), "Save must be disabled when 0 calendars");
+}
+
+void TstProviderConfigDialog::happyPath_result_and_selectedCollectionIds_roundTrip()
+{
+    // §4.3 happy path: connect() succeeds with calendars → picker shown, Save
+    // enabled. Selecting collection IDs via the picker and calling
+    // selectedCollectionIds() returns them; result() returns the provider config.
+    BackendRegistry registry;
+    registry.registerContribution(std::make_shared<WithCalendarsContribution>());
+    ProviderManager pm(&registry);
+    Ui::ProviderConfigDialog dlg(&pm, &registry, Ui::ProviderConfigDialog::AddNew, {});
+
+    QMetaObject::invokeMethod(&dlg, "onTestClicked");
+
+    auto *status = dlg.findChild<QLabel*>(QStringLiteral("testStatusLabel"));
+    QVERIFY(status != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        status->text().contains(QStringLiteral("Connected")), 3000);
+
+    // Picker must be visible and Save enabled
+    auto *picker = dlg.findChild<QWidget*>(QStringLiteral("collectionPicker"));
+    QVERIFY2(picker != nullptr && !picker->isHidden(), "picker must not be hidden after connect");
+
+    auto *bb = dlg.findChild<QDialogButtonBox*>();
+    QPushButton *saveBtn = nullptr;
+    if (bb) saveBtn = bb->button(QDialogButtonBox::Save);
+    QVERIFY2(saveBtn != nullptr && saveBtn->isEnabled(), "Save must be enabled with calendars");
+
+    // Select "cal-work" by checking its checkbox
+    auto *chk = dlg.findChild<QCheckBox*>(QStringLiteral("collection-cal-work"));
+    QVERIFY2(chk != nullptr, "checkbox for cal-work must exist in picker");
+    chk->setChecked(true);
+
+    // selectedCollectionIds() must return the checked ID
+    const QStringList ids = dlg.selectedCollectionIds();
+    QVERIFY2(ids.contains(QStringLiteral("cal-work")), "cal-work must be in selectedCollectionIds");
+
+    // result() must return a valid BackendConfiguration from the provider
+    const Sync::BackendConfiguration cfg = dlg.result();
+    QCOMPARE(cfg.type, QStringLiteral("with-cal"));
 }
 
 QTEST_MAIN(TstProviderConfigDialog)
