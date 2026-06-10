@@ -326,11 +326,6 @@ QString RemoteCalendarBackend::cachedEtag(const QString &remoteUrl) const
     return m_localEtags.value(normalizeUrlKey(remoteUrl), QString());
 }
 
-QMap<QString, QString> RemoteCalendarBackend::currentEtags() const
-{
-    return m_localEtags;
-}
-
 // ============================================================================
 // Content Cache for Delta Sync
 // ============================================================================
@@ -475,29 +470,6 @@ void RemoteCalendarBackend::removeCachedContent(const QString &itemUrl)
     }
 }
 
-void RemoteCalendarBackend::clearCachedContentForCalendar(const QString &calendarId)
-{
-    if (!m_cacheInitialized || !m_davUrls.contains(calendarId)) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    // Get the calendar's base URL to match items
-    QString calendarBaseUrl = m_davUrls[calendarId].url().toString();
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM cached_items WHERE url LIKE ?"));
-    query.addBindValue(calendarBaseUrl + QStringLiteral("%"));
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to clear cache for calendar:" << query.lastError().text();
-    }
-}
-
 // Calendar list loading
 void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
 {
@@ -612,21 +584,6 @@ QString RemoteCalendarBackend::discoveredUrl(const QString &calendarId) const
 QColor RemoteCalendarBackend::discoveredColor(const QString &calendarId) const
 {
     return m_calendarColors.value(calendarId);
-}
-
-QString RemoteCalendarBackend::discoveredCtag(const QString &calendarId) const
-{
-    return m_calendarCtags.value(calendarId);
-}
-
-void RemoteCalendarBackend::primeCtagCache(const QMap<QString, QString> &ctags)
-{
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    for (auto it = ctags.constBegin(); it != ctags.constEnd(); ++it) {
-        m_primedCtags[it.key()] = PrimedCtag{ it.value(), now };
-    }
-    qDebug() << "RemoteCalendarBackend::primeCtagCache: primed" << ctags.size()
-             << "ctags (total cache size now" << m_primedCtags.size() << ")";
 }
 
 void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendars)
@@ -1194,11 +1151,8 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                     qDebug() << "Delete job succeeded for" << uid;
 
                     QString calendarId = deleteJob->property("calendarId").toString();
-                    QString itemKey = calendarId + "/" + uid;
                     QString urlKey = normalizeUrlKey(itemUrl.toString());
 
-                    m_etags.remove(itemKey);
-                    m_itemUrls.remove(itemKey);
                     m_localEtags.remove(urlKey);
                     if (m_etagCache) {
                         m_etagCache->removeEtag(urlKey);
@@ -1217,54 +1171,6 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
 }
 
 
-
-void RemoteCalendarBackend::runJobsSequentially(
-    const QList<KDAV::DavJobBase *> &jobs,
-    std::function<void()> onFinished)
-{
-    if (jobs.isEmpty()) {
-        onFinished();
-        return;
-    }
-
-    QPointer<RemoteCalendarBackend> safeThis(this);
-    int index = 0;
-    auto finished = std::make_shared<bool>(false);
-
-    auto runNext = std::make_shared<std::function<void()>>();
-    std::weak_ptr<std::function<void()>> weakRunNext = runNext;
-
-    *runNext = [=]() mutable {
-        if (*finished || !safeThis) return;
-
-        if (index >= jobs.size()) {
-            *finished = true;
-            onFinished();
-            return;
-        }
-
-        KDAV::DavJobBase *job = jobs.at(index++);
-        QObject::connect(job, &KDAV::DavJobBase::result, safeThis, [safeThis, job, weakRunNext, finished](KJob *) {
-            if (*finished || !safeThis) {
-                job->deleteLater();
-                return;
-            }
-            if (job->error()) {
-                qWarning() << "Job failed for incidence"
-                           << job->property("incidenceUid").toString() << ":" << job->errorString();
-            }
-            job->deleteLater();
-
-            if (auto locked = weakRunNext.lock()) {
-                (*locked)();
-            }
-        });
-
-        job->start();
-    };
-
-    (*runNext)();
-}
 
 void RemoteCalendarBackend::storeCalendars(const QString &, const QList<KCalendarCore::MemoryCalendar*> &)
 {
@@ -1681,21 +1587,8 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
         if (m_davUrls.contains(calendarId)) {
             QString storedCtag = ctag(calendarId);
             QString freshCtag;
-            bool freshFromPrimedCache = false;
 
-            // Phase-1 batched-CTag fast-path: was a fresh CTag primed for us?
-            auto primedIt = m_primedCtags.constFind(calendarId);
-            if (primedIt != m_primedCtags.constEnd()) {
-                const auto ageMs = primedIt->fetchedAt.msecsTo(QDateTime::currentDateTimeUtc());
-                if (ageMs >= 0 && ageMs <= kPrimedCtagFreshnessMs) {
-                    freshCtag = primedIt->value;
-                    freshFromPrimedCache = true;
-                    qDebug() << "RemoteCalendarBackend::fetchItems: using primed CTag for"
-                             << calendarId << "(age" << ageMs << "ms)";
-                }
-            }
-
-            if (!freshFromPrimedCache && !storedCtag.isEmpty()) {
+            if (!storedCtag.isEmpty()) {
                 QUrl propfindUrl = davUrl.url();
                 propfindUrl.setUserName(QString());
                 propfindUrl.setPassword(QString());
@@ -1737,7 +1630,6 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 loop.exec();
             }
 
-            // Cache-match check applies whether freshCtag came from primed cache or PROPFIND
             if (!storedCtag.isEmpty() && !freshCtag.isEmpty() && freshCtag == storedCtag) {
                 qDebug() << "RemoteCalendarBackend::fetchItems: CTag unchanged for" << calendarId
                          << "(" << freshCtag << ") - serving from cache";
