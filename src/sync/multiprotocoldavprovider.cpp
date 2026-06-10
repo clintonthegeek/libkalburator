@@ -5,6 +5,7 @@
 #include "../calendar/remotecalendarbackend.h"
 #include "../contacts/remotecontactsbackend.h"
 #include "carddavcapabilitydiscovery.h"
+#include "caldavcontenttypes.h"
 
 #include <QFutureWatcher>
 #include <QLoggingCategory>
@@ -13,18 +14,6 @@
 Q_LOGGING_CATEGORY(lcMultiDav, "kalburator.sync.multidav")
 
 namespace Kalburator::Sync {
-
-namespace {
-// Synthesize KDAV's content-type flags from the discovered per-component bools
-// (mirrors CalDavProvider's helper).
-KDAV::DavCollection::ContentTypes contentTypesFromCaps(const PerCalendarCapabilities &c)
-{
-    KDAV::DavCollection::ContentTypes types;
-    if (c.supportsVEvent) types |= KDAV::DavCollection::Events;
-    if (c.supportsVTodo)  types |= KDAV::DavCollection::Todos;
-    return types;
-}
-} // namespace
 
 MultiProtocolDavProvider::MultiProtocolDavProvider(bool calendarsOnly, QObject *parent)
     : IProvider(parent)

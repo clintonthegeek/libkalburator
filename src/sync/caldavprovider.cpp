@@ -5,24 +5,12 @@
 #include "backendconfiguration.h"
 #include "caldavcapabilitydiscovery.h"
 #include "remotecalendarbackend.h"
+#include "caldavcontenttypes.h"
 
 #include <QFutureInterface>
 #include <QUuid>
 
 namespace Kalburator::Sync {
-
-namespace {
-// Synthesize KDAV's content-type flags from the discovered per-component bools.
-// The discovery walk records supportsVEvent/VTodo as booleans; the backend's
-// internal maps and the network loadCalendars path use a KDAV bitmask.
-KDAV::DavCollection::ContentTypes contentTypesFromCaps(const PerCalendarCapabilities &c)
-{
-    KDAV::DavCollection::ContentTypes types;
-    if (c.supportsVEvent) types |= KDAV::DavCollection::Events;
-    if (c.supportsVTodo)  types |= KDAV::DavCollection::Todos;
-    return types;
-}
-} // namespace
 
 CalDavProvider::CalDavProvider(QObject *parent)
     : IProvider(parent)
