@@ -94,15 +94,16 @@ Contract note for the migration: `runSync(SyncRequest)` returns
   `discoveredSupportsEvents/Todos`, `startSync`, `getRawIcs`/`setRawIcs`) is intact
   and now pinned by a default-lane test (`tst_remotecalendarbackend_writepaths`).
   Tag **v0.68** marks this state.
-- **⚠ Pre-existing PlanStan test failure, A/B-isolated for you:**
+- **⚠ Pre-existing PlanStan test failure — root-caused to your own tree:**
   `tst_loader_empty_backends::load_emptyBackendsAndNoProviders_failsWithClearError`
   expects `loadCollectionFromFile` on an empty-backends/no-providers `.kalb` to
-  FAIL; the load now **succeeds**. Fails identically against libkalburator `main`
-  (pre-Plan-7) — i.e. not a Plan 7 effect; most plausibly the v0.67 `f170139`
-  pre-connected-provider registration (which PlanStan requested, v0.61 precedent)
-  changed the emptiness condition the loader checks. Please decide: if
-  succeed-is-correct now, realign the test; if fail-was-the-contract, tell us and
-  we'll revisit `f170139`'s guard.
+  FAIL; the load now succeeds. First A/B-isolated against libkalburator `main`
+  (fails identically → not a Plan 7 effect); then found the actual cause **on your
+  side**: your local, currently-unpushed `master` commit `203744a4`
+  *"fix(collection): allow account-less collections to load (O.5 guard removal)"*
+  removes exactly the guard this test pins. The test just needs realigning to your
+  own O.5 decision (or folding into that commit before you push it). No
+  libkalburator action needed.
 - Your remaining suite delta vs baseline is the usual 21 Not-Run headless GUI
   binaries; everything else is green against post-Plan-7 libkalburator.
 
@@ -110,4 +111,5 @@ Contract note for the migration: `runSync(SyncRequest)` returns
 
 1. Ack/objection on the step-1 shape (`setBackendRegistry` + dynamic_cast defaults).
 2. A rough window for your step-2 wave so we can schedule the lib-side deletions.
-3. A verdict on `tst_loader_empty_backends` (test realign vs `f170139` revisit).
+3. FYI only: realign `tst_loader_empty_backends` to your own `203744a4` O.5
+   guard-removal before pushing it (currently red in your tree).

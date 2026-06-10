@@ -57,10 +57,11 @@ the plan file's Outcome section. Headlines:
   (`PLANSTAN_LIBKALBURATOR_SOURCE_DIR` override) — suite run against the branch:
   93/115 with failed-set = 21 Not-Run headless-GUI binaries +
   `tst_loader_empty_backends`, and that single real failure **A/B-verified
-  pre-existing** (fails identically against libkalburator `main`; it expects an
-  empty-backends/no-providers load to FAIL and the load now succeeds — likely the
-  v0.67 `f170139` preconnected-provider change or PlanStan-side drift; flag for the
-  PlanStan dev, not a Plan 7 effect). WildPalms: grep-verified per-symbol
+  pre-existing** (fails identically against libkalburator `main`) and subsequently
+  **root-caused to PlanStan's own unpushed `203744a4`** ("allow account-less
+  collections to load (O.5 guard removal)") — the commit removes exactly the guard
+  the test pins; flagged to the PlanStan dev in the Plan 8 RFC, no libkalburator
+  action needed. WildPalms: grep-verified per-symbol
   non-consumer of every changed/removed RemoteCalendarBackend symbol (its only
   reference is a comment), so the five invariants hold by construction; the
   96-commits-behind clone gate was not run (per plan).
