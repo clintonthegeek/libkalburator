@@ -13,6 +13,10 @@ class IBlobBackend;
 /**
  * @brief Account-neutral IProvider adapter.
  *
+ * RETAINED: K.7.1 scaffolding — bridges local/file backends into the IProvider
+ * shape for consumers that only know about IProvider (e.g. ProviderManager).
+ * Review for production consumer or remove next quarter if none materialises.
+ *
  * Wraps a single-collection backend factory and a CollectionInfo so that
  * backends with no account concept (local files, raw-file sinks, etc.)
  * fit the IProvider shape without requiring a full CalDAV/CardDAV provider.

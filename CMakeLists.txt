@@ -146,9 +146,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/iconflictpresenter.h
     src/calendar/iconflictresolver.h
     src/calendar/icsfeedfetcher.h
-    src/calendar/incidencesyncadapter.h
     src/calendar/isynchost.h
-    src/calendar/isyncrecord.h
     src/calendar/localbackend.h
     src/calendar/logicalcalendarbuilder.h
     src/calendar/mockbackend.h
@@ -282,12 +280,8 @@ set(KALBURATOR_BLOB_SOURCES
 )
 
 # Phase K.1 — backend capability interfaces.
-# Pure-virtual non-QObject side-interfaces opted into by concrete
-# backends. Engine consumes via dynamic_cast in K.2; backends declare
-# them now for forward compatibility (no behavior change in K.1).
 set(KALBURATOR_BACKEND_HEADERS
     src/backend/changedetection.h
-    src/backend/resourcelinearization.h
 )
 # (No sources — headers-only interfaces.)
 

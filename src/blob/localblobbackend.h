@@ -12,6 +12,10 @@ namespace Kalburator::Sync {
 /**
  * @brief Disk-backed IBlobBackend reference impl.
  *
+ * RETAINED: canonical IBlobBackend reference implementation and test fixture.
+ * Intentionally kept even with no production consumer — it is the worked
+ * example backends inherit from and the sink used by integration tests.
+ *
  * Storage: <basePath>/<collectionId>/<slug-<short-hash-of-id>>.<ext>
  * where <ext> is derived from CollectionInfo::type:
  *   "memos"    → .md

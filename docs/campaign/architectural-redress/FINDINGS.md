@@ -361,3 +361,7 @@ invariant 9:
 - ~~Raw `QFutureInterface*` in `SyncEngine` leaked when destroyed mid-sync (dtor freed neither)
   (AUDIT MAJOR).~~ Both members are `std::unique_ptr`; 8 delete sites → `.reset()`; dtor documents
   why it does not `reportFinished()`. ASAN-clean over the sync lifecycle. (P4.T6)
+- 2026-06-10 — `src/calendar/icsfeedfetcher.h` — DECIDE: lib-internal only, zero consumer
+  adoption; ship as public API or remove when webcal/subscription features are deferred. (WP-C4)
+- 2026-06-10 — `src/calendar/logicalcalendarbuilder.h` — DECIDE: lib-internal only, zero consumer
+  adoption; promote to supported API or remove. (WP-C4)

@@ -13,6 +13,9 @@ namespace Kalburator::Sync {
 /**
  * @brief Utility class for building LogicalCalendars from discovered calendars.
  *
+ * SCAFFOLDING (WP-C4 2026-06-10): used only in lib-internal tests; no consumer
+ * has adopted it. Decide: promote to supported API or remove. See FINDINGS.md.
+ *
  * This class centralizes the logic for:
  * - Matching discovered calendars across backends by name
  * - Creating CalendarBackendBinding objects with proper metadata

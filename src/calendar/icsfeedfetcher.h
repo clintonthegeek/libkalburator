@@ -16,6 +16,10 @@ namespace Kalburator::Sync {
 /**
  * @brief Synchronous fetcher for iCalendar feeds over HTTP(S) and file://.
  *
+ * SCAFFOLDING (WP-C4 2026-06-10): used only in lib-internal subscription tests.
+ * Decide: ship as a public consumer utility, or remove when subscription/webcal
+ * features are explicitly deferred. See FINDINGS.md.
+ *
  * Wraps QNetworkAccessManager + KCalendarCore::ICalFormat into a single
  * blocking call returning the parsed Incidences (with optional date-range
  * filtering, RRULE expansion handled by KCalendarCore).
