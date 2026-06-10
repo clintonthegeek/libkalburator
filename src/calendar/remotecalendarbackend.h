@@ -17,6 +17,7 @@
 #include <QColor>
 #include <QDateTime>
 #include <QStringList>
+#include <functional>
 #include <memory>
 
 namespace Kalburator::Sync {
@@ -422,6 +423,24 @@ private:
     // (Radicale-style /<username>/<calendarId>/ when the base URL has no
     // path; credentials stripped — they travel in the auth header).
     QUrl calendarUrlForCrud(const QString &calendarId) const;
+
+    // Post-write bookkeeping shared by the create/modify/push success paths:
+    // both etag stores + the content cache. No-op when @p etag is empty.
+    void noteItemWritten(const QString &urlKey, const QString &etag,
+                         const QString &icalData);
+
+    // Post-delete bookkeeping: evict from both etag stores and the content
+    // cache (cache eviction normalized across all delete paths, Plan 7 T4).
+    void noteItemErased(const QString &urlKey);
+
+    // One startSync modify job (PUT with If-Match: @p etag). When
+    // @p retryOn412 is set, a 412 retries once with If-Match: * (the
+    // user-resolved-conflict force push); the retry itself never loops.
+    void launchStartSyncModify(const QString &calId,
+                               KCalendarCore::MemoryCalendar *calendar,
+                               const KCalendarCore::Incidence::Ptr &inc,
+                               const QString &etag, bool retryOn412,
+                               const std::function<void()> &checkDone);
 };
 
 } // namespace Kalburator::Sync
