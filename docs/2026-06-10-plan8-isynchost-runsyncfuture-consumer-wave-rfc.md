@@ -7,7 +7,9 @@
 **Campaign refs:** `docs/campaign/architectural-redress/STATUS.md` §"Plan 8 prep",
 `2026-06-10-audit-follow-up-specs.md` §"Plan 8 prep", FINDINGS "From Plan 3" (the
 `backendById` static-cast hazard), AUDIT supplement S6/S7 family.
-**Status: PROPOSED — nothing lands lib-side until you ack the sequencing.**
+**Status: step 1 LANDED 2026-06-10 (`58728cd`, tag v0.69) — acked in
+`2026-06-10-plan8-consumer-wave-response-planstan.md`; awaiting the PlanStan step-2
+closing note (window 2026-06-14) before step 3.**
 
 ---
 

@@ -126,6 +126,25 @@ pins against).
   reference_consumer) become deletable in step 3, not now (inv 8: they are
   overriders, and touching them is churn before the consumer wave settles).
 
-## Outcome
+## Outcome (step 1)
 
-_To be filled at T2._
+**Landed 2026-06-10** (T1 `58728cd`): `setBackendRegistry` + non-pure
+`backendById`/`backends()` exactly per the acked shape; new
+`tst_isynchost_defaults` pins the no-registry emptiness, registry lookup, the
+base-only clean-miss (the retired UB), non-calendar omission, and nullptr reset
+(falsifiability probe shown red). Suite **147/147** (was 146); zero existing host
+implementors touched.
+
+**PlanStan gate, with a runbook lesson:** the first post-change run showed 4 NEW
+SEGFAULTs (`integration_recurrence_editing`, `integration_collection_switching`,
+`integration_collection_lifecycle`, `sync_workflow_conflicts`). Root cause: those
+fixtures are `EXCLUDE_FROM_ALL` targets, and this change is the first to alter
+`ISyncHost`'s vtable layout — `make all` left their binaries stale against the new
+ABI. Explicit relink of the four targets → all four PASS; final failed-set = exactly
+the 21 Not-Run headless GUI binaries. (This is the mechanism behind the v0.65-era
+"stale-binary artifact" note; FINDINGS now records the rule: any change to a
+polymorphic public-header class layout requires relinking PlanStan's
+`EXCLUDE_FROM_ALL` test fixtures before reading the gate.)
+
+Steps 2–3 remain open per the plan: PlanStan wave by 2026-06-14, then the lib-side
+`runSyncFuture` retirement. Tag **v0.69** marks step 1 for their pin.

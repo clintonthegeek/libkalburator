@@ -48,9 +48,20 @@ unconditional) or stays as a permanent cache is **their in-wave decision** — d
 assume either in the step-1 plan. The lib default must be additive, not a behavior
 swap.
 
-**Next action = Plan 8 lib-side step 1** (write
-`plans/plan-8-isynchost-neutralization.md` first, per P1; the RFC + PlanStan response
-are the inputs).
+**Plan 8 step 1 is LANDED (2026-06-10)** — plan file
+`plans/plan-8-isynchost-neutralization.md`; `ISyncHost` gained `setBackendRegistry` +
+non-pure `backendById`/`backends()` registry defaults (dynamic_cast clean-miss;
+additive — every existing override untouched). Suite **147/147**; PlanStan gate clean
+after relinking their `EXCLUDE_FROM_ALL` fixtures (vtable-change runbook rule, see
+FINDINGS). Tag **v0.69**.
+
+**Next action = WAIT for PlanStan's step-2 closing note (window 2026-06-14), then
+Plan 8 step 3** (lib-side `runSyncFuture` retirement: migrate
+`syncruncoordinator.cpp:60` + ~87 lib test sites + `examples/reference_consumer`,
+delete the four deprecated overloads, collapse the engine's dual future-interface
+members per FINDINGS "From Plan 1"). Meanwhile the next unblocked lib-only plan is
+**Plan 9** (backend-adjacent dir consolidation + discovery placement) — plan file
+first, per P1.
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
