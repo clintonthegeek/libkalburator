@@ -104,6 +104,21 @@ void ProviderManager::addProvider(std::unique_ptr<IProvider> provider)
     // m_providerStates is lazily populated — entry appears on first
     // connectionStateChanged from this provider, not at addProvider time.
     wireProviderSignals(provider.get());
+
+    // A provider handed over already-connected (the Add Account flow:
+    // ProviderConfigDialog drives connect() for calendar discovery before
+    // the manager ever sees the provider) emitted connectionStateChanged(true)
+    // with no subscribers. Re-run the work that emission would have driven —
+    // otherwise connectAll()'s idempotency fast-path (providers return a
+    // finished future without re-emitting) leaves the backends unregistered
+    // and the state stuck at Connecting.
+    if (provider->isConnected()) {
+        registerProviderBackends(provider.get());
+        m_providerStates[provider->id()] = ProviderConnectionState::Connected;
+        emit providerStateChanged(provider->id(),
+                                  ProviderConnectionState::Connected);
+    }
+
     m_providers.push_back(std::move(provider));
     emit providersChanged();
 }
