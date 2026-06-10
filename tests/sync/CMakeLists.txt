@@ -256,6 +256,22 @@ if(KALBURATOR_HAVE_AKONADI)
     )
 endif()
 
+# WP-D6 — Syncthing discovery/ smoke tests.
+# SyncthingDiscovery (static, file-based) + SyncthingMonitor (network,
+# with an inline fake Syncthing REST endpoint). Zero prior coverage.
+add_executable(tst_syncthing_discovery tst_syncthing_discovery.cpp)
+target_link_libraries(tst_syncthing_discovery
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_syncthing_discovery COMMAND tst_syncthing_discovery)
+set_tests_properties(tst_syncthing_discovery PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Manual live-server probe (NOT a CI test). Drives CalDavProvider against a real
 # Radicale instance to trace the v0.63 discovery primer end-to-end. Off by
 # default; enable with -DKALBURATOR_BUILD_LIVE_PROBES=ON.
