@@ -271,11 +271,18 @@ void ProviderConfigDialog::onConnectFinished(bool ok)
     if (!m_currentProvider) return;
 
     if (ok) {
-        m_picker->setCollections(m_currentProvider->collections());
+        auto allCollections = m_currentProvider->collections();
+        QList<Sync::CollectionInfo> calendarOnly;
+        calendarOnly.reserve(allCollections.size());
+        for (const auto &c : allCollections) {
+            if (c.type == QStringLiteral("calendar"))
+                calendarOnly.append(c);
+        }
+        m_picker->setCollections(calendarOnly);
         m_picker->setVisible(true);
         m_saveButton->setEnabled(true);
 
-        const int n = m_currentProvider->collections().size();
+        const int n = calendarOnly.size();
         QString msg = tr("Connected — %n collection(s) found", nullptr, n);
         // A partial success (e.g. CalDAV worked but CardDAV didn't) is reported
         // via lastWarning() even when connect() overall succeeded.
