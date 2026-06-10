@@ -322,6 +322,18 @@ invariant 9:
   path. QSKIP'd in
   `tst_conflict_policy_matrix::conflictResolution_duplicate_keepsBothSides`
   until resolved. → WP-D1.
+- 2026-06-10 — `src/typesupport/incidencelock_registry.cpp:218` (`onOwnerDestroyed`) — inv 4
+  (contract mismatch) — **[C3] IncidenceLockRegistry::onOwnerDestroyed fails to eagerly
+  release locks on Qt6.** Qt6 nullifies all `QPointer`s to an object *before* emitting
+  `destroyed()`, so when `onOwnerDestroyed(QObject *owner)` calls `unlockAll(owner)`, every
+  `it->owner == owner` comparison is `nullptr == dangling_ptr` → false. Locks become
+  `isValid()==false` (QPointer null) immediately, but are not removed from `m_locks` until
+  the next `cleanupInvalidLocks()` call (inside `tryLock`/`unlock`/etc.). Observable
+  consequence: `lockCount()` over-reports stale entries; `itemUnlocked` signals are delayed.
+  `isLocked()` is correct (checks `isValid()`). The WP-D4 tests pin the lazy-cleanup
+  contract and the re-acquirability invariant; a follow-up fix should iterate `m_locks`
+  looking for null QPointers inside `onOwnerDestroyed` rather than relying on the raw
+  pointer comparison.
 
 ## Resolved
 

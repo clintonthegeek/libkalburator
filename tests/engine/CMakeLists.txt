@@ -126,3 +126,11 @@ kalburator_add_engine_integration_test(tst_conflict_policy_matrix)
 target_link_libraries(tst_conflict_policy_matrix PRIVATE Qt6::Sql Qt6::Widgets)
 target_include_directories(tst_conflict_policy_matrix
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)
+
+# WP-D5 — SyncEngine config API unit tests.
+# Covers loadSyncMappings, setMappingEnabled, hasSyncWork,
+# setSkipUnchangedMappings, register/unregisterActiveController.
+# Uses StubSyncHost + StubSyncConfigStore (no sync runs).
+kalburator_add_engine_integration_test(tst_syncengine_config_api)
+target_include_directories(tst_syncengine_config_api
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)
