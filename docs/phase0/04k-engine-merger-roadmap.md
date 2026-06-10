@@ -5,14 +5,11 @@
 > **HISTORICAL SNAPSHOT — do not edit retroactively.**
 > Refactor has proceeded through Phases H, Ia, Ia.5, Ib, Ib.5, Ic,
 > J, and K (K.0 through K.9). For current state see
-> [`04ae-phase-k-status.md`](04ae-phase-k-status.md) (live Phase K
-> status), `~/dev/refactor-engine-merger/CURRENT-STATUS.md`
-> (fresh-session entry point), and
-> `~/dev/refactor-engine-merger/ROADMAP.md` (overall tag history).
-> As of 2026-05-15, K.9 is the last code phase landed; K closing
-> tag `v0.40-phase-k-engine-generalized` is pending the user's
-> manual HotSync confirmation against a Palm device. The tables
-> below capture the original D–G design record.
+> [`04ae-phase-k-status.md`](04ae-phase-k-status.md) (live Phase K status).
+> **Note (2026-06-10):** `~/dev/refactor-engine-merger/` no longer exists on
+> disk — those pointers are dead. The K closing tag
+> `v0.40-phase-k-engine-generalized` **was cut** (the "pending" claim below is
+> stale). The tables below capture the original D–G design record.
 
 **Original (2026-04-28) status header:**
 **Status:** D.0, D, E, F.0, F1, F2 landed. Phase G next.

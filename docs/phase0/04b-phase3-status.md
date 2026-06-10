@@ -35,6 +35,10 @@ the same code regions and can be bundled without loss.
 
 ## Phase 3b resolution (2026-04-20 continuation)
 
+> **Update (2026-06-10):** Phase 3b is fully closed. PlanStan subsequently migrated from
+> the `add_subdirectory` cutover (described below) to a **FetchContent + pinned tag**
+> consumption pattern. The `KALBURATOR_PROVIDE_TYPES` flag is no longer in active use.
+
 The cutover used `add_subdirectory` rather than FetchContent, mirroring
 the existing Graffodil consumption pattern at
 `add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../Graffodil graffodil
