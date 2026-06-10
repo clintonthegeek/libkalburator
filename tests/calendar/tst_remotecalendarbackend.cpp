@@ -905,12 +905,14 @@ void RemoteCalendarBackendTest::testFetchAllCtagsBatched()
     m_backend->loadCalendars(QStringLiteral("test-collection"));
     waitForSignal(loadCalSpy, 10000);
 
-    // 4. Fetch all ctags in one batched PROPFIND.
+    // 4. Fetch all ctags in one batched PROPFIND, through the production
+    //    surface: the engine consumes this as ChangeDetection::collectionRevisions
+    //    (fetchAllCtags went private in Plan 7 T6).
     QStringList ids{ m_testCalendarName };
-    QMap<QString, QString> ctags = m_backend->fetchAllCtags(ids);
+    QMap<QString, QString> ctags = m_backend->collectionRevisions(ids);
 
     QVERIFY2(!ctags.isEmpty(),
-             "fetchAllCtags returned empty — server did not return any CS:getctag");
+             "collectionRevisions returned empty — server did not return any CS:getctag");
     QVERIFY(ctags.contains(m_testCalendarName));
     QVERIFY(!ctags.value(m_testCalendarName).isEmpty());
 

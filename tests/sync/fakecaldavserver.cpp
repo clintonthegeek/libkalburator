@@ -261,9 +261,59 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
     } else if (method == "DELETE") {
         handleDelete(socket, path);
 
+    } else if (method == "MKCALENDAR") {
+        handleMkCalendar(socket, path);
+
+    } else if (method == "PROPPATCH") {
+        handleProppatch(socket, path);
+
     } else {
         writeResponse(socket, 405, "Method Not Allowed", QByteArray());
     }
+}
+
+bool FakeCalDavServer::isKnownCollection(const QString &href) const
+{
+    if (m_createdCollections.contains(href)) return true;
+    for (const auto &cal : m_calendars) {
+        if (cal.second == href) return true;
+    }
+    return false;
+}
+
+void FakeCalDavServer::handleMkCalendar(QTcpSocket *socket, const QString &path)
+{
+    // RFC 4791 §5.3.1: MKCALENDAR on an existing collection is an error;
+    // real servers answer 405 (Radicale) or 409. The backend treats both as
+    // "already exists" and proceeds idempotently.
+    if (isKnownCollection(path)) {
+        writeResponse(socket, 405, "Method Not Allowed", QByteArray());
+        return;
+    }
+    m_createdCollections.insert(path);
+    writeResponse(socket, 201, "Created", QByteArray());
+}
+
+void FakeCalDavServer::handleProppatch(QTcpSocket *socket, const QString &path)
+{
+    if (!isKnownCollection(path)) {
+        writeResponse(socket, 404, "Not Found", QByteArray());
+        return;
+    }
+    // Minimal RFC 4918 §9.2 success: 207 with a 200-status propstat. The
+    // backend only checks the HTTP status (207/200/204), not the body props.
+    const QByteArray body = QByteArrayLiteral(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+        "<d:multistatus xmlns:d=\"DAV:\">\n"
+        "  <d:response>\n"
+        "    <d:href>") + path.toUtf8() + QByteArrayLiteral("</d:href>\n"
+        "    <d:propstat>\n"
+        "      <d:prop/>\n"
+        "      <d:status>HTTP/1.1 200 OK</d:status>\n"
+        "    </d:propstat>\n"
+        "  </d:response>\n"
+        "</d:multistatus>\n");
+    writeResponse(socket, 207, "Multi-Status", body);
 }
 
 void FakeCalDavServer::handleReport(QTcpSocket *socket,
@@ -341,7 +391,21 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
 void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
 {
     if (!path.endsWith(QStringLiteral(".ics"))) {
-        writeResponse(socket, 400, "Bad Request", QByteArray());
+        // Collection DELETE (RFC 4791 calendar removal).
+        if (m_createdCollections.remove(path)) {
+            m_store.remove(path);
+            writeResponse(socket, 204, "No Content", QByteArray());
+            return;
+        }
+        for (int i = 0; i < m_calendars.size(); ++i) {
+            if (m_calendars.at(i).second == path) {
+                m_store.remove(path);
+                m_calendars.removeAt(i);
+                writeResponse(socket, 204, "No Content", QByteArray());
+                return;
+            }
+        }
+        writeResponse(socket, 404, "Not Found", QByteArray());
         return;
     }
 

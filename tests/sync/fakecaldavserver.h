@@ -6,6 +6,7 @@
 #include <QHostAddress>
 #include <QList>
 #include <QPair>
+#include <QSet>
 #include <QString>
 #include <QTcpServer>
 #include <QUrl>
@@ -25,6 +26,10 @@ class QTcpSocket;
  *   REPORT  "/calendars/testuser/<cal>/"  -> calendar-query (ETag list)
  *                                            or calendar-multiget (full data)
  *   PUT     "/calendars/testuser/<cal>/<uid>.ics" -> store event
+ *   MKCALENDAR <collection href>          -> 201 (or 405 if it exists)
+ *   PROPPATCH  <collection href>          -> 207 if known, else 404
+ *   DELETE     <collection href>          -> 204 if known, else 404
+ *                                            (item DELETE unchanged)
  *
  * The default calendar is "Personal" at "/calendars/testuser/personal/".
  *
@@ -112,6 +117,9 @@ private:
     void handlePut(QTcpSocket *socket, const QString &path,
                    const QByteArray &body);
     void handleDelete(QTcpSocket *socket, const QString &path);
+    void handleMkCalendar(QTcpSocket *socket, const QString &path);
+    void handleProppatch(QTcpSocket *socket, const QString &path);
+    bool isKnownCollection(const QString &href) const;
     void writeResponse(QTcpSocket *socket,
                        int statusCode,
                        const QByteArray &reasonPhrase,
@@ -134,6 +142,7 @@ private:
     bool m_return500 = false;
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
+    QSet<QString> m_createdCollections;  // hrefs created via MKCALENDAR
     QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
     QHash<QString, QStringList> m_componentsByHref;  // component-set overrides
     QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()

@@ -76,6 +76,29 @@ set_tests_properties(tst_remotecalendarbackend_convergence PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# Plan 7 T1 — default-lane pins for the legacy write path (startSync /
+# removeItem; PlanStan stagingcontroller.cpp:307 is a PROD caller) and the
+# calendar CRUD trio (MKCALENDAR / PROPPATCH / DELETE), ahead of the T3/T4
+# internal rewrites. Reuses FakeCalDavServer (MKCALENDAR / PROPPATCH /
+# collection-DELETE handling added for this test).
+add_executable(tst_remotecalendarbackend_writepaths
+    tst_remotecalendarbackend_writepaths.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_remotecalendarbackend_writepaths
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        Kalburator::Sync
+)
+add_test(NAME tst_remotecalendarbackend_writepaths COMMAND tst_remotecalendarbackend_writepaths)
+set_tests_properties(tst_remotecalendarbackend_writepaths PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Phase H Task 7 — CalDavConfigWidget UI tests. Reuses FakeCalDavServer
 # from Task 6 for the Test-Connection button workflow.
 add_executable(tst_caldav_config_widget

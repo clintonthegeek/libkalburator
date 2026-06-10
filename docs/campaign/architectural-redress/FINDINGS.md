@@ -343,7 +343,67 @@ invariant 9:
   `src/calendar/org*`, `src/sync/akonadi*`, or `src/contacts/akonadi*`, and when PlanStan
   reports an Akonadi regression. Runbook: `docs/2026-06-10-akonadi-org-dark-coverage-lane.md`.
 
+### From Plan 7 (RemoteCalendarBackend decomposition, 2026-06-10)
+
+- 2026-06-10 — `src/calendar/localbackend.{h,cpp}` (~1300 LOC, ~55 methods) — inv 4 —
+  **AUDIT B3's second half, deferred out of Plan 7** (scope decision in the plan file).
+  Mirror sketch against Plan 7 idioms: (a) grep-verify then delete dead fingerprint/
+  metadata surface (one plain pattern per symbol — see the grep lesson below); (b) the
+  four metadata setters (`setCalendarColor/DisplayName/Description/Order`) collapse to one
+  patch-struct method delegating to `calendar/calendarmetadatamanager` (post-Plan-5 home);
+  (c) privatize the fingerprint cache behind the `ChangeDetection` overrides exactly as
+  RCB's ctag cluster; (d) protective default-lane test first. Candidate: Plan 7b or
+  fold into Plan 11.
+- 2026-06-10 — `src/calendar/syncoperation.h:64-112` — inv 4 — `succeededUids`/
+  `failedUids`/`addSucceededUid`/`addFailedUid` are declared **separately on
+  `PushOperation` AND `DeleteOperation`** (copy-paste accessors + members), which is why
+  Plan 7's settle-helper had to stay function-local instead of shared. Hoist to a common
+  batch-operation base when the operation family is next touched (Plan 10/11).
+- 2026-06-10 — verification discipline — **deletion-warrant greps must be one plain
+  pattern per symbol.** Plan 7's first zero-caller sweep used a single `\|`-alternation
+  pattern that ugrep (this machine aliases grep→ugrep) silently mis-parsed; the false
+  negative hid `tst_remotecalendarbackend.cpp:910`'s `fetchAllCtags` call until the
+  compiler caught it. Re-verified per-symbol; all other verdicts stood.
+- 2026-06-10 — `src/calendar/remotecalendarbackend.cpp` (`collectionRevisions` vs
+  `fetchItems`) — perf idea, NOT scheduled — the engine's fast-path PROPFINDs fresh
+  ctags via `collectionRevisions`, then the worker's `fetchItems` PROPFINDs again for
+  changed calendars. Plan 7 T2 deleted the dead 60s primed-ctag path (zero callers);
+  if the double PROPFIND ever measures as pain, the right revival is self-priming
+  inside `collectionRevisions` (backend-internal, no new API) — not resurrecting the
+  public `primeCtagCache`.
+- 2026-06-10 — `src/calendar/remotecalendarbackend.cpp` (`pushItems`) — design note —
+  `pushItems` deliberately has **no 412-update fallback** (creates only; the engine's
+  update path is `updateRecord` → `setRawIcs` with If-Match). The asymmetry vs
+  `startSync` (which retries 412s) is intentional and now documented here; do not
+  "fix" it without an engine-side design.
+- 2026-06-10 — `tests/sync/fakecaldavserver.cpp` — test-infra gap — the fake still
+  ignores `If-Match`/`If-None-Match`, so the `startSync` 412-retry branches are
+  pinned only by the live-Radicale lane (which DID run green throughout Plan 7 on
+  this machine). Teaching the fake conditional-PUT semantics would bring the 412
+  paths into the default lane (→ Plan 11 test-gap closure).
+- 2026-06-10 — public API removals shipped in Plan 7 (release-note item for the next
+  tag): `primeCtagCache()`, `discoveredCtag()`, `currentEtags()` deleted;
+  `ctag/setCtag/clearCtag/fetchAllCtags` privatized (engine face =
+  `Backend::ChangeDetection`). PlanStan + WildPalms grep-verified non-consumers,
+  per-symbol.
+
 ## Resolved
+
+### By Plan 7 (RemoteCalendarBackend decomposition, 2026-06-10)
+
+- ~~`RemoteCalendarBackend` god-class (AUDIT B3, RCB half; supplement S4: 2718/472 LOC,
+  ~61 methods, 13 containers, CTags×3/ETags×3/URLs×3).~~ Decomposed subtract-first
+  (plan + Outcome in `plans/plan-7-remotecalendarbackend-decomposition.md`): net
+  −322 LOC; QEventLoop boilerplate 11→2 (`davSyncRequest` — the AUDIT's named
+  extraction); 13 containers → 6 (CTags×3→2: dead primed-path deleted, discovery map
+  folded into `CalendarFacts.pendingCtag`; ETags×3→2: dead `m_etags` deleted, the
+  surviving pair documented — KDAV's `EtagCache` has no getter; URLs×3→1: dead
+  `m_configuredCollectionUrls` + `m_itemUrls` deleted); one real collaborator
+  extracted (`CalDavContentCache`, fixes a per-instance connection leak); ctag surface
+  privatized behind `ChangeDetection`. **Three latent bugs found & fixed:** 412-retry
+  dangling-reference UB, `pushItems` trailing-null never-settles hang, the connection
+  leak. (T1–T6b, branch `feature/redress-7-remotecalendarbackend-decomposition`.)
+  LocalBackend half deferred (open entry above).
 
 ### By Plan 1 (SyncEngine decomposition, merged 2026-05-29)
 

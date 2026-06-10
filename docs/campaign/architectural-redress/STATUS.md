@@ -1,6 +1,7 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (WP-A–WP-D audit-follow-up wave complete; baseline **144/144**)
+**Last updated:** 2026-06-10 (Plan 7 COMPLETE on its branch; baseline **145/145** —
++1 from the T1 write-paths pin)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
@@ -16,7 +17,53 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = Plan 7 (RemoteCalendarBackend decomposition).**
+**Next action = Plan 8** (PlanStan-first `backendById` neutralization +
+`runSyncFuture` consumer wave — see "Plan 8 prep" below; it is a consumer wave, open
+with a joint handoff doc). The LocalBackend half of AUDIT B3 is deferred to Plan 7b /
+Plan 11 with a FINDINGS mirror-sketch.
+
+## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
+
+Subtract-first decomposition of `RemoteCalendarBackend`; full metrics + bug list in
+the plan file's Outcome section. Headlines:
+
+- **Net −322 LOC** across the touched src files (3190 → 2868 incl. the new
+  collaborator) — the explicit anti-Plan-1-bloat goal (Plan 1 grew +629). The −350
+  gate missed by 28 LOC (estimate variance, documented in the plan; structural gates
+  all met: QEventLoop 11→2, RCB-specific publics 16→9 all consumer-verified,
+  stateful members 13→6).
+- **Dead surface deleted** (all per-symbol grep-verified vs lib+PlanStan+WildPalms):
+  `primeCtagCache` + the never-engaged 60s primed-ctag path, `discoveredCtag`,
+  `currentEtags`, `runJobsSequentially`, `clearCachedContentForCalendar`,
+  `CTagStore::clearAll`, `m_etags`, `m_itemUrls`, `m_configuredCollectionUrls`,
+  `etagForItem` decl.
+- **One collaborator extracted:** `CalDavContentCache` (self-contained SQLite payload
+  cache; fixes a per-instance QSqlDatabase connection leak). CTagStore stays
+  file-local. The rest consolidated into helpers — `davSyncRequest` (the AUDIT-named
+  extraction), shared iCal codec, `noteItemWritten/Erased`, `awaitOperation`.
+- **Discovery state unified:** 4 parallel maps → `QMap<QString, CalendarFacts>`
+  (supplement S2's backend-internal half); ctag cluster privatized behind
+  `Backend::ChangeDetection` (one public face per concept, inv 4).
+- **Three latent bugs found & fixed by the refactor:** startSync 412-retry
+  dangling-reference UB (captured-by-ref lambdas outliving their frame); `pushItems`
+  trailing-null item left the operation unsettled forever; the content-cache
+  connection leak.
+- **Protective tests first (inv 6):** new `tst_remotecalendarbackend_writepaths`
+  pins the startSync signal contract (PlanStan PROD caller) + calendar CRUD in the
+  default lane (FakeCalDavServer grew MKCALENDAR/PROPPATCH/collection-DELETE);
+  falsifiability demonstrated. Convergence + blob_view contracts preserved verbatim
+  (files untouched). The live-Radicale lane ran green throughout.
+- **Downstream gates (inv 10):** PlanStan `build-dev` consumes this working tree
+  (`PLANSTAN_LIBKALBURATOR_SOURCE_DIR` override) — suite run against the branch:
+  93/115 with failed-set = 21 Not-Run headless-GUI binaries +
+  `tst_loader_empty_backends`, and that single real failure **A/B-verified
+  pre-existing** (fails identically against libkalburator `main`; it expects an
+  empty-backends/no-providers load to FAIL and the load now succeeds — likely the
+  v0.67 `f170139` preconnected-provider change or PlanStan-side drift; flag for the
+  PlanStan dev, not a Plan 7 effect). WildPalms: grep-verified per-symbol
+  non-consumer of every changed/removed RemoteCalendarBackend symbol (its only
+  reference is a comment), so the five invariants hold by construction; the
+  96-commits-behind clone gate was not run (per plan).
 
 All audit-follow-up work packages are complete:
 
@@ -246,7 +293,7 @@ severities, not the retired old plan numbers:
 | 5 | `types/` purification | B2 (MAJOR, corrected) | **DONE — merged to main (7d8a4ef), tag v0.62 cut; downstream relink pushes = user's manual step** |
 | 6 | `shape/` decoupling (move `ConflictPolicy` down) | B6 (MAJOR, corrected) | **DONE — merged to main `806392c` 2026-06-06 (resolved by narrowing, see Locked decisions)** |
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
-| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | proposed (after WP-A; **replan inputs now CURRENT** — figures + concern inventory in specs §Plan 7) |
+| 7 | Remote/Local backend decomposition | B3 (MAJOR) + supplement S4 | **DONE (RCB half) 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized; LocalBackend half deferred to 7b/11 (FINDINGS sketch) |
 | 8 | `CalendarManager` split + `IncidenceDiff`→free fns + `backendById` neutralization | B7/B8 + supplement | proposed (after 2, 7; **resequenced PlanStan-first** — see specs §Plan 8 prep: WildPalms has 0 lookup sites, PlanStan ~20; `runSyncFuture` has 2 WildPalms prod callers) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |

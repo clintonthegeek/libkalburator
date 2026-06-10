@@ -184,6 +184,19 @@ target for codecs/I/O/lock machinery.
 
 **Fix direction:** extract a `DiscoveredCalendarInfo` DTO for the getters; split IBlobBackend /
 ChangeDetection / calendar-CRUD into collaborators.
+- **RESOLVED for RemoteCalendarBackend 2026-06-10 (Plan 7)** — subtract-first rather than
+  the literal collaborator split (rationale + approach comparison committed in
+  `plans/plan-7-remotecalendarbackend-decomposition.md`): net −322 LOC (2718/472 →
+  2164/425 + a 279-LOC `CalDavContentCache` collaborator), QEventLoop boilerplate 11→2
+  via the named `davSyncRequest` extraction, 13 stateful containers → 6 (the S4
+  triplications resolved: dead members deleted, discovery maps unified into
+  `CalendarFacts`, the surviving etag pair documented), ctag surface privatized behind
+  `Backend::ChangeDetection`, 7 `discoveredX` getters → 6 with every survivor
+  base-mandated or PlanStan-called (full DTO collapse blocked on consumers → Plan 8).
+  The DTO direction is honored internally (`CalendarFacts` + the public v0.63
+  `PrimedCalendar` seed). Three latent bugs found & fixed (412-retry dangling-ref UB,
+  pushItems trailing-null hang, content-cache connection leak). **LocalBackend half
+  still OPEN** — deferred with a FINDINGS mirror-sketch (Plan 7b / Plan 11).
 
 ### MAJOR — `sync/` includes domain backends, but there is NO cycle (B4, corrected)
 

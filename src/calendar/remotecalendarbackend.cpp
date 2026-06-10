@@ -1,4 +1,5 @@
 #include "remotecalendarbackend.h"
+#include "caldavcontentcache.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -15,28 +16,17 @@
 #include <KCalendarCore/ICalFormat>
 #include <KIO/Job>
 
-#include <QAtomicInt>
 #include <QPointer>
 #include <QDebug>
 #include <QTimer>
 #include <QEventLoop>
-#include <QCoreApplication>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSqlQuery>
 #include <QSqlError>
-#include <QStandardPaths>
-#include <QDir>
-#include <QUuid>
-#include <QRegularExpression>
 #include <QXmlStreamReader>
 #include <QCryptographicHash>
-
-#include <KIO/Job>
-#include <KIO/TransferJob>
-#include <KIO/DeleteJob>
-#include <KDAV/DavItemFetchJob>
 
 namespace {
 
@@ -151,17 +141,6 @@ public:
         return q.exec();
     }
 
-    bool clearAll()
-    {
-        if (!isValid()) return false;
-        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "DELETE FROM remote_ctags WHERE backend_id = ?"));
-        q.addBindValue(m_backendId);
-        return q.exec();
-    }
-
 private:
     bool ensureSchema()
     {
@@ -203,6 +182,158 @@ static QString safeUrlString(const QUrl &url)
     return url.toString(QUrl::RemovePassword);
 }
 
+namespace {
+
+// One synchronous DAV round-trip. Collapses the QNetworkAccessManager +
+// Basic-auth + QEventLoop boilerplate that was duplicated across every
+// calendar-CRUD / ctag-PROPFIND / raw-ICS method (AUDIT MAJOR; Plan 7 T3).
+// Credentials never travel in the URL; they go in the Authorization header,
+// matching every site this replaces.
+struct DavResponse {
+    int status = 0;                       // HTTP status; 0 = no HTTP response
+    QByteArray body;
+    QString etag;                         // response ETag header, unquoted
+    QNetworkReply::NetworkError error = QNetworkReply::NoError;
+    QString errorString;
+    bool transportOk() const { return error == QNetworkReply::NoError; }
+};
+
+DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
+                           const QString &username, const QString &password,
+                           const QByteArray &body = {},
+                           const QList<std::pair<QByteArray, QByteArray>> &rawHeaders = {},
+                           const QByteArray &contentType =
+                               QByteArrayLiteral("application/xml; charset=utf-8"))
+{
+    QUrl cleanUrl = url;
+    cleanUrl.setUserInfo(QString());
+
+    QNetworkRequest request(cleanUrl);
+    if (!body.isEmpty()) {
+        request.setHeader(QNetworkRequest::ContentTypeHeader,
+                          QString::fromLatin1(contentType));
+    }
+    const QString credentials = username + QLatin1Char(':') + password;
+    request.setRawHeader("Authorization",
+                         "Basic " + credentials.toUtf8().toBase64());
+    for (const auto &h : rawHeaders) {
+        request.setRawHeader(h.first, h.second);
+    }
+
+    QNetworkAccessManager nam;
+    QEventLoop loop;
+    DavResponse resp;
+
+    QNetworkReply *reply = nam.sendCustomRequest(request, verb, body);
+    QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
+        resp.status =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        resp.error = reply->error();
+        if (resp.error != QNetworkReply::NoError) {
+            resp.errorString = reply->errorString();
+        }
+        resp.body = reply->readAll();
+        QString etag = QString::fromUtf8(reply->rawHeader("ETag"));
+        if (etag.startsWith(QLatin1Char('"')) && etag.endsWith(QLatin1Char('"'))) {
+            etag = etag.mid(1, etag.length() - 2);
+        }
+        resp.etag = etag;
+        reply->deleteLater();
+        loop.quit();
+    });
+    loop.exec();
+    return resp;
+}
+
+// href -> ctag entries from a 207 multistatus PROPFIND response. Compares
+// local element names only, so any namespace prefix (or none) matches.
+QMap<QString, QString> parseCtagMultistatus(const QByteArray &xml)
+{
+    QMap<QString, QString> result;
+    QXmlStreamReader reader(xml);
+    QString currentHref;
+    QString currentCtag;
+    while (!reader.atEnd()) {
+        reader.readNext();
+        if (reader.isStartElement()) {
+            if (reader.name() == u"response") {
+                currentHref.clear();
+                currentCtag.clear();
+            } else if (reader.name() == u"href") {
+                currentHref = reader.readElementText();
+            } else if (reader.name() == u"getctag") {
+                currentCtag = reader.readElementText();
+            }
+        } else if (reader.isEndElement() && reader.name() == u"response") {
+            if (!currentHref.isEmpty() && !currentCtag.isEmpty()) {
+                result.insert(currentHref, currentCtag);
+            }
+        }
+    }
+    if (reader.hasError()) {
+        qWarning() << "parseCtagMultistatus: XML parse error:" << reader.errorString();
+    }
+    return result;
+}
+
+const QByteArray kCtagPropfindBody = QByteArrayLiteral(
+    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+    "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
+    "  <D:prop><CS:getctag/></D:prop>"
+    "</D:propfind>");
+
+// Incidence <-> iCal codec via a throwaway in-memory calendar. Free functions
+// (no captures), so async job callbacks can use them without the
+// dangling-reference hazard the old per-method lambdas carried.
+QByteArray icalFromIncidence(const KCalendarCore::Incidence::Ptr &inc)
+{
+    KCalendarCore::Calendar::Ptr tmpCal(
+        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+    tmpCal->addIncidence(inc);
+    KCalendarCore::ICalFormat format;
+    return format.toString(tmpCal).toUtf8();
+}
+
+// Empty on parse failure (or on a VCALENDAR with no incidences). The returned
+// shared pointers stay valid after the temporary calendar dies.
+QList<KCalendarCore::Incidence::Ptr> incidencesFromIcal(const QString &ical)
+{
+    KCalendarCore::Calendar::Ptr tmpCal(
+        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+    KCalendarCore::ICalFormat format;
+    if (!format.fromString(tmpCal, ical)) {
+        return {};
+    }
+    return tmpCal->incidences();
+}
+
+/// Raw-bytes variant (ICalFormat::fromRawString handles encoding sniffing).
+QList<KCalendarCore::Incidence::Ptr> incidencesFromIcal(const QByteArray &raw)
+{
+    KCalendarCore::Calendar::Ptr tmpCal(
+        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+    KCalendarCore::ICalFormat format;
+    if (!format.fromRawString(tmpCal, raw)) {
+        return {};
+    }
+    return tmpCal->incidences();
+}
+
+// Block on a SyncOperation's finished signal (the worker-thread blob-view
+// adapters). Returns true iff the operation Succeeded.
+bool awaitOperation(Kalburator::Sync::SyncOperation *op)
+{
+    if (!op->isFinished()) {
+        QEventLoop loop;
+        QObject::connect(op, &Kalburator::Sync::SyncOperation::finished,
+                         &loop, &QEventLoop::quit);
+        loop.exec();
+    }
+    return op->state() == Kalburator::Sync::SyncOperation::Succeeded;
+}
+
+} // anonymous namespace
+
 // Constructor
 RemoteCalendarBackend::RemoteCalendarBackend(const QUrl &url,
                              const QString &username,
@@ -213,7 +344,7 @@ RemoteCalendarBackend::RemoteCalendarBackend(const QUrl &url,
     , m_username(username)
     , m_password(password)
     , m_etagCache(std::make_shared<KDAV::EtagCache>())
-    , m_cacheConnectionName(QStringLiteral("RemoteCalendarBackendCache_") + QUuid::createUuid().toString(QUuid::WithoutBraces))
+    , m_contentCache(std::make_unique<CalDavContentCache>(url.host() + url.path()))
 {
     m_url.setUserName(m_username);
     m_url.setPassword(m_password);
@@ -231,7 +362,7 @@ void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 
 void RemoteCalendarBackend::setCacheDir(const QString &dir)
 {
-    m_cacheDirOverride = dir;
+    m_contentCache->setCacheDir(dir);
 }
 
 QString RemoteCalendarBackend::ctag(const QString &calendarId) const
@@ -326,178 +457,6 @@ QString RemoteCalendarBackend::cachedEtag(const QString &remoteUrl) const
     return m_localEtags.value(normalizeUrlKey(remoteUrl), QString());
 }
 
-QMap<QString, QString> RemoteCalendarBackend::currentEtags() const
-{
-    return m_localEtags;
-}
-
-// ============================================================================
-// Content Cache for Delta Sync
-// ============================================================================
-
-namespace {
-// Process-stable 64-bit hash (FNV-1a) over a string's UTF-8 bytes. Unlike
-// qHash(QString), this does NOT incorporate the per-process random QHashSeed,
-// so the derived cache filename is identical across launches for the same
-// account — the property the content cache requires to persist.
-quint64 stableContentCacheHash(const QString &s)
-{
-    const QByteArray bytes = s.toUtf8();
-    quint64 hash = 1469598103934665603ULL;          // FNV offset basis
-    for (const char ch : bytes) {
-        hash ^= static_cast<quint64>(static_cast<unsigned char>(ch));
-        hash *= 1099511628211ULL;                    // FNV prime
-    }
-    return hash;
-}
-} // namespace
-
-void RemoteCalendarBackend::initContentCache()
-{
-    if (m_cacheInitialized) {
-        return;
-    }
-
-    // Cache directory: caller-chosen (per-collection profile folder) when set,
-    // otherwise the app's shared cache location.
-    QString cacheDir = m_cacheDirOverride.isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
-        : m_cacheDirOverride;
-    if (cacheDir.isEmpty()) {
-        cacheDir = QDir::tempPath();
-    }
-    QDir().mkpath(cacheDir);
-
-    // Create a host-specific cache file to avoid collisions between servers.
-    // NOTE: must be a *stable* hash — qHash(QString) mixes in a per-process
-    // random seed (QHashSeed), so it yields a different filename every launch,
-    // orphaning the previous run's cache (libkalburator content-cache handoff,
-    // 2026-05-27). Use a fixed FNV-1a over the UTF-8 bytes instead.
-    QString hostHash = QString::number(stableContentCacheHash(m_url.host() + m_url.path()));
-    QString dbPath = cacheDir + QStringLiteral("/caldav-cache-%1.db").arg(hostHash);
-
-    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_cacheConnectionName);
-    db.setDatabaseName(dbPath);
-
-    if (!db.open()) {
-        qWarning() << "RemoteCalendarBackend: Failed to open content cache database:" << db.lastError().text();
-        return;
-    }
-
-    // Create the cache table
-    QSqlQuery query(db);
-    bool success = query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS cached_items ("
-        "  url TEXT PRIMARY KEY,"
-        "  etag TEXT NOT NULL,"
-        "  ical_content TEXT NOT NULL,"
-        "  fetched_at INTEGER NOT NULL"
-        ")"));
-
-    if (!success) {
-        qWarning() << "RemoteCalendarBackend: Failed to create cache table:" << query.lastError().text();
-        return;
-    }
-
-    // Create index for faster lookups
-    query.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_cached_items_etag ON cached_items(etag)"));
-
-    m_cacheInitialized = true;
-    qDebug() << "RemoteCalendarBackend: Content cache initialized at" << dbPath;
-}
-
-QString RemoteCalendarBackend::getCachedContent(const QString &itemUrl, const QString &expectedEtag) const
-{
-    if (!m_cacheInitialized || expectedEtag.isEmpty()) {
-        return QString();
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return QString();
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT ical_content FROM cached_items WHERE url = ? AND etag = ?"));
-    query.addBindValue(itemUrl);
-    query.addBindValue(expectedEtag);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-
-    return QString();
-}
-
-void RemoteCalendarBackend::setCachedContent(const QString &itemUrl, const QString &etag, const QString &icalContent)
-{
-    if (!m_cacheInitialized || itemUrl.isEmpty() || etag.isEmpty()) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO cached_items (url, etag, ical_content, fetched_at) "
-        "VALUES (?, ?, ?, ?)"));
-    query.addBindValue(itemUrl);
-    query.addBindValue(etag);
-    query.addBindValue(icalContent);
-    query.addBindValue(QDateTime::currentSecsSinceEpoch());
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to cache content:" << query.lastError().text();
-    }
-}
-
-void RemoteCalendarBackend::removeCachedContent(const QString &itemUrl)
-{
-    if (!m_cacheInitialized) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM cached_items WHERE url = ?"));
-    query.addBindValue(itemUrl);
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to remove cached content:" << query.lastError().text();
-    }
-}
-
-void RemoteCalendarBackend::clearCachedContentForCalendar(const QString &calendarId)
-{
-    if (!m_cacheInitialized || !m_davUrls.contains(calendarId)) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    // Get the calendar's base URL to match items
-    QString calendarBaseUrl = m_davUrls[calendarId].url().toString();
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM cached_items WHERE url LIKE ?"));
-    query.addBindValue(calendarBaseUrl + QStringLiteral("%"));
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to clear cache for calendar:" << query.lastError().text();
-    }
-}
-
 // Calendar list loading
 void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
 {
@@ -537,12 +496,13 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
                 // Normalize and configure URL with user info
                 KDAV::DavUrl configuredUrl = configuredDavUrl(rawUrl.toString());
 
-                m_davUrls[calId] = configuredUrl;
+                CalendarFacts &facts = m_calendars[calId];
+                facts.davUrl = configuredUrl;
 
                 // Store discovered color (from apple:calendar-color property)
                 QColor calColor = col.color();
                 if (calColor.isValid()) {
-                    m_calendarColors[calId] = calColor;
+                    facts.color = calColor;
                     qDebug() << "RemoteCalendarBackend: discovered calendar:" << calId
                              << "with color:" << calColor.name();
                 } else {
@@ -551,12 +511,13 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
                 }
 
                 // Store discovered content types (VEVENT, VTODO support)
-                m_calendarContentTypes[calId] = col.contentTypes();
+                facts.contentTypes = col.contentTypes();
+                facts.hasContentTypes = true;
 
-                // Cache CTag for sync optimization
+                // Stash the discovery CTag; persisted after a successful fetch
                 QString ctag = col.CTag();
                 if (!ctag.isEmpty()) {
-                    m_calendarCtags[calId] = ctag;
+                    facts.pendingCtag = ctag;
                 }
 
                 qDebug() << "RemoteCalendarBackend: calendar URL:" << safeUrlString(configuredUrl.url())
@@ -595,7 +556,7 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
     }
 
     KDAV::DavUrl configuredUrl = configuredDavUrl(davUrl);
-    m_davUrls[calendarId] = configuredUrl;
+    m_calendars[calendarId].davUrl = configuredUrl;
 
     qDebug() << "RemoteCalendarBackend::registerCalendarUrl: Registered calendar" << calendarId
              << "with URL:" << configuredUrl.url().toString(QUrl::RemovePassword);
@@ -603,30 +564,15 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
 
 QString RemoteCalendarBackend::discoveredUrl(const QString &calendarId) const
 {
-    if (m_davUrls.contains(calendarId)) {
-        return m_davUrls[calendarId].url().toString();
+    if (const auto davUrl = davUrlFor(calendarId)) {
+        return davUrl->url().toString();
     }
     return QString();
 }
 
 QColor RemoteCalendarBackend::discoveredColor(const QString &calendarId) const
 {
-    return m_calendarColors.value(calendarId);
-}
-
-QString RemoteCalendarBackend::discoveredCtag(const QString &calendarId) const
-{
-    return m_calendarCtags.value(calendarId);
-}
-
-void RemoteCalendarBackend::primeCtagCache(const QMap<QString, QString> &ctags)
-{
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    for (auto it = ctags.constBegin(); it != ctags.constEnd(); ++it) {
-        m_primedCtags[it.key()] = PrimedCtag{ it.value(), now };
-    }
-    qDebug() << "RemoteCalendarBackend::primeCtagCache: primed" << ctags.size()
-             << "ctags (total cache size now" << m_primedCtags.size() << ")";
+    return m_calendars.value(calendarId).color;
 }
 
 void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendars)
@@ -639,13 +585,15 @@ void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendar
         // Configure the URL with credentials, exactly as registerCalendarUrl /
         // the network discovery path do, so a primed backend can sync without
         // any further PROPFIND.
+        CalendarFacts &facts = m_calendars[c.calendarId];
         if (!c.davUrl.isEmpty()) {
-            m_davUrls[c.calendarId] = configuredDavUrl(c.davUrl);
+            facts.davUrl = configuredDavUrl(c.davUrl);
         }
         if (c.color.isValid()) {
-            m_calendarColors[c.calendarId] = c.color;
+            facts.color = c.color;
         }
-        m_calendarContentTypes[c.calendarId] = c.contentTypes;
+        facts.contentTypes = c.contentTypes;
+        facts.hasContentTypes = true;
         if (!m_primedCalendarIds.contains(c.calendarId)) {
             m_primedCalendarIds.append(c.calendarId);
         }
@@ -663,8 +611,9 @@ QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &c
     QMap<QUrl, QStringList> groups;    // parentUrl -> [calId, ...]
     QMap<QString, QString> hrefByCalId; // calId -> URL path (for match-back)
     for (const QString &calId : calendarIds) {
-        if (!m_davUrls.contains(calId)) continue;
-        const QUrl url = m_davUrls.value(calId).url();
+        const auto davUrl = davUrlFor(calId);
+        if (!davUrl) continue;
+        const QUrl url = davUrl->url();
         QUrl parent = parentUrl(url);
         parent.setUserName(QString());
         parent.setPassword(QString());
@@ -674,81 +623,26 @@ QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &c
 
     if (groups.isEmpty()) return result;
 
-    const QByteArray body =
-        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
-        "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
-        "  <D:prop><CS:getctag/></D:prop>"
-        "</D:propfind>";
-
-    const QString credentials = m_username + QLatin1Char(':') + m_password;
-    const QByteArray authHeader = "Basic " + credentials.toUtf8().toBase64();
-
-    QNetworkAccessManager nam;
-
     for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
-        QNetworkRequest request(it.key());
-        request.setHeader(QNetworkRequest::ContentTypeHeader,
-                          QStringLiteral("application/xml; charset=utf-8"));
-        request.setRawHeader("Depth", "1");
-        request.setRawHeader("Authorization", authHeader);
-
-        QEventLoop loop;
-        QByteArray responseData;
-        bool ok = false;
-
-        QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
-        connect(reply, &QNetworkReply::finished, &loop,
-                [reply, &loop, &responseData, &ok]() {
-            if (reply->error() == QNetworkReply::NoError) {
-                responseData = reply->readAll();
-                ok = true;
-            } else {
-                qWarning() << "RemoteCalendarBackend::fetchAllCtags: PROPFIND failed for"
-                           << reply->url() << ":" << reply->errorString();
-            }
-            reply->deleteLater();
-            loop.quit();
-        });
-        loop.exec();
-
-        if (!ok) continue;
-
-        // Parse multistatus: each <D:response> has a <D:href> and a <CS:getctag>.
-        // QXmlStreamReader returns the local name without prefix, so comparisons
-        // against "response", "href", and "getctag" are correct regardless of
-        // namespace prefix used by the server.
-        QXmlStreamReader xml(responseData);
-        QString currentHref;
-        QString currentCtag;
-        while (!xml.atEnd()) {
-            xml.readNext();
-            if (xml.isStartElement()) {
-                if (xml.name() == u"response") {
-                    currentHref.clear();
-                    currentCtag.clear();
-                } else if (xml.name() == u"href") {
-                    currentHref = xml.readElementText();
-                } else if (xml.name() == u"getctag") {
-                    currentCtag = xml.readElementText();
-                }
-            } else if (xml.isEndElement() && xml.name() == u"response") {
-                if (!currentHref.isEmpty() && !currentCtag.isEmpty()) {
-                    // Match href back to calId by path comparison.
-                    // TODO: if the server returns URL-encoded hrefs for calendars
-                    // with non-ASCII characters, this comparison may fail; normalize
-                    // both sides with QUrl::fromPercentEncoding if that becomes a concern.
-                    for (const QString &calId : it.value()) {
-                        if (hrefByCalId.value(calId) == currentHref) {
-                            result[calId] = currentCtag;
-                            break;
-                        }
-                    }
-                }
-            }
+        const DavResponse resp = davSyncRequest(
+            it.key(), QByteArrayLiteral("PROPFIND"), m_username, m_password,
+            kCtagPropfindBody, {{QByteArrayLiteral("Depth"), QByteArrayLiteral("1")}});
+        if (!resp.transportOk()) {
+            qWarning() << "RemoteCalendarBackend::fetchAllCtags: PROPFIND failed for"
+                       << it.key() << ":" << resp.errorString;
+            continue;
         }
-        if (xml.hasError()) {
-            qWarning() << "RemoteCalendarBackend::fetchAllCtags: XML parse error for"
-                       << it.key() << ":" << xml.errorString();
+
+        // Match each href back to its calId by path comparison.
+        // TODO: if the server returns URL-encoded hrefs for calendars with
+        // non-ASCII characters, this comparison may fail; normalize both sides
+        // with QUrl::fromPercentEncoding if that becomes a concern.
+        const QMap<QString, QString> ctagsByHref = parseCtagMultistatus(resp.body);
+        for (const QString &calId : it.value()) {
+            const auto hrefIt = ctagsByHref.constFind(hrefByCalId.value(calId));
+            if (hrefIt != ctagsByHref.constEnd()) {
+                result[calId] = hrefIt.value();
+            }
         }
     }
 
@@ -758,10 +652,58 @@ QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &c
     return result;
 }
 
+QString RemoteCalendarBackend::fetchFreshCtag(const QString &calendarId)
+{
+    const auto davUrl = davUrlFor(calendarId);
+    if (!davUrl) return QString();
+
+    const DavResponse resp = davSyncRequest(
+        davUrl->url(), QByteArrayLiteral("PROPFIND"),
+        m_username, m_password, kCtagPropfindBody,
+        {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}});
+    if (!resp.transportOk()) return QString();
+
+    const QMap<QString, QString> ctags = parseCtagMultistatus(resp.body);
+    return ctags.isEmpty() ? QString() : ctags.first();
+}
+
+std::optional<KDAV::DavUrl> RemoteCalendarBackend::davUrlFor(const QString &calendarId) const
+{
+    const auto it = m_calendars.constFind(calendarId);
+    if (it == m_calendars.constEnd() || it->davUrl.url().isEmpty()) {
+        return std::nullopt;
+    }
+    return it->davUrl;
+}
+
+// ---- Backend::ChangeDetection ----------------------------------------------
+
+QString RemoteCalendarBackend::collectionRevision(const QString &collectionId)
+{
+    return fetchAllCtags({collectionId}).value(collectionId);
+}
+
+QMap<QString, QString>
+RemoteCalendarBackend::collectionRevisions(const QStringList &collectionIds)
+{
+    return fetchAllCtags(collectionIds);
+}
+
+QString RemoteCalendarBackend::cachedCollectionRevision(const QString &collectionId) const
+{
+    return ctag(collectionId);
+}
+
+void RemoteCalendarBackend::primeRevisionCache(const QMap<QString, QString> &cache)
+{
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
+        setCtag(it.key(), it.value());
+}
+
 QColor RemoteCalendarBackend::calendarColor(const QString &calendarId) const
 {
     // Return from cache (populated during discovery or after updateCalendar)
-    return m_calendarColors.value(calendarId);
+    return m_calendars.value(calendarId).color;
 }
 
 QString RemoteCalendarBackend::calendarDescription(const QString &calendarId) const
@@ -776,29 +718,32 @@ QString RemoteCalendarBackend::calendarDescription(const QString &calendarId) co
 
 bool RemoteCalendarBackend::discoveredSupportsEvents(const QString &calendarId) const
 {
-    if (!m_calendarContentTypes.contains(calendarId)) {
+    const CalendarFacts facts = m_calendars.value(calendarId);
+    if (!facts.hasContentTypes) {
         return true;  // Default to true if not discovered
     }
-    auto types = m_calendarContentTypes.value(calendarId);
-    return (types & KDAV::DavCollection::Events) || (types & KDAV::DavCollection::Calendar);
+    return (facts.contentTypes & KDAV::DavCollection::Events)
+        || (facts.contentTypes & KDAV::DavCollection::Calendar);
 }
 
 bool RemoteCalendarBackend::discoveredSupportsTodos(const QString &calendarId) const
 {
-    if (!m_calendarContentTypes.contains(calendarId)) {
+    const CalendarFacts facts = m_calendars.value(calendarId);
+    if (!facts.hasContentTypes) {
         return true;  // Default to true if not discovered
     }
-    auto types = m_calendarContentTypes.value(calendarId);
-    return (types & KDAV::DavCollection::Todos) || (types & KDAV::DavCollection::Calendar);
+    return (facts.contentTypes & KDAV::DavCollection::Todos)
+        || (facts.contentTypes & KDAV::DavCollection::Calendar);
 }
 
 CalendarType RemoteCalendarBackend::discoveredCalendarType(const QString &calendarId) const
 {
-    if (!m_calendarContentTypes.contains(calendarId)) {
+    const CalendarFacts facts = m_calendars.value(calendarId);
+    if (!facts.hasContentTypes) {
         return CalendarType::Hybrid;  // Default if not discovered
     }
 
-    auto types = m_calendarContentTypes.value(calendarId);
+    const auto types = facts.contentTypes;
     bool supportsEvents = (types & KDAV::DavCollection::Events) || (types & KDAV::DavCollection::Calendar);
     bool supportsTodos = (types & KDAV::DavCollection::Todos) || (types & KDAV::DavCollection::Calendar);
 
@@ -822,7 +767,7 @@ bool RemoteCalendarBackend::discoveredWritable(const QString &calendarId) const
 
 void RemoteCalendarBackend::removeItem(const QString &calId, const QString &itemUid)
 {
-    if (!m_davUrls.contains(calId)) {
+    if (!davUrlFor(calId)) {
         qWarning() << "RemoteCalendarBackend::removeItem: Unknown calendar DAV URL for" << calId;
         return;
     }
@@ -831,7 +776,7 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
         return;
     }
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calId);
+    KDAV::DavUrl davUrl = *davUrlFor(calId);
 
     QUrl itemUrl = generateItemUrl(davUrl, itemUid);
     KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
@@ -846,17 +791,13 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
 
     auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
 
-    connect(deleteJob, &KDAV::DavItemDeleteJob::result, this, [this, deleteJob, calId, itemUid, itemUrl](KJob *job) {
+    connect(deleteJob, &KDAV::DavItemDeleteJob::result, this, [this, calId, itemUid, itemUrl](KJob *job) {
         if (job->error()) {
             qWarning() << "RemoteCalendarBackend::removeItem: Failed to delete item:" << job->errorString();
             return;
         }
 
-        QString urlKey = normalizeUrlKey(itemUrl.toString());
-        if (m_etagCache) {
-            m_etagCache->removeEtag(urlKey);
-        }
-        m_localEtags.remove(urlKey);
+        noteItemErased(normalizeUrlKey(itemUrl.toString()));
 
         qDebug() << "RemoteCalendarBackend::removeItem: Deleted incidence UID:" << itemUid << "from calendar" << calId;
 
@@ -866,8 +807,6 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
     deleteJob->start();
 }
 
-
-// ... other includes if needed...
 
 KDAV::DavUrl RemoteCalendarBackend::configuredDavUrl(const QString &rawUrl)
 {
@@ -914,19 +853,16 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
         return;
     }
 
-    if (!m_davUrls.contains(calId)) {
+    if (!davUrlFor(calId)) {
         qWarning() << "RemoteCalendarBackend::startSync: No DAV URL for calendar" << calId;
         emit syncCompleted(collectionId);
         return;
     }
 
-    const QList<KCalendarCore::Incidence::Ptr> &finalCreations = stagedCreations;
-    const QList<KCalendarCore::Incidence::Ptr> &finalUpdates = stagedUpdates;
-
-    const KDAV::DavUrl baseDavUrl = m_davUrls.value(calId);
+    const KDAV::DavUrl baseDavUrl = *davUrlFor(calId);
 
     // Count total jobs for completion tracking
-    const int totalJobs = finalCreations.size() + finalUpdates.size() + stagedDeletions.size();
+    const int totalJobs = stagedCreations.size() + stagedUpdates.size() + stagedDeletions.size();
     if (totalJobs == 0) {
         emit syncCompleted(collectionId);
         return;
@@ -955,132 +891,31 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
         }
     };
 
-    // IMPORTANT: Create ICalFormat inside the lambda to avoid use-after-free.
-    // This lambda is called from async job callbacks that run after startSync returns,
-    // so any captured-by-reference local variables would be dangling references.
-    auto serializeIncidence = [](const KCalendarCore::Incidence::Ptr &inc) -> QByteArray {
-        KCalendarCore::ICalFormat icalFormat;
-        auto tmpCalRaw = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-        tmpCalRaw->addIncidence(inc);
-        QSharedPointer<KCalendarCore::Calendar> tmpCal(tmpCalRaw, [](KCalendarCore::Calendar*){});
-        QString icalData = icalFormat.toString(tmpCal);
-        delete tmpCalRaw;
-        return icalData.toUtf8();
-    };
-
-    // Helper to force-update an incidence using If-Match: * (bypasses ETag check)
-    // Used when user explicitly resolved a conflict and chose to overwrite server version.
-    // Per RFC 7232, If-Match: * succeeds if the resource exists, regardless of its current ETag.
-    auto forceUpdateIncidence = [this, &serializeIncidence, &checkDone, calId, calendar](KCalendarCore::Incidence::Ptr inc) {
-        QUrl itemUrl = generateItemUrl(m_davUrls[calId], inc->uid());
-
-        KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(itemUrl, m_davUrls[calId].protocol()));
-        davItem.setContentType(QStringLiteral("text/calendar"));
-        davItem.setData(serializeIncidence(inc));
-        davItem.setEtag(QStringLiteral("*"));  // If-Match: * - force update if resource exists
-
-        auto *modifyJob = new KDAV::DavItemModifyJob(davItem, this);
-        modifyJob->setProperty("incidenceUid", inc->uid());
-        modifyJob->setProperty("calendarId", calId);
-
-        connect(modifyJob, &KDAV::DavItemModifyJob::result, this,
-                [this, modifyJob, inc, calendar, checkDone, serializeIncidence](KJob *job) {
-                    if (job->error()) {
-                        qWarning() << "Force update job failed for" << inc->uid() << ":" << job->errorString();
-                        checkDone();
-                        return;
-                    }
-                    auto updatedItem = modifyJob->item();
-                    QString url = normalizeUrlKey(updatedItem.url().url().toString());
-
-                    if (m_etagCache)
-                        m_etagCache->setEtag(url, updatedItem.etag());
-                    m_localEtags[url] = updatedItem.etag();
-
-                    // Update content cache
-                    if (!updatedItem.etag().isEmpty()) {
-                        QString icalData = QString::fromUtf8(serializeIncidence(inc));
-                        setCachedContent(url, updatedItem.etag(), icalData);
-                    }
-
-                    qDebug() << "Force update succeeded for" << inc->uid() << "new ETag:" << updatedItem.etag();
-                    emit itemLoaded(calendar, inc, updatedItem.etag());
-                    checkDone();
-                });
-
-        modifyJob->start();
-    };
-
-    // Helper to start update job after failed create (412)
-    auto startUpdateJobForIncidence = [this, &serializeIncidence, &checkDone, calId, calendar](KCalendarCore::Incidence::Ptr inc) {
-        QUrl itemUrl = generateItemUrl(m_davUrls[calId], inc->uid());
-        QString etag = m_localEtags.value(normalizeUrlKey(itemUrl.toString()));
-
-        KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(itemUrl, m_davUrls[calId].protocol()));
-        davItem.setContentType(QStringLiteral("text/calendar"));
-        davItem.setData(serializeIncidence(inc));
-        davItem.setEtag(etag);
-
-        auto *modifyJob = new KDAV::DavItemModifyJob(davItem, this);
-        modifyJob->setProperty("incidenceUid", inc->uid());
-        modifyJob->setProperty("calendarId", calId);
-
-        connect(modifyJob, &KDAV::DavItemModifyJob::result, this,
-                [this, modifyJob, inc, calendar, checkDone, serializeIncidence](KJob *job) {
-                    if (job->error()) {
-                        qWarning() << "Update job (retry after 412) failed for" << inc->uid() << ":" << job->errorString();
-                        checkDone();
-                        return;
-                    }
-                    auto updatedItem = modifyJob->item();
-                    QString url = normalizeUrlKey(updatedItem.url().url().toString());
-
-                    if (m_etagCache)
-                        m_etagCache->setEtag(url, updatedItem.etag());
-                    m_localEtags[url] = updatedItem.etag();
-
-                    // Update content cache
-                    if (!updatedItem.etag().isEmpty()) {
-                        QString icalData = QString::fromUtf8(serializeIncidence(inc));
-                        setCachedContent(url, updatedItem.etag(), icalData);
-                    }
-
-                    emit itemLoaded(calendar, inc, updatedItem.etag());
-
-                    checkDone();
-                });
-
-        modifyJob->start();
-    };
-
-    // Launch create jobs
-    for (const auto &inc : finalCreations) {
+    // Launch create jobs. A 412 means the item already exists on the server
+    // (DavItemCreateJob PUTs with If-None-Match: *); retry as a normal update.
+    for (const auto &inc : stagedCreations) {
         if (!inc) {
             checkDone();
             continue;
         }
 
-        QUrl itemUrl = generateItemUrl(baseDavUrl, inc->uid());
-
         KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(itemUrl, baseDavUrl.protocol()));
+        davItem.setUrl(KDAV::DavUrl(generateItemUrl(baseDavUrl, inc->uid()),
+                                    baseDavUrl.protocol()));
         davItem.setContentType(QStringLiteral("text/calendar"));
-        // Create PUT without ETag
-        davItem.setData(serializeIncidence(inc));
+        davItem.setData(icalFromIncidence(inc));  // create PUT without ETag
 
         auto *createJob = new KDAV::DavItemCreateJob(davItem, this);
-        createJob->setProperty("incidenceUid", inc->uid());
-        createJob->setProperty("calendarId", calId);
 
         connect(createJob, &KDAV::DavItemCreateJob::result, this,
-                [this, createJob, inc, calendar, checkDone, startUpdateJobForIncidence, serializeIncidence](KJob *job) {
+                [this, createJob, inc, calendar, calId, checkDone](KJob *job) {
             if (job->error()) {
-                int httpStatus = getHttpStatusCode(job);
-                if (httpStatus == 412) {
+                if (getHttpStatusCode(job) == 412) {
                     qDebug() << "Create job 412 Precondition Failed, switching to update for" << inc->uid();
-                    startUpdateJobForIncidence(inc);
+                    const QString etag = cachedEtag(
+                        generateItemUrl(davUrlFor(calId).value_or(KDAV::DavUrl()), inc->uid()).toString());
+                    launchStartSyncModify(calId, calendar, inc, etag,
+                                          /*retryOn412=*/true, checkDone);
                     return;
                 }
                 qWarning() << "Create job failed for" << inc->uid() << ":" << job->errorString();
@@ -1088,103 +923,44 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                 return;
             }
 
-                    auto createdItem = createJob->item();
-                    QString remoteUrl = normalizeUrlKey(createdItem.url().url().toString());
-
-                    if (!createdItem.etag().isEmpty()) {
-                        if (m_etagCache) m_etagCache->setEtag(remoteUrl, createdItem.etag());
-                        m_localEtags[remoteUrl] = createdItem.etag();
-
-                        // Update content cache with the data we just sent
-                        QString icalData = QString::fromUtf8(serializeIncidence(inc));
-                        setCachedContent(remoteUrl, createdItem.etag(), icalData);
-                    }
-
-                    emit itemLoaded(calendar, inc, createdItem.etag());
-
-                    checkDone();
-                });
+            const auto createdItem = createJob->item();
+            const QString remoteUrl = normalizeUrlKey(createdItem.url().url().toString());
+            noteItemWritten(remoteUrl, createdItem.etag(),
+                            QString::fromUtf8(icalFromIncidence(inc)));
+            emit itemLoaded(calendar, inc, createdItem.etag());
+            checkDone();
+        });
 
         createJob->start();
     }
 
-    // Launch update jobs
-    for (const auto &inc : finalUpdates) {
+    // Launch update jobs (modify with the cached ETag; 412 retries as force).
+    for (const auto &inc : stagedUpdates) {
         if (!inc) {
             checkDone();
             continue;
         }
-
-        QUrl itemUrl = generateItemUrl(baseDavUrl, inc->uid());
-        QString etag = m_localEtags.value(normalizeUrlKey(itemUrl.toString()));
-
-        KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(itemUrl, baseDavUrl.protocol()));
-        davItem.setContentType(QStringLiteral("text/calendar"));
-        davItem.setData(serializeIncidence(inc));
-        davItem.setEtag(etag);
-
-        auto *modifyJob = new KDAV::DavItemModifyJob(davItem, this);
-        modifyJob->setProperty("incidenceUid", inc->uid());
-        modifyJob->setProperty("calendarId", calId);
-
-        connect(modifyJob, &KDAV::DavItemModifyJob::result, this,
-                [this, modifyJob, inc, calendar, checkDone, forceUpdateIncidence, serializeIncidence](KJob *job) {
-                    if (job->error()) {
-                        int httpStatus = getHttpStatusCode(job);
-                        if (httpStatus == 412) {
-                            // 412 Precondition Failed - ETag mismatch (server has newer version)
-                            // This happens during sync when user resolved a conflict to push local.
-                            // Retry with If-Match: * to force the update (user's explicit intent).
-                            qDebug() << "Update job 412 Precondition Failed for" << inc->uid()
-                                     << "- retrying with force update (If-Match: *)";
-                            forceUpdateIncidence(inc);
-                            return;  // forceUpdateIncidence will call checkDone when complete
-                        }
-                        qWarning() << "Update job failed for" << inc->uid() << ":" << job->errorString();
-                        checkDone();
-                        return;
-                    }
-
-                    auto updatedItem = modifyJob->item();
-                    QString url = normalizeUrlKey(updatedItem.url().url().toString());
-
-                    if (m_etagCache) m_etagCache->setEtag(url, updatedItem.etag());
-                    m_localEtags[url] = updatedItem.etag();
-
-                    // Update content cache with the data we just sent
-                    if (!updatedItem.etag().isEmpty()) {
-                        QString icalData = QString::fromUtf8(serializeIncidence(inc));
-                        setCachedContent(url, updatedItem.etag(), icalData);
-                    }
-
-                    emit itemLoaded(calendar, inc, updatedItem.etag());
-
-                    checkDone();
-                });
-
-        modifyJob->start();
+        const QString etag = cachedEtag(generateItemUrl(baseDavUrl, inc->uid()).toString());
+        launchStartSyncModify(calId, calendar, inc, etag,
+                              /*retryOn412=*/true, checkDone);
     }
 
     // Launch delete jobs
     for (auto it = stagedDeletions.constBegin(); it != stagedDeletions.constEnd(); ++it) {
         const QString &uid = it.key();
-        const QString &etag = it.value();
-
-        QUrl itemUrl = generateItemUrl(baseDavUrl, uid);
 
         KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(itemUrl, baseDavUrl.protocol()));
+        davItem.setUrl(KDAV::DavUrl(generateItemUrl(baseDavUrl, uid),
+                                    baseDavUrl.protocol()));
         davItem.setContentType(QStringLiteral("text/calendar"));
         davItem.setData(QByteArray());
-        davItem.setEtag(etag);
+        davItem.setEtag(it.value());
 
         auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
-        deleteJob->setProperty("incidenceUid", uid);
-        deleteJob->setProperty("calendarId", calId);
+        const QUrl itemUrl = davItem.url().url();
 
         connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
-                [this, deleteJob, uid, itemUrl, checkDone](KJob *job) {
+                [this, uid, calId, itemUrl, checkDone](KJob *job) {
                     if (job->error()) {
                         qWarning() << "Delete job failed for" << uid << ":" << job->errorString();
                         checkDone();
@@ -1192,23 +968,8 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                     }
 
                     qDebug() << "Delete job succeeded for" << uid;
-
-                    QString calendarId = deleteJob->property("calendarId").toString();
-                    QString itemKey = calendarId + "/" + uid;
-                    QString urlKey = normalizeUrlKey(itemUrl.toString());
-
-                    m_etags.remove(itemKey);
-                    m_itemUrls.remove(itemKey);
-                    m_localEtags.remove(urlKey);
-                    if (m_etagCache) {
-                        m_etagCache->removeEtag(urlKey);
-                    }
-
-                    // Remove from content cache
-                    removeCachedContent(urlKey);
-
-                    emit itemRemoved(calendarId, uid);
-
+                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                    emit itemRemoved(calId, uid);
                     checkDone();
                 });
 
@@ -1216,55 +977,76 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
     }
 }
 
-
-
-void RemoteCalendarBackend::runJobsSequentially(
-    const QList<KDAV::DavJobBase *> &jobs,
-    std::function<void()> onFinished)
+void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
+                                                  KCalendarCore::MemoryCalendar *calendar,
+                                                  const KCalendarCore::Incidence::Ptr &inc,
+                                                  const QString &etag, bool retryOn412,
+                                                  const std::function<void()> &checkDone)
 {
-    if (jobs.isEmpty()) {
-        onFinished();
+    const KDAV::DavUrl base = davUrlFor(calId).value_or(KDAV::DavUrl());
+    KDAV::DavItem davItem;
+    davItem.setUrl(KDAV::DavUrl(generateItemUrl(base, inc->uid()),
+                                base.protocol()));
+    davItem.setContentType(QStringLiteral("text/calendar"));
+    davItem.setData(icalFromIncidence(inc));
+    davItem.setEtag(etag);  // "*" on the force path (RFC 7232 If-Match: *)
+
+    auto *modifyJob = new KDAV::DavItemModifyJob(davItem, this);
+
+    connect(modifyJob, &KDAV::DavItemModifyJob::result, this,
+            [this, modifyJob, inc, calendar, calId, retryOn412, checkDone](KJob *job) {
+                if (job->error()) {
+                    if (retryOn412 && getHttpStatusCode(job) == 412) {
+                        // ETag mismatch (server has a newer version) during a
+                        // sync where the user resolved a conflict to push
+                        // local: retry once with If-Match: * — the user's
+                        // explicit intent. The retry never loops.
+                        qDebug() << "Update job 412 Precondition Failed for" << inc->uid()
+                                 << "- retrying with force update (If-Match: *)";
+                        launchStartSyncModify(calId, calendar, inc,
+                                              QStringLiteral("*"),
+                                              /*retryOn412=*/false, checkDone);
+                        return;
+                    }
+                    qWarning() << "Update job failed for" << inc->uid() << ":" << job->errorString();
+                    checkDone();
+                    return;
+                }
+
+                const auto updatedItem = modifyJob->item();
+                const QString url = normalizeUrlKey(updatedItem.url().url().toString());
+                noteItemWritten(url, updatedItem.etag(),
+                                QString::fromUtf8(icalFromIncidence(inc)));
+                emit itemLoaded(calendar, inc, updatedItem.etag());
+                checkDone();
+            });
+
+    modifyJob->start();
+}
+
+void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString &etag,
+                                            const QString &icalData)
+{
+    if (etag.isEmpty()) {
         return;
     }
-
-    QPointer<RemoteCalendarBackend> safeThis(this);
-    int index = 0;
-    auto finished = std::make_shared<bool>(false);
-
-    auto runNext = std::make_shared<std::function<void()>>();
-    std::weak_ptr<std::function<void()>> weakRunNext = runNext;
-
-    *runNext = [=]() mutable {
-        if (*finished || !safeThis) return;
-
-        if (index >= jobs.size()) {
-            *finished = true;
-            onFinished();
-            return;
-        }
-
-        KDAV::DavJobBase *job = jobs.at(index++);
-        QObject::connect(job, &KDAV::DavJobBase::result, safeThis, [safeThis, job, weakRunNext, finished](KJob *) {
-            if (*finished || !safeThis) {
-                job->deleteLater();
-                return;
-            }
-            if (job->error()) {
-                qWarning() << "Job failed for incidence"
-                           << job->property("incidenceUid").toString() << ":" << job->errorString();
-            }
-            job->deleteLater();
-
-            if (auto locked = weakRunNext.lock()) {
-                (*locked)();
-            }
-        });
-
-        job->start();
-    };
-
-    (*runNext)();
+    if (m_etagCache) {
+        m_etagCache->setEtag(urlKey, etag);
+    }
+    m_localEtags[urlKey] = etag;
+    m_contentCache->store(urlKey, etag, icalData);
 }
+
+void RemoteCalendarBackend::noteItemErased(const QString &urlKey)
+{
+    if (m_etagCache) {
+        m_etagCache->removeEtag(urlKey);
+    }
+    m_localEtags.remove(urlKey);
+    m_contentCache->remove(urlKey);
+}
+
+
 
 void RemoteCalendarBackend::storeCalendars(const QString &, const QList<KCalendarCore::MemoryCalendar*> &)
 {
@@ -1278,27 +1060,7 @@ void RemoteCalendarBackend::storeCalendars(const QString &, const QList<KCalenda
 bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QString &calendarId,
                                     const QString &name, CalendarType type)
 {
-    // Build calendar URL: principal URL + calendar slug
-    // For Radicale-style servers, the username must be in the path: /username/calendar/
-    // The URL may have credentials in userinfo (user@host) that need to be moved to path
-    QUrl calendarUrl = m_url;
-    QString path = calendarUrl.path();
-
-    // If path is empty or just "/", and we have a username, prepend username to path
-    // This handles URLs like "http://user@host:port/" -> path becomes "/user/"
-    if ((path.isEmpty() || path == QLatin1String("/")) && !m_username.isEmpty()) {
-        path = QLatin1Char('/') + m_username + QLatin1Char('/');
-    }
-
-    // Remove credentials from URL - they'll be passed via Basic Auth header
-    calendarUrl.setUserName(QString());
-    calendarUrl.setPassword(QString());
-
-    if (!path.endsWith('/')) {
-        path += '/';
-    }
-    path += calendarId + '/';
-    calendarUrl.setPath(path);
+    const QUrl calendarUrl = calendarUrlForCrud(calendarId);
 
     qDebug() << "RemoteCalendarBackend::createCalendar: Creating calendar at" << safeUrlString(calendarUrl)
              << "type:" << static_cast<int>(type);
@@ -1332,98 +1094,57 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
         "</C:mkcalendar>\n"
     ).arg(displayName.toHtmlEscaped(), componentSet);
 
-    // Use QNetworkAccessManager for custom HTTP method (MKCALENDAR)
-    // KIO doesn't properly support custom HTTP methods like MKCALENDAR
-    QNetworkAccessManager manager;
-    QNetworkRequest request(calendarUrl);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/xml; charset=utf-8"));
+    const DavResponse resp = davSyncRequest(calendarUrl,
+                                            QByteArrayLiteral("MKCALENDAR"),
+                                            m_username, m_password,
+                                            requestBody.toUtf8());
+    qDebug() << "RemoteCalendarBackend::createCalendar: HTTP status" << resp.status;
 
-    // Set up Basic Authentication
-    QString credentials = m_username + ':' + m_password;
-    QByteArray authData = credentials.toUtf8().toBase64();
-    request.setRawHeader("Authorization", "Basic " + authData);
+    // Register the calendar URL helper (used on success)
+    auto registerCalendar = [this, calendarId, calendarUrl, type]() {
+        QUrl davCalendarUrl = calendarUrl;
+        davCalendarUrl.setUserName(m_username);
+        davCalendarUrl.setPassword(m_password);
+        CalendarFacts &facts = m_calendars[calendarId];
+        facts.davUrl = configuredDavUrl(davCalendarUrl.toString());
 
-    // Use sendCustomRequest for MKCALENDAR method
-    QEventLoop loop;
-    bool success = false;
-    QString errorMessage;
-
-    QNetworkReply *reply = manager.sendCustomRequest(request, "MKCALENDAR", requestBody.toUtf8());
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, &loop, &success, &errorMessage, calendarId, calendarUrl, collectionId, type]() {
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        qDebug() << "RemoteCalendarBackend::createCalendar: HTTP status" << statusCode;
-
-        // Register the calendar URL helper (used on success)
-        auto registerCalendar = [this, calendarId, calendarUrl, collectionId, type]() {
-            QUrl davCalendarUrl = calendarUrl;
-            davCalendarUrl.setUserName(m_username);
-            davCalendarUrl.setPassword(m_password);
-            KDAV::DavUrl davUrl = configuredDavUrl(davCalendarUrl.toString());
-            m_davUrls[calendarId] = davUrl;
-
-            // Store the calendar type so discoveredCalendarType() returns correct value
-            KDAV::DavCollection::ContentTypes contentTypes;
-            if (type == CalendarType::Event) {
-                contentTypes = KDAV::DavCollection::Events;
-            } else if (type == CalendarType::Todo) {
-                contentTypes = KDAV::DavCollection::Todos;
-            } else {
-                contentTypes = KDAV::DavCollection::Events | KDAV::DavCollection::Todos;
-            }
-            m_calendarContentTypes[calendarId] = contentTypes;
-        };
-
-        if (statusCode == 201) {
-            qDebug() << "RemoteCalendarBackend::createCalendar: Calendar created successfully:" << calendarId;
-            registerCalendar();
-            emit calendarCreated(collectionId, calendarId);
-            emit calendarDiscovered(collectionId, calendarId);
-            success = true;
-        } else if (statusCode == 405 || statusCode == 409) {
-            // Idempotent: 405 Method Not Allowed or 409 Conflict means calendar already exists
-            qDebug() << "RemoteCalendarBackend::createCalendar: Calendar already exists:" << calendarId << "(HTTP" << statusCode << ")";
-            registerCalendar();
-            success = true;
-        } else if (reply->error() != QNetworkReply::NoError) {
-            errorMessage = reply->errorString();
-            qWarning() << "RemoteCalendarBackend::createCalendar: Failed:" << errorMessage << "HTTP status:" << statusCode;
-            emit calendarOperationError(calendarId, errorMessage);
-            success = false;
+        // Store the calendar type so discoveredCalendarType() returns correct value
+        if (type == CalendarType::Event) {
+            facts.contentTypes = KDAV::DavCollection::Events;
+        } else if (type == CalendarType::Todo) {
+            facts.contentTypes = KDAV::DavCollection::Todos;
         } else {
-            errorMessage = QStringLiteral("Unexpected HTTP status: %1").arg(statusCode);
-            qWarning() << "RemoteCalendarBackend::createCalendar: Failed:" << errorMessage;
-            emit calendarOperationError(calendarId, errorMessage);
-            success = false;
+            facts.contentTypes = KDAV::DavCollection::Events | KDAV::DavCollection::Todos;
         }
-        reply->deleteLater();
-        loop.quit();
-    });
+        facts.hasContentTypes = true;
+    };
 
-    loop.exec();
-
-    return success;
+    if (resp.status == 201) {
+        qDebug() << "RemoteCalendarBackend::createCalendar: Calendar created successfully:" << calendarId;
+        registerCalendar();
+        emit calendarCreated(collectionId, calendarId);
+        emit calendarDiscovered(collectionId, calendarId);
+        return true;
+    }
+    if (resp.status == 405 || resp.status == 409) {
+        // Idempotent: 405 Method Not Allowed or 409 Conflict means calendar already exists
+        qDebug() << "RemoteCalendarBackend::createCalendar: Calendar already exists:" << calendarId << "(HTTP" << resp.status << ")";
+        registerCalendar();
+        return true;
+    }
+    const QString errorMessage = !resp.transportOk()
+        ? resp.errorString
+        : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
+    qWarning() << "RemoteCalendarBackend::createCalendar: Failed:" << errorMessage
+               << "HTTP status:" << resp.status;
+    emit calendarOperationError(calendarId, errorMessage);
+    return false;
 }
 
 bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QString &calendarId,
                                     const QVariantMap &properties)
 {
-    // Build calendar URL (similar to createCalendar)
-    QUrl calendarUrl = m_url;
-    QString path = calendarUrl.path();
-
-    if ((path.isEmpty() || path == QLatin1String("/")) && !m_username.isEmpty()) {
-        path = QLatin1Char('/') + m_username + QLatin1Char('/');
-    }
-
-    calendarUrl.setUserName(QString());
-    calendarUrl.setPassword(QString());
-
-    if (!path.endsWith('/')) {
-        path += '/';
-    }
-    path += calendarId + '/';
-    calendarUrl.setPath(path);
+    const QUrl calendarUrl = calendarUrlForCrud(calendarId);
 
     qDebug() << "RemoteCalendarBackend::updateCalendar: Updating calendar at" << safeUrlString(calendarUrl);
 
@@ -1470,60 +1191,37 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
         "</D:propertyupdate>\n"
     ).arg(propsXml);
 
-    // Use QNetworkAccessManager for PROPPATCH
-    QNetworkAccessManager manager;
-    QNetworkRequest request(calendarUrl);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/xml; charset=utf-8"));
+    const DavResponse resp = davSyncRequest(calendarUrl,
+                                            QByteArrayLiteral("PROPPATCH"),
+                                            m_username, m_password,
+                                            requestBody.toUtf8());
+    qDebug() << "RemoteCalendarBackend::updateCalendar: HTTP status" << resp.status;
 
-    QString credentials = m_username + ':' + m_password;
-    QByteArray authData = credentials.toUtf8().toBase64();
-    request.setRawHeader("Authorization", "Basic " + authData);
+    // 207 Multi-Status is the expected response for PROPPATCH
+    if (resp.status == 207 || resp.status == 200 || resp.status == 204) {
+        qDebug() << "RemoteCalendarBackend::updateCalendar: Calendar updated successfully:" << calendarId;
 
-    QEventLoop loop;
-    bool success = false;
-    QString errorMessage;
-
-    QNetworkReply *reply = manager.sendCustomRequest(request, "PROPPATCH", requestBody.toUtf8());
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, &loop, &success, &errorMessage, calendarId, collectionId, properties]() {
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        qDebug() << "RemoteCalendarBackend::updateCalendar: HTTP status" << statusCode;
-
-        // 207 Multi-Status is the expected response for PROPPATCH
-        if (statusCode == 207 || statusCode == 200 || statusCode == 204) {
-            qDebug() << "RemoteCalendarBackend::updateCalendar: Calendar updated successfully:" << calendarId;
-
-            // Update local cache to reflect the change
-            if (properties.contains(QStringLiteral("color"))) {
-                QColor color = properties.value(QStringLiteral("color")).value<QColor>();
-                if (!color.isValid()) {
-                    color = QColor(properties.value(QStringLiteral("color")).toString());
-                }
-                if (color.isValid()) {
-                    m_calendarColors[calendarId] = color;
-                }
+        // Update local cache to reflect the change
+        if (properties.contains(QStringLiteral("color"))) {
+            QColor color = properties.value(QStringLiteral("color")).value<QColor>();
+            if (!color.isValid()) {
+                color = QColor(properties.value(QStringLiteral("color")).toString());
             }
-
-            emit calendarUpdated(collectionId, calendarId);
-            success = true;
-        } else if (reply->error() != QNetworkReply::NoError) {
-            errorMessage = reply->errorString();
-            qWarning() << "RemoteCalendarBackend::updateCalendar: Failed:" << errorMessage << "HTTP status:" << statusCode;
-            emit calendarOperationError(calendarId, errorMessage);
-            success = false;
-        } else {
-            errorMessage = QStringLiteral("Unexpected HTTP status: %1").arg(statusCode);
-            qWarning() << "RemoteCalendarBackend::updateCalendar: Failed:" << errorMessage;
-            emit calendarOperationError(calendarId, errorMessage);
-            success = false;
+            if (color.isValid()) {
+                m_calendars[calendarId].color = color;
+            }
         }
-        reply->deleteLater();
-        loop.quit();
-    });
 
-    loop.exec();
-
-    return success;
+        emit calendarUpdated(collectionId, calendarId);
+        return true;
+    }
+    const QString errorMessage = !resp.transportOk()
+        ? resp.errorString
+        : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
+    qWarning() << "RemoteCalendarBackend::updateCalendar: Failed:" << errorMessage
+               << "HTTP status:" << resp.status;
+    emit calendarOperationError(calendarId, errorMessage);
+    return false;
 }
 
 bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QString &calendarId)
@@ -1531,83 +1229,63 @@ bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QS
     QUrl calendarUrl;
 
     // Try to use the stored URL from discovery (has correct path case)
-    if (m_davUrls.contains(calendarId)) {
-        calendarUrl = m_davUrls[calendarId].url();
+    if (const auto davUrl = davUrlFor(calendarId)) {
+        calendarUrl = davUrl->url();
         calendarUrl.setUserName(QString());
         calendarUrl.setPassword(QString());
         qDebug() << "RemoteCalendarBackend::deleteCalendar: Using discovered URL for" << calendarId;
     } else {
-        // Fallback: Build calendar URL from calendarId
-        // For Radicale-style servers, the username must be in the path: /username/calendar/
-        calendarUrl = m_url;
-        QString path = calendarUrl.path();
-
-        if ((path.isEmpty() || path == QLatin1String("/")) && !m_username.isEmpty()) {
-            path = QLatin1Char('/') + m_username + QLatin1Char('/');
-        }
-
-        calendarUrl.setUserName(QString());
-        calendarUrl.setPassword(QString());
-
-        if (!path.endsWith('/')) {
-            path += '/';
-        }
-        path += calendarId + '/';
-        calendarUrl.setPath(path);
+        calendarUrl = calendarUrlForCrud(calendarId);
         qDebug() << "RemoteCalendarBackend::deleteCalendar: Using constructed URL for" << calendarId;
     }
 
     qDebug() << "RemoteCalendarBackend::deleteCalendar: Deleting calendar at" << safeUrlString(calendarUrl);
 
-    // Use QNetworkAccessManager for DELETE (consistent with createCalendar)
-    QNetworkAccessManager manager;
-    QNetworkRequest request(calendarUrl);
+    const DavResponse resp = davSyncRequest(calendarUrl,
+                                            QByteArrayLiteral("DELETE"),
+                                            m_username, m_password);
+    qDebug() << "RemoteCalendarBackend::deleteCalendar: HTTP status" << resp.status;
 
-    // Set up Basic Authentication
-    QString credentials = m_username + ':' + m_password;
-    QByteArray authData = credentials.toUtf8().toBase64();
-    request.setRawHeader("Authorization", "Basic " + authData);
+    // 200 OK or 204 No Content are both valid DELETE responses
+    if (resp.status == 200 || resp.status == 204) {
+        qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar deleted successfully:" << calendarId;
+        m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
+        emit calendarDeleted(collectionId, calendarId);
+        return true;
+    }
+    if (resp.status == 404) {
+        // Calendar doesn't exist - return false to indicate it wasn't deleted
+        qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar not found:" << calendarId;
+        m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
+        return false;
+    }
+    QString errorMessage = resp.errorString;
+    if (errorMessage.isEmpty()) {
+        errorMessage = QStringLiteral("HTTP status: %1").arg(resp.status);
+    }
+    qWarning() << "RemoteCalendarBackend::deleteCalendar: Failed:" << errorMessage;
+    emit calendarOperationError(calendarId, errorMessage);
+    return false;
+}
 
-    QEventLoop loop;
-    bool success = false;
-    QString errorMessage;
-
-    QNetworkReply *reply = manager.deleteResource(request);
-
-    connect(reply, &QNetworkReply::finished, this, [this, reply, &loop, &success, &errorMessage, calendarId, collectionId]() {
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        qDebug() << "RemoteCalendarBackend::deleteCalendar: HTTP status" << statusCode;
-
-        // 200 OK or 204 No Content are both valid DELETE responses
-        if (statusCode == 200 || statusCode == 204) {
-            qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar deleted successfully:" << calendarId;
-
-            // Remove from our URL cache
-            m_davUrls.remove(calendarId);
-
-            emit calendarDeleted(collectionId, calendarId);
-            success = true;
-        } else if (statusCode == 404) {
-            // Calendar doesn't exist - return false to indicate it wasn't deleted
-            qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar not found:" << calendarId;
-            m_davUrls.remove(calendarId);
-            success = false;
-        } else {
-            errorMessage = reply->errorString();
-            if (errorMessage.isEmpty()) {
-                errorMessage = QStringLiteral("HTTP status: %1").arg(statusCode);
-            }
-            qWarning() << "RemoteCalendarBackend::deleteCalendar: Failed:" << errorMessage;
-            emit calendarOperationError(calendarId, errorMessage);
-            success = false;
-        }
-        reply->deleteLater();
-        loop.quit();
-    });
-
-    loop.exec();
-
-    return success;
+QUrl RemoteCalendarBackend::calendarUrlForCrud(const QString &calendarId) const
+{
+    // Principal URL + calendar slug. For Radicale-style servers the username
+    // must be in the path (/username/calendar/) when the base URL has none;
+    // userinfo credentials move to the Authorization header instead.
+    QUrl url = m_url;
+    QString path = url.path();
+    if ((path.isEmpty() || path == QLatin1String("/")) && !m_username.isEmpty()) {
+        path = QLatin1Char('/') + m_username + QLatin1Char('/');
+    }
+    url.setUserName(QString());
+    url.setPassword(QString());
+    if (!path.endsWith(QLatin1Char('/'))) {
+        path += QLatin1Char('/');
+    }
+    path += calendarId + QLatin1Char('/');
+    url.setPath(path);
+    return url;
 }
 
 // ============================================================================
@@ -1618,35 +1296,14 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
     const QString &calendarId, const KDAV::DavUrl &davUrl)
 {
     QList<KCalendarCore::Incidence::Ptr> cachedIncidences;
-    KCalendarCore::ICalFormat format;
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isValid()) {
-        return cachedIncidences;
-    }
-
-    QString calendarPath = davUrl.url().path();
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT url, ical_content FROM cached_items WHERE url LIKE ?"));
-    query.addBindValue(QLatin1Char('%') + calendarPath + QLatin1Char('%'));
-
-    if (query.exec()) {
-        while (query.next()) {
-            QString icalData = query.value(1).toString();
-            auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-            QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-
-            if (format.fromString(tmpCalPtr, icalData)) {
-                for (const auto &incidence : tmpCal->incidences()) {
-                    cachedIncidences.append(incidence);
-                    emit itemFetched(calendarId, incidence);
-                }
-            }
-            delete tmpCal;
+    const auto rows = m_contentCache->rowsByPathFragment(davUrl.url().path());
+    for (const auto &row : rows) {
+        const auto incidences = incidencesFromIcal(row.ical);
+        for (const auto &incidence : incidences) {
+            cachedIncidences.append(incidence);
+            emit itemFetched(calendarId, incidence);
         }
     }
-
     return cachedIncidences;
 }
 
@@ -1655,7 +1312,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
     auto *op = new FetchOperation(calendarId, this);
     registerOperation(op);
 
-    if (!m_davUrls.contains(calendarId)) {
+    if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::fetchItems: No DAV URL for calendar:" << calendarId;
         // Use QTimer to defer the failure so caller can connect to signals
         QTimer::singleShot(0, op, [op, calendarId, this]() {
@@ -1666,9 +1323,9 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
     }
 
     // Initialize content cache on first fetch (lazy initialization)
-    initContentCache();
+    m_contentCache->ensureOpen();
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
+    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
     // Start the operation
     QMetaObject::invokeMethod(this, [this, op, davUrl, calendarId]() {
@@ -1678,66 +1335,14 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
         // CTag optimization: raw PROPFIND for CS:getctag on the calendar URL.
         // KDAV's DavCollectionsFetchJob doesn't return CTag for individual calendar
         // URLs, so we do a lightweight Depth:0 PROPFIND ourselves.
-        if (m_davUrls.contains(calendarId)) {
+        if (davUrlFor(calendarId)) {
             QString storedCtag = ctag(calendarId);
             QString freshCtag;
-            bool freshFromPrimedCache = false;
 
-            // Phase-1 batched-CTag fast-path: was a fresh CTag primed for us?
-            auto primedIt = m_primedCtags.constFind(calendarId);
-            if (primedIt != m_primedCtags.constEnd()) {
-                const auto ageMs = primedIt->fetchedAt.msecsTo(QDateTime::currentDateTimeUtc());
-                if (ageMs >= 0 && ageMs <= kPrimedCtagFreshnessMs) {
-                    freshCtag = primedIt->value;
-                    freshFromPrimedCache = true;
-                    qDebug() << "RemoteCalendarBackend::fetchItems: using primed CTag for"
-                             << calendarId << "(age" << ageMs << "ms)";
-                }
+            if (!storedCtag.isEmpty()) {
+                freshCtag = fetchFreshCtag(calendarId);
             }
 
-            if (!freshFromPrimedCache && !storedCtag.isEmpty()) {
-                QUrl propfindUrl = davUrl.url();
-                propfindUrl.setUserName(QString());
-                propfindUrl.setPassword(QString());
-
-                QNetworkAccessManager nam;
-                QNetworkRequest request(propfindUrl);
-                request.setHeader(QNetworkRequest::ContentTypeHeader,
-                                  QStringLiteral("application/xml; charset=utf-8"));
-                request.setRawHeader("Depth", "0");
-
-                QString credentials = m_username + QLatin1Char(':') + m_password;
-                request.setRawHeader("Authorization",
-                                     "Basic " + credentials.toUtf8().toBase64());
-
-                QByteArray body =
-                    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
-                    "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
-                    "  <D:prop><CS:getctag/></D:prop>"
-                    "</D:propfind>";
-
-                QEventLoop loop;
-
-                QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
-                connect(reply, &QNetworkReply::finished, this, [reply, &loop, &freshCtag]() {
-                    if (reply->error() == QNetworkReply::NoError) {
-                        QByteArray responseData = reply->readAll();
-                        // Parse CS:getctag from XML response
-                        // Format: <CS:getctag>"hash-value"</CS:getctag>
-                        QString response = QString::fromUtf8(responseData);
-                        QRegularExpression re(QStringLiteral("<[^>]*:getctag[^>]*>([^<]+)</[^>]*:getctag>"));
-                        auto match = re.match(response);
-                        if (match.hasMatch()) {
-                            freshCtag = match.captured(1);
-                        }
-                    }
-                    reply->deleteLater();
-                    loop.quit();
-                });
-                loop.exec();
-            }
-
-            // Cache-match check applies whether freshCtag came from primed cache or PROPFIND
             if (!storedCtag.isEmpty() && !freshCtag.isEmpty() && freshCtag == storedCtag) {
                 qDebug() << "RemoteCalendarBackend::fetchItems: CTag unchanged for" << calendarId
                          << "(" << freshCtag << ") - serving from cache";
@@ -1756,7 +1361,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
             // CTag changed or unavailable — update in-memory cache for storage after full fetch
             if (!freshCtag.isEmpty()) {
-                m_calendarCtags[calendarId] = freshCtag;
+                m_calendars[calendarId].pendingCtag = freshCtag;
             }
         }
 
@@ -1811,11 +1416,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     // This URL is from a different calendar - skip it
                     continue;
                 }
-                removeCachedContent(urlStr);
-                m_localEtags.remove(urlStr);
-                if (m_etagCache) {
-                    m_etagCache->removeEtag(urlStr);
-                }
+                noteItemErased(urlStr);
                 deletedFromThisCalendar++;
             }
             if (deletedFromThisCalendar > 0) {
@@ -1844,7 +1445,6 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
             // If no items to fetch, serve everything from cache
             if (urlsToFetch.isEmpty()) {
                 QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
-                KCalendarCore::ICalFormat format;
                 int currentItem = 0;
 
                 for (const auto &item : allItems) {
@@ -1860,7 +1460,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     QString etag = serverEtags.value(urlKey);
 
                     // Get content from cache
-                    QString cachedIcal = getCachedContent(urlKey, etag);
+                    QString cachedIcal = m_contentCache->content(urlKey, etag);
                     if (cachedIcal.isEmpty()) {
                         // Cache miss - shouldn't happen if item wasn't in changedItems
                         // but handle gracefully by skipping
@@ -1870,12 +1470,9 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         continue;
                     }
 
-                    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-                    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-
-                    if (!format.fromString(tmpCalPtr, cachedIcal)) {
+                    const auto incidences = incidencesFromIcal(cachedIcal);
+                    if (incidences.isEmpty()) {
                         qWarning() << "RemoteCalendarBackend::fetchItems: Could not parse cached iCal for:" << urlKey;
-                        delete tmpCal;
                         currentItem++;
                         emit fetchProgressChanged(calendarId, currentItem, allItems.size());
                         continue;
@@ -1889,12 +1486,11 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         }
                     }
 
-                    for (const auto &incidence : tmpCal->incidences()) {
+                    for (const auto &incidence : incidences) {
                         fetchedIncidences.append(incidence);
                         emit itemFetched(calendarId, incidence);
                     }
 
-                    delete tmpCal;
                     currentItem++;
                     emit fetchProgressChanged(calendarId, currentItem, allItems.size());
                 }
@@ -1903,8 +1499,9 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                          << "incidences from cache for calendar" << calendarId;
 
                 // Update stored CTag after successful full fetch
-                if (m_calendarCtags.contains(calendarId)) {
-                    setCtag(calendarId, m_calendarCtags.value(calendarId));
+                const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+                if (!pendingCtag.isEmpty()) {
+                    setCtag(calendarId, pendingCtag);
                 }
 
                 op->setFetchedItems(fetchedIncidences);
@@ -1931,7 +1528,6 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 }
 
                 QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
-                KCalendarCore::ICalFormat format;
 
                 // Build a map of fetched items for quick lookup.
                 // Use normalizeUrlKey (strips credentials) so the map key matches
@@ -1974,11 +1570,11 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
                         // Update cache with fresh content
                         if (!icalData.isEmpty() && !etag.isEmpty()) {
-                            setCachedContent(urlKey, etag, icalData);
+                            m_contentCache->store(urlKey, etag, icalData);
                         }
                     } else {
                         // Serve from cache
-                        icalData = getCachedContent(urlKey, etag);
+                        icalData = m_contentCache->content(urlKey, etag);
                         if (icalData.isEmpty()) {
                             qWarning() << "RemoteCalendarBackend::fetchItems: Cache miss for item:" << urlKey;
                             countSkipped++;
@@ -1988,13 +1584,10 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         }
                     }
 
-                    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-                    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-
-                    if (!format.fromString(tmpCalPtr, icalData)) {
+                    const auto incidences = incidencesFromIcal(icalData);
+                    if (incidences.isEmpty()) {
                         qWarning() << "RemoteCalendarBackend::fetchItems: Could not parse iCal data for item:"
                                    << urlKey << (fromNetwork ? "(from network)" : "(from cache)");
-                        delete tmpCal;
                         countSkipped++;
                         currentItem++;
                         emit fetchProgressChanged(calendarId, currentItem, totalItems);
@@ -2015,12 +1608,11 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         }
                     }
 
-                    for (const auto &incidence : tmpCal->incidences()) {
+                    for (const auto &incidence : incidences) {
                         fetchedIncidences.append(incidence);
                         emit itemFetched(calendarId, incidence);
                     }
 
-                    delete tmpCal;
                     currentItem++;
                     emit fetchProgressChanged(calendarId, currentItem, totalItems);
                 }
@@ -2033,8 +1625,9 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                                               : QStringLiteral(")"));
 
                 // Update stored CTag after successful full fetch
-                if (m_calendarCtags.contains(calendarId)) {
-                    setCtag(calendarId, m_calendarCtags.value(calendarId));
+                const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+                if (!pendingCtag.isEmpty()) {
+                    setCtag(calendarId, pendingCtag);
                 }
 
                 op->setFetchedItems(fetchedIncidences);
@@ -2064,14 +1657,14 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
         return op;
     }
 
-    if (!m_davUrls.contains(calendarId)) {
+    if (!davUrlFor(calendarId)) {
         QTimer::singleShot(0, op, [op, calendarId]() {
             op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
         });
         return op;
     }
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
+    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
     // Use shared counter to track completion
     auto remaining = std::make_shared<int>(items.size());
@@ -2081,32 +1674,42 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
         op->setState(SyncOperation::Running);
 
         // Initialize content cache so we can store pushed items for subsequent fetches
-        initContentCache();
+        m_contentCache->ensureOpen();
 
-        KCalendarCore::ICalFormat icalFormat;  // Create inside lambda (non-copyable)
+        // Shared accounting tail for every per-item outcome. When the last
+        // item lands: invalidate the stored CTag (our push changed it
+        // server-side) and settle the op — fail only when nothing succeeded;
+        // partial success completes with failedUids tracked (the F2 operation
+        // contract). Pre-T4 the three accounting sites disagreed (a trailing
+        // null item never settled the op at all; a trailing serialization
+        // failure failed a partly-successful push).
+        auto settleIfDone = [this, op, remaining, anyError]() {
+            if (--(*remaining) != 0) {
+                return;
+            }
+            if (!op->succeededUids().isEmpty()) {
+                clearCtag(op->calendarId());
+            }
+            if ((*anyError || !op->failedUids().isEmpty())
+                && op->succeededUids().isEmpty()) {
+                op->fail(QStringLiteral("All items failed to push"));
+            } else {
+                op->complete();
+            }
+        };
 
         for (const auto &incidence : items) {
             if (incidence.isNull()) {
-                (*remaining)--;
+                settleIfDone();
                 continue;
             }
 
-            auto tempCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-            tempCal->addIncidence(incidence);
-            QSharedPointer<KCalendarCore::Calendar> tempCalPtr(tempCal, [](KCalendarCore::Calendar*){});
-            QString icalData = icalFormat.toString(tempCalPtr);
+            const QString icalData = QString::fromUtf8(icalFromIncidence(incidence));
 
             if (icalData.isEmpty()) {
                 qWarning() << "RemoteCalendarBackend::pushItems: Failed to convert incidence to iCal:" << incidence->uid();
                 op->addFailedUid(incidence->uid());
-                (*remaining)--;
-                if (*remaining == 0) {
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        op->fail(QStringLiteral("Some items failed to push"));
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
                 continue;
             }
 
@@ -2121,7 +1724,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
             QString uid = incidence->uid();
 
             connect(createJob, &KDAV::DavItemCreateJob::result, this,
-                    [this, op, createJob, uid, remaining, anyError, icalData](KJob *job) {
+                    [this, op, createJob, uid, anyError, icalData, settleIfDone](KJob *job) {
                 if (op->state() == SyncOperation::Cancelled) {
                     return;
                 }
@@ -2131,38 +1734,14 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                     op->addFailedUid(uid);
                     *anyError = true;
                 } else {
-                    KDAV::DavItem createdItem = createJob->item();
-                    QString remoteUrl = normalizeUrlKey(createdItem.url().url().toString());
-                    if (m_etagCache) {
-                        m_etagCache->setEtag(remoteUrl, createdItem.etag());
-                    }
-                    m_localEtags[remoteUrl] = createdItem.etag();
-
-                    // Store content in cache so subsequent fetches can use delta sync
-                    setCachedContent(remoteUrl, createdItem.etag(), icalData);
-
+                    const KDAV::DavItem createdItem = createJob->item();
+                    noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
+                                    createdItem.etag(), icalData);
                     op->addSucceededUid(uid);
                     qDebug() << "RemoteCalendarBackend::pushItems: Created" << uid << "ETag:" << createdItem.etag();
                 }
 
-                (*remaining)--;
-                if (*remaining == 0) {
-                    // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty()) {
-                        clearCtag(op->calendarId());
-                    }
-
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        if (op->succeededUids().isEmpty()) {
-                            op->fail(QStringLiteral("All items failed to push"));
-                        } else {
-                            // Partial success - still complete but with failed UIDs tracked
-                            op->complete();
-                        }
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
             });
 
             createJob->start();
@@ -2186,14 +1765,14 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
         return op;
     }
 
-    if (!m_davUrls.contains(calendarId)) {
+    if (!davUrlFor(calendarId)) {
         QTimer::singleShot(0, op, [op, calendarId]() {
             op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
         });
         return op;
     }
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
+    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
     auto remaining = std::make_shared<int>(uids.size());
     auto anyError = std::make_shared<bool>(false);
@@ -2226,11 +1805,7 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                     op->addFailedUid(uid);
                     *anyError = true;
                 } else {
-                    QString urlKey = normalizeUrlKey(itemUrl.toString());
-                    if (m_etagCache) {
-                        m_etagCache->removeEtag(urlKey);
-                    }
-                    m_localEtags.remove(urlKey);
+                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
                     op->addSucceededUid(uid);
                     qDebug() << "RemoteCalendarBackend::deleteItems: Deleted" << uid;
                 }
@@ -2271,48 +1846,22 @@ QString RemoteCalendarBackend::getRawIcs(const QString &calendarId, const QStrin
         return QString();
     }
 
-    if (!m_davUrls.contains(calendarId)) {
+    if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::getRawIcs: No DAV URL for calendar:" << calendarId;
         return QString();
     }
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
-    QUrl itemUrl = const_cast<RemoteCalendarBackend*>(this)->generateItemUrl(davUrl, uid);
+    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
+    QUrl itemUrl = generateItemUrl(davUrl, uid);
 
-    // Remove credentials from URL - they'll be passed via Basic Auth header
-    QUrl cleanUrl = itemUrl;
-    cleanUrl.setUserName(QString());
-    cleanUrl.setPassword(QString());
-
-    QNetworkAccessManager manager;
-    QNetworkRequest request(cleanUrl);
-
-    // Set up Basic Authentication
-    QString credentials = m_username + ':' + m_password;
-    QByteArray authData = credentials.toUtf8().toBase64();
-    request.setRawHeader("Authorization", "Basic " + authData);
-
-    QEventLoop loop;
-    QString content;
-
-    QNetworkReply *reply = manager.get(request);
-    QObject::connect(reply, &QNetworkReply::finished, [reply, &loop, &content]() {
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-
-        if (statusCode == 200 && reply->error() == QNetworkReply::NoError) {
-            content = QString::fromUtf8(reply->readAll());
-        } else {
-            qWarning() << "RemoteCalendarBackend::getRawIcs: Failed to fetch, HTTP status:" << statusCode
-                       << "error:" << reply->errorString();
-        }
-
-        reply->deleteLater();
-        loop.quit();
-    });
-
-    loop.exec();
-
-    return content;
+    const DavResponse resp = davSyncRequest(itemUrl, QByteArrayLiteral("GET"),
+                                            m_username, m_password);
+    if (resp.status == 200 && resp.transportOk()) {
+        return QString::fromUtf8(resp.body);
+    }
+    qWarning() << "RemoteCalendarBackend::getRawIcs: Failed to fetch, HTTP status:" << resp.status
+               << "error:" << resp.errorString;
+    return QString();
 }
 
 bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &uid,
@@ -2322,88 +1871,54 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
         return false;
     }
 
-    if (!m_davUrls.contains(calendarId)) {
+    if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::setRawIcs: No DAV URL for calendar:" << calendarId;
         return false;
     }
 
-    KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
+    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
     QUrl itemUrl = generateItemUrl(davUrl, uid);
 
-    // Remove credentials from URL - they'll be passed via Basic Auth header
-    QUrl cleanUrl = itemUrl;
-    cleanUrl.setUserName(QString());
-    cleanUrl.setPassword(QString());
-
-    QNetworkAccessManager manager;
-    QNetworkRequest request(cleanUrl);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("text/calendar; charset=utf-8"));
-
-    // Set up Basic Authentication
-    QString credentials = m_username + ':' + m_password;
-    QByteArray authData = credentials.toUtf8().toBase64();
-    request.setRawHeader("Authorization", "Basic " + authData);
-
-    // Get cached ETag and set If-Match header to prevent overwriting concurrent changes
-    QString oldEtag = cachedEtag(itemUrl.toString());
+    // Cached ETag goes in If-Match to prevent overwriting concurrent changes.
+    QList<std::pair<QByteArray, QByteArray>> headers;
+    const QString oldEtag = cachedEtag(itemUrl.toString());
     if (!oldEtag.isEmpty()) {
-        request.setRawHeader("If-Match", oldEtag.toUtf8());
+        headers.append({QByteArrayLiteral("If-Match"), oldEtag.toUtf8()});
         qDebug() << "RemoteCalendarBackend::setRawIcs: Using ETag:" << oldEtag;
     }
 
-    QEventLoop loop;
-    bool success = false;
+    const DavResponse resp = davSyncRequest(
+        itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
+        icsContent.toUtf8(), headers,
+        QByteArrayLiteral("text/calendar; charset=utf-8"));
 
-    QNetworkReply *reply = manager.put(request, icsContent.toUtf8());
-    QObject::connect(reply, &QNetworkReply::finished, [this, reply, &loop, &success, itemUrl]() {
-        int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-
-        // 200 OK, 201 Created, or 204 No Content are valid PUT responses
-        if (statusCode == 200 || statusCode == 201 || statusCode == 204) {
-            success = true;
-
-            QString urlKey = normalizeUrlKey(itemUrl.toString());
-
-            // Capture and cache the new ETag from the response
-            QString newEtag = QString::fromUtf8(reply->rawHeader("ETag"));
-            if (!newEtag.isEmpty()) {
-                // Remove quotes if present (ETags may be quoted per RFC 7232)
-                if (newEtag.startsWith('"') && newEtag.endsWith('"')) {
-                    newEtag = newEtag.mid(1, newEtag.length() - 2);
-                }
-                m_localEtags[urlKey] = newEtag;
-                if (m_etagCache) {
-                    m_etagCache->setEtag(urlKey, newEtag);
-                }
-                qDebug() << "RemoteCalendarBackend::setRawIcs: Updated ETag to:" << newEtag;
-            } else {
-                // If server doesn't return ETag, clear the cached one to force refresh
-                qWarning() << "RemoteCalendarBackend::setRawIcs: Server didn't return ETag, clearing cache";
-                m_localEtags.remove(urlKey);
-                if (m_etagCache) {
-                    m_etagCache->removeEtag(urlKey);
-                }
-            }
-
-            qDebug() << "RemoteCalendarBackend::setRawIcs: Successfully updated, HTTP status:" << statusCode;
-        } else {
-            qWarning() << "RemoteCalendarBackend::setRawIcs: Failed, HTTP status:" << statusCode
-                       << "error:" << reply->errorString();
-            success = false;
-        }
-
-        reply->deleteLater();
-        loop.quit();
-    });
-
-    loop.exec();
-
-    // Invalidate stored CTag — the server's CTag changed due to our push
-    if (success) {
-        clearCtag(calendarId);
+    // 200 OK, 201 Created, or 204 No Content are valid PUT responses
+    if (resp.status != 200 && resp.status != 201 && resp.status != 204) {
+        qWarning() << "RemoteCalendarBackend::setRawIcs: Failed, HTTP status:" << resp.status
+                   << "error:" << resp.errorString;
+        return false;
     }
 
-    return success;
+    const QString urlKey = normalizeUrlKey(itemUrl.toString());
+    if (!resp.etag.isEmpty()) {
+        m_localEtags[urlKey] = resp.etag;
+        if (m_etagCache) {
+            m_etagCache->setEtag(urlKey, resp.etag);
+        }
+        qDebug() << "RemoteCalendarBackend::setRawIcs: Updated ETag to:" << resp.etag;
+    } else {
+        // If server doesn't return ETag, clear the cached one to force refresh
+        qWarning() << "RemoteCalendarBackend::setRawIcs: Server didn't return ETag, clearing cache";
+        m_localEtags.remove(urlKey);
+        if (m_etagCache) {
+            m_etagCache->removeEtag(urlKey);
+        }
+    }
+    qDebug() << "RemoteCalendarBackend::setRawIcs: Successfully updated, HTTP status:" << resp.status;
+
+    // Invalidate stored CTag — the server's CTag changed due to our push
+    clearCtag(calendarId);
+    return true;
 }
 
 
@@ -2469,11 +1984,12 @@ bool RemoteCalendarBackend::isAvailable() const
 QList<CollectionInfo> RemoteCalendarBackend::availableCollections()
 {
     QList<CollectionInfo> result;
-    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
         CollectionInfo info;
         info.id   = it.key();
         info.name = it.key();
-        info.path = it.value().url().toString(QUrl::RemovePassword);
+        info.path = it->davUrl.url().toString(QUrl::RemovePassword);
         info.type = QStringLiteral("calendar");
         result.append(info);
     }
@@ -2485,8 +2001,8 @@ CollectionInfo RemoteCalendarBackend::collectionInfo(const QString &collectionId
     CollectionInfo info;
     info.id   = collectionId;
     info.name = collectionId;
-    if (m_davUrls.contains(collectionId)) {
-        info.path = m_davUrls.value(collectionId).url().toString(QUrl::RemovePassword);
+    if (const auto davUrl = davUrlFor(collectionId)) {
+        info.path = davUrl->url().toString(QUrl::RemovePassword);
     }
     info.type = QStringLiteral("calendar");
     return info;
@@ -2514,32 +2030,17 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
         return {};
     }
 
-    // Block until the operation finishes.
-    if (!op->isFinished()) {
-        QEventLoop loop;
-        QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
-        loop.exec();
-    }
-
     QList<BackendRecord> result;
-    if (op->state() != SyncOperation::Succeeded) {
+    if (!awaitOperation(op)) {
         qWarning() << "RemoteCalendarBackend::loadRecords: fetchItems failed for" << collectionId
                    << ":" << op->errorString();
         op->deleteLater();
         return result;
     }
 
-    KCalendarCore::ICalFormat fmt;
     for (const auto &incidence : op->fetchedItems()) {
         if (incidence.isNull()) continue;
-
-        // Serialize the incidence back to iCal bytes.
-        auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-        tmpCal->addIncidence(incidence);
-        QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-        const QString icalStr = fmt.toString(tmpCalPtr);
-        const QByteArray icalBytes = icalStr.toUtf8();
-        result.append(blobRecordFromIcal(incidence->uid(), icalBytes));
+        result.append(blobRecordFromIcal(incidence->uid(), icalFromIncidence(incidence)));
     }
 
     op->deleteLater();
@@ -2549,7 +2050,8 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
 std::optional<BackendRecord> RemoteCalendarBackend::loadRecord(const QString &recordId)
 {
     // recordId == uid; search all registered calendars.
-    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
         const QString icsContent = getRawIcs(it.key(), recordId);
         if (!icsContent.isEmpty()) {
             return blobRecordFromIcal(recordId, icsContent.toUtf8());
@@ -2564,31 +2066,17 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
     if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
         return {};
 
-    // Parse the iCal to get an Incidence::Ptr for pushItems.
-    KCalendarCore::ICalFormat fmt;
-    auto tmpCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
-    QSharedPointer<KCalendarCore::Calendar> tmpCalPtr(tmpCal, [](KCalendarCore::Calendar*){});
-    if (!fmt.fromRawString(tmpCalPtr, record.data)) {
-        qWarning() << "RemoteCalendarBackend::createRecord: cannot parse iCal for uid" << record.id;
-        return {};
-    }
-    const auto incidences = tmpCal->incidences();
+    // Parse the iCal to get Incidence::Ptrs for pushItems.
+    const auto incidences = incidencesFromIcal(record.data);
     if (incidences.isEmpty()) {
-        qWarning() << "RemoteCalendarBackend::createRecord: no incidences in iCal for uid" << record.id;
+        qWarning() << "RemoteCalendarBackend::createRecord: no parseable incidences in iCal for uid" << record.id;
         return {};
     }
 
     PushOperation *op = pushItems(collectionId, incidences);
     if (!op) return {};
 
-    if (!op->isFinished()) {
-        QEventLoop loop;
-        QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
-        loop.exec();
-    }
-
-    const bool ok = (op->state() == SyncOperation::Succeeded) &&
-                    op->failedUids().isEmpty();
+    const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
     op->deleteLater();
     return ok ? record.id : QString{};
 }
@@ -2598,9 +2086,9 @@ bool RemoteCalendarBackend::updateRecord(const BackendRecord &record)
     if (record.id.isEmpty() || record.data.isEmpty()) return false;
 
     // Find which calendar this uid lives in.
-    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
-        KDAV::DavUrl davUrl = it.value();
-        QUrl itemUrl = generateItemUrl(davUrl, record.id);
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
+        QUrl itemUrl = generateItemUrl(it->davUrl, record.id);
         QString urlKey = normalizeUrlKey(itemUrl.toString());
 
         // Check if we have an ETag for this item (proxy for "this calendar owns it").
@@ -2610,7 +2098,8 @@ bool RemoteCalendarBackend::updateRecord(const BackendRecord &record)
     }
 
     // Fallback: try all registered calendars (first success wins).
-    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
         if (setRawIcs(it.key(), record.id, QString::fromUtf8(record.data)))
             return true;
     }
@@ -2623,18 +2112,12 @@ bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
     if (recordId.isEmpty()) return false;
 
     // Try all registered calendars; deleteItems returns success if the uid exists.
-    for (auto it = m_davUrls.constBegin(); it != m_davUrls.constEnd(); ++it) {
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
         DeleteOperation *op = deleteItems(it.key(), QStringList{recordId});
         if (!op) continue;
 
-        if (!op->isFinished()) {
-            QEventLoop loop;
-            QObject::connect(op, &SyncOperation::finished, &loop, &QEventLoop::quit);
-            loop.exec();
-        }
-
-        const bool ok = (op->state() == SyncOperation::Succeeded) &&
-                        op->failedUids().isEmpty();
+        const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
         op->deleteLater();
         if (ok) return true;
     }
@@ -2646,48 +2129,11 @@ bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
 QList<BackendRecord> RemoteCalendarBackend::modifiedSince(const QString &collectionId,
                                                    const QDateTime &since)
 {
-    // CTag short-circuit: if the stored CTag matches what the server has, nothing changed.
-    // The freshCtag is fetched inside fetchItems via PROPFIND; we replicate just the check here.
-    // If the CTag matches, return empty — caller will skip a full fetch.
+    // CTag short-circuit: if the stored CTag matches what the server has,
+    // nothing changed — return empty and the caller skips the full fetch.
     const QString storedCtag = ctag(collectionId);
-    if (!storedCtag.isEmpty() && m_davUrls.contains(collectionId)) {
-        // Do a lightweight Depth:0 PROPFIND to get the current CTag.
-        KDAV::DavUrl davUrl = m_davUrls.value(collectionId);
-        QUrl propfindUrl = davUrl.url();
-        propfindUrl.setUserName(QString());
-        propfindUrl.setPassword(QString());
-
-        QNetworkAccessManager nam;
-        QNetworkRequest request(propfindUrl);
-        request.setHeader(QNetworkRequest::ContentTypeHeader,
-                          QStringLiteral("application/xml; charset=utf-8"));
-        request.setRawHeader("Depth", "0");
-        request.setRawHeader("Authorization",
-                             "Basic " + (m_username + QLatin1Char(':') + m_password).toUtf8().toBase64());
-
-        const QByteArray body =
-            "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
-            "<D:propfind xmlns:D=\"DAV:\" xmlns:CS=\"http://calendarserver.org/ns/\">"
-            "  <D:prop><CS:getctag/></D:prop>"
-            "</D:propfind>";
-
-        QEventLoop loop;
-        QString freshCtag;
-
-        QNetworkReply *reply = nam.sendCustomRequest(request, "PROPFIND", body);
-        QObject::connect(reply, &QNetworkReply::finished, &loop,
-                         [reply, &loop, &freshCtag]() {
-            if (reply->error() == QNetworkReply::NoError) {
-                const QString response = QString::fromUtf8(reply->readAll());
-                QRegularExpression re(QStringLiteral("<[^>]*:getctag[^>]*>([^<]+)</[^>]*:getctag>"));
-                auto m = re.match(response);
-                if (m.hasMatch()) freshCtag = m.captured(1);
-            }
-            reply->deleteLater();
-            loop.quit();
-        });
-        loop.exec();
-
+    if (!storedCtag.isEmpty() && davUrlFor(collectionId)) {
+        const QString freshCtag = fetchFreshCtag(collectionId);
         if (!freshCtag.isEmpty() && freshCtag == storedCtag) {
             return {};  // CTag unchanged — nothing modified
         }

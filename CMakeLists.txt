@@ -132,6 +132,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/backendcapabilities.h
     src/sync/backendregistry.h
     src/calendar/caldavcapabilitydiscovery.h
+    src/calendar/caldavcontentcache.h
     src/calendar/calendarmanager.h
     # calendarmetadatamanager moved from src/types/ in Plan 5 (atomic QSaveFile Vdir
     # metadata I/O; no downstream consumer, so calendar/ not TypeSupport; AUDIT B2).
@@ -175,6 +176,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/backendcapabilities.cpp
     src/sync/backendregistry.cpp
     src/calendar/caldavcapabilitydiscovery.cpp
+    src/calendar/caldavcontentcache.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/calendarmetadatamanager.cpp
     src/calendar/decsyncactivecontroller.cpp
