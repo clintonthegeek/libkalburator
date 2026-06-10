@@ -11,12 +11,16 @@
 #include <QAction>
 #include <QComboBox>
 #include <QDialogButtonBox>
+#include <QFont>
+#include <QFrame>
 #include <QFutureWatcher>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace Kalburator::Ui {
@@ -75,6 +79,29 @@ ProviderConfigDialog::ProviderConfigDialog(
     m_statusLabel->setWordWrap(true);
     m_statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     root->addWidget(m_statusLabel);
+
+    // §4.4 — error-details disclosure: "Details ▶" toggle + collapsible plain-text view.
+    // Built here; shown/hidden in onConnectFinished depending on outcome.
+    m_detailsBtn = new QToolButton(this);
+    m_detailsBtn->setObjectName(QStringLiteral("testDetailsButton"));
+    m_detailsBtn->setText(tr("Details"));
+    m_detailsBtn->setCheckable(true);
+    m_detailsBtn->setArrowType(Qt::RightArrow);
+    m_detailsBtn->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_detailsBtn->hide();
+    root->addWidget(m_detailsBtn);
+
+    m_detailsText = new QPlainTextEdit(this);
+    m_detailsText->setObjectName(QStringLiteral("testDetailsText"));
+    m_detailsText->setReadOnly(true);
+    m_detailsText->setMaximumHeight(100);
+    m_detailsText->hide();
+    root->addWidget(m_detailsText);
+
+    QObject::connect(m_detailsBtn, &QToolButton::toggled, m_detailsText, &QPlainTextEdit::setVisible);
+    QObject::connect(m_detailsBtn, &QToolButton::toggled, this, [this](bool open) {
+        m_detailsBtn->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+    });
 
     QObject::connect(m_combo, &QComboBox::currentIndexChanged,
                      this, &ProviderConfigDialog::onProviderChanged);
@@ -182,8 +209,12 @@ void ProviderConfigDialog::rebuildProviderWidget()
     }
 
     m_picker->setVisible(false);
+    if (m_noCalendarsPanel) m_noCalendarsPanel->setVisible(false);
     m_saveButton->setEnabled(false);
     if (m_statusLabel) m_statusLabel->clear();
+    // Reset error-details disclosure
+    if (m_detailsBtn)  { m_detailsBtn->setChecked(false);  m_detailsBtn->hide(); }
+    if (m_detailsText) { m_detailsText->clear();            m_detailsText->hide(); }
 }
 
 void ProviderConfigDialog::applyWidgetToProvider() const
@@ -270,6 +301,10 @@ void ProviderConfigDialog::onConnectFinished(bool ok)
     QObject::disconnect(m_errorConn);
     if (!m_currentProvider) return;
 
+    // Always reset the details disclosure — it will be reshown for errors below.
+    if (m_detailsBtn)  { m_detailsBtn->setChecked(false);  m_detailsBtn->hide(); }
+    if (m_detailsText) { m_detailsText->clear();            m_detailsText->hide(); }
+
     if (ok) {
         auto allCollections = m_currentProvider->collections();
         QList<Sync::CollectionInfo> calendarOnly;
@@ -278,26 +313,106 @@ void ProviderConfigDialog::onConnectFinished(bool ok)
             if (c.type == QStringLiteral("calendar"))
                 calendarOnly.append(c);
         }
-        m_picker->setCollections(calendarOnly);
-        m_picker->setVisible(true);
-        m_saveButton->setEnabled(true);
 
         const int n = calendarOnly.size();
-        QString msg = tr("Connected — %n collection(s) found", nullptr, n);
-        // A partial success (e.g. CalDAV worked but CardDAV didn't) is reported
-        // via lastWarning() even when connect() overall succeeded.
-        const QString warning = m_currentProvider->lastWarning();
-        if (!warning.isEmpty())
-            msg += QStringLiteral("\n⚠ %1").arg(warning);
-        if (m_statusLabel) m_statusLabel->setText(msg);
+
+        // §4.3 — 0-calendars state: disable Save, hide picker, show help panel.
+        if (n == 0) {
+            m_saveButton->setEnabled(false);
+            m_picker->setVisible(false);
+
+            // Build the help panel lazily and insert it above the picker in the
+            // root layout (root is the top-level QVBoxLayout of this dialog).
+            if (!m_noCalendarsPanel) {
+                m_noCalendarsPanel = new QFrame(this);
+                m_noCalendarsPanel->setObjectName(QStringLiteral("noCalendarsPanel"));
+                m_noCalendarsPanel->setFrameShape(QFrame::Box);
+
+                auto *vbox = new QVBoxLayout(m_noCalendarsPanel);
+
+                auto *title = new QLabel(tr("No calendars found on this account."), m_noCalendarsPanel);
+                title->setTextFormat(Qt::PlainText);
+                QFont f = title->font();
+                f.setBold(true);
+                title->setFont(f);
+
+                auto *body = new QLabel(tr(
+                    "This could mean:\n"
+                    " • The account has no calendars yet.\n"
+                    " • The URL points to the wrong server or path.\n"
+                    " • The credentials don’t have permission to list calendars."
+                ), m_noCalendarsPanel);
+                body->setWordWrap(true);
+                body->setTextFormat(Qt::PlainText);
+
+                auto *btnRow = new QHBoxLayout;
+                auto *tryAgainBtn = new QPushButton(tr("Try Again"), m_noCalendarsPanel);
+                auto *backBtn     = new QPushButton(tr("Check the URL"), m_noCalendarsPanel);
+                btnRow->addWidget(tryAgainBtn);
+                btnRow->addWidget(backBtn);
+                btnRow->addStretch();
+
+                vbox->addWidget(title);
+                vbox->addWidget(body);
+                vbox->addLayout(btnRow);
+
+                // "Try Again" re-runs the test with whatever is currently in the
+                // embedded config widget. "Check the URL" closes the picker area
+                // and returns focus to the config fields (the embed host is always
+                // visible; hiding the panel is sufficient to restore the layout).
+                QObject::connect(tryAgainBtn, &QPushButton::clicked,
+                                 this, &ProviderConfigDialog::onTestClicked);
+                QObject::connect(backBtn, &QPushButton::clicked, this, [this]() {
+                    if (m_noCalendarsPanel) m_noCalendarsPanel->setVisible(false);
+                    if (m_statusLabel) m_statusLabel->clear();
+                });
+
+                // Insert just above m_picker in the root layout.
+                auto *root = qobject_cast<QVBoxLayout *>(layout());
+                if (root) {
+                    const int pickerIdx = root->indexOf(m_picker);
+                    root->insertWidget(pickerIdx >= 0 ? pickerIdx : root->count(),
+                                      m_noCalendarsPanel);
+                }
+            }
+            m_noCalendarsPanel->setVisible(true);
+
+            if (m_statusLabel) m_statusLabel->setText(tr("Connected — no calendars found."));
+        } else {
+            // n > 0: normal success path.
+            if (m_noCalendarsPanel) m_noCalendarsPanel->setVisible(false);
+            m_picker->setCollections(calendarOnly);
+            m_picker->setVisible(true);
+            m_saveButton->setEnabled(true);
+
+            QString msg = tr("Connected — %n collection(s) found", nullptr, n);
+            // A partial success (e.g. CalDAV worked but CardDAV didn't) is
+            // reported via lastWarning() even when connect() overall succeeded.
+            const QString warning = m_currentProvider->lastWarning();
+            if (!warning.isEmpty())
+                msg += QStringLiteral("\n⚠ %1").arg(warning);
+            if (m_statusLabel) m_statusLabel->setText(msg);
+        }
     } else {
+        // Connection failure. §4.4 — show error summary in the status label
+        // and expose an expandable Details disclosure for the raw error text.
+        if (m_noCalendarsPanel) m_noCalendarsPanel->setVisible(false);
+
         // Prefer the captured error(); fall back to lastWarning(), then a
         // generic message — but always say more than just "Failed".
         QString reason = m_lastTestError;
         if (reason.isEmpty()) reason = m_currentProvider->lastWarning();
         if (reason.isEmpty()) reason = tr("Connection failed (no detail reported).");
+
         if (m_statusLabel)
-            m_statusLabel->setText(tr("Connection failed: %1").arg(reason));
+            m_statusLabel->setText(tr("Connection failed. Check the URL and credentials."));
+
+        // Populate and surface the details disclosure with the raw reason.
+        if (m_detailsBtn && m_detailsText) {
+            m_detailsText->setPlainText(reason);
+            m_detailsBtn->show();
+            // Leave collapsed by default — user expands if they need the detail.
+        }
     }
 }
 
