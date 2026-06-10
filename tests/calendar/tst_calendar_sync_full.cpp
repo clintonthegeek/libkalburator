@@ -24,6 +24,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -172,8 +173,9 @@ bool TestCalendarSyncFull::runOneSync()
     // The single-mapping form does not cleanly exit the post-sync
     // processNextMapping loop in SyncEngine, leading to a second
     // queued sync that interferes with cleanup.
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     // QFuture::waitForFinished() does not spin the event loop; poll
     // with QTest::qWait() until the future finishes or we time out.
     int waited = 0;

@@ -66,6 +66,7 @@
 #include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 #include "stubs/stubsynchost.h"
@@ -228,7 +229,9 @@ void TstSyncEngineUnification::multiMappingSequentialCompletesInOrder()
         startedOrder.append(mappingId);
     });
 
-    auto future = m_engine->runSyncFuture(SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     QVERIFY(!future.isCanceled());

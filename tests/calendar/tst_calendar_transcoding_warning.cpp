@@ -30,6 +30,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -187,8 +188,9 @@ void TestCalendarTranscodingWarning::transcoding_sourceHasRruleByDay_targetCantR
     QSignalSpy warningSpy(m_coordinator.get(),
                           &SyncEngine::transcodingWarning);
 
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     QVERIFY(!future.isCanceled());
 

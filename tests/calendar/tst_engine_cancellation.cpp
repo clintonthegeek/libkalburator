@@ -18,6 +18,7 @@
 #include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 #include <KCalendarCore/ICalFormat>
@@ -515,7 +516,7 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
     // Block m3's source fetch so the queue stalls there.
     sources[2]->setFetchBlocking(true);
 
-    auto future = m_engine->runSyncFuture();
+    auto future = m_engine->runSync(SyncRequest{});
 
     // Wait until m1 + m2 have completed by observing their target
     // backends receiving the seeded event. Per-mapping QFuture
@@ -661,7 +662,7 @@ void TstEngineCancellation::multiMappingFutureReturnsList()
                         makeEvent(QStringLiteral("evt-1"),
                                   QStringLiteral("Event One")));
 
-    auto future = m_engine->runSyncFuture();
+    auto future = m_engine->runSync(SyncRequest{});
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
 

@@ -45,6 +45,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -180,8 +181,9 @@ void TstEngineSilentSuccessGuard::cleanup()
 
 bool TstEngineSilentSuccessGuard::runOneSync()
 {
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     if (!QTest::qWaitFor([&] { return future.isFinished(); }, kSyncTimeoutMs)) {
         qWarning() << "runSyncFuture did not finish within"
                    << kSyncTimeoutMs << "ms";

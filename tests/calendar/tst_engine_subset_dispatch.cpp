@@ -16,6 +16,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -144,8 +145,9 @@ void TestEngineSubsetDispatch::cleanup()
 
 void TestEngineSubsetDispatch::subsetOf2Runs_returnsExactly2Results()
 {
-    auto future = m_engine->runSyncFuture(
-        QList<QString>{ QStringLiteral("m1"), QStringLiteral("m3") });
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m1"), QStringLiteral("m3") };
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     const auto results = future.resultAt(0);
     QCOMPARE(results.size(), 2);
@@ -163,7 +165,7 @@ void TestEngineSubsetDispatch::emptySubset_returnsEmptyResults()
 
 void TestEngineSubsetDispatch::noFilter_runsAll3()
 {
-    auto future = m_engine->runSyncFuture();
+    auto future = m_engine->runSync(SyncRequest{});
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     const auto results = future.resultAt(0);
     QCOMPARE(results.size(), 3);

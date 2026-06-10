@@ -5,6 +5,7 @@
 #include "syncruncoordinator.h"
 
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 #include <QDebug>
@@ -57,7 +58,9 @@ void SyncRunCoordinator::runSync(Kalburator::Engine::SyncEngine::SyncBehavior be
         m_watcher = nullptr;
     }
 
-    auto future = m_engine->runSyncFuture(behavior);
+    Kalburator::Engine::SyncRequest req;
+    req.behavior = behavior;
+    auto future = m_engine->runSync(req);
     m_watcher = new QFutureWatcher<QList<SyncResult>>(this);
     connect(m_watcher, &QFutureWatcher<QList<SyncResult>>::finished,
             this, &SyncRunCoordinator::onSyncRunFinished);

@@ -34,6 +34,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -215,8 +216,9 @@ void TestCalendarSubsequentSyncUsesBlobView::setupCoordinator()
 
 bool TestCalendarSubsequentSyncUsesBlobView::runOneSync()
 {
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     int waited = 0;
     while (!future.isFinished() && waited < kSyncTimeoutMs) {
         QTest::qWait(10);

@@ -28,6 +28,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -209,8 +210,9 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
     QSignalSpy conflictSpy(m_coordinator.get(),
                            &SyncEngine::conflictDetected);
 
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     QVERIFY(!future.isCanceled());
 
@@ -238,8 +240,9 @@ void TestCalendarConflict::monitored_sameUidDivergent_pausesUntilResume()
     QSignalSpy conflictSpy(m_coordinator.get(),
                            &SyncEngine::conflictDetected);
 
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_coordinator->runSync(req);
 
     // In monitored mode, the worker emits conflictPauseRequested and
     // yields. SyncEngine's onWorkerConflictPauseRequested calls
