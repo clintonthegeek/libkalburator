@@ -181,15 +181,28 @@ PlanStan-side call. Closing note:
 lib default), KEEP the local-hash `SyncHost_WP`, and migrate the **2 PROD**
 `runSyncFuture` callers (`runAllMappings` :916 subset = mechanical; `runMirror` :1031
 single-mapping = return-type change + the `.then()`-on-cancel caveat,
-`syncengine.h:486-488`). Not yet done.
+`syncengine.h:486-488`). **DONE same day (2026-06-10).** Part A: pin → v0.69
+(`d68fa5d`), `PalmSyncHost` overrides deleted → `setBackendRegistry()` on the base
+(`e5d2820`), `SyncHost_WP` kept; A.3 test hosts untouched. Part B: both callers migrated
+(`4dc3537`) — result delivery moved out of `.then()` into the K.8b cancel watcher's
+`finished` slot with a `resultCount()>0` guard + `isCanceled()` synthesis (a canceled
+single-mapping canonical future carries **no result at all**), two new cancel regression
+tests (`tst_palm_runtime_cancel_sync.cpp`, both fail-against-`.then()` / pass-against-watcher),
+ctest **120/120**, `runSyncFuture`-clean. WildPalms declined to pull the dual-iface collapse
+forward (watcher workaround sufficed). Response:
+`docs/2026-06-10-plan8-consumer-wave-response-wildpalms.md`.
 
-## Step 3 (next plan — detail per P1)
+## Step 3 (next plan — detail per P1) — GATE CLEARED
 
-Step 3 (lib `runSyncFuture` retirement) is the next plan to write. The lib-internal
-migration (`syncruncoordinator.cpp:60` + ~87 test sites + `examples/reference_consumer`)
-may proceed now (PlanStan grep-clean), but **deletion of the four `[[deprecated]]`
-overloads is gated on WildPalms** completing its 2 PROD-call migration. The single-mapping
-caller's `.then()`-on-cancel result loss (`syncengine.h:486-488`) means step 3 should also
-collapse the engine's dual future-interface members (FINDINGS "From Plan 1") so the
-canonical single-mapping path preserves the native cancellation result. See STATUS Locked
-decisions (2026-06-10).
+Step 3 (lib `runSyncFuture` retirement) is the next plan to write, and it is now **fully
+unblocked**: both PlanStan and WildPalms are `runSyncFuture`-clean, so the **deletion of
+the four `[[deprecated]]` overloads** has no remaining external consumer — the only callers
+left are lib-internal (`syncruncoordinator.cpp:60`, `examples/reference_consumer/main.cpp:300`,
+~87 test sites). **Carry into the step-3 plan:** the canonical single-mapping
+`runSync(SyncRequest)` branch `.then()`-wraps `dispatchSingleNative` and loses the native
+cancellation result (`syncengine.h:486-488`); WildPalms confirmed the wrapped canceled
+future has `resultCount()==0`, so the lib's own migration must guard `resultCount()>0`
+before `resultAt(0)` and synthesize cancel via `isCanceled()` — OR collapse the engine's
+dual future-interface members (FINDINGS "From Plan 1") so the canonical single-mapping path
+preserves the native result and the guard becomes unnecessary. See STATUS Locked decisions
+(2026-06-10).

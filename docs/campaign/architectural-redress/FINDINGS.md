@@ -540,6 +540,12 @@ invariant 9:
   and Qt6 drops `.then()` continuations on a canceled source, so the native F2 Task 23
   cancellation result (`resultCount()==1`, `cancelled==true`) is LOST through the wrapper.
   The deprecated `runSyncFuture(mappingId, …)` shims return the native future verbatim and
-  do NOT have this loss. Surfaces in the WildPalms handoff (`runMirror`, `06fd77c`). Step 3
-  must collapse the dual future-interface members (see "From Plan 1") so the canonical path
-  preserves cancellation natively. (NOT FIXED — step 3.)
+  do NOT have this loss. **WildPalms empirically refined this (2026-06-10, `4dc3537`):**
+  the wrapped canceled single-mapping future carries `resultCount()==0` — NO result at all,
+  not even a cancelled one — so bare `resultAt(0)` would assert. Their fix delivers from the
+  cancel watcher's `finished` slot, guarding `resultCount()>0` before `resultAt(0)` and
+  synthesizing `cancelled` via `isCanceled()` (`palmruntime.cpp:923/1063`, WildPalms). Step 3's
+  own `syncruncoordinator.cpp:60` + `examples/reference_consumer` migration must carry the same
+  guard, OR collapse the engine's dual future-interface members (see "From Plan 1") so the
+  canonical single-mapping path returns the native result and the guard becomes unnecessary.
+  (NOT FIXED lib-side — step 3; both consumers already worked around it.)

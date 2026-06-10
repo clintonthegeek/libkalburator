@@ -1,8 +1,9 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (Plan 8 step 2 — PlanStan consumer wave — COMPLETE +
-WildPalms handoff issued; step 3 is next, gated on WildPalms for the overload deletion.
-Lib baseline unchanged at **147/147** — step 2 touched no lib code, only PlanStan's)
+**Last updated:** 2026-06-10 (Plan 8 step 2 — BOTH consumer waves COMPLETE: PlanStan
+`58bd4835` + WildPalms `4dc3537`, both `runSyncFuture`-clean. Step 3 is now **fully
+unblocked** — overload deletion gate cleared. Lib baseline unchanged at **147/147** —
+step 2 touched no lib code, only the two consumers')
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
@@ -73,11 +74,20 @@ separate handoff** (`docs/2026-06-10-plan8-wildpalms-consumer-wave-handoff.md`,
 lib-side `runSyncFuture` retirement: migrate `syncruncoordinator.cpp:60` + ~87 lib test
 sites + `examples/reference_consumer` to `runSync(SyncRequest)`, then **delete the four
 `[[deprecated]]` overloads** and collapse the engine's dual future-interface members
-(FINDINGS "From Plan 1"). **Gate:** the lib-internal migration can proceed now (PlanStan
-is grep-clean), but **deleting the four overloads is gated on WildPalms** completing its
-2 PROD-call migration — the only remaining external consumer (see Locked decisions
-2026-06-10). If step 3 waits on WildPalms, the alternative next plan is **Plan 9**
-(backend-adjacent dir consolidation + discovery placement) — plan file first, per P1.
+(FINDINGS "From Plan 1"). **Gate CLEARED (2026-06-10):** BOTH external consumers are now
+`runSyncFuture`-clean — PlanStan (`58bd4835`) and **WildPalms** (Part A+B done:
+`d68fa5d`/`e5d2820`/`4dc3537`, ctest 120/120; response
+`docs/2026-06-10-plan8-consumer-wave-response-wildpalms.md`). The ONLY remaining
+`runSyncFuture` callers are lib-internal (`syncruncoordinator.cpp:60`,
+`examples/reference_consumer/main.cpp:300`) — exactly the step-3 scope. **Step 3 is fully
+unblocked, overload deletion included.** Step-3 single-mapping note from WildPalms: the
+canonical `runSync(SyncRequest)` single-mapping branch returns a future with
+**`resultCount()==0` when canceled** (no result at all — not a cancelled result), so the
+lib's own `syncruncoordinator`/`reference_consumer` migration must guard
+`if (resultCount() > 0) resultAt(0)` and synthesize the cancelled outcome via
+`isCanceled()` (FINDINGS). The dual future-interface collapse would remove this wart;
+WildPalms confirmed it is NOT urgent. (The other unblocked lib-only plan remains **Plan
+9** if step 3 is deferred.)
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -353,7 +363,7 @@ severities, not the retired old plan numbers:
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
 | 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
 | 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
-| 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **step 1 DONE** (v0.69) + **step 2 PlanStan wave DONE** 2026-06-10 (`58bd4835`, grep-clean); **step 3** (lib `runSyncFuture` deletion) next — plan file first, overload deletion gated on WildPalms handoff `06fd77c`. (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
+| 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **step 1 DONE** (v0.69) + **step 2 BOTH consumer waves DONE** 2026-06-10 (PlanStan `58bd4835` + WildPalms `4dc3537`, both grep-clean); **step 3** (lib `runSyncFuture` deletion) **fully unblocked** — plan file first, per P1. (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
 | 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
@@ -428,7 +438,13 @@ the invariant or audit finding. Format:
   overrides (now zero-internal-consumer; their later call). The single-mapping caller faces
   the `.then()`-on-cancel result-loss (`syncengine.h:486-488`); step 3's dual future-interface
   collapse (FINDINGS "From Plan 1") is the proper fix and may be pulled forward if WildPalms
-  needs it. (Plan 8 consumer-wave closing notes; INVARIANTS §10.)
+  needs it. (Plan 8 consumer-wave closing notes; INVARIANTS §10.) — **GATE SATISFIED same
+  day (2026-06-10):** WildPalms completed Part A+B (`4dc3537`, ctest 120/120,
+  `runSyncFuture`-clean; response `docs/2026-06-10-plan8-consumer-wave-response-wildpalms.md`)
+  and declined to pull the dual-iface collapse forward (watcher workaround sufficed). Both
+  consumers clean ⇒ step-3 overload deletion is unblocked. WildPalms surfaced that the
+  canonical single-mapping canceled future has `resultCount()==0` — step 3 must guard
+  `resultCount()>0` before `resultAt(0)` and synthesize cancel via `isCanceled()`.
 
 ## Acceptance gates
 
