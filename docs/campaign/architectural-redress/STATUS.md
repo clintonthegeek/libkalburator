@@ -1,11 +1,9 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (audit supplement + v0.67 wave landed; baseline **137/137**)
+**Last updated:** 2026-06-10 (WP-A–WP-D audit-follow-up wave complete; baseline **144/144**)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
-**State:** **Audit rebaselined; Plans 1 (SyncEngine decomposition), 2 (CalendarManager safety
-net), 3 (neutralize the calendar-typed sync core), 4 (correctness/ownership sweep), 5 (`types/`
-purification) and 6 (`shape/` decoupling) landed.**
+**State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
 The original 2026-05-28 audit and its nine drafted plans rested on material factual errors (see
 `AUDIT.md` provenance) and are **archived under `archive/`**. The new `AUDIT.md` is a verified
 rebuild (139-agent run, every finding adversarially checked against source). Plan 2 pinned three
@@ -18,18 +16,40 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Next action = WP-B doc-truth sweep (in progress), then WP-C/D, then Plan 7.** A five-agent
-audit supplement (`AUDIT-2026-06-10-supplement.md`) re-baselined everything that grew since
-the 2026-05-29 audit; its implementation sequencing lives in
-`2026-06-10-audit-follow-up-specs.md` (**WP-A** DONE — correctness/contract quick wins →
-**WP-B** doc-truth sweep **← current** → **WP-C** dead-code removal → **WP-D** test-gap
-closure → **Plan 7** RemoteCalendarBackend decomposition → **Plan 8 prep**, resequenced
-PlanStan-first). A fresh agent should read INVARIANTS → supplement → specs then pick up at
-the first incomplete WP-B item.
+**Next action = Plan 7 (RemoteCalendarBackend decomposition).**
 
-Same-day fixes already landed (2026-06-10, all merged to `main`, 137/137): the
-`calendarsOnly` ctor-argument swallow (`b47d75e`, audit C1), the §4.4 dialog-test contract
-realignment (`d1e924b`), and the v0.67 consumer wave (below).
+All audit-follow-up work packages are complete:
+
+| Work package | What | Status |
+|---|---|---|
+| **WP-A** (7 tasks) | Correctness/contract quick wins, calendarsOnly RFC, failure-contract RFC | ✅ DONE |
+| **WP-B** | Doc/comment truth sweep | ✅ DONE |
+| **WP-C** (6 tasks) | Dead-code deletion, retirement RFCs | ✅ DONE |
+| **WP-D** (10 tasks) | Test-gap closure (conflict-policy, wipeCollection, convergence, TypeSupport unit tests, SyncEngine config API, discovery/ smoke, §4.3 dialog, cancel cache-integrity, QSKIP revival, Akonadi/Org lane) | ✅ DONE |
+
+Baseline: **144/144** (was 137 at the start of the WP-A–D session; +7 new test executables).
+
+**Plan 7 inputs are current** (re-surveyed in `AUDIT-2026-06-10-supplement.md` §S4 +
+`2026-06-10-audit-follow-up-specs.md` §"Plan 7"): `remotecalendarbackend.cpp` 2718 LOC /
+header 472 LOC, ~61 public methods, 8-concern inventory (credentials/URL; discovery & primed
+replay; ctag change-detection; SQLite content cache; etag/item-URL bookkeeping; calendar CRUD;
+operations API + IBlobBackend + QEventLoop boilerplate; legacy storeCalendars/startSync).
+Constraints: preserve `tst_remotecalendarbackend_convergence` + blob_view contracts verbatim.
+
+**A fresh agent must write
+`docs/campaign/architectural-redress/plans/plan-7-remotecalendarbackend-decomposition.md`
+BEFORE implementing** (INVARIANTS §11: next-plan-only detail). Read INVARIANTS → supplement
+S4 → specs §"Plan 7" → FINDINGS B3 / AUDIT B3 for the full concern inventory.
+
+**Plan 8** is resequenced PlanStan-first by consumer data: WildPalms has 0 `backendById`
+lookups (2 shim overrides); PlanStan has ~20 call/override sites and is the real migration.
+Order: (1) make `ISyncHost::backendById`/`backends()` non-pure with BackendRegistry-backed
+defaults; (2) RFC PlanStan migrates ~20 sites + WildPalms deletes its 2 shims; (3)
+`runSyncFuture` deletion requires a PlanStan migration wave (2 PROD callers).
+
+Same-day fixes landed 2026-06-10 (all on `main`, part of the baseline 137 before WP-A–D):
+the `calendarsOnly` ctor-argument swallow (`b47d75e`, audit C1), the §4.4 dialog-test
+contract realignment (`d1e924b`), and the v0.67 consumer wave (below).
 
 Plan 6 record (2026-06-06, kept for reference): merged `806392c`; downstream gates passed
 — PlanStan 98/118 failed-set identical to baseline (20 headless GUI tests); WildPalms temp
