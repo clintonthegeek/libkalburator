@@ -41,7 +41,6 @@ class IMassDeleteGuard;
 } // namespace Kalburator::Conflict
 
 namespace Kalburator::Sync {
-class SyncBackend;
 class SyncBackendBase;
 class BackendRegistry;
 class ISyncHost;
@@ -60,7 +59,6 @@ using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Sync::SyncOperation;
-using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncBackendBase;
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::ISyncHost;

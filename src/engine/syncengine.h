@@ -43,7 +43,6 @@ namespace Kalburator::Sync {
 class BackendRegistry;
 class IBlobBackend;
 class ISyncHost;
-class SyncBackend;
 class SyncBackendBase;
 class ICalendarCollection;
 class SyncConflictStore;
@@ -71,7 +70,6 @@ using Kalburator::Sync::SyncOperation;  // neutral op base; engine depends only 
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::IBlobBackend;
 using Kalburator::Sync::ISyncHost;
-using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncBackendBase;
 using Kalburator::Sync::ICalendarCollection;
 using Kalburator::Sync::SyncConflictStore;

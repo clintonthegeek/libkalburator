@@ -4,7 +4,6 @@
 #include "iblobbackend.h"
 #include "backendregistry.h"
 #include "backendcontribution.h"
-#include "syncbackend.h"
 #include "syncbackendbase.h"
 #include "backendconfiguration.h"
 

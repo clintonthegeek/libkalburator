@@ -27,7 +27,6 @@
 #include "icalendarcollection.h"
 #include "backendcapabilities.h"
 #include "backendconfiguration.h"
-#include "syncbackend.h"
 #include "changedetection.h"
 #include "../sync/syncoperation.h"
 #include "conflictmanager.h"
