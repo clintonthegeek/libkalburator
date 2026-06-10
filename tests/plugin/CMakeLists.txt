@@ -23,10 +23,14 @@ add_dependencies(tst_pluginmanager_smoke tinyplugin)
 target_compile_definitions(tst_pluginmanager_smoke PRIVATE
     TINY_PLUGIN_DIR="$<TARGET_FILE_DIR:tinyplugin>")
 add_test(NAME tst_pluginmanager_smoke COMMAND tst_pluginmanager_smoke)
+set_tests_properties(tst_pluginmanager_smoke PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(tst_stock_plugins tst_stock_plugins.cpp)
 target_link_libraries(tst_stock_plugins PRIVATE kalburator Qt6::Test)
 add_test(NAME tst_stock_plugins COMMAND tst_stock_plugins)
+set_tests_properties(tst_stock_plugins PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_executable(tst_provider_plugin_registration tst_provider_plugin_registration.cpp)
 target_link_libraries(tst_provider_plugin_registration PRIVATE kalburator Qt6::Test)

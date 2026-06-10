@@ -118,3 +118,11 @@ kalburator_add_engine_integration_test(tst_syncengine_unification)
 target_link_libraries(tst_syncengine_unification PRIVATE Qt6::Sql Qt6::Widgets)
 target_include_directories(tst_syncengine_unification
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)
+
+# WP-D1 — conflict-policy matrix: Duplicate, TargetWins, Skip.
+# Mirrors tst_syncengine_unification fixture; pins the three policy
+# paths (syncengine.cpp:1623/:1605/default) that had zero engine tests.
+kalburator_add_engine_integration_test(tst_conflict_policy_matrix)
+target_link_libraries(tst_conflict_policy_matrix PRIVATE Qt6::Sql Qt6::Widgets)
+target_include_directories(tst_conflict_policy_matrix
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)

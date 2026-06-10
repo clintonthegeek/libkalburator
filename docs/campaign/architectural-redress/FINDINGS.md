@@ -308,6 +308,20 @@ invariant 9:
   96 commits behind. Plan 8 blocker INVERTED: WildPalms has 0 `backendById` lookups,
   PlanStan ~20 sites; `runSyncFuture` has 2 WildPalms PROD callers — Plan 8 is a
   PlanStan-first consumer wave (specs §Plan 8 prep).
+- 2026-06-10 — `src/engine/syncengine.cpp:1637-1641` and `:2517-2520` — inv (correctness) —
+  **[C2] Duplicate UID-rebind broken for non-iCal canonical domains.**
+  Both Duplicate switch arms patch `clone.data` with
+  `data.replace("UID:<id>", "UID:<new-id>")` — correct only for iCal-encoded records.
+  At conflict-resolution time `op.targetRecord.data` is already in canonical form
+  (`{calendar,canon}` JSON after `tgtToCanon->apply` in `unifiedDispatchSync`), so the
+  iCal "UID:" string pattern never matches. Clone inherits original uid in canonical data;
+  `canonToTgt->apply` converts back to iCal with original uid; `MockBackend::createRecord`
+  stores the clone under the wrong key and the subsequent UPDATE overwrites it — result
+  is 1 record on the target, not 2. Fix: rebind the uid in canonical format (replace
+  `"uid":"<original-id>"` in the canonical JSON at both switch arms) before the write
+  path. QSKIP'd in
+  `tst_conflict_policy_matrix::conflictResolution_duplicate_keepsBothSides`
+  until resolved. → WP-D1.
 
 ## Resolved
 
