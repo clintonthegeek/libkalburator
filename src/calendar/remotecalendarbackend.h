@@ -13,7 +13,6 @@
 #include <QUrl>
 #include <QMap>
 #include <QPointer>
-#include <QSqlDatabase>
 #include <QColor>
 #include <QDateTime>
 #include <QStringList>
@@ -22,6 +21,7 @@
 
 namespace Kalburator::Sync {
 
+class CalDavContentCache;
 class CTagStore;
 struct BackendCapabilities;
 
@@ -376,23 +376,9 @@ private:
     // Our own local etag cache: map from remote URL string to ETag
     QMap<QString, QString> m_localEtags;
 
-    // ========== Content Cache for Delta Sync ==========
-    // SQLite cache for item content to avoid re-fetching unchanged items
-    QString m_cacheConnectionName;
-    bool m_cacheInitialized = false;
-    QString m_cacheDirOverride;  // when non-empty, overrides CacheLocation (setCacheDir)
-
-    // Initialize the cache database (lazy, called on first fetchItems)
-    void initContentCache();
-
-    // Get cached iCal content for a URL (returns empty if not cached or stale)
-    QString getCachedContent(const QString &itemUrl, const QString &expectedEtag) const;
-
-    // Store iCal content in cache
-    void setCachedContent(const QString &itemUrl, const QString &etag, const QString &icalContent);
-
-    // Remove an item from the cache
-    void removeCachedContent(const QString &itemUrl);
+    // Persistent delta-sync payload cache (own SQLite connection; see
+    // caldavcontentcache.h). Lazily opened on first fetchItems()/pushItems().
+    std::unique_ptr<CalDavContentCache> m_contentCache;
 
     // Helper to get our cached etag string for a remote item URL
     QString cachedEtag(const QString &remoteUrl) const;

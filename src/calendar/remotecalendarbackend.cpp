@@ -1,4 +1,5 @@
 #include "remotecalendarbackend.h"
+#include "caldavcontentcache.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -15,7 +16,6 @@
 #include <KCalendarCore/ICalFormat>
 #include <KIO/Job>
 
-#include <QAtomicInt>
 #include <QPointer>
 #include <QDebug>
 #include <QTimer>
@@ -26,17 +26,8 @@
 #include <QNetworkRequest>
 #include <QSqlQuery>
 #include <QSqlError>
-#include <QStandardPaths>
-#include <QDir>
-#include <QUuid>
-#include <QRegularExpression>
 #include <QXmlStreamReader>
 #include <QCryptographicHash>
-
-#include <KIO/Job>
-#include <KIO/TransferJob>
-#include <KIO/DeleteJob>
-#include <KDAV/DavItemFetchJob>
 
 namespace {
 
@@ -365,7 +356,7 @@ RemoteCalendarBackend::RemoteCalendarBackend(const QUrl &url,
     , m_username(username)
     , m_password(password)
     , m_etagCache(std::make_shared<KDAV::EtagCache>())
-    , m_cacheConnectionName(QStringLiteral("RemoteCalendarBackendCache_") + QUuid::createUuid().toString(QUuid::WithoutBraces))
+    , m_contentCache(std::make_unique<CalDavContentCache>(url.host() + url.path()))
 {
     m_url.setUserName(m_username);
     m_url.setPassword(m_password);
@@ -383,7 +374,7 @@ void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 
 void RemoteCalendarBackend::setCacheDir(const QString &dir)
 {
-    m_cacheDirOverride = dir;
+    m_contentCache->setCacheDir(dir);
 }
 
 QString RemoteCalendarBackend::ctag(const QString &calendarId) const
@@ -476,150 +467,6 @@ QString RemoteCalendarBackend::normalizeUrlKey(const QString &urlString)
 QString RemoteCalendarBackend::cachedEtag(const QString &remoteUrl) const
 {
     return m_localEtags.value(normalizeUrlKey(remoteUrl), QString());
-}
-
-// ============================================================================
-// Content Cache for Delta Sync
-// ============================================================================
-
-namespace {
-// Process-stable 64-bit hash (FNV-1a) over a string's UTF-8 bytes. Unlike
-// qHash(QString), this does NOT incorporate the per-process random QHashSeed,
-// so the derived cache filename is identical across launches for the same
-// account — the property the content cache requires to persist.
-quint64 stableContentCacheHash(const QString &s)
-{
-    const QByteArray bytes = s.toUtf8();
-    quint64 hash = 1469598103934665603ULL;          // FNV offset basis
-    for (const char ch : bytes) {
-        hash ^= static_cast<quint64>(static_cast<unsigned char>(ch));
-        hash *= 1099511628211ULL;                    // FNV prime
-    }
-    return hash;
-}
-} // namespace
-
-void RemoteCalendarBackend::initContentCache()
-{
-    if (m_cacheInitialized) {
-        return;
-    }
-
-    // Cache directory: caller-chosen (per-collection profile folder) when set,
-    // otherwise the app's shared cache location.
-    QString cacheDir = m_cacheDirOverride.isEmpty()
-        ? QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
-        : m_cacheDirOverride;
-    if (cacheDir.isEmpty()) {
-        cacheDir = QDir::tempPath();
-    }
-    QDir().mkpath(cacheDir);
-
-    // Create a host-specific cache file to avoid collisions between servers.
-    // NOTE: must be a *stable* hash — qHash(QString) mixes in a per-process
-    // random seed (QHashSeed), so it yields a different filename every launch,
-    // orphaning the previous run's cache (libkalburator content-cache handoff,
-    // 2026-05-27). Use a fixed FNV-1a over the UTF-8 bytes instead.
-    QString hostHash = QString::number(stableContentCacheHash(m_url.host() + m_url.path()));
-    QString dbPath = cacheDir + QStringLiteral("/caldav-cache-%1.db").arg(hostHash);
-
-    QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_cacheConnectionName);
-    db.setDatabaseName(dbPath);
-
-    if (!db.open()) {
-        qWarning() << "RemoteCalendarBackend: Failed to open content cache database:" << db.lastError().text();
-        return;
-    }
-
-    // Create the cache table
-    QSqlQuery query(db);
-    bool success = query.exec(QStringLiteral(
-        "CREATE TABLE IF NOT EXISTS cached_items ("
-        "  url TEXT PRIMARY KEY,"
-        "  etag TEXT NOT NULL,"
-        "  ical_content TEXT NOT NULL,"
-        "  fetched_at INTEGER NOT NULL"
-        ")"));
-
-    if (!success) {
-        qWarning() << "RemoteCalendarBackend: Failed to create cache table:" << query.lastError().text();
-        return;
-    }
-
-    // Create index for faster lookups
-    query.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_cached_items_etag ON cached_items(etag)"));
-
-    m_cacheInitialized = true;
-    qDebug() << "RemoteCalendarBackend: Content cache initialized at" << dbPath;
-}
-
-QString RemoteCalendarBackend::getCachedContent(const QString &itemUrl, const QString &expectedEtag) const
-{
-    if (!m_cacheInitialized || expectedEtag.isEmpty()) {
-        return QString();
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return QString();
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT ical_content FROM cached_items WHERE url = ? AND etag = ?"));
-    query.addBindValue(itemUrl);
-    query.addBindValue(expectedEtag);
-
-    if (query.exec() && query.next()) {
-        return query.value(0).toString();
-    }
-
-    return QString();
-}
-
-void RemoteCalendarBackend::setCachedContent(const QString &itemUrl, const QString &etag, const QString &icalContent)
-{
-    if (!m_cacheInitialized || itemUrl.isEmpty() || etag.isEmpty()) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT OR REPLACE INTO cached_items (url, etag, ical_content, fetched_at) "
-        "VALUES (?, ?, ?, ?)"));
-    query.addBindValue(itemUrl);
-    query.addBindValue(etag);
-    query.addBindValue(icalContent);
-    query.addBindValue(QDateTime::currentSecsSinceEpoch());
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to cache content:" << query.lastError().text();
-    }
-}
-
-void RemoteCalendarBackend::removeCachedContent(const QString &itemUrl)
-{
-    if (!m_cacheInitialized) {
-        return;
-    }
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isOpen()) {
-        return;
-    }
-
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral("DELETE FROM cached_items WHERE url = ?"));
-    query.addBindValue(itemUrl);
-
-    if (!query.exec()) {
-        qWarning() << "RemoteCalendarBackend: Failed to remove cached content:" << query.lastError().text();
-    }
 }
 
 // Calendar list loading
@@ -1161,7 +1008,7 @@ void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString
         m_etagCache->setEtag(urlKey, etag);
     }
     m_localEtags[urlKey] = etag;
-    setCachedContent(urlKey, etag, icalData);
+    m_contentCache->store(urlKey, etag, icalData);
 }
 
 void RemoteCalendarBackend::noteItemErased(const QString &urlKey)
@@ -1170,7 +1017,7 @@ void RemoteCalendarBackend::noteItemErased(const QString &urlKey)
         m_etagCache->removeEtag(urlKey);
     }
     m_localEtags.remove(urlKey);
-    removeCachedContent(urlKey);
+    m_contentCache->remove(urlKey);
 }
 
 
@@ -1423,28 +1270,14 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
     const QString &calendarId, const KDAV::DavUrl &davUrl)
 {
     QList<KCalendarCore::Incidence::Ptr> cachedIncidences;
-
-    QSqlDatabase db = QSqlDatabase::database(m_cacheConnectionName);
-    if (!db.isValid()) {
-        return cachedIncidences;
-    }
-
-    QString calendarPath = davUrl.url().path();
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT url, ical_content FROM cached_items WHERE url LIKE ?"));
-    query.addBindValue(QLatin1Char('%') + calendarPath + QLatin1Char('%'));
-
-    if (query.exec()) {
-        while (query.next()) {
-            const auto incidences = incidencesFromIcal(query.value(1).toString());
-            for (const auto &incidence : incidences) {
-                cachedIncidences.append(incidence);
-                emit itemFetched(calendarId, incidence);
-            }
+    const auto rows = m_contentCache->rowsByPathFragment(davUrl.url().path());
+    for (const auto &row : rows) {
+        const auto incidences = incidencesFromIcal(row.ical);
+        for (const auto &incidence : incidences) {
+            cachedIncidences.append(incidence);
+            emit itemFetched(calendarId, incidence);
         }
     }
-
     return cachedIncidences;
 }
 
@@ -1464,7 +1297,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
     }
 
     // Initialize content cache on first fetch (lazy initialization)
-    initContentCache();
+    m_contentCache->ensureOpen();
 
     KDAV::DavUrl davUrl = m_davUrls.value(calendarId);
 
@@ -1601,7 +1434,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     QString etag = serverEtags.value(urlKey);
 
                     // Get content from cache
-                    QString cachedIcal = getCachedContent(urlKey, etag);
+                    QString cachedIcal = m_contentCache->content(urlKey, etag);
                     if (cachedIcal.isEmpty()) {
                         // Cache miss - shouldn't happen if item wasn't in changedItems
                         // but handle gracefully by skipping
@@ -1710,11 +1543,11 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
                         // Update cache with fresh content
                         if (!icalData.isEmpty() && !etag.isEmpty()) {
-                            setCachedContent(urlKey, etag, icalData);
+                            m_contentCache->store(urlKey, etag, icalData);
                         }
                     } else {
                         // Serve from cache
-                        icalData = getCachedContent(urlKey, etag);
+                        icalData = m_contentCache->content(urlKey, etag);
                         if (icalData.isEmpty()) {
                             qWarning() << "RemoteCalendarBackend::fetchItems: Cache miss for item:" << urlKey;
                             countSkipped++;
@@ -1813,7 +1646,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
         op->setState(SyncOperation::Running);
 
         // Initialize content cache so we can store pushed items for subsequent fetches
-        initContentCache();
+        m_contentCache->ensureOpen();
 
         for (const auto &incidence : items) {
             if (incidence.isNull()) {
