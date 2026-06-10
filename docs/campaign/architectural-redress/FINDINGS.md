@@ -128,6 +128,12 @@ address — load-bearing knowledge, not audit restatements.
   pinned by `tst_engine_baseonly_backend` (base-only backends + dynamic_cast host). STILL OPEN:
   the interface itself — `ISyncHost::backendById()` remains calendar-typed and its remaining
   consumers (`CalendarManager`, calendar paths) still rely on host impls' casts.
+  **STEP-1 PROGRESS 2026-06-10 (Plan 8, `58728cd`):** `backendById`/`backends()` are now
+  non-pure with `BackendRegistry`-backed `dynamic_cast` defaults behind
+  `setBackendRegistry()` — a host that stops overriding gets clean-nullptr semantics
+  instead of the unchecked cast. The hazard FULLY closes in step 3 (consumer wave lands,
+  scaffold overrides + their casts deleted); until then the lib test scaffolds /
+  reference_consumer keep their overrides (inv 8).
 - 2026-05-29 — downstream contract (INVARIANTS §10) — `BackendRegistry::backendInstance()` now
   returns `SyncBackendBase*` (was `SyncBackend*`) and `registerBackendInstance` takes
   `SyncBackendBase*`. Registration stays source-compatible (upcast), but PlanStan code that
@@ -388,6 +394,17 @@ invariant 9:
   `ctag/setCtag/clearCtag/fetchAllCtags` privatized (engine face =
   `Backend::ChangeDetection`). PlanStan + WildPalms grep-verified non-consumers,
   per-symbol.
+
+### From Plan 8 step 1 (ISyncHost defaults, 2026-06-10)
+
+- 2026-06-10 — PlanStan gate runbook — **any change to a polymorphic class layout in a
+  public header (vtable entries, data members) SEGFAULTs PlanStan's `EXCLUDE_FROM_ALL`
+  test fixtures until they are explicitly relinked** (`make all` skips them; observed:
+  4 SEGFAULTs from the ISyncHost vtable change, all green after
+  `make tst_integration_recurrence_editing tst_integration_collection_switching
+  tst_integration_collection_lifecycle tst_sync_conflicts`). This is the mechanism
+  behind the v0.65-era "stale-binary artifact" note. Relink-the-fixtures is now a
+  standing step before reading the PlanStan gate on ABI-shaped changes.
 
 ### From Plan 7b (LocalBackend decomposition, 2026-06-10)
 
