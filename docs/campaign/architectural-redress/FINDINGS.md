@@ -447,6 +447,52 @@ invariant 9:
   listing — read ALL matches. Full discipline now: one plain pattern per symbol,
   exact-path exclusions, untruncated output, then classify each hit.
 
+### From Plan 9 (backend-dir + discovery consolidation, 2026-06-11)
+
+- 2026-06-11 — `src/sync/caldavprovider.cpp:7`, `src/sync/multiprotocoldavprovider.cpp:5`
+  — inv 1 — **the residual `sync/ → calendar/` CONCRETE-backend include** (both providers
+  `#include "remotecalendarbackend.h"` / `"../calendar/remotecalendarbackend.h"` and
+  `make_unique<RemoteCalendarBackend>` in `createBackend`). This is the B4-corrected MAJOR
+  ("`sync/` includes domain backends, but there is NO cycle") — **deliberately DEFERRED**
+  out of Plan 9 (fork decision 2026-06-11; STATUS): providers producing concrete domain
+  backends is a distinct layering question deserving its own plan, not a Plan 9 rider. Plan 9
+  removed the *discovery* half of the upward reach (CalDav discovery → `sync/`), not the
+  backend half.
+- 2026-06-11 — `src/universal/` dir ↔ `Kalburator::Sinks` namespace — inv 5 — dir/namespace
+  mismatch (the only one left after Plan 9 retired `backend/`→`Backend`; `storage/`↔`Storage`
+  matches). Rename **deferred to Plan 10** (vocabulary): `Kalburator::Sinks` has **11
+  WildPalms sites** (`palmruntime.{h,cpp}` + the hub-reader tests), so it is a downstream
+  consumer wave, not an in-Plan-9 edit. Documented in `universal/universalstorageplugin.h`.
+- 2026-06-11 — `src/typesupport/backendconfiguration.h` `PerCalendarCapabilities` vs
+  `src/sync/caldavcapabilitydiscovery.cpp:424-425` — inv 8 — the discovered href lives in a
+  parallel `m_calendarUrls` map keyed by the same calendarId as `perCalendarCapabilities`;
+  folding the href INTO `PerCalendarCapabilities` would collapse the last cross-layer
+  href hop, but that struct is a serializable `typesupport/` value type (with `fromJson`/
+  `toJson`) — out of Plan 9's sync-internal scope. Candidate for a later consolidation pass
+  (Plan 11). The provider's persistent `m_calendarUrls` is NOT redundant (the `m_discovery`
+  object is transient — `deleteLater()`'d post-connect), so there is no in-`sync/` dup to
+  collapse today.
+- 2026-06-11 — `src/calendar/syncbackend.h` + `remotecalendarbackend.{h}` — release-note /
+  Plan 11 item — the **6 `[[deprecated]]` `discovered*` forwarders** (`discoveredColor`/
+  `discoveredCalendarType`/`discoveredDisplayName` non-virtual base + RCB-local
+  `discoveredUrl`/`discoveredSupportsEvents`/`discoveredSupportsTodos`) are held for the
+  PlanStan migration window (Plan 9 T7). DELETE them once PlanStan adopts
+  `discoveredCalendar()` and pins the new tag (T7.2 / fold into Plan 11). Zero in-lib callers
+  remain; WildPalms consumes none.
+- 2026-06-11 — **downstream gate evidence (PlanStan-side, NOT a libkalburator issue)** —
+  PlanStan's integration test harness `tests/integration/integrationtestbase.cpp:155`
+  (`waitForFetch`) does `FetchOperation *op = backend->fetchItems(calendarId);` — an invalid
+  implicit downcast, since `SyncBackendBase::fetchItems()` returns `SyncOperation*`
+  (`sync/syncbackendbase.h:101`), and `FetchOperation` is a subclass. It only compiles with
+  `-fpermissive`. Surfaced by the Plan 9 invariant-10 gate when rebuilding the
+  EXCLUDE_FROM_ALL integration fixtures (their stale 14:25 binaries otherwise SEGFAULT on the
+  vtable change). **A/B-proven pre-existing, independent of Plan 9:** `fetchItems`'s return
+  type is byte-identical on libkalburator `main` and `feature/redress-9`, and Plan 9's diff
+  touches zero `fetchItems`/`FetchOperation` lines — so it fails identically against `main`.
+  The PlanStan dev should fix the downcast (`qobject_cast<FetchOperation*>` or change the
+  local type to `SyncOperation*`); their integration suite is currently broken-on-rebuild
+  against any current libkalburator. (No libkalburator action.)
+
 ## Resolved
 
 ### By Plan 7b (LocalBackend decomposition, 2026-06-10)

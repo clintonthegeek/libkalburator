@@ -1,11 +1,11 @@
-#ifndef KALBURATOR_BACKEND_CHANGEDETECTION_H
-#define KALBURATOR_BACKEND_CHANGEDETECTION_H
+#ifndef KALBURATOR_SYNC_CHANGEDETECTION_H
+#define KALBURATOR_SYNC_CHANGEDETECTION_H
 
 #include <QMap>
 #include <QString>
 #include <QStringList>
 
-namespace Kalburator::Backend {
+namespace Kalburator::Sync {
 
 /**
  * @brief Capability interface — collection-level change-detection token.
@@ -27,15 +27,12 @@ namespace Kalburator::Backend {
  * this interface; the engine treats them as "always changed" and
  * proceeds to a full fetch+diff (correct, just slower).
  *
- * Pure-virtual non-QObject interface. Backends inherit alongside
- * their main backend base class via multiple inheritance:
+ * Pure-virtual non-QObject interface — one of the neutral backend
+ * contracts that live in `sync/` (alongside `SyncBackendBase`).
+ * Backends inherit it as a mixin via multiple inheritance:
  *
- *   class MyBackend : public Backend::AbstractSyncBackend,
- *                     public Backend::ChangeDetection { ... };
- *
- * (Today's `class RemoteCalendarBackend : public Sync::SyncBackend,
- * public Backend::ChangeDetection { ... }` until K.4 collapses
- * `SyncBackend` into `Backend::AbstractSyncBackend`.)
+ *   class RemoteCalendarBackend : public Sync::SyncBackend,
+ *                                 public Sync::ChangeDetection { ... };
  */
 class ChangeDetection
 {
@@ -103,6 +100,6 @@ public:
     virtual bool persistsCollectionRevisions() const { return true; }
 };
 
-} // namespace Kalburator::Backend
+} // namespace Kalburator::Sync
 
-#endif // KALBURATOR_BACKEND_CHANGEDETECTION_H
+#endif // KALBURATOR_SYNC_CHANGEDETECTION_H

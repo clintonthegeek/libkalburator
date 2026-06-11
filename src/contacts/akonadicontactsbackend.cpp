@@ -572,7 +572,7 @@ QStringList AkonadiContactsBackend::deletedSince(const QString &collectionId,
 }
 
 // ============================================================================
-// Backend::ChangeDetection (Task 10)
+// Sync::ChangeDetection (Task 10)
 //
 // Fresh token: payload-free ItemFetchJob → computeRevisionDigest over
 // (item id, revision) pairs. Cached token: persisted via AkonadiRevisionStore.

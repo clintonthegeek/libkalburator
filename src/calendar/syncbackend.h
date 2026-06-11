@@ -42,6 +42,7 @@
 #include <KCalendarCore/Recurrence>
 
 #include "calendartype.h"   // CalendarType enum
+#include "discoveredcalendar.h" // DiscoveredCalendar DTO (Plan 9 aggregate accessor)
 #include "syncbackendbase.h" // domain-neutral base (Phase K.4)
 
 namespace Kalburator::Sync {
@@ -173,19 +174,40 @@ public:
 
     virtual bool supportsCalendarCreation() const { return false; }
 
-    virtual CalendarType discoveredCalendarType(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return CalendarType::Hybrid;
+    /**
+     * @brief Aggregate discovery facts for a calendar as one DTO (Plan 9).
+     *
+     * The single accessor that supersedes the per-field discovered* getters.
+     * The default fills only the neutral writability primitive; backends that
+     * discover richer metadata (color, component support, display name, URL)
+     * override this. Unset DTO fields keep their defaults, which match the
+     * retired per-field getter defaults: invalid color, Hybrid type (both
+     * supports* flags true), empty name/url.
+     */
+    virtual DiscoveredCalendar discoveredCalendar(const QString &calendarId) const {
+        DiscoveredCalendar d;
+        d.calendarId = calendarId;
+        d.writable = discoveredWritable(calendarId);
+        return d;
     }
 
-    virtual QColor discoveredColor(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return QColor();
+    // Per-field discovery getters, superseded by discoveredCalendar() (Plan 9).
+    // Now non-virtual forwarders into the DTO accessor (so polymorphism flows
+    // through the single overridable discoveredCalendar()); kept [[deprecated]]
+    // for the PlanStan migration window, deleted once it lands (Plan 11).
+    [[deprecated("use discoveredCalendar(id).calendarType()")]]
+    CalendarType discoveredCalendarType(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).calendarType();
     }
 
-    virtual QString discoveredDisplayName(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return QString();
+    [[deprecated("use discoveredCalendar(id).color")]]
+    QColor discoveredColor(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).color;
+    }
+
+    [[deprecated("use discoveredCalendar(id).name")]]
+    QString discoveredDisplayName(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).name;
     }
 
     virtual bool createCalendar(const QString &collectionId,

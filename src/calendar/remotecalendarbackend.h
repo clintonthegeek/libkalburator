@@ -5,7 +5,7 @@
 #include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
@@ -25,7 +25,7 @@ class CTagStore;
 struct BackendCapabilities;
 
 class RemoteCalendarBackend : public SyncBackend,
-                              public Kalburator::Backend::ChangeDetection
+                              public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -89,18 +89,8 @@ public:
      * @param calendarId The calendar ID (display name)
      * @return The discovered DAV URL, or empty string if not found
      */
+    [[deprecated("use discoveredCalendar(id).davUrl()")]]
     QString discoveredUrl(const QString &calendarId) const;
-
-    /**
-     * @brief Get the discovered color for a calendar.
-     *
-     * Returns the color from the CalDAV apple:calendar-color property
-     * discovered during loadCalendars().
-     *
-     * @param calendarId The calendar ID (display name)
-     * @return The discovered color, or invalid QColor if not found
-     */
-    QColor discoveredColor(const QString &calendarId) const override;
 
     /**
      * @brief Per-calendar metadata the provider already discovered at connect().
@@ -131,9 +121,9 @@ public:
      */
     void primeCalendars(const QList<PrimedCalendar> &calendars);
 
-    // ---- Backend::ChangeDetection ----
+    // ---- Sync::ChangeDetection ----
     // The engine's ONLY ctag entry points (consumed via
-    // dynamic_cast<Backend::ChangeDetection*>). The backend's own ctag
+    // dynamic_cast<Sync::ChangeDetection*>). The backend's own ctag
     // accessors are private since Plan 7 T6 — one public face per concept.
     QString collectionRevision(const QString &collectionId) override;
     QMap<QString, QString>
@@ -144,22 +134,14 @@ public:
     /**
      * @brief Check if discovered calendar supports VEVENT components.
      */
+    [[deprecated("use discoveredCalendar(id).supportsVEvent")]]
     bool discoveredSupportsEvents(const QString &calendarId) const;
 
     /**
      * @brief Check if discovered calendar supports VTODO components.
      */
+    [[deprecated("use discoveredCalendar(id).supportsVTodo")]]
     bool discoveredSupportsTodos(const QString &calendarId) const;
-
-    /**
-     * @brief Get the CalendarType based on discovered content types.
-     *
-     * Maps the KDAV content types to CalendarType:
-     * - VEVENT only -> Event
-     * - VTODO only -> Todo
-     * - Both or unknown -> Hybrid
-     */
-    CalendarType discoveredCalendarType(const QString &calendarId) const override;
 
     /**
      * @brief Check if discovered calendar is writable.
@@ -169,6 +151,10 @@ public:
      * which parses current-user-privilege-set.
      */
     bool discoveredWritable(const QString &calendarId) const override;
+
+    /// Aggregate discovery facts as one DTO (Plan 9). Self-contained read of
+    /// the per-calendar CalendarFacts; supersedes the per-field getters above.
+    DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
 
     // ========== Calendar Property Getters (for Property Sync) ==========
 
@@ -309,7 +295,7 @@ signals:
 private:
     // ---- Stored-CTag store (persisted change-detection tokens) ----
     // Private since Plan 7 T6: the engine reaches these only through the
-    // Backend::ChangeDetection overrides above; nothing else ever called them.
+    // Sync::ChangeDetection overrides above; nothing else ever called them.
     QString ctag(const QString &calendarId) const;
     void setCtag(const QString &calendarId, const QString &ctag);
     void clearCtag(const QString &calendarId);

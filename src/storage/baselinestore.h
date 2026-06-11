@@ -5,6 +5,11 @@
  * @file baselinestore.h
  * @brief SQLite-backed baseline store for the blob sync engine.
  *
+ * LAYER ROLE (Plan 9): `storage/` (namespace `Kalburator::Storage`) holds the
+ * SQLite-persistent engine-side sync stores — `BaselineStore` and
+ * `IDMappingStore` — durable state below the domains. "Store" == persists
+ * (invariant 5); these are plain RAII value types, not QObjects.
+ *
  * Two table generations co-exist:
  *
  * v2 (post-F1, user_version=3): `blob_baselines`

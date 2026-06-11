@@ -90,6 +90,7 @@ private slots:
     // Tasks collection
     void testTasksCollection();
     void testDiscoveredCalendarType();
+    void testDiscoveredCalendarAggregatesType();
 
     // Interop simulation
     void testReadExternalEntries();
@@ -329,7 +330,7 @@ void DecSyncBackendTest::testCreateCalendar()
     QVERIFY(QDir(m_decsyncDir + "/calendars/my-cal/v2/test-app").exists());
 
     // Verify name was set
-    auto name = backend.discoveredDisplayName(QStringLiteral("my-cal"));
+    auto name = backend.discoveredCalendar(QStringLiteral("my-cal")).name;
     QCOMPARE(name, QStringLiteral("My Calendar"));
 }
 
@@ -378,7 +379,7 @@ void DecSyncBackendTest::testUpdateCalendarName()
     QVERIFY(backend.updateCalendar(QStringLiteral("coll"), QStringLiteral("rename-me"),
                                     {{QStringLiteral("displayName"), QStringLiteral("New Name")}}));
 
-    QCOMPARE(backend.discoveredDisplayName(QStringLiteral("rename-me")),
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("rename-me")).name,
              QStringLiteral("New Name"));
 }
 
@@ -671,8 +672,27 @@ void DecSyncBackendTest::testDiscoveredCalendarType()
     DecSyncBackend backend(m_decsyncDir, QStringLiteral("test-app"));
 
     // calendars/ collections are Event type per DecSync standard
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("my-cal")), CalendarType::Event);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("tasks/my-tasks")), CalendarType::Todo);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("my-cal")).calendarType(), CalendarType::Event);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("tasks/my-tasks")).calendarType(), CalendarType::Todo);
+}
+
+void DecSyncBackendTest::testDiscoveredCalendarAggregatesType()
+{
+    createDecsyncDir(m_decsyncDir);
+    DecSyncBackend backend(m_decsyncDir, QStringLiteral("test-app"));
+
+    // The aggregate DTO carries the same type DecSync's dir layout implies
+    // (the new seam Plan 9 T4 routes discoveredCalendarType through).
+    const DiscoveredCalendar ev = backend.discoveredCalendar(QStringLiteral("my-cal"));
+    QCOMPARE(ev.calendarId, QStringLiteral("my-cal"));
+    QCOMPARE(ev.calendarType(), CalendarType::Event);
+    QVERIFY(ev.supportsVEvent);
+    QVERIFY(!ev.supportsVTodo);
+
+    const DiscoveredCalendar td = backend.discoveredCalendar(QStringLiteral("tasks/my-tasks"));
+    QCOMPARE(td.calendarType(), CalendarType::Todo);
+    QVERIFY(!td.supportsVEvent);
+    QVERIFY(td.supportsVTodo);
 }
 
 // ============================================================================
@@ -838,11 +858,11 @@ void DecSyncBackendTest::testDiscoveredCalendarTypeEvent()
     DecSyncBackend backend(m_decsyncDir, QStringLiteral("test-app"));
 
     // Bare ID maps to calendars/ -> Event type
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("personal")), CalendarType::Event);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("work")), CalendarType::Event);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("personal")).calendarType(), CalendarType::Event);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("work")).calendarType(), CalendarType::Event);
 
     // tasks/ prefix -> Todo type
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("tasks/shopping")), CalendarType::Todo);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("tasks/shopping")).calendarType(), CalendarType::Todo);
 }
 
 void DecSyncBackendTest::testCapabilitiesHybrid()
@@ -892,7 +912,7 @@ void DecSyncBackendTest::testStoreRejectsWrongType()
     QCOMPARE(fetchOp->fetchedItems().size(), 2);
 
     // Calendar should now be hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("event-cal")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("event-cal")).calendarType(), CalendarType::Hybrid);
 
     delete fetchOp;
     delete pushOp;
@@ -915,7 +935,7 @@ void DecSyncBackendTest::testUpdateRejectsWrongType()
 
     // Auto-promotion: no error
     QCOMPARE(errorSpy.count(), 0);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("event-cal-upd")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("event-cal-upd")).calendarType(), CalendarType::Hybrid);
 
     delete pushOp;
 }
@@ -1022,7 +1042,7 @@ void DecSyncBackendTest::testLoadDetectsTypeViolation()
 
     // Auto-promotion: no violation signal, calendar silently became hybrid
     QCOMPARE(violationSpy.count(), 0);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("violation-cal")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("violation-cal")).calendarType(), CalendarType::Hybrid);
 
     delete fetchOp;
 }
@@ -1074,7 +1094,7 @@ void DecSyncBackendTest::testFetchDetectsTypeViolation()
 
     // Auto-promotion: no violation signal
     QCOMPARE(violationSpy.count(), 0);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("fetch-violation-cal")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("fetch-violation-cal")).calendarType(), CalendarType::Hybrid);
 
     delete op;
 }
@@ -1092,7 +1112,7 @@ void DecSyncBackendTest::testCreateCalendarRoutesEvent()
     QVERIFY(QDir(m_decsyncDir + "/calendars/explicit-event/v2/test-app").exists());
 
     // Type should be Event
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("explicit-event")), CalendarType::Event);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("explicit-event")).calendarType(), CalendarType::Event);
 }
 
 // ============================================================================
@@ -1118,10 +1138,10 @@ void DecSyncBackendTest::testCreateHybridCalendar()
     QVERIFY(taskInfo.value(QStringLiteral("hybrid")).toBool(false));
 
     // Type should be Hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("hybrid-cal")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("hybrid-cal")).calendarType(), CalendarType::Hybrid);
 
     // Name should be readable from the tasks/ side
-    QCOMPARE(backend.discoveredDisplayName(QStringLiteral("hybrid-cal")),
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("hybrid-cal")).name,
              QStringLiteral("Hybrid Cal"));
 }
 
@@ -1173,12 +1193,12 @@ void DecSyncBackendTest::testHybridDiscovery()
     QVERIFY(!discovered.contains(QStringLiteral("tasks/waiting-for")));
 
     // Both should be detected as hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("paired")), CalendarType::Hybrid);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("waiting-for")), CalendarType::Hybrid);
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("tasks/standalone-tasks")), CalendarType::Todo);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("paired")).calendarType(), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("waiting-for")).calendarType(), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("tasks/standalone-tasks")).calendarType(), CalendarType::Todo);
 
     // "waiting-for" display name should be readable from tasks/ side
-    QCOMPARE(backend.discoveredDisplayName(QStringLiteral("waiting-for")),
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("waiting-for")).name,
              QStringLiteral("Waiting For"));
 }
 
@@ -1376,7 +1396,7 @@ void DecSyncBackendTest::testHybridDeleteCalendar()
     QVERIFY(QDir(m_decsyncDir + "/tasks/hybrid-del").exists());
     QVERIFY(!QDir(m_decsyncDir + "/calendars/hybrid-del").exists());
     QVERIFY(backend.deleteCalendar(QStringLiteral("coll"), QStringLiteral("hybrid-del")));
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("hybrid-del")), CalendarType::Event); // no longer hybrid
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("hybrid-del")).calendarType(), CalendarType::Event); // no longer hybrid
 
     // Test 2: Create hybrid, store items to create dirs, then delete
     backend.createCalendar(QStringLiteral("coll"), QStringLiteral("hybrid-del2"),
@@ -1421,7 +1441,7 @@ void DecSyncBackendTest::testStandaloneTasksUnaffected()
     QVERIFY(!QDir(m_decsyncDir + "/calendars/standalone").exists());
 
     // Type should be Todo, not Hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("tasks/standalone")), CalendarType::Todo);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("tasks/standalone")).calendarType(), CalendarType::Todo);
 
     // Push a todo — should work
     auto todo = createTestTodo(QStringLiteral("sa-todo"), QStringLiteral("Standalone Todo"));
@@ -1456,7 +1476,7 @@ void DecSyncBackendTest::testStandaloneCalendarsUnaffected()
     QVERIFY(!QDir(m_decsyncDir + "/tasks/standalone-events").exists());
 
     // Type should be Event, not Hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("standalone-events")), CalendarType::Event);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("standalone-events")).calendarType(), CalendarType::Event);
 
     // Push an event — should work
     auto event = createTestEvent(QStringLiteral("se-event"), QStringLiteral("Standalone Event"));
@@ -1477,7 +1497,7 @@ void DecSyncBackendTest::testStandaloneCalendarsUnaffected()
     delete pushOp2;
 
     // Calendar should now be hybrid
-    QCOMPARE(backend.discoveredCalendarType(QStringLiteral("standalone-events")), CalendarType::Hybrid);
+    QCOMPARE(backend.discoveredCalendar(QStringLiteral("standalone-events")).calendarType(), CalendarType::Hybrid);
     // tasks/ directory should now exist
     QVERIFY(QDir(m_decsyncDir + "/tasks/standalone-events").exists());
 }

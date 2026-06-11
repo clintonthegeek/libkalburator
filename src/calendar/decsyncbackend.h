@@ -78,10 +78,9 @@ public:
                         const QVariantMap &properties) override;
     bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
 
-    // Calendar property discovery
-    CalendarType discoveredCalendarType(const QString &calendarId) const override;
-    QColor discoveredColor(const QString &calendarId) const override;
-    QString discoveredDisplayName(const QString &calendarId) const override;
+    // Calendar property discovery — collapsed into the discoveredCalendar() DTO
+    // accessor (Plan 9); per-field type/color/name now compute via private helpers.
+    DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
     QColor calendarColor(const QString &calendarId) const override;
 
     // Capabilities
@@ -177,6 +176,11 @@ private:
     /// Check if a calendarId is a hybrid calendar (accepts both VEVENTs and VTODOs).
     /// True if explicitly created as Hybrid or discovered with both dirs / hybrid flag.
     bool isHybridCalendar(const QString &calendarId) const;
+
+    /// Discovery type/name computation backing discoveredCalendar() (Plan 9;
+    /// formerly the discoveredCalendarType()/discoveredDisplayName() overrides).
+    CalendarType calendarTypeFor(const QString &calendarId) const;
+    QString displayNameFor(const QString &calendarId) const;
 
     /// Get the tasks/ companion collection for a hybrid calendar.
     /// Returns nullptr if not hybrid or if the tasks/ dir doesn't exist yet.

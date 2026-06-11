@@ -76,6 +76,18 @@ public:
     DiscoveredCapabilities discoveredCapabilities() const { return m_capabilities; }
 
     /**
+     * @brief The per-calendar capability map — the only part of
+     * DiscoveredCapabilities the providers consume.
+     *
+     * Narrowed accessor (Plan 9): both `CalDavProvider` and
+     * `MultiProtocolDavProvider` reach only into
+     * `discoveredCapabilities().perCalendarCapabilities`; this hands them that
+     * map without exposing the rest of the struct. Empty until finished(true).
+     */
+    QMap<QString, PerCalendarCapabilities> perCalendarCapabilities() const
+    { return m_capabilities.perCalendarCapabilities; }
+
+    /**
      * @brief Calendar URLs discovered alongside per-calendar caps.
      *
      * Maps the same calendarIds used in

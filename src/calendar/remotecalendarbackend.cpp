@@ -550,21 +550,9 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
 
 QString RemoteCalendarBackend::discoveredUrl(const QString &calendarId) const
 {
-    // Reports only what discovery / registration actually recorded — NOT the
-    // derive-on-miss fallback davUrlFor() applies so operations can proceed
-    // before discovery completes. Callers (and tests) use this as an
-    // "is this calendar registered?" predicate, e.g. after deleteCalendar
-    // unregisters a URL.
-    const auto it = m_calendars.constFind(calendarId);
-    if (it != m_calendars.constEnd() && !it->davUrl.url().isEmpty()) {
-        return it->davUrl.url().toString();
-    }
-    return QString();
-}
-
-QColor RemoteCalendarBackend::discoveredColor(const QString &calendarId) const
-{
-    return m_calendars.value(calendarId).color;
+    // [[deprecated]] forwarder; the "is this calendar registered?" predicate
+    // semantics are preserved by the DTO builder's only-if-registered davUrl guard.
+    return discoveredCalendar(calendarId).davUrl();
 }
 
 void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendars)
@@ -682,7 +670,7 @@ std::optional<KDAV::DavUrl> RemoteCalendarBackend::davUrlFor(const QString &cale
     return configuredDavUrl(calendarUrlForCrud(calendarId).toString());
 }
 
-// ---- Backend::ChangeDetection ----------------------------------------------
+// ---- Sync::ChangeDetection ----------------------------------------------
 
 QString RemoteCalendarBackend::collectionRevision(const QString &collectionId)
 {
@@ -724,42 +712,12 @@ QString RemoteCalendarBackend::calendarDescription(const QString &calendarId) co
 
 bool RemoteCalendarBackend::discoveredSupportsEvents(const QString &calendarId) const
 {
-    const CalendarFacts facts = m_calendars.value(calendarId);
-    if (!facts.hasContentTypes) {
-        return true;  // Default to true if not discovered
-    }
-    return (facts.contentTypes & KDAV::DavCollection::Events)
-        || (facts.contentTypes & KDAV::DavCollection::Calendar);
+    return discoveredCalendar(calendarId).supportsVEvent;
 }
 
 bool RemoteCalendarBackend::discoveredSupportsTodos(const QString &calendarId) const
 {
-    const CalendarFacts facts = m_calendars.value(calendarId);
-    if (!facts.hasContentTypes) {
-        return true;  // Default to true if not discovered
-    }
-    return (facts.contentTypes & KDAV::DavCollection::Todos)
-        || (facts.contentTypes & KDAV::DavCollection::Calendar);
-}
-
-CalendarType RemoteCalendarBackend::discoveredCalendarType(const QString &calendarId) const
-{
-    const CalendarFacts facts = m_calendars.value(calendarId);
-    if (!facts.hasContentTypes) {
-        return CalendarType::Hybrid;  // Default if not discovered
-    }
-
-    const auto types = facts.contentTypes;
-    bool supportsEvents = (types & KDAV::DavCollection::Events) || (types & KDAV::DavCollection::Calendar);
-    bool supportsTodos = (types & KDAV::DavCollection::Todos) || (types & KDAV::DavCollection::Calendar);
-
-    if (supportsEvents && !supportsTodos) {
-        return CalendarType::Event;
-    } else if (supportsTodos && !supportsEvents) {
-        return CalendarType::Todo;
-    } else {
-        return CalendarType::Hybrid;
-    }
+    return discoveredCalendar(calendarId).supportsVTodo;
 }
 
 bool RemoteCalendarBackend::discoveredWritable(const QString &calendarId) const
@@ -769,6 +727,35 @@ bool RemoteCalendarBackend::discoveredWritable(const QString &calendarId) const
     // so we return true by default. For accurate writability detection,
     // use CalDavCapabilityDiscovery which parses privileges directly.
     return true;
+}
+
+DiscoveredCalendar RemoteCalendarBackend::discoveredCalendar(const QString &calendarId) const
+{
+    DiscoveredCalendar d;
+    d.calendarId = calendarId;
+
+    const CalendarFacts facts = m_calendars.value(calendarId);
+    d.color = facts.color;
+    if (!facts.hasContentTypes) {
+        // Historical map-miss default: assume events + todos (Hybrid).
+        d.supportsVEvent = true;
+        d.supportsVTodo = true;
+    } else {
+        d.supportsVEvent = (facts.contentTypes & KDAV::DavCollection::Events)
+                        || (facts.contentTypes & KDAV::DavCollection::Calendar);
+        d.supportsVTodo  = (facts.contentTypes & KDAV::DavCollection::Todos)
+                        || (facts.contentTypes & KDAV::DavCollection::Calendar);
+    }
+    d.writable = discoveredWritable(calendarId);  // KDAV: always true (see above)
+
+    // Only the URL discovery/registration actually recorded — the davUrlFor
+    // derive-on-miss fallback is deliberately NOT reflected (same "is this
+    // calendar registered?" predicate the retired discoveredUrl() had).
+    const auto it = m_calendars.constFind(calendarId);
+    if (it != m_calendars.constEnd() && !it->davUrl.url().isEmpty())
+        d.setDavUrl(it->davUrl.url().toString());
+
+    return d;
 }
 
 void RemoteCalendarBackend::removeItem(const QString &calId, const QString &itemUid)
@@ -1114,7 +1101,7 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
         CalendarFacts &facts = m_calendars[calendarId];
         facts.davUrl = configuredDavUrl(davCalendarUrl.toString());
 
-        // Store the calendar type so discoveredCalendarType() returns correct value
+        // Store the calendar type so discoveredCalendar().calendarType() reports it
         if (type == CalendarType::Event) {
             facts.contentTypes = KDAV::DavCollection::Events;
         } else if (type == CalendarType::Todo) {

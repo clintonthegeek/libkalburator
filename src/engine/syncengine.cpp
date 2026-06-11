@@ -664,11 +664,11 @@ void SyncEngine::prepareSyncFastPath()
 
     if (!m_registry) return;
 
-    // Collect collection IDs per backend that implements Backend::ChangeDetection.
+    // Collect collection IDs per backend that implements Sync::ChangeDetection.
     QMap<QString, QStringList> colIdsByBackend;
     auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
         SyncBackendBase *base = m_registry->backendInstance(backendId);
-        if (dynamic_cast<Backend::ChangeDetection*>(base))
+        if (dynamic_cast<Sync::ChangeDetection*>(base))
             colIdsByBackend[backendId].append(colId);
     };
     for (const auto &mapping : m_syncMappings) {
@@ -681,7 +681,7 @@ void SyncEngine::prepareSyncFastPath()
     QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
     for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
         SyncBackendBase *base = m_registry->backendInstance(it.key());
-        auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
+        auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
         if (!cd) continue;
         QStringList ids = it.value();
         ids.removeDuplicates();
@@ -706,7 +706,7 @@ void SyncEngine::prepareSyncFastPath()
         auto checkSide = [&](const QString &backendId, const QString &colId,
                               QString &outRevision, bool &covered, bool &unchanged) {
             SyncBackendBase *base = m_registry->backendInstance(backendId);
-            auto *cd = dynamic_cast<Backend::ChangeDetection*>(base);
+            auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
             if (!cd) return;
             covered = true;
             outRevision = freshRevisions.value(qMakePair(backendId, colId));
@@ -1121,7 +1121,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                                            const QString &revision) {
                     if (revision.isEmpty()) return;
                     SyncBackendBase *base = m_registry->backendInstance(backendId);
-                    if (auto *cd = dynamic_cast<Backend::ChangeDetection*>(base))
+                    if (auto *cd = dynamic_cast<Sync::ChangeDetection*>(base))
                         cd->primeRevisionCache({{colId, revision}});
                 };
                 persistRevision(mapping->sourceBackend, mapping->sourceCalendar,

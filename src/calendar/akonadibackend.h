@@ -7,7 +7,7 @@
 #include "syncoperation.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 #include "akonadirevisionstore.h"
 
 #include <Akonadi/Session>
@@ -35,7 +35,7 @@ namespace Kalburator::Sync {
  * that the Monitor ignores to prevent feedback loops.
  */
 class AkonadiBackend : public SyncBackend,
-                       public Kalburator::Backend::ChangeDetection
+                       public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -81,11 +81,10 @@ public:
     DeleteOperation* deleteItems(const QString &calendarId,
                                  const QStringList &uids) override;
 
-    // === Discovery Metadata ===
-    CalendarType discoveredCalendarType(const QString &calendarId) const override;
-    QColor       discoveredColor(const QString &calendarId) const override;
-    QString      discoveredDisplayName(const QString &calendarId) const override;
+    // === Discovery Metadata === (per-field type/color/name collapsed into
+    // discoveredCalendar() — Plan 9)
     bool         discoveredWritable(const QString &calendarId) const override;
+    DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
 
     // === Calendar Property Getters ===
     QColor  calendarColor(const QString &calendarId) const override;
@@ -120,7 +119,7 @@ public:
     // lastModified = Akonadi::Item::modificationTime()
     //
     // The per-record ops (createRecord/updateRecord/deleteRecord),
-    // createCollection, loadRecords/loadRecord, and the Backend::ChangeDetection
+    // createCollection, loadRecords/loadRecord, and the Sync::ChangeDetection
     // methods are real (bridge async Akonadi jobs via KJob::exec()). Require a
     // running Akonadi server.
     // See docs/2026-05-26-akonadi-full-functionality-design.md.
@@ -157,7 +156,7 @@ public:
     void rollbackBatch() override {}
     bool supportsBatch() const override { return false; }
 
-    // === Backend::ChangeDetection ===
+    // === Sync::ChangeDetection ===
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
     void    primeRevisionCache(const QMap<QString, QString> &cache) override;

@@ -131,7 +131,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/akonadibackend.h
     src/calendar/backendcapabilities.h
     src/sync/backendregistry.h
-    src/calendar/caldavcapabilitydiscovery.h
     src/calendar/caldavcontentcache.h
     src/calendar/calendarmanager.h
     # calendarmetadatamanager moved from src/types/ in Plan 5 (atomic QSaveFile Vdir
@@ -176,7 +175,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
     src/calendar/backendcapabilities.cpp
     src/sync/backendregistry.cpp
-    src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/caldavcontentcache.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/calendarmetadatamanager.cpp
@@ -282,12 +280,6 @@ set(KALBURATOR_BLOB_SOURCES
     src/blob/localblobbackend.cpp
     src/blob/mockblobbackend.cpp
 )
-
-# Phase K.1 — backend capability interfaces.
-set(KALBURATOR_BACKEND_HEADERS
-    src/backend/changedetection.h
-)
-# (No sources — headers-only interfaces.)
 
 set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
@@ -519,11 +511,14 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/providermanager.h
     src/sync/caldavprovider.h
     src/sync/caldavconfigwidget.h
+    src/sync/caldavcapabilitydiscovery.h
     src/sync/carddavcapabilitydiscovery.h
     src/sync/carddavprovider.h
     src/sync/carddavconfigwidget.h
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.h
+    # Neutral backend capability mixin (Plan 9: moved from src/backend/)
+    src/sync/changedetection.h
     # Phase K.7.1: account-neutral IProvider adapter
     src/sync/neutralprovider.h
     # Phase L.1: Akonadi first-class provider (gated on HAVE_AKONADI)
@@ -554,6 +549,7 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
     src/sync/caldavprovider.cpp
     src/sync/caldavconfigwidget.cpp
+    src/sync/caldavcapabilitydiscovery.cpp
     src/sync/carddavcapabilitydiscovery.cpp
     src/sync/carddavprovider.cpp
     src/sync/carddavconfigwidget.cpp
@@ -625,7 +621,6 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_STORAGE_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
-    ${KALBURATOR_BACKEND_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
     ${KALBURATOR_SHAPE_HEADERS}
     ${KALBURATOR_TODO_HEADERS}
@@ -711,7 +706,6 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/note>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/outline>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/backend>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/plugin>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ui>
 )

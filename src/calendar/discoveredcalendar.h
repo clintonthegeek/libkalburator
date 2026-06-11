@@ -7,6 +7,8 @@
 #include <QColor>
 #include <QMetaType>
 
+#include "calendartype.h"
+
 namespace Kalburator::Sync {
 
 /**
@@ -60,6 +62,19 @@ struct DiscoveredCalendar {
 
     bool isHybrid() const {
         return supportsVEvent && supportsVTodo;
+    }
+
+    /**
+     * @brief The calendar's component type, derived from the supports* flags.
+     *
+     * Faithfully mirrors the retired per-backend `discoveredCalendarType()`:
+     * a calendar that supports exactly one of VEVENT/VTODO is Event/Todo;
+     * one that supports both (or, defensively, neither) is Hybrid.
+     */
+    CalendarType calendarType() const {
+        if (supportsVEvent && !supportsVTodo) return CalendarType::Event;
+        if (supportsVTodo && !supportsVEvent) return CalendarType::Todo;
+        return CalendarType::Hybrid;
     }
 };
 

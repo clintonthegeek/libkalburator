@@ -560,41 +560,6 @@ DeleteOperation* AkonadiBackend::deleteItems(const QString &calendarId,
 // Discovery Metadata
 // ============================================================================
 
-CalendarType AkonadiBackend::discoveredCalendarType(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return CalendarType::Hybrid;
-    return calendarTypeForCollection(*it);
-}
-
-QColor AkonadiBackend::discoveredColor(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return QColor();
-
-    // Akonadi stores color as an entity attribute
-    if (it->hasAttribute(QByteArrayLiteral("collectioncolor"))) {
-        const auto attr = it->attribute(QByteArrayLiteral("collectioncolor"));
-        if (attr) {
-            // CollectionColorAttribute stores the color as serialized data
-            QColor color = QColor::fromString(QString::fromUtf8(attr->serialized()));
-            if (color.isValid())
-                return color;
-        }
-    }
-    return QColor();
-}
-
-QString AkonadiBackend::discoveredDisplayName(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return QString();
-    return it->displayName();
-}
-
 bool AkonadiBackend::discoveredWritable(const QString &calendarId) const
 {
     auto it = m_collections.find(calendarId);
@@ -605,13 +570,41 @@ bool AkonadiBackend::discoveredWritable(const QString &calendarId) const
     return rights & Akonadi::Collection::CanCreateItem;
 }
 
+DiscoveredCalendar AkonadiBackend::discoveredCalendar(const QString &calendarId) const
+{
+    DiscoveredCalendar d;
+    d.calendarId = calendarId;
+
+    auto it = m_collections.find(calendarId);
+    if (it == m_collections.end()) {
+        d.writable = true;   // mirrors discoveredWritable's not-found default
+        return d;            // Hybrid type, invalid color, empty name (DTO defaults)
+    }
+
+    const CalendarType t = calendarTypeForCollection(*it);
+    d.supportsVEvent = (t != CalendarType::Todo);
+    d.supportsVTodo  = (t != CalendarType::Event);
+
+    if (it->hasAttribute(QByteArrayLiteral("collectioncolor"))) {
+        const auto attr = it->attribute(QByteArrayLiteral("collectioncolor"));
+        if (attr) {
+            const QColor color = QColor::fromString(QString::fromUtf8(attr->serialized()));
+            if (color.isValid())
+                d.color = color;
+        }
+    }
+    d.name = it->displayName();
+    d.writable = (it->rights() & Akonadi::Collection::CanCreateItem);
+    return d;
+}
+
 // ============================================================================
 // Calendar Property Getters
 // ============================================================================
 
 QColor AkonadiBackend::calendarColor(const QString &calendarId) const
 {
-    return discoveredColor(calendarId);
+    return discoveredCalendar(calendarId).color;
 }
 
 QString AkonadiBackend::calendarDescription(const QString &calendarId) const
@@ -1089,7 +1082,7 @@ QStringList AkonadiBackend::deletedSince(const QString &collectionId,
 }
 
 // ============================================================================
-// Backend::ChangeDetection (Task 9)
+// Sync::ChangeDetection (Task 9)
 //
 // Fresh token: payload-free ItemFetchJob → computeRevisionDigest over
 // (item id, revision) pairs. Cached token: persisted via AkonadiRevisionStore.

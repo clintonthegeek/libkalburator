@@ -100,12 +100,11 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
     }
 
     if (success) {
-        const auto caps = m_discovery->discoveredCapabilities();
         m_calendarUrls = m_discovery->calendarUrls();
-        m_perCalendarCaps = caps.perCalendarCapabilities;  // retained for createBackend() priming
+        m_perCalendarCaps = m_discovery->perCalendarCapabilities();  // retained for createBackend() priming
         m_collections.clear();
-        for (auto it = caps.perCalendarCapabilities.constBegin();
-             it != caps.perCalendarCapabilities.constEnd(); ++it) {
+        for (auto it = m_perCalendarCaps.constBegin();
+             it != m_perCalendarCaps.constEnd(); ++it) {
             CollectionInfo ci;
             ci.id   = it.key();
             ci.name = it.value().serverDisplayName.isEmpty() ? it.key()
