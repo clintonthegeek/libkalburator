@@ -16,9 +16,9 @@
 
 **Branch:** `feature/redress-9-backend-dir-discovery-consolidation` off `main` @ `434c7d4`
 (tag **v0.72**).
-**Baseline at open:** confirm via `ctest -j 8` at branch open (was **148/148** at v0.70;
-v0.71 + v0.72 added the first-sync URL-race tests, so expect ≥148 — record the real number
-in T0 before any change).
+**Baseline at open:** **148/148** (`ctest --test-dir build -j 8`, confirmed 2026-06-11 on
+this branch @ `ca06534`, default profile Akonadi/Org OFF). This is the gate for every later
+task.
 **State:** plan written 2026-06-11 against the landed v0.72 tree. Scope band **Broad**
 (user decision 2026-06-11): includes the public `discovered*` → DTO collapse, which carries
 a PlanStan consumer wave (invariant 10).
@@ -313,6 +313,23 @@ Plan 11. Build `-j 8`, ctest green.
 
 ## Outcome
 
-_(filled in as tasks land — metrics vs gates, the real T0 baseline, the PlanStan gate
-result, the deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 +
-discovery-MODERATE closing annotations.)_
+**T0 — baseline (2026-06-11)** — branch `feature/redress-9-backend-dir-discovery-consolidation`
+@ `ca06534` (the plan commit). Build `-j 8` (default profile, Akonadi/Org OFF) clean and
+incremental (no recompiles needed — source tree unchanged at v0.72).
+`ctest --test-dir build -j 8`: **148/148 passed, 0 failed** (total 117.7 s; long pole is
+`tst_remotecalendarbackend` at 117.7 s). `compile_commands.json` present + valid (474
+entries, symlink → `build/`). **Baseline gate = 148.**
+
+**T1 — Stream A (2026-06-11)** — `git mv src/backend/changedetection.h src/sync/`; ns
+`Kalburator::Backend`→`Kalburator::Sync`, guard + doc comment updated (dropped the
+never-shipped `AbstractSyncBackend` reference). 6 includers rewired (5 `../backend/`→
+`../sync/`; `syncengine.cpp` unqualified unchanged); all `Backend::ChangeDetection`→
+`Sync::ChangeDetection` (base specifiers, the 4 engine `dynamic_cast` sites, comments).
+CMake: `changedetection.h` moved into the sync header group next to `syncbackendbase.h`;
+the empty `KALBURATOR_BACKEND_HEADERS` set + its target reference + the
+`$<BUILD_INTERFACE:.../src/backend>` include dir all removed; `src/backend/` dir gone.
+Grep-clean (zero `Backend::`/`../backend/` residue). Build clean, **ctest 148/148**.
+
+_(T2–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
+deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
+closing annotations.)_

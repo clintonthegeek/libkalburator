@@ -161,7 +161,7 @@ void LocalBackend::setCachedFingerprint(const QString &calendarId, const QString
         m_fingerprints->set(calendarId, fingerprint);
 }
 
-// ---- Backend::ChangeDetection ----------------------------------------------
+// ---- Sync::ChangeDetection ----------------------------------------------
 
 QString LocalBackend::collectionRevision(const QString &collectionId)
 {

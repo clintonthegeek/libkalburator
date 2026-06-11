@@ -13,7 +13,7 @@
 #include "syncoperation.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 
 namespace Kalburator::Sync {
 
@@ -22,7 +22,7 @@ class AsyncFileWriter;
 class FingerprintStore;
 
 class LocalBackend : public SyncBackend,
-                     public Kalburator::Backend::ChangeDetection
+                     public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -54,9 +54,9 @@ public:
      */
     void setDbPath(const QString &dbPath);
 
-    // ---- Backend::ChangeDetection ----
+    // ---- Sync::ChangeDetection ----
     // The engine's ONLY fingerprint entry points (consumed via
-    // dynamic_cast<Backend::ChangeDetection*>). The backend's own fingerprint
+    // dynamic_cast<Sync::ChangeDetection*>). The backend's own fingerprint
     // accessors are private since Plan 7b T3 — one public face per concept.
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
@@ -164,7 +164,7 @@ private slots:
 private:
     // ---- Fingerprint store (persisted change-detection tokens) ----
     // Private since Plan 7b T3: the engine reaches these only through the
-    // Backend::ChangeDetection overrides above (mirrors Plan 7's ctag move).
+    // Sync::ChangeDetection overrides above (mirrors Plan 7's ctag move).
 
     /// Cheap fingerprint of a calendar's on-disk state: sha256 over the
     /// sorted (filename | mtime | size) tuples of *.ics files. Empty when the

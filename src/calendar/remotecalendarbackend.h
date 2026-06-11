@@ -5,7 +5,7 @@
 #include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/EtagCache>
@@ -25,7 +25,7 @@ class CTagStore;
 struct BackendCapabilities;
 
 class RemoteCalendarBackend : public SyncBackend,
-                              public Kalburator::Backend::ChangeDetection
+                              public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -131,9 +131,9 @@ public:
      */
     void primeCalendars(const QList<PrimedCalendar> &calendars);
 
-    // ---- Backend::ChangeDetection ----
+    // ---- Sync::ChangeDetection ----
     // The engine's ONLY ctag entry points (consumed via
-    // dynamic_cast<Backend::ChangeDetection*>). The backend's own ctag
+    // dynamic_cast<Sync::ChangeDetection*>). The backend's own ctag
     // accessors are private since Plan 7 T6 — one public face per concept.
     QString collectionRevision(const QString &collectionId) override;
     QMap<QString, QString>
@@ -309,7 +309,7 @@ signals:
 private:
     // ---- Stored-CTag store (persisted change-detection tokens) ----
     // Private since Plan 7 T6: the engine reaches these only through the
-    // Backend::ChangeDetection overrides above; nothing else ever called them.
+    // Sync::ChangeDetection overrides above; nothing else ever called them.
     QString ctag(const QString &calendarId) const;
     void setCtag(const QString &calendarId, const QString &ctag);
     void clearCtag(const QString &calendarId);

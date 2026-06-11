@@ -1089,7 +1089,7 @@ QStringList AkonadiBackend::deletedSince(const QString &collectionId,
 }
 
 // ============================================================================
-// Backend::ChangeDetection (Task 9)
+// Sync::ChangeDetection (Task 9)
 //
 // Fresh token: payload-free ItemFetchJob → computeRevisionDigest over
 // (item id, revision) pairs. Cached token: persisted via AkonadiRevisionStore.

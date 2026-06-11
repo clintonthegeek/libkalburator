@@ -682,7 +682,7 @@ std::optional<KDAV::DavUrl> RemoteCalendarBackend::davUrlFor(const QString &cale
     return configuredDavUrl(calendarUrlForCrud(calendarId).toString());
 }
 
-// ---- Backend::ChangeDetection ----------------------------------------------
+// ---- Sync::ChangeDetection ----------------------------------------------
 
 QString RemoteCalendarBackend::collectionRevision(const QString &collectionId)
 {

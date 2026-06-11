@@ -7,7 +7,7 @@
 #include "syncoperation.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 #include "akonadirevisionstore.h"
 
 #include <Akonadi/Session>
@@ -42,7 +42,7 @@ namespace Kalburator::Sync {
  * jobs via KJob::exec(). Mirror AkonadiBackend (calendar counterpart).
  */
 class AkonadiContactsBackend : public SyncBackend,
-                               public Kalburator::Backend::ChangeDetection
+                               public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -84,7 +84,7 @@ public:
     // lastModified = Akonadi::Item::modificationTime()
     //
     // The per-record ops (createRecord/updateRecord/deleteRecord),
-    // createCollection, loadRecords/loadRecord, and the Backend::ChangeDetection
+    // createCollection, loadRecords/loadRecord, and the Sync::ChangeDetection
     // methods are real (bridge async Akonadi jobs via KJob::exec()). Require a
     // running Akonadi server.
     // See docs/2026-05-26-akonadi-full-functionality-design.md.
@@ -125,7 +125,7 @@ public:
     void rollbackBatch() override {}
     bool supportsBatch() const override { return false; }
 
-    // === Backend::ChangeDetection ===
+    // === Sync::ChangeDetection ===
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
     void    primeRevisionCache(const QMap<QString, QString> &cache) override;

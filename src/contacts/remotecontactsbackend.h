@@ -5,7 +5,7 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "shape.h"
-#include "../backend/changedetection.h"
+#include "../sync/changedetection.h"
 
 #include <QHash>
 #include <QList>
@@ -35,7 +35,7 @@ namespace Kalburator::Sync {
  * engine-worker call site; Phase F revisits true async).
  */
 class RemoteContactsBackend : public Kalburator::Sync::SyncBackendBase,
-                              public Kalburator::Backend::ChangeDetection
+                              public Kalburator::Sync::ChangeDetection
 {
     Q_OBJECT
 
@@ -151,7 +151,7 @@ public:
     QString backendType() const override
     { return QStringLiteral("carddav-contacts"); }
 
-    // ---- Backend::ChangeDetection (Phase K.1) ----
+    // ---- Sync::ChangeDetection (Phase K.1) ----
     // CardDAV CTag is not yet wired through this backend; the
     // PROPFIND for `cs:getctag` would mirror RemoteCalendarBackend's
     // CalDAV CTag fetch but is its own work item (out of K.1 scope).
