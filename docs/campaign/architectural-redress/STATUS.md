@@ -1,9 +1,11 @@
 # Architectural-redress campaign — STATUS
 
-**Last updated:** 2026-06-10 (Plan 8 step 2 — BOTH consumer waves COMPLETE: PlanStan
-`58bd4835` + WildPalms `4dc3537`, both `runSyncFuture`-clean. Step 3 is now **fully
-unblocked** — overload deletion gate cleared. Lib baseline unchanged at **147/147** —
-step 2 touched no lib code, only the two consumers')
+**Last updated:** 2026-06-10 (Plan 8 step 3 COMPLETE — lib-side `runSyncFuture`
+retirement + dual future-interface collapse landed on
+`feature/redress-8-runsyncfuture-retirement`: four `[[deprecated]]` overloads +
+`dispatchSingleNative` deleted, dual iface/watcher collapsed to one each via
+`beginRun()`, canonical single-mapping cancel now native. ctest **148/148**;
+**Plan 8 fully DONE**, tag **v0.70**. Both downstream gates clean)
 **Branch:** Campaign docs live on `main`. Plans 1–6 landed; each subsequent plan opens its own
 `feature/redress-N-<slug>` branch.
 **State:** **Audit rebaselined; Plans 1–6 landed; WP-A through WP-D ALL COMPLETE (2026-06-10).**
@@ -19,82 +21,45 @@ tests green (ASAN/TSan-confirmed on the touched paths).
 
 ## Next action
 
-**Plan 8 is OPENED as a consumer wave**: the joint RFC/handoff is written and
-delivered — `docs/2026-06-10-plan8-isynchost-runsyncfuture-consumer-wave-rfc.md`
-(canonical) + a copy committed into PlanStan `docs/handoffs/` (their `master`, local
-commit `85274c95`; deliberately not pushed — their tree carries their own unpushed
-`203744a4`). **Lib-side Plan 8 work waits on PlanStan's ack** of the step-1 shape.
-Tag **v0.68** cut (post-Plan-7, carries the API-removal release notes).
+**Plan 8 is COMPLETE (2026-06-10) — all three steps landed.** Steps 1 (`v0.69`,
+`ISyncHost` registry defaults) and 2 (BOTH consumer waves: PlanStan `58bd4835` +
+WildPalms `4dc3537`, both `runSyncFuture`-grep-clean, v0.69 pinned) closed earlier.
+**Step 3 — the lib-side `runSyncFuture` retirement + dual future-interface
+collapse — is now DONE** on `feature/redress-8-runsyncfuture-retirement` (off `main`
+@ `348aec9`):
 
-**Plan 7b is DONE (2026-06-10)** — LocalBackend decomposed; **AUDIT B3 closed, both
-halves**. Outcome in `plans/plan-7b-localbackend-decomposition.md`: pair net −86
-(1535→1449), dead no-op/never-read surface deleted, fingerprint + metadata clusters
-privatized behind their interface faces, shared `calendar/icalcodec.h` now serves both
-decomposed backends, LB-specific publics 13→3, new default-lane
-`tst_localbackend_writepaths` (suite **146/146**). FINDINGS adds: PlanStan never wires
-`LocalBackend::setDbPath` (fingerprint store dark in PROD — one-liner on their side);
-grep-discipline lesson #2 (exact-path exclusions).
+- **T1** (`0595044`) — multi-mapping callers (2 prod + test sites) →
+  `runSync(SyncRequest)`.
+- **T2** (`26c90ff`) — engine collapse via the new `beginRun()` helper: single-mapping
+  branch reports **natively**, the four `[[deprecated]] runSyncFuture` overloads +
+  `dispatchSingleNative` deleted, `m_currentSingleIface`/`m_singleWatcher` +
+  `m_currentMultiIface`/`m_multiWatcher` collapsed to one `m_currentIface` + one
+  `m_currentWatcher`; single-mapping callers migrated (empty-subset test → two unknown
+  ids); doc-comment truth sweep. Engine-only delta **−153 LOC**.
+- **Falsifiability fix** (`1243fce`) — added the protective test T2 omitted
+  (`tst_engine_single_mapping_cancel`), shown RED against the pre-collapse engine
+  (A/B vs `0595044`: cancel never reached the worker → items written) and green
+  natively post-collapse.
 
-**Plan 8 is ACKED (2026-06-10): lib-side step 1 is UNGATED.** PlanStan's response
-landed on our `main` (`c873032`; their commit `91774225` bumps their pin to v0.68,
-realigns `tst_loader_empty_backends` to their own O.5 removal, and commits to a
-step-2 window by 2026-06-14, tracked in their
-`docs/todo/plan8-isynchost-runsyncfuture-migration-wave.md`). **Prerequisite they
-flagged for the step-1 plan file:** PlanStan's `CollectionController` override bridges
-the legacy `m_backends` hash, while the lib default walks the registry — NOT
-equivalent in PlanStan today: config-declared backends only reach the registry inside
-`initializeSyncInfrastructure()`, gated on `m_backends.size() > 1`, so the lib-default
-`backendById` would return nullptr on single-backend collections. Their override
-therefore stays through step 2; whether it then goes (registration made
-unconditional) or stays as a permanent cache is **their in-wave decision** — do not
-assume either in the step-1 plan. The lib default must be additive, not a behavior
-swap.
+`grep -rn runSyncFuture src/ tests/ examples/` is now **only historical comments**
+(zero live calls). The canonical single-mapping `runSync(SyncRequest)` path preserves
+the F2 Task 23 cancel contract **natively** (`resultCount()==1`,
+`resultAt(0).first().cancelled`) — the WildPalms `resultCount()>0` watcher workaround
+is no longer required for new lib consumers (theirs stays — their call). ctest
+**148/148**; tag **v0.70**. (See the plan-8-step3 Outcome + Locked decision below.)
 
-**Plan 8 step 1 is LANDED (2026-06-10)** — plan file
-`plans/plan-8-isynchost-neutralization.md`; `ISyncHost` gained `setBackendRegistry` +
-non-pure `backendById`/`backends()` registry defaults (dynamic_cast clean-miss;
-additive — every existing override untouched). Suite **147/147**; PlanStan gate clean
-after relinking their `EXCLUDE_FROM_ALL` fixtures (vtable-change runbook rule, see
-FINDINGS). Tag **v0.69**.
+Downstream gates (INVARIANTS §10): **WildPalms** is a per-symbol non-consumer of every
+deleted symbol (grep-clean; only historical comments in `palmruntime.cpp`).
+**PlanStan** (`58bd4835`, `runSyncFuture`-token-free, pins v0.69, KEEPS its CC
+`backendById`/`backends()` overrides — zero internal consumers, deletable on their
+call) built fresh against this tree (`PLANSTAN_LIBKALBURATOR_SOURCE_DIR`): **88
+passed, 0 real failures**; the 27 ✱Not Run are all unbuilt EXCLUDE_FROM_ALL GUI
+binaries, and `tst_syncruncoordinator` + the full sync/backend suite passed
+(plan-8-step3 Outcome has the breakdown).
 
-**Plan 8 step 2 (PlanStan consumer wave) is COMPLETE (2026-06-10).** PlanStan merged
-the wave to `master` (`58bd4835`, pushed; commits A1 unconditional registry
-registration + dtor unregister `939d3047`, A2/A3 `dynamic_cast` provider mirror +
-CC-internal decoupling `ba02815d`, B `runSyncFuture`→`runSync(SyncRequest)` `37e3a1ed`
-+ `6767e724`); `grep -rn runSyncFuture src/ tests/` in PlanStan is **empty**
-(independently verified). PlanStan adopted the **v0.69** pin (our `1ee48249` rode in on
-the shared-checkout wave branch). CC keeps its `backendById`/`backends()` overrides but
-they now have zero CC-internal consumers (deletable later, their call). Their closing
-note: `docs/2026-06-10-plan8-step2-planstan-wave-complete.md`. **WildPalms' half is a
-separate handoff** (`docs/2026-06-10-plan8-wildpalms-consumer-wave-handoff.md`,
-`06fd77c`): 2 PROD `runSyncFuture` calls (`palmruntime.cpp` `runAllMappings`/`runMirror`)
-+ the optional `PalmSyncHost` shim collapse — **NOT yet done**.
-
-**Plan 8 step 3 plan is WRITTEN (2026-06-10) and execution is IN PROGRESS** on branch
-`feature/redress-8-runsyncfuture-retirement` (off `main` @ `348aec9`, baseline 147/147
-re-confirmed green). Plan file:
-`plans/plan-8-step3-runsyncfuture-retirement.md`. Scope (user decision 2026-06-10):
-**collapse the dual future-interface in this plan**, not a follow-up. Step 3 is the
-lib-side `runSyncFuture` retirement: migrate `syncruncoordinator.cpp:60` + ~85 lib test
-sites + `examples/reference_consumer` to `runSync(SyncRequest)`, then **delete the four
-`[[deprecated]]` overloads** and collapse the engine's dual future-interface members
-(FINDINGS "From Plan 1") — making the canonical single-mapping path preserve the cancel
-result natively (retires the `resultCount()>0` workaround). Tasks: T1 multi-mapping
-migration · T2 engine collapse + single-mapping migration + overload deletion · T3
-gates + close-out + tag v0.70. **Gate CLEARED (2026-06-10):** BOTH external consumers are now
-`runSyncFuture`-clean — PlanStan (`58bd4835`) and **WildPalms** (Part A+B done:
-`d68fa5d`/`e5d2820`/`4dc3537`, ctest 120/120; response
-`docs/2026-06-10-plan8-consumer-wave-response-wildpalms.md`). The ONLY remaining
-`runSyncFuture` callers are lib-internal (`syncruncoordinator.cpp:60`,
-`examples/reference_consumer/main.cpp:300`) — exactly the step-3 scope. **Step 3 is fully
-unblocked, overload deletion included.** Step-3 single-mapping note from WildPalms: the
-canonical `runSync(SyncRequest)` single-mapping branch returns a future with
-**`resultCount()==0` when canceled** (no result at all — not a cancelled result), so the
-lib's own `syncruncoordinator`/`reference_consumer` migration must guard
-`if (resultCount() > 0) resultAt(0)` and synthesize the cancelled outcome via
-`isCanceled()` (FINDINGS). The dual future-interface collapse would remove this wart;
-WildPalms confirmed it is NOT urgent. (The other unblocked lib-only plan remains **Plan
-9** if step 3 is deferred.)
+**NEXT: Plan 9** (backend-adjacent dir consolidation + discovery placement; AUDIT B5 +
+MODERATE) — write the plan file first, against the landed tree (invariant P1). Plan 10
+(vocabulary cleanup) and Plan 11 (dead-code + test-gap) remain after.
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -370,7 +335,7 @@ severities, not the retired old plan numbers:
 | 6.5 | Audit follow-up WP-A…WP-D (correctness, doc truth, dead code, test gaps) | 2026-06-10 supplement | **in progress** — WP-A DONE, WP-B current; specs at `2026-06-10-audit-follow-up-specs.md` |
 | 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
 | 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
-| 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **step 1 DONE** (v0.69) + **step 2 BOTH consumer waves DONE** 2026-06-10 (PlanStan `58bd4835` + WildPalms `4dc3537`, both grep-clean); **step 3** (lib `runSyncFuture` deletion) **fully unblocked** — plan file first, per P1. (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
+| 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **DONE 2026-06-10** — step 1 (v0.69) + step 2 BOTH consumer waves (PlanStan `58bd4835` + WildPalms `4dc3537`) + **step 3** (lib `runSyncFuture` deletion + dual future-interface collapse: T1 `0595044`, T2 `26c90ff`, falsifiability `1243fce`; ctest 148; **tag v0.70**). (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
 | 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | proposed |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
 | 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
@@ -452,6 +417,22 @@ the invariant or audit finding. Format:
   consumers clean ⇒ step-3 overload deletion is unblocked. WildPalms surfaced that the
   canonical single-mapping canceled future has `resultCount()==0` — step 3 must guard
   `resultCount()>0` before `resultAt(0)` and synthesize cancel via `isCanceled()`.
+- **2026-06-10 — Plan 8 step 3 collapsed the dual future-interface; the canonical
+  single-mapping `runSync(SyncRequest)` path now preserves the cancel result
+  NATIVELY.** The four `[[deprecated]] runSyncFuture` overloads + `dispatchSingleNative`
+  are deleted; `m_currentSingleIface`/`m_singleWatcher` + `m_currentMultiIface`/
+  `m_multiWatcher` collapsed to one `m_currentIface` + one `m_currentWatcher` (wired by a
+  shared `beginRun()` helper). The single-mapping branch reports a one-element
+  `QList<SyncResult>` straight into the sole iface — **no `.then()` wrap** — so the
+  F2 Task 23 contract (`resultCount()==1`, `resultAt(0).first().cancelled==true`) holds
+  on the canonical path. Consequence: the `resultCount()>0` + `isCanceled()` watcher
+  workaround (the prior decision, and WildPalms' `palmruntime.cpp`) is **no longer
+  required for new lib consumers**; WildPalms' existing workaround stays (their call).
+  Pinned by `tst_engine_single_mapping_cancel` (shown RED against the pre-collapse
+  engine: cancel never reached the worker, items were written). The empty-subset *shim*
+  semantics retired with the overload — **no `SyncRequest` sentinel added** (INVARIANTS
+  §8). (FINDINGS "From Plan 1"/"By Plan 8" struck RESOLVED; T2 `26c90ff` + test
+  `1243fce`.)
 
 ## Acceptance gates
 

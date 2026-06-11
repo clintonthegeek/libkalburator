@@ -375,3 +375,92 @@ existing 17-site cancel suite, now canonical) stays green.
   2026-05-29) touches this exact path. If it surfaces during T2, it is **pre-existing**
   (A/B-verify against `main`); root-causing the threading race is out of this plan's
   scope (log it, don't chase it — INVARIANTS §8).
+
+---
+
+## Outcome (2026-06-10, branch `feature/redress-8-runsyncfuture-retirement`)
+
+Landed in commits off `main` @ `348aec9` (baseline 147/147):
+
+| Commit | Task | What |
+|---|---|---|
+| `0595044` | T1 | Migrate the multi-mapping callers (2 prod + test sites) to `runSync(SyncRequest)`; overloads still present. |
+| `26c90ff` | T2 | Engine collapse: `beginRun()` helper; single-mapping branch reports **natively**; **delete the four `[[deprecated]] runSyncFuture` overloads + `dispatchSingleNative`**; collapse `m_currentSingleIface`/`m_singleWatcher` + `m_currentMultiIface`/`m_multiWatcher` → one `m_currentIface` + one `m_currentWatcher`; migrate single-mapping callers (incl. empty-subset → two unknown ids); doc-comment truth sweep. |
+| `1243fce` | T2 follow-up | Add the falsifiability test T2 omitted (`tst_engine_single_mapping_cancel`), shown RED against the pre-collapse engine. |
+| _(this commit)_ | T3 | Gates + FINDINGS/STATUS/Outcome + `CLAUDE.md` doc-truth; merge `--no-ff`; tag **v0.70**. |
+
+### Metrics
+
+| Metric | Before | After | Delta |
+|---|---|---|---|
+| `runSyncFuture` overloads | 4 | 0 | **−4** |
+| `QFutureInterface<…>` members | 2 (`m_currentSingleIface` + `m_currentMultiIface`) | 1 (`m_currentIface`) | **−1** |
+| `QFutureWatcher<…>` members | 2 (`m_singleWatcher` + `m_multiWatcher`) | 1 (`m_currentWatcher`) | **−1** |
+| `dispatchSingleNative` | 1 | 0 | **−1** (folded into `runSync()` + new `beginRun()`) |
+| `syncengine.h` / `.cpp` LOC | 640 / 2932 | 581 / 2838 | **−153 net** (116 ins / 269 del, T1+T2) |
+| Live `runSyncFuture` callers | ~87 (2 prod + ~85 test) | 0 | only historical comments remain |
+| ctest | 147 | 148 | **+1** (the cancel pin) |
+
+### The payoff (not just deletion)
+
+The canonical single-mapping path now reports a one-element `QList<SyncResult>`
+**straight into the sole iface** — no `.then()` wrap — so the F2 Task 23 cancel
+contract (`resultCount()==1`, `resultAt(0).first().cancelled==true`) holds on the
+canonical path. This closes the three FINDINGS "From Plan 1" dual-iface /
+single-shim-bypass entries **and** the "By Plan 8" cancel-loss entry (all struck
+RESOLVED). The WildPalms `resultCount()>0` watcher workaround is no longer required
+for new lib consumers (theirs stays — their call).
+
+### Falsifiability (INVARIANTS §6) — and a process correction
+
+T2 (`26c90ff`) did the engine surgery but **omitted the protective test the plan
+mandated as T2 step 1**. T3 caught this at the gate (ctest was 147, not the required
+148) and added it (`1243fce`). Falsifiability was demonstrated retroactively by A/B
+against the pre-collapse engine (revert `syncengine.{h,cpp}` + the three doc-only
+engine headers to `0595044`, rebuild): the test FAILS. The pre-collapse failure was
+**deeper than the plan predicted** — canceling the `.then()`-wrapped canonical future
+never reached the engine's cancel watcher (bound to the native future, not the
+continuation), so the worker ran to completion and wrote items (observed: 2 written),
+tripping the "no items reached the destination" assertion before the result-shape
+check. Only the deleted `runSyncFuture(mappingId)` shims (native future verbatim) had
+a working single-mapping cancel pre-collapse. The migrated 17-site
+`tst_engine_cancellation` suite (now on the canonical path) is the broad net; the
+focused test is the falsifiable pin.
+
+### Deviations (documented per INVARIANTS "Scope and exceptions")
+
+- **Test lane.** Plan named `kalburator_add_engine_test` (default lane); the test
+  needs the calendar stub harness (`MockBackend`/`StubSyncHost`/`MemoryCalendar`), so
+  it uses `kalburator_add_engine_integration_test` — the lane of its sibling
+  `tst_cancellation_reason`.
+- **Empty-subset test.** Plan suggested one non-existent id; a single unknown id is
+  single-mapping-not-found (one-element error result), so the migrated
+  `tst_engine_subset_dispatch::emptySubset_returnsEmptyResults` uses **two** unknown
+  ids to stay on the subset path.
+
+### Gates (INVARIANTS §10)
+
+- **libkalburator ctest:** 148/148 green (clean re-run). The one intermittent
+  `tst_engine_cancellation` SEGFAULT under `-j8` is the documented FINDINGS "From
+  Plan 2" load flake (5/5 isolated + a clean 148/148 full re-run); pre-existing, not
+  chased (INVARIANTS §8).
+- **WildPalms:** per-symbol non-consumer of every deleted symbol — `grep` for actual
+  calls is empty; only historical comments in `palmruntime.cpp` mention the retired
+  API. Clone gate skipped (plan-7 precedent).
+- **PlanStan** (`58bd4835`, `runSyncFuture`-token-free, pins v0.69): built **fresh**
+  against this tree (`PLANSTAN_LIBKALBURATOR_SOURCE_DIR`, `build-redress8gate`, clean
+  Makefiles configure → no stale objects, so every fixture relinks against the new
+  SyncEngine ABI — a cleaner equivalent of the "relink EXCLUDE_FROM_ALL fixtures
+  first" runbook rule). ctest: **88 passed, 27 ✱Not Run, 0 real failures** (0
+  `✱✱✱Failed`, 0 SegFault). All 27 Not-Run are EXCLUDE_FROM_ALL GUI / graph-editor /
+  GUI-integration binaries the fresh `make all` doesn't build (verified
+  `<not built>`); the count is 27 vs Plan-7's 21 only because a fresh dir builds none
+  of them (build-dev had ~6 pre-built). **Every libkalburator-consuming test ran and
+  passed** — notably `tst_syncruncoordinator` (PlanStan's prod consumer of the engine
+  sync API the collapse changed), `tst_synchostsmoke`/`tst_calendarhostsmoke`
+  (ISyncHost integration), the full sync/backend/collection/topology suite, and
+  `tst_loader_empty_backends` (Plan-7's prior real failure, now green via PlanStan's
+  own O.5 realignment `91774225`). The overload deletion + ABI change is transparent
+  to PlanStan.
+- **clangd:** `compile_commands.json` regenerated; no new diagnostics on touched TUs
+  (the unused-include / `.moc`-not-found warnings are pre-existing clangd noise).

@@ -105,16 +105,28 @@ When writing or modifying tests in this directory:
   `tests/calendar/CMakeLists.txt`.
 
 - **Canonical engine entry: `SyncEngine::runSync(SyncRequest)`**
-  returning `QFuture<QList<SyncResult>>` (redress Plan 1). The four
-  `runSyncFuture(...)` overloads are `[[deprecated]]` shims slated
-  for removal in redress Plan 8 — do not write new calls against
-  them. Wait via `QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000)`
-  (NOT `waitForFinished` — Qt6's `waitForFinished` does NOT spin the
-  test event loop). Read results via `future.resultAt(0)` (NOT
-  `future.results()` — empty after cancel due to a Qt6 quirk).
-  The void `runSync` overloads, `cancelSync`, and the
+  returning `QFuture<QList<SyncResult>>` (redress Plan 1). This is the
+  **sole** sync entry — the four `runSyncFuture(...)` overloads were
+  DELETED in redress Plan 8 step 3 (2026-06-10), along with
+  `dispatchSingleNative` and the dual `m_currentSingleIface`/
+  `m_currentMultiIface` interface; the engine now holds one
+  `m_currentIface` + one `m_currentWatcher` wired by `beginRun()`.
+  Build a `SyncRequest` (`mappingIds` empty ⇒ all enabled; size 1 ⇒
+  single mapping; size >1 ⇒ subset). Wait via
+  `QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 5000)` (NOT
+  `waitForFinished` — Qt6's `waitForFinished` does NOT spin the test
+  event loop). Read results via `future.resultAt(0)` — a
+  `QList<SyncResult>` (NOT `future.results()`, empty after cancel due
+  to a Qt6 quirk). The void `runSync` overloads, `cancelSync`, and the
   `syncCompleted`/`allSyncsCompleted` signals were deleted in
   F2 Task 42.
+
+- **Single-mapping cancel is now native** (Plan 8 step 3): a canceled
+  single-mapping `runSync(SyncRequest)` future preserves the F2 Task 23
+  contract — `resultCount()==1`, `resultAt(0).first().cancelled==true` —
+  with **no `.then()` wrap** and **no `resultCount()>0` guard** needed.
+  (Pre-collapse the canonical single path lost this; only the deleted
+  shims preserved it. Pinned by `tst_engine_single_mapping_cancel`.)
 
 - **Cancellation** — call `future.cancel()`. The cancellation
   channel propagates through
