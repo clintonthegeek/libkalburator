@@ -343,6 +343,11 @@ backends; the directory has no stated principle.
 **Fix direction:** rename/move to `capabilities/` (or `sync/capabilities/`); the directory
 should hold either backend base classes or nothing.
 
+**RESOLVED by Plan 9 (T1, 2026-06-11, tag v0.73):** `backend/` deleted; its sole survivor
+`changedetection.h` (`resourcelinearization.h` was already gone) moved to `sync/` beside its
+sibling neutral contract `SyncBackendBase`, namespace `Kalburator::Backend`→`Kalburator::Sync`.
+"Nothing" was chosen over a one-file `capabilities/` dir (fork decision, STATUS).
+
 ### MAJOR — Store/Manager naming collisions (U3, corrected)
 
 Two unrelated `BaselineStore` classes (SQLite `storage/baselinestore.h:39` vs in-memory
@@ -384,15 +389,15 @@ via `SyncRunCoordinator`.
 - **`calendar/syncbackend.h` lives in `calendar/` but is `Kalburator::Sync`** — physical/logical mismatch with calendar signals + KCalendarCore. (`:4/47/40/285`) Consider moving to `sync/`.
 - **Implicit CMake include paths expose domain headers to `sync/`** — `caldavprovider.cpp:6/7`, `carddavprovider.cpp:5/7` use unqualified includes while `multiprotocoldavprovider.cpp:4` uses `../calendar/`; inconsistent.
 - **`U1` "Backend" overloaded across 6 constructs in 4 dirs** (corrected: `SyncBackend` is calendar-typed, neutral one is `SyncBackendBase`; `ChangeDetection` excluded). `syncbackend.h:120`, `syncbackendbase.h:53`, `iblobbackend.h:36`, `backendcontribution.h:15`, `backendconfiguration.h:81`, `backendcapabilities.h:141`.
-- **`B5` three backend-adjacent dirs lack documented layer position + namespace fragmentation** (Backend/Storage/Sinks). `changedetection.h:8`, `baselinestore.h:37`, `rawfilesbackend.h:9`; phases K.1/K.5/K.7.3.
+- **`B5` three backend-adjacent dirs lack documented layer position + namespace fragmentation** (Backend/Storage/Sinks). `changedetection.h:8`, `baselinestore.h:37`, `rawfilesbackend.h:9`; phases K.1/K.5/K.7.3. — **Plan 9 (T1/T6):** `Backend` ns retired (`backend/` deleted); layer-role comments document `sync/`/`storage/`/`universal/`; the `Sinks`↔`universal/` dir/ns mismatch deferred to Plan 10 (FINDINGS).
 - **`B7` `CalendarManager` mixes Calendar/Binding/Incidence CRUD + repeated skeleton** (corrected: 5 DeleteMode variants, 17 public methods; no routine "check caps"/"update baseline" steps). `calendarmanager.cpp:927`; `:73/125/128`.
 - **`B8` `IncidenceDiff` is a namespace-as-class** (1160 LOC, all-static; corrected: `vcarddiffer`/`icalvtododiffer` are properly polymorphic, not equivalents). `incidencediff.h:71/91`.
 - **`PropertyDiff`/`IncidenceDiff` are calendar-specific but in `Sync` namespace** — `incidencediff.h:8/10`; used only from `calendar/`; engine deliberately defines a separate `MapPropertyDiff` (`propertydiff.h:23`).
 - **`IncidenceDiff` duplicates property-catalogue metadata** — display-name/category/priority maps in `incidencediff.cpp:20/72` duplicate `calendar/icalproperties.cpp:7`.
-- **7 loose `discovered*` getters leak `RemoteCalendarBackend` discovery state** — `remotecalendarbackend.h:102…205`, private maps `:350/351`. Consolidate into a DTO.
-- **`discoveredCapabilities()` bulk getter** exposes whole struct + nested map — `caldavcapabilitydiscovery.h:76`; both callers reach into `.perCalendarCapabilities`.
-- **Discovery URL maps duplicated across discovery/provider/backend** — `caldavcapabilitydiscovery.h:158`, `caldavprovider.h:66`, `remotecalendarbackend.h:350`.
-- **Asymmetric discovery placement** — `CalDavCapabilityDiscovery` in `calendar/` (`:14/41`), `CardDavCapabilityDiscovery` in `sync/`; `multiprotocoldavprovider.cpp:4` crosses upward into calendar.
+- **7 loose `discovered*` getters leak `RemoteCalendarBackend` discovery state** — `remotecalendarbackend.h:102…205`, private maps `:350/351`. Consolidate into a DTO. — **Plan 9 (T3/T4):** 6 surviving getters (the 7th, `discoveredCtag`, went in Plan 7) collapsed into the `DiscoveredCalendar discoveredCalendar()` accessor; 3 calendar-base virtuals became non-virtual forwarders, 3 RCB-local stay as forwarders; all `[[deprecated]]` for the PlanStan window, deletion → Plan 11. (Internal state was already `CalendarFacts` post-Plan-7.)
+- **`discoveredCapabilities()` bulk getter** exposes whole struct + nested map — `caldavcapabilitydiscovery.h:76`; both callers reach into `.perCalendarCapabilities`. — **RESOLVED by Plan 9 (T5):** narrowed to a `perCalendarCapabilities()` accessor; both providers rewired off the whole-struct fetch.
+- **Discovery URL maps duplicated across discovery/provider/backend** — `caldavcapabilitydiscovery.h:158`, `caldavprovider.h:66`, `remotecalendarbackend.h:350`. — **Plan 9 (T5):** found to be a lifecycle handoff (transient discovery→persistent provider→backend), not a live dup; backend half already consolidated by Plan 7. The href-into-`PerCalendarCapabilities` fold deferred to Plan 11 (FINDINGS).
+- **Asymmetric discovery placement** — `CalDavCapabilityDiscovery` in `calendar/` (`:14/41`), `CardDavCapabilityDiscovery` in `sync/`; `multiprotocoldavprovider.cpp:4` crosses upward into calendar. — **RESOLVED by Plan 9 (T2):** `CalDavCapabilityDiscovery` moved `calendar/`→`sync/` (transport-only); the discovery half of the `sync/→calendar/` reach is gone. The residual concrete-backend include is the B4-corrected MAJOR (deferred, FINDINGS).
 - **`FilteredCollectionBackend` couples to `BackendRegistry` via `parentBackendId`** — `filteredcollectionbackend.h:29/36`, `.cpp:39`; `backendId()` defaults to `backendType()` (`syncbackendbase.cpp:60`).
 - **`FilteredCollectionBackend` `const_cast` in const methods** — `filteredcollectionbackend.cpp:48/94` cast away const to call non-const `collectionInfo()` (`iblobbackend.h:47`).
 - **Identical `nativeShapes()`/`shapeFor()` in `GenericSqliteBackend` + `RawFilesBackend`** — byte-for-byte (`genericsqlitebackend.cpp:86/97`, `rawfilesbackend.cpp:56/67`). Hoist to a shared base.

@@ -57,6 +57,20 @@ passed, 0 real failures**; the 27 ✱Not Run are all unbuilt EXCLUDE_FROM_ALL GU
 binaries, and `tst_syncruncoordinator` + the full sync/backend suite passed
 (plan-8-step3 Outcome has the breakdown).
 
+**Plan 9 — DONE 2026-06-11 (merged to `main`, tag v0.73).** Landed across T0–T7,
+ctest 148/148 after every task, +766/−223 / 29 files. Resolved the `backend/`-capability-bin
+MAJOR (B5-adjacent), the B5 documented-layer-position MODERATE, the asymmetric-discovery-
+placement MODERATE, the `discoveredCapabilities()` bulk-getter MODERATE, and the
+`discovered*`-DTO-consolidation MODERATE (via a `[[deprecated]]` forwarder window). PlanStan
+invariant-10 gate PASSED (production builds clean against the forwarders; all runnable tests
+green; the integration-suite failures A/B-proven pre-existing — a PlanStan-harness
+`fetchItems`/`FetchOperation` downcast bug, flagged in FINDINGS). Deferred to later plans
+(FINDINGS "From Plan 9"): the `Sinks`↔`universal/` rename (Plan 10), the 6 forwarders'
+deletion + href-into-`PerCalendarCapabilities` (Plan 11), the residual `sync/→calendar/`
+concrete-backend include (B4-corrected MAJOR, own concern). **NEXT: Plan 10 (vocabulary
+cleanup).** Plan 11 (dead-code + test-gap) remains after.
+
+<!-- superseded planning note (Plan 9 now DONE):
 **Plan 9 — plan WRITTEN 2026-06-11** (backend-adjacent dir consolidation + discovery
 placement; AUDIT B5 + MODERATE) at
 `plans/plan-9-backend-dir-discovery-consolidation.md`, against the landed v0.72 tree
@@ -72,6 +86,7 @@ placement; AUDIT B5 + MODERATE) at
 WildPalms sites) DEFERRED to Plan 10. **NEXT: implement T0–T7** on
 `feature/redress-9-backend-dir-discovery-consolidation`. Plan 10 (vocabulary cleanup) and
 Plan 11 (dead-code + test-gap) remain after.
+-->
 
 ## Plan 7 outcome (2026-06-10, branch `feature/redress-7-remotecalendarbackend-decomposition`)
 
@@ -348,7 +363,7 @@ severities, not the retired old plan numbers:
 | 7 | Remote backend decomposition | B3 (MAJOR) + supplement S4 | **DONE 2026-06-10** — net −322 LOC, 3 latent bugs fixed, ctag surface privatized (merged `2df77e9`, tag v0.68) |
 | 7b | LocalBackend decomposition | B3 (MAJOR, second half) | **DONE 2026-06-10** — pair net −86, clusters privatized, shared icalcodec.h; **B3 closed both halves** |
 | 8 | `ISyncHost` neutralization + `runSyncFuture` retirement (consumer wave) | B7/B8 + FINDINGS "From Plan 1/3" | **DONE 2026-06-10** — step 1 (v0.69) + step 2 BOTH consumer waves (PlanStan `58bd4835` + WildPalms `4dc3537`) + **step 3** (lib `runSyncFuture` deletion + dual future-interface collapse: T1 `0595044`, T2 `26c90ff`, falsifiability `1243fce`; ctest 148; **tag v0.70**). (`CalendarManager` split / `IncidenceDiff`→free-fns deferred — not part of the consumer wave.) |
-| 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | **plan written 2026-06-11** (Broad scope; `plans/plan-9-backend-dir-discovery-consolidation.md`) — awaiting implementation |
+| 9 | Backend-adjacent dir consolidation + discovery placement | B5 + MODERATE | **DONE 2026-06-11** — merged to `main`, tag **v0.73**; ctest 148/148; `backend/` deleted (changedetection.h→sync/), CalDav discovery→sync/, 6 `discovered*` getters→`discoveredCalendar()` DTO behind a `[[deprecated]]` forwarder window, `discoveredCapabilities()` narrowed, layer-position docs. PlanStan gate PASS (pre-existing failures only). Forwarder deletion + `Sinks` rename + concrete-backend include deferred (FINDINGS) |
 | 10 | Vocabulary cleanup (Backend/Store/Manager/Canon) | U1–U5 | proposed (late — rename what survives) |
 | 11 | Dead-code + test-gap closure | B9-corrected + test gaps | proposed (last) |
 

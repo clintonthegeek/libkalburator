@@ -479,6 +479,19 @@ invariant 9:
   PlanStan migration window (Plan 9 T7). DELETE them once PlanStan adopts
   `discoveredCalendar()` and pins the new tag (T7.2 / fold into Plan 11). Zero in-lib callers
   remain; WildPalms consumes none.
+- 2026-06-11 — **downstream gate evidence (PlanStan-side, NOT a libkalburator issue)** —
+  PlanStan's integration test harness `tests/integration/integrationtestbase.cpp:155`
+  (`waitForFetch`) does `FetchOperation *op = backend->fetchItems(calendarId);` — an invalid
+  implicit downcast, since `SyncBackendBase::fetchItems()` returns `SyncOperation*`
+  (`sync/syncbackendbase.h:101`), and `FetchOperation` is a subclass. It only compiles with
+  `-fpermissive`. Surfaced by the Plan 9 invariant-10 gate when rebuilding the
+  EXCLUDE_FROM_ALL integration fixtures (their stale 14:25 binaries otherwise SEGFAULT on the
+  vtable change). **A/B-proven pre-existing, independent of Plan 9:** `fetchItems`'s return
+  type is byte-identical on libkalburator `main` and `feature/redress-9`, and Plan 9's diff
+  touches zero `fetchItems`/`FetchOperation` lines — so it fails identically against `main`.
+  The PlanStan dev should fix the downcast (`qobject_cast<FetchOperation*>` or change the
+  local type to `SyncOperation*`); their integration suite is currently broken-on-rebuild
+  against any current libkalburator. (No libkalburator action.)
 
 ## Resolved
 

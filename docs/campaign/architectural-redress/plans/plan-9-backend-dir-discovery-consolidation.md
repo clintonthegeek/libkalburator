@@ -411,5 +411,43 @@ stores; "Store" persists), `universal/universalstorageplugin.h` (`universal/`/`K
 sites), the href-into-`PerCalendarCapabilities` consolidation (Plan 11, crosses into
 typesupport), and the 6 `[[deprecated]]` forwarders' deletion (T7.2/Plan 11). ctest 148/148.
 
-_(T7 filled in as it lands — the PlanStan gate result, the deprecated-forwarder disposition,
-and the AUDIT B5 + discovery-MODERATE closing annotations.)_
+**T7 — PlanStan invariant-10 gate (2026-06-11, verification only — no PlanStan edits):**
+PlanStan `build/` consumes this branch via `PLANSTAN_LIBKALBURATOR_SOURCE_DIR`. **Production
+`make all` builds CLEAN** against Plan 9 — the only diagnostics are **7 deprecation warnings**
+at exactly the surveyed `discovered*` sites (`backenddiscoverycoordinator.cpp:103`,
+`collectioncontroller.cpp:1087`, `backenddiscoveryhelper.cpp:72/74/83/84/85`), proving the
+forwarder window keeps PlanStan compiling; `discoveredWritable` (kept) warns nowhere. ctest:
+**88 passed**, including every runnable sync/provider/host test (`tst_providerlifecycle`,
+`tst_syncruncoordinator`, `tst_synchostsmoke`, `tst_kalbsynctopologydatasource`). The 27
+non-passing = **22 Not-Run** headless-GUI/unbuilt-EXCLUDE_FROM_ALL binaries (baseline) +
+**5 stale-binary SEGFAULTs** in the `integration_*` fixtures. The integration fixtures
+**cannot be rebuilt** against current libkalburator due to a **pre-existing PlanStan-harness
+bug** (`tests/integration/integrationtestbase.cpp:155` does `FetchOperation *op =
+backend->fetchItems(...)`, an invalid downcast — `fetchItems()` returns `SyncOperation*`).
+**A/B-proven pre-existing, NOT a Plan 9 regression:** `fetchItems`'s return type is
+byte-identical on `main` and this branch (`sync/syncbackendbase.h:101`), and Plan 9's diff
+touches zero `fetchItems`/`FetchOperation` lines, so it fails identically against `main`.
+Flagged to the PlanStan dev (FINDINGS). **Gate verdict: PASS — Plan 9 does not regress
+PlanStan** (clean production build + all runnable tests green; the unverifiable integration
+suite is pre-existing-broken, independent of this work).
+
+**Close-out (2026-06-11, merged to `main`, tag v0.73).** Plan 9 landed across T0–T7 on
+`feature/redress-9-backend-dir-discovery-consolidation`, **ctest 148/148 after every task**,
++766/−223 across 29 files. Resolved AUDIT items:
+
+| AUDIT item | Resolution |
+|---|---|
+| MAJOR — `backend/` capability bin (B5-adjacent) | `backend/` deleted; `changedetection.h`→`sync/` (T1) |
+| MODERATE B5 — backend-adjacent dirs lack documented layer position | layer-role comments on `sync/`/`storage/`/`universal/` (T6); the `Sinks`↔`universal/` namespace half deferred to Plan 10 (FINDINGS) |
+| MODERATE — asymmetric discovery placement + implicit-include exposure | CalDav capability discovery `calendar/`→`sync/` (T2) — discovery half of the sync→calendar reach removed |
+| MODERATE — `discoveredCapabilities()` bulk getter | narrowed to `perCalendarCapabilities()` (T5) |
+| MODERATE — loose `discovered*` getters leak / consolidate into a DTO | 6 getters collapsed into the `DiscoveredCalendar discoveredCalendar()` accessor via a `[[deprecated]]` forwarder window (T3/T4); deletion → Plan 11 after PlanStan migrates |
+
+Deferred (FINDINGS "From Plan 9"): the residual `sync/→calendar/` **concrete-backend** include
+(B4-corrected MAJOR — own concern); the `Kalburator::Sinks` rename (Plan 10); the
+href-into-`PerCalendarCapabilities` consolidation (Plan 11); the 6 deprecated forwarders'
+deletion (Plan 11). **Consumer wave:** the invariant-10 PlanStan gate passed (production
+builds clean; all runnable tests green; the only failures A/B-proven pre-existing — see the
+T7 gate entry above); the actual PlanStan migration of ~10 sites to `discoveredCalendar()`
+(net-simplifying) is a follow-up, unblocked by the forwarder window. WildPalms: 0 consumers
+of any changed symbol (verified 2026-06-11). **Next: Plan 10 (vocabulary cleanup).**
