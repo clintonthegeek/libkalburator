@@ -4,9 +4,20 @@
 > Verified: libkalburator `tst_remotecalendarbackend_writepaths` 11/11 (new
 > `startSync_undiscovered_calendar_derives_url_and_writes` regression + live
 > Radicale lane + convergence); PlanStan `tst_sync_caldav_conflicts` 10/10
-> against the pristine v0.71 tag (was 8/10). **Defect 2 (thread-affinity)
-> deferred** — confirmed benign for the sync path (the warning prints but the
-> PlanStan tests pass with it present); see the section below, still open.
+> against the pristine v0.71 tag (was 8/10).
+>
+> **Defect 2 (thread-affinity) RESOLVED in v0.72** — the three op-based API
+> methods (`fetchItems`/`pushItems`/`deleteItems`) no longer parent the
+> operation to `this` across a thread boundary. The op is created unparented and
+> pushed onto the backend's thread via a small `onOwnerThread()` helper
+> (no-op when the API is already called from the backend thread). TDD: three new
+> `tst_remotecalendarbackend_writepaths` cases
+> (`{fetch,push,delete}Items_fromWorkerThread_opLivesOnBackendThread`) assert the
+> returned op's `thread()` equals the backend's thread when the call originates
+> on a worker thread — watched RED (op stranded, `Actual: <null>` + the "Cannot
+> create children…" warning), then GREEN. Verified: writepaths **14/14**, live
+> Radicale lane (121s) + convergence + blob-view + subsequent-sync all green,
+> and the affinity warning no longer prints. See the section below.
 
 **Date:** 2026-06-11
 **From:** PlanStan dev (triaged via PlanStan's gated `tst_sync_caldav_conflicts`)
@@ -74,21 +85,57 @@ The URL is derivable with no network round-trip — discovery itself builds it a
   initial `loadCalendars` completes, and have the sync orchestration gate the
   first run on it. Heavier; the derivation is the smaller fix.
 
-## Defect 2 — thread-affinity violation (secondary, latent UB)
+## Defect 2 — thread-affinity violation (secondary, latent UB) — RESOLVED in v0.72
 
-`fetchItems` (`:1276`) does `new FetchOperation(calendarId, this)` and
-`QTimer::singleShot(0, op, …)` (`:1282`) **synchronously on the sync worker
-thread**, before the `QMetaObject::invokeMethod(this, …)` (`:1295`) marshals to
-the backend's thread — so QObjects are parented across a thread boundary
-(`this` lives on the main thread; the worker is another). Qt logs "Cannot create
-children for a parent that is in a different thread." Marshal the op creation
-(and the deferred-failure timer) onto the backend thread first, or don't parent
-the op to `this`.
+**Was:** `fetchItems`/`pushItems`/`deleteItems` each did `new XOperation(…, this)`
+**synchronously on the sync worker thread** (the blob-view CRUD adapters —
+`loadRecords`/`createRecord`/`deleteRecord` — run there), before the
+`QMetaObject::invokeMethod(this, …)` marshalled the real work onto the backend's
+thread. `this` lives on the main thread, so parenting the op to it across the
+boundary was illegal: Qt logged "Cannot create children for a parent that is in
+a different thread", the parent link was silently dropped, and the op was
+stranded with no thread affinity (`op->thread()` came back null) — yet its
+completion lambda still ran on the backend thread and emitted `finished` from
+there, i.e. mutating/signalling the op from a thread it didn't live on.
 
-> One related shape worth an audit glance (from PlanStan's Plan-8 wave note):
-> `ProviderManager::~ProviderManager → disconnectAll → unregisterProviderBackends`
-> has the same cross-thread/teardown-ordering hazard if a provider is still
-> connected at exit and the manager outlives the registry.
+**Fix (chosen: "don't parent the op to `this`"):** the op is created unparented
+and pushed onto the backend's thread via a small anonymous-namespace helper:
+
+```cpp
+template <typename Op>
+Op *onOwnerThread(Op *op, const QObject *owner) {
+    if (op->thread() != owner->thread())
+        op->moveToThread(owner->thread());
+    return op;
+}
+```
+
+So `new FetchOperation(calendarId, this)` → `onOwnerThread(new FetchOperation(calendarId), this)`
+(and likewise for Push/Delete). `moveToThread` is called from the op's current
+(creating) thread, on a parentless object — both Qt preconditions hold — and is a
+no-op on the common primed-provider path where the API is already invoked on the
+backend thread. The op now lives where it completes, so `finished` is emitted
+from its own thread; the worker-thread `awaitOperation()` receives it via the
+normal cross-thread queued connection (`SyncOperation::state` is `std::atomic`,
+so the await's `isFinished()`/`state()` reads are already safe). Ownership is
+unchanged: the synchronous adapters `deleteLater()` the op they await, and there
+are no raw async consumers relying on parent-based cleanup (the base destructor
+never touches `m_pendingOperations`).
+
+**Tests:** `tst_remotecalendarbackend_writepaths` +3 cases
+(`{fetch,push,delete}Items_fromWorkerThread_opLivesOnBackendThread`): construct
+the op-API call on a `QThread::create` worker (empty base URL → `davUrlFor`
+returns nullopt → early-fail path, no network, but the op is still constructed
+first — the site under test) and assert `op->thread() == backend.thread()`.
+Watched RED (`Actual: <null>` + the affinity warning), then GREEN. Suite 14/14;
+live Radicale lane + convergence + blob-view + subsequent-sync still green; the
+warning is gone.
+
+> Still-open related shape (NOT addressed here — separate teardown-ordering
+> hazard, no repro yet): `ProviderManager::~ProviderManager → disconnectAll →
+> unregisterProviderBackends` can cross threads at exit if a provider is still
+> connected and the manager outlives the registry. Worth an audit glance when
+> next in that code.
 
 ## Repro (in a PlanStan checkout pinned to v0.69)
 

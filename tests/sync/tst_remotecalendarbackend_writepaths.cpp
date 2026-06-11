@@ -20,6 +20,7 @@
 #include <QtTest/QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThread>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
@@ -68,6 +69,12 @@ private slots:
     void createCalendar_405_is_idempotent_success();
     void updateCalendar_proppatch_updates_color_cache();
     void deleteCalendar_204_unregisters_then_404_returns_false();
+
+    // Defect 2 (thread-affinity): operations created from a worker thread must
+    // still be affiliated with the backend's thread, never parented across it.
+    void fetchItems_fromWorkerThread_opLivesOnBackendThread();
+    void pushItems_fromWorkerThread_opLivesOnBackendThread();
+    void deleteItems_fromWorkerThread_opLivesOnBackendThread();
 };
 
 void TstRemoteCalendarBackendWritePaths::startSync_creations_reach_server_with_signal_contract()
@@ -349,6 +356,92 @@ void TstRemoteCalendarBackendWritePaths::deleteCalendar_204_unregisters_then_404
     // Second delete: the collection is gone server-side -> 404 -> false.
     QVERIFY(!backend.deleteCalendar(QStringLiteral("coll-1"),
                                     QStringLiteral("projects")));
+}
+
+// ---------------------------------------------------------------------------
+// Defect 2 — thread-affinity of the operation-based API.
+//
+// The SyncEngine drives a backend's BlobBackend CRUD (loadRecords/createRecord/
+// ...) from a worker thread, which in turn calls the op-based API (fetchItems/
+// pushItems/deleteItems). The backend object itself lives on the owning (main)
+// thread. The operation must end up affiliated with the backend's thread — its
+// completion lambda (QMetaObject::invokeMethod(this, ...)) runs there and emits
+// `finished` from there — so creating it with `this` as parent across the
+// thread boundary is illegal ("QObject: Cannot create children for a parent
+// that is in a different thread") and strands the op on the caller's thread.
+//
+// Each test constructs the op-API call on a worker thread and asserts the
+// returned operation lives on the backend's thread. An empty base URL makes
+// davUrlFor() return nullopt, so the early-fail path is taken (no network) —
+// but the operation object is still constructed first, which is the site under
+// test. The base destructor does not touch m_pendingOperations, so deleting the
+// op (or leaking it on the RED early-return) is safe.
+
+namespace {
+
+template <typename Call>
+QThread *callerThreadFor(Call &&call)
+{
+    QThread *worker = QThread::create(std::forward<Call>(call));
+    worker->start();
+    return worker;
+}
+
+} // namespace
+
+void TstRemoteCalendarBackendWritePaths::fetchItems_fromWorkerThread_opLivesOnBackendThread()
+{
+    RemoteCalendarBackend backend{QUrl(), QString(), QString()};
+
+    FetchOperation *op = nullptr;
+    QThread *worker = callerThreadFor([&]() {
+        op = backend.fetchItems(QStringLiteral("worker-cal"));
+    });
+    QVERIFY(worker->wait(5000));
+    delete worker;
+
+    QVERIFY(op != nullptr);
+    QCOMPARE(op->thread(), backend.thread());
+
+    delete op;
+}
+
+void TstRemoteCalendarBackendWritePaths::pushItems_fromWorkerThread_opLivesOnBackendThread()
+{
+    RemoteCalendarBackend backend{QUrl(), QString(), QString()};
+
+    const QList<KCalendarCore::Incidence::Ptr> items{
+        makeEvent(QStringLiteral("worker-push-1"), QStringLiteral("Pushed"))};
+
+    PushOperation *op = nullptr;
+    QThread *worker = callerThreadFor([&]() {
+        op = backend.pushItems(QStringLiteral("worker-cal"), items);
+    });
+    QVERIFY(worker->wait(5000));
+    delete worker;
+
+    QVERIFY(op != nullptr);
+    QCOMPARE(op->thread(), backend.thread());
+
+    delete op;
+}
+
+void TstRemoteCalendarBackendWritePaths::deleteItems_fromWorkerThread_opLivesOnBackendThread()
+{
+    RemoteCalendarBackend backend{QUrl(), QString(), QString()};
+
+    DeleteOperation *op = nullptr;
+    QThread *worker = callerThreadFor([&]() {
+        op = backend.deleteItems(QStringLiteral("worker-cal"),
+                                 QStringList{QStringLiteral("worker-del-1")});
+    });
+    QVERIFY(worker->wait(5000));
+    delete worker;
+
+    QVERIFY(op != nullptr);
+    QCOMPARE(op->thread(), backend.thread());
+
+    delete op;
 }
 
 QTEST_GUILESS_MAIN(TstRemoteCalendarBackendWritePaths)

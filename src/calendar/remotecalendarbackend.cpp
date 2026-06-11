@@ -296,6 +296,28 @@ bool awaitOperation(Kalburator::Sync::SyncOperation *op)
     return op->state() == Kalburator::Sync::SyncOperation::Succeeded;
 }
 
+// Affiliate a freshly-created operation with `owner`'s thread.
+//
+// The op-based API (fetchItems/pushItems/deleteItems) is driven from a sync
+// worker thread via the blob-view CRUD adapters, but the backend itself lives
+// on the owning (main) thread, and each operation's completion lambda —
+// QMetaObject::invokeMethod(this, ...) — runs there and emits `finished` from
+// there. Parenting the op to the backend across that boundary is illegal
+// ("QObject: Cannot create children for a parent that is in a different
+// thread") and strands the op on the caller's thread. So the op is created
+// unparented and pushed onto the backend thread; this is a no-op when the API
+// is called from the backend thread directly (the common, primed-provider
+// path). Ownership: the synchronous adapters deleteLater() the op they await;
+// there are no raw async consumers relying on parent-based cleanup.
+template <typename Op>
+Op *onOwnerThread(Op *op, const QObject *owner)
+{
+    if (op->thread() != owner->thread()) {
+        op->moveToThread(owner->thread());
+    }
+    return op;
+}
+
 } // anonymous namespace
 
 // Constructor
@@ -1293,7 +1315,7 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
 
 FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 {
-    auto *op = new FetchOperation(calendarId, this);
+    auto *op = onOwnerThread(new FetchOperation(calendarId), this);
     registerOperation(op);
 
     if (!davUrlFor(calendarId)) {
@@ -1631,7 +1653,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                                         const QList<KCalendarCore::Incidence::Ptr> &items)
 {
-    auto *op = new PushOperation(calendarId, items, this);
+    auto *op = onOwnerThread(new PushOperation(calendarId, items), this);
     registerOperation(op);
 
     if (items.isEmpty()) {
@@ -1739,7 +1761,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
 DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
 {
-    auto *op = new DeleteOperation(calendarId, uids, this);
+    auto *op = onOwnerThread(new DeleteOperation(calendarId, uids), this);
     registerOperation(op);
 
     if (uids.isEmpty()) {
