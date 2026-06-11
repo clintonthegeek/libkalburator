@@ -390,7 +390,7 @@ private:
     QList<KCalendarCore::Incidence::Ptr> serveCachedItems(const QString &calendarId, const KDAV::DavUrl &davUrl);
 
     QUrl generateItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
-    KDAV::DavUrl configuredDavUrl(const QString &rawUrl);
+    KDAV::DavUrl configuredDavUrl(const QString &rawUrl) const;
 
     // Fresh CS:getctag via a Depth:0 PROPFIND on the calendar's URL (shared
     // by fetchItems and modifiedSince). Empty when unregistered or on failure.

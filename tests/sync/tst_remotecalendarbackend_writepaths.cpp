@@ -62,7 +62,7 @@ private slots:
     void startSync_creations_reach_server_with_signal_contract();
     void startSync_deletions_remove_from_server();
     void startSync_empty_stages_completes_immediately();
-    void startSync_unknown_calendar_completes_without_jobs();
+    void startSync_undiscovered_calendar_derives_url_and_writes();
     void removeItem_deletes_and_emits_itemRemoved();
     void createCalendar_201_registers_url_and_emits();
     void createCalendar_405_is_idempotent_success();
@@ -184,28 +184,40 @@ void TstRemoteCalendarBackendWritePaths::startSync_empty_stages_completes_immedi
     QCOMPARE(startedSpy.count(), 0);
 }
 
-void TstRemoteCalendarBackendWritePaths::startSync_unknown_calendar_completes_without_jobs()
+void TstRemoteCalendarBackendWritePaths::startSync_undiscovered_calendar_derives_url_and_writes()
 {
+    // Regression for the first-sync DAV-URL race: on the first sync of a
+    // directly-configured (non-primed) CalDAV backend, the per-calendar DAV URL
+    // is not yet in the map because async loadCalendars discovery has not
+    // completed. The creation must still reach the server at the URL derived
+    // from base + calendarId (the same derivation createCalendar/updateCalendar/
+    // deleteCalendar already use) — NOT be silently dropped.
     FakeCalDavServer server;
     QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
 
     RemoteCalendarBackend backend(server.baseUrl(),
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
-    // Deliberately no registerCalendarUrl.
+    backend.setCacheDir(cacheDir.path());
+    // Deliberately NO registerCalendarUrl / discovery / primeCalendars: this
+    // reproduces the discovery-race window the first sync runs inside.
 
     KCalendarCore::MemoryCalendar cal(QTimeZone::utc());
-    cal.setId(QStringLiteral("Ghost"));
+    cal.setId(QStringLiteral("Personal"));
 
     QSignalSpy completedSpy(&backend, &RemoteCalendarBackend::syncCompleted);
 
     const QList<KCalendarCore::Incidence::Ptr> creations{
-        makeEvent(QStringLiteral("wp-ghost-1"), QStringLiteral("Ghost"))};
-    backend.startSync(QStringLiteral("ghost-coll"), &cal, creations, {}, {});
+        makeEvent(QStringLiteral("wp-undisc-1"), QStringLiteral("Undiscovered"))};
+    backend.startSync(QStringLiteral("personal-coll"), &cal, creations, {}, {});
 
-    // Unknown DAV URL: completes synchronously without touching the network.
-    QCOMPARE(completedSpy.count(), 1);
-    QCOMPARE(server.requestCount("PUT"), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(completedSpy.count(), 1, 8000);
+    // Derived calendar URL is base + calendarId == /testuser/Personal/.
+    QVERIFY(server.hasEvent(QStringLiteral("/testuser/Personal/"),
+                            QStringLiteral("wp-undisc-1")));
 }
 
 void TstRemoteCalendarBackendWritePaths::removeItem_deletes_and_emits_itemRemoved()

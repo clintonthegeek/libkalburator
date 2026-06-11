@@ -528,8 +528,14 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
 
 QString RemoteCalendarBackend::discoveredUrl(const QString &calendarId) const
 {
-    if (const auto davUrl = davUrlFor(calendarId)) {
-        return davUrl->url().toString();
+    // Reports only what discovery / registration actually recorded — NOT the
+    // derive-on-miss fallback davUrlFor() applies so operations can proceed
+    // before discovery completes. Callers (and tests) use this as an
+    // "is this calendar registered?" predicate, e.g. after deleteCalendar
+    // unregisters a URL.
+    const auto it = m_calendars.constFind(calendarId);
+    if (it != m_calendars.constEnd() && !it->davUrl.url().isEmpty()) {
+        return it->davUrl.url().toString();
     }
     return QString();
 }
@@ -634,10 +640,24 @@ QString RemoteCalendarBackend::fetchFreshCtag(const QString &calendarId)
 std::optional<KDAV::DavUrl> RemoteCalendarBackend::davUrlFor(const QString &calendarId) const
 {
     const auto it = m_calendars.constFind(calendarId);
-    if (it == m_calendars.constEnd() || it->davUrl.url().isEmpty()) {
+    if (it != m_calendars.constEnd() && !it->davUrl.url().isEmpty()) {
+        return it->davUrl;
+    }
+
+    // Discovery has not yet populated the per-calendar URL. This is the
+    // first-sync race window for a directly-configured (non-primed) CalDAV
+    // backend: async loadCalendars has not finished, so the map is still empty
+    // when the first sync's fetchItems/startSync runs. The calendar URL is
+    // deterministically derivable from the base server URL + calendarId — the
+    // exact derivation createCalendar/updateCalendar/deleteCalendar already use
+    // (calendarUrlForCrud) — so fall back to it rather than failing the
+    // operation and silently dropping the write. Once loadCalendars completes it
+    // overwrites m_calendars[calendarId].davUrl with the server-authoritative
+    // URL; this fallback only covers the gap before that.
+    if (calendarId.isEmpty() || m_url.isEmpty()) {
         return std::nullopt;
     }
-    return it->davUrl;
+    return configuredDavUrl(calendarUrlForCrud(calendarId).toString());
 }
 
 // ---- Backend::ChangeDetection ----------------------------------------------
@@ -772,7 +792,7 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
 }
 
 
-KDAV::DavUrl RemoteCalendarBackend::configuredDavUrl(const QString &rawUrl)
+KDAV::DavUrl RemoteCalendarBackend::configuredDavUrl(const QString &rawUrl) const
 {
     QUrl url(rawUrl);
     // QUrl::fromUserInput() treats absolute paths like "/calendars/foo/" as
