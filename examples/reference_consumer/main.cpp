@@ -1,7 +1,7 @@
 // Reference consumer for libkalburator's K.8 plugin surface.
 // Demonstrates: in-process plugin load via registerStockPlugins(),
 // backend contribution enumeration, and end-to-end calendar+contacts
-// sync between SyncBackend instances using SyncEngine::runSyncFuture.
+// sync between SyncBackend instances using SyncEngine::runSync.
 //
 // Usage: reference_consumer --smoke <tmpdir>
 //   --smoke runs the smoke scenario in <tmpdir> and exits 0 on success.
@@ -35,6 +35,7 @@
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 #include "transformationregistry.h"
 
@@ -52,6 +53,7 @@ using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 
 namespace {
 
@@ -297,7 +299,9 @@ int main(int argc, char *argv[])
     engine.setSyncMappings({ calMapping, conMapping });
 
     // ── Step 6: Run sync (all mappings) ─────────────────────────────────────
-    auto future = engine.runSyncFuture(SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
 
     // Wait WITHOUT QFuture::waitForFinished() — Qt6's waitForFinished()
     // does not spin the event loop, so the worker thread's queued

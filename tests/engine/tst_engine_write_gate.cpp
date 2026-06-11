@@ -29,6 +29,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -201,18 +202,20 @@ void TestEngineWriteGate::setupCoordinator(const QList<SyncMapping> &mappings)
 
 bool TestEngineWriteGate::runOneSync()
 {
-    auto future = m_coordinator->runSyncFuture(SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     int waited = 0;
     while (!future.isFinished() && waited < kSyncTimeoutMs) {
         QTest::qWait(10);
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within" << kSyncTimeoutMs << "ms";
+        qWarning() << "runSync did not finish within" << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     const QList<SyncResult> results = future.resultAt(0);

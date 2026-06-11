@@ -27,6 +27,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -188,18 +189,20 @@ void TestCalendarFirstSyncViaBlobEngine::setupCoordinator(const QList<SyncMappin
 
 bool TestCalendarFirstSyncViaBlobEngine::runOneSync(SyncEngine::SyncBehavior behavior)
 {
-    auto future = m_coordinator->runSyncFuture(behavior);
+    SyncRequest req;
+    req.behavior = behavior;
+    auto future = m_coordinator->runSync(req);
     int waited = 0;
     while (!future.isFinished() && waited < kSyncTimeoutMs) {
         QTest::qWait(10);
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within" << kSyncTimeoutMs << "ms";
+        qWarning() << "runSync did not finish within" << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     return true;

@@ -13,10 +13,9 @@ namespace Kalburator::Engine {
  * @brief Canonical request object for SyncEngine::runSync.
  *
  * Architectural-redress Plan 1 Task 4 (2026-05-29) — collapses the four
- * `runSyncFuture()` overloads into a single struct-parameterized entry
- * point. The four prior overloads are kept as `[[deprecated]]` shims
- * that construct a SyncRequest and call SyncEngine::runSync; they are
- * scheduled for removal in campaign Plan 8.
+ * former `runSyncFuture()` overloads into a single struct-parameterized
+ * entry point. Plan 8 step 3 (2026-06-10) deleted those `[[deprecated]]`
+ * overloads; runSync(SyncRequest) is now the sole sync entry.
  *
  * Three dispatch shapes, distinguished by `mappingIds`:
  *

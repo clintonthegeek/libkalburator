@@ -40,6 +40,7 @@
 #include "syncbackend.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 using Kalburator::Sync::BackendRecord;
@@ -55,6 +56,7 @@ using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Sync::SyncConflictStore;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -343,7 +345,9 @@ void TestUnifiedAskUserPause::monitored_contactsConflict_pausesAndResolvesWithSo
     QSignalSpy conflictSpy(m_engine.get(), &SyncEngine::conflictDetected);
     QVERIFY(conflictSpy.isValid());
 
-    auto future = m_engine->runSyncFuture(SyncEngine::SyncBehavior::Monitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     QVERIFY(!future.isCanceled());
 

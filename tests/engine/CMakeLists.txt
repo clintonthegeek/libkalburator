@@ -39,6 +39,12 @@ kalburator_add_engine_test(tst_mappingqueue)
 # Task 46 — CancellationReason integration tests
 kalburator_add_engine_integration_test(tst_cancellation_reason)
 
+# Architectural-redress Plan 8 step 3 — pins the canonical single-mapping
+# cancel contract after the dual future-interface collapse (resultCount()==1,
+# resultAt(0).first().cancelled). Shown RED against the pre-collapse .then()
+# path (commit 0595044); green only on the native post-collapse engine.
+kalburator_add_engine_integration_test(tst_engine_single_mapping_cancel)
+
 # Phase Ia.5 Task 7 — generic property-phase helper unit tests
 kalburator_add_engine_test(tst_property_phase)
 
@@ -67,7 +73,7 @@ target_link_libraries(tst_engine_universal_sink_dispatch
 
 # Phase Ib Task 9 — CardDAV engine integration test.
 # FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
-# → SyncEngine::runSyncFuture → ShapedTestBackend (peer, vcard4).
+# → SyncEngine::runSync → ShapedTestBackend (peer, vcard4).
 # Pins 2-record round-trip and vCard 3.0 passthrough behavior.
 # Uses --whole-archive so the contacts domain plugin's static initializer
 # registers the vcard3↔vcard4 edges in TransformationRegistry.

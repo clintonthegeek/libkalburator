@@ -1,8 +1,8 @@
 /// G-phase Task 8 — failing test for ExecutionOverride mirror-direction semantics
 ///
 /// Pins the expected behavior of
-///   SyncEngine::runSyncFuture(mappingId, ExecutionOverride{Direction::MirrorAToB})
-///   SyncEngine::runSyncFuture(mappingId, ExecutionOverride{Direction::MirrorBToA})
+///   runSync(SyncRequest) with executionOverride = ExecutionOverride{Direction::MirrorAToB}
+///   runSync(SyncRequest) with executionOverride = ExecutionOverride{Direction::MirrorBToA}
 ///
 /// The stub added in Task 7 ignores the override and runs a normal two-way (or
 /// first-sync mirror) sync, so these tests FAIL. Task 9 makes them pass by
@@ -32,6 +32,7 @@
 #include "stock_plugins.h"
 #include "syncbackend.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 using Kalburator::Sync::BackendRecord;
@@ -42,6 +43,7 @@ using Kalburator::Sync::ExecutionOverride;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::SyncBackend;
 using Kalburator::Engine::SyncEngine;
+using Kalburator::Engine::SyncRequest;
 using Kalburator::Sync::SyncMapping;
 using Kalburator::Sync::SyncMode;
 using Kalburator::Sync::SyncResult;
@@ -396,11 +398,13 @@ static BackendRecord hashedRecord(const QString &id, const QString &data,
 /// return the result. Asserts that the future completes without cancellation.
 static SyncResult runTwoWay(SyncEngine *engine, const QString &mappingId)
 {
-    QFuture<SyncResult> future = engine->runSyncFuture(
-        mappingId, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { mappingId };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = engine->runSync(req);
     [&]() { QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs); }();
     Q_ASSERT(!future.isCanceled());
-    return future.resultAt(0);
+    return future.resultAt(0).first();
 }
 
 // ---- MirrorAToB -------------------------------------------------------------
@@ -430,13 +434,16 @@ void TstEngineMirrorDirection::mirrorAToB_targetBecomesExactCopyOfSource()
     ExecutionOverride ov;
     ov.direction = ExecutionOverride::Direction::MirrorAToB;
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.executionOverride = ov;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // Target must now be an exact mirror of source: records {a, b}.
@@ -481,13 +488,16 @@ void TstEngineMirrorDirection::mirrorBToA_sourceBecomesExactCopyOfTarget()
     ExecutionOverride ov;
     ov.direction = ExecutionOverride::Direction::MirrorBToA;
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.executionOverride = ov;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // Source must now be an exact mirror of target: record {b} only.
@@ -570,13 +580,16 @@ void TstEngineMirrorDirection::mirrorBToA_overwritesSourceChangedRecord()
     ExecutionOverride ov;
     ov.direction = ExecutionOverride::Direction::MirrorBToA;
 
-    QFuture<SyncResult> future = engine.runSyncFuture(
-        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.executionOverride = ov;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = engine.runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // Source must now hold target's (= baseline) version: payload-v1.
@@ -610,13 +623,16 @@ void TstEngineMirrorDirection::mirrorAToB_copiesSourceToEmptyTarget()
     ExecutionOverride ov;
     ov.direction = ExecutionOverride::Direction::MirrorAToB;
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.executionOverride = ov;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     const auto tgtRecs = m_tgt->recordsIn(QString::fromLatin1(kColId));
@@ -644,13 +660,16 @@ void TstEngineMirrorDirection::mirrorAToB_leavesMatchingRecordsAlone()
     ExecutionOverride ov;
     ov.direction = ExecutionOverride::Direction::MirrorAToB;
 
-    QFuture<SyncResult> future = m_engine->runSyncFuture(
-        QString::fromLatin1(kMapId), ov, SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMapId) };
+    req.executionOverride = ov;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    QFuture<QList<SyncResult>> future = m_engine->runSync(req);
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kTimeoutMs);
     QVERIFY(!future.isCanceled());
 
-    const SyncResult result = future.resultAt(0);
+    const SyncResult result = future.resultAt(0).first();
     QVERIFY2(result.success, qUtf8Printable(result.errorMessage));
 
     // Target still has exactly one record with the original hash.

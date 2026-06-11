@@ -28,6 +28,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -187,7 +188,9 @@ void TstMassDeleteGuard::seedEvents(MockBackend *backend, int count, int startIn
 
 bool TstMassDeleteGuard::runOneSync()
 {
-    auto future = m_engine->runSyncFuture(SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_engine->runSync(req);
     if (!QTest::qWaitFor([&] { return future.isFinished(); }, kSyncTimeoutMs)) return false;
     if (future.isCanceled()) return false;
     const auto results = future.resultAt(0);

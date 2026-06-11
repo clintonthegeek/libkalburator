@@ -1,4 +1,4 @@
-/// G.6 Task 43 — runSyncFuture(QList<QString>) subset dispatch.
+/// G.6 Task 43 — runSync(SyncRequest) subset dispatch.
 ///
 /// Verifies that when a list of mapping IDs is passed to the overload,
 /// only those mappings run and the future returns exactly that many results.
@@ -16,6 +16,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -144,8 +145,9 @@ void TestEngineSubsetDispatch::cleanup()
 
 void TestEngineSubsetDispatch::subsetOf2Runs_returnsExactly2Results()
 {
-    auto future = m_engine->runSyncFuture(
-        QList<QString>{ QStringLiteral("m1"), QStringLiteral("m3") });
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("m1"), QStringLiteral("m3") };
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     const auto results = future.resultAt(0);
     QCOMPARE(results.size(), 2);
@@ -155,7 +157,16 @@ void TestEngineSubsetDispatch::subsetOf2Runs_returnsExactly2Results()
 
 void TestEngineSubsetDispatch::emptySubset_returnsEmptyResults()
 {
-    auto future = m_engine->runSyncFuture(QList<QString>{});
+    // The deprecated runSyncFuture(QList<QString>{}) short-circuited an empty
+    // id list to "zero mappings dispatched". That shim retired with Plan 8
+    // step 3; the canonical equivalent is a subset naming only non-existent
+    // mappings — the queue matches nothing and returns an empty result list.
+    // (An empty SyncRequest.mappingIds means all-enabled, not empty-subset;
+    // a single unknown id is single-mapping not-found, a one-element error
+    // result — so two unknown ids are needed to stay on the subset path.)
+    SyncRequest req;
+    req.mappingIds = { QStringLiteral("no-such-1"), QStringLiteral("no-such-2") };
+    auto future = m_engine->runSync(req);
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     const auto results = future.resultAt(0);
     QCOMPARE(results.size(), 0);
@@ -163,7 +174,7 @@ void TestEngineSubsetDispatch::emptySubset_returnsEmptyResults()
 
 void TestEngineSubsetDispatch::noFilter_runsAll3()
 {
-    auto future = m_engine->runSyncFuture();
+    auto future = m_engine->runSync(SyncRequest{});
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     const auto results = future.resultAt(0);
     QCOMPARE(results.size(), 3);

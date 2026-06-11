@@ -17,6 +17,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncenginefuture.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
@@ -171,7 +172,7 @@ void TstCancellationReason::userRequestedCancel_stopsFuture()
                     QStringLiteral("col")),
     });
 
-    SyncEngineFuture f(m_engine->runSyncFuture());
+    SyncEngineFuture f(m_engine->runSync(SyncRequest{}));
 
     QVERIFY(f.isValid());
     QCOMPARE(f.cancellationReason(), CancellationReason::UserRequested);
@@ -195,7 +196,7 @@ void TstCancellationReason::resourceLostBeforeStart_skipsAffectedMappings()
     //   m2: src-b(res-b) → tgt-b(res-c)  — no res-x    → RUN and SUCCEED
     //   m3: src-c(res-x) → tgt-c(res-x)  — uses res-x  → SKIPPED (cancelled result)
     //
-    // cancelWithReason(ResourceLost, "res-x") is called after runSyncFuture().
+    // cancelWithReason(ResourceLost, "res-x") is called after runSync().
     // Since v1 is sequential, m1 and m2 may already be done or in-flight by
     // the time the engine processes m3; m3's backends use res-x so it is
     // skipped with a cancelled SyncResult. All 3 results appear in the future.
@@ -218,7 +219,7 @@ void TstCancellationReason::resourceLostBeforeStart_skipsAffectedMappings()
                     QStringLiteral("col")),
     });
 
-    SyncEngineFuture f(m_engine->runSyncFuture());
+    SyncEngineFuture f(m_engine->runSync(SyncRequest{}));
 
     // Inject ResourceLost. m1 and m2 are already queued/in-flight but don't use
     // res-x, so they complete normally. m3 uses res-x and is skipped with a
@@ -262,7 +263,7 @@ void TstCancellationReason::cancellationReasonIsReadable()
                     QStringLiteral("col")),
     });
 
-    SyncEngineFuture f1(m_engine->runSyncFuture());
+    SyncEngineFuture f1(m_engine->runSync(SyncRequest{}));
     SyncEngineFuture f2 = f1; // copy — shares state
 
     QCOMPARE(f1.cancellationReason(), CancellationReason::UserRequested);

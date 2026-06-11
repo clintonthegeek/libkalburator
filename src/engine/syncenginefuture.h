@@ -20,7 +20,7 @@ enum class CancellationReason {
 };
 
 /// Thin wrapper around QFuture<QList<SyncResult>> that adds a reasoned
-/// cancellation side-channel. Returned by SyncEngine::runSyncFuture().
+/// cancellation side-channel. Returned by SyncEngine::runSync().
 ///
 /// The wrapper is copyable — copies share the same cancellation-reason
 /// state via shared_ptr, so calling cancelWithReason() on any copy is

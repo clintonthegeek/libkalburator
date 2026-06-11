@@ -24,6 +24,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -168,12 +169,13 @@ void TestCalendarSyncFull::cleanup()
 
 bool TestCalendarSyncFull::runOneSync()
 {
-    // Use the multi-mapping form (runSyncFuture() with no mappingId).
+    // Use the multi-mapping form (runSync(SyncRequest{}) — all enabled).
     // The single-mapping form does not cleanly exit the post-sync
     // processNextMapping loop in SyncEngine, leading to a second
     // queued sync that interferes with cleanup.
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     // QFuture::waitForFinished() does not spin the event loop; poll
     // with QTest::qWait() until the future finishes or we time out.
     int waited = 0;
@@ -182,12 +184,12 @@ bool TestCalendarSyncFull::runOneSync()
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within"
+        qWarning() << "runSync did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     return true;

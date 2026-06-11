@@ -33,6 +33,7 @@
 #include "stock_plugins.h"
 #include "syncconflictstore.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "synctypes.h"
 
 #include "stubs/stubsynchost.h"
@@ -167,20 +168,21 @@ void TestEngineUnifiedBoundary::cleanup()
 
 bool TestEngineUnifiedBoundary::runOneCalendarSync()
 {
-    auto future = m_engine->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_engine->runSync(req);
     int waited = 0;
     while (!future.isFinished() && waited < kSyncTimeoutMs) {
         QTest::qWait(10);
         waited += 10;
     }
     if (!future.isFinished()) {
-        qWarning() << "runSyncFuture did not finish within"
+        qWarning() << "runSync did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     return true;

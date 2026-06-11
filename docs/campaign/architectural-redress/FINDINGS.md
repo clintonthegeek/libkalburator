@@ -44,7 +44,7 @@ Smells discovered during work that the AUDIT does not already catalogue.
 These document why the merged engine code is shaped as it is and what later plans must
 address — load-bearing knowledge, not audit restatements.
 
-- 2026-05-29 — `src/engine/syncengine.cpp:578-616` — inv 4/discipline — the deprecated
+- ~~2026-05-29 — `src/engine/syncengine.cpp:578-616` — inv 4/discipline — the deprecated
   `runSyncFuture(mappingId, …)` shims bypass the canonical `runSync(SyncRequest)` and call
   `dispatchSingleNative()` directly, returning `m_currentSingleIface->future()` verbatim.
   Rationale: the single-mapping wrap (`singleFuture.then([](r){return QList{r};})`) drops
@@ -52,19 +52,31 @@ address — load-bearing knowledge, not audit restatements.
   is canceled, so the F2 Task 23 contract (`resultCount()==1` with `resultAt(0).cancelled==true`
   after cancel) is lost on the wrapped future. The bypass preserves it natively for the
   deprecated single-shim consumers. Asymmetry vanishes when the shims are deleted (vocabulary
-  plan).
-- 2026-05-29 — `src/engine/syncrequest.h:35-56` — inv 4 — `SyncRequest` cannot express
+  plan).~~ **RESOLVED by Plan 8 step 3 T2 (`26c90ff`):** the four `runSyncFuture` overloads
+  and `dispatchSingleNative()` are deleted; `runSync(SyncRequest)`'s single-mapping branch now
+  reports **natively** into the sole `m_currentIface` (no `.then()` wrap), so the F2 Task 23
+  cancel contract holds on the canonical path. The single/multi asymmetry is gone.
+- ~~2026-05-29 — `src/engine/syncrequest.h:35-56` — inv 4 — `SyncRequest` cannot express
   "explicitly empty subset" (zero mappings) — `mappingIds.isEmpty()` collapses "all enabled" and
   "empty subset" into the same dispatch shape (runs all enabled). The deprecated subset shim
   preserves the historical empty-list-means-zero semantics by short-circuiting before building
   the request. If a canonical-API consumer ever needs the distinction, add an explicit
-  `bool allEnabled` (or sentinel) to `SyncRequest`. None needs it yet.
-- 2026-05-29 — `src/engine/syncengine.h:~445-501` — inv 3 — the engine retains two
+  `bool allEnabled` (or sentinel) to `SyncRequest`. None needs it yet.~~ **RESOLVED by Plan 8
+  step 3 T2 (`26c90ff`):** the subset shim is deleted, so the empty-list-means-zero semantics
+  retired with it; **no `SyncRequest` sentinel was added** (no canonical consumer needs the
+  distinction — INVARIANTS §8). The one test that pinned the empty-subset path
+  (`tst_engine_subset_dispatch::emptySubset_returnsEmptyResults`) now drives the canonical
+  subset path with **two non-existent ids** — a single unknown id is single-mapping-not-found
+  (a one-element error result), so two are needed to stay on the subset path.
+- ~~2026-05-29 — `src/engine/syncengine.h:~445-501` — inv 3 — the engine retains two
   `QFutureInterface*` members (`m_currentSingleIface`, `m_currentMultiIface`) + two watchers,
   mirroring the dual return-type surface. Collapsing to multi-iface-only was rejected because
   the deprecated single-shim must return `QFuture<SyncResult>` with the F2 Task 23 contract
   intact (the wrap-then-unwrap loses cancellation results in Qt6). Collapses naturally once the
-  deprecated shims are removed (vocabulary plan).
+  deprecated shims are removed (vocabulary plan).~~ **RESOLVED by Plan 8 step 3 T2 (`26c90ff`):**
+  collapsed to one `m_currentIface` (`QFutureInterface<QList<SyncResult>>`) + one
+  `m_currentWatcher`; the `Single`-typed iface/watcher and `dispatchSingleNative` are deleted. A
+  `beginRun()` helper wires the sole iface+watcher for both `runSync()` branches.
 - 2026-05-29 — `src/engine/syncengine.cpp:493-497` and `:~577` — pre-existing — overlap
   rejection reports `QList<SyncResult>{}` / a default `SyncResult{}` (no error or cancelled
   flag), indistinguishable from a legitimate "no enabled mappings" result. Pre-T4 overloads had
@@ -535,7 +547,7 @@ invariant 9:
   backends has the same shape **if** a provider is still connected at app exit and the
   manager outlives the registry. Not a confirmed lib bug — worth an audit-supplement glance
   at ProviderManager/registry ownership lifetimes. (NOT FIXED)
-- 2026-06-10 — `src/engine/syncengine.h:486-488` (`runSync(SyncRequest)` single-mapping
+- ~~2026-06-10 — `src/engine/syncengine.h:486-488` (`runSync(SyncRequest)` single-mapping
   branch) — inv 4 — the canonical single-mapping path `.then()`-wraps `dispatchSingleNative`,
   and Qt6 drops `.then()` continuations on a canceled source, so the native F2 Task 23
   cancellation result (`resultCount()==1`, `cancelled==true`) is LOST through the wrapper.
@@ -548,4 +560,12 @@ invariant 9:
   own `syncruncoordinator.cpp:60` + `examples/reference_consumer` migration must carry the same
   guard, OR collapse the engine's dual future-interface members (see "From Plan 1") so the
   canonical single-mapping path returns the native result and the guard becomes unnecessary.
-  (NOT FIXED lib-side — step 3; both consumers already worked around it.)
+  (NOT FIXED lib-side — step 3; both consumers already worked around it.)~~ **RESOLVED by
+  Plan 8 step 3 T2 (`26c90ff`):** the dual-iface collapse removed the `.then()` wrap — the
+  canonical single-mapping path now reports the native cancel result into `m_currentIface`
+  (`resultCount()==1`, `resultAt(0).first().cancelled==true`), pinned by the new
+  `tst_engine_single_mapping_cancel` (shown RED against the pre-collapse `.then()` path:
+  `resultCount()==0`). The `resultCount()>0` guard is **no longer required for new lib
+  consumers**; WildPalms' existing watcher workaround stays (their call). The prod migrations
+  (`syncruncoordinator.cpp`, `examples/reference_consumer`) are multi-mapping callers, so they
+  never hit the single-path loss.

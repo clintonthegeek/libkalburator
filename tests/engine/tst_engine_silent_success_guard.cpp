@@ -45,6 +45,7 @@
 #include "shaperegistries.h"
 #include "stock_plugins.h"
 #include "syncengine.h"
+#include "syncrequest.h"
 #include "syncconflictstore.h"
 #include "synctypes.h"
 
@@ -180,20 +181,21 @@ void TstEngineSilentSuccessGuard::cleanup()
 
 bool TstEngineSilentSuccessGuard::runOneSync()
 {
-    auto future = m_coordinator->runSyncFuture(
-        SyncEngine::SyncBehavior::Unmonitored);
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_coordinator->runSync(req);
     if (!QTest::qWaitFor([&] { return future.isFinished(); }, kSyncTimeoutMs)) {
-        qWarning() << "runSyncFuture did not finish within"
+        qWarning() << "runSync did not finish within"
                    << kSyncTimeoutMs << "ms";
         return false;
     }
     if (future.isCanceled()) {
-        qWarning() << "runSyncFuture was canceled unexpectedly";
+        qWarning() << "runSync was canceled unexpectedly";
         return false;
     }
     const auto results = future.resultAt(0);
     if (results.isEmpty()) {
-        qWarning() << "runSyncFuture produced no per-mapping result "
+        qWarning() << "runSync produced no per-mapping result "
                       "(engine never reached per-mapping completion)";
         return false;
     }
