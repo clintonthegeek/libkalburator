@@ -400,6 +400,16 @@ whole-struct fetch (both only ever read `.perCalendarCapabilities`). The full
 "fold href into `PerCalendarCapabilities`" consolidation crosses into `typesupport/` + its JSON
 codec — out of T5's sync-internal scope; FINDINGS note (T6) for a future pass. ctest 148/148.
 
-_(T6–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
-deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
-closing annotations.)_
+**T6 — Stream D docs + FINDINGS (2026-06-11)** — layer-role header comments added:
+`sync/syncbackendbase.h` (`sync/` = neutral backend contracts `SyncBackendBase` +
+`ChangeDetection`, domains implement downward, `sync/` names no concrete backend),
+`storage/baselinestore.h` (`storage/`/`Kalburator::Storage` = SQLite-persistent engine
+stores; "Store" persists), `universal/universalstorageplugin.h` (`universal/`/`Kalburator::Sinks`
+= concrete sink backends; the dir↔ns mismatch flagged for Plan 10). FINDINGS gained a
+"From Plan 9" block (inv 9): the deferred `sync/→calendar/` concrete-backend include
+(B4-corrected MAJOR — own concern), the `universal/`↔`Sinks` rename (Plan 10, 11 WildPalms
+sites), the href-into-`PerCalendarCapabilities` consolidation (Plan 11, crosses into
+typesupport), and the 6 `[[deprecated]]` forwarders' deletion (T7.2/Plan 11). ctest 148/148.
+
+_(T7 filled in as it lands — the PlanStan gate result, the deprecated-forwarder disposition,
+and the AUDIT B5 + discovery-MODERATE closing annotations.)_

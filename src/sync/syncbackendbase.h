@@ -1,6 +1,15 @@
 #ifndef KALBURATOR_SYNC_SYNCBACKENDBASE_H
 #define KALBURATOR_SYNC_SYNCBACKENDBASE_H
 
+// LAYER ROLE (Plan 9) — `sync/` is the orchestration layer's home for the
+// NEUTRAL backend contracts: the abstract bases/mixins that concrete domain
+// backends implement and the engine dispatches against, naming no concrete
+// domain backend (invariant 1). The neutral contracts are `SyncBackendBase`
+// (here) and the `ChangeDetection` capability mixin (sync/changedetection.h);
+// the blob-level contract `IBlobBackend` lives one layer down in `blob/`.
+// Concrete backends (calendar/, contacts/, universal/) inherit these
+// downward; `sync/` itself never inherits or #includes a concrete backend.
+//
 // Phase K.4: slim, domain-neutral sync-backend base. Lifted out of
 // `src/calendar/syncbackend.h` so that non-calendar backends
 // (RawFilesBackend, GenericSqliteBackend, RemoteContactsBackend,
