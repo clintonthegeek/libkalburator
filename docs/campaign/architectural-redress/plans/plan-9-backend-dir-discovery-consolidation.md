@@ -330,6 +330,16 @@ the empty `KALBURATOR_BACKEND_HEADERS` set + its target reference + the
 `$<BUILD_INTERFACE:.../src/backend>` include dir all removed; `src/backend/` dir gone.
 Grep-clean (zero `Backend::`/`../backend/` residue). Build clean, **ctest 148/148**.
 
-_(T2–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
+**T2 — Stream B (2026-06-11)** — `git mv caldavcapabilitydiscovery.{h,cpp}`
+`calendar/`→`sync/` (confirmed pure-transport: only Qt + its own header; no calendar
+deps). Only `multiprotocoldavprovider.cpp:4` needed an edit (`"../calendar/…"`→same-dir);
+`caldavprovider.cpp:6`, the `.cpp`'s own include, and `tst_caldav_provider.cpp:19` are
+unqualified and resolve via the `sync/` include path post-move. CMake: both entries moved
+from the calendar block to the CardDAV-transport block next to
+`carddavcapabilitydiscovery.{h,cpp}`. Zero `calendar/caldavcapabilitydiscovery` residue.
+Build clean, **ctest 148/148**. (Residual `sync/→calendar/` *concrete-backend* include —
+the deferred B4-corrected MAJOR — logged to FINDINGS in T6.)
+
+_(T3–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
 deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
 closing annotations.)_

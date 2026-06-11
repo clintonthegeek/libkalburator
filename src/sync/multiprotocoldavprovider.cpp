@@ -1,7 +1,7 @@
 #include "multiprotocoldavprovider.h"
 
 #include "multiprotocoldavconfigwidget.h"
-#include "../calendar/caldavcapabilitydiscovery.h"
+#include "caldavcapabilitydiscovery.h"
 #include "../calendar/remotecalendarbackend.h"
 #include "../contacts/remotecontactsbackend.h"
 #include "carddavcapabilitydiscovery.h"

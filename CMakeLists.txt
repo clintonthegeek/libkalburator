@@ -131,7 +131,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/akonadibackend.h
     src/calendar/backendcapabilities.h
     src/sync/backendregistry.h
-    src/calendar/caldavcapabilitydiscovery.h
     src/calendar/caldavcontentcache.h
     src/calendar/calendarmanager.h
     # calendarmetadatamanager moved from src/types/ in Plan 5 (atomic QSaveFile Vdir
@@ -176,7 +175,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
     src/calendar/backendcapabilities.cpp
     src/sync/backendregistry.cpp
-    src/calendar/caldavcapabilitydiscovery.cpp
     src/calendar/caldavcontentcache.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/calendarmetadatamanager.cpp
@@ -513,6 +511,7 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/providermanager.h
     src/sync/caldavprovider.h
     src/sync/caldavconfigwidget.h
+    src/sync/caldavcapabilitydiscovery.h
     src/sync/carddavcapabilitydiscovery.h
     src/sync/carddavprovider.h
     src/sync/carddavconfigwidget.h
@@ -550,6 +549,7 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
     src/sync/caldavprovider.cpp
     src/sync/caldavconfigwidget.cpp
+    src/sync/caldavcapabilitydiscovery.cpp
     src/sync/carddavcapabilitydiscovery.cpp
     src/sync/carddavprovider.cpp
     src/sync/carddavconfigwidget.cpp
