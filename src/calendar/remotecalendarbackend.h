@@ -170,6 +170,10 @@ public:
      */
     bool discoveredWritable(const QString &calendarId) const override;
 
+    /// Aggregate discovery facts as one DTO (Plan 9). Self-contained read of
+    /// the per-calendar CalendarFacts; supersedes the per-field getters above.
+    DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
+
     // ========== Calendar Property Getters (for Property Sync) ==========
 
     /**

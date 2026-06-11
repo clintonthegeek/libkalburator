@@ -605,6 +605,34 @@ bool AkonadiBackend::discoveredWritable(const QString &calendarId) const
     return rights & Akonadi::Collection::CanCreateItem;
 }
 
+DiscoveredCalendar AkonadiBackend::discoveredCalendar(const QString &calendarId) const
+{
+    DiscoveredCalendar d;
+    d.calendarId = calendarId;
+
+    auto it = m_collections.find(calendarId);
+    if (it == m_collections.end()) {
+        d.writable = true;   // mirrors discoveredWritable's not-found default
+        return d;            // Hybrid type, invalid color, empty name (DTO defaults)
+    }
+
+    const CalendarType t = calendarTypeForCollection(*it);
+    d.supportsVEvent = (t != CalendarType::Todo);
+    d.supportsVTodo  = (t != CalendarType::Event);
+
+    if (it->hasAttribute(QByteArrayLiteral("collectioncolor"))) {
+        const auto attr = it->attribute(QByteArrayLiteral("collectioncolor"));
+        if (attr) {
+            const QColor color = QColor::fromString(QString::fromUtf8(attr->serialized()));
+            if (color.isValid())
+                d.color = color;
+        }
+    }
+    d.name = it->displayName();
+    d.writable = (it->rights() & Akonadi::Collection::CanCreateItem);
+    return d;
+}
+
 // ============================================================================
 // Calendar Property Getters
 // ============================================================================

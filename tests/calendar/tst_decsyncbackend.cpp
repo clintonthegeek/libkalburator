@@ -90,6 +90,7 @@ private slots:
     // Tasks collection
     void testTasksCollection();
     void testDiscoveredCalendarType();
+    void testDiscoveredCalendarAggregatesType();
 
     // Interop simulation
     void testReadExternalEntries();
@@ -673,6 +674,25 @@ void DecSyncBackendTest::testDiscoveredCalendarType()
     // calendars/ collections are Event type per DecSync standard
     QCOMPARE(backend.discoveredCalendarType(QStringLiteral("my-cal")), CalendarType::Event);
     QCOMPARE(backend.discoveredCalendarType(QStringLiteral("tasks/my-tasks")), CalendarType::Todo);
+}
+
+void DecSyncBackendTest::testDiscoveredCalendarAggregatesType()
+{
+    createDecsyncDir(m_decsyncDir);
+    DecSyncBackend backend(m_decsyncDir, QStringLiteral("test-app"));
+
+    // The aggregate DTO carries the same type DecSync's dir layout implies
+    // (the new seam Plan 9 T4 routes discoveredCalendarType through).
+    const DiscoveredCalendar ev = backend.discoveredCalendar(QStringLiteral("my-cal"));
+    QCOMPARE(ev.calendarId, QStringLiteral("my-cal"));
+    QCOMPARE(ev.calendarType(), CalendarType::Event);
+    QVERIFY(ev.supportsVEvent);
+    QVERIFY(!ev.supportsVTodo);
+
+    const DiscoveredCalendar td = backend.discoveredCalendar(QStringLiteral("tasks/my-tasks"));
+    QCOMPARE(td.calendarType(), CalendarType::Todo);
+    QVERIFY(!td.supportsVEvent);
+    QVERIFY(td.supportsVTodo);
 }
 
 // ============================================================================

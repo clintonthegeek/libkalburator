@@ -82,6 +82,7 @@ public:
     CalendarType discoveredCalendarType(const QString &calendarId) const override;
     QColor discoveredColor(const QString &calendarId) const override;
     QString discoveredDisplayName(const QString &calendarId) const override;
+    DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
     QColor calendarColor(const QString &calendarId) const override;
 
     // Capabilities

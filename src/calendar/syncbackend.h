@@ -42,6 +42,7 @@
 #include <KCalendarCore/Recurrence>
 
 #include "calendartype.h"   // CalendarType enum
+#include "discoveredcalendar.h" // DiscoveredCalendar DTO (Plan 9 aggregate accessor)
 #include "syncbackendbase.h" // domain-neutral base (Phase K.4)
 
 namespace Kalburator::Sync {
@@ -172,6 +173,23 @@ public:
     // ========== Calendar-Level CRUD Operations ==========
 
     virtual bool supportsCalendarCreation() const { return false; }
+
+    /**
+     * @brief Aggregate discovery facts for a calendar as one DTO (Plan 9).
+     *
+     * The single accessor that supersedes the per-field discovered* getters.
+     * The default fills only the neutral writability primitive; backends that
+     * discover richer metadata (color, component support, display name, URL)
+     * override this. Unset DTO fields keep their defaults, which match the
+     * retired per-field getter defaults: invalid color, Hybrid type (both
+     * supports* flags true), empty name/url.
+     */
+    virtual DiscoveredCalendar discoveredCalendar(const QString &calendarId) const {
+        DiscoveredCalendar d;
+        d.calendarId = calendarId;
+        d.writable = discoveredWritable(calendarId);
+        return d;
+    }
 
     virtual CalendarType discoveredCalendarType(const QString &calendarId) const {
         Q_UNUSED(calendarId);

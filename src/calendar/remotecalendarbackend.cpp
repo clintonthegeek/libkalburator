@@ -771,6 +771,35 @@ bool RemoteCalendarBackend::discoveredWritable(const QString &calendarId) const
     return true;
 }
 
+DiscoveredCalendar RemoteCalendarBackend::discoveredCalendar(const QString &calendarId) const
+{
+    DiscoveredCalendar d;
+    d.calendarId = calendarId;
+
+    const CalendarFacts facts = m_calendars.value(calendarId);
+    d.color = facts.color;
+    if (!facts.hasContentTypes) {
+        // Historical map-miss default: assume events + todos (Hybrid).
+        d.supportsVEvent = true;
+        d.supportsVTodo = true;
+    } else {
+        d.supportsVEvent = (facts.contentTypes & KDAV::DavCollection::Events)
+                        || (facts.contentTypes & KDAV::DavCollection::Calendar);
+        d.supportsVTodo  = (facts.contentTypes & KDAV::DavCollection::Todos)
+                        || (facts.contentTypes & KDAV::DavCollection::Calendar);
+    }
+    d.writable = discoveredWritable(calendarId);  // KDAV: always true (see above)
+
+    // Only the URL discovery/registration actually recorded — the davUrlFor
+    // derive-on-miss fallback is deliberately NOT reflected (same "is this
+    // calendar registered?" predicate the retired discoveredUrl() had).
+    const auto it = m_calendars.constFind(calendarId);
+    if (it != m_calendars.constEnd() && !it->davUrl.url().isEmpty())
+        d.setDavUrl(it->davUrl.url().toString());
+
+    return d;
+}
+
 void RemoteCalendarBackend::removeItem(const QString &calId, const QString &itemUid)
 {
     if (!davUrlFor(calId)) {

@@ -66,6 +66,7 @@ private slots:
     void startSync_undiscovered_calendar_derives_url_and_writes();
     void removeItem_deletes_and_emits_itemRemoved();
     void createCalendar_201_registers_url_and_emits();
+    void discoveredCalendar_aggregates_url_type_support();
     void createCalendar_405_is_idempotent_success();
     void updateCalendar_proppatch_updates_color_cache();
     void deleteCalendar_204_unregisters_then_404_returns_false();
@@ -279,6 +280,31 @@ void TstRemoteCalendarBackendWritePaths::createCalendar_201_registers_url_and_em
                 .contains(QStringLiteral("/testuser/projects/")));
     QVERIFY(backend.discoveredSupportsEvents(QStringLiteral("projects")));
     QVERIFY(!backend.discoveredSupportsTodos(QStringLiteral("projects")));
+}
+
+void TstRemoteCalendarBackendWritePaths::discoveredCalendar_aggregates_url_type_support()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+
+    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+                                   QStringLiteral("projects"),
+                                   QStringLiteral("Projects"),
+                                   CalendarType::Event));
+
+    // The aggregate DTO reports the same facts the retired per-field getters did
+    // (the new seam Plan 9 T4 will route discoveredUrl/Supports*/Color/Type through).
+    const DiscoveredCalendar dc = backend.discoveredCalendar(QStringLiteral("projects"));
+    QCOMPARE(dc.calendarId, QStringLiteral("projects"));
+    QVERIFY(dc.davUrl().contains(QStringLiteral("/testuser/projects/")));
+    QVERIFY(dc.supportsVEvent);
+    QVERIFY(!dc.supportsVTodo);
+    QCOMPARE(dc.calendarType(), CalendarType::Event);
+    QVERIFY(dc.writable);
 }
 
 void TstRemoteCalendarBackendWritePaths::createCalendar_405_is_idempotent_success()

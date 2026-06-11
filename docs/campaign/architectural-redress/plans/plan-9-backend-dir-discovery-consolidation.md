@@ -340,6 +340,24 @@ from the calendar block to the CardDAV-transport block next to
 Build clean, **ctest 148/148**. (Residual `sync/→calendar/` *concrete-backend* include —
 the deferred B4-corrected MAJOR — logged to FINDINGS in T6.)
 
-_(T3–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
+**T3 — Stream C seam (2026-06-11)** — added the `DiscoveredCalendar discoveredCalendar()`
+aggregate accessor without yet retiring any getter (tree stays green). `DiscoveredCalendar`
+gained a faithful `calendarType()` convenience (`#include "calendartype.h"`); `SyncBackend`
+got the `virtual discoveredCalendar()` default (DTO with `calendarId` + neutral
+`writable=discoveredWritable()`, other fields at defaults that match the old base getter
+defaults: invalid color, Hybrid, empty name/url). Overrides reading internal state in **RCB**
+(self-contained `m_calendars`/`CalendarFacts` read — independent of the per-field getters so
+T4 can delete them without recursion), **DecSync** (color/name/type via its existing
+methods — T4 rewires to helpers), **Akonadi** (`m_collections`; gated off — compiles only in
+the Akonadi lane, to be verified at close-out). Protective slots pinning the new seam:
+`tst_remotecalendarbackend_writepaths::discoveredCalendar_aggregates_url_type_support` +
+`tst_decsyncbackend::testDiscoveredCalendarAggregatesType`. **Falsifiability shown:** stubbing
+RCB's override to `return {}` reddened the slot (`dc.calendarId` empty), reverted. Slots land
+in existing executables, so the count stays **148/148** (the Gates "+1 executable" estimate
+didn't apply — no new binary). Caught one self-inflicted bug en route: the base virtual was
+initially omitted (only the include was added), surfaced immediately by the `override`
+compile error.
+
+_(T4–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
 deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
 closing annotations.)_

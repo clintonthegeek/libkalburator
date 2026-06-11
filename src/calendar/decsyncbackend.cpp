@@ -832,6 +832,19 @@ QString DecSyncBackend::discoveredDisplayName(const QString &calendarId) const
     return QString();
 }
 
+DiscoveredCalendar DecSyncBackend::discoveredCalendar(const QString &calendarId) const
+{
+    DiscoveredCalendar d;
+    d.calendarId = calendarId;
+    d.color = calendarColor(calendarId);
+    d.name = discoveredDisplayName(calendarId);
+    const CalendarType t = discoveredCalendarType(calendarId);
+    d.supportsVEvent = (t != CalendarType::Todo);   // Event or Hybrid
+    d.supportsVTodo  = (t != CalendarType::Event);  // Todo or Hybrid
+    d.writable = discoveredWritable(calendarId);
+    return d;
+}
+
 QColor DecSyncBackend::calendarColor(const QString &calendarId) const
 {
     QString syncType, collId;
