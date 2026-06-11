@@ -276,10 +276,10 @@ void TstRemoteCalendarBackendWritePaths::createCalendar_201_registers_url_and_em
     QCOMPARE(discoveredSpy.count(), 1);
 
     // Success registers the calendar URL and the requested content type.
-    QVERIFY(backend.discoveredUrl(QStringLiteral("projects"))
+    QVERIFY(backend.discoveredCalendar(QStringLiteral("projects")).davUrl()
                 .contains(QStringLiteral("/testuser/projects/")));
-    QVERIFY(backend.discoveredSupportsEvents(QStringLiteral("projects")));
-    QVERIFY(!backend.discoveredSupportsTodos(QStringLiteral("projects")));
+    QVERIFY(backend.discoveredCalendar(QStringLiteral("projects")).supportsVEvent);
+    QVERIFY(!backend.discoveredCalendar(QStringLiteral("projects")).supportsVTodo);
 }
 
 void TstRemoteCalendarBackendWritePaths::discoveredCalendar_aggregates_url_type_support()
@@ -327,7 +327,7 @@ void TstRemoteCalendarBackendWritePaths::createCalendar_405_is_idempotent_succes
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
     QCOMPARE(createdSpy.count(), 1);
-    QVERIFY(!backend.discoveredUrl(QStringLiteral("projects")).isEmpty());
+    QVERIFY(!backend.discoveredCalendar(QStringLiteral("projects")).davUrl().isEmpty());
 }
 
 void TstRemoteCalendarBackendWritePaths::updateCalendar_proppatch_updates_color_cache()
@@ -377,7 +377,7 @@ void TstRemoteCalendarBackendWritePaths::deleteCalendar_204_unregisters_then_404
     QVERIFY(backend.deleteCalendar(QStringLiteral("coll-1"),
                                    QStringLiteral("projects")));
     QCOMPARE(deletedSpy.count(), 1);
-    QVERIFY(backend.discoveredUrl(QStringLiteral("projects")).isEmpty());
+    QVERIFY(backend.discoveredCalendar(QStringLiteral("projects")).davUrl().isEmpty());
 
     // Second delete: the collection is gone server-side -> 404 -> false.
     QVERIFY(!backend.deleteCalendar(QStringLiteral("coll-1"),

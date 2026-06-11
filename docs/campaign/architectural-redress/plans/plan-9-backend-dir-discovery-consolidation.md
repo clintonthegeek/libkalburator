@@ -63,7 +63,7 @@ The AUDIT line-numbers predate v0.63–v0.72. Verified corrections this plan res
 |---|---|---|
 | **A** | Delete `backend/`; move `changedetection.h` → `sync/`; ns `Backend`→`Sync` | 0 |
 | **B** | Move `caldavcapabilitydiscovery.{h,cpp}` `calendar/` → `sync/` | 0 |
-| **C** | `DiscoveredCalendar` DTO accessor; collapse the **6** per-field getters into it (3 calendar-base virtuals `discoveredColor`/`discoveredCalendarType`/`discoveredDisplayName` → `[[deprecated]]` forwarders then deleted; 3 RCB-local `discoveredUrl`/`discoveredSupportsEvents`/`discoveredSupportsTodos` → deleted outright); keep neutral `discoveredWritable`; sync-internal URL-map dedup | PlanStan ~10 sites (net-simplifying); WildPalms 0 |
+| **C** | `DiscoveredCalendar` DTO accessor; collapse the **6** per-field getters into it. **All 6 become `[[deprecated]]` forwarders** during the PlanStan window — the 3 calendar-base virtuals (`discoveredColor`/`discoveredCalendarType`/`discoveredDisplayName`) as non-virtual base forwarders (overrides deleted); the 3 RCB-local (`discoveredUrl`/`discoveredSupportsEvents`/`discoveredSupportsTodos`) kept on RCB as forwarders (PlanStan consumes all three — `backenddiscoveryhelper.cpp:83-85`). Forwarder deletion → T7.2/Plan 11. Keep neutral `discoveredWritable`; sync-internal URL-map dedup | PlanStan ~10 sites (net-simplifying); WildPalms 0 |
 | **D** | Document layer position of `sync/` (neutral contracts), `storage/`, `universal/`; FINDINGS for the deferrals | 0 |
 
 **Explicitly deferred (flagged in FINDINGS, NOT touched — fork decisions 2026-06-11):**
@@ -85,9 +85,12 @@ The AUDIT line-numbers predate v0.63–v0.72. Verified corrections this plan res
 - `src/calendar/caldavcapabilitydiscovery.*` gone; `grep -rn "calendar/caldavcapabilitydiscovery"
   src/ tests/` returns zero; the two providers include it same-dir (no `../calendar/`
   for discovery).
-- After T4: `grep -rn "discoveredColor\|discoveredCalendarType\|discoveredDisplayName\|discoveredUrl\|discoveredSupportsEvents\|discoveredSupportsTodos" src/`
-  shows only the `[[deprecated]]` base forwarders (calendar-flavored) + the DTO builder
-  bodies — zero per-field *overrides* in concrete backends; `discoveredWritable` untouched.
+- After T4: the 6 collapse-getters survive only as `[[deprecated]]` forwarders (3
+  non-virtual base + 3 RCB-local) plus the per-backend `discoveredCalendar()` builder
+  bodies and DecSync's extracted private `calendarTypeFor`/`displayNameFor`. **Zero per-field
+  overrides** of `discoveredColor`/`CalendarType`/`DisplayName` in concrete backends, and
+  **zero in-lib callers** of any deprecated forwarder (the lib build is deprecation-warning
+  clean; PlanStan's calls migrate in T7). `discoveredWritable` untouched.
 - PlanStan `ctest` baseline green after the consumer wave (T7); WildPalms five invariants
   hold by construction (0 changed-symbol consumers — verified 2026-06-11).
 - `compile_commands.json` regenerated; clangd shows no new diagnostics on touched TUs.
@@ -101,9 +104,9 @@ The AUDIT line-numbers predate v0.63–v0.72. Verified corrections this plan res
 | `discoveredCalendarType` | `decsyncbackend.cpp` (4 internal), `akonadibackend.cpp`, `remotecalendarbackend.cpp`, `tst_decsyncbackend.cpp` (many) | `backenddiscoverycoordinator.cpp:103`, `collectioncontroller.cpp:1087`, `tst_calendarcrud.cpp:200/836` (4) | 0 | base virtual → **`[[deprecated]]` forwarder** to `discoveredCalendar(id).calendarType()`; overrides deleted; DecSync internal → private helper |
 | `discoveredColor` | `akonadibackend.cpp`, `decsyncbackend.cpp`, `remotecalendarbackend.cpp` | `backenddiscoveryhelper.cpp:74`, `tst_calendarcrud.cpp:511` (2) | 0 | base virtual → **`[[deprecated]]` forwarder** to `.color`; overrides deleted |
 | `discoveredDisplayName` | `akonadibackend.cpp`, `decsyncbackend.cpp`, `tst_decsyncbackend.cpp` (4) | 0 | 0 | base virtual → **`[[deprecated]]` forwarder** to `.name`; overrides deleted |
-| `discoveredUrl` | RCB only + `tst_remotecalendarbackend_writepaths.cpp` (3) | `backenddiscoveryhelper.cpp:83` (1) | 0 | RCB-local → **delete**; callers use `.davUrl()` |
-| `discoveredSupportsEvents` | RCB only + writepaths test | `backenddiscoveryhelper.cpp:84` (1) | 0 | RCB-local → **delete**; callers use `.supportsVEvent` |
-| `discoveredSupportsTodos` | RCB only + writepaths test | `backenddiscoveryhelper.cpp:85` (1) | 0 | RCB-local → **delete**; callers use `.supportsVTodo` |
+| `discoveredUrl` | RCB only + `tst_remotecalendarbackend_writepaths.cpp` (3) | `backenddiscoveryhelper.cpp:83` (1) | 0 | RCB-local → **`[[deprecated]]` forwarder** to `.davUrl()` (PlanStan consumes; deleted T7.2/Plan 11) |
+| `discoveredSupportsEvents` | RCB only + writepaths test | `backenddiscoveryhelper.cpp:84` (1) | 0 | RCB-local → **`[[deprecated]]` forwarder** to `.supportsVEvent` (PlanStan consumes; deleted T7.2/Plan 11) |
+| `discoveredSupportsTodos` | RCB only + writepaths test | `backenddiscoveryhelper.cpp:85` (1) | 0 | RCB-local → **`[[deprecated]]` forwarder** to `.supportsVTodo` (PlanStan consumes; deleted T7.2/Plan 11) |
 | `discoveredWritable` | neutral base; engine `syncengine.cpp:1696/:2580`; `FilteredCollectionBackend`; many backends | `backenddiscoveryhelper.cpp:75` (1) | 0 | **KEEP** (neutral primitive); DTO `.writable` populated from it |
 | `discoveredCapabilities()` (CalDav discovery) | `caldavprovider.cpp`, `multiprotocoldavprovider.cpp` | 0 | 0 | sync-internal; tidy in T5 (out of the public-getter wave) |
 | `Sinks` namespace / `universal/` | many | 0 | **11 sites** | **DEFER to Plan 10** (document only) |
@@ -220,15 +223,22 @@ red before the accessor exists, keep all existing getter tests green.
 2. **Delete the overrides** of those three in `akonadibackend.{h,cpp}`,
    `decsyncbackend.{h,cpp}`, `remotecalendarbackend.{h,cpp}` (their data now flows through
    `discoveredCalendar()`).
-3. **Delete the RCB-local non-virtuals** `discoveredUrl`, `discoveredSupportsEvents`,
-   `discoveredSupportsTodos` (`remotecalendarbackend.h` :92/:147/:152, `.cpp`
-   :551/:725/:735). Migrate the 3 `tst_remotecalendarbackend_writepaths.cpp` call sites
-   (:278/:280/:281/:304/:354) to `backend.discoveredCalendar("projects").davUrl()` /
-   `.supportsVEvent` / `.supportsVTodo`.
-4. **DecSync internal self-calls** (`decsyncbackend.cpp` :264/:401/:473/:1021 call
-   `discoveredCalendarType(calId)`): extract the existing body into a `private`
-   `CalendarType calendarTypeFor(const QString &calendarId) const;` and have both
-   `discoveredCalendar()` and the 4 internal sites call it (no deprecated self-call).
+3. **RCB-local trio → `[[deprecated]]` forwarders** (NOT deleted — PlanStan consumes all
+   three at `backenddiscoveryhelper.cpp:83-85`): `discoveredUrl` →
+   `discoveredCalendar(id).davUrl()`, `discoveredSupportsEvents` → `.supportsVEvent`,
+   `discoveredSupportsTodos` → `.supportsVTodo` (mark the header decls `[[deprecated]]`).
+   Migrate the in-lib `tst_remotecalendarbackend_writepaths.cpp` call sites to
+   `discoveredCalendar()` so the lib build stays deprecation-clean.
+4. **DecSync helper extraction + recursion fix.** Extract `discoveredCalendarType`'s body
+   into `private CalendarType calendarTypeFor(const QString&) const` and
+   `discoveredDisplayName`'s body into `private QString displayNameFor(const QString&) const`;
+   delete the three DecSync overrides. Rewire `DecSyncBackend::discoveredCalendar()` (T3) to
+   call `calendarTypeFor()`/`displayNameFor()`/`calendarColor()` directly — NOT the
+   now-forwarding getters (which would recurse through `discoveredCalendar()`). Point the 4
+   internal `discoveredCalendarType` self-calls (`decsyncbackend.cpp` :264/:401/:473/:1034)
+   at `calendarTypeFor()`. Likewise fix `AkonadiBackend::calendarColor` (`:642`,
+   `return discoveredColor(id)`) → `discoveredCalendar(id).color` (Akonadi gated off —
+   compile-verify in build-akonadi).
 5. Migrate the in-lib `tst_decsyncbackend.cpp` assertions (many
    `discoveredCalendarType`/`discoveredDisplayName`) to
    `backend.discoveredCalendar(id).calendarType()` / `.name`.
@@ -358,6 +368,22 @@ didn't apply — no new binary). Caught one self-inflicted bug en route: the bas
 initially omitted (only the include was added), surfaced immediately by the `override`
 compile error.
 
-_(T4–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
+**T4 — Stream C getter retirement (2026-06-11)** — all 6 per-field getters are now
+`[[deprecated]]` forwarders into `discoveredCalendar()`; **none deleted** (plan corrected
+mid-task — PlanStan consumes the RCB-local trio too, so the forwarder window covers all 6;
+deletion → T7.2/Plan 11). The 3 calendar-base virtuals (`discoveredColor`/`CalendarType`/
+`DisplayName`) became non-virtual base forwarders (polymorphism now flows through the single
+overridable `discoveredCalendar()`); their overrides in RCB/DecSync/Akonadi deleted. The 3
+RCB-local (`discoveredUrl`/`SupportsEvents`/`SupportsTodos`) stay on RCB as forwarders. DecSync
+extracted private `calendarTypeFor`/`displayNameFor` (4 internal self-calls + the DTO builder
+repointed — no recursion); Akonadi's `calendarColor` rewired off the deleted `discoveredColor`.
+All in-lib callers migrated to `discoveredCalendar()` (tests via scripted rewrite) so the lib
+build is **deprecation-warning-clean** (only the pre-existing `recurrenceCapabilities` warning
+remains). `discoveredWritable` untouched (neutral; engine write-gate). **Default lane
+148/148; Akonadi-lane library compiles clean** (`build-akonadi`, `HAVE_AKONADI=ON` — verifies
+the removed/added vtable slots + the T1/T2 moves under Akonadi). Akonadi-lane *tests* deferred
+to the D1 periodic manual lane at close-out.
+
+_(T5–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
 deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
 closing annotations.)_

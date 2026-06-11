@@ -191,19 +191,23 @@ public:
         return d;
     }
 
-    virtual CalendarType discoveredCalendarType(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return CalendarType::Hybrid;
+    // Per-field discovery getters, superseded by discoveredCalendar() (Plan 9).
+    // Now non-virtual forwarders into the DTO accessor (so polymorphism flows
+    // through the single overridable discoveredCalendar()); kept [[deprecated]]
+    // for the PlanStan migration window, deleted once it lands (Plan 11).
+    [[deprecated("use discoveredCalendar(id).calendarType()")]]
+    CalendarType discoveredCalendarType(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).calendarType();
     }
 
-    virtual QColor discoveredColor(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return QColor();
+    [[deprecated("use discoveredCalendar(id).color")]]
+    QColor discoveredColor(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).color;
     }
 
-    virtual QString discoveredDisplayName(const QString &calendarId) const {
-        Q_UNUSED(calendarId);
-        return QString();
+    [[deprecated("use discoveredCalendar(id).name")]]
+    QString discoveredDisplayName(const QString &calendarId) const {
+        return discoveredCalendar(calendarId).name;
     }
 
     virtual bool createCalendar(const QString &collectionId,

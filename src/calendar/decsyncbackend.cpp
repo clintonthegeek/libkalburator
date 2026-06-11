@@ -261,7 +261,7 @@ void DecSyncBackend::startSync(const QString &collectionId,
             if (item.isNull() || item->uid().isEmpty()) continue;
 
             if (!isTypeAllowed(calId, item)) {
-                CalendarType expected = discoveredCalendarType(calId);
+                CalendarType expected = calendarTypeFor(calId);
                 CalendarType actual = incidenceCalendarType(item);
                 qWarning() << "DecSyncBackend::startSync: Type violation -"
                             << item->uid() << "is"
@@ -398,7 +398,7 @@ FetchOperation* DecSyncBackend::fetchItems(const QString &calendarId)
                     QList<KCalendarCore::Incidence::Ptr> incidences = deserializeIcal(icalData);
                     for (const auto &inc : incidences) {
                         if (!hybrid && !isTypeAllowed(calendarId, inc)) {
-                            CalendarType expected = discoveredCalendarType(calendarId);
+                            CalendarType expected = calendarTypeFor(calendarId);
                             CalendarType actual = incidenceCalendarType(inc);
                             qWarning() << "DecSyncBackend::fetchItems: Type violation -"
                                         << inc->uid() << "is"
@@ -470,7 +470,7 @@ PushOperation* DecSyncBackend::pushItems(const QString &calendarId,
             if (item.isNull() || item->uid().isEmpty()) continue;
 
             if (!isTypeAllowed(calendarId, item)) {
-                CalendarType expected = discoveredCalendarType(calendarId);
+                CalendarType expected = calendarTypeFor(calendarId);
                 CalendarType actual = incidenceCalendarType(item);
                 qWarning() << "DecSyncBackend::pushItems: Type violation -"
                             << item->uid() << "is"
@@ -778,7 +778,7 @@ bool DecSyncBackend::deleteCalendar(const QString &collectionId, const QString &
 // Calendar Property Discovery
 // ============================================================================
 
-CalendarType DecSyncBackend::discoveredCalendarType(const QString &calendarId) const
+CalendarType DecSyncBackend::calendarTypeFor(const QString &calendarId) const
 {
     QString syncType, collId;
     parseSyncId(calendarId, syncType, collId);
@@ -795,12 +795,7 @@ CalendarType DecSyncBackend::discoveredCalendarType(const QString &calendarId) c
     return CalendarType::Event;
 }
 
-QColor DecSyncBackend::discoveredColor(const QString &calendarId) const
-{
-    return calendarColor(calendarId);
-}
-
-QString DecSyncBackend::discoveredDisplayName(const QString &calendarId) const
+QString DecSyncBackend::displayNameFor(const QString &calendarId) const
 {
     QString syncType, collId;
     parseSyncId(calendarId, syncType, collId);
@@ -837,8 +832,8 @@ DiscoveredCalendar DecSyncBackend::discoveredCalendar(const QString &calendarId)
     DiscoveredCalendar d;
     d.calendarId = calendarId;
     d.color = calendarColor(calendarId);
-    d.name = discoveredDisplayName(calendarId);
-    const CalendarType t = discoveredCalendarType(calendarId);
+    d.name = displayNameFor(calendarId);
+    const CalendarType t = calendarTypeFor(calendarId);
     d.supportsVEvent = (t != CalendarType::Todo);   // Event or Hybrid
     d.supportsVTodo  = (t != CalendarType::Event);  // Todo or Hybrid
     d.writable = discoveredWritable(calendarId);
@@ -1031,7 +1026,7 @@ bool DecSyncBackend::isTypeAllowed(const QString &calendarId,
     if (isHybridCalendar(calendarId))
         return true;
 
-    CalendarType expected = discoveredCalendarType(calendarId);
+    CalendarType expected = calendarTypeFor(calendarId);
     if (expected == actual)
         return true;
 

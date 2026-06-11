@@ -89,18 +89,8 @@ public:
      * @param calendarId The calendar ID (display name)
      * @return The discovered DAV URL, or empty string if not found
      */
+    [[deprecated("use discoveredCalendar(id).davUrl()")]]
     QString discoveredUrl(const QString &calendarId) const;
-
-    /**
-     * @brief Get the discovered color for a calendar.
-     *
-     * Returns the color from the CalDAV apple:calendar-color property
-     * discovered during loadCalendars().
-     *
-     * @param calendarId The calendar ID (display name)
-     * @return The discovered color, or invalid QColor if not found
-     */
-    QColor discoveredColor(const QString &calendarId) const override;
 
     /**
      * @brief Per-calendar metadata the provider already discovered at connect().
@@ -144,22 +134,14 @@ public:
     /**
      * @brief Check if discovered calendar supports VEVENT components.
      */
+    [[deprecated("use discoveredCalendar(id).supportsVEvent")]]
     bool discoveredSupportsEvents(const QString &calendarId) const;
 
     /**
      * @brief Check if discovered calendar supports VTODO components.
      */
+    [[deprecated("use discoveredCalendar(id).supportsVTodo")]]
     bool discoveredSupportsTodos(const QString &calendarId) const;
-
-    /**
-     * @brief Get the CalendarType based on discovered content types.
-     *
-     * Maps the KDAV content types to CalendarType:
-     * - VEVENT only -> Event
-     * - VTODO only -> Todo
-     * - Both or unknown -> Hybrid
-     */
-    CalendarType discoveredCalendarType(const QString &calendarId) const override;
 
     /**
      * @brief Check if discovered calendar is writable.

@@ -81,10 +81,8 @@ public:
     DeleteOperation* deleteItems(const QString &calendarId,
                                  const QStringList &uids) override;
 
-    // === Discovery Metadata ===
-    CalendarType discoveredCalendarType(const QString &calendarId) const override;
-    QColor       discoveredColor(const QString &calendarId) const override;
-    QString      discoveredDisplayName(const QString &calendarId) const override;
+    // === Discovery Metadata === (per-field type/color/name collapsed into
+    // discoveredCalendar() — Plan 9)
     bool         discoveredWritable(const QString &calendarId) const override;
     DiscoveredCalendar discoveredCalendar(const QString &calendarId) const override;
 

@@ -560,41 +560,6 @@ DeleteOperation* AkonadiBackend::deleteItems(const QString &calendarId,
 // Discovery Metadata
 // ============================================================================
 
-CalendarType AkonadiBackend::discoveredCalendarType(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return CalendarType::Hybrid;
-    return calendarTypeForCollection(*it);
-}
-
-QColor AkonadiBackend::discoveredColor(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return QColor();
-
-    // Akonadi stores color as an entity attribute
-    if (it->hasAttribute(QByteArrayLiteral("collectioncolor"))) {
-        const auto attr = it->attribute(QByteArrayLiteral("collectioncolor"));
-        if (attr) {
-            // CollectionColorAttribute stores the color as serialized data
-            QColor color = QColor::fromString(QString::fromUtf8(attr->serialized()));
-            if (color.isValid())
-                return color;
-        }
-    }
-    return QColor();
-}
-
-QString AkonadiBackend::discoveredDisplayName(const QString &calendarId) const
-{
-    auto it = m_collections.find(calendarId);
-    if (it == m_collections.end())
-        return QString();
-    return it->displayName();
-}
-
 bool AkonadiBackend::discoveredWritable(const QString &calendarId) const
 {
     auto it = m_collections.find(calendarId);
@@ -639,7 +604,7 @@ DiscoveredCalendar AkonadiBackend::discoveredCalendar(const QString &calendarId)
 
 QColor AkonadiBackend::calendarColor(const QString &calendarId) const
 {
-    return discoveredColor(calendarId);
+    return discoveredCalendar(calendarId).color;
 }
 
 QString AkonadiBackend::calendarDescription(const QString &calendarId) const
