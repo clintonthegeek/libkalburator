@@ -39,6 +39,12 @@ kalburator_add_engine_test(tst_mappingqueue)
 # Task 46 — CancellationReason integration tests
 kalburator_add_engine_integration_test(tst_cancellation_reason)
 
+# Architectural-redress Plan 8 step 3 — pins the canonical single-mapping
+# cancel contract after the dual future-interface collapse (resultCount()==1,
+# resultAt(0).first().cancelled). Shown RED against the pre-collapse .then()
+# path (commit 0595044); green only on the native post-collapse engine.
+kalburator_add_engine_integration_test(tst_engine_single_mapping_cancel)
+
 # Phase Ia.5 Task 7 — generic property-phase helper unit tests
 kalburator_add_engine_test(tst_property_phase)
 
