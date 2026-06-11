@@ -384,6 +384,22 @@ remains). `discoveredWritable` untouched (neutral; engine write-gate). **Default
 the removed/added vtable slots + the T1/T2 moves under Akonadi). Akonadi-lane *tests* deferred
 to the D1 periodic manual lane at close-out.
 
-_(T5–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
+**T5 — Stream C sync-internal discovery tidy (2026-06-11)** — investigation first: the
+providers' `m_calendarUrls`/`m_addressbookUrls` are **lifecycle-necessary persistent stores**,
+not live duplicates — the `m_discovery` object is transient (`deleteLater()`'d right after
+connect, `caldavprovider.cpp:137-139`), so the provider copies the href map out before the
+discovery dies. And `PerCalendarCapabilities` carries no href (discovery splits href into
+`m_calendarUrls` and caps into `perCalendarCapabilities`, both keyed by calendarId — they're
+complementary, not duplicate). So the audit's "URL maps duplicated across discovery/provider/
+backend" is a **cross-layer lifecycle handoff** (transient discovery → persistent provider →
+backend), and Plan 7 already consolidated the backend-internal half; the "one owner per URL map
+within `sync/`" gate already holds. The clean in-scope item — the **`discoveredCapabilities()`
+bulk-getter narrowing** — is done: new `perCalendarCapabilities()` accessor on
+`CalDavCapabilityDiscovery`; `CalDavProvider` + `MultiProtocolDavProvider` rewired off the
+whole-struct fetch (both only ever read `.perCalendarCapabilities`). The full
+"fold href into `PerCalendarCapabilities`" consolidation crosses into `typesupport/` + its JSON
+codec — out of T5's sync-internal scope; FINDINGS note (T6) for a future pass. ctest 148/148.
+
+_(T6–T7 filled in as tasks land — metrics vs gates, the PlanStan gate result, the
 deprecated-forwarder disposition, FINDINGS surfaced, and the AUDIT B5 + discovery-MODERATE
 closing annotations.)_

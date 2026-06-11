@@ -211,11 +211,10 @@ MultiProtocolDavProvider::createBackend(const QString &collectionId)
 void MultiProtocolDavProvider::onCalDavFinished(bool success)
 {
     if (success) {
-        const auto caps = m_caldavDiscovery->discoveredCapabilities();
         m_calDavUrlMap = m_caldavDiscovery->calendarUrls();
-        m_calDavCaps = caps.perCalendarCapabilities;  // retained for createBackend() priming
-        for (auto it = caps.perCalendarCapabilities.constBegin();
-             it != caps.perCalendarCapabilities.constEnd(); ++it) {
+        m_calDavCaps = m_caldavDiscovery->perCalendarCapabilities();  // retained for createBackend() priming
+        for (auto it = m_calDavCaps.constBegin();
+             it != m_calDavCaps.constEnd(); ++it) {
             CollectionInfo ci;
             ci.id   = it.key();
             ci.name = it.value().serverDisplayName.isEmpty()
