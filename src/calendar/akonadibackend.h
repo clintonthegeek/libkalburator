@@ -179,6 +179,13 @@ private:
     /// Convert our calendar ID string to Akonadi Collection::Id
     Akonadi::Collection::Id collectionIdForCalendar(const QString &calendarId) const;
 
+    /// Phase L.5: lazily seed m_collections with the single scoped collection
+    /// (an id-only Akonadi::Collection) when it isn't present yet, so a
+    /// per-collection scoped backend can resolve its own collection for
+    /// fetch/create without a loadCalendars() discovery pass. No-op for
+    /// non-scoped backends or ids that aren't the scoped one.
+    void ensureScopedCollection(const QString &calendarId);
+
     /// Look up the cached Akonadi::Item for a given calendar + uid
     Akonadi::Item findItemByUid(const QString &calendarId, const QString &uid) const;
 

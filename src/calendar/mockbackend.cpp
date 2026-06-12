@@ -169,6 +169,28 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
 
     auto *op = new FetchOperation(calendarId, this);
     registerOperation(op);
+
+    // Test fixture: mimic a backend whose fetchItems fails synchronously (like
+    // the scoped AkonadiBackend's "Unknown calendar" fast-fail) while its read
+    // path (loadRecordsOrError) stays silent. The op is Failed at return — not
+    // Running — so the engine's fetch gate is the only thing that can surface it.
+    if (m_fetchOpFailsSilently) {
+        op->fail(m_fetchOpFailMessage.isEmpty()
+                     ? QStringLiteral("Mock: fetchItems failed (silent read path)")
+                     : m_fetchOpFailMessage);
+        emit fetchFinished(calendarId, false, op->errorString());
+        return op;
+    }
+
+    // Test fixture: mimic a backend that doesn't override fetchItems — the
+    // SyncBackendBase default returns a NotSupported op and the read happens
+    // via loadRecords. The engine must treat this as "proceed", not a failure.
+    if (m_useBaseFetchItems) {
+        op->notSupported(QStringLiteral("fetchItems() not implemented (mock base mode)"));
+        emit fetchFinished(calendarId, false, op->errorString());
+        return op;
+    }
+
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
 
     if (shouldFail(FailurePoint::OnFetch)) {

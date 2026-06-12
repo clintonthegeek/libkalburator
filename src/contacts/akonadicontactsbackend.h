@@ -152,6 +152,11 @@ private:
     /// Convert our collection ID string to Akonadi Collection::Id
     Akonadi::Collection::Id akonadiIdForCollection(const QString &collectionId) const;
 
+    /// Phase L.5: lazily seed m_collections with the single scoped collection
+    /// so a per-collection scoped contacts backend can resolve it for
+    /// fetch/create. No-op for non-scoped backends or non-scoped ids.
+    void ensureScopedCollection(const QString &collectionId);
+
     /// Look up the cached Akonadi::Item for a given collection + uid
     Akonadi::Item findItemByUid(const QString &collectionId, const QString &uid) const;
 

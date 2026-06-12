@@ -140,6 +140,24 @@ Akonadi::Collection::Id AkonadiBackend::collectionIdForCalendar(const QString &c
     return ok ? id : -1;
 }
 
+void AkonadiBackend::ensureScopedCollection(const QString &calendarId)
+{
+    // Phase L.5 fix: a per-collection scoped backend (created by
+    // AkonadiProvider::createBackend with "akonadiCollectionId") is never run
+    // through loadCalendars(), so m_collections stays empty and every
+    // fetch/read/write fast-fails with "Unknown calendar". Seed the one scoped
+    // collection lazily from its id. An id-only Akonadi::Collection is enough:
+    // ItemFetchJob / ItemCreateJob resolve it server-side, so no
+    // CollectionFetchJob round-trip (or the dead loadCalendars path) is needed.
+    if (m_collections.contains(calendarId) || calendarId != m_scopedCollectionId)
+        return;
+    const Akonadi::Collection::Id id = collectionIdForCalendar(calendarId);
+    if (id < 0)
+        return;
+    m_collectionToCalId.insert(id, calendarId);
+    m_collections.insert(calendarId, Akonadi::Collection(id));
+}
+
 Akonadi::Item AkonadiBackend::findItemByUid(const QString &calendarId, const QString &uid) const
 {
     auto it = m_itemsByCalendar.find(calendarId);
@@ -380,6 +398,7 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
     auto *op = new FetchOperation(calendarId, this);
     registerOperation(op);
 
+    ensureScopedCollection(calendarId);
     auto colIt = m_collections.find(calendarId);
     if (colIt == m_collections.end()) {
         QString errorMsg = QStringLiteral("Unknown calendar: ") + calendarId;
@@ -994,6 +1013,7 @@ std::optional<BackendRecord> AkonadiBackend::loadRecord(const QString &recordId)
 QString AkonadiBackend::createRecord(const QString &collectionId,
                                       const BackendRecord &record)
 {
+    ensureScopedCollection(collectionId);
     auto colIt = m_collections.find(collectionId);
     if (colIt == m_collections.end()) {
         qWarning() << "AkonadiBackend::createRecord: unknown collection" << collectionId;

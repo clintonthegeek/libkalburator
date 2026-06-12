@@ -22,7 +22,12 @@ class SyncOperation : public QObject
     Q_PROPERTY(int progress READ progress NOTIFY progressChanged)
 
 public:
-    enum State { Pending, Running, Succeeded, Failed, Cancelled };
+    // NotSupported is appended last so existing ordinals are unchanged.
+    // It is a terminal state distinct from Failed: a backend that does not
+    // implement an operation (e.g. SyncBackendBase::fetchItems default) returns
+    // an op in this state so callers can tell "not implemented" apart from a
+    // genuine failure. See SyncBackendBase::fetchItems and the engine fetch gate.
+    enum State { Pending, Running, Succeeded, Failed, Cancelled, NotSupported };
     Q_ENUM(State)
 
     explicit SyncOperation(const QString &calendarId, QObject *parent = nullptr);
@@ -37,6 +42,10 @@ public:
 
     virtual void cancel();
     void fail(const QString &errorString);
+    /// Terminal: mark this operation as not implemented by the backend
+    /// (state NotSupported). Distinct from fail() — callers treat it as
+    /// "delegate elsewhere", not as a genuine error.
+    void notSupported(const QString &reason);
     void setState(State newState);
     void setProgress(int percent);
     void complete();

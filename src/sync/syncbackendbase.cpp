@@ -35,9 +35,14 @@ Kalburator::Shape::Shape SyncBackendBase::shapeFor(const QString &) const
 
 SyncOperation* SyncBackendBase::fetchItems(const QString &calendarId)
 {
+    // NotSupported (not Failed): backends that read solely via loadRecords()
+    // don't override fetchItems and rely on the engine ignoring this op and
+    // proceeding to loadRecordsOrError(). Returning NotSupported lets the
+    // engine tell this apart from an overriding backend's genuine fetch failure
+    // (which IS Failed and must fail the mapping). See the engine fetch gate.
     auto *op = new SyncOperation(calendarId, this);
     const QString errorMsg = QStringLiteral("fetchItems() not implemented by this backend");
-    op->fail(errorMsg);
+    op->notSupported(errorMsg);
     emit fetchFinished(calendarId, false, errorMsg);
     return op;
 }

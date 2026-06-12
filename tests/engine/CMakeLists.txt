@@ -103,6 +103,13 @@ set_tests_properties(tst_carddav_engine_integration PROPERTIES
 # Layer B — silent-success guard (failing test: no engine call site migrated yet)
 kalburator_add_engine_integration_test(tst_engine_silent_success_guard)
 
+# Fix B (2026-06-12 Akonadi scoped-backend handoff) — the engine must tell a
+# genuine fetchItems failure (an overriding backend whose fetch failed, whose
+# read path is silent — the scoped AkonadiBackend's shape) apart from a backend
+# that doesn't implement fetchItems. Red pre-fix: a genuine failure is swallowed
+# and the mapping "succeeds" with 0 records (and a clobber wipes the target).
+kalburator_add_engine_integration_test(tst_engine_fetch_failure_discrimination)
+
 # T3 — mass-delete guard engine integration test
 kalburator_add_engine_integration_test(tst_mass_delete_guard)
 
