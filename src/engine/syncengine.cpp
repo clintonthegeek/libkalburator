@@ -2029,6 +2029,20 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        // Fix B: a backend that IMPLEMENTS fetchItems and genuinely failed
+        // (state Failed — not the NotSupported "not implemented" default that
+        // loadRecords-only backends return) must fail the mapping. Otherwise we
+        // read its empty/stale cache via loadRecordsOrError (whose default
+        // reports no error) and declare a false success. This gate fires BEFORE
+        // the clobber wipe below, so the target is never destroyed when the
+        // source can't be read.
+        if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = fetchOp->errorString();
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
     }
     QList<BackendRecord> sourceRecords;
     {
@@ -2119,6 +2133,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         if (m_cancelled) {
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+        // Fix B: a genuine target fetch failure (state Failed, distinct from the
+        // NotSupported "not implemented" default) must fail the mapping rather
+        // than reading an empty/stale cache and reporting success. Under clobber
+        // the target was already wiped above; converting this to a reported
+        // failure is the minimum guarantee for a fetch that fails post-wipe.
+        if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = fetchOp->errorString();
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;

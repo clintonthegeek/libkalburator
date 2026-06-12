@@ -23,7 +23,7 @@ SyncOperation::~SyncOperation()
 bool SyncOperation::isFinished() const noexcept
 {
     const State s = m_state.load(std::memory_order_acquire);
-    return s == Succeeded || s == Failed || s == Cancelled;
+    return s == Succeeded || s == Failed || s == Cancelled || s == NotSupported;
 }
 
 bool SyncOperation::cancelRequested() const noexcept
@@ -60,9 +60,11 @@ void SyncOperation::setState(State newState)
             return; // same-state: no-op
         }
         const bool wasTerminal =
-            expected == Succeeded || expected == Failed || expected == Cancelled;
+            expected == Succeeded || expected == Failed
+            || expected == Cancelled || expected == NotSupported;
         const bool willBeTerminal =
-            newState == Succeeded || newState == Failed || newState == Cancelled;
+            newState == Succeeded || newState == Failed
+            || newState == Cancelled || newState == NotSupported;
         if (wasTerminal) {
             // Already in a terminal state. Per the F2 contract, terminal
             // is sticky: ignore further transitions silently.
@@ -133,6 +135,12 @@ void SyncOperation::fail(const QString &errorString)
 {
     setErrorString(errorString);
     setState(Failed);
+}
+
+void SyncOperation::notSupported(const QString &reason)
+{
+    setErrorString(reason);
+    setState(NotSupported);
 }
 
 } // namespace Kalburator::Sync

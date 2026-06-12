@@ -164,6 +164,25 @@ public:
     void setPushBlocking(bool blocking) { m_pushBlocking = blocking; }
     void releasePushBlocker() { m_pushBlocker.release(); }
 
+    /// Test fixture: when true, fetchItems() returns a synchronously-Failed
+    /// FetchOperation — mimicking a backend (e.g. the scoped AkonadiBackend
+    /// whose collection never resolved) whose fetch fails fast — WITHOUT
+    /// making loadRecordsOrError report an error. The read path stays silent
+    /// (base-class loadRecordsOrError default), exactly as Akonadi's does.
+    /// Isolates the engine's fetch-op failure gate from the
+    /// loadRecordsOrError gate. Default off; existing tests unaffected.
+    void setFetchOpFailsSilently(bool fails, const QString &message = QString()) {
+        m_fetchOpFailsSilently = fails;
+        m_fetchOpFailMessage   = message;
+    }
+
+    /// Test fixture: when true, fetchItems() returns an op in the terminal
+    /// NotSupported state — mimicking a backend that does NOT override
+    /// fetchItems (SyncBackendBase's "not implemented" default) and reads
+    /// solely via loadRecords. Pins that the engine treats NotSupported as
+    /// "proceed to loadRecords", NOT as a failure. Default off.
+    void setUseBaseFetchItems(bool useBase) { m_useBaseFetchItems = useBase; }
+
     // =========================================================================
     // State Inspection (for test verification)
     // =========================================================================
@@ -331,6 +350,13 @@ private:
     bool m_pushBlocking  = false;
     QSemaphore m_fetchBlocker;
     QSemaphore m_pushBlocker;
+
+    // Test fixture: synchronous fetchItems failure with a silent read path.
+    bool    m_fetchOpFailsSilently = false;
+    QString m_fetchOpFailMessage;
+
+    // Test fixture: emit the base-class NotSupported "not implemented" op.
+    bool    m_useBaseFetchItems = false;
 };
 
 } // namespace Kalburator::Sync

@@ -115,6 +115,21 @@ QString AkonadiContactsBackend::collectionIdForAkonadiId(Akonadi::Collection::Id
     return AKONADI_CONTACTS_PREFIX + QString::number(id);
 }
 
+void AkonadiContactsBackend::ensureScopedCollection(const QString &collectionId)
+{
+    // Phase L.5 fix (mirrors AkonadiBackend::ensureScopedCollection): seed the
+    // single scoped collection lazily from its id so a per-collection scoped
+    // contacts backend can resolve it for fetch/create. An id-only
+    // Akonadi::Collection suffices; the server resolves it on first job.
+    if (m_collections.contains(collectionId) || collectionId != m_scopedCollectionId)
+        return;
+    const Akonadi::Collection::Id id = akonadiIdForCollection(collectionId);
+    if (id < 0)
+        return;
+    m_collectionToContactId.insert(id, collectionId);
+    m_collections.insert(collectionId, Akonadi::Collection(id));
+}
+
 Akonadi::Collection::Id AkonadiContactsBackend::akonadiIdForCollection(const QString &collectionId) const
 {
     if (!collectionId.startsWith(AKONADI_CONTACTS_PREFIX))
@@ -159,6 +174,7 @@ FetchOperation* AkonadiContactsBackend::fetchItems(const QString &collectionId)
     auto *op = new FetchOperation(collectionId, this);
     registerOperation(op);
 
+    ensureScopedCollection(collectionId);
     auto colIt = m_collections.find(collectionId);
     if (colIt == m_collections.end()) {
         QString errorMsg = QStringLiteral("Unknown collection: ") + collectionId;
@@ -489,6 +505,7 @@ AkonadiContactsBackend::addresseeFromRecord(const BackendRecord &record) const
 QString AkonadiContactsBackend::createRecord(const QString &collectionId,
                                                const BackendRecord &record)
 {
+    ensureScopedCollection(collectionId);
     auto colIt = m_collections.find(collectionId);
     if (colIt == m_collections.end()) {
         qWarning() << "AkonadiContactsBackend::createRecord: unknown collection" << collectionId;

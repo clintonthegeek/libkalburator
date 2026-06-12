@@ -78,6 +78,11 @@ if(KALBURATOR_HAVE_AKONADI)
     kalburator_add_calendar_test(tst_akonadibackend_blob_view)
     kalburator_add_calendar_test(tst_akonadi_payload)
     kalburator_add_calendar_test(tst_akonadibackend_live)
+    # Fix A (2026-06-12 scoped-backend handoff) — a scoped backend's fetchItems
+    # for its own collection must not fast-fail "Unknown calendar". Exercises the
+    # contacts backend too, so link KF6::Contacts.
+    kalburator_add_calendar_test(tst_akonadi_scoped_collection)
+    target_link_libraries(tst_akonadi_scoped_collection PRIVATE KF6::Contacts)
 endif()
 
 kalburator_add_calendar_test(tst_decsyncbackend)
