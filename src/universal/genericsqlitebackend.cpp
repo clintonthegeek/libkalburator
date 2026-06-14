@@ -1,11 +1,13 @@
 #include "genericsqlitebackend.h"
 
+#include <QCryptographicHash>
 #include <QDebug>
 #include <QMutexLocker>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QThread>
 #include <QUuid>
+#include <QVariant>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;
@@ -131,6 +133,14 @@ bool GenericSqliteBackend::deleteCollection(const QString &collectionId)
     if (!q.exec()) {
         qWarning() << "GenericSqliteBackend::deleteCollection: _shapes cleanup failed for"
                    << collectionId << ":" << q.lastError().text();
+        ok = false;
+    }
+    q.prepare(QStringLiteral(
+        "DELETE FROM _collection_revisions WHERE collection_id = ?"));
+    q.addBindValue(collectionId);
+    if (!q.exec()) {
+        qWarning() << "GenericSqliteBackend::deleteCollection: _collection_revisions"
+                      " cleanup failed for" << collectionId << ":" << q.lastError().text();
         ok = false;
     }
     // Best-effort eviction: drop the in-memory entry even on partial DB-cleanup
@@ -311,6 +321,11 @@ QSqlDatabase GenericSqliteBackend::threadDb()
         "  shape_type TEXT NOT NULL,"
         "  created_at TEXT NOT NULL"
         ")"));
+    q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS _collection_revisions ("
+        "  collection_id TEXT PRIMARY KEY,"
+        "  synced_rev TEXT"
+        ")"));
 
     QMutexLocker lock(&m_connMutex);
     m_openConnections.append(name);
@@ -346,12 +361,18 @@ bool GenericSqliteBackend::ensureOpen()
 bool GenericSqliteBackend::ensureSchema(QSqlDatabase &db)
 {
     QSqlQuery q(db);
-    return q.exec(QStringLiteral(
+    if (!q.exec(QStringLiteral(
         "CREATE TABLE IF NOT EXISTS _shapes ("
         "  shape_key TEXT PRIMARY KEY,"
         "  shape_name TEXT NOT NULL,"
         "  shape_type TEXT NOT NULL,"
         "  created_at TEXT NOT NULL"
+        ")")))
+        return false;
+    return q.exec(QStringLiteral(
+        "CREATE TABLE IF NOT EXISTS _collection_revisions ("
+        "  collection_id TEXT PRIMARY KEY,"
+        "  synced_rev TEXT"
         ")"));
 }
 
@@ -398,6 +419,93 @@ bool GenericSqliteBackend::decodeRecordId(const QString &recordId,
     *collectionId = recordId.left(sep);
     *id = recordId.mid(sep + 1);
     return true;
+}
+
+// ---- Sync::ChangeDetection ----
+
+QString GenericSqliteBackend::computeContentDigest(const QString &collectionId) const
+{
+    if (!m_open)
+        return {};
+    // Only digest collections this backend actually owns; an unknown id
+    // yields empty ("can't answer" → engine treats as changed).
+    {
+        QMutexLocker lock(&m_collectionsMutex);
+        if (!m_collections.contains(collectionId))
+            return {};
+    }
+    // Const-cast to reach the per-thread connection accessor (non-const by
+    // design: it lazily opens/caches a connection under m_connMutex). Safe
+    // from a const method because it does not mutate observable state. Same
+    // idiom the FCB uses for its const accessors.
+    QSqlDatabase db = const_cast<GenericSqliteBackend*>(this)->threadDb();
+    QSqlQuery q(db);
+    // ORDER BY record_id makes the digest order-independent. Reading only
+    // (record_id, content_hash) keeps this cheap — no payload deserialization,
+    // unlike a full fetch. tableNameFor() sanitizes the interpolated name
+    // (SQLite can't bind a table name); it is the canonical injection guard.
+    q.prepare(QStringLiteral(
+        "SELECT record_id, content_hash FROM \"%1\" ORDER BY record_id")
+        .arg(tableNameFor(collectionId)));
+    if (!q.exec())
+        return {};
+    // Frame each field with ASCII control separators (US \x1f, RS \x1e) that
+    // cannot appear in record ids or hex content hashes, so distinct record
+    // sets can't collide by concatenation. Empty collection → hash of "" (a
+    // stable non-empty token).
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (q.next()) {
+        hash.addData(q.value(0).toString().toUtf8());
+        hash.addData(QByteArrayLiteral("\x1f"));   // unit separator
+        hash.addData(q.value(1).toString().toUtf8());
+        hash.addData(QByteArrayLiteral("\x1e"));   // record separator
+    }
+    return QString::fromLatin1(hash.result().toHex());
+}
+
+QVariant GenericSqliteBackend::readSyncedRevision(const QString &collectionId) const
+{
+    if (!m_open)
+        return {};
+    QSqlDatabase db = const_cast<GenericSqliteBackend*>(this)->threadDb();
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT synced_rev FROM _collection_revisions WHERE collection_id = ?"));
+    q.addBindValue(collectionId);
+    if (!q.exec() || !q.next())
+        return {};
+    return q.value(0);
+}
+
+QString GenericSqliteBackend::collectionRevision(const QString &collectionId)
+{
+    return computeContentDigest(collectionId);
+}
+
+QString GenericSqliteBackend::cachedCollectionRevision(const QString &collectionId) const
+{
+    const QVariant synced = readSyncedRevision(collectionId);
+    return synced.isValid() ? synced.toString() : QString();
+}
+
+void GenericSqliteBackend::primeRevisionCache(const QMap<QString, QString> &cache)
+{
+    if (!m_open)
+        return;
+    QSqlDatabase db = threadDb();
+    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it) {
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "INSERT INTO _collection_revisions (collection_id, synced_rev) "
+            "VALUES (?, ?) "
+            "ON CONFLICT(collection_id) DO UPDATE SET synced_rev = excluded.synced_rev"));
+        q.addBindValue(it.key());
+        q.addBindValue(it.value());
+        if (!q.exec()) {
+            qWarning() << "GenericSqliteBackend::primeRevisionCache: failed for"
+                       << it.key() << ":" << q.lastError().text();
+        }
+    }
 }
 
 } // namespace Kalburator::Sinks

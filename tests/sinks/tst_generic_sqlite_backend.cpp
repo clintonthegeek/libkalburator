@@ -67,6 +67,12 @@ private slots:
     void concurrentShapeForVsCreateCollection();
     void wipeCollection_emptiesTable_leavesCollectionIntact();
     void wipeCollection_survivorIsolation();
+
+    // Sync::ChangeDetection (hub-side skip-unchanged support).
+    void revision_stableUntilWrite();
+    void revision_changesOnCreateUpdateDelete();
+    void revision_primeCachedRoundTripAcrossInstances();
+    void revision_unknownCollectionReturnsEmpty();
 };
 
 void TestGenericSqliteBackend::isAvailable_falseForUnopenedDb()
@@ -320,6 +326,103 @@ void TestGenericSqliteBackend::wipeCollection_survivorIsolation()
     QCOMPARE(b.loadRecords(wiped).size(),    0);
     QCOMPARE(b.loadRecords(survivor).size(), 1);
     QCOMPARE(b.loadRecords(survivor).first().data, QByteArrayLiteral("safe"));
+}
+
+// ---- Sync::ChangeDetection ----
+
+void TestGenericSqliteBackend::revision_stableUntilWrite()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
+
+    // A freshly-created collection reports a stable, non-empty token, and
+    // repeated reads without an intervening write do not change it.
+    const QString r0 = b.collectionRevision(colId);
+    QVERIFY(!r0.isEmpty());
+    QCOMPARE(b.collectionRevision(colId), r0);
+    QCOMPARE(b.collectionRevision(colId), r0);
+}
+
+void TestGenericSqliteBackend::revision_changesOnCreateUpdateDelete()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    const QString colId = QStringLiteral("memo+plaintext");
+    b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
+
+    const QString rStart = b.collectionRevision(colId);
+
+    const QString id = b.createRecord(colId,
+        makeRecord(QStringLiteral("r1"), QByteArrayLiteral("one")));
+    QVERIFY(!id.isEmpty());
+    const QString rAfterCreate = b.collectionRevision(colId);
+    QVERIFY2(rAfterCreate != rStart, "create must bump the revision");
+
+    BackendRecord upd = makeRecord(QStringLiteral("r1"), QByteArrayLiteral("two"));
+    upd.id = id;
+    QVERIFY(b.updateRecord(upd));
+    const QString rAfterUpdate = b.collectionRevision(colId);
+    QVERIFY2(rAfterUpdate != rAfterCreate, "update must bump the revision");
+
+    QVERIFY(b.deleteRecord(id));
+    const QString rAfterDelete = b.collectionRevision(colId);
+    QVERIFY2(rAfterDelete != rAfterUpdate, "delete must bump the revision");
+
+    // clearCollection also bumps.
+    b.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("x")));
+    const QString rBeforeClear = b.collectionRevision(colId);
+    QVERIFY(b.clearCollection(colId));
+    QVERIFY2(b.collectionRevision(colId) != rBeforeClear,
+             "clearCollection must bump the revision");
+}
+
+void TestGenericSqliteBackend::revision_primeCachedRoundTripAcrossInstances()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    const QString dbPath = tmp.filePath(QStringLiteral("rev-persist.db"));
+    const QString colId = QStringLiteral("memo+plaintext");
+
+    QString fresh;
+    {
+        GenericSqliteBackend b(dbPath);
+        b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
+        b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("a")));
+
+        // No baseline yet → cached is empty (engine treats as changed).
+        QVERIFY(b.cachedCollectionRevision(colId).isEmpty());
+
+        // The engine primes the cache with the fresh token after a sync.
+        fresh = b.collectionRevision(colId);
+        QVERIFY(!fresh.isEmpty());
+        b.primeRevisionCache({{colId, fresh}});
+        QCOMPARE(b.cachedCollectionRevision(colId), fresh);
+    }
+
+    // New instance over the same file: the primed baseline persists, and
+    // since nothing changed the fresh token still equals the cached one
+    // (the skip condition the engine checks).
+    GenericSqliteBackend b2(dbPath);
+    QCOMPARE(b2.cachedCollectionRevision(colId), fresh);
+    QCOMPARE(b2.collectionRevision(colId), fresh);
+
+    // A write makes fresh diverge from cached again.
+    b2.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("b")));
+    QVERIFY(b2.collectionRevision(colId) != b2.cachedCollectionRevision(colId));
+}
+
+void TestGenericSqliteBackend::revision_unknownCollectionReturnsEmpty()
+{
+    QTemporaryDir tmp;
+    QVERIFY(tmp.isValid());
+    GenericSqliteBackend b(tmp.filePath(QStringLiteral("test.db")));
+    // A collection that was never created → "can't answer" → empty token.
+    QVERIFY(b.collectionRevision(QStringLiteral("never+made")).isEmpty());
+    QVERIFY(b.cachedCollectionRevision(QStringLiteral("never+made")).isEmpty());
 }
 
 QTEST_MAIN(TestGenericSqliteBackend)
