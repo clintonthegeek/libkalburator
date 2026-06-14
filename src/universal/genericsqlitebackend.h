@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include "syncbackendbase.h"
+#include "changedetection.h"
 #include "shape.h"
 
 namespace Kalburator::Sinks {
@@ -30,7 +31,8 @@ namespace Kalburator::Sinks {
 /// thread and the main thread simultaneously). All per-thread connection
 /// names are tracked in m_openConnections (guarded by m_connMutex) for
 /// cleanup in the destructor.
-class GenericSqliteBackend : public Kalburator::Sync::SyncBackendBase {
+class GenericSqliteBackend : public Kalburator::Sync::SyncBackendBase,
+                            public Kalburator::Sync::ChangeDetection {
     Q_OBJECT
 public:
     explicit GenericSqliteBackend(QString dbPath, QObject *parent = nullptr);
@@ -70,6 +72,21 @@ public:
     bool updateRecord(const Kalburator::Sync::BackendRecord &record) override;
     bool deleteRecord(const QString &recordId) override;
 
+    // ---- Sync::ChangeDetection ----
+    // Lets the SyncEngine fast-path skip a settled mapping when both sides
+    // report an unchanged revision. collectionRevision() is a content digest
+    // — a pure function of the collection's (record_id, content_hash) tuples
+    // — NOT a write counter. A write counter is unusable here because the
+    // engine re-writes identical records back to both backends during a
+    // TwoWay sync; a counter would chase those no-op writes and never settle.
+    // A digest is unchanged by an idempotent re-write, so it settles. (Same
+    // reason the Akonadi backend digests item ids+revisions.) The
+    // engine-primed baseline is persisted in _collection_revisions.synced_rev.
+    QString collectionRevision(const QString &collectionId) override;
+    QString cachedCollectionRevision(const QString &collectionId) const override;
+    void    primeRevisionCache(const QMap<QString, QString> &cache) override;
+    bool    persistsCollectionRevisions() const override { return true; }
+
 private:
     /// Returns (and lazily opens) the per-thread SQLite connection.
     QSqlDatabase threadDb();
@@ -77,6 +94,17 @@ private:
     bool ensureSchema(QSqlDatabase &db);
     bool ensureTableFor(const QString &collectionId);
     static QString tableNameFor(const QString &collectionId);
+
+    /// Content digest of a collection: an order-independent hash over its
+    /// (record_id, content_hash) tuples. Changes iff the collection's records
+    /// change; unaffected by idempotent re-writes. Empty for an unknown
+    /// collection. Const-callable read path (const-casts `this` to reach
+    /// threadDb(), the FCB idiom).
+    QString computeContentDigest(const QString &collectionId) const;
+
+    /// Read the persisted synced_rev for a collection, or a null QVariant if
+    /// no row exists. Const-callable (see computeContentDigest).
+    QVariant readSyncedRevision(const QString &collectionId) const;
 
     // RecordId format: "<collectionId>/<originalId>"
     static QString encodeRecordId(const QString &collectionId, const QString &id);

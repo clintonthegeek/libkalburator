@@ -242,4 +242,41 @@ bool FilteredCollectionBackend::deleteRecord(const QString& recordId)
     return m_parent->deleteRecord(recordId);
 }
 
+// ---- Sync::ChangeDetection ----
+// All four delegate to the parent, translating the virtual collection id to
+// m_parentColId. Guarded for a null parent (post-unregister) and for a parent
+// that doesn't implement ChangeDetection — both return the "can't answer"
+// values, which the engine treats as changed (so the view re-syncs).
+
+QString FilteredCollectionBackend::collectionRevision(const QString& collectionId)
+{
+    if (collectionId != m_virtualColId) return {};
+    auto* cd = parentChangeDetection();
+    return cd ? cd->collectionRevision(m_parentColId) : QString();
+}
+
+QString FilteredCollectionBackend::cachedCollectionRevision(const QString& collectionId) const
+{
+    if (collectionId != m_virtualColId) return {};
+    auto* cd = parentChangeDetection();
+    return cd ? cd->cachedCollectionRevision(m_parentColId) : QString();
+}
+
+void FilteredCollectionBackend::primeRevisionCache(const QMap<QString, QString>& cache)
+{
+    auto* cd = parentChangeDetection();
+    if (!cd) return;
+    // Rewrite the virtual collection key to the parent collection id before
+    // forwarding; ignore any other keys.
+    auto it = cache.constFind(m_virtualColId);
+    if (it == cache.constEnd()) return;
+    cd->primeRevisionCache({{m_parentColId, it.value()}});
+}
+
+bool FilteredCollectionBackend::persistsCollectionRevisions() const
+{
+    auto* cd = parentChangeDetection();
+    return cd ? cd->persistsCollectionRevisions() : true;
+}
+
 } // namespace Kalburator::Sinks

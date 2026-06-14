@@ -3,6 +3,7 @@
 #include <QString>
 
 #include "syncbackendbase.h"       // Kalburator::Sync::SyncBackendBase (neutral base)
+#include "changedetection.h"      // Kalburator::Sync::ChangeDetection
 #include "recordfilter.h"         // Kalburator::Shape::RecordFilter
 #include "collectioninfo.h"       // Kalburator::Sync::CollectionInfo
 
@@ -29,7 +30,8 @@ namespace Kalburator::Sinks {
 /// Caller MUST pass the same `parentBackendId` that was used to register
 /// the parent in `BackendRegistry`; the default `backendId()` for
 /// production `SyncBackend`s is not unique.
-class FilteredCollectionBackend : public Kalburator::Sync::SyncBackendBase {
+class FilteredCollectionBackend : public Kalburator::Sync::SyncBackendBase,
+                                  public Kalburator::Sync::ChangeDetection {
     Q_OBJECT
 public:
     FilteredCollectionBackend(Kalburator::Sync::SyncBackendBase* parentBackend,
@@ -61,12 +63,29 @@ public:
     bool    updateRecord(const Kalburator::Sync::BackendRecord& record) override;
     bool    deleteRecord(const QString& recordId)            override;
 
+    // ---- Sync::ChangeDetection ----
+    // A filtered view changes iff its parent collection changes, so the
+    // conservative + correct token is the parent's revision for
+    // m_parentColId. Requires the parent to implement ChangeDetection
+    // (satisfied when the parent is the sqlite hub); otherwise returns empty
+    // ("can't answer" → engine treats as changed, current behavior).
+    QString collectionRevision(const QString& collectionId) override;
+    QString cachedCollectionRevision(const QString& collectionId) const override;
+    void    primeRevisionCache(const QMap<QString, QString>& cache) override;
+    bool    persistsCollectionRevisions() const override;
+
     // Accessors for tests / consumers.
     QString parentCollectionId() const { return m_parentColId; }
     QString virtualCollectionId() const { return m_virtualColId; }
     const Kalburator::Shape::RecordFilter& filter() const { return m_filter; }
 
 private:
+    /// The parent's Sync::ChangeDetection interface, or null if the parent is
+    /// gone (post-unregister) or doesn't implement it. Centralizes the cross-
+    /// cast the four ChangeDetection overrides share.
+    Kalburator::Sync::ChangeDetection* parentChangeDetection() const
+    { return dynamic_cast<Kalburator::Sync::ChangeDetection*>(m_parent); }
+
     /// Compose the parent's `CollectionInfo` for `m_parentColId` into a
     /// CollectionInfo for the virtual collection: rewrites `id`, applies
     /// `displayName` override (or composes a default), inherits `color`

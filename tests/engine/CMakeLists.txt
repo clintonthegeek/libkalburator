@@ -71,6 +71,18 @@ target_link_libraries(tst_engine_universal_sink_dispatch
         KF6::CalendarCore
 )
 
+# 2026-06-14 — hub-side ChangeDetection skip-unchanged integration test.
+# Two GenericSqliteBackends (now Sync::ChangeDetection-capable) stand in for
+# the WildPalms sqlite hub; pins that a settled mapping is skipped and a
+# mutation defeats the skip (WP efficiency RFC). Needs Qt6::Sql for the
+# sqlite backend and KF6::CalendarCore for the shared SyncBackend vtable.
+kalburator_add_engine_test(tst_engine_skip_unchanged)
+target_link_libraries(tst_engine_skip_unchanged
+    PRIVATE
+        Qt6::Sql
+        KF6::CalendarCore
+)
+
 # Phase Ib Task 9 — CardDAV engine integration test.
 # FakeCardDavServer → CardDavProvider → RemoteContactsBackend (source)
 # → SyncEngine::runSync → ShapedTestBackend (peer, vcard4).
