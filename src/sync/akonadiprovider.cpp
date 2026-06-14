@@ -5,6 +5,7 @@
 #include "akonadiconfigwidget.h"
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
+#include "akonadicollectionid.h"
 #include "../calendar/akonadibackend.h"
 #include "../contacts/akonadicontactsbackend.h"
 
@@ -134,7 +135,7 @@ void AkonadiProvider::onCollectionsFetched(KJob *kjob)
             continue;
 
         CollectionInfo info;
-        info.id   = QStringLiteral("akonadi-%1").arg(col.id());
+        info.id   = akonadiCollectionIdToString(col.id());  // shared scheme; see akonadicollectionid.h
         info.name = col.displayName();
         info.type = type;
         m_collections.append(info);

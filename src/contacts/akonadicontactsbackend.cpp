@@ -4,6 +4,7 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "../sync/akonadirevisiondigest.h"
+#include "../sync/akonadicollectionid.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -26,15 +27,10 @@
 
 namespace Kalburator::Sync {
 
-// Collection-id prefix. MUST match what AkonadiProvider emits for every
-// collection regardless of type ("akonadi-<id>", akonadiprovider.cpp ~137) —
-// the same scheme the calendar backend uses (AKONADI_PREFIX). Akonadi
-// collection ids are globally unique across the whole tree, so no per-type
-// discriminator is needed; a "akonadi-contacts-" prefix here would not match
-// the provider's ids and would leave scoped contacts backends unable to resolve
-// their collection. (NB: distinct from backendId()'s "akonadi-contacts:"
-// registry namespace and the session-name string, which are unrelated.)
-static const QString AKONADI_CONTACTS_PREFIX = QStringLiteral("akonadi-");
+// The collection-id scheme ("akonadi-<id>", shared with the provider and the
+// calendar backend) lives in akonadicollectionid.h. (NB: backendId()'s
+// "akonadi-contacts:" registry namespace and the session-name string are
+// unrelated and intentionally still type-specific.)
 
 // ============================================================================
 // Construction / Destruction
@@ -120,7 +116,7 @@ void AkonadiContactsBackend::setupMonitor()
 
 QString AkonadiContactsBackend::collectionIdForAkonadiId(Akonadi::Collection::Id id) const
 {
-    return AKONADI_CONTACTS_PREFIX + QString::number(id);
+    return akonadiCollectionIdToString(id);
 }
 
 void AkonadiContactsBackend::ensureScopedCollection(const QString &collectionId)
@@ -140,11 +136,7 @@ void AkonadiContactsBackend::ensureScopedCollection(const QString &collectionId)
 
 Akonadi::Collection::Id AkonadiContactsBackend::akonadiIdForCollection(const QString &collectionId) const
 {
-    if (!collectionId.startsWith(AKONADI_CONTACTS_PREFIX))
-        return -1;
-    bool ok = false;
-    auto id = collectionId.mid(AKONADI_CONTACTS_PREFIX.length()).toLongLong(&ok);
-    return ok ? id : -1;
+    return akonadiCollectionIdFromString(collectionId);
 }
 
 Akonadi::Item AkonadiContactsBackend::findItemByUid(const QString &collectionId, const QString &uid) const
