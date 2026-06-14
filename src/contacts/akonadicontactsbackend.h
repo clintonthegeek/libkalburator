@@ -29,9 +29,10 @@ namespace Kalburator::Sync {
  * Acts as an Akonadi client, letting consumers read/write addressbooks
  * managed by Akonadi resources (e.g. EWS, KCard, Google Contacts).
  *
- * Collection ID scheme: "akonadi-contacts-<collectionId>"
- * (e.g., "akonadi-contacts-42"). Stable across sessions because
- * Akonadi::Collection::Id persists.
+ * Collection ID scheme: "akonadi-<collectionId>" (e.g., "akonadi-42") —
+ * the same scheme AkonadiProvider emits for every collection regardless of
+ * type, and the same one the calendar backend uses. Stable across sessions
+ * because Akonadi::Collection::Id persists.
  *
  * Uses Akonadi::Monitor to watch for external changes and maps those
  * to SyncBackend signals. Writes use a dedicated Session that the
@@ -78,7 +79,7 @@ public:
     //
     // recordId     = vCard UID (cross-backend-stable; Akonadi::Item::id() is
     //                local-only and is never exposed as the record id)
-    // collectionId = "akonadi-contacts-<Akonadi::Collection::Id>"
+    // collectionId = "akonadi-<Akonadi::Collection::Id>" (provider scheme)
     // data         = serialized vCard bytes (KContacts::VCardConverter v4_0)
     // contentHash  = SHA-256 of vCard bytes
     // lastModified = Akonadi::Item::modificationTime()

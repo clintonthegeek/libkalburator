@@ -22,11 +22,14 @@
 using namespace Kalburator::Sync;
 
 namespace {
-// Collection 1 always exists in any Akonadi store (the search/root). The id is
-// irrelevant to this guard — we assert only the SYNCHRONOUS return state, which
-// for the buggy code is Failed("Unknown calendar") before any server I/O.
+// AkonadiProvider emits "akonadi-<id>" for EVERY collection regardless of type
+// (src/sync/akonadiprovider.cpp ~137) — there is no per-type prefix. These ids
+// MUST be the scheme the provider actually produces (the id WP persists into a
+// route), not a backend-self-invented scheme. The id value is otherwise
+// irrelevant to these guards — we assert only the SYNCHRONOUS return state,
+// which for the buggy code is Failed("Unknown …") before any server I/O.
 constexpr auto kCalendarScopedId = "akonadi-1";
-constexpr auto kContactsScopedId = "akonadi-contacts-1";
+constexpr auto kContactsScopedId = "akonadi-1";   // provider scheme, NOT "akonadi-contacts-1"
 }
 
 class TstAkonadiScopedCollection : public QObject
@@ -35,6 +38,7 @@ class TstAkonadiScopedCollection : public QObject
 private slots:
     void calendar_scopedFetch_doesNotFastFailUnknownCalendar();
     void contacts_scopedFetch_doesNotFastFailUnknownCollection();
+    void contacts_resolvesProviderEmittedIdScheme();
 };
 
 void TstAkonadiScopedCollection::calendar_scopedFetch_doesNotFastFailUnknownCalendar()
@@ -76,6 +80,34 @@ void TstAkonadiScopedCollection::contacts_scopedFetch_doesNotFastFailUnknownColl
                && op->errorString().contains(QStringLiteral("Unknown collection"))),
              qPrintable(QStringLiteral("scoped contacts fetchItems fast-failed: state=%1 err=%2")
                             .arg(int(op->state())).arg(op->errorString())));
+}
+
+void TstAkonadiScopedCollection::contacts_resolvesProviderEmittedIdScheme()
+{
+    // Pin provider<->backend id-scheme agreement. Build the collection id EXACTLY
+    // the way AkonadiProvider::collectionFetchResult does for a contacts
+    // collection (src/sync/akonadiprovider.cpp ~137: "akonadi-%1".arg(col.id()))
+    // — there is no per-type prefix — and feed it through the same createBackend
+    // path the provider uses. The scoped contacts backend must resolve it, i.e.
+    // fetchItems must not fast-fail "Unknown collection". A backend that only
+    // parsed "akonadi-contacts-<id>" (its old self-documented scheme, which
+    // nothing produces) fails this.
+    const QString providerEmittedId = QStringLiteral("akonadi-%1").arg(184);
+
+    QVariantMap cfg;
+    cfg.insert(QStringLiteral("akonadiCollectionId"), providerEmittedId);
+    std::unique_ptr<AkonadiContactsBackend> backend(
+        static_cast<AkonadiContactsBackend *>(
+            AkonadiContactsBackend::create(cfg, nullptr)));
+    QVERIFY(backend);
+
+    FetchOperation *op = backend->fetchItems(providerEmittedId);
+    QVERIFY(op);
+
+    QVERIFY2(!(op->state() == SyncOperation::Failed
+               && op->errorString().contains(QStringLiteral("Unknown collection"))),
+             qPrintable(QStringLiteral("contacts backend did not resolve provider id %1: state=%2 err=%3")
+                            .arg(providerEmittedId).arg(int(op->state())).arg(op->errorString())));
 }
 
 QTEST_GUILESS_MAIN(TstAkonadiScopedCollection)
