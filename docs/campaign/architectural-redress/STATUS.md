@@ -70,6 +70,16 @@ deletion + href-into-`PerCalendarCapabilities` (Plan 11), the residual `sync/→
 concrete-backend include (B4-corrected MAJOR, own concern). **NEXT: Plan 10 (vocabulary
 cleanup).** Plan 11 (dead-code + test-gap) remains after.
 
+> **Off-campaign baseline note (2026-06-14):** after Plan 9, three handoff-driven
+> (non-campaign) Akonadi fixes landed on `main` — **v0.74** (scoped-backend reads +
+> engine `SyncOperation::NotSupported` fetch-failure gate), **v0.75** (contacts
+> collection-id prefix), **v0.76** (shared `akonadicollectionid.h` helper). **`main`
+> tip is now v0.76**; Plan 10 should branch off current `main`. Details in
+> `docs/phase0/04y-phase-l-status.md` (Phase L.5) and the dated `docs/*-response.md`.
+> The PlanStan integration-harness `fetchItems`/`FetchOperation` downcast bug noted
+> above (the v0.73 gate's "pre-existing" caveat) was since fixed PlanStan-side in
+> `0d0072b6`; the gate result is otherwise unchanged.
+
 <!-- superseded planning note (Plan 9 now DONE):
 **Plan 9 — plan WRITTEN 2026-06-11** (backend-adjacent dir consolidation + discovery
 placement; AUDIT B5 + MODERATE) at

@@ -1,6 +1,8 @@
 # Phase L — Akonadi as first-class provider
 
-**Status:** landed 2026-05-16  
+**Status:** provider + contacts skeleton landed 2026-05-16; full functionality
+2026-05-26; **Phase L.5 per-collection scoped-backend hardening 2026-06-12 – 06-14
+(v0.74 → v0.76)** — see the dated sections below.  
 **Tag:** `v0.41-phase-l-akonadi-provider` (pending user `git tag` authorization)  
 **Plan:** `~/dev/refactor-engine-merger/2026-05-15-phase-l-akonadi-plan.md`
 
@@ -76,3 +78,47 @@ parity:
 **Note:** the `ChangeRecorder` warm-path (incremental dirty-tracking on top of the
 digest backbone) was scoped in the design but **deferred** — see `docs/campaign/FINDINGS.md`
 O14 for rationale. The digest backbone is the correctness floor and is sufficient.
+
+---
+
+## 2026-06-12 – 06-14 — Phase L.5: per-collection scoped backends (on-device hardening)
+
+WildPalms' first on-device exercise of the per-collection ("Phase L.5") scoped
+Akonadi backends — `AkonadiProvider::createBackend(collectionId)` builds a fresh
+backend scoped to ONE collection via `cfg["akonadiCollectionId"]` — surfaced three
+defects the earlier whole-store path never hit. All fixed; the calendar path is
+verified on device (Akonadi collection 54 → 83 events into the WP hub).
+
+- **v0.74 — scoped read never resolved its collection.** A scoped backend stored
+  `m_scopedCollectionId` but never populated `m_collections` (only the dead
+  `loadCalendars()` did), so every `fetchItems`/`createRecord` fast-failed
+  "Unknown calendar/collection". Fix: `ensureScopedCollection()` lazily seeds an
+  id-only `Akonadi::Collection` (the server resolves it — no discovery round-trip),
+  in both `AkonadiBackend` and `AkonadiContactsBackend`. Guard test
+  `tests/calendar/tst_akonadi_scoped_collection.cpp`. Shipped with the engine
+  "Fix B" (`SyncOperation::NotSupported` — a genuine fetch failure now fails the
+  mapping instead of a silent 0-record success, closing a clobber-wipe data-loss
+  footgun). Response: `docs/2026-06-12-akonadi-scoped-backend-fix-response.md`.
+- **v0.75 — contacts id-prefix mismatch.** `AkonadiProvider` emits `"akonadi-<id>"`
+  for ALL collections, but `AkonadiContactsBackend` parsed only
+  `"akonadi-contacts-<id>"`, so contacts collections never resolved (0 records;
+  calendar was immune). Fix: align the contacts prefix to `"akonadi-"`. The v0.74
+  guard test had masked it (it invented the unused scheme); corrected + added a
+  provider↔backend agreement test. Response:
+  `docs/2026-06-14-akonadi-contacts-id-prefix-fix-response.md`.
+- **v0.76 — shared collection-id helper.** Extracted the `"akonadi-<id>"` scheme to
+  `src/sync/akonadicollectionid.h` (one round-trip helper used by the provider AND
+  both backends); removed the duplicated `AKONADI_PREFIX` / `AKONADI_CONTACTS_PREFIX`
+  constants, so producer↔consumer agreement is structural. Default-profile unit test
+  `tests/sync/tst_akonadicollectionid.cpp`.
+
+**Verification:** default ctest 150/150, Akonadi profile 159/159; PlanStan pretest
+88/88 buildable (the 13 EXCLUDE_FROM_ALL integration tests are unrelated —
+pre-existing API-drift casts fixed PlanStan-side in `0d0072b6`).
+
+**Still open (tracked, not blocking):**
+- Contacts N>0 read of a real address book — WP on-device step (acceptance criterion 2).
+- The engine first-sync fast path (`dispatchFirstSync`, OneWayUpload + same-shape) is
+  NOT fetch-gated, so a genuine fetch failure on a silent-`loadRecordsOrError` backend
+  is still swallowed there; WP's real Akonadi routes are TwoWay (unified path, covered).
+  See the v0.74 response doc.
