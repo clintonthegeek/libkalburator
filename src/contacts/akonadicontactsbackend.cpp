@@ -26,7 +26,15 @@
 
 namespace Kalburator::Sync {
 
-static const QString AKONADI_CONTACTS_PREFIX = QStringLiteral("akonadi-contacts-");
+// Collection-id prefix. MUST match what AkonadiProvider emits for every
+// collection regardless of type ("akonadi-<id>", akonadiprovider.cpp ~137) —
+// the same scheme the calendar backend uses (AKONADI_PREFIX). Akonadi
+// collection ids are globally unique across the whole tree, so no per-type
+// discriminator is needed; a "akonadi-contacts-" prefix here would not match
+// the provider's ids and would leave scoped contacts backends unable to resolve
+// their collection. (NB: distinct from backendId()'s "akonadi-contacts:"
+// registry namespace and the session-name string, which are unrelated.)
+static const QString AKONADI_CONTACTS_PREFIX = QStringLiteral("akonadi-");
 
 // ============================================================================
 // Construction / Destruction
