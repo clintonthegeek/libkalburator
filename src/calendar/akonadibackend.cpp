@@ -7,6 +7,7 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "../sync/akonadirevisiondigest.h"
+#include "../sync/akonadicollectionid.h"
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -32,8 +33,6 @@
 #include <memory>
 
 namespace Kalburator::Sync {
-
-static const QString AKONADI_PREFIX = QStringLiteral("akonadi-");
 
 // Calendar MIME types we care about
 static const QString EVENT_MIME   = KCalendarCore::Event::eventMimeType();
@@ -128,16 +127,12 @@ void AkonadiBackend::setupMonitor()
 
 QString AkonadiBackend::calendarIdForCollection(Akonadi::Collection::Id id) const
 {
-    return AKONADI_PREFIX + QString::number(id);
+    return akonadiCollectionIdToString(id);
 }
 
 Akonadi::Collection::Id AkonadiBackend::collectionIdForCalendar(const QString &calendarId) const
 {
-    if (!calendarId.startsWith(AKONADI_PREFIX))
-        return -1;
-    bool ok = false;
-    auto id = calendarId.mid(AKONADI_PREFIX.length()).toLongLong(&ok);
-    return ok ? id : -1;
+    return akonadiCollectionIdFromString(calendarId);
 }
 
 void AkonadiBackend::ensureScopedCollection(const QString &calendarId)
