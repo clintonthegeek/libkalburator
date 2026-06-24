@@ -7,6 +7,7 @@
 #include "fakecaldavserver.h"
 
 #include "../../src/sync/multiprotocoldavprovider.h"
+#include "../../src/calendar/syncbackend.h"
 #include "../../src/plugin/pluginmanager.h"
 #include "../../src/shape/shaperegistries.h"
 #include "../../src/plugin/stock_plugins.h"
@@ -33,6 +34,7 @@ private slots:
     void createBackendUnknownIdReturnsNullptr();
     void createBackendNotConnectedReturnsNullptr();
     void connectPopulatesContentTypesOnCalDavCollections();
+    void primedBackendEmitsAdvertisedCollectionIdAtDiscovery();
     void pluginRegistersMultiProtoDavContribution();
     void contributionCreateProviderHonorsParent();
     void connect_while_inflight_is_idempotent();
@@ -293,6 +295,59 @@ void TstMultiProtocolDavProvider::connectPopulatesContentTypesOnCalDavCollection
              (QStringList{ QStringLiteral("VTODO") }));
     QCOMPARE(typesByName.value(QStringLiteral("Mixed")),
              (QStringList{ QStringLiteral("VEVENT"), QStringLiteral("VTODO") }));
+}
+
+void TstMultiProtocolDavProvider::primedBackendEmitsAdvertisedCollectionIdAtDiscovery()
+{
+    // Regression (PlanStan "Missing Calendars" false positive): the per-calendar
+    // backend from createBackend() must emit calendarDiscovered() with the SAME
+    // (prefixed) id that collections() advertised. The host builds its
+    // logical-calendar bindings from collections() ids, then matches discovery
+    // by exact id. Priming with the inner (unprefixed) key made discovery emit
+    // a different id, so every calendar was orphaned at discovery AND reported
+    // as a missing calendar — even though its events loaded fine.
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Events"), QStringLiteral("/calendars/testuser/events/") }
+    });
+    server.setCalendarComponents(QStringLiteral("/calendars/testuser/events/"),
+                                 { QStringLiteral("VEVENT") });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id   = QStringLiteral("mpdav-primed-id");
+    cfg.type = QStringLiteral("multiproto-dav");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider;   // calendarsOnly default
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    QString calId;
+    for (const auto &c : provider.collections()) {
+        if (c.id.contains(QStringLiteral(":cal:"))) { calId = c.id; break; }
+    }
+    QVERIFY2(!calId.isEmpty(), "expected a calendar collection after connect");
+
+    auto backend = provider.createBackend(calId);
+    QVERIFY2(backend != nullptr, "createBackend() returned nullptr for advertised id");
+    auto *cal = dynamic_cast<SyncBackend *>(backend.get());
+    QVERIFY2(cal != nullptr, "calendar collection did not yield a SyncBackend");
+
+    QSignalSpy discovered(cal, &SyncBackend::calendarDiscovered);
+    cal->loadCalendars(QStringLiteral("any-collection-id"));   // replays primed cache
+    QTRY_VERIFY_WITH_TIMEOUT(discovered.count() >= 1, 5000);
+
+    // calendarDiscovered(collectionId, calendarId): the calendarId (index 1)
+    // must equal the advertised collection id, not the inner discovery key.
+    const QString emitted = discovered.first().at(1).toString();
+    QCOMPARE(emitted, calId);
 }
 
 void TstMultiProtocolDavProvider::pluginRegistersMultiProtoDavContribution()

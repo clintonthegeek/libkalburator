@@ -213,7 +213,6 @@ void TstRemoteCalendarBackendConvergence::multiproto_primed_loadCalendars_issues
     for (int i : { 0, 4 }) {
         const QString prefixedId = calCols.at(i).id;
         QVERIFY(prefixedId.startsWith(calPrefix));
-        const QString innerKey = prefixedId.mid(calPrefix.length());
 
         auto backend = provider.createBackend(prefixedId);
         QVERIFY(backend != nullptr);
@@ -224,14 +223,18 @@ void TstRemoteCalendarBackendConvergence::multiproto_primed_loadCalendars_issues
         QSignalSpy finishedSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
         remote->loadCalendars(prefixedId);
 
-        // Primed path is synchronous and surfaces exactly the bound calendar,
-        // emitted under the prefixed collectionId but with the inner (unprefixed)
-        // calendar id — matching the network path's (collectionId, displayName).
+        // Primed path is synchronous and surfaces exactly the bound calendar.
+        // BOTH the collectionId and the calendarId must be the *prefixed* id —
+        // that is the id this provider advertised in collections(), so it is the
+        // id the host built its bindings from and matches discovery against.
+        // (Emitting the inner/unprefixed key here made the host orphan every
+        // calendar and raise a false "missing calendar" — the primed backend is
+        // always taken for multiproto, so this is the contract that matters.)
         QCOMPARE(finishedSpy.count(), 1);
         QCOMPARE(finishedSpy.first().at(1).toBool(), true);
         QCOMPARE(discoveredSpy.count(), 1);
         QCOMPARE(discoveredSpy.first().at(0).toString(), prefixedId);
-        QCOMPARE(discoveredSpy.first().at(1).toString(), innerKey);
+        QCOMPARE(discoveredSpy.first().at(1).toString(), prefixedId);
     }
 
     // The whole point: priming made loadCalendars add zero PROPFINDs.

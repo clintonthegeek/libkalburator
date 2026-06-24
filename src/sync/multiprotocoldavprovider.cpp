@@ -185,14 +185,20 @@ MultiProtocolDavProvider::createBackend(const QString &collectionId)
         backend->registerCalendarUrl(collectionId, href);
 
         // Seed the bound calendar from connect-time discovery so loadCalendars()
-        // skips its server-wide PROPFIND (v0.63). The prefixed collectionId is
-        // "multiproto-dav:<id>:cal:<innerKey>"; the discovery caps + the emitted
-        // calendarId use the inner (unprefixed) key.
+        // skips its server-wide PROPFIND (v0.63). The discovery caps are keyed by
+        // the inner (unprefixed) key, but the calendar must be primed under the
+        // *prefixed* collectionId — that is the id this provider advertised in
+        // collections() (maybeResolveConnect sets CollectionInfo.id = prefixedId),
+        // hence the id the host built its bindings from. PrimedCalendar.calendarId
+        // is the id loadCalendars() emits via calendarDiscovered(); priming with the
+        // inner key made discovery emit a different id than the binding, so the host
+        // orphaned every calendar and raised a false "missing calendar" — even though
+        // fetch (which uses the prefixed id registered above) worked fine.
         const QString innerKey = collectionId.mid(calPrefix.length());
         const auto capIt = m_calDavCaps.constFind(innerKey);
         if (capIt != m_calDavCaps.constEnd()) {
             backend->primeCalendars({ RemoteCalendarBackend::PrimedCalendar{
-                innerKey,
+                collectionId,
                 href,
                 capIt.value().serverColor,
                 contentTypesFromCaps(capIt.value()) } });
