@@ -41,6 +41,10 @@ void MultiProtocolDavProvider::load(const BackendConfiguration &config)
     m_password               = p.value(QStringLiteral("password")).toString();
     m_manualCalDavPrincipal  = p.value(QStringLiteral("manualCaldavPrincipal")).toString();
     m_manualCardDavPrincipal = p.value(QStringLiteral("manualCarddavPrincipal")).toString();
+    // Restore the persisted calendars-only mode. Absent (legacy configs) keeps
+    // the value the provider was constructed with, preserving old behavior.
+    if (p.contains(QStringLiteral("calendarsOnly")))
+        m_calendarsOnly = p.value(QStringLiteral("calendarsOnly")).toBool();
 }
 
 BackendConfiguration MultiProtocolDavProvider::save() const
@@ -56,6 +60,9 @@ BackendConfiguration MultiProtocolDavProvider::save() const
         c.connectionParams[QStringLiteral("manualCaldavPrincipal")] = m_manualCalDavPrincipal;
     if (!m_manualCardDavPrincipal.isEmpty())
         c.connectionParams[QStringLiteral("manualCarddavPrincipal")] = m_manualCardDavPrincipal;
+    // Persist calendars-only mode so a registry-reconstructed provider (which
+    // the contribution builds with calendarsOnly=false) restores it on load().
+    c.connectionParams[QStringLiteral("calendarsOnly")] = m_calendarsOnly;
     return c;
 }
 

@@ -1050,10 +1050,25 @@ void RemoteCalendarBackend::storeCalendars(const QString &, const QList<KCalenda
 // Calendar CRUD Operations (RFC 4791 MKCALENDAR / DELETE)
 // ============================================================================
 
+QUrl RemoteCalendarBackend::crudCalendarUrl(const QString &calendarId) const
+{
+    // Prefer the registered per-calendar DAV URL (correct path + case, and the
+    // only valid URL for prefixed multiproto ids). Strip credentials — they
+    // travel in the Authorization header. Fall back to the derived URL for
+    // calendars that were never registered (e.g. a brand-new MKCALENDAR target).
+    if (const auto davUrl = davUrlFor(calendarId)) {
+        QUrl u = davUrl->url();
+        u.setUserName(QString());
+        u.setPassword(QString());
+        return u;
+    }
+    return calendarUrlForCrud(calendarId);
+}
+
 bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QString &calendarId,
                                     const QString &name, CalendarType type)
 {
-    const QUrl calendarUrl = calendarUrlForCrud(calendarId);
+    const QUrl calendarUrl = crudCalendarUrl(calendarId);
 
     qDebug() << "RemoteCalendarBackend::createCalendar: Creating calendar at" << safeUrlString(calendarUrl)
              << "type:" << static_cast<int>(type);
@@ -1137,7 +1152,7 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
 bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QString &calendarId,
                                     const QVariantMap &properties)
 {
-    const QUrl calendarUrl = calendarUrlForCrud(calendarId);
+    const QUrl calendarUrl = crudCalendarUrl(calendarId);
 
     qDebug() << "RemoteCalendarBackend::updateCalendar: Updating calendar at" << safeUrlString(calendarUrl);
 
@@ -1219,19 +1234,7 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
 
 bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QString &calendarId)
 {
-    QUrl calendarUrl;
-
-    // Try to use the stored URL from discovery (has correct path case)
-    if (const auto davUrl = davUrlFor(calendarId)) {
-        calendarUrl = davUrl->url();
-        calendarUrl.setUserName(QString());
-        calendarUrl.setPassword(QString());
-        qDebug() << "RemoteCalendarBackend::deleteCalendar: Using discovered URL for" << calendarId;
-    } else {
-        calendarUrl = calendarUrlForCrud(calendarId);
-        qDebug() << "RemoteCalendarBackend::deleteCalendar: Using constructed URL for" << calendarId;
-    }
-
+    const QUrl calendarUrl = crudCalendarUrl(calendarId);
     qDebug() << "RemoteCalendarBackend::deleteCalendar: Deleting calendar at" << safeUrlString(calendarUrl);
 
     const DavResponse resp = davSyncRequest(calendarUrl,

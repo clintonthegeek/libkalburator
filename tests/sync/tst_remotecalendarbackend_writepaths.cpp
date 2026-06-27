@@ -69,6 +69,7 @@ private slots:
     void discoveredCalendar_aggregates_url_type_support();
     void createCalendar_405_is_idempotent_success();
     void updateCalendar_proppatch_updates_color_cache();
+    void updateCalendar_prefixedId_followsRegisteredDavUrl();
     void deleteCalendar_204_unregisters_then_404_returns_false();
 
     // Defect 2 (thread-affinity): operations created from a worker thread must
@@ -357,6 +358,43 @@ void TstRemoteCalendarBackendWritePaths::updateCalendar_proppatch_updates_color_
     QCOMPARE(updatedSpy.count(), 1);
     // Success refreshes the local color cache.
     QCOMPARE(backend.calendarColor(QStringLiteral("projects")), red);
+}
+
+// Regression for the multiproto sync 404: updateCalendar must resolve the
+// per-calendar DAV URL via davUrlFor() (as fetchItems/deleteCalendar do) rather
+// than concatenating the calendarId onto the base. For multiproto the engine
+// passes the PREFIXED logical id ("multiproto-dav:<uuid>:cal:<key>"), which is
+// registered against the real DAV href — concatenating it onto the base yields
+// <host>/<user>/multiproto-dav:...:cal:.../ which 404s on every property sync.
+void TstRemoteCalendarBackendWritePaths::updateCalendar_prefixedId_followsRegisteredDavUrl()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+
+    // A real calendar exists on the server at /testuser/projects/.
+    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+                                   QStringLiteral("projects"),
+                                   QStringLiteral("Projects")));
+    const QString href =
+        backend.discoveredCalendar(QStringLiteral("projects")).davUrl();
+    QVERIFY(href.contains(QStringLiteral("/testuser/projects/")));
+
+    // Provider registers the calendar under its prefixed logical id (mirrors
+    // MultiProtocolDavProvider::createBackend) pointing at the real href.
+    const QString prefixedId =
+        QStringLiteral("multiproto-dav:uuid-1234:cal:projects");
+    backend.registerCalendarUrl(prefixedId, href);
+
+    QVariantMap props;
+    props.insert(QStringLiteral("displayName"), QStringLiteral("Renamed"));
+
+    QVERIFY2(backend.updateCalendar(QStringLiteral("coll-1"), prefixedId, props),
+             "updateCalendar must follow the registered DAV URL for a prefixed id");
+    QCOMPARE(server.requestCount("PROPPATCH"), 1);
 }
 
 void TstRemoteCalendarBackendWritePaths::deleteCalendar_204_unregisters_then_404_returns_false()

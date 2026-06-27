@@ -26,6 +26,7 @@ private slots:
     void isNotConnectedAfterConstruction();
     void collectionsEmptyAfterConstruction();
     void loadAndSaveRoundTripsConnectionParams();
+    void calendarsOnlyRoundTripsThroughSaveLoad();
     void loadAppliesDisplayNameAndId();
     void connectWithoutUrlReturnsFalseQuickly();
     void connectInvalidCredentialsEmitsErrorAndResolvesFalse();
@@ -102,6 +103,25 @@ void TstMultiProtocolDavProvider::loadAndSaveRoundTripsConnectionParams()
              QStringLiteral("hunter2"));
     QCOMPARE(roundtrip.connectionParams.value(QStringLiteral("manualCaldavPrincipal")).toString(),
              QStringLiteral("https://cloud.example.com/dav/cal/"));
+}
+
+// A calendarsOnly provider must persist the flag so that a registry-
+// reconstructed provider — which the contribution builds with
+// calendarsOnly=false (multiprotocoldavbackendcontribution.h) — restores the
+// intended calendars-only behavior on load(). Without this, a reopened
+// collection re-discovers contacts the user never asked for.
+void TstMultiProtocolDavProvider::calendarsOnlyRoundTripsThroughSaveLoad()
+{
+    MultiProtocolDavProvider src(/*calendarsOnly=*/true);
+    const BackendConfiguration cfg = src.save();
+    QCOMPARE(cfg.connectionParams.value(QStringLiteral("calendarsOnly")).toBool(), true);
+
+    // Mirror the reload path: the contribution constructs with calendarsOnly=false,
+    // then load() must restore the persisted true.
+    MultiProtocolDavProvider reloaded(/*calendarsOnly=*/false);
+    reloaded.load(cfg);
+    QCOMPARE(reloaded.save().connectionParams.value(QStringLiteral("calendarsOnly")).toBool(),
+             true);
 }
 
 void TstMultiProtocolDavProvider::loadAppliesDisplayNameAndId()

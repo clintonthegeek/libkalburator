@@ -341,6 +341,13 @@ private:
     /// The registered DAV URL, or nullopt when the calendar has none.
     std::optional<KDAV::DavUrl> davUrlFor(const QString &calendarId) const;
 
+    /// Target URL for calendar-level CRUD (MKCALENDAR/PROPPATCH/DELETE):
+    /// the registered per-calendar DAV URL when known (credentials stripped),
+    /// else the derived calendarUrlForCrud(). Using the registered URL is
+    /// essential for prefixed multiproto ids, whose literal value is NOT a valid
+    /// path segment (concatenating it onto the base 404s).
+    QUrl crudCalendarUrl(const QString &calendarId) const;
+
     // Calendars seeded via primeCalendars(); when non-empty, loadCalendars()
     // short-circuits the server walk and replays these directly (insertion
     // order preserved for deterministic calendarDiscovered emission).
