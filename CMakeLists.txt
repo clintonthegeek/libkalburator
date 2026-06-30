@@ -166,6 +166,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalcanonstages.h
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.h
+    # Plan 4 Task 1 — VJOURNAL field mapping helpers
+    src/calendar/journalcanonfields.h
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.h
     src/calendar/calendardomaindefinition.h
@@ -208,6 +210,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalcanonstages.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.cpp
+    # Plan 4 Task 1 — VJOURNAL field mapping helpers
+    src/calendar/journalcanonfields.cpp
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.cpp
     src/calendar/calendardomaindefinition.cpp

@@ -76,6 +76,16 @@ Kalburator::Shape::PropertyCatalogue makeCalendarCanonCatalogue()
     cat.addProperty({ PropertyId{"locked"},                PropertyKind::Boolean, QStringLiteral("Locked") });
     cat.addProperty({ PropertyId{"privateCopy"},           PropertyKind::Boolean, QStringLiteral("Private Copy") });
 
+    // --- Union across iCalendar component kinds (VTODO / VJOURNAL) ---
+    // The {calendar,canon} shape carries any of VEVENT/VTODO/VJOURNAL (kind-
+    // tagged in the envelope). These fields are absent on events but must be
+    // catalogued so CanonJsonDiffer detects changes to todo/journal records.
+    cat.addProperty({ PropertyId{"due"},             PropertyKind::Json,    QStringLiteral("Due") });
+    cat.addProperty({ PropertyId{"completed"},       PropertyKind::DateTime, QStringLiteral("Completed") });
+    cat.addProperty({ PropertyId{"percentComplete"}, PropertyKind::Integer, QStringLiteral("Percent Complete") });
+    cat.addProperty({ PropertyId{"relatedTo"},       PropertyKind::Json,    QStringLiteral("Related To") });
+    cat.addProperty({ PropertyId{"geo"},             PropertyKind::Json,    QStringLiteral("Geo") });
+
     return cat;
 }
 
