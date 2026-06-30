@@ -274,6 +274,26 @@ private slots:
                  LossKind::Simplified);
     }
 
+    // Task 1: canon envelope kind discriminator
+    void envelopeStampsAndReadsKind()
+    {
+        using namespace Kalburator::Shape::CanonEnvelope;
+        QJsonObject obj;
+        stampEnvelope(obj, QStringLiteral("calendar"), QStringLiteral("u-1"),
+                      QStringLiteral("vtodo"));
+        QCOMPARE(kind(obj), QStringLiteral("vtodo"));
+        const QJsonObject canon = obj.value(QStringLiteral("_canon")).toObject();
+        QCOMPARE(canon.value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("vtodo"));
+
+        // Default (no kind) writes no kind key and reads back empty.
+        QJsonObject ev;
+        stampEnvelope(ev, QStringLiteral("calendar"), QStringLiteral("u-2"));
+        QVERIFY(kind(ev).isEmpty());
+        QVERIFY(!ev.value(QStringLiteral("_canon")).toObject()
+                    .contains(QStringLiteral("kind")));
+    }
+
     // Fix 1 verification: classification=personal → CLASS:PRIVATE + verbatim stash
     void canonPersonalClassificationProducesPrivateAndStash()
     {

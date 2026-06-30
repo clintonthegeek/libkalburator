@@ -164,6 +164,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalrecordmerger.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
+    # Plan 6 Task 3 — VEVENT field mapping helpers
+    src/calendar/eventcanonfields.h
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.h
     src/calendar/calendardomaindefinition.h
@@ -204,6 +206,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalrecordmerger.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
+    # Plan 6 Task 3 — VEVENT field mapping helpers
+    src/calendar/eventcanonfields.cpp
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.cpp
     src/calendar/calendardomaindefinition.cpp
@@ -363,6 +367,7 @@ set(KALBURATOR_TODO_HEADERS
     src/todo/todotxttransformation.h
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.h
+    src/todo/vtodocanonfields.h
     src/todo/tododomaindefinition.h
     src/todo/todostockshapes.h
     src/todo/todoplugin.h
@@ -374,6 +379,7 @@ set(KALBURATOR_TODO_SOURCES
     src/todo/todotxttransformation.cpp
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.cpp
+    src/todo/vtodocanonfields.cpp
     src/todo/tododomaindefinition.cpp
     src/todo/todostockshapes.cpp
     src/todo/todoplugin.cpp
