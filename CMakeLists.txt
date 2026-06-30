@@ -363,6 +363,7 @@ set(KALBURATOR_TODO_HEADERS
     src/todo/todotxttransformation.h
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.h
+    src/todo/vtodocanonfields.h
     src/todo/tododomaindefinition.h
     src/todo/todostockshapes.h
     src/todo/todoplugin.h
@@ -374,6 +375,7 @@ set(KALBURATOR_TODO_SOURCES
     src/todo/todotxttransformation.cpp
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.cpp
+    src/todo/vtodocanonfields.cpp
     src/todo/tododomaindefinition.cpp
     src/todo/todostockshapes.cpp
     src/todo/todoplugin.cpp
