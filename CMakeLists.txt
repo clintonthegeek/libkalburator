@@ -164,6 +164,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalrecordmerger.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
+    # Plan 6 Task 3 — VEVENT field mapping helpers
+    src/calendar/eventcanonfields.h
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.h
     src/calendar/calendardomaindefinition.h
@@ -204,6 +206,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalrecordmerger.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
+    # Plan 6 Task 3 — VEVENT field mapping helpers
+    src/calendar/eventcanonfields.cpp
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.cpp
     src/calendar/calendardomaindefinition.cpp

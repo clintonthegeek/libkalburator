@@ -1,0 +1,709 @@
+#include "eventcanonfields.h"
+
+#include "canonenvelope.h"
+
+#include <KCalendarCore/Attendee>
+#include <KCalendarCore/ICalFormat>
+#include <KCalendarCore/Incidence>
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QTimeZone>
+
+namespace {
+
+using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+using Kalburator::Shape::CanonEnvelope::stampEnvelope;
+using Kalburator::Shape::CanonEnvelope::serialize;
+using Kalburator::Shape::CanonEnvelope::parse;
+
+KCalendarCore::Event::Ptr parseEvent(const QByteArray &data)
+{
+    if (data.isEmpty())
+        return {};
+    KCalendarCore::ICalFormat fmt;
+    auto inc = fmt.fromString(QString::fromUtf8(data));
+    return inc.dynamicCast<KCalendarCore::Event>();
+}
+
+QByteArray serializeEvent(const KCalendarCore::Event::Ptr &event)
+{
+    if (!event)
+        return {};
+    KCalendarCore::ICalFormat fmt;
+    return fmt.toICalString(event).toUtf8();
+}
+
+/// Encode a QDateTime (from KCalendarCore) to a JSON object:
+///   date-only: { "date": "YYYY-MM-DD", "allDay": true }
+///   floating:  { "dateTime": "...", "floating": true }
+///   with tz:   { "dateTime": "...", "tz": "<iana-id>", "floating": false }
+QJsonObject dateTimeToJson(const QDateTime &dt, bool allDay = false)
+{
+    if (!dt.isValid())
+        return {};
+    QJsonObject obj;
+    if (allDay) {
+        obj.insert(QStringLiteral("date"),   dt.date().toString(Qt::ISODate));
+        obj.insert(QStringLiteral("allDay"), true);
+    } else {
+        obj.insert(QStringLiteral("dateTime"), dt.toUTC().toString(Qt::ISODate));
+        const bool floating = (dt.timeSpec() == Qt::LocalTime);
+        obj.insert(QStringLiteral("floating"), floating);
+        if (!floating && dt.timeSpec() == Qt::TimeZone) {
+            const QString tzId = QString::fromLatin1(dt.timeZone().id());
+            if (!tzId.isEmpty())
+                obj.insert(QStringLiteral("tz"), tzId);
+        }
+    }
+    return obj;
+}
+
+/// Reverse of dateTimeToJson.
+QDateTime jsonToDateTime(const QJsonObject &obj)
+{
+    if (obj.isEmpty())
+        return {};
+    if (obj.value(QStringLiteral("allDay")).toBool() ||
+        obj.contains(QStringLiteral("date"))) {
+        const QDate d = QDate::fromString(
+            obj.value(QStringLiteral("date")).toString(), Qt::ISODate);
+        return d.isValid() ? QDateTime(d, QTime(0,0,0), QTimeZone::utc()) : QDateTime{};
+    }
+    const QString dtStr = obj.value(QStringLiteral("dateTime")).toString();
+    if (dtStr.isEmpty())
+        return {};
+    const QDateTime dt = QDateTime::fromString(dtStr, Qt::ISODate);
+    if (!dt.isValid())
+        return {};
+    const QString tzId = obj.value(QStringLiteral("tz")).toString();
+    if (tzId.isEmpty())
+        return dt;
+    const QTimeZone tz(tzId.toLatin1());
+    return tz.isValid() ? dt.toTimeZone(tz) : dt;
+}
+
+/// Convert status enum to string.
+QString statusToString(KCalendarCore::Incidence::Status s)
+{
+    switch (s) {
+    case KCalendarCore::Incidence::StatusTentative:  return QStringLiteral("tentative");
+    case KCalendarCore::Incidence::StatusConfirmed:  return QStringLiteral("confirmed");
+    case KCalendarCore::Incidence::StatusCanceled:   return QStringLiteral("cancelled");
+    default:                                         return {};
+    }
+}
+
+/// Reverse of statusToString.
+KCalendarCore::Incidence::Status statusFromString(const QString &s)
+{
+    if (s == QStringLiteral("tentative"))  return KCalendarCore::Incidence::StatusTentative;
+    if (s == QStringLiteral("confirmed"))  return KCalendarCore::Incidence::StatusConfirmed;
+    if (s == QStringLiteral("cancelled"))  return KCalendarCore::Incidence::StatusCanceled;
+    return KCalendarCore::Incidence::StatusNone;
+}
+
+/// Convert Attendee::PartStat enum to string.
+QString partStatToString(KCalendarCore::Attendee::PartStat ps)
+{
+    switch (ps) {
+    case KCalendarCore::Attendee::Accepted:      return QStringLiteral("accepted");
+    case KCalendarCore::Attendee::Declined:      return QStringLiteral("declined");
+    case KCalendarCore::Attendee::Tentative:     return QStringLiteral("tentative");
+    case KCalendarCore::Attendee::Delegated:     return QStringLiteral("delegated");
+    case KCalendarCore::Attendee::NeedsAction:   return QStringLiteral("needsAction");
+    default:                                     return QStringLiteral("needsAction");
+    }
+}
+
+/// Reverse of partStatToString.
+KCalendarCore::Attendee::PartStat partStatFromString(const QString &s)
+{
+    if (s == QStringLiteral("accepted"))    return KCalendarCore::Attendee::Accepted;
+    if (s == QStringLiteral("declined"))    return KCalendarCore::Attendee::Declined;
+    if (s == QStringLiteral("tentative"))   return KCalendarCore::Attendee::Tentative;
+    if (s == QStringLiteral("delegated"))   return KCalendarCore::Attendee::Delegated;
+    return KCalendarCore::Attendee::NeedsAction;
+}
+
+/// Convert Attendee::Role enum to string.
+QString roleToString(KCalendarCore::Attendee::Role r)
+{
+    switch (r) {
+    case KCalendarCore::Attendee::Chair:           return QStringLiteral("chair");
+    case KCalendarCore::Attendee::ReqParticipant:  return QStringLiteral("required");
+    case KCalendarCore::Attendee::OptParticipant:  return QStringLiteral("optional");
+    case KCalendarCore::Attendee::NonParticipant:  return QStringLiteral("nonParticipant");
+    default:                                       return QStringLiteral("required");
+    }
+}
+
+/// Reverse of roleToString.
+KCalendarCore::Attendee::Role roleFromString(const QString &s)
+{
+    if (s == QStringLiteral("chair"))          return KCalendarCore::Attendee::Chair;
+    if (s == QStringLiteral("optional"))       return KCalendarCore::Attendee::OptParticipant;
+    if (s == QStringLiteral("nonParticipant")) return KCalendarCore::Attendee::NonParticipant;
+    return KCalendarCore::Attendee::ReqParticipant;
+}
+
+/// Collect verbatim RRULE/RDATE/EXDATE lines from an iCal byte string.
+/// This is the only way to preserve recurrence verbatim (invariant 3).
+QStringList extractRecurrenceLines(const QByteArray &icalBytes)
+{
+    QStringList lines;
+    const auto text = QString::fromUtf8(icalBytes);
+    const auto all  = text.split(QLatin1Char('\n'));
+    for (const QString &raw : all) {
+        const QString line = raw.trimmed();
+        if (line.startsWith(QStringLiteral("RRULE:"))  ||
+            line.startsWith(QStringLiteral("RDATE:"))  ||
+            line.startsWith(QStringLiteral("EXDATE:")))
+            lines.append(line);
+    }
+    return lines;
+}
+
+} // namespace
+
+namespace Kalburator::Calendar {
+
+QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
+                               const QByteArray& originalBytes)
+{
+    QJsonObject obj;
+
+    // ---- sequence ----------------------------------------------------------
+    {
+        const int seq = event->revision();
+        if (seq > 0)
+            obj.insert(QStringLiteral("sequence"), seq);
+    }
+
+    // ---- created / lastModified --------------------------------------------
+    {
+        const QDateTime created = event->created();
+        const QDateTime lastMod = event->lastModified();
+        if (created.isValid())
+            obj.insert(QStringLiteral("created"),      created.toUTC().toString(Qt::ISODate));
+        if (lastMod.isValid())
+            obj.insert(QStringLiteral("lastModified"), lastMod.toUTC().toString(Qt::ISODate));
+    }
+
+    // ---- summary / description ---------------------------------------------
+    {
+        const QString summary = event->summary();
+        const QString description = event->description();
+        if (!summary.isEmpty())
+            obj.insert(QStringLiteral("summary"), summary);
+        if (!description.isEmpty())
+            obj.insert(QStringLiteral("description"), description);
+    }
+
+    // ---- descriptionHtml (X-ALT-DESC) — Reversible carrier -----------------
+    {
+        const QString altDesc = event->nonKDECustomProperty("X-ALT-DESC");
+        if (!altDesc.isEmpty())
+            obj.insert(QStringLiteral("descriptionHtml"), altDesc);
+    }
+
+    // ---- location ----------------------------------------------------------
+    {
+        const QString location = event->location();
+        if (!location.isEmpty())
+            obj.insert(QStringLiteral("location"), location);
+    }
+
+    // ---- status ------------------------------------------------------------
+    {
+        const QString status = statusToString(event->status());
+        if (!status.isEmpty())
+            obj.insert(QStringLiteral("status"), status);
+    }
+
+    // ---- classification ----------------------------------------------------
+    {
+        const auto cls = event->secrecy();
+        QString clsStr;
+        switch (cls) {
+        case KCalendarCore::Incidence::SecrecyPublic:      clsStr = QStringLiteral("public");       break;
+        case KCalendarCore::Incidence::SecrecyPrivate:     clsStr = QStringLiteral("private");      break;
+        case KCalendarCore::Incidence::SecrecyConfidential: clsStr = QStringLiteral("confidential"); break;
+        default: break;
+        }
+        if (!clsStr.isEmpty())
+            obj.insert(QStringLiteral("classification"), clsStr);
+    }
+
+    // ---- timeTransparency --------------------------------------------------
+    {
+        const auto transp = event->transparency();
+        const QString transpStr = (transp == KCalendarCore::Event::Transparent)
+            ? QStringLiteral("transparent") : QStringLiteral("opaque");
+        obj.insert(QStringLiteral("timeTransparency"), transpStr);
+    }
+
+    // ---- freeBusyStatus (X-MICROSOFT-CDO-BUSYSTATUS) -----------------------
+    {
+        const QString fbs = event->nonKDECustomProperty("X-MICROSOFT-CDO-BUSYSTATUS");
+        if (!fbs.isEmpty())
+            obj.insert(QStringLiteral("freeBusyStatus"), fbs);
+    }
+
+    // ---- start / end -------------------------------------------------------
+    {
+        const QDateTime start = event->dtStart();
+        const bool allDay     = event->allDay();
+        if (start.isValid()) {
+            const QJsonObject startObj = dateTimeToJson(start, allDay);
+            if (!startObj.isEmpty()) {
+                obj.insert(QStringLiteral("start"),  startObj);
+                obj.insert(QStringLiteral("allDay"), allDay);
+            }
+        }
+    }
+    {
+        const QDateTime end = event->dtEnd();
+        const bool allDay   = event->allDay();
+        if (end.isValid()) {
+            const QJsonObject endObj = dateTimeToJson(end, allDay);
+            if (!endObj.isEmpty())
+                obj.insert(QStringLiteral("end"), endObj);
+        }
+    }
+
+    // ---- recurrence (verbatim lines — invariant 3) -------------------------
+    {
+        const QStringList recLines = extractRecurrenceLines(originalBytes);
+        if (!recLines.isEmpty()) {
+            QJsonArray arr;
+            for (const auto& l : recLines)
+                arr.append(l);
+            obj.insert(QStringLiteral("recurrence"), arr);
+        }
+    }
+
+    // ---- recurrenceId / recurrenceRange ------------------------------------
+    {
+        const QDateTime recId = event->recurrenceId();
+        if (recId.isValid()) {
+            QJsonObject recIdObj;
+            recIdObj.insert(QStringLiteral("dateTime"), recId.toUTC().toString(Qt::ISODate));
+            obj.insert(QStringLiteral("recurrenceId"), recIdObj);
+
+            // RANGE=THISANDFUTURE → recurrenceRange
+            if (event->thisAndFuture())
+                obj.insert(QStringLiteral("recurrenceRange"), QStringLiteral("thisAndFuture"));
+        }
+    }
+
+    // ---- color -------------------------------------------------------------
+    {
+        const QString color = event->color();
+        if (!color.isEmpty())
+            obj.insert(QStringLiteral("color"), color);
+    }
+
+    // ---- categories --------------------------------------------------------
+    {
+        const QStringList cats = event->categories();
+        if (!cats.isEmpty()) {
+            QJsonArray arr;
+            for (const auto& c : cats)
+                arr.append(c);
+            obj.insert(QStringLiteral("categories"), arr);
+        }
+    }
+
+    // ---- url ---------------------------------------------------------------
+    {
+        const QUrl url = event->url();
+        if (url.isValid())
+            obj.insert(QStringLiteral("url"), url.toString());
+    }
+
+    // ---- organizer ---------------------------------------------------------
+    {
+        const auto org = event->organizer();
+        if (!org.email().isEmpty() || !org.name().isEmpty()) {
+            QJsonObject orgObj;
+            if (!org.email().isEmpty()) orgObj.insert(QStringLiteral("email"), org.email());
+            if (!org.name().isEmpty())  orgObj.insert(QStringLiteral("name"),  org.name());
+            obj.insert(QStringLiteral("organizer"), orgObj);
+        }
+    }
+
+    // ---- attendees ---------------------------------------------------------
+    {
+        const auto attendees = event->attendees();
+        if (!attendees.isEmpty()) {
+            QJsonArray arr;
+            for (const auto& a : attendees) {
+                if (a.email().isEmpty())
+                    continue;
+                QJsonObject entry;
+                entry.insert(QStringLiteral("email"),   a.email());
+                if (!a.name().isEmpty())
+                    entry.insert(QStringLiteral("name"), a.name());
+                entry.insert(QStringLiteral("role"),    roleToString(a.role()));
+                entry.insert(QStringLiteral("partstat"), partStatToString(a.status()));
+                entry.insert(QStringLiteral("rsvp"),    a.RSVP());
+                arr.append(entry);
+            }
+            if (!arr.isEmpty())
+                obj.insert(QStringLiteral("attendees"), arr);
+        }
+    }
+
+    // ---- priority ----------------------------------------------------------
+    {
+        const int pri = event->priority();
+        if (pri > 0)
+            obj.insert(QStringLiteral("priority"), pri);
+    }
+
+    // ---- alarms (VALARM) ---------------------------------------------------
+    {
+        const auto alarms = event->alarms();
+        if (!alarms.isEmpty()) {
+            QJsonArray arr;
+            for (const auto& alarm : alarms) {
+                QJsonObject a;
+                a.insert(QStringLiteral("type"),   int(alarm->type()));
+                a.insert(QStringLiteral("offset"), alarm->startOffset().asSeconds());
+                if (!alarm->text().isEmpty())
+                    a.insert(QStringLiteral("text"), alarm->text());
+                arr.append(a);
+            }
+            obj.insert(QStringLiteral("alarms"), arr);
+        }
+    }
+
+    // ---- attachments -------------------------------------------------------
+    {
+        const auto attachments = event->attachments();
+        if (!attachments.isEmpty()) {
+            QJsonArray arr;
+            for (const auto& att : attachments) {
+                QJsonObject entry;
+                if (att.isUri())
+                    entry.insert(QStringLiteral("url"), att.uri());
+                if (!att.mimeType().isEmpty())
+                    entry.insert(QStringLiteral("mimeType"), att.mimeType());
+                if (!entry.isEmpty())
+                    arr.append(entry);
+            }
+            if (!arr.isEmpty())
+                obj.insert(QStringLiteral("attachments"), arr);
+        }
+    }
+
+    // ---- providerExtras["x-ical"] — unmapped X- custom properties ----------
+    {
+        const auto customProps = event->customProperties();
+        if (!customProps.isEmpty()) {
+            QJsonObject xical;
+            for (auto it = customProps.constBegin(); it != customProps.constEnd(); ++it) {
+                const QString key = QString::fromLatin1(it.key());
+                // Skip the ones we've already promoted above
+                if (key == QStringLiteral("X-ALT-DESC") ||
+                    key == QStringLiteral("X-MICROSOFT-CDO-BUSYSTATUS"))
+                    continue;
+                xical.insert(key, it.value());
+            }
+            if (!xical.isEmpty()) {
+                QJsonObject extras;
+                extras.insert(QStringLiteral("x-ical"), xical);
+                obj.insert(providerExtrasKey(), extras);
+            }
+        }
+    }
+
+    return obj;
+}
+
+QByteArray canonObjectToEventBytes(const QJsonObject& obj)
+{
+    if (obj.isEmpty())
+        return {};
+
+    KCalendarCore::Event::Ptr event(new KCalendarCore::Event);
+
+    // ---- uid ---------------------------------------------------------------
+    {
+        const QString uid = obj.value(QStringLiteral("uid")).toString();
+        if (!uid.isEmpty())
+            event->setUid(uid);
+    }
+
+    // ---- sequence ----------------------------------------------------------
+    {
+        const QJsonValue seq = obj.value(QStringLiteral("sequence"));
+        if (!seq.isUndefined())
+            event->setRevision(seq.toInt());
+    }
+
+    // ---- created / lastModified --------------------------------------------
+    {
+        const QString created = obj.value(QStringLiteral("created")).toString();
+        if (!created.isEmpty()) {
+            const QDateTime dt = QDateTime::fromString(created, Qt::ISODate);
+            if (dt.isValid())
+                event->setCreated(dt);
+        }
+    }
+    {
+        const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
+        if (!lastMod.isEmpty()) {
+            const QDateTime dt = QDateTime::fromString(lastMod, Qt::ISODate);
+            if (dt.isValid())
+                event->setLastModified(dt);
+        }
+    }
+
+    // ---- summary / description ---------------------------------------------
+    {
+        const QString summary = obj.value(QStringLiteral("summary")).toString();
+        if (!summary.isEmpty())
+            event->setSummary(summary);
+    }
+    {
+        const QString description = obj.value(QStringLiteral("description")).toString();
+        if (!description.isEmpty())
+            event->setDescription(description);
+    }
+
+    // ---- descriptionHtml → X-ALT-DESC (Reversible) ------------------------
+    {
+        const QString html = obj.value(QStringLiteral("descriptionHtml")).toString();
+        if (!html.isEmpty())
+            event->setNonKDECustomProperty("X-ALT-DESC", html);
+    }
+
+    // ---- location ----------------------------------------------------------
+    {
+        const QString location = obj.value(QStringLiteral("location")).toString();
+        if (!location.isEmpty())
+            event->setLocation(location);
+
+        // locations (multi) → Simplified: only first → LOCATION (already done above)
+        // (if location is empty but locations has entries, use first entry)
+        if (location.isEmpty()) {
+            const QJsonArray locs = obj.value(QStringLiteral("locations")).toArray();
+            if (!locs.isEmpty()) {
+                const QString firstLoc = locs.at(0).toObject()
+                    .value(QStringLiteral("displayName")).toString();
+                if (!firstLoc.isEmpty())
+                    event->setLocation(firstLoc);
+            }
+        }
+    }
+
+    // ---- status ------------------------------------------------------------
+    {
+        const QString statusStr = obj.value(QStringLiteral("status")).toString();
+        if (!statusStr.isEmpty()) {
+            const auto status = statusFromString(statusStr);
+            if (status != KCalendarCore::Incidence::StatusNone)
+                event->setStatus(status);
+        }
+    }
+
+    // ---- classification ----------------------------------------------------
+    {
+        const QString cls = obj.value(QStringLiteral("classification")).toString();
+        KCalendarCore::Incidence::Secrecy secrecy = KCalendarCore::Incidence::SecrecyPublic;
+        if (cls == QStringLiteral("private")) {
+            secrecy = KCalendarCore::Incidence::SecrecyPrivate;
+        } else if (cls == QStringLiteral("confidential")) {
+            secrecy = KCalendarCore::Incidence::SecrecyConfidential;
+        } else if (cls == QStringLiteral("personal")) {
+            // Degraded: MS "personal" has no iCal CLASS; map to PRIVATE but keep the
+            // original verbatim (invariant 4) so it is recoverable — emit as an X-
+            // property the forward stage round-trips into providerExtras["x-ical"].
+            secrecy = KCalendarCore::Incidence::SecrecyPrivate;
+            event->setNonKDECustomProperty("X-CANON-CLASSIFICATION", cls);
+        }
+        event->setSecrecy(secrecy);
+    }
+
+    // ---- timeTransparency --------------------------------------------------
+    {
+        const QString transp = obj.value(QStringLiteral("timeTransparency")).toString();
+        if (transp == QStringLiteral("transparent"))
+            event->setTransparency(KCalendarCore::Event::Transparent);
+        else
+            event->setTransparency(KCalendarCore::Event::Opaque);
+    }
+
+    // ---- freeBusyStatus → X-MICROSOFT-CDO-BUSYSTATUS (Reversible) ----------
+    {
+        const QString fbs = obj.value(QStringLiteral("freeBusyStatus")).toString();
+        if (!fbs.isEmpty())
+            event->setNonKDECustomProperty("X-MICROSOFT-CDO-BUSYSTATUS", fbs);
+    }
+
+    // ---- start / end -------------------------------------------------------
+    {
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        const bool allDay = obj.value(QStringLiteral("allDay")).toBool();
+        if (!startObj.isEmpty()) {
+            const QDateTime dt = jsonToDateTime(startObj);
+            if (dt.isValid()) {
+                event->setDtStart(dt);
+                event->setAllDay(allDay);
+            }
+        }
+    }
+    {
+        const QJsonObject endObj = obj.value(QStringLiteral("end")).toObject();
+        if (!endObj.isEmpty()) {
+            const QDateTime dt = jsonToDateTime(endObj);
+            if (dt.isValid())
+                event->setDtEnd(dt);
+        }
+    }
+
+    // ---- recurrence — re-inject verbatim RRULE/RDATE/EXDATE lines ----------
+    // Store for post-serialization injection (same approach as vtodo stages).
+    const QJsonArray recurrenceArr = obj.value(QStringLiteral("recurrence")).toArray();
+
+    // ---- recurrenceId / recurrenceRange ------------------------------------
+    {
+        const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
+        if (!recIdObj.isEmpty()) {
+            const QString dtStr = recIdObj.value(QStringLiteral("dateTime")).toString();
+            if (!dtStr.isEmpty()) {
+                const QDateTime dt = QDateTime::fromString(dtStr, Qt::ISODate);
+                if (dt.isValid()) {
+                    const QString range = obj.value(QStringLiteral("recurrenceRange")).toString();
+                    event->setRecurrenceId(dt);
+                    event->setThisAndFuture(range == QStringLiteral("thisAndFuture"));
+                }
+            }
+        }
+    }
+
+    // ---- color -------------------------------------------------------------
+    {
+        const QString color = obj.value(QStringLiteral("color")).toString();
+        if (!color.isEmpty())
+            event->setColor(color);
+    }
+
+    // ---- categories --------------------------------------------------------
+    {
+        const QJsonArray cats = obj.value(QStringLiteral("categories")).toArray();
+        if (!cats.isEmpty()) {
+            QStringList catList;
+            for (const auto& c : cats)
+                catList << c.toString();
+            event->setCategories(catList);
+        }
+    }
+
+    // ---- url ---------------------------------------------------------------
+    {
+        const QString url = obj.value(QStringLiteral("url")).toString();
+        if (!url.isEmpty())
+            event->setUrl(QUrl(url));
+    }
+
+    // ---- organizer ---------------------------------------------------------
+    {
+        const QJsonObject orgObj = obj.value(QStringLiteral("organizer")).toObject();
+        if (!orgObj.isEmpty()) {
+            const QString email = orgObj.value(QStringLiteral("email")).toString();
+            const QString name  = orgObj.value(QStringLiteral("name")).toString();
+            if (!email.isEmpty())
+                event->setOrganizer(KCalendarCore::Person(name, email));
+        }
+    }
+
+    // ---- attendees ---------------------------------------------------------
+    {
+        const QJsonArray attendees = obj.value(QStringLiteral("attendees")).toArray();
+        for (const auto& av : attendees) {
+            const QJsonObject a = av.toObject();
+            const QString email = a.value(QStringLiteral("email")).toString();
+            if (email.isEmpty())
+                continue;
+            const QString name    = a.value(QStringLiteral("name")).toString();
+            const auto role       = roleFromString(a.value(QStringLiteral("role")).toString());
+            const auto partstat   = partStatFromString(a.value(QStringLiteral("partstat")).toString());
+            const bool rsvp       = a.value(QStringLiteral("rsvp")).toBool();
+            KCalendarCore::Attendee att(name, email, rsvp, partstat, role);
+            event->addAttendee(att);
+        }
+    }
+
+    // ---- priority ----------------------------------------------------------
+    {
+        const QJsonValue pri = obj.value(QStringLiteral("priority"));
+        if (!pri.isUndefined())
+            event->setPriority(pri.toInt());
+    }
+
+    // ---- alarms (VALARM) ---------------------------------------------------
+    {
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        for (const auto& av : alarms) {
+            const QJsonObject a = av.toObject();
+            KCalendarCore::Alarm::Ptr alarm(new KCalendarCore::Alarm(event.data()));
+            const int typeInt = a.value(QStringLiteral("type")).toInt();
+            alarm->setType(static_cast<KCalendarCore::Alarm::Type>(typeInt));
+            const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
+            alarm->setStartOffset(KCalendarCore::Duration(offsetSecs));
+            const QString text = a.value(QStringLiteral("text")).toString();
+            if (!text.isEmpty())
+                alarm->setText(text);
+            event->addAlarm(alarm);
+        }
+    }
+
+    // ---- attachments -------------------------------------------------------
+    {
+        const QJsonArray attachments = obj.value(QStringLiteral("attachments")).toArray();
+        for (const auto& av : attachments) {
+            const QJsonObject a = av.toObject();
+            const QString url = a.value(QStringLiteral("url")).toString();
+            if (!url.isEmpty()) {
+                KCalendarCore::Attachment att;
+                att.setUri(url);
+                const QString mime = a.value(QStringLiteral("mimeType")).toString();
+                if (!mime.isEmpty())
+                    att.setMimeType(mime);
+                event->addAttachment(att);
+            }
+        }
+    }
+
+    // ---- providerExtras["x-ical"] — re-emit custom/X- properties ----------
+    {
+        const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
+        const QJsonObject xical  = extras.value(QStringLiteral("x-ical")).toObject();
+        for (auto it = xical.constBegin(); it != xical.constEnd(); ++it)
+            event->setNonKDECustomProperty(it.key().toLatin1(), it.value().toString());
+    }
+
+    // ---- Serialize to iCal -------------------------------------------------
+    QByteArray icalBytes = serializeEvent(event);
+
+    // ---- Inject verbatim recurrence lines ----------------------------------
+    if (!recurrenceArr.isEmpty() && !icalBytes.isEmpty()) {
+        const QByteArray marker = "END:VEVENT";
+        const int pos = icalBytes.indexOf(marker);
+        if (pos >= 0) {
+            QByteArray recBytes;
+            for (const auto& rv : recurrenceArr) {
+                recBytes += rv.toString().toUtf8();
+                recBytes += '\n';
+            }
+            icalBytes.insert(pos, recBytes);
+        }
+    }
+
+    return icalBytes;
+}
+
+}  // namespace Kalburator::Calendar
