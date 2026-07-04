@@ -8,6 +8,7 @@
 #include "../sync/changedetection.h"
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
+#include <KDAV/DavItem>
 #include <KDAV/EtagCache>
 #include <QUrl>
 #include <QMap>
@@ -65,6 +66,16 @@ public:
      * Must be called before the first fetchItems() (which lazily opens it).
      */
     void setCacheDir(const QString &dir);
+
+    /**
+     * @brief Override the multiget REPORT chunk size (default 75).
+     *
+     * fetchItems() splits the changed-item href list into batches of at
+     * most this many hrefs per DavItemsFetchJob/REPORT, run sequentially.
+     * Test-only affordance so a small fixture can exercise multi-batch
+     * behavior without generating hundreds of items (N4 fix).
+     */
+    void setMultigetChunkSize(int size);
 
     void loadCalendars(const QString &collectionId) override;
 
@@ -310,11 +321,26 @@ private:
      */
     QMap<QString, QString> fetchAllCtags(const QStringList &calendarIds);
 
+    /**
+     * @brief Second half of fetchItems(): merge network-fetched items with
+     * cached content for the unchanged items, complete the operation.
+     *
+     * Split out of fetchItems() (N4 fix) so it can run once, after ALL
+     * multiget batches have completed successfully — @p fetchedItemsMap must
+     * be the complete accumulation across every batch; a caller must never
+     * invoke this with a partial map (i.e. after a batch failure).
+     */
+    void processFetchedItems(FetchOperation *op, const QString &calendarId,
+                              const KDAV::DavItem::List &allItems,
+                              const QMap<QString, QString> &serverEtags,
+                              const QMap<QString, KDAV::DavItem> &fetchedItemsMap);
+
     // No SyncStore member — CTags have their own CTagStore below
     std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setDbPath()
     QUrl m_url;
     QString m_username;
     QString m_password;
+    int m_multigetChunkSize = 75; // N4 fix — see setMultigetChunkSize()
 
     /**
      * @brief One row of per-calendar discovery/registration state.

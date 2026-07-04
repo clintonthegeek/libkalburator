@@ -12,6 +12,7 @@
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
 #include <KDAV/DavItemsFetchJob>
+#include <KDAV/DavJobBase>
 #include <KDAV/DavItemCreateJob>
 #include <KDAV/DavItemModifyJob>
 #include <KDAV/DavItemDeleteJob>
@@ -249,6 +250,23 @@ DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
     return resp;
 }
 
+// N4 fix — a truthful error message for a failed KDAV job: the KJob-level
+// message alone collapses distinct failures into confusing text (a real
+// example: an HTTP/2 stream reset on a 673-href multiget surfaced to the app
+// as "Invalid username/password (401)", though no 401 ever occurred and no
+// credentials were wrong). DavJobBase::latestResponseCode() is 0 when the
+// failure never reached the HTTP level (a transport error), so include both
+// pieces of information rather than picking one.
+QString davJobErrorMessage(KDAV::DavJobBase *job)
+{
+    const int httpStatus = job->latestResponseCode();
+    if (httpStatus > 0) {
+        return QStringLiteral("%1 (HTTP %2)").arg(job->errorString()).arg(httpStatus);
+    }
+    return QStringLiteral("%1 (no HTTP response — transport-level failure)")
+        .arg(job->errorString());
+}
+
 // href -> ctag entries from a 207 multistatus PROPFIND response. Compares
 // local element names only, so any namespace prefix (or none) matches.
 QMap<QString, QString> parseCtagMultistatus(const QByteArray &xml)
@@ -352,6 +370,12 @@ void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 void RemoteCalendarBackend::setCacheDir(const QString &dir)
 {
     m_contentCache->setCacheDir(dir);
+}
+
+void RemoteCalendarBackend::setMultigetChunkSize(int size)
+{
+    if (size > 0)
+        m_multigetChunkSize = size;
 }
 
 QString RemoteCalendarBackend::ctag(const QString &calendarId) const
@@ -1509,138 +1533,180 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 return;
             }
 
-            // Fetch only the changed items from the server via MULTIGET
-            KDAV::DavItemsFetchJob *fetchJob = new KDAV::DavItemsFetchJob(davUrl, urlsToFetch, this);
+            // Fetch only the changed items from the server via MULTIGET,
+            // chunked into sequential batches (N4 fix). A single REPORT with
+            // hundreds of hrefs reliably triggers transport-level failures on
+            // some servers (a 673-href multiget died with an HTTP/2 stream
+            // reset, misreported by KIO as "Invalid username/password (401)"
+            // even though no 401 ever occurred); chunking keeps each request
+            // body small. Batches run strictly sequentially — never
+            // parallel, since these hit one possibly-rate-limited host — and
+            // ANY batch failure fails the whole op before a single item is
+            // processed: fetchedItemsMap must be complete or the op must
+            // fail, never a partial map reaching processFetchedItems (whose
+            // CTag commit assumes completeness — see N5/B3).
+            QList<QStringList> hrefBatches;
+            for (int i = 0; i < urlsToFetch.size(); i += m_multigetChunkSize)
+                hrefBatches.append(urlsToFetch.mid(i, m_multigetChunkSize));
 
-            connect(fetchJob, &KDAV::DavItemsFetchJob::result, this,
-                    [this, op, calendarId, fetchJob, allItems, serverEtags, urlsToFetch](KJob *fj) {
-                if (op->state() == SyncOperation::Cancelled) {
-                    emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
+            auto fetchedItemsMap = std::make_shared<QMap<QString, KDAV::DavItem>>();
+            auto batchIndex = std::make_shared<int>(0);
+            auto runNextBatch = std::make_shared<std::function<void()>>();
+            const int totalBatches = hrefBatches.size();
+
+            *runNextBatch = [this, op, calendarId, davUrl, hrefBatches, fetchedItemsMap,
+                              batchIndex, runNextBatch, allItems, serverEtags, totalBatches]() {
+                if (*batchIndex >= hrefBatches.size()) {
+                    processFetchedItems(op, calendarId, allItems, serverEtags, *fetchedItemsMap);
                     return;
                 }
 
-                if (fj->error()) {
-                    QString errorMsg = QStringLiteral("Failed to fetch items: %1").arg(fj->errorString());
-                    op->fail(errorMsg);
-                    emit fetchFinished(calendarId, false, errorMsg);
-                    return;
-                }
+                KDAV::DavItemsFetchJob *fetchJob =
+                    new KDAV::DavItemsFetchJob(davUrl, hrefBatches.at(*batchIndex), this);
 
-                QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
-
-                // Build a map of fetched items for quick lookup.
-                // Use normalizeUrlKey (strips credentials) so the map key matches
-                // regardless of whether the multiget response URL includes user-info
-                // or not. Discovery URLs carry credentials (http://user@host/...);
-                // multiget response URLs typically don't (http://host/...) — using
-                // a raw toDisplayString() key here caused a systematic lookup miss
-                // (FINDINGS 2026-05-09 "FakeCalDavServer multiget REPORT").
-                QMap<QString, KDAV::DavItem> fetchedItemsMap;
-                for (const auto &davItem : fetchJob->items()) {
-                    fetchedItemsMap[normalizeUrlKey(davItem.url().url().toString())] = davItem;
-                }
-
-                int currentItem = 0;
-                const int totalItems = allItems.size();
-                int countFromNetwork = 0;
-                int countFromCache = 0;
-                int countSkipped = 0;
-
-                // Process all items, using fetched data for changed items and cache for unchanged
-                for (const auto &item : allItems) {
+                connect(fetchJob, &KDAV::DavItemsFetchJob::result, this,
+                        [this, op, calendarId, fetchJob, fetchedItemsMap, batchIndex,
+                         runNextBatch, totalBatches](KJob *fj) {
                     if (op->state() == SyncOperation::Cancelled) {
                         emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
                         return;
                     }
 
-                    // URL without credentials for both fetchedItemsMap lookup and cache
-                    QString urlKey = normalizeUrlKey(item.url().url().toString());
-
-                    QString etag = serverEtags.value(urlKey);
-                    QString icalData;
-                    bool fromNetwork = false;
-
-                    // Check if this item was fetched from network
-                    if (fetchedItemsMap.contains(urlKey)) {
-                        const KDAV::DavItem &davItem = fetchedItemsMap[urlKey];
-                        icalData = QString::fromUtf8(davItem.data());
-                        etag = davItem.etag();
-                        fromNetwork = true;
-
-                        // Update cache with fresh content
-                        if (!icalData.isEmpty() && !etag.isEmpty()) {
-                            m_contentCache->store(urlKey, etag, icalData);
-                        }
-                    } else {
-                        // Serve from cache
-                        icalData = m_contentCache->content(urlKey, etag);
-                        if (icalData.isEmpty()) {
-                            qWarning() << "RemoteCalendarBackend::fetchItems: Cache miss for item:" << urlKey;
-                            countSkipped++;
-                            currentItem++;
-                            emit fetchProgressChanged(calendarId, currentItem, totalItems);
-                            continue;
-                        }
+                    if (fj->error()) {
+                        const QString errorMsg = QStringLiteral(
+                            "Failed to fetch items (batch %1/%2): %3")
+                                .arg(*batchIndex + 1).arg(totalBatches)
+                                .arg(davJobErrorMessage(static_cast<KDAV::DavJobBase *>(fj)));
+                        op->fail(errorMsg);
+                        emit fetchFinished(calendarId, false, errorMsg);
+                        return;
                     }
 
-                    const auto incidences = incidencesFromIcal(icalData);
-                    if (incidences.isEmpty()) {
-                        qWarning() << "RemoteCalendarBackend::fetchItems: Could not parse iCal data for item:"
-                                   << urlKey << (fromNetwork ? "(from network)" : "(from cache)");
-                        countSkipped++;
-                        currentItem++;
-                        emit fetchProgressChanged(calendarId, currentItem, totalItems);
-                        continue;
+                    // Use normalizeUrlKey (strips credentials) so the map key matches
+                    // regardless of whether the multiget response URL includes user-info
+                    // or not. Discovery URLs carry credentials (http://user@host/...);
+                    // multiget response URLs typically don't (http://host/...) — using
+                    // a raw toDisplayString() key here caused a systematic lookup miss
+                    // (FINDINGS 2026-05-09 "FakeCalDavServer multiget REPORT").
+                    for (const auto &davItem : fetchJob->items()) {
+                        (*fetchedItemsMap)[normalizeUrlKey(davItem.url().url().toString())] = davItem;
                     }
 
-                    if (fromNetwork) {
-                        countFromNetwork++;
-                    } else {
-                        countFromCache++;
-                    }
+                    ++(*batchIndex);
+                    (*runNextBatch)();
+                });
 
-                    // Update ETag caches - use urlKey (no credentials) to match KDAV's format
-                    if (!etag.isEmpty()) {
-                        m_localEtags[urlKey] = etag;
-                        if (m_etagCache) {
-                            m_etagCache->setEtag(urlKey, etag);
-                        }
-                    }
+                fetchJob->start();
+            };
 
-                    for (const auto &incidence : incidences) {
-                        fetchedIncidences.append(incidence);
-                        emit itemFetched(calendarId, incidence);
-                    }
-
-                    currentItem++;
-                    emit fetchProgressChanged(calendarId, currentItem, totalItems);
-                }
-
-                qDebug() << "RemoteCalendarBackend::fetchItems: Fetched" << fetchedIncidences.size()
-                         << "incidences for calendar" << calendarId
-                         << "(" << countFromNetwork << "from network,"
-                         << countFromCache << "from cache"
-                         << (countSkipped > 0 ? QString(", %1 skipped)").arg(countSkipped)
-                                              : QStringLiteral(")"));
-
-                // Update stored CTag after successful full fetch
-                const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
-                if (!pendingCtag.isEmpty()) {
-                    setCtag(calendarId, pendingCtag);
-                }
-
-                op->setFetchedItems(fetchedIncidences);
-                op->complete();
-                emit fetchFinished(calendarId, true);
-            });
-
-            fetchJob->start();
+            (*runNextBatch)();
         });
 
         listJob->start();
     }, Qt::QueuedConnection);
 
     return op;
+}
+
+void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QString &calendarId,
+                                                 const KDAV::DavItem::List &allItems,
+                                                 const QMap<QString, QString> &serverEtags,
+                                                 const QMap<QString, KDAV::DavItem> &fetchedItemsMap)
+{
+    QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
+
+    int currentItem = 0;
+    const int totalItems = allItems.size();
+    int countFromNetwork = 0;
+    int countFromCache = 0;
+    int countSkipped = 0;
+
+    // Process all items, using fetched data for changed items and cache for unchanged
+    for (const auto &item : allItems) {
+        if (op->state() == SyncOperation::Cancelled) {
+            emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
+            return;
+        }
+
+        // URL without credentials for both fetchedItemsMap lookup and cache
+        QString urlKey = normalizeUrlKey(item.url().url().toString());
+
+        QString etag = serverEtags.value(urlKey);
+        QString icalData;
+        bool fromNetwork = false;
+
+        // Check if this item was fetched from network
+        if (fetchedItemsMap.contains(urlKey)) {
+            const KDAV::DavItem &davItem = fetchedItemsMap[urlKey];
+            icalData = QString::fromUtf8(davItem.data());
+            etag = davItem.etag();
+            fromNetwork = true;
+
+            // Update cache with fresh content
+            if (!icalData.isEmpty() && !etag.isEmpty()) {
+                m_contentCache->store(urlKey, etag, icalData);
+            }
+        } else {
+            // Serve from cache
+            icalData = m_contentCache->content(urlKey, etag);
+            if (icalData.isEmpty()) {
+                qWarning() << "RemoteCalendarBackend::fetchItems: Cache miss for item:" << urlKey;
+                countSkipped++;
+                currentItem++;
+                emit fetchProgressChanged(calendarId, currentItem, totalItems);
+                continue;
+            }
+        }
+
+        const auto incidences = incidencesFromIcal(icalData);
+        if (incidences.isEmpty()) {
+            qWarning() << "RemoteCalendarBackend::fetchItems: Could not parse iCal data for item:"
+                       << urlKey << (fromNetwork ? "(from network)" : "(from cache)");
+            countSkipped++;
+            currentItem++;
+            emit fetchProgressChanged(calendarId, currentItem, totalItems);
+            continue;
+        }
+
+        if (fromNetwork) {
+            countFromNetwork++;
+        } else {
+            countFromCache++;
+        }
+
+        // Update ETag caches - use urlKey (no credentials) to match KDAV's format
+        if (!etag.isEmpty()) {
+            m_localEtags[urlKey] = etag;
+            if (m_etagCache) {
+                m_etagCache->setEtag(urlKey, etag);
+            }
+        }
+
+        for (const auto &incidence : incidences) {
+            fetchedIncidences.append(incidence);
+            emit itemFetched(calendarId, incidence);
+        }
+
+        currentItem++;
+        emit fetchProgressChanged(calendarId, currentItem, totalItems);
+    }
+
+    qDebug() << "RemoteCalendarBackend::fetchItems: Fetched" << fetchedIncidences.size()
+             << "incidences for calendar" << calendarId
+             << "(" << countFromNetwork << "from network,"
+             << countFromCache << "from cache"
+             << (countSkipped > 0 ? QString(", %1 skipped)").arg(countSkipped)
+                                  : QStringLiteral(")"));
+
+    // Update stored CTag after successful full fetch
+    const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+    if (!pendingCtag.isEmpty()) {
+        setCtag(calendarId, pendingCtag);
+    }
+
+    op->setFetchedItems(fetchedIncidences);
+    op->complete();
+    emit fetchFinished(calendarId, true);
 }
 
 PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
@@ -1893,8 +1959,13 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 
     // 200 OK, 201 Created, or 204 No Content are valid PUT responses
     if (resp.status != 200 && resp.status != 201 && resp.status != 204) {
+        // Sabre (and most CalDAV servers) put the exact rejection reason in
+        // the response body (e.g. "This resource only supports valid
+        // iCalendar 2.0 data..."). Discarding it costs real debugging time
+        // (N4) — log it alongside the status/error.
         qWarning() << "RemoteCalendarBackend::setRawIcs: Failed, HTTP status:" << resp.status
-                   << "error:" << resp.errorString;
+                   << "error:" << resp.errorString
+                   << "body:" << resp.body;
         return false;
     }
 

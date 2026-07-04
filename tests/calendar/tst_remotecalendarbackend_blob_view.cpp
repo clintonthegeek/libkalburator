@@ -37,6 +37,8 @@ private slots:
     void updateRecord_modifies_existing_record();
     void updateRecord_nonexistent_id_returns_error();
     void loadRecords_surfacesAuthoritativeLastModified_notNow();
+    void loadRecords_chunksMultigetAcrossBatches();
+    void loadRecords_failsWholeOpWhenABatchFails_noPartialResults();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -202,6 +204,94 @@ void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastMod
              "lastModified must be a valid, parsed timestamp");
     QCOMPARE(records.first().lastModified,
              QDateTime(QDate(2020, 6, 1), QTime(9, 30, 0), QTimeZone::utc()));
+}
+
+// N4: split a large multiget into chunked, sequential batches.
+
+namespace {
+QByteArray makeEventIcs(const QString &uid)
+{
+    return QStringLiteral(
+               "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:%1\r\n"
+               "SUMMARY:Event %1\r\nDTSTART:20260601T120000Z\r\n"
+               "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+        .arg(uid)
+        .toUtf8();
+}
+}  // namespace
+
+void TestRemoteCalendarBackendBlobView::loadRecords_chunksMultigetAcrossBatches()
+{
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    QList<QByteArray> seeds;
+    for (int i = 0; i < 7; ++i)
+        seeds << makeEventIcs(QStringLiteral("event-%1").arg(i));
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, seeds);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.setMultigetChunkSize(3);  // 7 items / 3 per batch = 3 batches (3,3,1)
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(),
+             "loadCalendars must succeed before we can loadRecords");
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    QCOMPARE(records.size(), 7);
+    QCOMPARE(server.multigetReportCount(), 3);  // ceil(7 / 3) == 3 batches
+}
+
+void TestRemoteCalendarBackendBlobView::loadRecords_failsWholeOpWhenABatchFails_noPartialResults()
+{
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    QList<QByteArray> seeds;
+    for (int i = 0; i < 7; ++i)
+        seeds << makeEventIcs(QStringLiteral("event-%1").arg(i));
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, seeds);
+    server.setFailNthMultigetReport(2);  // the second batch's REPORT fails (500)
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.setMultigetChunkSize(3);
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(),
+             "loadCalendars must succeed before we can loadRecords");
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    QVERIFY2(records.isEmpty(),
+             "a failed batch must fail the whole op — never a partial result set");
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)

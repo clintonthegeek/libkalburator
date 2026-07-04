@@ -66,6 +66,7 @@ FakeCalDavServer::~FakeCalDavServer() = default;
 bool FakeCalDavServer::startListening()
 {
     m_requestCounts.clear();
+    m_multigetReportCount = 0;
     return listen(QHostAddress::LocalHost, 0);
 }
 
@@ -337,6 +338,11 @@ void FakeCalDavServer::handleReport(QTcpSocket *socket,
     // Distinguish calendar-query (ETag list) from calendar-multiget (full data)
     // by looking for the report type string in the request body.
     if (body.contains("calendar-multiget")) {
+        ++m_multigetReportCount;
+        if (m_failNthMultigetReport > 0 && m_multigetReportCount == m_failNthMultigetReport) {
+            writeResponse(socket, 500, "Internal Server Error", QByteArray());
+            return;
+        }
         const QList<QString> hrefs = parseHrefsFromBody(body);
         writeResponse(socket, 207, "Multi-Status",
                       xmlForCalendarMultiget(collectionHref, hrefs));

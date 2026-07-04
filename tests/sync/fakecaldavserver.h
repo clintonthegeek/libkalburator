@@ -60,6 +60,18 @@ public:
     void setReturn401(bool on)   { m_return401 = on; }
     void setReturn500(bool on)   { m_return500 = on; }
 
+    /// Fail the Nth calendar-multiget REPORT (1-based) with a 500 response
+    /// instead of serving it normally. 0 (the default) means never fail.
+    /// Lets tests exercise N4's chunked-batch error path without needing a
+    /// transport-level fault injector.
+    void setFailNthMultigetReport(int n) { m_failNthMultigetReport = n; }
+
+    /// Number of calendar-multiget REPORTs specifically (a subset of
+    /// requestCount("REPORT"), which also counts calendar-query REPORTs —
+    /// DavItemsListJob issues more than one of those per fetch for reasons
+    /// unrelated to multiget chunking). Reset on startListening().
+    int multigetReportCount() const { return m_multigetReportCount; }
+
     /// Emulate a NextCloud-style deployment (RFC 6764 well-known discovery):
     ///   - the DAV endpoints live under @p contextPath (e.g. "/remote.php/dav")
     ///   - GET/PROPFIND "/.well-known/caldav" returns 301 -> "<contextPath>/"
@@ -140,6 +152,8 @@ private:
 
     bool m_return401 = false;
     bool m_return500 = false;
+    int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
+    int m_multigetReportCount = 0;      // reset on startListening()
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
     QSet<QString> m_createdCollections;  // hrefs created via MKCALENDAR
