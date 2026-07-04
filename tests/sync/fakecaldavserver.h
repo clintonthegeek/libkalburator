@@ -66,6 +66,16 @@ public:
     /// transport-level fault injector.
     void setFailNthMultigetReport(int n) { m_failNthMultigetReport = n; }
 
+    /// Configure the CS:getctag value a Depth:0 PROPFIND on @p href reports
+    /// (href must match one of the hrefs set via setCalendars()). Without a
+    /// configured value, a Depth:0 PROPFIND on any collection 404s (matching
+    /// this fake's original behavior — the backend just skips its CTag
+    /// optimisation). Lets N5 tests drive the CTag-match/serve-path logic.
+    void setCollectionCtag(const QString &href, const QString &ctagValue)
+    {
+        m_ctagByHref[href] = ctagValue;
+    }
+
     /// Number of calendar-multiget REPORTs specifically (a subset of
     /// requestCount("REPORT"), which also counts calendar-query REPORTs —
     /// DavItemsListJob issues more than one of those per fetch for reasons
@@ -144,6 +154,7 @@ private:
     QByteArray xmlForCalendarQuery(const QString &collectionHref) const;
     QByteArray xmlForCalendarMultiget(const QString &collectionHref,
                                       const QList<QString> &hrefs) const;
+    QByteArray xmlForCtag(const QString &collectionHref) const;
 
     static QString uidFromIcs(const QByteArray &ics);
     static QString uidFromPath(const QString &path);
@@ -154,6 +165,7 @@ private:
     bool m_return500 = false;
     int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
     int m_multigetReportCount = 0;      // reset on startListening()
+    QHash<QString, QString> m_ctagByHref;  // href -> CS:getctag value, if configured
     QString m_contextPath;  // empty => DAV served at root; else NextCloud-style
     QList<QPair<QString, QString>> m_calendars;
     QSet<QString> m_createdCollections;  // hrefs created via MKCALENDAR

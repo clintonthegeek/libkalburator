@@ -717,8 +717,20 @@ QString RemoteCalendarBackend::cachedCollectionRevision(const QString &collectio
 
 void RemoteCalendarBackend::primeRevisionCache(const QMap<QString, QString> &cache)
 {
+    // N5 fix: stage into pendingCtag, never write the persisted CTag
+    // directly. fetchItems() already commits the persisted CTag itself,
+    // but only after verifying every item actually materialized
+    // (countSkipped == 0, no failed multiget batches) — writing here
+    // unconditionally would let a sync that completed with some items
+    // silently skipped still stamp the fresh CTag, so a later CTag-match
+    // short-circuit would serve that incomplete set as "current" forever
+    // after (the exact CTag-ahead-of-content-cache bug this campaign
+    // found). When fetchItems already committed the real CTag during this
+    // same sync (the common case), this pendingCtag value is simply
+    // superseded the next time fetchItems runs — never a second, competing
+    // write path into the trusted store.
     for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-        setCtag(it.key(), it.value());
+        m_calendars[it.key()].pendingCtag = it.value();
 }
 
 QColor RemoteCalendarBackend::calendarColor(const QString &calendarId) const
@@ -1367,19 +1379,36 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
             }
 
             if (!storedCtag.isEmpty() && !freshCtag.isEmpty() && freshCtag == storedCtag) {
-                qDebug() << "RemoteCalendarBackend::fetchItems: CTag unchanged for" << calendarId
-                         << "(" << freshCtag << ") - serving from cache";
-
                 auto cachedIncidences = serveCachedItems(calendarId, davUrl);
 
-                emit fetchStarted(calendarId, cachedIncidences.size());
-                qDebug() << "RemoteCalendarBackend::fetchItems: Served" << cachedIncidences.size()
-                         << "incidences from cache (CTag match) for" << calendarId;
+                if (!cachedIncidences.isEmpty()) {
+                    qDebug() << "RemoteCalendarBackend::fetchItems: CTag unchanged for" << calendarId
+                             << "(" << freshCtag << ") - serving from cache";
 
-                op->setFetchedItems(cachedIncidences);
-                op->complete();
-                emit fetchFinished(calendarId, true);
-                return;
+                    emit fetchStarted(calendarId, cachedIncidences.size());
+                    qDebug() << "RemoteCalendarBackend::fetchItems: Served" << cachedIncidences.size()
+                             << "incidences from cache (CTag match) for" << calendarId;
+
+                    op->setFetchedItems(cachedIncidences);
+                    op->complete();
+                    emit fetchFinished(calendarId, true);
+                    return;
+                }
+
+                // N5 fix: a CTag match that serves ZERO cached items is
+                // suspicious — either the content cache is missing/stale
+                // for a non-empty calendar (the CTag-ahead-of-cache bug: a
+                // 673-item calendar whose every multiget had previously
+                // failed read back as "empty, fresh, success" forever after)
+                // or the calendar really is empty. Don't trust the match
+                // either way; clear the stale CTag and fall through to the
+                // normal list+fetch below. A genuinely empty calendar
+                // re-lists cheaply (one PROPFIND, 0 items) and legitimately
+                // re-commits its CTag afterward.
+                qWarning() << "RemoteCalendarBackend::fetchItems: CTag match for" << calendarId
+                           << "(" << freshCtag << ") served 0 cached items"
+                           << "- distrusting the match, re-listing";
+                clearCtag(calendarId);
             }
 
             // CTag changed or unavailable — update in-memory cache for storage after full fetch
@@ -1469,6 +1498,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
             if (urlsToFetch.isEmpty()) {
                 QList<KCalendarCore::Incidence::Ptr> fetchedIncidences;
                 int currentItem = 0;
+                int countSkipped = 0;
 
                 for (const auto &item : allItems) {
                     if (op->state() == SyncOperation::Cancelled) {
@@ -1488,6 +1518,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                         // Cache miss - shouldn't happen if item wasn't in changedItems
                         // but handle gracefully by skipping
                         qWarning() << "RemoteCalendarBackend::fetchItems: Cache miss for unchanged item:" << urlKey;
+                        countSkipped++;
                         currentItem++;
                         emit fetchProgressChanged(calendarId, currentItem, allItems.size());
                         continue;
@@ -1496,6 +1527,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     const auto incidences = incidencesFromIcal(cachedIcal);
                     if (incidences.isEmpty()) {
                         qWarning() << "RemoteCalendarBackend::fetchItems: Could not parse cached iCal for:" << urlKey;
+                        countSkipped++;
                         currentItem++;
                         emit fetchProgressChanged(calendarId, currentItem, allItems.size());
                         continue;
@@ -1519,12 +1551,26 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 }
 
                 qDebug() << "RemoteCalendarBackend::fetchItems: Served" << fetchedIncidences.size()
-                         << "incidences from cache for calendar" << calendarId;
+                         << "incidences from cache for calendar" << calendarId
+                         << (countSkipped > 0 ? QString(" (%1 skipped)").arg(countSkipped)
+                                              : QString());
 
-                // Update stored CTag after successful full fetch
-                const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
-                if (!pendingCtag.isEmpty()) {
-                    setCtag(calendarId, pendingCtag);
+                // N5 fix: only commit the pending CTag when every item
+                // actually materialized. A skip here means the content
+                // cache is missing bytes for an item the CTag says is
+                // current — committing anyway would let a later cycle's
+                // CTag-match short-circuit serve an incomplete set silently
+                // (the "CTag ahead of content cache" bug). Leaving the
+                // stored CTag untouched makes the next cycle re-list.
+                if (countSkipped == 0) {
+                    const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+                    if (!pendingCtag.isEmpty()) {
+                        setCtag(calendarId, pendingCtag);
+                    }
+                } else {
+                    qWarning() << "RemoteCalendarBackend::fetchItems: NOT committing CTag for"
+                               << calendarId << "-" << countSkipped
+                               << "item(s) served incomplete from cache";
                 }
 
                 op->setFetchedItems(fetchedIncidences);
@@ -1698,10 +1744,20 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
              << (countSkipped > 0 ? QString(", %1 skipped)").arg(countSkipped)
                                   : QStringLiteral(")"));
 
-    // Update stored CTag after successful full fetch
-    const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
-    if (!pendingCtag.isEmpty()) {
-        setCtag(calendarId, pendingCtag);
+    // N5 fix: only commit the pending CTag when every item materialized
+    // (this function is only reached after every multiget batch already
+    // succeeded — see the batch runner in fetchItems — so the remaining
+    // completeness gate is countSkipped). Committing on a partial result
+    // would let a later CTag-match short-circuit silently serve the
+    // incomplete set (the "CTag ahead of content cache" bug).
+    if (countSkipped == 0) {
+        const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+        if (!pendingCtag.isEmpty()) {
+            setCtag(calendarId, pendingCtag);
+        }
+    } else {
+        qWarning() << "RemoteCalendarBackend::fetchItems: NOT committing CTag for"
+                   << calendarId << "-" << countSkipped << "item(s) skipped";
     }
 
     op->setFetchedItems(fetchedIncidences);

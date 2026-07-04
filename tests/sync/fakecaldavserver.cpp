@@ -243,11 +243,17 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
             xml = xmlForHome();
         } else if (path == calendarsPath) {
             xml = xmlForCalendars();
+        } else if (isKnownCollection(path) && m_ctagByHref.contains(path)) {
+            // Depth:0 CS:getctag PROPFIND on a known calendar collection —
+            // supports N5's CTag-match/serve-path tests. A collection with
+            // no ctag set via setCollectionCtag() still 404s (matches the
+            // prior behavior tests not needing this may rely on).
+            xml = xmlForCtag(path);
         } else {
-            // Depth:0 PROPFIND on a collection (e.g. for CTag) — return 404
-            // since our fake server does not implement CS:getctag. The backend
-            // skips the CTag optimisation when the PROPFIND fails, which is
-            // fine for tests that only need the first sync.
+            // Depth:0 PROPFIND on a collection this fake doesn't have a
+            // CTag configured for — return 404. The backend skips the CTag
+            // optimisation when the PROPFIND fails, which is fine for tests
+            // that only need the first sync.
             writeResponse(socket, 404, "Not Found", QByteArray());
             return;
         }
@@ -480,7 +486,8 @@ QString FakeCalDavServer::xmlForCalendars() const
     QString xml;
     xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
     xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\" "
-                          "xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">\n");
+                          "xmlns:cal=\"urn:ietf:params:xml:ns:caldav\" "
+                          "xmlns:cs=\"http://calendarserver.org/ns/\">\n");
     for (const auto &cal : m_calendars) {
         xml += QStringLiteral("  <d:response>\n");
         xml += QStringLiteral("    <d:href>%1%2</d:href>\n")
@@ -497,6 +504,14 @@ QString FakeCalDavServer::xmlForCalendars() const
         for (const QString &comp : comps)
             xml += QStringLiteral("<cal:comp name=\"%1\"/>").arg(comp);
         xml += QStringLiteral("</cal:supported-calendar-component-set>\n");
+        // getctag, when configured via setCollectionCtag() — real servers
+        // commonly include it in the depth-1 calendar-list response too, so
+        // discovery (not just the later Depth:0 optimisation PROPFIND) can
+        // stage a pendingCtag (N5 tests).
+        if (m_ctagByHref.contains(cal.second)) {
+            xml += QStringLiteral(
+                "        <cs:getctag>%1</cs:getctag>\n").arg(m_ctagByHref.value(cal.second));
+        }
         if (m_readOnlyHrefs.contains(cal.second)) {
             // Advertise only the <read/> privilege so discovery reports
             // writable=false (no write/write-content/bind/unbind).
@@ -540,6 +555,26 @@ QByteArray FakeCalDavServer::xmlForCalendarQuery(
         }
     }
 
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml.toUtf8();
+}
+
+QByteArray FakeCalDavServer::xmlForCtag(const QString &collectionHref) const
+{
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\""
+                          " xmlns:cs=\"http://calendarserver.org/ns/\">\n");
+    xml += QStringLiteral("  <d:response>\n");
+    xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(collectionHref);
+    xml += QStringLiteral("    <d:propstat>\n");
+    xml += QStringLiteral("      <d:prop>\n");
+    xml += QStringLiteral("        <cs:getctag>%1</cs:getctag>\n")
+               .arg(m_ctagByHref.value(collectionHref));
+    xml += QStringLiteral("      </d:prop>\n");
+    xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+    xml += QStringLiteral("    </d:propstat>\n");
+    xml += QStringLiteral("  </d:response>\n");
     xml += QStringLiteral("</d:multistatus>\n");
     return xml.toUtf8();
 }

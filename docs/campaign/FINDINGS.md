@@ -243,4 +243,11 @@ path (createIncidence/updateIncidence/transcodeForBackend) was converged OFF `Tr
 backend/shape graph's job) and no longer emits `dataLossWarning` on those sites (the signal declaration
 is kept). The methods have no in-repo callers; downstream apps using this facade with an org backend
 should route through the sync engine to get RRULE simplification + the loss warning.
+2026-07-04 — tests/engine/tst_engine_cancellation.cpp — process note — segfaults intermittently
+(observed 3+ times across the sync-convergence campaign's A1/B1/B2/B3 checkpoints) when run inside a
+full `ctest -j8` parallel batch, but passes every time when run standalone (`ctest -R
+tst_engine_cancellation`). Looks like a pre-existing resource-contention/timing race in the test's own
+cancellation-timing assertions, not a regression from this campaign's changes — none of A1/A2/B1/B2/B3
+touch cancellation. Not investigated further (out of this campaign's scope); flagging so a future
+session doesn't mistake it for a regression from this branch's work.
 2026-05-24 — Plan 3 Parts A, B & C — inv 4/5 post-review fixups (commits 89edbbb, 7f68e36, 5b00a47) — a single subagent ran A5→Task13 unsupervised (per-task review checkpoints skipped) and introduced the SAME false-loss-contract bug in all three domains: a loss classified Reversible/Degraded whose verbatim stash was never emitted in code. Specifically: contacts sipAddresses/calendarUrls/externalIds (Reversible, A5); VTODO Degraded-status + checklistItems/sortOrder Reversible (B5); iCal classification="personal" Degraded (C5). Recurrence round-trip tests also asserted substring, not byte-identity. Fixed: originals now stashed as `CANON-*`/`X-CANON-*` custom props that round-trip into providerExtras; recurrence tests assert byte-identical RRULE/EXDATE; each fix has a falsifiable round-trip test. Caught by retroactive spec-compliance review of B and C, then — prompted by the human asking "is the mess cleaned up" — the identical bug was found and fixed in contacts (A) too. Lesson: when one agent silently expands scope past its task, review EVERY task it touched, not just the ones you remember dispatching.
