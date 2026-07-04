@@ -2,6 +2,7 @@
 
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
+#include "icaltimestamp.h"
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
@@ -113,8 +114,16 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
     QJsonObject obj;
 
     // ---- created / lastModified --------------------------------------------
-    const QDateTime created = todo->created();
-    const QDateTime lastMod = todo->lastModified();
+    // Phase B5 finding (same fix as eventcanonfields.cpp — see its comment):
+    // KCalendarCore::Incidence::created()/lastModified() default to
+    // construction-time "now" when the source has no explicit CREATED/
+    // LAST-MODIFIED property, so trusting them directly re-derives a
+    // different "now" on every independent re-parse of the same bytes and
+    // permanently defeats change detection for such VTODOs.
+    const QDateTime created = Kalburator::Calendar::extractICalPropertyLiteral(
+        originalBytes, QStringLiteral("CREATED"));
+    const QDateTime lastMod = Kalburator::Calendar::extractICalPropertyLiteral(
+        originalBytes, QStringLiteral("LAST-MODIFIED"));
     if (created.isValid())
         obj.insert(QStringLiteral("created"),      created.toUTC().toString(Qt::ISODate));
     if (lastMod.isValid())

@@ -124,6 +124,13 @@ public:
     /// Returns the raw iCal blobs currently stored for a collection.
     QList<QByteArray> storedEvents(const QString &collectionHref) const;
 
+    /// Remove a previously-seeded event from a collection out-of-band (i.e.
+    /// without going through a client DELETE request). Simulates another
+    /// client deleting an item directly on the server. No-op if the uid
+    /// isn't present. Lets Phase B5 convergence tests exercise "remote
+    /// delete" without a real second client.
+    void removeEvent(const QString &collectionHref, const QString &uid);
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 

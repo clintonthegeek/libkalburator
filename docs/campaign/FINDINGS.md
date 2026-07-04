@@ -272,3 +272,48 @@ witnesses convergence via FakeCalDavServer's PUT/DELETE request counters plus on
 comparison of LocalBackend's written files. Not fixed this session (out of B4's scope — this is a
 pre-existing observability gap, not a correctness bug); a future phase should either wire these
 fields up from `EngineMerge`/`WriterBatch` counts or delete them if genuinely unused by any consumer.
+
+2026-07-04 — src/calendar/eventcanonfields.cpp:168-190 / src/todo/vtodocanonfields.cpp:115-125,
+src/calendar/remotecalendarbackend.cpp (loadRecords + the three incidence-parse sites) — Phase B5,
+**MAJOR fix, not just a notice** — a real, previously-latent non-convergence bug found by the B5
+acceptance-matrix tests (`tests/engine/tst_sync_convergence.cpp`), intermittently flaky (~1-in-3 to
+1-in-4 runs) in a way that made it easy to miss in a single manual run. Root cause:
+`RemoteCalendarBackend::loadRecords()` re-derived each record's raw iCal bytes via
+`icalFromIncidence(incidence)` — parse-then-reserialize through a throwaway KCalendarCore
+MemoryCalendar — on every call, including calls that serve content the backend already has
+cached verbatim. Two independent KCalendarCore behaviors make that re-serialization
+non-deterministic byte-for-byte across separate calls to the SAME logical content: (1)
+`Incidence::created()`/`lastModified()` default to the wall-clock time AT PARSE, not "unset", when
+the source lacks explicit CREATED/LAST-MODIFIED properties — so a freshly re-parsed object's
+`eventFieldsToCanon`/`todoFieldsToCanon` call re-derives a DIFFERENT literal CREATED/LAST-MODIFIED
+canon value every time, since those functions trusted the accessors directly; (2) KCalendarCore's
+`ICalFormat` writer regenerates `DTSTAMP` unconditionally to "now" on every `toString()`/
+`toICalString()` call regardless of the source's own DTSTAMP (RFC 5545 semantics: DTSTAMP is "when
+this representation was produced", so this is correct KCalendarCore behavior, not a library bug).
+Net effect: `BackendRecord.contentHash` for ANY event/todo was unstable across independent
+`loadRecords()` calls for byte-identical server content — silently defeating B4's per-side baseline
+convergence whenever the two independent `fetchItems()` calls per sync (the "runs at least twice"
+structural residual, §Phase B5 item 3) landed in different wall-clock seconds, which is common
+enough to be genuinely disruptive on a real 120s-cycle collection, not just a test artifact.
+**Fix (two parts, both needed for full closure):** (a) `eventFieldsToCanon`/`todoFieldsToCanon` now
+read CREATED/LAST-MODIFIED via a new `Kalburator::Calendar::extractICalPropertyLiteral()` (icaltimestamp.{h,cpp})
+— literal per-property presence in the ORIGINAL bytes, no accessor-trusting — so a canon encoder
+never invents a field the source didn't have. This alone is insufficient when the "original bytes"
+passed in have themselves already been through one icalFromIncidence round-trip (see (b)). (b) the
+actual closure: `RemoteCalendarBackend` now remembers the LAST VERBATIM raw bytes served for each
+uid (`m_lastRawIcsByUid`, populated at all three sites that parse raw ics text: `serveCachedItems`,
+the all-from-cache branch, `processFetchedItems`) and `loadRecords()` prefers that verbatim blob
+over `icalFromIncidence()`, falling back only if the map has no entry. Verified: the acceptance-
+matrix tests (`localEditPropagatesExactlyOncePut`, `remoteEditFetchesExactlyOneChangedItem`,
+`remoteDeleteRemovesExactlyOneLocally`, `fastPathSkipsGenuinelyUnchangedMapping`) went from ~30-40%
+flaky to 0/40 failures across a stress-test loop after fix (b) landed; fix (a) alone did not resolve
+the flakiness (confirmed by testing it in isolation first) because DTSTAMP corruption survived it.
+Also fixes a companion (b1) one-cycle staleness in `SyncEngine::onWorkerSyncCompleted`'s
+`persistRevision` helper: it used to persist the PRE-dispatch `fresh.targetRevision`/`sourceRevision`
+snapshot captured by `prepareSyncFastPath` before the mapping ran, which for a target a mapping just
+WROTE TO (e.g. LocalBackend on the mirror-populating first sync) is already stale the instant the
+callback runs — it now re-queries each side's LIVE `ChangeDetection::collectionRevision()` after the
+mapping completes, falling back to the pre-dispatch snapshot only if the live query comes back empty.
+This — not the DTSTAMP bug — was the direct cause of the roadmap's "of 7 mappings, 0 are unchanged"
+real-world symptom for the LOCAL/target side (see the fast-path test's doc comment for the parallel,
+separate, NOT-a-bug one-cycle warm-up the REMOTE/source side's CTagStore still needs).

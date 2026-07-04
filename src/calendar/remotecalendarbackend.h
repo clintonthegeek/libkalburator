@@ -390,6 +390,25 @@ private:
     // caldavcontentcache.h). Lazily opened on first fetchItems()/pushItems().
     std::unique_ptr<CalDavContentCache> m_contentCache;
 
+    // Phase B5 finding: the last VERBATIM raw iCal bytes served for each uid
+    // (whether from the network or the content cache), keyed by uid.
+    // loadRecords() uses this instead of re-deriving bytes via
+    // icalFromIncidence(incidence) when available. Re-deriving is NOT
+    // equivalent to the original bytes: KCalendarCore::Incidence defaults
+    // created()/lastModified() to the parse-time wall clock when the source
+    // lacks those properties, and its ICalFormat writer unconditionally
+    // regenerates DTSTAMP on every serialize (RFC 5545 semantics — DTSTAMP is
+    // "when this representation was produced"). Re-serializing on every
+    // loadRecords() call therefore bakes a fresh, non-deterministic
+    // timestamp into bytes that are otherwise unchanged, making
+    // BackendRecord.contentHash unstable across independent loadRecords()
+    // calls for the SAME server-side content — silently defeating
+    // convergence (see docs/campaign/2026-07-03-sync-convergence-roadmap.md
+    // Phase B5). Populated by serveCachedItems(), the all-from-cache branch,
+    // and processFetchedItems() — every site that parses raw ics text into
+    // Incidence objects.
+    QHash<QString, QByteArray> m_lastRawIcsByUid;
+
     // Helper to get our cached etag string for a remote item URL
     QString cachedEtag(const QString &remoteUrl) const;
 

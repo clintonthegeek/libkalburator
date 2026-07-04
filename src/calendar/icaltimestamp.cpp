@@ -46,4 +46,9 @@ QDateTime extractICalTimestamp(const QByteArray &icalBytes)
     return {};
 }
 
+QDateTime extractICalPropertyLiteral(const QByteArray &icalBytes, const QString &propertyName)
+{
+    return extractProperty(QString::fromUtf8(icalBytes), propertyName);
+}
+
 }  // namespace Kalburator::Calendar

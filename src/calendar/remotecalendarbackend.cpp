@@ -1335,6 +1335,9 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
     for (const auto &row : rows) {
         const auto incidences = incidencesFromIcal(row.ical);
         for (const auto &incidence : incidences) {
+            // Phase B5: remember the verbatim bytes this incidence came
+            // from — see m_lastRawIcsByUid's doc comment.
+            m_lastRawIcsByUid[incidence->uid()] = row.ical.toUtf8();
             cachedIncidences.append(incidence);
             emit itemFetched(calendarId, incidence);
         }
@@ -1542,6 +1545,9 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     }
 
                     for (const auto &incidence : incidences) {
+                        // Phase B5: remember the verbatim bytes — see
+                        // m_lastRawIcsByUid's doc comment.
+                        m_lastRawIcsByUid[incidence->uid()] = cachedIcal.toUtf8();
                         fetchedIncidences.append(incidence);
                         emit itemFetched(calendarId, incidence);
                     }
@@ -1729,6 +1735,10 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
         }
 
         for (const auto &incidence : incidences) {
+            // Phase B5: remember the verbatim bytes this incidence came
+            // from (network response or cache) — see m_lastRawIcsByUid's
+            // doc comment.
+            m_lastRawIcsByUid[incidence->uid()] = icalData.toUtf8();
             fetchedIncidences.append(incidence);
             emit itemFetched(calendarId, incidence);
         }
@@ -2169,7 +2179,18 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
 
     for (const auto &incidence : op->fetchedItems()) {
         if (incidence.isNull()) continue;
-        result.append(blobRecordFromIcal(incidence->uid(), icalFromIncidence(incidence)));
+        // Phase B5 fix: prefer the verbatim bytes this incidence was parsed
+        // from (network response or content cache) over re-deriving via
+        // icalFromIncidence(). Re-serialization is not equivalent — see
+        // m_lastRawIcsByUid's doc comment — and made contentHash unstable
+        // across independent loadRecords() calls for unchanged server
+        // content, silently defeating convergence. Only falls back to
+        // re-derivation if the map has no entry (shouldn't happen for
+        // anything fetchItems() actually produced, but fail soft rather
+        // than drop the record).
+        const QByteArray rawIcs = m_lastRawIcsByUid.value(incidence->uid());
+        result.append(blobRecordFromIcal(
+            incidence->uid(), !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence)));
     }
 
     op->deleteLater();

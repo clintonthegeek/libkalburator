@@ -708,7 +708,69 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       `tst_perrecorddiff` per-side cases and 4 new `tst_baseline_store_v3`
       migration/round-trip cases. Full suite green, net +1 test binary +
       16 new cases in existing binaries, zero regressions.
-- [ ] B5 convergence gate + fast path
+- [x] B5 convergence gate + fast path — landed 2026-07-04 on branch
+      `feature/sync-convergence-b5-acceptance-gate` (not yet merged/tagged).
+      **Acceptance matrix** (`tests/engine/tst_sync_convergence.cpp`, +4 new
+      cases beyond the existing `secondSyncIsNoOp`): `localEditPropagates
+      ExactlyOncePut`, `remoteEditFetchesExactlyOneChangedItem`,
+      `remoteDeleteRemovesExactlyOneLocally` (exercises the engine's
+      built-in mass-delete threshold with NO guard registered — proceeds
+      per the documented backward-compatible default, distinct from
+      PlanStan's C1 guard), `fastPathSkipsGenuinelyUnchangedMapping`. All
+      use a shared `ConvergenceFixture`/`makeConvergenceFixture()` rig
+      (real FakeCalDavServer + CalDavProvider + RemoteCalendarBackend +
+      LocalBackend + SyncEngine + BaselineStore, isolated per-test tmp
+      dirs) and assert exact FakeCalDavServer request-count deltas (PUT/
+      DELETE/REPORT/multigetReportCount/PROPFIND), not just pass/fail.
+      **Fast path confirmed working** — `SyncEngine::prepareSyncFastPath`'s
+      existing logic (predates this phase) was already structurally
+      correct; the "of 7 mappings, 0 are unchanged" real-world
+      under-reporting was traced to two separate, now-fixed causes: (1) a
+      one-cycle staleness in `onWorkerSyncCompleted`'s revision write-back
+      (fixed: now re-queries each side's LIVE `ChangeDetection::
+      collectionRevision()` post-completion instead of persisting the
+      pre-dispatch snapshot — syncengine.cpp), and (2) a genuinely new,
+      MAJOR convergence bug found by the acceptance tests themselves:
+      `RemoteCalendarBackend::loadRecords()` re-derived every record's raw
+      bytes via `icalFromIncidence()` on every call, and KCalendarCore
+      non-deterministically bakes a fresh DTSTAMP (and phantom CREATED/
+      LAST-MODIFIED) into that re-serialization — making `contentHash`
+      unstable across independent `loadRecords()` calls for byte-identical
+      server content, silently defeating B4's per-side baselines whenever
+      the "runs fetchItems at least twice per mapping" structural residual
+      (below) landed in different wall-clock seconds (~30-40% of runs in
+      a stress-test loop). Fixed by having `RemoteCalendarBackend` remember
+      the last verbatim raw bytes served per uid
+      (`m_lastRawIcsByUid`) and preferring that over re-derivation; a
+      companion fix in `eventcanonfields.cpp`/`vtodocanonfields.cpp` makes
+      the canon encoders trust literal property presence in the source
+      bytes rather than KCalendarCore's parse-time-defaulted
+      created()/lastModified() accessors. Full details + verification
+      numbers: `docs/campaign/FINDINGS.md` 2026-07-04 entries. Telemetry:
+      the "would skip unchanged mapping (flag off)" / "skipping unchanged
+      mapping" qInfo lines the roadmap asked for already existed
+      (pre-dating this phase, from the original Plan-8-era skip-eligibility
+      feature) — confirmed sufficient, no new logging added.
+      **Idle-cycle budget confirmed moot on the structural double-fetch**:
+      when a mapping is skip-eligible and the flag is on, `advanceQueue`'s
+      `m_skippedMappingIds` branch short-circuits BEFORE the mapping ever
+      dispatches to the worker — `fetchItems()` (gating call + `loadRecords`'
+      internal reuse) never runs even once. `fastPathSkipsGenuinelyUnchanged
+      Mapping` asserts exactly +1 PROPFIND (prepareSyncFastPath's own CTag
+      check) and zero REPORT/multiget/PUT/DELETE/local-file-touch on the
+      truly-idle cycle. **One residual, documented characteristic (not a
+      bug, not fixed)**: a BRAND NEW collection needs its first TWO real
+      sync cycles before the fast path can engage on the third — cycle 1
+      populates but can't commit the source's CTagStore yet (fetchItems'
+      own commit-on-complete logic is gated on a pre-existing stored CTag
+      to compare against); cycle 2 is a real, correctly-detected-as-no-op
+      dispatch that finally commits it; cycle 3 is the first that can
+      skip. See the fast-path test's doc comment for the full mechanism.
+      Full suite: 157/157 (unchanged count — new cases live in the existing
+      `tst_sync_convergence` binary/ctest entry); the new acceptance-matrix
+      tests were run 40x in a stress loop post-fix with 0 failures (they
+      were ~30-40% flaky before the `m_lastRawIcsByUid` fix, confirming the
+      fix, not luck, closed it).
 - [ ] — tag v0.82
 - [ ] C1 PlanStan mass-delete guard
 - [ ] C2 PlanStan spoke-loading fix

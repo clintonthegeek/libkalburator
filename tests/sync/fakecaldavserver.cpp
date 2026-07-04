@@ -119,6 +119,13 @@ QList<QByteArray> FakeCalDavServer::storedEvents(
     return result;
 }
 
+void FakeCalDavServer::removeEvent(const QString &collectionHref, const QString &uid)
+{
+    auto it = m_store.find(collectionHref);
+    if (it == m_store.end()) return;
+    it->remove(uid);
+}
+
 void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
 {
     auto *socket = new QTcpSocket(this);

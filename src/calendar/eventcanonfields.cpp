@@ -2,6 +2,7 @@
 
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
+#include "icaltimestamp.h"
 
 #include <KCalendarCore/Attendee>
 #include <KCalendarCore/ICalFormat>
@@ -165,9 +166,24 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
     }
 
     // ---- created / lastModified --------------------------------------------
+    // Phase B5 finding: KCalendarCore::Incidence::created()/lastModified()
+    // return a construction-time default (effectively "now") when the
+    // parsed source has no explicit CREATED/LAST-MODIFIED property — they
+    // don't distinguish "absent in the source" from "never set". Trusting
+    // those accessors directly here made this canon encoder re-derive a
+    // DIFFERENT "now" on every independent re-parse of byte-identical
+    // source iCal (e.g. every RemoteCalendarBackend::loadRecords() call for
+    // an event lacking those properties), which permanently defeated
+    // change detection for such events — the exact same "stamp now instead
+    // of leaving it absent" anti-pattern N3 already fixed one layer down
+    // (blobRecordFromIcal), just reached via the canon encode path instead.
+    // Only emit these fields when the property is LITERALLY present in the
+    // source bytes (see extractICalPropertyLiteral's doc comment).
     {
-        const QDateTime created = event->created();
-        const QDateTime lastMod = event->lastModified();
+        const QDateTime created = Kalburator::Calendar::extractICalPropertyLiteral(
+            originalBytes, QStringLiteral("CREATED"));
+        const QDateTime lastMod = Kalburator::Calendar::extractICalPropertyLiteral(
+            originalBytes, QStringLiteral("LAST-MODIFIED"));
         if (created.isValid())
             obj.insert(QStringLiteral("created"),      created.toUTC().toString(Qt::ISODate));
         if (lastMod.isValid())

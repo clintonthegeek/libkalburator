@@ -1118,13 +1118,33 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                 if (m.id == mappingId) { mapping = &m; break; }
             }
             if (mapping) {
+                // Phase B5 fix: re-query the LIVE revision now that the
+                // mapping has actually finished, instead of reusing the
+                // snapshot prepareSyncFastPath captured BEFORE this mapping
+                // ran. For a side this very sync wrote to (the common case
+                // is LocalBackend as target on a first/populating sync —
+                // its fingerprint is a directory content hash, so writing
+                // new files changes it), the pre-dispatch snapshot reflects
+                // the PRE-write state and is stale the instant this
+                // callback runs. Persisting that stale value costs the
+                // *next* sync's prepareSyncFastPath its skip-eligibility
+                // even though nothing has changed since THIS sync
+                // completed — a one-cycle lag that, for a real backend
+                // this campaign found could re-run a full busy cycle for
+                // no reason. Falls back to the pre-dispatch snapshot only
+                // if the live re-query comes back empty (e.g. a backend
+                // whose ChangeDetection needs a moment to settle).
                 auto persistRevision = [&](const QString &backendId,
                                            const QString &colId,
-                                           const QString &revision) {
-                    if (revision.isEmpty()) return;
+                                           const QString &precomputed) {
+                    if (!m_registry) return;
                     SyncBackendBase *base = m_registry->backendInstance(backendId);
-                    if (auto *cd = dynamic_cast<Sync::ChangeDetection*>(base))
-                        cd->primeRevisionCache({{colId, revision}});
+                    auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
+                    if (!cd) return;
+                    const QString live = cd->collectionRevision(colId);
+                    const QString revision = !live.isEmpty() ? live : precomputed;
+                    if (revision.isEmpty()) return;
+                    cd->primeRevisionCache({{colId, revision}});
                 };
                 persistRevision(mapping->sourceBackend, mapping->sourceCalendar,
                                 fresh.sourceRevision);

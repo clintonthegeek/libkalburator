@@ -14,4 +14,23 @@ namespace Kalburator::Calendar {
 /// freshly modified on every load and defeats the LWW tie-bias fix (v0.64).
 QDateTime extractICalTimestamp(const QByteArray &icalBytes);
 
+/// Extract exactly one named timestamp property's raw textual value from
+/// iCal bytes (e.g. "CREATED", "LAST-MODIFIED") — no fallback to any other
+/// property. Returns an invalid QDateTime when that specific property is
+/// not literally present, or is present but unparseable.
+///
+/// Exists because KCalendarCore::Incidence's created()/lastModified()
+/// accessors return a construction-time default (effectively "now") when
+/// the parsed source lacks an explicit CREATED/LAST-MODIFIED property —
+/// they do not distinguish "explicitly zero/absent" from "never set". A
+/// canon encoder that trusts those accessors directly re-derives a
+/// different "now" on every independent re-parse of byte-identical source
+/// text, which defeats change detection for any event lacking those
+/// properties (the same class of bug as N3, just at the canon-encode layer
+/// instead of blobRecordFromIcal). Callers needing "was this literally
+/// stamped in the source" must check presence via this function rather
+/// than trusting the parsed object's accessor.
+QDateTime extractICalPropertyLiteral(const QByteArray &icalBytes,
+                                      const QString &propertyName);
+
 }  // namespace Kalburator::Calendar
