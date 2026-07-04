@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(Kalburator VERSION 0.2.2 LANGUAGES CXX)
+project(Kalburator VERSION 0.2.3 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # libkalburator — a reusable sync substrate for Qt6/KF6 calendar apps.
