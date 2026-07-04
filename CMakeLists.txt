@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.19)
-project(Kalburator VERSION 0.2.0 LANGUAGES CXX)
+project(Kalburator VERSION 0.2.2 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # libkalburator — a reusable sync substrate for Qt6/KF6 calendar apps.
@@ -166,8 +166,12 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalcanonstages.h
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.h
+    # Plan 4 Task 1 — VJOURNAL field mapping helpers
+    src/calendar/journalcanonfields.h
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.h
+    # N1 fix — shared component-scoped recurrence-line extraction
+    src/calendar/icalcomponentscan.h
     src/calendar/calendardomaindefinition.h
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
@@ -208,8 +212,12 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalcanonstages.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.cpp
+    # Plan 4 Task 1 — VJOURNAL field mapping helpers
+    src/calendar/journalcanonfields.cpp
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.cpp
+    # N1 fix — shared component-scoped recurrence-line extraction
+    src/calendar/icalcomponentscan.cpp
     src/calendar/calendardomaindefinition.cpp
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp

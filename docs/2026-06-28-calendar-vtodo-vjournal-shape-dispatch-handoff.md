@@ -280,3 +280,50 @@ and the canonical-spine/loss-profile model. Requirements and constraints:
   analysis and will be closed when the pin bump verifies the fix.
 - Questions / live repro data (the Nextcloud account, cached VTODO samples) are
   available on the PlanStan side — ask.
+
+---
+
+## 9. Resolution (2026-06-28 → 2026-07-03, `v0.80`)
+
+Landed on `feature/calendar-per-kind-canon-dispatch` in nine tasks (Tasks 1–6
+merged earlier; Tasks 7–9 plus the N1 follow-up fix land together):
+
+- **Kind discriminator** (`Kalburator::Shape::CanonEnvelope`): an optional
+  `kind` key in the `_canon` envelope (`"vtodo"` / `"vjournal"`; absent means
+  `"vevent"` for v1 baseline compatibility — no migration needed).
+- **Kind-dispatching calendar stages**: `ICalToCanonStage`/`CanonToICalStage`
+  now branch on the parsed component's dynamic type (`Event`/`Todo`/`Journal`)
+  and on the envelope's `kind`, reusing the **same** VTODO field-mapping helper
+  (`Kalburator::Todo::todoFieldsToCanon`/`canonObjectToVtodoBytes`) that the
+  `todo` domain's own stages call — one definition, per INVARIANTS §1.
+- **First-class VJOURNAL** (`journalcanonfields.{h,cpp}`): summary,
+  description, start, status, classification, color, url, categories,
+  provider-extras X- catch-all.
+- **Property catalogue union** (`calendarcanonproperties.cpp`): `due`,
+  `completed`, `percentComplete`, `relatedTo`, `geo` added so the differ
+  detects todo/journal field changes on a calendar-domain record.
+- **Fail-loud transcode guard** (`src/engine/transcodeguard.h`,
+  `transcodeEmptiedRecord`): wired at the promote site and both demote apply
+  sites in `syncengine.cpp` — a non-empty record that would transcode to empty
+  bytes now fails the mapping with a descriptive error instead of silently
+  writing nothing.
+- **Engine-level acceptance test** (`tst_calendar_hybrid_reconcile`): a
+  one-way upload of a calendar holding one VEVENT and one VTODO propagates
+  both to the target through the real `SyncEngine` — the §6 scenario, GREEN.
+- **N1 follow-up (found during this work, fixed in the same branch)**: the
+  verbatim RRULE/RDATE/EXDATE extraction each stage relied on (invariant 3)
+  scanned the *entire* iCal blob, so any TZID-bearing component's embedded
+  VTIMEZONE (whose STANDARD/DAYLIGHT sub-components legitimately carry their
+  own RRULE for DST transitions) got harvested as if it were the record's own
+  recurrence — corrupting one-off events/todos with spurious multi-RRULE
+  recurrence. Replaced the three duplicated whole-blob scanners
+  (`eventcanonfields.cpp`, `vtodocanonfields.cpp`, `orgicalcanonstages.cpp`)
+  with one shared, component-scoped, line-unfolding helper
+  (`icalcomponentscan.{h,cpp}`). See
+  `docs/campaign/2026-07-03-sync-convergence-roadmap.md` Phase A2 (finding N1)
+  for the full evidence trail and design rationale.
+
+**No engine dispatch change, no mixed canonical shapes, no PlanStan-side
+change, and no baseline migration were needed** — exactly as scoped in §7.
+Full suite green at 155/155 (151 v0.79 baseline + `tst_calendar_kind_dispatch`,
+`tst_transcode_guard`, `tst_calendar_hybrid_reconcile`, `tst_icalcomponentscan`).

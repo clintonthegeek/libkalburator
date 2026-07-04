@@ -104,6 +104,10 @@ kalburator_add_calendar_integration_test(tst_calendar_sync_oneway)
 kalburator_add_calendar_integration_test(tst_calendar_conflict)
 kalburator_add_calendar_integration_test(tst_calendar_transcoding_warning)
 
+# Per-kind canon dispatch Task 8 — engine-level hybrid event+todo reconcile
+# (acceptance test proving the VTODO no longer demotes to empty bytes).
+kalburator_add_calendar_integration_test(tst_calendar_hybrid_reconcile)
+
 # Phase D Task 21 — first-sync path via BlobSyncEngine
 kalburator_add_calendar_integration_test(tst_calendar_first_sync_via_blob_engine)
 
@@ -151,6 +155,13 @@ add_subdirectory(plugin)
 
 # Plan 3 Task C2/C3/C5 — ical ↔ canon round-trip + loss profile tests
 kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
+
+# N1 fix — shared component-scoped recurrence-line extraction, tested once
+# independent of any specific canon-stage caller.
+kalburator_add_calendar_test(tst_icalcomponentscan)
+
+# Plan 4 Task 1 — calendar per-kind canon dispatch (VTODO/VJOURNAL)
+kalburator_add_calendar_test(tst_calendar_kind_dispatch)
 
 # Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
 kalburator_add_calendar_test(tst_orgical_canon_roundtrip)

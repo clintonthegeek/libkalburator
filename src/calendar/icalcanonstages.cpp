@@ -2,11 +2,15 @@
 
 #include "canonenvelope.h"
 #include "eventcanonfields.h"
+#include "journalcanonfields.h"
+#include "vtodocanonfields.h"
 
 #include <KCalendarCore/Attendee>
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Incidence>
+#include <KCalendarCore/Journal>
+#include <KCalendarCore/Todo>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -19,13 +23,12 @@ using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
 
-KCalendarCore::Event::Ptr parseEvent(const QByteArray &data)
+KCalendarCore::Incidence::Ptr parseIncidence(const QByteArray &data)
 {
     if (data.isEmpty())
         return {};
     KCalendarCore::ICalFormat fmt;
-    auto inc = fmt.fromString(QString::fromUtf8(data));
-    return inc.dynamicCast<KCalendarCore::Event>();
+    return fmt.fromString(QString::fromUtf8(data));
 }
 
 } // namespace
@@ -33,30 +36,56 @@ KCalendarCore::Event::Ptr parseEvent(const QByteArray &data)
 namespace Kalburator::Calendar {
 
 // ---------------------------------------------------------------------------
-// ICalToCanonStage — VEVENT iCal bytes → canon JSON (lossless)
+// ICalToCanonStage — iCal bytes → canon JSON (kind-dispatched)
 // ---------------------------------------------------------------------------
 
 QByteArray ICalToCanonStage::transform(const QByteArray& icalBytes) const
 {
     if (icalBytes.isEmpty())
         return {};
-    const auto event = parseEvent(icalBytes);
-    if (!event)
+    const auto inc = parseIncidence(icalBytes);
+    if (!inc)
         return {};
-    QJsonObject obj = eventFieldsToCanon(event, icalBytes);
-    stampEnvelope(obj, QStringLiteral("calendar"), event->uid());
+
+    QJsonObject obj;
+    QString kind;
+    if (auto ev = inc.dynamicCast<KCalendarCore::Event>()) {
+        obj  = eventFieldsToCanon(ev, icalBytes);
+        kind = QStringLiteral("vevent");
+    } else if (auto td = inc.dynamicCast<KCalendarCore::Todo>()) {
+        obj  = Kalburator::Todo::todoFieldsToCanon(td, icalBytes);
+        kind = QStringLiteral("vtodo");
+    } else if (auto jr = inc.dynamicCast<KCalendarCore::Journal>()) {
+        obj  = journalFieldsToCanon(jr, icalBytes);
+        kind = QStringLiteral("vjournal");
+    } else {
+        return {};   // unknown component kind — guarded loudly by the engine.
+    }
+    // vevent kind is the default; omit it so existing v1 baselines stay byte-stable.
+    stampEnvelope(obj, QStringLiteral("calendar"), inc->uid(),
+                  kind == QStringLiteral("vevent") ? QString() : kind);
     return serialize(obj);
 }
 
 // ---------------------------------------------------------------------------
-// CanonToICalStage — canon JSON → VEVENT iCal bytes (lossy)
+// CanonToICalStage — canon JSON → iCal bytes (kind-dispatched)
 // ---------------------------------------------------------------------------
 
 QByteArray CanonToICalStage::transform(const QByteArray& canonBytes) const
 {
     if (canonBytes.isEmpty())
         return {};
-    return canonObjectToEventBytes(parse(canonBytes));
+    const QJsonObject obj = parse(canonBytes);
+    if (obj.isEmpty())
+        return {};
+    const QString kind = Kalburator::Shape::CanonEnvelope::kind(obj);
+    if (kind == QStringLiteral("vtodo"))
+        return Kalburator::Todo::canonObjectToVtodoBytes(obj);
+    if (kind == QStringLiteral("vjournal"))
+        return canonObjectToJournalBytes(obj);
+    if (kind.isEmpty() || kind == QStringLiteral("vevent"))
+        return canonObjectToEventBytes(obj);   // absent kind ⇒ vevent (back-compat)
+    return {};   // unknown kind — guarded loudly by the engine.
 }
 
 // ---------------------------------------------------------------------------
