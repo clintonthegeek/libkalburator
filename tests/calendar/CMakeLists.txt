@@ -104,6 +104,10 @@ kalburator_add_calendar_integration_test(tst_calendar_sync_oneway)
 kalburator_add_calendar_integration_test(tst_calendar_conflict)
 kalburator_add_calendar_integration_test(tst_calendar_transcoding_warning)
 
+# Per-kind canon dispatch Task 8 — engine-level hybrid event+todo reconcile
+# (acceptance test proving the VTODO no longer demotes to empty bytes).
+kalburator_add_calendar_integration_test(tst_calendar_hybrid_reconcile)
+
 # Phase D Task 21 — first-sync path via BlobSyncEngine
 kalburator_add_calendar_integration_test(tst_calendar_first_sync_via_blob_engine)
 
