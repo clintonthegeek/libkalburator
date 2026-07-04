@@ -172,6 +172,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/orgicalcanonstages.h
     # N1 fix — shared component-scoped recurrence-line extraction
     src/calendar/icalcomponentscan.h
+    # N3 fix — authoritative iCal timestamp extraction (LAST-MODIFIED/DTSTAMP/CREATED)
+    src/calendar/icaltimestamp.h
     src/calendar/calendardomaindefinition.h
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
@@ -218,6 +220,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/orgicalcanonstages.cpp
     # N1 fix — shared component-scoped recurrence-line extraction
     src/calendar/icalcomponentscan.cpp
+    # N3 fix — authoritative iCal timestamp extraction (LAST-MODIFIED/DTSTAMP/CREATED)
+    src/calendar/icaltimestamp.cpp
     src/calendar/calendardomaindefinition.cpp
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp
