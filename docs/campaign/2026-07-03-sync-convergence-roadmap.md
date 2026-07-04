@@ -689,7 +689,25 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 - [x] B2 N4 multiget chunking + error truth — merged to main 2026-07-04
 - [x] B3 N5 CTag/content-cache coherence — merged to main 2026-07-04
 - [x] — tag v0.81
-- [ ] B4 N2 per-side baselines (schema v5)
+- [x] B4 N2 per-side baselines — landed 2026-07-04 on branch
+      `feature/sync-convergence-b4-baselines` (not yet merged/tagged). Schema
+      bumped v5→**v6** (blob_baselines_v3 gained nullable source_hash/
+      target_hash; the roadmap's original "schema v5" framing was stale —
+      v5 was already taken by the K.5 collection_baselines work). New engine
+      type `Kalburator::Engine::BaselineEntry`; `perRecordDiff` now diffs
+      each side against its OWN baseline hash. Written-bytes hashes are
+      captured via a post-write re-fetch through each backend's own
+      `contentHash` (not an engine-computed hash — needed because not every
+      backend recomputes a hash the same way on read, caught by
+      `tst_contacts_engine_witness`). Implicit baseline seeding and
+      `harvestBaselinesAfterFirstSync` (the first-sync mirror path) also
+      fixed — both had the same single-shared-hash defect. Core regression
+      gate `tests/engine/tst_sync_convergence.cpp::secondSyncIsNoOp` (real
+      FakeCalDavServer + LocalBackend + SyncEngine, VEVENT+VTODO, verified
+      RED against a reintroduced single-hash bug, then GREEN); plus 6 new
+      `tst_perrecorddiff` per-side cases and 4 new `tst_baseline_store_v3`
+      migration/round-trip cases. Full suite green, net +1 test binary +
+      16 new cases in existing binaries, zero regressions.
 - [ ] B5 convergence gate + fast path
 - [ ] — tag v0.82
 - [ ] C1 PlanStan mass-delete guard

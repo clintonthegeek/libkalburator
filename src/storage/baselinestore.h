@@ -94,6 +94,43 @@ public:
     bool clearMappingV3(const QString &mappingId);
 
     // -----------------------------------------------------------------------
+    // Per-side baseline hashes (Phase B4 / N2 fix, schema v6).
+    //
+    // A single stored content hash compared against both sides' native
+    // bytes can never converge: two backends never serialize the same
+    // logical record identically (PRODID, property order, folding, server
+    // normalization). These methods store what EACH side's native bytes
+    // hashed to at the moment of the last successful sync, in two new
+    // nullable columns (source_hash, target_hash) on the existing
+    // blob_baselines_v3 table — same (mappingId, recordId) key as the v3
+    // API above, so removeBaselineV3()/clearMappingV3() also clear these.
+    //
+    // Legacy rows written before this migration (only canonical_bytes set,
+    // domain "blob") have NULL source_hash/target_hash; baselineHashesV4()/
+    // baselinesHashesForMappingV4() treat that single legacy hash as BOTH
+    // side hashes so the first post-upgrade sync re-diffs exactly as
+    // before, then writes proper per-side rows on the next save. No
+    // separate data-migration pass is needed.
+    // -----------------------------------------------------------------------
+
+    struct BaselineHashes {
+        QString recordId;
+        QString sourceHash;
+        QString targetHash;
+    };
+
+    bool setBaselineHashesV4(const QString &mappingId,
+                             const QString &recordId,
+                             const QString &sourceHash,
+                             const QString &targetHash);
+
+    std::optional<BaselineHashes>
+    baselineHashesV4(const QString &mappingId, const QString &recordId) const;
+
+    QList<BaselineHashes>
+    baselineHashesForMappingV4(const QString &mappingId) const;
+
+    // -----------------------------------------------------------------------
     // Collection-baseline API (K.5, schema v5).
     //
     // Per (mappingId, collectionId) → QVariantMap of
@@ -162,6 +199,7 @@ private:
     bool ensureSchemaAndVersion();
     bool ensureSchemaV3();
     bool ensureSchemaV5();
+    bool ensureSchemaV6();
     void setError(const QString &message) const;
 };
 

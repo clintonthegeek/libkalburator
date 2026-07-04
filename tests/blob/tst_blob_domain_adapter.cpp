@@ -1,12 +1,14 @@
 #include <QtTest/QtTest>
 
 #include "backendrecord.h"
+#include "baselineentry.h"
 #include "blobdomaindefinition.h"
 #include "enginediff.h"
 #include "perrecorddiff.h"
 #include "recorddiffer.h"
 
 using Kalburator::Sync::BackendRecord;
+using Kalburator::Engine::BaselineEntry;
 using Kalburator::Engine::EngineDiff;
 using Kalburator::Engine::EngineDiffOp;
 using Kalburator::Engine::perRecordDiff;
@@ -24,6 +26,18 @@ BackendRecord makeRecord(const QString &id, const QString &payload)
     r.contentHash = QStringLiteral("hash-of-%1").arg(payload);
     r.lastModified = QDateTime::currentDateTimeUtc();
     return r;
+}
+
+// Pre-B4-style baseline: same hash on both sides (what every caller in this
+// file meant before the per-side split — these tests never exercised
+// cross-serialization).
+BaselineEntry makeBaseline(const BackendRecord &rec)
+{
+    BaselineEntry e;
+    e.id = rec.id;
+    e.sourceHash = rec.contentHash;
+    e.targetHash = rec.contentHash;
+    return e;
 }
 
 } // namespace
@@ -51,7 +65,7 @@ void TstBlobDomainAdapter::hashEqualityDetection_returnsUnchanged()
     BlobDomainDefinition dom;
     auto differ = dom.createCanonicalDiffer();
     const EngineDiff d = perRecordDiff(
-        {rec}, {rec}, {rec}, dom.canonicalShape(), *differ);
+        {rec}, {rec}, {makeBaseline(rec)}, dom.canonicalShape(), *differ);
 
     QCOMPARE(d.totalOperations(), 0);
     QVERIFY(!d.hasConflicts());
@@ -85,7 +99,7 @@ void TstBlobDomainAdapter::updateDiff_returnsToTargetUpdate()
     BlobDomainDefinition dom;
     auto differ = dom.createCanonicalDiffer();
     const EngineDiff d = perRecordDiff(
-        {v2}, {v1}, {v1}, dom.canonicalShape(), *differ);
+        {v2}, {v1}, {makeBaseline(v1)}, dom.canonicalShape(), *differ);
 
     QCOMPARE(d.toSource.size(), 0);
     QCOMPARE(d.toTarget.size(), 1);
@@ -105,7 +119,7 @@ void TstBlobDomainAdapter::deleteDiff_returnsToTargetDelete()
     BlobDomainDefinition dom;
     auto differ = dom.createCanonicalDiffer();
     const EngineDiff d = perRecordDiff(
-        {}, {rec}, {rec}, dom.canonicalShape(), *differ);
+        {}, {rec}, {makeBaseline(rec)}, dom.canonicalShape(), *differ);
 
     QCOMPARE(d.toSource.size(), 0);
     QCOMPARE(d.toTarget.size(), 1);

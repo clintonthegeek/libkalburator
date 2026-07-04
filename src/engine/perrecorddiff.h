@@ -2,6 +2,7 @@
 #define KALBURATOR_ENGINE_PERRECORDDIFF_H
 
 #include "backendrecord.h"
+#include "baselineentry.h"
 #include "enginediff.h"
 #include "shape.h"
 
@@ -15,11 +16,16 @@ namespace Kalburator::Engine {
 /// caller-provided RecordDiffer for equality. Produces an EngineDiff
 /// with toSource/toTarget op lists; conflicts land in toTarget.
 ///
-/// Replaces the Phase Ia.5 transitional helper `blobBatchDiff`. The
-/// differ is borrowed; the caller retains ownership.
+/// Replaces the Phase Ia.5 transitional helper `blobBatchDiff`.
+///
+/// Phase B4 (N2 fix): `baseline` carries a per-side hash pair per record
+/// (see BaselineEntry) instead of one hash shared by both sides — a
+/// source record is compared against its own `sourceHash`, a target
+/// record against its own `targetHash`, never against the other side's
+/// native bytes. The differ is borrowed; the caller retains ownership.
 EngineDiff perRecordDiff(const QList<Kalburator::Sync::BackendRecord>& source,
                          const QList<Kalburator::Sync::BackendRecord>& target,
-                         const QList<Kalburator::Sync::BackendRecord>& baseline,
+                         const QList<BaselineEntry>& baseline,
                          const Kalburator::Shape::Shape& canonical,
                          const Kalburator::Shape::RecordDiffer& differ);
 

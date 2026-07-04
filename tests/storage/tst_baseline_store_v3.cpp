@@ -1,4 +1,5 @@
 #include <QtTest/QtTest>
+#include <QHash>
 #include <QTemporaryDir>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -42,6 +43,12 @@ private slots:
     void migrate_fromV2_noResolver_dropsData();
     void migrate_idempotent_reopenSafe();
     void migrate_orphanRow_skipped();
+
+    // Phase B4 (N2 fix): per-side baseline hashes, schema v6.
+    void legacyRow_singleHash_loadsAsBothSidesEqual();
+    void newRow_perSideHashesPersistIndependently();
+    void perSideHashes_roundTripAcrossReopen();
+    void legacyAndPerSideRows_coexistInSameMapping();
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -68,12 +75,26 @@ void TestBlobBaselineStoreV3::freshDb_hasV3Table()
             QSqlQuery q(db);
             q.exec(QStringLiteral("PRAGMA user_version"));
             QVERIFY(q.next());
-            QCOMPARE(q.value(0).toInt(), 5);  // K.5: schema v5 (collection_baselines added)
+            QCOMPARE(q.value(0).toInt(), 6);  // B4: schema v6 (source_hash/target_hash added)
 
             q.exec(QStringLiteral(
                 "SELECT name FROM sqlite_master WHERE type='table' "
                 "AND name='blob_baselines_v3'"));
             QVERIFY(q.next());
+        }
+        {
+            // B4: blob_baselines_v3 gained nullable source_hash/target_hash
+            // columns on a fresh DB too (not just on migration).
+            QSqlQuery info(db);
+            info.exec(QStringLiteral("PRAGMA table_info(blob_baselines_v3)"));
+            bool hasSourceHash = false, hasTargetHash = false;
+            while (info.next()) {
+                const QString col = info.value(1).toString();
+                if (col == QLatin1String("source_hash")) hasSourceHash = true;
+                if (col == QLatin1String("target_hash")) hasTargetHash = true;
+            }
+            QVERIFY(hasSourceHash);
+            QVERIFY(hasTargetHash);
         }
         db.close();
     }
@@ -351,6 +372,125 @@ void TestBlobBaselineStoreV3::migrate_orphanRow_skipped()
     const auto all = store.baselinesForMappingV3(QStringLiteral("m"));
     QCOMPARE(all.size(), 1);
     QCOMPARE(all.first().recordId, QStringLiteral("r1"));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase B4 (N2 fix): per-side baseline hashes, schema v6.
+//
+// blob_baselines_v3 gained nullable source_hash/target_hash columns. A
+// legacy row (written via the pre-B4 setBaselineV3() API, which never
+// touches those columns) must transparently load as "both sides equal" so
+// the first post-upgrade sync re-diffs exactly as it did before this
+// migration; a fresh per-side write must persist and round-trip each
+// side's hash independently.
+// ───────────────────────────────────────────────────────────────────────────
+
+void TestBlobBaselineStoreV3::legacyRow_singleHash_loadsAsBothSidesEqual()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BaselineStore store(dir.filePath(QStringLiteral("test.db")));
+    QVERIFY(store.isOpen());
+
+    const QString mid = QStringLiteral("m1");
+
+    // Simulate a pre-B4 baseline row: written via the old single-hash API,
+    // domain "blob" (the unified engine's steady-state marker for a
+    // hash-only baseline row — see syncengine.cpp), source_hash/target_hash
+    // left untouched (NULL).
+    CanonicalRecord legacy;
+    legacy.recordId = QStringLiteral("r1");
+    legacy.shape    = Shape{DomainId{QStringLiteral("blob")}, EncodingId{QStringLiteral("raw")}};
+    legacy.data     = QByteArrayLiteral("legacy-shared-hash");
+    QVERIFY(store.setBaselineV3(mid, legacy));
+
+    const auto single = store.baselineHashesV4(mid, QStringLiteral("r1"));
+    QVERIFY(single.has_value());
+    QCOMPARE(single->sourceHash, QStringLiteral("legacy-shared-hash"));
+    QCOMPARE(single->targetHash, QStringLiteral("legacy-shared-hash"));
+
+    const auto all = store.baselineHashesForMappingV4(mid);
+    QCOMPARE(all.size(), 1);
+    QCOMPARE(all.first().sourceHash, QStringLiteral("legacy-shared-hash"));
+    QCOMPARE(all.first().targetHash, QStringLiteral("legacy-shared-hash"));
+}
+
+void TestBlobBaselineStoreV3::newRow_perSideHashesPersistIndependently()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BaselineStore store(dir.filePath(QStringLiteral("test.db")));
+    QVERIFY(store.isOpen());
+
+    const QString mid = QStringLiteral("m1");
+    QVERIFY(store.setBaselineHashesV4(mid, QStringLiteral("r1"),
+                                      QStringLiteral("local-hash"),
+                                      QStringLiteral("caldav-hash")));
+
+    const auto got = store.baselineHashesV4(mid, QStringLiteral("r1"));
+    QVERIFY(got.has_value());
+    QCOMPARE(got->sourceHash, QStringLiteral("local-hash"));
+    QCOMPARE(got->targetHash, QStringLiteral("caldav-hash"));
+    QVERIFY(got->sourceHash != got->targetHash);
+}
+
+void TestBlobBaselineStoreV3::perSideHashes_roundTripAcrossReopen()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("test.db"));
+    const QString mid = QStringLiteral("m1");
+
+    {
+        BaselineStore store(dbPath);
+        QVERIFY(store.isOpen());
+        QVERIFY(store.setBaselineHashesV4(mid, QStringLiteral("r1"),
+                                          QStringLiteral("src-hash-1"),
+                                          QStringLiteral("tgt-hash-1")));
+    }
+    {
+        BaselineStore store2(dbPath);
+        QVERIFY(store2.isOpen());
+        const auto got = store2.baselineHashesV4(mid, QStringLiteral("r1"));
+        QVERIFY(got.has_value());
+        QCOMPARE(got->sourceHash, QStringLiteral("src-hash-1"));
+        QCOMPARE(got->targetHash, QStringLiteral("tgt-hash-1"));
+    }
+}
+
+void TestBlobBaselineStoreV3::legacyAndPerSideRows_coexistInSameMapping()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BaselineStore store(dir.filePath(QStringLiteral("test.db")));
+    QVERIFY(store.isOpen());
+
+    const QString mid = QStringLiteral("m1");
+
+    // r1: legacy single-hash row (pre-B4 sync, never migrated by any data
+    // pass — just left alone per the design).
+    CanonicalRecord legacy;
+    legacy.recordId = QStringLiteral("r1");
+    legacy.shape    = Shape{DomainId{QStringLiteral("blob")}, EncodingId{QStringLiteral("raw")}};
+    legacy.data     = QByteArrayLiteral("legacy-hash");
+    QVERIFY(store.setBaselineV3(mid, legacy));
+
+    // r2: fresh per-side row (post-B4 sync).
+    QVERIFY(store.setBaselineHashesV4(mid, QStringLiteral("r2"),
+                                      QStringLiteral("src-2"), QStringLiteral("tgt-2")));
+
+    const auto all = store.baselineHashesForMappingV4(mid);
+    QCOMPARE(all.size(), 2);
+    QHash<QString, Kalburator::Storage::BaselineStore::BaselineHashes> byId;
+    for (const auto &h : all) byId.insert(h.recordId, h);
+
+    QVERIFY(byId.contains(QStringLiteral("r1")));
+    QCOMPARE(byId.value(QStringLiteral("r1")).sourceHash, QStringLiteral("legacy-hash"));
+    QCOMPARE(byId.value(QStringLiteral("r1")).targetHash, QStringLiteral("legacy-hash"));
+
+    QVERIFY(byId.contains(QStringLiteral("r2")));
+    QCOMPARE(byId.value(QStringLiteral("r2")).sourceHash, QStringLiteral("src-2"));
+    QCOMPARE(byId.value(QStringLiteral("r2")).targetHash, QStringLiteral("tgt-2"));
 }
 
 QTEST_MAIN(TestBlobBaselineStoreV3)

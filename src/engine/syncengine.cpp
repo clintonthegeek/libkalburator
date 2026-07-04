@@ -3,6 +3,7 @@
 #include "syncrequest.h"
 #include "lastwritewins.h"
 #include "baselinestore.h"
+#include "baselineentry.h"
 #include "perrecorddiff.h"
 #include "propertydiff.h"
 #include "domainoperationsregistry.h"
@@ -1732,6 +1733,17 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
                     if (tgtWritable && tgt->createRecord(colId, sr).isEmpty())
                         ++mirrorErrors;
                 } else if (it.value().contentHash != sr.contentHash) {
+                    // Phase B4 (N2): this is a genuine cross-side native-bytes
+                    // hash compare, the same shape as the N2 bug elsewhere in
+                    // this file — but it does NOT need the per-side-baseline
+                    // treatment. dispatchFirstSync only reaches this mirror
+                    // body when the target collection was independently
+                    // confirmed empty just above (targetEmpty), so tgtById is
+                    // empty and this branch is unreached in the true
+                    // first-sync case. It only fires if the target gained
+                    // records in the narrow window between the emptiness
+                    // check and this walk (a benign existing-item update,
+                    // not the steady-state convergence path B4 fixes).
                     BackendRecord out = sr;
                     out.id = it.value().id;
                     if (tgtWritable && !tgt->updateRecord(out))
@@ -1786,49 +1798,84 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 
     SyncBackendBase *srcBackend = m_registry
         ? m_registry->backendInstance(request.mapping.sourceBackend) : nullptr;
-    if (!srcBackend) {
-        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - source backend not found";
+    SyncBackendBase *tgtBackend = m_registry
+        ? m_registry->backendInstance(request.mapping.targetBackend) : nullptr;
+    if (!srcBackend || !tgtBackend) {
+        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - backend not found";
         return;
     }
 
     IBlobBackend *src = asBlob(srcBackend);
-    const QString colId = request.mapping.sourceCalendar;
-    const QString backendId = request.mapping.sourceBackend;
+    IBlobBackend *tgt = asBlob(tgtBackend);
+    const QString srcColId = request.mapping.sourceCalendar;
+    const QString tgtColId = request.mapping.targetCalendar;
 
-    QList<BackendRecord> records;
+    // Phase B4 (N2 fix): the mirror just wrote source's content into target
+    // using target's own native serialization — its bytes (and hence its
+    // hash) generally differ from source's, even for identical logical
+    // content (PRODID, property order, folding, server normalization). Read
+    // BOTH sides back post-mirror so each gets its own baseline hash,
+    // instead of stamping target with source's hash (which is exactly the
+    // single-shared-hash bug this phase fixes, just reached via the
+    // first-sync path instead of the steady-state one).
+    QList<BackendRecord> srcRecords;
+    QList<BackendRecord> tgtRecords;
     QString harvestReadErr;
     QMetaObject::invokeMethod(srcBackend,
-        [src, colId, &records, &harvestReadErr]() {
-            (void)src->loadRecordsOrError(colId, records, harvestReadErr);
+        [src, srcColId, &srcRecords, &harvestReadErr]() {
+            (void)src->loadRecordsOrError(srcColId, srcRecords, harvestReadErr);
         }, Qt::BlockingQueuedConnection);
     if (!harvestReadErr.isEmpty()) {
-        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - read failed:"
+        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - source read failed:"
+                   << harvestReadErr << "(no baselines harvested)";
+        return;
+    }
+    QMetaObject::invokeMethod(tgtBackend,
+        [tgt, tgtColId, &tgtRecords, &harvestReadErr]() {
+            (void)tgt->loadRecordsOrError(tgtColId, tgtRecords, harvestReadErr);
+        }, Qt::BlockingQueuedConnection);
+    if (!harvestReadErr.isEmpty()) {
+        qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - target read failed:"
                    << harvestReadErr << "(no baselines harvested)";
         return;
     }
 
-    QHash<QString, QString> uidToIcal;
-    const QString mappingId = request.mapping.id;
-
-    for (const BackendRecord &r : records) {
-        const QString ical = QString::fromUtf8(r.data);
-        uidToIcal.insert(r.id, ical);
+    QHash<QString, QString> tgtHashById;
+    tgtHashById.reserve(tgtRecords.size());
+    for (const BackendRecord &r : tgtRecords) {
+        tgtHashById.insert(r.id, r.contentHash);
     }
+
+    const QString mappingId = request.mapping.id;
+    QList<Kalburator::Engine::BaselineEntry> entries;
+    entries.reserve(srcRecords.size());
+    for (const BackendRecord &r : srcRecords) {
+        Kalburator::Engine::BaselineEntry e;
+        e.id = r.id;
+        e.sourceHash = r.contentHash;
+        // Fallback to the source hash only if target somehow doesn't have
+        // the record yet (shouldn't happen — the mirror just wrote it —
+        // but never silently leave a hash empty; see INVARIANTS "fail
+        // loud, never silently-empty").
+        e.targetHash = tgtHashById.contains(r.id) ? tgtHashById.value(r.id) : r.contentHash;
+        entries.append(e);
+    }
+
     const QDateTime now = QDateTime::currentDateTime();
     if (m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         // Marshal to engine thread — BaselineStore (SQLite) is not thread-safe.
         QMetaObject::invokeMethod(m_baselineStoreAnchor,
-            [bbs, mappingId, uidToIcal, now]() {
-                for (auto it = uidToIcal.constBegin(); it != uidToIcal.constEnd(); ++it) {
-                    bbs->setBaselineV3(mappingId, makeCalendarRec(it.key(), it.value()));
+            [bbs, mappingId, entries, now]() {
+                for (const auto &e : entries) {
+                    bbs->setBaselineHashesV4(mappingId, e.id, e.sourceHash, e.targetHash);
                 }
                 bbs->setLastSyncTime(mappingId, now);
             }, Qt::BlockingQueuedConnection);
     }
 
     qDebug().noquote() << QString("SyncEngineWorker::harvestBaselinesAfterFirstSync - seeded %1 baselines for %2")
-        .arg(uidToIcal.size()).arg(mappingId);
+        .arg(entries.size()).arg(mappingId);
 }
 
 // ----------------------------------------------------------------------------
@@ -2191,30 +2238,25 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // Clobber skips the load entirely: the diff must see a first sync (all
     // source records become Creates against the wiped target). A fresh
     // baseline is still written at end-of-sync as normal.
-    QList<BackendRecord> baselineRecords;
+    //
+    // Phase B4 (N2 fix): baselines are now per-side hash pairs
+    // (Engine::BaselineEntry), not a single hash compared against both
+    // sides' native bytes — see baselineentry.h and perrecorddiff.h.
+    // baselineHashesForMappingV4() already filters out legacy non-hash rows
+    // (e.g. the pre-unified calendar/ical baseline shape written by the
+    // now-dead SyncEngine::updateSyncMetadata) and transparently upgrades
+    // legacy single-hash rows to "both sides equal" (see its doc comment in
+    // baselinestore.cpp).
+    QList<Kalburator::Engine::BaselineEntry> baselineEntries;
     if (!request.override.clobber && m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineRecords]() {
-            for (const auto &canonical : bbs->baselinesForMappingV3(mappingId)) {
-                // The unified engine persists EVERY baseline as blob/raw with
-                // data = contentHash bytes (see the two setBaselineV3 sites
-                // below and in unifiedContinueAfterConflicts), regardless of the
-                // record's real domain. So this filter does not drop modern
-                // baselines — it skips only *legacy* calendar baselines
-                // (domain="calendar", encoding="ical") left by the pre-unified
-                // path, which stored iCal text, not hashes. Loading those would
-                // set contentHash = <ical text> and break perRecordDiff's
-                // hash-equality comparison. Baseline-driven deletion detection
-                // for calendar/contacts works via the blob+hash form (proven by
-                // tst_calendar_subsequent_sync_uses_blob_view
-                // ::subsequentSync_deletedSourceRecordPropagatesDeletion).
-                if (canonical.shape.domain.toString() != QLatin1String("blob")) {
-                    continue;
-                }
-                BackendRecord rec;
-                rec.id          = canonical.recordId;
-                rec.contentHash = QString::fromUtf8(canonical.data);
-                baselineRecords.append(rec);
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineEntries]() {
+            for (const auto &h : bbs->baselineHashesForMappingV4(mappingId)) {
+                Kalburator::Engine::BaselineEntry e;
+                e.id         = h.recordId;
+                e.sourceHash = h.sourceHash;
+                e.targetHash = h.targetHash;
+                baselineEntries.append(e);
             }
         }, Qt::BlockingQueuedConnection);
     }
@@ -2225,40 +2267,51 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     m_unifiedDiffer = dd->createCanonicalDiffer();
     m_unifiedMerger = dd->createCanonicalMerger();
     const EngineDiff engineDiff = perRecordDiff(
-        sourceRecords, targetRecords, baselineRecords,
+        sourceRecords, targetRecords, baselineEntries,
         canonical, *m_unifiedDiffer);
 
-    // Seed baselines for records that are already in sync (same ID, same hash
-    // on both sides, no existing baseline). Without this, a subsequent sync
-    // cannot distinguish "source deleted this record" from "target has a
-    // new record the source never knew about". The legacy calendar path saved
-    // every known record after each successful sync; we replicate that
-    // guarantee here for BaselineStore-backed paths.
+    // Seed baselines for records that are already in sync (same ID, no
+    // existing baseline) so a subsequent sync can distinguish "source
+    // deleted this record" from "target has a new record the source never
+    // knew about". The legacy calendar path saved every known record after
+    // each successful sync; we replicate that guarantee here for
+    // BaselineStore-backed paths.
+    //
+    // Phase B4 (N2 fix): "already in sync" must be judged by SEMANTIC
+    // (canonical) equality, not by comparing the two sides' native-bytes
+    // hashes to each other — those never match across backends (that
+    // comparison IS the bug), so the old raw-hash check here silently
+    // disabled deletion-detection bootstrap for every already-converged
+    // record synced across two different backend types. The per-side
+    // hashes captured on each successful seed are each side's own current
+    // native hash — never each other's.
     if (m_baselineStore && m_baselineStoreAnchor) {
         QHash<QString, BackendRecord> srcById;
         for (const auto &r : sourceRecords) srcById.insert(r.id, r);
-        QHash<QString, BackendRecord> baselineById;
-        for (const auto &r : baselineRecords) baselineById.insert(r.id, r);
-        QList<Kalburator::Shape::CanonicalRecord> implicitBaselines;
-        const Kalburator::Shape::Shape blobShape_{
-            Kalburator::Shape::DomainId{QStringLiteral("blob")},
-            Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
+        QHash<QString, Kalburator::Engine::BaselineEntry> baselineById;
+        for (const auto &e : baselineEntries) baselineById.insert(e.id, e);
+        QList<Kalburator::Engine::BaselineEntry> implicitBaselines;
         for (const auto &tgtRec : targetRecords) {
             if (!srcById.contains(tgtRec.id)) continue;
             if (baselineById.contains(tgtRec.id)) continue; // already tracked
             const BackendRecord &srcRec = srcById.value(tgtRec.id);
-            if (srcRec.contentHash != tgtRec.contentHash) continue; // conflict/update — handled by diff
-            Kalburator::Shape::CanonicalRecord c;
-            c.recordId = tgtRec.id;
-            c.shape    = blobShape_;
-            c.data     = tgtRec.contentHash.toUtf8();
-            implicitBaselines.append(c);
+            const Kalburator::Shape::CanonicalRecord srcCanon{
+                canonical, srcRec.data, srcRec.id};
+            const Kalburator::Shape::CanonicalRecord tgtCanon{
+                canonical, tgtRec.data, tgtRec.id};
+            if (!m_unifiedDiffer->equal(srcCanon, tgtCanon))
+                continue; // genuinely differ — conflict/update, handled by diff
+            Kalburator::Engine::BaselineEntry e;
+            e.id         = tgtRec.id;
+            e.sourceHash = srcRec.contentHash;
+            e.targetHash = tgtRec.contentHash;
+            implicitBaselines.append(e);
         }
         if (!implicitBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, implicitBaselines]() {
-                for (const auto &c : implicitBaselines)
-                    bbs->setBaselineV3(mappingId, c);
+                for (const auto &e : implicitBaselines)
+                    bbs->setBaselineHashesV4(mappingId, e.id, e.sourceHash, e.targetHash);
             }, Qt::BlockingQueuedConnection);
         }
     }
@@ -2719,6 +2772,24 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         }
     };
 
+    // Phase B4 (N2 fix): per-side hashes of the bytes ACTUALLY WRITTEN this
+    // sync, keyed by record id. Populated below via a post-write re-fetch
+    // through EACH backend's own contentHash computation — not an engine-
+    // side hash of the bytes we handed to the writer. BackendRecord.contentHash
+    // is explicitly "backend's choice of algorithm" (backendrecord.h); some
+    // backends recompute a fresh hash from stored bytes on every read (real
+    // backends — LocalBackend, RemoteCalendarBackend, both SHA-256), others
+    // may use a different algorithm or even pass a caller-supplied hash
+    // through unchanged. Re-fetching after a successful write and reading
+    // back THAT backend's own contentHash is the only way to guarantee the
+    // saved baseline matches what the very next sync's fetch will see,
+    // regardless of the backend's hash semantics. Used by the baseline-save
+    // block after a successful apply so each side's baseline reflects its
+    // own read-time hash — never the other side's, which is the
+    // single-shared-hash bug this phase fixes.
+    QHash<QString, QString> writtenTargetHash;
+    QHash<QString, QString> writtenSourceHash;
+
     // Apply to target.
     if (!m_unifiedMerge.finalTarget.isEmpty()) {
         QList<BackendRecord> toWrite = m_unifiedMerge.finalTarget;
@@ -2747,6 +2818,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
                    m_currentRequest.mapping.targetBackend);
+        if (!writeFailed) {
+            QList<BackendRecord> refetched;
+            QString refetchErr;
+            QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &refetched, &refetchErr]() {
+                tgtBlob->loadRecordsOrError(tgtColId, refetched, refetchErr);
+            }, Qt::BlockingQueuedConnection);
+            for (const auto &r : refetched) writtenTargetHash.insert(r.id, r.contentHash);
+        }
     }
 
     // Apply to source.
@@ -2777,6 +2856,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
                    m_currentRequest.mapping.sourceBackend);
+        if (!writeFailed) {
+            QList<BackendRecord> refetched;
+            QString refetchErr;
+            QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &refetched, &refetchErr]() {
+                srcBlob->loadRecordsOrError(srcColId, refetched, refetchErr);
+            }, Qt::BlockingQueuedConnection);
+            for (const auto &r : refetched) writtenSourceHash.insert(r.id, r.contentHash);
+        }
     }
 
     if (writeFailed) {
@@ -2788,21 +2875,39 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // partial write failure would cause "phantom deletions" on retry: the
         // next sync sees the baseline + no target record → wrongly tells source
         // to delete the record the target never actually committed.
+        //
+        // Phase B4 (N2 fix): `updatedBaselines` tells us WHICH record ids
+        // need a fresh baseline (populated the same way it always was,
+        // across unifiedHandleConflicts/resumeAfterConflict/the toSource
+        // loop/mergeMirrorAToB/mergeMirrorBToA) and, for whichever side
+        // did NOT get new bytes this sync, its `.contentHash` is that
+        // side's already-current native hash (the entry is literally that
+        // side's own unwritten record — see each population site). For
+        // whichever side WAS (re)written, prefer the hash of the bytes
+        // actually written (writtenSourceHash/writtenTargetHash), captured
+        // post-transcode above — never the other side's hash, and never a
+        // single shared hash.
         if (m_baselineStore && m_baselineStoreAnchor && !m_unifiedMerge.updatedBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-            const Kalburator::Shape::Shape blobShape{
-                Kalburator::Shape::DomainId{QStringLiteral("blob")},
-                Kalburator::Shape::EncodingId{QStringLiteral("raw")}};
-            const QList<BackendRecord> updated = m_unifiedMerge.updatedBaselines;
-            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, blobShape, updated]() {
-                for (const auto &rec : updated) {
-                    if (rec.id.isEmpty() || rec.isDeleted)
-                        continue;
-                    Kalburator::Shape::CanonicalRecord canonical;
-                    canonical.recordId = rec.id;
-                    canonical.shape    = blobShape;
-                    canonical.data     = rec.contentHash.toUtf8();
-                    bbs->setBaselineV3(mappingId, canonical);
+            QHash<QString, Kalburator::Engine::BaselineEntry> toSave;
+            for (const auto &rec : m_unifiedMerge.updatedBaselines) {
+                if (rec.id.isEmpty() || rec.isDeleted) continue;
+                Kalburator::Engine::BaselineEntry e = toSave.value(rec.id);
+                e.id = rec.id;
+                if (writtenSourceHash.contains(rec.id))
+                    e.sourceHash = writtenSourceHash.value(rec.id);
+                else if (e.sourceHash.isEmpty())
+                    e.sourceHash = rec.contentHash;
+                if (writtenTargetHash.contains(rec.id))
+                    e.targetHash = writtenTargetHash.value(rec.id);
+                else if (e.targetHash.isEmpty())
+                    e.targetHash = rec.contentHash;
+                toSave.insert(rec.id, e);
+            }
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave]() {
+                for (auto it = toSave.constBegin(); it != toSave.constEnd(); ++it) {
+                    bbs->setBaselineHashesV4(mappingId, it.value().id,
+                                             it.value().sourceHash, it.value().targetHash);
                 }
             }, Qt::BlockingQueuedConnection);
         }

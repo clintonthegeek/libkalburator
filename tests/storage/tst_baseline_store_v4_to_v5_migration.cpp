@@ -73,7 +73,11 @@ void TstBaselineStoreV4ToV5Migration::migrationStampsVersion5() {
         QSqlQuery q(db);
         q.exec("PRAGMA user_version");
         QVERIFY(q.next());
-        QCOMPARE(q.value(0).toInt(), 5);
+        // Phase B4 bumped the schema stamp 5 -> 6 (blob_baselines_v3 gained
+        // source_hash/target_hash columns, ensureSchemaV6()). This test's
+        // name predates that bump; the v4->v5 migration path it exercises
+        // is unchanged, it just now lands one version further along.
+        QCOMPARE(q.value(0).toInt(), 6);
     }
     QSqlDatabase::removeDatabase(conn);
 }

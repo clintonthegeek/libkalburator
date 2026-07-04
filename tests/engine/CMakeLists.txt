@@ -162,3 +162,32 @@ target_include_directories(tst_syncengine_config_api
 
 # Per-kind canon dispatch Task 7 — fail-loud transcode guard predicate.
 kalburator_add_engine_test(tst_transcode_guard)
+
+# Phase B4 (N2 fix) — the sync-convergence campaign's core regression gate.
+# FakeCalDavServer -> CalDavProvider -> RemoteCalendarBackend (source)
+# <-> SyncEngine::runSync <-> LocalBackend (target, real .ics files).
+# secondSyncIsNoOp proves per-side baseline hashes let an already-converged
+# mirror sync twice with zero writes, even though the two backends never
+# serialize the same logical record identically.
+add_executable(tst_sync_convergence
+    tst_sync_convergence.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.h
+)
+target_include_directories(tst_sync_convergence
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+        ${CMAKE_CURRENT_SOURCE_DIR}/../calendar
+)
+target_link_libraries(tst_sync_convergence
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_sync_convergence COMMAND tst_sync_convergence)
+set_tests_properties(tst_sync_convergence PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

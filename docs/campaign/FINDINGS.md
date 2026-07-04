@@ -251,3 +251,24 @@ cancellation-timing assertions, not a regression from this campaign's changes �
 touch cancellation. Not investigated further (out of this campaign's scope); flagging so a future
 session doesn't mistake it for a regression from this branch's work.
 2026-05-24 — Plan 3 Parts A, B & C — inv 4/5 post-review fixups (commits 89edbbb, 7f68e36, 5b00a47) — a single subagent ran A5→Task13 unsupervised (per-task review checkpoints skipped) and introduced the SAME false-loss-contract bug in all three domains: a loss classified Reversible/Degraded whose verbatim stash was never emitted in code. Specifically: contacts sipAddresses/calendarUrls/externalIds (Reversible, A5); VTODO Degraded-status + checklistItems/sortOrder Reversible (B5); iCal classification="personal" Degraded (C5). Recurrence round-trip tests also asserted substring, not byte-identity. Fixed: originals now stashed as `CANON-*`/`X-CANON-*` custom props that round-trip into providerExtras; recurrence tests assert byte-identical RRULE/EXDATE; each fix has a falsifiable round-trip test. Caught by retroactive spec-compliance review of B and C, then — prompted by the human asking "is the mess cleaned up" — the identical bug was found and fixed in contacts (A) too. Lesson: when one agent silently expands scope past its task, review EVERY task it touched, not just the ones you remember dispatching.
+2026-07-04 — src/engine/syncengine.cpp `SyncEngine::updateSyncMetadata` (Phase B4 work) —
+inv 9 (off-topic notice) — this method (and its `makeCalendarRec` helper) is dead code: declared,
+defined, never called from anywhere in src/ or tests/ (calendar sync has routed through the unified
+`dispatchSync`/`unifiedContinueAfterConflicts` path since Phase Ib.5 Task 7 removed the if-calendar
+guard). It stores baselines under domain="calendar"/encoding="ical" with real iCal text as the
+payload — a different shape than the unified path's domain="blob"/encoding="raw" hash-only rows — so
+if it were ever accidentally wired back in, its rows would be silently invisible to
+`baselineHashesForMappingV4()`'s legacy-fallback filter (which only treats domain="blob" rows as
+hash rows, correctly ignoring "calendar"/"ical" ones as non-hash data). Not fixed this session
+(true dead code, zero runtime risk); flagging so a future cleanup pass deletes it deliberately
+rather than rediscovering the discrepancy under time pressure.
+2026-07-04 — src/types/synctypes.h `SyncStats` / `SyncResult::sourceStats,targetStats` (Phase B4
+work) — inv 9 (off-topic notice) — grep-confirmed: nothing under src/engine/ ever populates
+`sourceStats`/`targetStats` for the unified dispatch path (`unifiedContinueAfterConflicts` never
+touches `.created`/`.updated`/`.deleted`/`.conflicts`). The fields default-construct to all-zero and
+stay that way regardless of what actually happened during a sync. `tests/engine/tst_sync_convergence.cpp`
+could not use these fields to prove "zero writes on the second sync" for this reason and instead
+witnesses convergence via FakeCalDavServer's PUT/DELETE request counters plus on-disk mtime/byte
+comparison of LocalBackend's written files. Not fixed this session (out of B4's scope — this is a
+pre-existing observability gap, not a correctness bug); a future phase should either wire these
+fields up from `EngineMerge`/`WriterBatch` counts or delete them if genuinely unused by any consumer.

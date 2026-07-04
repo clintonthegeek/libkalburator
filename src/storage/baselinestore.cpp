@@ -15,7 +15,7 @@
 namespace Kalburator::Storage {
 
 namespace {
-constexpr int kSchemaVersion = 5;  // K.5: collection_baselines table.
+constexpr int kSchemaVersion = 6;  // B4: blob_baselines_v3 source_hash/target_hash columns.
 } // namespace
 
 int BaselineStore::s_connectionCounter = 0;
@@ -181,9 +181,14 @@ bool BaselineStore::ensureSchemaAndVersion()
         return false;
     }
 
+    // B4: ensure blob_baselines_v3 has the per-side hash columns.
+    if (!ensureSchemaV6()) {
+        return false;
+    }
+
     // Single final user_version stamp for the full migration arc.
-    // Both ensureSchemaV3 and ensureSchemaV5 only create tables; they do not
-    // stamp user_version. This stamp covers all tables up to kSchemaVersion.
+    // ensureSchemaV3/V5/V6 only create tables/columns; they do not stamp
+    // user_version. This stamp covers everything up to kSchemaVersion.
     {
         QSqlQuery sq(db);
         sq.exec(QStringLiteral("PRAGMA user_version"));
@@ -274,6 +279,189 @@ bool BaselineStore::ensureSchemaV5()
     }
 
     return true;
+}
+
+bool BaselineStore::ensureSchemaV6()
+{
+    // B4 (N2 fix): add nullable source_hash/target_hash columns to
+    // blob_baselines_v3. SQLite has no "ADD COLUMN IF NOT EXISTS", so probe
+    // the column set via PRAGMA table_info first — idempotent, safe on every
+    // open. Existing rows keep NULL in the new columns; the fallback that
+    // treats a legacy single-hash row as "both sides equal" lives in
+    // baselineHashesV4()/baselineHashesForMappingV4(), not here.
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+
+    bool hasSourceHash = false;
+    bool hasTargetHash = false;
+    {
+        QSqlQuery info(db);
+        if (!info.exec(QStringLiteral("PRAGMA table_info(blob_baselines_v3)"))) {
+            setError(QStringLiteral("ensureSchemaV6: table_info failed: %1")
+                         .arg(info.lastError().text()));
+            return false;
+        }
+        while (info.next()) {
+            const QString colName = info.value(1).toString();
+            if (colName == QLatin1String("source_hash")) hasSourceHash = true;
+            if (colName == QLatin1String("target_hash")) hasTargetHash = true;
+        }
+    }
+
+    QSqlQuery q(db);
+    if (!hasSourceHash) {
+        if (!q.exec(QStringLiteral(
+                "ALTER TABLE blob_baselines_v3 ADD COLUMN source_hash TEXT"))) {
+            setError(QStringLiteral("ensureSchemaV6: ADD COLUMN source_hash failed: %1")
+                         .arg(q.lastError().text()));
+            return false;
+        }
+    }
+    if (!hasTargetHash) {
+        if (!q.exec(QStringLiteral(
+                "ALTER TABLE blob_baselines_v3 ADD COLUMN target_hash TEXT"))) {
+            setError(QStringLiteral("ensureSchemaV6: ADD COLUMN target_hash failed: %1")
+                         .arg(q.lastError().text()));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// ===========================================================================
+// Per-side baseline hashes (Phase B4 / N2 fix, schema v6)
+// ===========================================================================
+
+bool BaselineStore::setBaselineHashesV4(const QString &mappingId,
+                                        const QString &recordId,
+                                        const QString &sourceHash,
+                                        const QString &targetHash)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setBaselineHashesV4: store not open"));
+        return false;
+    }
+    // Shares blob_baselines_v3 with setBaselineV3()/baselineV3(); the
+    // domain/encoding/canonical_bytes columns are NOT NULL so we stamp them
+    // with the same "blob"/"raw" marker the unified engine's steady-state
+    // save path has always used for hash-only baseline rows (see
+    // syncengine.cpp) — canonical_bytes is left empty since the real payload
+    // now lives in source_hash/target_hash.
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_baselines_v3 "
+        "(mapping_id, record_id, canonical_shape_domain, canonical_shape_encoding, "
+        " canonical_bytes, source_hash, target_hash, updated_at) "
+        "VALUES (?, ?, 'blob', 'raw', ?, ?, ?, ?)"));
+    // A default-constructed QByteArray() is *null*, which Qt's SQLite
+    // driver binds as SQL NULL — violating canonical_bytes's NOT NULL
+    // constraint. Bind a non-null, empty byte array instead (the real
+    // payload for these rows lives in source_hash/target_hash).
+    static const QByteArray kEmptyNotNull(QByteArrayLiteral(""));
+    q.addBindValue(mappingId);
+    q.addBindValue(recordId);
+    q.addBindValue(kEmptyNotNull);
+    q.addBindValue(sourceHash);
+    q.addBindValue(targetHash);
+    q.addBindValue(QDateTime::currentSecsSinceEpoch());
+    if (!q.exec()) {
+        setError(QStringLiteral("setBaselineHashesV4: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+std::optional<BaselineStore::BaselineHashes>
+BaselineStore::baselineHashesV4(const QString &mappingId, const QString &recordId) const
+{
+    if (!m_isOpen) {
+        return std::nullopt;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT canonical_shape_domain, canonical_bytes, source_hash, target_hash "
+        "FROM blob_baselines_v3 WHERE mapping_id = ? AND record_id = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(recordId);
+    if (!q.exec() || !q.next()) {
+        return std::nullopt;
+    }
+    const QString domain     = q.value(0).toString();
+    const QByteArray bytes   = q.value(1).toByteArray();
+    const QVariant sourceVal = q.value(2);
+    const QVariant targetVal = q.value(3);
+
+    if (sourceVal.isNull() || targetVal.isNull()) {
+        // Legacy pre-B4 row: only a single hash was ever stored (in
+        // canonical_bytes, under domain "blob"). Treat it as both sides'
+        // hash so the next diff behaves exactly as it did before this
+        // migration; the next successful sync overwrites this row with a
+        // proper per-side pair. Non-"blob" legacy rows (e.g. the
+        // pre-unified calendar/ical baseline shape) are not hash rows at
+        // all — report "no baseline" rather than misreading ical text as
+        // a hash.
+        if (domain != QLatin1String("blob")) {
+            return std::nullopt;
+        }
+        BaselineHashes h;
+        h.recordId   = recordId;
+        h.sourceHash = QString::fromUtf8(bytes);
+        h.targetHash = h.sourceHash;
+        return h;
+    }
+
+    BaselineHashes h;
+    h.recordId   = recordId;
+    h.sourceHash = sourceVal.toString();
+    h.targetHash = targetVal.toString();
+    return h;
+}
+
+QList<BaselineStore::BaselineHashes>
+BaselineStore::baselineHashesForMappingV4(const QString &mappingId) const
+{
+    QList<BaselineHashes> out;
+    if (!m_isOpen) {
+        return out;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT record_id, canonical_shape_domain, canonical_bytes, source_hash, target_hash "
+        "FROM blob_baselines_v3 WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec()) {
+        setError(QStringLiteral("baselineHashesForMappingV4: %1").arg(q.lastError().text()));
+        return out;
+    }
+    while (q.next()) {
+        const QString recordId   = q.value(0).toString();
+        const QString domain     = q.value(1).toString();
+        const QByteArray bytes   = q.value(2).toByteArray();
+        const QVariant sourceVal = q.value(3);
+        const QVariant targetVal = q.value(4);
+
+        if (sourceVal.isNull() || targetVal.isNull()) {
+            if (domain != QLatin1String("blob")) {
+                continue;  // legacy non-hash row (e.g. calendar/ical) — not ours
+            }
+            BaselineHashes h;
+            h.recordId   = recordId;
+            h.sourceHash = QString::fromUtf8(bytes);
+            h.targetHash = h.sourceHash;
+            out.append(h);
+            continue;
+        }
+
+        BaselineHashes h;
+        h.recordId   = recordId;
+        h.sourceHash = sourceVal.toString();
+        h.targetHash = targetVal.toString();
+        out.append(h);
+    }
+    return out;
 }
 
 // ===========================================================================

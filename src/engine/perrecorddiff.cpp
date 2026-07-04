@@ -23,6 +23,29 @@ QHash<QString, BackendRecord> indexById(const QList<BackendRecord>& records)
     return out;
 }
 
+QHash<QString, BaselineEntry> indexBaselineById(const QList<BaselineEntry>& entries)
+{
+    QHash<QString, BaselineEntry> out;
+    out.reserve(entries.size());
+    for (const auto& e : entries) out.insert(e.id, e);
+    return out;
+}
+
+// EngineDiffOp::baselineRecord is a BackendRecord for historical/API-
+// compatibility reasons (CustomMerge/Duplicate resolution and the doomed-
+// record delete path only need `.id`, and CustomMerge reads `.data`, which
+// baseline entries never carried even before B4). Build a minimal shell:
+// `.contentHash` carries the baseline's sourceHash so pre-B4 call sites and
+// tests that read a single baseline hash keep working (source == target in
+// every case that predates the per-side split).
+BackendRecord baselineShell(const BaselineEntry& e)
+{
+    BackendRecord r;
+    r.id = e.id;
+    r.contentHash = e.sourceHash;
+    return r;
+}
+
 CanonicalRecord toCanonical(const BackendRecord& r, const KShape& shape)
 {
     CanonicalRecord c;
@@ -78,30 +101,51 @@ EngineDiffOp makeConflict(const BackendRecord& source,
 
 EngineDiff perRecordDiff(const QList<BackendRecord>& source,
                          const QList<BackendRecord>& target,
-                         const QList<BackendRecord>& baseline,
+                         const QList<BaselineEntry>& baseline,
                          const Kalburator::Shape::Shape& canonical,
                          const RecordDiffer& differ)
 {
     EngineDiff result;
 
-    const QHash<QString, BackendRecord> sById = indexById(source);
-    const QHash<QString, BackendRecord> tById = indexById(target);
-    const QHash<QString, BackendRecord> bById = indexById(baseline);
+    const QHash<QString, BackendRecord>  sById = indexById(source);
+    const QHash<QString, BackendRecord>  tById = indexById(target);
+    const QHash<QString, BaselineEntry>  bById = indexBaselineById(baseline);
 
     QSet<QString> allIds;
     for (auto it = sById.constBegin(); it != sById.constEnd(); ++it) allIds.insert(it.key());
     for (auto it = tById.constBegin(); it != tById.constEnd(); ++it) allIds.insert(it.key());
     for (auto it = bById.constBegin(); it != bById.constEnd(); ++it) allIds.insert(it.key());
 
-    // Prefer hash equality over semantic diff: baseline records store
-    // contentHash but not actual data bytes, so feeding a hash string
-    // to a JSON/iCal/vcard parser gives wrong results. When both records
-    // carry a contentHash, compare hashes directly; fall back to the
-    // semantic differ only when hashes are absent.
-    auto equalRecords = [&differ, &canonical](const BackendRecord& a,
-                                               const BackendRecord& b) -> bool {
-        if (!a.contentHash.isEmpty() && !b.contentHash.isEmpty())
-            return a.contentHash == b.contentHash;
+    // Phase B4 (N2 fix): each side is compared against its OWN baseline
+    // hash, never against the other side's native bytes — two backends
+    // never serialize the same logical record identically (PRODID,
+    // property order, folding, server normalization), so a cross-side
+    // hash compare would read "changed" forever after any cross-backend
+    // write. Prefer hash equality (baseline entries store no data bytes,
+    // only hashes, so a semantic differ has nothing to compare against on
+    // that side); fall back to the differ only when a side's baseline hash
+    // is absent, in which case we compare against the OTHER side's current
+    // record as the closest available reference — still never bytewise
+    // cross-side hash-equating.
+    auto sourceChanged = [&](const BackendRecord& s, const BaselineEntry& b) -> bool {
+        if (!s.contentHash.isEmpty() && !b.sourceHash.isEmpty())
+            return s.contentHash != b.sourceHash;
+        // No hash to compare: no baseline bytes exist to diff against
+        // either (BaselineEntry carries no payload) — report "changed" so
+        // an untracked side never silently reads as unchanged (fail loud,
+        // never silently-empty).
+        return true;
+    };
+    auto targetChanged = [&](const BackendRecord& t, const BaselineEntry& b) -> bool {
+        if (!t.contentHash.isEmpty() && !b.targetHash.isEmpty())
+            return t.contentHash != b.targetHash;
+        return true;
+    };
+    // Only used where there is genuinely no baseline at all (!hasB): the
+    // one place a cross-side comparison is legitimate, since there is no
+    // per-side reference yet. Semantic (canonical) equality, not hash.
+    auto semanticallyEqual = [&differ, &canonical](const BackendRecord& a,
+                                                    const BackendRecord& b) -> bool {
         return differ.equal(toCanonical(a, canonical), toCanonical(b, canonical));
     };
 
@@ -110,13 +154,14 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
         const bool hasT = tById.contains(id);
         const bool hasB = bById.contains(id);
 
-        const BackendRecord sRec = hasS ? sById.value(id) : BackendRecord{};
-        const BackendRecord tRec = hasT ? tById.value(id) : BackendRecord{};
-        const BackendRecord bRec = hasB ? bById.value(id) : BackendRecord{};
+        const BackendRecord  sRec   = hasS ? sById.value(id) : BackendRecord{};
+        const BackendRecord  tRec   = hasT ? tById.value(id) : BackendRecord{};
+        const BaselineEntry  bEntry = hasB ? bById.value(id) : BaselineEntry{};
+        const BackendRecord  bRec   = hasB ? baselineShell(bEntry) : BackendRecord{};
 
         if (hasS && hasT && hasB) {
-            const bool sChanged = !equalRecords(sRec, bRec);
-            const bool tChanged = !equalRecords(tRec, bRec);
+            const bool sChanged = sourceChanged(sRec, bEntry);
+            const bool tChanged = targetChanged(tRec, bEntry);
             if (!sChanged && !tChanged) continue;
             if (sChanged && !tChanged)
                 result.toTarget.append(makeUpdate(sRec, bRec, tRec));
@@ -125,12 +170,12 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
             else
                 result.toTarget.append(makeConflict(sRec, tRec, bRec));
         } else if (!hasS && hasT && hasB) {
-            if (!equalRecords(tRec, bRec))
+            if (targetChanged(tRec, bEntry))
                 result.toTarget.append(makeConflict(BackendRecord{}, tRec, bRec));
             else
                 result.toTarget.append(makeDelete(bRec, bRec));
         } else if (hasS && !hasT && hasB) {
-            if (!equalRecords(sRec, bRec))
+            if (sourceChanged(sRec, bEntry))
                 result.toTarget.append(makeConflict(sRec, BackendRecord{}, bRec));
             else
                 result.toSource.append(makeDelete(bRec, bRec));
@@ -139,7 +184,15 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
         } else if (!hasS && hasT && !hasB) {
             result.toSource.append(makeCreate(tRec));
         } else if (hasS && hasT && !hasB) {
-            if (!equalRecords(sRec, tRec))
+            // No baseline for this id at all yet (e.g. immediately after a
+            // first-sync mirror, before either side's steady-state baseline
+            // has been written): the only reference available is the other
+            // side's current record, so this is the one legitimate
+            // cross-side comparison — and it must be semantic, not a raw
+            // native-bytes hash compare (which would never match across
+            // backends and would manufacture a spurious conflict on every
+            // record on the very next sync).
+            if (!semanticallyEqual(sRec, tRec))
                 result.toTarget.append(makeConflict(sRec, tRec, BackendRecord{}));
         }
         // (!hasS && !hasT && hasB) is vestigial; ignore.
