@@ -771,8 +771,10 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       tests were run 40x in a stress loop post-fix with 0 failures (they
       were ~30-40% flaky before the `m_lastRawIcsByUid` fix, confirming the
       fix, not luck, closed it).
-- [ ] — tag v0.82
-- [ ] C1 PlanStan mass-delete guard
+- [x] — tag v0.82 (libkalburator main @ `1e985e5`, 2026-07-04)
+- [x] C1 PlanStan mass-delete guard — landed in PlanStan (`SyncMassDeleteGuard`,
+      registered in `CollectionController::initializeSyncInfrastructure`);
+      see PlanStan/CLAUDE.md sync-convergence campaign section
 - [ ] C2 PlanStan spoke-loading fix
 - [ ] C3 PlanStan auto-sync ordering
 - [ ] C4 pin bumps + live end-to-end + recovery
