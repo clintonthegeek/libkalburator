@@ -159,3 +159,6 @@ target_include_directories(tst_conflict_policy_matrix
 kalburator_add_engine_integration_test(tst_syncengine_config_api)
 target_include_directories(tst_syncengine_config_api
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../calendar)
+
+# Per-kind canon dispatch Task 7 — fail-loud transcode guard predicate.
+kalburator_add_engine_test(tst_transcode_guard)

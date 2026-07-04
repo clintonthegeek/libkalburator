@@ -32,6 +32,7 @@
 #include "conflictmanager.h"
 #include "imassdeleteguard.h"
 #include "canonenvelope.h"
+#include "transcodeguard.h"
 #include "lossprofile.h"
 
 #include <QDebug>
@@ -2068,7 +2069,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // IRecordDiffer migration fixes.
     if (!srcToCanon->isIdentity()) {
         for (auto &r : sourceRecords) {
+            const QByteArray before = r.data;
             r.data = srcToCanon->apply(r.data);
+            if (Kalburator::Sync::transcodeEmptiedRecord(before, r.data)) {
+                m_currentResult.success = false;
+                m_currentResult.errorMessage = QStringLiteral(
+                    "transcode produced empty bytes for record '%1' "
+                    "promoting %2/%3 -> canonical (unhandled component kind?)")
+                        .arg(r.id, srcShape.domain.toString(), srcShape.encoding.toString());
+                m_currentResult.endTime = QDateTime::currentDateTime();
+                emit syncCompleted(mappingId, m_currentResult);
+                return true;
+            }
         }
     }
 
@@ -2718,7 +2730,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     const QStringList lost = materializedLoss(*canonToTgt, rec.data);
                     if (!lost.isEmpty())
                         emit transcodingWarning(tgtColId, rec.id, { lost.join(QStringLiteral(", ")) });
+                    const QByteArray before = rec.data;
                     rec.data = canonToTgt->apply(rec.data);
+                    if (Kalburator::Sync::transcodeEmptiedRecord(before, rec.data)) {
+                        writeFailed = true;
+                        writeError = QStringLiteral(
+                            "transcode produced empty bytes for record '%1' "
+                            "demoting canonical -> %2/%3 (unhandled component kind?)")
+                                .arg(rec.id, tgtShape.domain.toString(), tgtShape.encoding.toString());
+                    }
                 }
             }
         }
@@ -2740,7 +2760,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     const QStringList lost = materializedLoss(*canonToSrc, rec.data);
                     if (!lost.isEmpty())
                         emit transcodingWarning(srcColId, rec.id, { lost.join(QStringLiteral(", ")) });
+                    const QByteArray before = rec.data;
                     rec.data = canonToSrc->apply(rec.data);
+                    if (Kalburator::Sync::transcodeEmptiedRecord(before, rec.data)) {
+                        writeFailed = true;
+                        writeError = QStringLiteral(
+                            "transcode produced empty bytes for record '%1' "
+                            "demoting canonical -> %2/%3 (unhandled component kind?)")
+                                .arg(rec.id, srcShape.domain.toString(), srcShape.encoding.toString());
+                    }
                 }
             }
         }
