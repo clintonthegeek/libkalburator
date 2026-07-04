@@ -170,6 +170,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/journalcanonfields.h
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.h
+    # N1 fix — shared component-scoped recurrence-line extraction
+    src/calendar/icalcomponentscan.h
     src/calendar/calendardomaindefinition.h
     src/calendar/calendarstockshapes.h
     src/calendar/calendardomainoperations.h
@@ -214,6 +216,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/journalcanonfields.cpp
     # Plan 4 Task 2 — org-ical stages (RRULE simplification)
     src/calendar/orgicalcanonstages.cpp
+    # N1 fix — shared component-scoped recurrence-line extraction
+    src/calendar/icalcomponentscan.cpp
     src/calendar/calendardomaindefinition.cpp
     src/calendar/calendarstockshapes.cpp
     src/calendar/calendardomainoperations.cpp

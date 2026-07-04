@@ -1,6 +1,7 @@
 #include "vtodocanonfields.h"
 
 #include "canonenvelope.h"
+#include "icalcomponentscan.h"
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
@@ -102,24 +103,6 @@ KCalendarCore::Incidence::Status statusFromString(const QString &s)
     return KCalendarCore::Incidence::StatusNone;
 }
 
-/// Collect verbatim RRULE/RDATE/EXDATE lines from an iCal byte string.
-/// This is the only way to preserve recurrence verbatim (invariant 3): KCalendarCore
-/// round-trips recurrences through its own parser/generator which may reformat them.
-QStringList extractRecurrenceLines(const QByteArray &icalBytes)
-{
-    QStringList lines;
-    const auto text = QString::fromUtf8(icalBytes);
-    const auto all  = text.split(QLatin1Char('\n'));
-    for (const QString &raw : all) {
-        const QString line = raw.trimmed();
-        if (line.startsWith(QStringLiteral("RRULE:"))  ||
-            line.startsWith(QStringLiteral("RDATE:"))  ||
-            line.startsWith(QStringLiteral("EXDATE:")))
-            lines.append(line);
-    }
-    return lines;
-}
-
 } // namespace
 
 namespace Kalburator::Todo {
@@ -211,7 +194,8 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
 
     // ---- recurrence (verbatim lines — invariant 3) -------------------------
     {
-        const QStringList recLines = extractRecurrenceLines(originalBytes);
+        const QStringList recLines = Kalburator::Calendar::extractComponentRecurrenceLines(
+            originalBytes, "VTODO", todo->uid());
         if (!recLines.isEmpty()) {
             QJsonArray arr;
             for (const auto& l : recLines)

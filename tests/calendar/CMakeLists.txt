@@ -156,6 +156,10 @@ add_subdirectory(plugin)
 # Plan 3 Task C2/C3/C5 — ical ↔ canon round-trip + loss profile tests
 kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
 
+# N1 fix — shared component-scoped recurrence-line extraction, tested once
+# independent of any specific canon-stage caller.
+kalburator_add_calendar_test(tst_icalcomponentscan)
+
 # Plan 4 Task 1 — calendar per-kind canon dispatch (VTODO/VJOURNAL)
 kalburator_add_calendar_test(tst_calendar_kind_dispatch)
 

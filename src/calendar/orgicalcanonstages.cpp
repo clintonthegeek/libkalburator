@@ -1,5 +1,6 @@
 #include "orgicalcanonstages.h"
 #include "icalcanonstages.h"
+#include "icalcomponentscan.h"
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>
@@ -102,22 +103,6 @@ void simplifyRecurrence(KCalendarCore::Incidence::Ptr &incidence)
         recurrence->setEndDateTime(endDate);
 }
 
-/// Collect verbatim RRULE/RDATE/EXDATE lines from raw iCal bytes (same
-/// approach as extractRecurrenceLines in icalcanonstages.cpp).
-QStringList extractRecurrenceLinesLocal(const QByteArray &icalBytes)
-{
-    QStringList lines;
-    const auto text = QString::fromUtf8(icalBytes);
-    for (const QString &raw : text.split(QLatin1Char('\n'))) {
-        const QString line = raw.trimmed();
-        if (line.startsWith(QStringLiteral("RRULE:"))  ||
-            line.startsWith(QStringLiteral("RDATE:"))  ||
-            line.startsWith(QStringLiteral("EXDATE:")))
-            lines.append(line);
-    }
-    return lines;
-}
-
 /// Parse an iCal byte string to an Event::Ptr.
 KCalendarCore::Event::Ptr parseEvent(const QByteArray &data)
 {
@@ -207,14 +192,17 @@ QByteArray CanonToOrgICalStage::transform(const QByteArray& canonBytes) const
     if (icalBytes.isEmpty())
         return {};
 
-    // (2) Capture verbatim RRULE/RDATE/EXDATE lines BEFORE any parsing.
-    //     These are what we stash for the reverse direction.
-    const QStringList origRecLines = extractRecurrenceLinesLocal(icalBytes);
-
-    // (3) Parse to Event — invariant-3-sanctioned recurrence parse.
+    // (2) Parse to Event — invariant-3-sanctioned recurrence parse.
     auto event = parseEvent(icalBytes);
     if (!event)
         return {};
+
+    // (3) Capture verbatim RRULE/RDATE/EXDATE lines BEFORE any further
+    //     parsing/simplification, scoped to this event's own VEVENT component
+    //     (never an embedded VTIMEZONE's DST-transition sub-components — N1).
+    //     These are what we stash for the reverse direction.
+    const QStringList origRecLines =
+        extractComponentRecurrenceLines(icalBytes, "VEVENT", event->uid());
 
     // (4) Check complexity.
     KCalendarCore::Incidence::Ptr inc = event.staticCast<KCalendarCore::Incidence>();
@@ -272,7 +260,7 @@ QByteArray OrgICalToCanonStage::transform(const QByteArray& orgIcalBytes) const
     modified = injectBeforeEndVevent(modified, origRecLines);
 
     // (4) Run ICalToCanonStage — captures the restored RRULE verbatim per
-    //     invariant 3 (extractRecurrenceLines in that stage reads the text).
+    //     invariant 3 (extractComponentRecurrenceLines in that stage reads the text).
     return ICalToCanonStage{}.transform(modified);
 }
 

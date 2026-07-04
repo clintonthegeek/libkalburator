@@ -60,6 +60,21 @@ KCalendarCore::Event::Ptr parseEvent(const QByteArray &bytes)
     return inc.dynamicCast<KCalendarCore::Event>();
 }
 
+// Isolate just the VEVENT component's own lines, excluding any VTIMEZONE.
+// KCalendarCore's own serializer regenerates a full VTIMEZONE (with
+// legitimate STANDARD/DAYLIGHT RRULEs expressing DST transitions) for any
+// TZID-based event — that is correct iCal and must not be mistaken for
+// event recurrence contamination (the N1 bug is scoped to the event's own
+// component only).
+QByteArray eventComponentOf(const QByteArray &ical)
+{
+    const int b = ical.indexOf("BEGIN:VEVENT");
+    if (b < 0) return {};
+    const int e = ical.indexOf("END:VEVENT", b);
+    if (e < 0) return {};
+    return ical.mid(b, e - b);
+}
+
 // A representative VEVENT with core fields, RRULE, EXDATE, and ATTENDEE.
 const QByteArray kTestIcal =
     "BEGIN:VCALENDAR\r\n"
@@ -83,6 +98,77 @@ const QByteArray kTestIcal =
 // Expected recurrence lines verbatim (no CR — extractRecurrenceLines trims them).
 const QByteArray kExpectedRRule  = "RRULE:FREQ=WEEKLY;BYDAY=MO";
 const QByteArray kExpectedExdate = "EXDATE:20260615T090000Z";
+
+// N1 regression fixtures — a one-off VEVENT with a TZID DTSTART carries a
+// full VTIMEZONE block whose STANDARD/DAYLIGHT sub-components have their own
+// RRULE (the DST transition rule). A whole-blob line scan harvests those as
+// if they were the event's own recurrence — the corruption documented in
+// PlanStan's sync-nonconvergence-vtimezone-corruption-and-dav-transport.md.
+const QByteArray kVtimezoneBlock =
+    "BEGIN:VTIMEZONE\r\n"
+    "TZID:America/New_York\r\n"
+    "BEGIN:STANDARD\r\n"
+    "DTSTART:20071104T020000\r\n"
+    "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\n"
+    "TZOFFSETFROM:-0400\r\n"
+    "TZOFFSETTO:-0500\r\n"
+    "TZNAME:EST\r\n"
+    "END:STANDARD\r\n"
+    "BEGIN:DAYLIGHT\r\n"
+    "DTSTART:20070311T020000\r\n"
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n"
+    "TZOFFSETFROM:-0500\r\n"
+    "TZOFFSETTO:-0400\r\n"
+    "TZNAME:EDT\r\n"
+    "END:DAYLIGHT\r\n"
+    "END:VTIMEZONE\r\n";
+
+const QByteArray kEventWithVtimezoneNoOwnRecurrence =
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    "PRODID:-//Test//Test//EN\r\n" + kVtimezoneBlock +
+    "BEGIN:VEVENT\r\n"
+    "UID:tz-event-one-off@example.com\r\n"
+    "DTSTAMP:20260601T120000Z\r\n"
+    "DTSTART;TZID=America/New_York:20260615T100000\r\n"
+    "DTEND;TZID=America/New_York:20260615T110000\r\n"
+    "SUMMARY:One-off Meeting\r\n"
+    "END:VEVENT\r\n"
+    "END:VCALENDAR\r\n";
+
+const QByteArray kEventWithVtimezoneAndOwnRecurrence =
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    "PRODID:-//Test//Test//EN\r\n" + kVtimezoneBlock +
+    "BEGIN:VEVENT\r\n"
+    "UID:tz-event-recurring@example.com\r\n"
+    "DTSTAMP:20260601T120000Z\r\n"
+    "DTSTART;TZID=America/New_York:20260615T100000\r\n"
+    "DTEND;TZID=America/New_York:20260615T110000\r\n"
+    "SUMMARY:Recurring Meeting\r\n"
+    "RRULE:FREQ=WEEKLY\r\n"
+    "END:VEVENT\r\n"
+    "END:VCALENDAR\r\n";
+
+// A folded RRULE (RFC 5545 §3.1: a continuation line starts with a single
+// space). Must be unfolded to one logical line before matching.
+const QByteArray kEventWithFoldedRrule =
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    "PRODID:-//Test//Test//EN\r\n"
+    "BEGIN:VEVENT\r\n"
+    "UID:folded-rrule-event@example.com\r\n"
+    "DTSTAMP:20260601T120000Z\r\n"
+    "DTSTART:20260601T090000Z\r\n"
+    "DTEND:20260601T100000Z\r\n"
+    "SUMMARY:Folded RRULE\r\n"
+    "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;WKST=MO;UNTIL=2026123\r\n"
+    " 1T000000Z\r\n"
+    "END:VEVENT\r\n"
+    "END:VCALENDAR\r\n";
+
+const QByteArray kExpectedUnfoldedRrule =
+    "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;WKST=MO;UNTIL=20261231T000000Z";
 
 } // namespace
 
@@ -325,6 +411,95 @@ private slots:
         // Must stash the verbatim original (invariant 4: recoverable)
         QVERIFY2(output.contains("X-CANON-CLASSIFICATION:personal"),
                  "classification=personal must stash verbatim value in X-CANON-CLASSIFICATION");
+    }
+
+    // N1: a one-off event with a TZID DTSTART must not gain the VTIMEZONE's
+    // DST-transition rules as its own recurrence.
+    void vtimezoneRecurrenceDoesNotContaminateEventWithoutOwnRRule()
+    {
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(kEventWithVtimezoneNoOwnRecurrence);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonArray recArr = obj.value(QStringLiteral("recurrence")).toArray();
+        QVERIFY2(recArr.isEmpty(),
+                 qPrintable(QStringLiteral("recurrence must be empty for a one-off event; got: %1")
+                     .arg(QString::fromUtf8(QJsonDocument(recArr).toJson(QJsonDocument::Compact)))));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Scope to the VEVENT's own component — KCalendarCore legitimately
+        // regenerates a VTIMEZONE (with its own RRULEs) for a TZID event;
+        // only the event's own lines matter for this assertion.
+        const QByteArray eventBlock = eventComponentOf(output);
+        QVERIFY2(!eventBlock.isEmpty(), "output must contain a VEVENT component");
+        QVERIFY2(!eventBlock.contains("RRULE:"),  "the event's own component must contain zero RRULE lines");
+        QVERIFY2(!eventBlock.contains("RDATE:"),  "the event's own component must contain zero RDATE lines");
+        QVERIFY2(!eventBlock.contains("EXDATE:"), "the event's own component must contain zero EXDATE lines");
+
+        const auto outEvent = parseEvent(output);
+        QVERIFY2(outEvent, "output must parse as a valid VEVENT via KCalendarCore");
+        QVERIFY2(!outEvent->recurs(), "output event must not recur");
+    }
+
+    // N1: when the event DOES have its own RRULE, exactly that line survives
+    // byte-exact — none of the VTIMEZONE's transition rules leak in.
+    void vtimezoneRecurrenceDoesNotContaminateEventWithOwnRRule()
+    {
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(kEventWithVtimezoneAndOwnRecurrence);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonArray recArr = obj.value(QStringLiteral("recurrence")).toArray();
+        QCOMPARE(recArr.size(), 1);
+        QCOMPARE(recArr.first().toString(), QStringLiteral("RRULE:FREQ=WEEKLY"));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Scope to the VEVENT's own component (see eventComponentOf) — a
+        // freshly regenerated VTIMEZONE legitimately carries its own RRULEs.
+        const QByteArray eventBlock = eventComponentOf(output);
+        QVERIFY2(!eventBlock.isEmpty(), "output must contain a VEVENT component");
+
+        int rruleCount = 0;
+        for (const QByteArray &raw : eventBlock.split('\n')) {
+            QByteArray line = raw;
+            if (line.endsWith('\r')) line.chop(1);
+            if (line.startsWith("RRULE:"))
+                ++rruleCount;
+        }
+        QCOMPARE(rruleCount, 1);
+        QVERIFY2(eventBlock.contains("RRULE:FREQ=WEEKLY"),
+                 "the event's own RRULE must survive byte-exact");
+    }
+
+    // N1: a folded RRULE (continuation line) must be unfolded before
+    // matching, not mangled into two truncated recurrence entries.
+    void foldedRruleRoundTripsIntact()
+    {
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(kEventWithFoldedRrule);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonArray recArr = obj.value(QStringLiteral("recurrence")).toArray();
+        QCOMPARE(recArr.size(), 1);
+        QCOMPARE(recArr.first().toString(), QString::fromUtf8(kExpectedUnfoldedRrule));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(output.contains(kExpectedUnfoldedRrule),
+                 qPrintable(QStringLiteral("unfolded RRULE must survive intact; got: %1")
+                     .arg(QString::fromUtf8(output))));
     }
 };
 

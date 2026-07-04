@@ -90,6 +90,50 @@ KCalendarCore::Todo::Ptr parseTodoFromICal(const QByteArray &bytes)
     return inc.dynamicCast<KCalendarCore::Todo>();
 }
 
+// Isolate just the VTODO component's own lines, excluding any VTIMEZONE.
+// KCalendarCore's own serializer regenerates a full VTIMEZONE (with
+// legitimate STANDARD/DAYLIGHT RRULEs) for any TZID-based todo — that is
+// correct iCal and must not be mistaken for recurrence contamination.
+QByteArray todoComponentOf(const QByteArray &ical)
+{
+    const int b = ical.indexOf("BEGIN:VTODO");
+    if (b < 0) return {};
+    const int e = ical.indexOf("END:VTODO", b);
+    if (e < 0) return {};
+    return ical.mid(b, e - b);
+}
+
+// N1 regression fixture — a non-recurring VTODO with a TZID DUE carries a
+// full VTIMEZONE block whose STANDARD/DAYLIGHT sub-components have their own
+// RRULE. A whole-blob line scan would harvest those as the todo's recurrence.
+const QByteArray kTestVTodoWithVtimezoneNoOwnRecurrence =
+    "BEGIN:VCALENDAR\r\n"
+    "VERSION:2.0\r\n"
+    "PRODID:-//Test//Test//EN\r\n"
+    "BEGIN:VTIMEZONE\r\n"
+    "TZID:America/New_York\r\n"
+    "BEGIN:STANDARD\r\n"
+    "DTSTART:20071104T020000\r\n"
+    "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU\r\n"
+    "TZOFFSETFROM:-0400\r\n"
+    "TZOFFSETTO:-0500\r\n"
+    "TZNAME:EST\r\n"
+    "END:STANDARD\r\n"
+    "BEGIN:DAYLIGHT\r\n"
+    "DTSTART:20070311T020000\r\n"
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU\r\n"
+    "TZOFFSETFROM:-0500\r\n"
+    "TZOFFSETTO:-0400\r\n"
+    "TZNAME:EDT\r\n"
+    "END:DAYLIGHT\r\n"
+    "END:VTIMEZONE\r\n"
+    "BEGIN:VTODO\r\n"
+    "UID:tz-todo-one-off@example.com\r\n"
+    "SUMMARY:One-off task\r\n"
+    "DUE;TZID=America/New_York:20260615T170000\r\n"
+    "END:VTODO\r\n"
+    "END:VCALENDAR\r\n";
+
 } // namespace
 
 class TestTodoCanonRoundtrip : public QObject {
@@ -302,6 +346,39 @@ private slots:
         // checklistItems: Reversible
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("checklistItems")}),
                  LossKind::Reversible);
+    }
+
+    // N1: a non-recurring VTODO with a TZID DUE must not gain the
+    // VTIMEZONE's DST-transition rules as its own recurrence.
+    void vtimezoneRecurrenceDoesNotContaminateNonRecurringTodo()
+    {
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(kTestVTodoWithVtimezoneNoOwnRecurrence);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonArray recArr = obj.value(QStringLiteral("recurrence")).toArray();
+        QVERIFY2(recArr.isEmpty(),
+                 qPrintable(QStringLiteral("recurrence must be empty for a non-recurring todo; got: %1")
+                     .arg(QString::fromUtf8(QJsonDocument(recArr).toJson(QJsonDocument::Compact)))));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Scope to the VTODO's own component — KCalendarCore legitimately
+        // regenerates a VTIMEZONE (with its own RRULEs) for a TZID todo;
+        // only the todo's own lines matter for this assertion.
+        const QByteArray todoBlock = todoComponentOf(output);
+        QVERIFY2(!todoBlock.isEmpty(), "output must contain a VTODO component");
+        QVERIFY2(!todoBlock.contains("RRULE:"),  "the todo's own component must contain zero RRULE lines");
+        QVERIFY2(!todoBlock.contains("RDATE:"),  "the todo's own component must contain zero RDATE lines");
+        QVERIFY2(!todoBlock.contains("EXDATE:"), "the todo's own component must contain zero EXDATE lines");
+
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "output must parse as a valid VTODO via KCalendarCore");
+        QVERIFY2(!outTodo->recurs(), "output todo must not recur");
     }
 };
 
