@@ -775,8 +775,26 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 - [x] C1 PlanStan mass-delete guard — landed in PlanStan (`SyncMassDeleteGuard`,
       registered in `CollectionController::initializeSyncInfrastructure`);
       see PlanStan/CLAUDE.md sync-convergence campaign section
-- [ ] C2 PlanStan spoke-loading fix
-- [ ] C3 PlanStan auto-sync ordering
-- [ ] C4 pin bumps + live end-to-end + recovery
+- [x] C2 PlanStan spoke-loading fix — `ItemLoadingCoordinator::shouldLoadCalendar()`
+      gates `loadAllItems()` + the `calendarAdded` discovery hookup (2026-07-04).
+      NOTE: C4 live verification found this was incomplete — the sync-side fetch
+      path bypassed it; see C4.
+- [x] C3 PlanStan auto-sync ordering — deferred auto-sync-on-load via a pending
+      flag consumed once the sync coordinator exists; 120s timer skips when a
+      sync is already in progress (2026-07-04, N9).
+- [~] C4 pin bumps + live end-to-end + recovery — PlanStan pinned to v0.82,
+      `syncSkipUnchanged` flipped true. **First live run against the real
+      Nextcloud multiproto mirror (2026-07-04): sync CONVERGED** (all mappings
+      settle to `+0 ~0 -0` no-op). Two PlanStan-side issues found + fixed on that
+      run: (a) **N8 residual** — C2's gate missed the shared `onItemFetched`
+      chokepoint the sync-side fetch also travels, so a live sync still
+      duplicated the spoke into the model; moved the gate there + added a
+      post-initial-sync model reload (the engine's `recordChanged` apply callback
+      is inert — tracked in PlanStan `docs/todo/sync-apply-phase-model-refresh.md`).
+      (b) the "Discovered Calendars" dialog fired for wizard-unpicked calendars —
+      added a per-collection ignore list in the `.kalb`. **Still open:** a clean
+      re-run confirming zero dup-warnings live, and collection recovery for
+      pre-v0.80 collections (recreate rather than in-place resync). See
+      PlanStan/CLAUDE.md.
 - [ ] D1 N7 threading (tag v0.83)
 - [ ] D2 backlog triage
