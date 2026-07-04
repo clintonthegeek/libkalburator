@@ -160,6 +160,9 @@ kalburator_add_calendar_test(tst_calendar_canon_roundtrip)
 # independent of any specific canon-stage caller.
 kalburator_add_calendar_test(tst_icalcomponentscan)
 
+# N3 fix — authoritative iCal timestamp extraction (LAST-MODIFIED/DTSTAMP/CREATED).
+kalburator_add_calendar_test(tst_icaltimestamp)
+
 # Plan 4 Task 1 — calendar per-kind canon dispatch (VTODO/VJOURNAL)
 kalburator_add_calendar_test(tst_calendar_kind_dispatch)
 

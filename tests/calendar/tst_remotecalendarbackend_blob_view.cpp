@@ -15,6 +15,7 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTimeZone>
 
 #include "remotecalendarbackend.h"
 #include "iblobbackend.h"
@@ -35,6 +36,7 @@ private slots:
     void availableCollections_emptyWithoutRegisteredCalendars();
     void updateRecord_modifies_existing_record();
     void updateRecord_nonexistent_id_returns_error();
+    void loadRecords_surfacesAuthoritativeLastModified_notNow();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -152,6 +154,54 @@ void TestRemoteCalendarBackendBlobView::updateRecord_nonexistent_id_returns_erro
 
     QVERIFY2(!backend.updateRecord(rec),
              "updateRecord must return false when no calendars are registered");
+}
+
+void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastModified_notNow()
+{
+    // N3: a record's lastModified must be its own iCal LAST-MODIFIED (falling
+    // back to DTSTAMP/CREATED), never QDateTime::currentDateTimeUtc() — the
+    // old behavior defeated LastWriteWins by making every remote record look
+    // freshly modified on every load.
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString uid = QStringLiteral("stale-event-uid-1");
+    const QByteArray seededIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:stale-event-uid-1\r\n"
+        "SUMMARY:Old Event\r\nDTSTART:20200601T120000Z\r\n"
+        "DTEND:20200601T130000Z\r\n"
+        "LAST-MODIFIED:20200601T093000Z\r\n"
+        "END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, {seededIcs});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString()
+                              + calHref.mid(1); // strip leading '/'
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(),
+             "loadCalendars must succeed before we can loadRecords");
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.first().lastModified.isValid(),
+             "lastModified must be a valid, parsed timestamp");
+    QCOMPARE(records.first().lastModified,
+             QDateTime(QDate(2020, 6, 1), QTime(9, 30, 0), QTimeZone::utc()));
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)

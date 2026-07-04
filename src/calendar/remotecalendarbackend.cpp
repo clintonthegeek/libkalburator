@@ -1,6 +1,7 @@
 #include "remotecalendarbackend.h"
 #include "caldavcontentcache.h"
 #include "icalcodec.h"
+#include "icaltimestamp.h"
 #include "syncoperation.h"
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
@@ -28,6 +29,8 @@
 #include <QSqlError>
 #include <QXmlStreamReader>
 #include <QCryptographicHash>
+#include <QRegularExpression>
+#include <QTimeZone>
 
 namespace {
 
@@ -1926,8 +1929,11 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 // collectionId = calendarId
 // data         = raw iCal bytes
 // contentHash  = SHA-256 of the bytes
-// lastModified = current UTC time (ETag-opaque; CalDAV doesn't reliably
-//                expose getlastmodified; Phase E can improve this)
+// lastModified = the record's own LAST-MODIFIED (falling back to DTSTAMP,
+//                then CREATED); invalid QDateTime if none is present (N3 fix
+//                — stamping "now" made every remote record look freshly
+//                modified on every load, defeating the LastWriteWins
+//                tie-bias fix from v0.64).
 // ============================================================================
 
 namespace {
@@ -1943,7 +1949,7 @@ static Kalburator::Sync::BackendRecord blobRecordFromIcal(
     rec.data        = icalBytes;
     rec.contentHash = QString::fromLatin1(
         QCryptographicHash::hash(icalBytes, QCryptographicHash::Sha256).toHex());
-    rec.lastModified = QDateTime::currentDateTimeUtc();
+    rec.lastModified = Kalburator::Calendar::extractICalTimestamp(icalBytes);
     rec.isDeleted   = false;
     return rec;
 }
