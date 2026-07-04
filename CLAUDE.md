@@ -56,6 +56,40 @@ The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a thi
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
 
+## Sync-convergence campaign — START HERE if working sync/CalDAV correctness
+
+Opened 2026-07-03 from a PlanStan investigation of a real-world Nextcloud
+account that never converged (120s soft-freeze, corrupted recurrence,
+non-converging diff, silent-empty-read risk). Full roadmap, evidence, exact
+file:line references, and RED-first test plans for every phase:
+`docs/campaign/2026-07-03-sync-convergence-roadmap.md` — its §5 "Phase status"
+checklist is the single source of truth for what's landed; update it in the
+same commit that lands or merges a phase (same discipline as the other two
+campaigns above).
+
+**Status (2026-07-04): Track A and Track B phases B1–B3 are done, tagged, and
+merged to `main`.**
+- **v0.80** — Track A: per-kind canon dispatch (VTODO/VJOURNAL no longer
+  silently drop) + N1 (VTIMEZONE recurrence-scraping corruption fixed via a
+  shared, component-scoped `extractComponentRecurrenceLines`).
+- **v0.81** — Track B(1-3): N3 (honest remote `lastModified`, no more
+  stamping "now"), N4 (multiget chunking + transport-error truth), N5
+  (CTag/content-cache coherence — closes a silent mass-delete vector).
+- PlanStan is pinned to `v0.81` and has adopted C1 (a registered
+  `IMassDeleteGuard`).
+
+**Remaining, in order:** B4 (N2 — per-side baseline hashes; the actual
+convergence fix; CRITICAL, large — touches storage schema v5 + engine diff/
+merge internals) → B5 (convergence acceptance gate + fast-path wiring, tag
+v0.82) → PlanStan C2/C3/C4 → D1 (N7 — move DAV I/O off the GUI thread, tag
+v0.83) → D2 backlog triage. Read the roadmap's own phase sections before
+starting any of these — each is self-contained (problem, evidence, fix
+design, test plan, acceptance gate).
+
+Work happens on short-lived feature branches per phase group (e.g.
+`feature/sync-stack-integrity-b1-b3`), merged `--no-ff` to `main` and tagged
+once its full-suite gate is green; branches are not kept around after merge.
+
 ## Phase-status docs are living documents
 
 All phase progress is tracked under `docs/phase0/`. When a phase
