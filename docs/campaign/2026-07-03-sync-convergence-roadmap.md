@@ -682,9 +682,9 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 
 ## 5. Phase status (update in the landing commit)
 
-- [ ] A1 per-kind dispatch Tasks 4–9 (plan: 2026-06-28-calendar-per-kind-canon-dispatch.md)
-- [ ] A2 N1 component-scoped recurrence extraction
-- [ ] — tag v0.80
+- [x] A1 per-kind dispatch Tasks 4–9 (plan: 2026-06-28-calendar-per-kind-canon-dispatch.md) — merged to main 2026-07-03
+- [x] A2 N1 component-scoped recurrence extraction — merged to main 2026-07-03 (same branch/merge as A1)
+- [x] — tag v0.80
 - [ ] B1 N3 remote lastModified honesty
 - [ ] B2 N4 multiget chunking + error truth
 - [ ] B3 N5 CTag/content-cache coherence
