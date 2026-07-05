@@ -782,19 +782,34 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 - [x] C3 PlanStan auto-sync ordering — deferred auto-sync-on-load via a pending
       flag consumed once the sync coordinator exists; 120s timer skips when a
       sync is already in progress (2026-07-04, N9).
-- [~] C4 pin bumps + live end-to-end + recovery — PlanStan pinned to v0.82,
-      `syncSkipUnchanged` flipped true. **First live run against the real
-      Nextcloud multiproto mirror (2026-07-04): sync CONVERGED** (all mappings
-      settle to `+0 ~0 -0` no-op). Two PlanStan-side issues found + fixed on that
-      run: (a) **N8 residual** — C2's gate missed the shared `onItemFetched`
-      chokepoint the sync-side fetch also travels, so a live sync still
-      duplicated the spoke into the model; moved the gate there + added a
-      post-initial-sync model reload (the engine's `recordChanged` apply callback
-      is inert — tracked in PlanStan `docs/todo/sync-apply-phase-model-refresh.md`).
-      (b) the "Discovered Calendars" dialog fired for wizard-unpicked calendars —
-      added a per-collection ignore list in the `.kalb`. **Still open:** a clean
-      re-run confirming zero dup-warnings live, and collection recovery for
-      pre-v0.80 collections (recreate rather than in-place resync). See
+- [x] C4 pin bumps + live end-to-end + recovery-scope — PlanStan pinned to
+      v0.82, `syncSkipUnchanged` flipped true. **First live run against the
+      real Nextcloud multiproto mirror (2026-07-04): sync CONVERGED** (all
+      mappings settle to `+0 ~0 -0` no-op). Two PlanStan-side issues found +
+      fixed on that run: (a) **N8 residual** — C2's gate missed the shared
+      `onItemFetched` chokepoint the sync-side fetch also travels, so a live
+      sync still duplicated the spoke into the model; moved the gate there +
+      added a post-initial-sync model reload (the engine's `recordChanged`
+      apply callback is inert — tracked in PlanStan
+      `docs/todo/sync-apply-phase-model-refresh.md`). (b) the "Discovered
+      Calendars" dialog fired for wizard-unpicked calendars — added a
+      per-collection ignore list in the `.kalb`. **Third PlanStan-side issue
+      found on a follow-up live run (2026-07-04):** `SyncEngine::
+      prepareSyncFastPath` never once engaged across 8 consecutive idle
+      cycles on a fresh collection — a DISTINCT root cause from the DTSTAMP/
+      stale-revision bugs this campaign's B4/B5 phases already fixed for the
+      same-looking "of 7 mappings, 0 are unchanged" symptom (see this file's
+      2026-07-04 entries above). PlanStan's `initializeSyncInfrastructure()`
+      wired `setDbPath()` into `RemoteCalendarBackend` but never into
+      `LocalBackend`, so the local side of every mirror mapping could never
+      report a cached fingerprint — permanently defeating the fast path for
+      PlanStan's default local-mirror topology regardless of B4/B5. Fixed
+      PlanStan-side (the missing `setDbPath()` call); **verified live on a
+      clean reopen (2026-07-04)** — cycle 1 cold-starts as documented, cycle 2
+      converges to `7 are unchanged; 7 actually skipped` and holds. **C4 is
+      now fully closed** for the fresh-creation + reopen happy path. Still
+      open (separate, smaller item): collection recovery for pre-v0.80
+      collections (recreate rather than in-place resync). See
       PlanStan/CLAUDE.md.
 - [ ] D1 N7 threading (tag v0.83)
 - [ ] D2 backlog triage
