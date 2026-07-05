@@ -177,12 +177,15 @@ commit; drop it then per the todo doc.
 
 ### Phase D1 — N7: DAV I/O off the GUI thread
 
-> **Execution plan (authoritative, task-level):**
-> `docs/campaign/2026-07-04-d1-threading-execution-plan.md` — written
-> 2026-07-04 from a full cross-repo viability audit; hand-off ready. Work
-> from that doc, in its task order, and update its §9 checklist in the same
-> commit as each task. The section below is the original phase sketch and is
-> superseded on any disagreement.
+> **Superseded pointer (2026-07-05):** D1 was expanded into the
+> **sync-hardening campaign** after a first-principles audit
+> (`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
+> found eight issues beyond N7 (FINDINGS O17–O24). The live, task-level
+> plan is now **`docs/campaign/2026-07-05-sync-hardening-phases.md`**
+> (phases H1–H9; v0.83 tags at its H6). The old execution plan
+> `2026-07-04-d1-threading-execution-plan.md` is superseded (its T1.1–T1.5
+> landed; its Stages 2–4 became hardening H7/H8). The section below is the
+> original phase sketch, kept for context only.
 
 **Problem.** Backends live on the consumer's main thread. The engine worker
 marshals every read/classify/apply to them via `Qt::BlockingQueuedConnection`
@@ -302,7 +305,11 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       and `PlanStan/CLAUDE.md`.
 - [x] D0 apply-phase `recordChanged` wiring — landed 2026-07-04 on `main`,
       untagged (ships with v0.83 alongside D1)
-- [ ] D1 N7 threading (tag v0.83) — execution plan ready:
-      `docs/campaign/2026-07-04-d1-threading-execution-plan.md` (live
-      checklist in its §9)
+- [ ] D1 N7 threading + O16–O24 hardening (tag v0.83) — **expanded into
+      the sync-hardening campaign** 2026-07-05:
+      `docs/campaign/2026-07-05-sync-hardening-phases.md` (live checklist
+      in its §10; lib-side T1.1–T1.5 already landed on
+      `feature/d1-threading`). This roadmap's D1 line closes when
+      hardening H6 tags v0.83; PlanStan adoption closes at hardening
+      H7/H8.
 - [ ] D2 backlog triage

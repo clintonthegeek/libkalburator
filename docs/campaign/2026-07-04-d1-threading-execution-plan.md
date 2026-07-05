@@ -1,27 +1,21 @@
 # Phase D1 execution plan — DAV I/O off the GUI thread (→ v0.83)
 
 **Date:** 2026-07-04
-**Status:** Stage 1 IN PROGRESS, BLOCKED on a newly-found gap — T1.1-T1.4
-landed and green (158→159 tests). T1.5's GUI-stall probe is written and
-correctly identifies a real, unfixed stall: `SyncEngine::prepareSyncFastPath()`
-runs synchronously on the caller's thread (before the worker thread starts)
-and blocks on relocated backends' network I/O via `BlockingQueuedConnection`
-— relocating backends doesn't help because the caller still waits
-synchronously regardless of which thread does the work. Full detail + fix
-options: `docs/campaign/FINDINGS.md` O16. Needs a decision before Stage 1's
-gate can close — see §9 checklist for the specific blocked item.
-**2026-07-05 update:** a first-principles audit
+**Status: SUPERSEDED (2026-07-05) — do not work from this document.**
+T1.1–T1.5 landed on `feature/d1-threading` and remain valid history
+(158→159 tests; T1.5's stall probe is intentionally RED pending the fix).
+A first-principles audit
 (`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
-re-verified O16 and found eight further issues (FINDINGS.md O17–O24),
-including a no-threading-required data-stranding bug (O17) and two
-unmarshaled cross-thread call sites this plan's §0 viability audit missed
-(O20, live pre-D1; O21, latent under per-backend threads). The audit's §6
-proposes the unblock order: T1.6 worker-side fast path (closes O16) → T1.7
-token rework (O17–O19) → T1.8 marshaling completeness (O20–O21) → T1.9
-bounded waits (O22) → T1.10 single-fetch + op lifetime (O23–O24). Adopt or
-amend there before resuming Stage 1.
-Checklist in §9 is the live state; update it in the
-same commit as the work it describes.
+then re-verified the T1.5 blocker (FINDINGS O16) and found eight further
+issues (O17–O24), including a no-threading-required data-stranding bug and
+two unmarshaled cross-thread call sites this plan's §0 viability audit
+missed. The remaining work — O16–O24 plus this plan's Stages 2–4 (PlanStan
+adoption, v0.83) — is re-sequenced in
+**`docs/campaign/2026-07-05-sync-hardening-phases.md`**, which is now the
+live plan. This document is kept for its still-accurate reference
+material: the §0 history/postmortem constraints, the Stage 2–3 PlanStan
+construction-site and call-site inventories (consumed by hardening phase
+H7), and the §9 record of T1.1–T1.5.
 **Repos:** libkalburator (primary) + PlanStan (consumer adoption).
 **Baseline revisions for all file:line references below:** libkalburator
 `main` @ `928f318`, PlanStan `master` @ `ca17648b`. **Line numbers drift** —
