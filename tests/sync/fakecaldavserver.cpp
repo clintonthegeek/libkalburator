@@ -147,6 +147,11 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
         }
         const QByteArray request = buf.left(total);
         socket->setProperty(kBufProperty, QByteArray());
+        if (m_dropRequests) {
+            // Read the request and go silent — no response, socket stays
+            // open. Deliberately not handleRequest() nor a disconnect.
+            return;
+        }
         if (m_responseDelayMs > 0) {
             QTimer::singleShot(m_responseDelayMs, this, [this, socket, request]() {
                 handleRequest(socket, request);

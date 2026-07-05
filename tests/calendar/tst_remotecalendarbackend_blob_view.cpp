@@ -13,6 +13,7 @@
 //   6. updateRecord with no registered calendars returns false (no-op).
 
 #include <QtTest>
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTimeZone>
@@ -41,6 +42,7 @@ private slots:
     void loadRecords_failsWholeOpWhenABatchFails_noPartialResults();
     void ctagMatchServingZeroCachedItems_distrustsMatchAndRelists();
     void partialMaterialization_doesNotCommitCtag();
+    void collectionRevision_droppedRequests_failsWithinTimeout();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -407,6 +409,48 @@ void TestRemoteCalendarBackendBlobView::partialMaterialization_doesNotCommitCtag
 
     QVERIFY2(backend.cachedCollectionRevision(QStringLiteral("Personal")).isEmpty(),
              "the CTag must not be committed when any item failed to materialize");
+}
+
+void TestRemoteCalendarBackendBlobView::collectionRevision_droppedRequests_failsWithinTimeout()
+{
+    // H1.2/O22: without a QNAM transfer timeout, a server that accepts a
+    // connection and never responds stalls the raw davSyncRequest() round
+    // trip forever. collectionRevision() is the QNAM-level path (a PROPFIND
+    // via davSyncRequest(nam(), ...) — see fetchFreshCtag()); fetchItems()
+    // itself goes through KDAV::DavItemsListJob, which does not share our
+    // nam() and so isn't affected by setTransferTimeoutMs() at all. Pins
+    // that collectionRevision() returns empty (its transportOk()-false
+    // path) once the timeout elapses, rather than hanging. Uses
+    // setTransferTimeoutMs() to shrink the wait from the real 30s default
+    // so the test stays fast.
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setDropRequests(true);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    // Pre-register rather than discover via loadCalendars() — discovery's
+    // own PROPFIND would hang against a dropping server too, which isn't
+    // what this test is pinning.
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.setTransferTimeoutMs(2000);
+
+    QString revision;
+    QElapsedTimer timer;
+    timer.start();
+    revision = backend.collectionRevision(QStringLiteral("Personal"));
+    QVERIFY2(timer.elapsed() < 60000,
+             "collectionRevision must fail within the transfer timeout, not hang");
+    QVERIFY2(revision.isEmpty(),
+             "a dropped/never-answered PROPFIND must not report a revision");
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)
