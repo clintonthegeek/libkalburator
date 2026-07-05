@@ -224,7 +224,7 @@ parallelism is a separate risk/benefit decision.
 |---|---|---|
 | v0.80 | A1 (per-kind dispatch Tasks 4–9) + A2 (N1 recurrence fix) | PlanStan pin bump; re-verify F4 GUI repro; delete/close F4 bug docs |
 | v0.81 | B1 (N3) + B2 (N4) + B3 (N5) | PlanStan pin bump; C1 guard lands alongside |
-| v0.82 | B4 (N2 per-side baselines, schema v5) + B5 (convergence gate + fast path) | PlanStan pin bump; flip `syncSkipUnchanged` default; C2/C3; **C4 live verification**; recreate pre-v0.80 collections |
+| v0.82 | B4 (N2 per-side baselines, schema v5) + B5 (convergence gate + fast path) | PlanStan pin bump; flip `syncSkipUnchanged` default; C2/C3; **C4 live verification** (done) |
 | v0.83 | D1 (threading + shared QNAM) | PlanStan I/O-thread adoption; close `sequential-sync-performance.md` freeze half |
 
 Every lib phase: feature branch → RED tests → implement → full suite (157+ at
