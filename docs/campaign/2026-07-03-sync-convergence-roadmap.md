@@ -137,6 +137,44 @@ in §5 below and `docs/campaign/FINDINGS.md`.
 
 ## Track D — architecture & backlog
 
+### Phase D0 — apply-phase `ISyncHost::recordChanged` wiring (landed 2026-07-04)
+
+**Problem.** `ISyncHost::recordChanged(mappingId, recordId, kind)` (G.9.a,
+`isynchost.h`) was declared but never invoked anywhere in the engine — grep
+turned up only the interface declaration and no-op stubs. PlanStan's consumer
+side (`CollectionController::recordChanged` → `ItemLoadingCoordinator`) was
+correct and ready, but dead: on an already-open collection, a remote→local
+change materialized by a later sync run didn't reach the view model until the
+*next* fetch cycle (~120 s) or a reopen. Full origin: PlanStan
+`docs/todo/sync-apply-phase-model-refresh.md`.
+
+**Fix.** `SyncEngineWorker::unifiedContinueAfterConflicts`'s `applyBatch`
+lambda (`syncengine.cpp`) now calls `m_controller->recordChanged(mappingId,
+recordId, kind)` for every record it classifies into `WriterBatch`
+creates/updates/deletes, for the write onto the mapping's **source** side
+only (`notifyHost=true` on that call site, `false` on the target-side call).
+Source is the primary/local side in a PlanStan-style local-mirror mapping
+(`syncmappinggenerator.cpp` always passes the logical calendar's primary
+binding as `s`/source); consumers that re-read from source regardless of
+which side changed (PlanStan's `recordChanged`) get exactly the live-refresh
+signal they were built for, without a redundant notify on the push-to-target
+half of the same sync.
+
+**Tests.** New `tests/calendar/tst_calendar_recordchanged_notifications.cpp`
+(4 cases): target-side create/update/delete each propagate to source and
+fire the matching `ChangeKind`; a source-side-only change (pushed to target)
+fires no `recordChanged` at all. Full suite still green at the same 2
+pre-existing/unrelated flakes (`tst_sync_convergence`
+`remoteEditFetchesExactlyOneChangedItem` multiget-count assertion,
+reproduces identically on unmodified `main`; `tst_engine_single_mapping_cancel`
+segfaults only under `ctest -j` parallel contention, passes standalone).
+
+**Status:** merged to `main`, **not yet tagged** — ships in the same release
+as D1 (v0.83) since PlanStan is still pinned to v0.82. PlanStan's initial-sync
+reload mitigation (`CollectionController::createLogicalCalendar` →
+`reloadModelEligibleCalendars()`) stays in place until the pin bumps past this
+commit; drop it then per the todo doc.
+
 ### Phase D1 — N7: DAV I/O off the GUI thread
 
 **Problem.** Backends live on the consumer's main thread. The engine worker
@@ -255,5 +293,7 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       issues found and fixed along the way) archived in
       `docs/campaign/archive/2026-07-03-sync-convergence-tracks-a-b-c.md`
       and `PlanStan/CLAUDE.md`.
+- [x] D0 apply-phase `recordChanged` wiring — landed 2026-07-04 on `main`,
+      untagged (ships with v0.83 alongside D1)
 - [ ] D1 N7 threading (tag v0.83)
 - [ ] D2 backlog triage

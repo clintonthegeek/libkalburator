@@ -2674,13 +2674,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     //     runs on the worker thread (a writer that uses
     //     BlockingQueuedConnection internally must not be called from
     //     the backend thread).
-    auto applyBatch = [this, &writeFailed, &writeError](
+    auto applyBatch = [this, &writeFailed, &writeError, &mappingId](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackendBase *backend,
         IBlobBackend *blobBackend,
         const QString &colId,
         const QList<BackendRecord> &toWrite,
-        const QString &backendRegistryId)
+        const QString &backendRegistryId,
+        bool notifyHost)
     {
         // Authority: never write to a backend that reports read-only for this
         // collection (e.g. an ACL change at runtime). Skip is a no-op, NOT a
@@ -2750,12 +2751,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             return writer->apply(colId, batch.creates, batch.updates, batch.deletes);
         };
 
+        WriterBatch batch;
         if (writer->threading() ==
             Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
             // Writer manages its own backend-thread marshalling
             // (a WorkerThread writer uses BlockingQueuedConnection
             // internally inside apply()).
-            WriterBatch batch;
             QString classifyErr1;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr1, toWrite]() {
                 batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr1);
@@ -2771,7 +2772,6 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             // apply on worker thread to avoid re-entering the backend thread
             // while invoking m_baselineStoreAnchor (which lives on the
             // engine thread — see setDependencies docs in syncengine_p.h).
-            WriterBatch batch;
             QString classifyErr2;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
                 batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
@@ -2789,6 +2789,27 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (!ok && !writeFailed) {
             writeFailed = true;
             writeError = QStringLiteral("Write to %1 failed").arg(colId);
+        }
+
+        // G.9.a closeout: tell the host about every record this batch
+        // actually materialized, so a view bound to the host (e.g.
+        // PlanStan's ItemLoadingCoordinator via
+        // CollectionController::recordChanged) can refresh live instead of
+        // waiting for the next fetch cycle or a reopen. Only the side the
+        // caller designates as authoritative (PlanStan: the source/primary
+        // side of the mapping) notifies — recordChanged's contract re-reads
+        // from that side regardless of which side actually changed, so
+        // notifying the other side would just be redundant work.
+        if (ok && notifyHost && m_controller) {
+            for (const auto &r : batch.creates)
+                m_controller->recordChanged(mappingId, r.id,
+                    ISyncHost::ChangeKind::Created);
+            for (const auto &r : batch.updates)
+                m_controller->recordChanged(mappingId, r.id,
+                    ISyncHost::ChangeKind::Updated);
+            for (const auto &id : batch.deletes)
+                m_controller->recordChanged(mappingId, id,
+                    ISyncHost::ChangeKind::Deleted);
         }
     };
 
@@ -2837,7 +2858,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (!tgtWriter)
             tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
-                   m_currentRequest.mapping.targetBackend);
+                   m_currentRequest.mapping.targetBackend, /*notifyHost=*/false);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -2875,7 +2896,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (!srcWriter)
             srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
-                   m_currentRequest.mapping.sourceBackend);
+                   m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
