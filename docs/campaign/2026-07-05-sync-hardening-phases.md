@@ -1,7 +1,7 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H4 done, CP-A recorded (2026-07-05). H5 is next. See
+**Status:** Phases H1–H5 done, CP-A recorded (2026-07-05). CP-B is next. See
 §10 checklist — it is the single source of truth for progress; update it
 in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
@@ -745,7 +745,21 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       stayResponsive` green for the first time (5x re-run, no flake).
       Full suite 160/160 green — first fully-green run of the campaign.
       See FINDINGS O16 for the landing note.
-- [ ] **H5** recordsFromLastFetch single-fetch pipeline (RED: fetchStarted-once)
+- [x] **H5** recordsFromLastFetch single-fetch pipeline (RED:
+      `singleFetch_localBackends_noRedundantRead`,
+      `singleFetch_remoteBackend_noRedundantListing`) — 2026-07-05. Added
+      `SyncBackendBase::recordsFromLastFetch`; `LocalBackend` and
+      `RemoteCalendarBackend` populate a single-shot per-collection memo at
+      `fetchItems()` (Remote via a `SyncOperation::finished` hook, firing
+      uniformly across every completion branch rather than each
+      `op->complete()` site); `dispatchSync`'s two "Fetch source/target
+      records" blocks now serve from it instead of `loadRecordsOrError()`
+      whenever the gate's own `fetchItems()` succeeded. Also fixed a latent
+      hash-instability bug the RED test surfaced: `LocalBackend::fetchItems`
+      read files with `QIODevice::Text` (strips `\r`) while `loadRecords()`'s
+      `recordFromFile()` didn't — different bytes/hash for the same file,
+      manufacturing spurious Conflicts in place of genuine Deletes. Full
+      suite 160/160 green. See FINDINGS O23 for the landing note.
 - [ ] **CP-B** strong-model review + live Radicale smoke; ruling: _(pending)_
 - [ ] **H6** merge → main, tag v0.83, roadmap §5 updated
 - [ ] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,

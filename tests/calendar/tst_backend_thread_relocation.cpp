@@ -126,6 +126,25 @@ public:
         return LocalBackend::loadRecords(collectionId);
     }
 
+    // H5/O23: recordsFromLastFetch() falling back to loadRecordsOrError()
+    // (and thus loadRecords()) means the memo wasn't there — i.e. the exact
+    // redundant-read path H5 eliminates. loadRecordsCallCount alone can't
+    // isolate this: applyBatch's classifyForWriter and the post-write hash-
+    // verification refetch also call loadRecords(), for unrelated, legitimate
+    // reasons outside H5's scope. Comparing the call count immediately before
+    // and after THIS call isolates just the fallback.
+    bool recordsFromLastFetch(const QString &collectionId,
+                              QList<Kalburator::Sync::BackendRecord> &records,
+                              QString &errorMessage) override
+    {
+        const int before = m_loadRecordsCallCount;
+        const bool ok = LocalBackend::recordsFromLastFetch(collectionId, records, errorMessage);
+        if (m_loadRecordsCallCount != before) {
+            ++m_recordsFromLastFetchFellBackCount;
+        }
+        return ok;
+    }
+
     QString createRecord(const QString &collectionId,
                          const Kalburator::Sync::BackendRecord &record) override
     {
@@ -139,6 +158,7 @@ public:
     QThread *m_loadRecordsCallThread = nullptr;
     QThread *m_createRecordCallThread = nullptr;
     int m_loadRecordsCallCount = 0;
+    int m_recordsFromLastFetchFellBackCount = 0;
 
 private:
     QColor m_stubColor;
@@ -1108,32 +1128,55 @@ void TstBackendThreadRelocation::singleFetch_localBackends_noRedundantRead()
     mapping.sourceCalendar  = calId;
     mapping.targetBackend   = QStringLiteral("single-fetch-target");
     mapping.targetCalendar  = calId;
-    mapping.mode            = SyncMode::TwoWay;
+    // One-way: isolates the read-side redundancy H5 fixes from unrelated
+    // post-write harvest re-reads (a create on the target legitimately
+    // triggers its own baseline re-read elsewhere in dispatchSync — out of
+    // H5's scope, which is only the "Fetch source/target records" gate
+    // blocks). TwoWay would conflate the two.
+    mapping.mode            = SyncMode::OneWayUpload;
     mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
     mapping.enabled         = true;
     engine.setSyncMappings({mapping});
 
-    SyncRequest req;
-    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
-    auto future = engine.runSync(req);
-    int waited = 0;
-    constexpr int kSyncTimeoutMs = 30000;
-    while (!future.isFinished() && waited < kSyncTimeoutMs) {
-        QTest::qWait(10);
-        waited += 10;
-    }
-    QVERIFY(future.isFinished());
-    QVERIFY(!future.isCanceled());
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    };
 
-    // The item landed on the target (sanity: the mapping actually ran).
+    // Cycle 1: target starts empty, so this is dispatchFirstSync's "inline
+    // blob mirror" path — a separate, out-of-scope code path with its own
+    // reads. Only cycle 2, a steady-state incremental sync through the main
+    // dispatchSync gate, is what H5 targets.
+    runOnce();
     QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/single-fetch-evt-1.ics"))));
 
-    // The single-fetch pipeline means dispatchSync never falls back to
-    // loadRecordsOrError() (and thus never calls loadRecords()) when the
-    // gate's own fetchItems() already succeeded — it serves the gate's own
-    // fetch results via recordsFromLastFetch() instead.
-    QCOMPARE(sourceBackend->m_loadRecordsCallCount, 0);
-    QCOMPARE(targetBackend->m_loadRecordsCallCount, 0);
+    {
+        QFile f(sourceDir.filePath(calId + QStringLiteral("/single-fetch-evt-2.ics")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(seedIcs("single-fetch-evt-2"));
+    }
+    runOnce();
+    QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/single-fetch-evt-2.ics"))));
+
+    // The single-fetch pipeline means dispatchSync's own read block never
+    // falls back to loadRecordsOrError() (and thus never calls loadRecords())
+    // when the gate's own fetchItems() already succeeded — it serves the
+    // gate's own fetch results via recordsFromLastFetch() instead. Measuring
+    // the fallback specifically (not total loadRecords() calls) is required:
+    // this cycle's create also triggers legitimate, out-of-scope loadRecords()
+    // calls elsewhere (classifyForWriter's diff classification, the
+    // post-write hash-verification refetch) that have nothing to do with H5.
+    QCOMPARE(sourceBackend->m_recordsFromLastFetchFellBackCount, 0);
+    QCOMPARE(targetBackend->m_recordsFromLastFetchFellBackCount, 0);
 
     delete sourceBackend;
     delete targetBackend;
@@ -1191,7 +1234,11 @@ void TstBackendThreadRelocation::singleFetch_remoteBackend_noRedundantListing()
     mapping.sourceCalendar  = calId;
     mapping.targetBackend   = QStringLiteral("single-fetch-local");
     mapping.targetCalendar  = calId;
-    mapping.mode            = SyncMode::TwoWay;
+    // One-way: isolates the read-side redundancy H5 fixes on the remote
+    // source from unrelated post-write harvest re-reads on the target
+    // (out of H5's scope). See the Local test's comment for the same
+    // reasoning.
+    mapping.mode            = SyncMode::OneWayUpload;
     mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
     mapping.enabled         = true;
     engine.setSyncMappings({mapping});

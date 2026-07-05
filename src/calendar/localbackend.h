@@ -5,6 +5,7 @@
 #include <memory>
 
 #include <QDateTime>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QColor>
@@ -137,6 +138,9 @@ public:
     // Records
     QList<BackendRecord>         loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    bool recordsFromLastFetch(const QString &collectionId,
+                              QList<BackendRecord> &records,
+                              QString &errorMessage) override;
     QString                      createRecord(const QString &collectionId,
                                               const BackendRecord &record) override;
     bool                         updateRecord(const BackendRecord &record) override;
@@ -186,6 +190,11 @@ private:
     std::optional<QString> metadataDirFor(const QString &calendarId) const;
 
     QString m_calendarRootPath;
+
+    // H5/O23: single-shot memo of the last successful fetchItems() per
+    // collection, so recordsFromLastFetch() can serve it without a second
+    // directory scan. Cleared once served (see recordsFromLastFetch()).
+    QHash<QString, QList<BackendRecord>> m_lastFetchRecords;
 
     // Private per-backend fingerprint store (persisted to .kalburator-sync.db)
     std::unique_ptr<FingerprintStore> m_fingerprints;

@@ -57,6 +57,10 @@ QUrl parentUrl(const QUrl &url)
 
 namespace Kalburator::Sync {
 
+// Forward declaration: defined in the anonymous namespace near loadRecords()
+// below, needed by the recordsFromLastFetch() memo hook in fetchItems().
+namespace { BackendRecord blobRecordFromIcal(const QString &uid, const QByteArray &icalBytes); }
+
 // ============================================================================
 // CTagStore — private inner store for per-backend CalDAV CTags
 //
@@ -1386,6 +1390,24 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
     auto *op = onOwnerThread(new FetchOperation(calendarId), this);
     registerOperation(op);
 
+    // H5/O23: capture this fetch's results into the recordsFromLastFetch()
+    // memo on every successful completion, regardless of which internal
+    // branch completed it (cache hit, cache miss, full network fetch).
+    // setFetchedItems() and m_lastRawIcsByUid are always populated before
+    // complete() is called, and finished() fires synchronously from
+    // complete() on this same thread, so both are ready here.
+    connect(op, &SyncOperation::finished, this, [this, op, calendarId]() {
+        if (op->state() != SyncOperation::Succeeded) return;
+        QList<BackendRecord> records;
+        for (const auto &incidence : op->fetchedItems()) {
+            if (incidence.isNull()) continue;
+            const QByteArray rawIcs = m_lastRawIcsByUid.value(incidence->uid());
+            records.append(blobRecordFromIcal(
+                incidence->uid(), !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence)));
+        }
+        m_lastFetchRecords[calendarId] = records;
+    });
+
     if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::fetchItems: No DAV URL for calendar:" << calendarId;
         // Use QTimer to defer the failure so caller can connect to signals
@@ -2112,7 +2134,7 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 namespace {
 
 /// Build a BackendRecord from raw iCal bytes and a uid.
-static Kalburator::Sync::BackendRecord blobRecordFromIcal(
+Kalburator::Sync::BackendRecord blobRecordFromIcal(
     const QString &uid,
     const QByteArray &icalBytes)
 {
@@ -2231,6 +2253,20 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
 
     op->deleteLater();
     return result;
+}
+
+bool RemoteCalendarBackend::recordsFromLastFetch(const QString &collectionId,
+                                                 QList<BackendRecord> &records,
+                                                 QString &errorMessage)
+{
+    auto it = m_lastFetchRecords.find(collectionId);
+    if (it == m_lastFetchRecords.end()) {
+        return SyncBackendBase::recordsFromLastFetch(collectionId, records, errorMessage);
+    }
+    records = it.value();
+    m_lastFetchRecords.erase(it); // single-shot
+    errorMessage.clear();
+    return true;
 }
 
 std::optional<BackendRecord> RemoteCalendarBackend::loadRecord(const QString &recordId)

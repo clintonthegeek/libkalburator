@@ -280,6 +280,9 @@ public:
     // Records
     QList<BackendRecord>         loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    bool recordsFromLastFetch(const QString &collectionId,
+                              QList<BackendRecord> &records,
+                              QString &errorMessage) override;
     QString                      createRecord(const QString &collectionId,
                                               const BackendRecord &record) override;
     bool                         updateRecord(const BackendRecord &record) override;
@@ -433,6 +436,13 @@ private:
     // and processFetchedItems() — every site that parses raw ics text into
     // Incidence objects.
     QHash<QString, QByteArray> m_lastRawIcsByUid;
+
+    // H5/O23: single-shot memo of the last successful fetchItems() per
+    // collection, so recordsFromLastFetch() can serve it without a second
+    // listing+multiget round trip. Populated by a finished-signal hook in
+    // fetchItems() (fires uniformly across every completion branch — cache
+    // hit, cache miss, full network fetch); cleared once served.
+    QHash<QString, QList<BackendRecord>> m_lastFetchRecords;
 
     // Helper to get our cached etag string for a remote item URL
     QString cachedEtag(const QString &remoteUrl) const;

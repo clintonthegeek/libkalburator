@@ -47,6 +47,13 @@ SyncOperation* SyncBackendBase::fetchItems(const QString &calendarId)
     return op;
 }
 
+bool SyncBackendBase::recordsFromLastFetch(const QString &collectionId,
+                                           QList<BackendRecord> &records,
+                                           QString &errorMessage)
+{
+    return loadRecordsOrError(collectionId, records, errorMessage);
+}
+
 SyncOperation* SyncBackendBase::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
 {

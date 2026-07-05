@@ -327,7 +327,7 @@ so it's no longer indistinguishable from a successful no-op. Remaining halves (n
 H1's job): the fetch-gate `op->cancel()` call is now wired (H1.1, see O24), but
 `stopWorkerThread`'s mid-marshal deadlock risk is untouched — parked for a later phase.
 
-### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (partially resolved by H1.1, 2026-07-05)
+### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (RESOLVED, 2026-07-05)
 
 Audit §C1/C2. The dispatchSync gate ops (`syncengine.cpp:2122-2165`, `:2245-2282`) are
 never deleted — remote ops are unparented (leak until exit), local ops accumulate on the
@@ -340,9 +340,40 @@ cycle where one fetch + one PROPFIND would do.
 fetch op on every exit path (success, cancelled, failed). Pinned by
 `gateOps_areDeleted_afterSync` (`tst_backend_thread_relocation.cpp`), which asserts zero
 `SyncOperation` children on either backend after one sync cycle, and still zero after a
-second (no per-cycle regrowth). The double-fetch half (gate `fetchItems` +
-`loadRecords`→`fetchItems` again) is unresolved — that's H5's `recordsFromLastFetch`
-single-fetch pipeline.
+second (no per-cycle regrowth).
+
+**H5 (2026-07-05) closed the double-fetch half.** Added
+`SyncBackendBase::recordsFromLastFetch(collectionId, records, errorMessage)` — a
+single-shot memo of the most recent successful `fetchItems()`, served without new I/O,
+falling back to `loadRecordsOrError()` when the memo is absent (backends with no fetch
+cache, or a gate op that didn't succeed). `LocalBackend` and `RemoteCalendarBackend`
+populate the memo: `LocalBackend::fetchItems` builds the `BackendRecord` list inline from
+the bytes already in hand (no second disk read); `RemoteCalendarBackend::fetchItems`
+hooks `SyncOperation::finished` once (fires uniformly across every completion branch —
+cache hit, cache miss, full network fetch) rather than touching each of the ~9
+`op->complete()` call sites individually. `dispatchSync`'s two "Fetch source/target
+records" blocks now call `recordsFromLastFetch` instead of `loadRecordsOrError` whenever
+the gate's own `fetchItems()` succeeded.
+
+Landing also fixed a **latent hash-instability bug** this phase's own test surfaced:
+`LocalBackend::fetchItems`'s file read used `QIODevice::ReadOnly | QIODevice::Text`,
+while `recordFromFile()` (the `loadRecords()`/baseline path) read the same file without
+`Text` mode. `Text` mode strips `\r` on read, so the two paths produced different bytes
+— and therefore different `contentHash` values — for the identical file, which
+`perRecordDiff` read as "target changed since baseline", manufacturing a spurious
+Conflict in place of a genuine Delete (`tst_sync_convergence::remoteDeleteRemovesExactlyOneLocally`
+failure during H5 development). Fixed by dropping `QIODevice::Text` from `fetchItems`'s
+read, matching `recordFromFile()`.
+
+**RED tests** (`tst_backend_thread_relocation.cpp`): `singleFetch_localBackends_noRedundantRead`
+(a `recordsFromLastFetchFellBackCount` counter on a `LocalBackend` test subclass — isolates
+the gate's own fallback decision from unrelated legitimate re-reads elsewhere, e.g.
+`classifyForWriter`'s diff classification and the post-write hash-verification refetch,
+both out of this phase's scope) and `singleFetch_remoteBackend_noRedundantListing` (a
+`fetchStarted` `QSignalSpy` count on `RemoteCalendarBackend`, measured only on the
+steady-state second sync cycle — cycle 1's `dispatchFirstSync` fast path is a separate,
+out-of-scope code path with its own reads). Both confirmed RED against
+`feature/d1-threading` @ `16a5c14` (H4), GREEN after the fix. Full suite 160/160 green.
 
 ### O24 — the cancellation gate doesn't gate LocalBackend; F2 cancellation only ever tested against MockBackend's model (RESOLVED by H1.1, 2026-07-05)
 

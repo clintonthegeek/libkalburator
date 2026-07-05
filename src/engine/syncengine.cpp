@@ -2190,6 +2190,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // and abort the sync. Backends that don't override fetchItems() return a
     // immediately-failed op; we skip the QEventLoop for those and proceed
     // directly to loadRecordsOrError().
+    bool srcFetchSucceeded = false;
     {
         SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(srcBackend, [srcBackend, srcColId, &fetchOpRaw]() {
@@ -2252,13 +2253,22 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        srcFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
         if (fetchOp) fetchOp->deleteLater();
     }
     QList<BackendRecord> sourceRecords;
     {
         QString fetchErr;
-        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &sourceRecords, &fetchErr]() {
-            srcBlob->loadRecordsOrError(srcColId, sourceRecords, fetchErr);
+        QMetaObject::invokeMethod(srcBackend, [srcBackend, srcBlob, srcColId, srcFetchSucceeded, &sourceRecords, &fetchErr]() {
+            // H5/O23: the gate's own fetchItems() already read this collection
+            // moments ago — serve its memo instead of a second, fully
+            // redundant read. NotSupported/null-op backends (no fetch cache)
+            // fall through to loadRecordsOrError() exactly as before.
+            if (srcFetchSucceeded) {
+                srcBackend->recordsFromLastFetch(srcColId, sourceRecords, fetchErr);
+            } else {
+                srcBlob->loadRecordsOrError(srcColId, sourceRecords, fetchErr);
+            }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
             m_currentResult.success = false;
@@ -2332,6 +2342,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     // --- Fetch target records (cross-thread) ---
     // Same cancellable gating pattern as source fetch above.
+    bool tgtFetchSucceeded = false;
     {
         SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtColId, &fetchOpRaw]() {
@@ -2384,13 +2395,20 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        tgtFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
         if (fetchOp) fetchOp->deleteLater();
     }
     QList<BackendRecord> targetRecords;
     {
         QString fetchErr;
-        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &targetRecords, &fetchErr]() {
-            tgtBlob->loadRecordsOrError(tgtColId, targetRecords, fetchErr);
+        QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtBlob, tgtColId, tgtFetchSucceeded, &targetRecords, &fetchErr]() {
+            // H5/O23: same single-fetch-pipeline reasoning as the source
+            // block above.
+            if (tgtFetchSucceeded) {
+                tgtBackend->recordsFromLastFetch(tgtColId, targetRecords, fetchErr);
+            } else {
+                tgtBlob->loadRecordsOrError(tgtColId, targetRecords, fetchErr);
+            }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
             m_currentResult.success = false;
