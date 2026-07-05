@@ -177,6 +177,13 @@ commit; drop it then per the todo doc.
 
 ### Phase D1 — N7: DAV I/O off the GUI thread
 
+> **Execution plan (authoritative, task-level):**
+> `docs/campaign/2026-07-04-d1-threading-execution-plan.md` — written
+> 2026-07-04 from a full cross-repo viability audit; hand-off ready. Work
+> from that doc, in its task order, and update its §9 checklist in the same
+> commit as each task. The section below is the original phase sketch and is
+> superseded on any disagreement.
+
 **Problem.** Backends live on the consumer's main thread. The engine worker
 marshals every read/classify/apply to them via `Qt::BlockingQueuedConnection`
 (sites: syncengine.cpp:1643, 1713, 2004, 2050, 2096, 2116, 2156, 2675, 2691),
@@ -295,5 +302,7 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       and `PlanStan/CLAUDE.md`.
 - [x] D0 apply-phase `recordChanged` wiring — landed 2026-07-04 on `main`,
       untagged (ships with v0.83 alongside D1)
-- [ ] D1 N7 threading (tag v0.83)
+- [ ] D1 N7 threading (tag v0.83) — execution plan ready:
+      `docs/campaign/2026-07-04-d1-threading-execution-plan.md` (live
+      checklist in its §9)
 - [ ] D2 backlog triage

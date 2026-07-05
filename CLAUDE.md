@@ -67,24 +67,21 @@ checklist is the single source of truth for what's landed; update it in the
 same commit that lands or merges a phase (same discipline as the other two
 campaigns above).
 
-**Status (2026-07-04): Track A and Track B phases B1–B3 are done, tagged, and
-merged to `main`.**
-- **v0.80** — Track A: per-kind canon dispatch (VTODO/VJOURNAL no longer
-  silently drop) + N1 (VTIMEZONE recurrence-scraping corruption fixed via a
-  shared, component-scoped `extractComponentRecurrenceLines`).
-- **v0.81** — Track B(1-3): N3 (honest remote `lastModified`, no more
-  stamping "now"), N4 (multiget chunking + transport-error truth), N5
-  (CTag/content-cache coherence — closes a silent mass-delete vector).
-- PlanStan is pinned to `v0.81` and has adopted C1 (a registered
-  `IMassDeleteGuard`).
+**Status (2026-07-04): Tracks A, B, and C are COMPLETE** — tagged v0.80,
+v0.81, v0.82; PlanStan pinned to v0.82 and live-verified (sync converges on a
+real account, fast path by cycle 2). D0 (apply-phase
+`ISyncHost::recordChanged` wiring) is merged to `main` @ `928f318`,
+**untagged** — it ships with D1 under v0.83. Full landed-work history:
+`docs/campaign/FINDINGS.md` and
+`docs/campaign/archive/2026-07-03-sync-convergence-tracks-a-b-c.md`.
 
-**Remaining, in order:** B4 (N2 — per-side baseline hashes; the actual
-convergence fix; CRITICAL, large — touches storage schema v5 + engine diff/
-merge internals) → B5 (convergence acceptance gate + fast-path wiring, tag
-v0.82) → PlanStan C2/C3/C4 → D1 (N7 — move DAV I/O off the GUI thread, tag
-v0.83) → D2 backlog triage. Read the roadmap's own phase sections before
-starting any of these — each is self-contained (problem, evidence, fix
-design, test plan, acceptance gate).
+**Remaining: Phase D1 (N7 — move DAV I/O off the GUI thread, tag v0.83), then
+D2 backlog triage.** D1 has a hand-off-ready, task-level execution plan
+written from a full cross-repo viability audit:
+**`docs/campaign/2026-07-04-d1-threading-execution-plan.md`** — if you are
+picking up D1, start there, work its tasks in order, and update its §9
+checklist in the same commit as each task. It supersedes the roadmap's D1
+sketch on any disagreement.
 
 Work happens on short-lived feature branches per phase group (e.g.
 `feature/sync-stack-integrity-b1-b3`), merged `--no-ff` to `main` and tagged
