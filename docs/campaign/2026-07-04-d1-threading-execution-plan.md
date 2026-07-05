@@ -1,7 +1,16 @@
 # Phase D1 execution plan — DAV I/O off the GUI thread (→ v0.83)
 
 **Date:** 2026-07-04
-**Status:** NOT STARTED — checklist in §9 is the live state; update it in the
+**Status:** Stage 1 IN PROGRESS, BLOCKED on a newly-found gap — T1.1-T1.4
+landed and green (158→159 tests). T1.5's GUI-stall probe is written and
+correctly identifies a real, unfixed stall: `SyncEngine::prepareSyncFastPath()`
+runs synchronously on the caller's thread (before the worker thread starts)
+and blocks on relocated backends' network I/O via `BlockingQueuedConnection`
+— relocating backends doesn't help because the caller still waits
+synchronously regardless of which thread does the work. Full detail + fix
+options: `docs/campaign/FINDINGS.md` O16. Needs a decision before Stage 1's
+gate can close — see §9 checklist for the specific blocked item.
+Checklist in §9 is the live state; update it in the
 same commit as the work it describes.
 **Repos:** libkalburator (primary) + PlanStan (consumer adoption).
 **Baseline revisions for all file:line references below:** libkalburator
@@ -475,13 +484,23 @@ move** → Stage 4 release steps 1-6.
 ## 9. Checklist (LIVE — update in the same commit as the work)
 
 Stage 1 (libkalburator, branch `feature/d1-threading`):
-- [ ] T1.1 shared lazily-created QNAM + entry assert
-- [ ] T1.2 CTagStore lazy-open
-- [ ] T1.3 FingerprintStore lazy-open
-- [ ] T1.4 relocation tests (remote / local / full-engine-on-io-thread)
-- [ ] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms)
+- [x] T1.1 shared lazily-created QNAM + entry assert
+- [x] T1.2 CTagStore lazy-open
+- [x] T1.3 FingerprintStore lazy-open
+- [x] T1.4 relocation tests (remote / local / full-engine-on-io-thread) —
+      also found and fixed two unmarshaled engine→backend calls
+      (`prepareSyncFastPath`/`persistRevision` called `ChangeDetection`
+      methods directly; now via a `runOnBackendThread()` helper)
+- [ ] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms) —
+      **written, RED**: probe correctly measures a ~213ms stall even with
+      backends relocated. Root cause is NOT a T1.1-T1.4 gap — it's
+      `prepareSyncFastPath()` itself running synchronously on the caller's
+      thread before the worker thread starts. See FINDINGS.md O16 for full
+      detail + fix options. Blocked pending a decision on which fix
+      direction to take.
 - [ ] T1.6 threading contract docs + FCB/ProviderManager audit notes
 - [ ] Stage 1 gate: full suite green; merged --no-ff to main; roadmap §5 touched
+      — **cannot close while T1.5 is RED**
 
 Stage 2 (PlanStan, branch `feature/d1-io-thread`):
 - [ ] T2.1 backends de-parented; ownership audit of all insert/delete paths

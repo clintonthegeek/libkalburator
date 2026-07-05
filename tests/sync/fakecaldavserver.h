@@ -60,6 +60,14 @@ public:
     void setReturn401(bool on)   { m_return401 = on; }
     void setReturn500(bool on)   { m_return500 = on; }
 
+    /// Delay every response by @p ms before it's handled (via a deferred
+    /// QTimer::singleShot on the server's own thread — never a blocking
+    /// sleep, which would freeze the fake server's event loop instead of
+    /// just simulating a slow network). D1 T1.5's GUI-stall probe uses this
+    /// to inject latency a relocated backend must absorb without stalling
+    /// whichever thread is polling for a freeze.
+    void setResponseDelayMs(int ms) { m_responseDelayMs = ms; }
+
     /// Fail the Nth calendar-multiget REPORT (1-based) with a 500 response
     /// instead of serving it normally. 0 (the default) means never fail.
     /// Lets tests exercise N4's chunked-batch error path without needing a
@@ -170,6 +178,7 @@ private:
 
     bool m_return401 = false;
     bool m_return500 = false;
+    int m_responseDelayMs = 0;
     int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
     int m_multigetReportCount = 0;      // reset on startListening()
     QHash<QString, QString> m_ctagByHref;  // href -> CS:getctag value, if configured

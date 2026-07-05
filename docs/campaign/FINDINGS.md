@@ -113,6 +113,59 @@ changes during downtime (which the digest already handles). The digest fetch is 
 local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
 shows the digest fetch is hot. (Decided 2026-05-26.)
 
+### O16 — `prepareSyncFastPath()` still blocks the caller's thread for network I/O after D1 relocation (OPEN, 2026-07-05)
+
+D1 Stage 1's T1.5 GUI-stall probe (`tests/calendar/tst_backend_thread_relocation.cpp`,
+`stallProbe_relocatedBackends_stayResponsive`) FAILS as of this writing: with both mapping
+backends relocated to a dedicated I/O thread and a 200ms latency-injected fake CalDAV server,
+the calling ("GUI") thread still stalls ~213ms — almost exactly one network round-trip.
+
+Root cause: `SyncEngine::driveQueue()` calls `prepareSyncFastPath()` (line ~384)
+**synchronously, on whatever thread called `runSync()`**, *before* `startWorkerThread()`.
+`prepareSyncFastPath()` fetches fresh ctag/fingerprint revisions per backend
+(`collectionRevisions`, `cachedCollectionRevision`) to decide per-mapping skip-eligibility —
+this file's T1.4 fix (see the `runOnBackendThread()` helper added to `syncengine.cpp`) made
+those calls thread-*safe* (no more silent cross-thread QObject/SQLite access) by marshaling
+them via `QMetaObject::invokeMethod(base, ..., Qt::BlockingQueuedConnection)` when the backend
+lives on a different thread than the caller. That fix was necessary and correct, but it cannot
+by itself close the stall: `Qt::BlockingQueuedConnection` is *synchronous by definition* — it
+parks the calling thread until the target thread finishes, regardless of which thread actually
+does the work. Relocating the backend changes *who* performs the network I/O; it does not make
+the caller stop waiting for it.
+
+This is architecturally different from the ~19 pre-existing `BlockingQueuedConnection` sites in
+`syncengine.cpp`, which are all reached from `SyncEngineWorker`'s own dedicated
+`m_workerThread` — a thread that, by construction, is never the GUI/caller thread, so blocking
+it was always safe. `prepareSyncFastPath()` and `onWorkerSyncCompleted()`'s `persistRevision`
+(the same finding, smaller impact — it runs once per mapping *after* the worker already did the
+real work, so it adds a per-mapping tail stall rather than a per-sync head stall) are the two
+sites that run on the *caller's* thread instead, which pre-D1 was harmless (caller thread ==
+backend thread == a direct, already-fast call) and only becomes a real stall once backends
+relocate.
+
+**Scope note:** this is a materially smaller problem than the 120s bulk-transfer freeze (finding
+N7) that motivated D1 — it's bounded by one ctag/fingerprint round-trip per
+`ChangeDetection`-implementing backend per sync (typically the source AND target of every
+mapping), not by the size of the actual data being synced. D1's core deliverable — bulk
+fetch/push work no longer blocking the GUI — is proven working by
+`fullEngineRun_relocatedBackends_completesAcrossThreeThreads` in the same test file. This is a
+narrower, separate gap in the *pre-check* phase, not a regression in the fix's core mechanism.
+
+**Fix directions (not yet implemented, needs a decision before Stage 1 can close):**
+1. Make `prepareSyncFastPath()` run asynchronously as part of the worker thread's own sequence
+   (start the worker thread first; have it run the fast-path check, then decide skip-eligibility,
+   then process the queue — all before ever handing control back to the caller synchronously).
+   This is the architecturally clean fix and mirrors the existing worker-thread pattern, but it
+   touches `driveQueue()`'s control flow (cancellation, `m_isSyncing`, the DecSync active-
+   controller loop that currently runs inline before it) and needs its own test coverage.
+2. Accept the bounded stall for D1 and defer a full fix to D2, documenting the acceptance gate's
+   50ms threshold as "during the worker-thread-driven bulk phase" rather than the whole cycle.
+3. Disable `m_skipUnchangedMappings` (the fast-path feature) when backends are relocated, trading
+   away the optimization to avoid the stall — cheapest but regresses a real, shipped perf win.
+
+Not fixed this session. Flagging here + in the D1 execution plan's checklist so Stage 1 doesn't
+get marked closed while this is open.
+
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)

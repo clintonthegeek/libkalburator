@@ -32,12 +32,14 @@
 
 #include <QtTest/QtTest>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimeZone>
+#include <QTimer>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
@@ -97,7 +99,17 @@ private slots:
     void local_constructThenMove_fetchStartSyncFingerprintRoundtrip();
     void fullEngineRun_relocatedBackends_completesAcrossThreeThreads();
 
+    void stallProbe_relocatedBackends_stayResponsive();
+
 private:
+    // Harness for the T1.5 GUI-stall probe: a latency-injected
+    // RemoteCalendarBackend (source) syncing TwoWay against a LocalBackend
+    // (target), both relocated to a dedicated I/O thread, driven through a
+    // real SyncEngine. A QTimer on the calling ("GUI") thread ticks every
+    // 10 ms while the sync runs; returns the largest observed gap between
+    // ticks — the D1 acceptance gate is that this stays under 50 ms.
+    qint64 runStallProbe();
+
     Kalburator::Shape::ShapeRegistries m_shape;
     BackendRegistry m_pluginRegistry;
 };
@@ -373,6 +385,173 @@ void TstBackendThreadRelocation::fullEngineRun_relocatedBackends_completesAcross
     QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/reloc-evt-1.ics"))));
     QCOMPARE(sourceBackend->thread(), &ioThread);
     QCOMPARE(targetBackend->thread(), &ioThread);
+}
+
+// ---- T1.5: GUI-stall probe -------------------------------------------------
+//
+// An earlier version of this probe also asserted the inverse — backends left
+// on the caller's thread should show a stall > 50ms. That assertion turned
+// out not to hold for this harness: davSyncRequest's nested QEventLoop::exec()
+// keeps processing other pending events (including our heartbeat QTimer)
+// while it waits for the network reply, so a single latency-injected
+// round-trip doesn't manifest as a naive heartbeat gap even when the backend
+// shares the calling thread. The historical 120s freeze (finding N7) is a
+// bulk-operation phenomenon, not something one small fetch reproduces — the
+// authoritative freeze reproduction is T3.3's live verification against a
+// real server. Dropped the inverse rather than keep an assertion that
+// doesn't actually discriminate anything.
+//
+// The other thing that inverse attempt exposed: giving FakeCalDavServer a
+// response delay via QTimer::singleShot only simulates real network latency
+// if the server can actually service that deferred callback independent of
+// whatever the "GUI" thread is doing. Since the fast-path pre-check
+// (prepareSyncFastPath(), called synchronously from runSync() on the calling
+// thread before the worker thread starts) now correctly marshals its
+// ChangeDetection calls via BlockingQueuedConnection when the backend has
+// been relocated (see runOnBackendThread() in syncengine.cpp), that pre-check
+// parks the calling thread without pumping its own event loop — so if the
+// fake server lived on that same thread, its deferred response would never
+// fire and the whole run would deadlock. Giving the server its own thread
+// (mimicking a real, independent CalDAV server process) fixes this and is
+// more realistic besides.
+qint64 TstBackendThreadRelocation::runStallProbe()
+{
+    auto *server = new FakeCalDavServer();
+    server->setResponseDelayMs(200);
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref),
+                          {seedIcs("stall-evt-1")});
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("d1-test-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    if (!listening) {
+        QMetaObject::invokeMethod(server, [server]() { delete server; }, Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+        return -1;
+    }
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; }, Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QTemporaryDir localDir;
+    if (!cacheDir.isValid() || !localDir.isValid()) return -1;
+    const QString calId = QStringLiteral("Personal");
+    if (!QDir().mkpath(localDir.filePath(calId))) return -1;
+
+    auto *remoteBackend = new RemoteCalendarBackend(baseUrl,
+                                                     QStringLiteral("testuser"),
+                                                     QStringLiteral("testpass"));
+    remoteBackend->setCacheDir(cacheDir.path());
+    remoteBackend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    remoteBackend->registerCalendarUrl(
+        calId, baseUrl.toString() + QString::fromLatin1(kPersonalHref).mid(1));
+
+    auto *localBackend = new LocalBackend(localDir.path());
+    localBackend->setDbPath(localDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("d1-test-stall-io"));
+    ioThread.start();
+    // See the T1.4 cases above for why deletion goes through invokeMethod on
+    // the backend's own thread before a relocated I/O thread stops.
+    auto backendGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(remoteBackend, [remoteBackend]() { delete remoteBackend; },
+                                  Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(localBackend, [localBackend]() { delete localBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    remoteBackend->moveToThread(&ioThread);
+    localBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("stall-remote"), remoteBackend);
+    registry.registerBackendInstance(QStringLiteral("stall-local"), localBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    if (!engineDbDir.isValid()) return -1;
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("stall-mapping");
+    mapping.sourceBackend   = QStringLiteral("stall-remote");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("stall-local");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    // Heartbeat on the calling ("GUI") thread: ticks every 10ms; the largest
+    // observed gap between ticks is how long this thread was ever stalled.
+    QElapsedTimer elapsed;
+    elapsed.start();
+    qint64 lastTick = 0;
+    qint64 maxGapMs = 0;
+    QTimer heartbeat;
+    heartbeat.setInterval(10);
+    QObject::connect(&heartbeat, &QTimer::timeout, [&]() {
+        const qint64 now = elapsed.elapsed();
+        const qint64 gap = now - lastTick;
+        if (gap > maxGapMs) maxGapMs = gap;
+        lastTick = now;
+    });
+    heartbeat.start();
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+    int waited = 0;
+    constexpr int kSyncTimeoutMs = 30000;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(5);
+        waited += 5;
+    }
+    heartbeat.stop();
+
+    if (!future.isFinished() || future.isCanceled()) return -1;
+    return maxGapMs;
+}
+
+void TstBackendThreadRelocation::stallProbe_relocatedBackends_stayResponsive()
+{
+    const qint64 maxGap = runStallProbe();
+    QVERIFY(maxGap >= 0);
+    // The D1 acceptance gate: the calling ("GUI") thread must never stall
+    // more than 50ms through a full sync cycle over a latency-injected fake
+    // server, once both mapping backends live on their own I/O thread.
+    QVERIFY2(maxGap < 50,
+             qPrintable(QStringLiteral(
+                 "GUI-analog thread stalled %1ms with backends relocated to their own I/O thread")
+                            .arg(maxGap)));
 }
 
 QTEST_GUILESS_MAIN(TstBackendThreadRelocation)
