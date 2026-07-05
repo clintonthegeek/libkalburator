@@ -181,6 +181,14 @@ default). Fix: per-`(mappingId, side)` token consumption recorded by the engine 
 BaselineStore on mapping success, token captured atomically with the fetch (audit §1.4/§6
 step T1.7). Needs a RED test first.
 
+**CP-A ruling (2026-07-05):** H3 design reviewed against post-H1/H2 code and CONFIRMED
+with two amendments (recorded in the phase plan §10, edited into its §6): BaselineStore
+schema bump is v6→v7 (not v5→v6 — B4 already stamped 6), and `clearMappingV3` must also
+clear the mapping's sync_tokens so an API-level baseline wipe can't leave skip-enabling
+tokens behind (A4). Pre-fetch-snapshot semantics, the present-but-unused ChangeDetection
+methods, and the accepted one-cycle re-diff lag are all confirmed as pre-decided. H3 may
+proceed.
+
 ### O18 — LocalBackend post-write fingerprint re-hash masks concurrent foreign edits (OPEN, 2026-07-05)
 
 Audit §A2. `persistRevision`'s live re-hash after a successful mapping is written

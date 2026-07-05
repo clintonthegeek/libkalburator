@@ -1,8 +1,9 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H2 done (2026-07-05); CP-A next. See §10 checklist — it is the single
-source of truth for progress; update it in the same commit as the work.
+**Status:** Phases H1–H2 done, CP-A recorded (2026-07-05) — H3 cleared to
+implement as amended. See §10 checklist — it is the single source of truth
+for progress; update it in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -334,8 +335,11 @@ and change only (a) what the skip check compares against and (b) what
 happens on completion.
 
 1. **BaselineStore** (`src/storage/baselinestore.{h,cpp}`): bump the
-   schema (current v5 → v6, follow the existing migration pattern —
-   forward-only, self-migrating, additive table):
+   schema (current **v6 → v7** — CP-A correction: the plan originally
+   said v5→v6, but B4's hash-column work already stamped
+   `kSchemaVersion = 6`; verify the constant before bumping), follow
+   the existing migration pattern — forward-only, self-migrating,
+   additive table:
    `CREATE TABLE IF NOT EXISTS sync_tokens (mapping_id TEXT NOT NULL,
    side TEXT NOT NULL CHECK(side IN ('source','target')),
    token TEXT NOT NULL, PRIMARY KEY (mapping_id, side))`.
@@ -343,6 +347,12 @@ happens on completion.
    &side) const;`, `void setSyncToken(const QString &mappingId, const
    QString &side, const QString &token);`, `void clearSyncTokens(const
    QString &mappingId);`.
+   **CP-A addition:** `clearMappingV3(mappingId)` must ALSO delete that
+   mapping's `sync_tokens` rows (call `clearSyncTokens` from it). The
+   header (`baselinestore.h:106`) already documents clearMappingV3 as
+   the mapping-scoped wipe; if baselines are cleared through the API
+   but tokens survived, a mapping could skip with no baselines — the
+   exact A4 hole this phase is supposed to close structurally.
 2. **Skip check** (`prepareSyncFastPath::checkSide`,
    `syncengine.cpp:744-758`): replace the marshaled
    `cd->cachedCollectionRevision(colId)` read with
@@ -362,7 +372,10 @@ happens on completion.
    fix).
 4. **Engine-wide grep:** after steps 2–3, `grep -n
    "cachedCollectionRevision\|primeRevisionCache" src/engine/` must be
-   empty. The `ChangeDetection` interface methods stay (WildPalms may
+   empty. (CP-A note: this includes `syncengine.h` — its
+   `prepareSyncFastPath` doc comment at ~`:456-459` names
+   `primeRevisionCache`, and the `skipUnchangedMappings` doc at
+   ~`:278` describes the old baseline condition; update both.) The `ChangeDetection` interface methods stay (WildPalms may
    use them); add a doc comment on each: "engine no longer calls this
    (sync-hardening H3, 2026-07-05); backend-internal / external
    consumers only."
@@ -686,7 +699,35 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
 - [x] **H1.4** delete dead `await<>`; fix localbackend comment + CLAUDE.md cancellation para — 2026-07-05
 - [x] **H2.1** runPropertyPhase marshaled per backend (RED: thread-recording stub) — 2026-07-05 (also fixed a 5th, previously-unlisted unmarshaled call site: the T9 baseline snapshot in unifiedContinueAfterConflicts)
 - [x] **H2.2** dispatchFirstSync split per backend (RED: two-thread first sync) — 2026-07-05
-- [ ] **CP-A** strong-model ruling on H3 design recorded here: _(pending)_
+- [x] **CP-A** strong-model ruling on H3 design recorded here (2026-07-05, Fable):
+      **CONFIRMED with two amendments** (both edited into §6 directly). Reviewed
+      audit §1.4 + §2 (A1–A4) against post-H1/H2 code (`feature/d1-threading`
+      @ `08c6239`). (1) Pre-fetch-snapshot semantics: CONFIRMED sound —
+      `m_freshState` is captured in `prepareSyncFastPath` before
+      `startWorkerThread()`, so the persisted token is never newer than the
+      data the run consumed; staleness is always safe-direction (worst case
+      one redundant re-diff), including the multi-mapping case where the
+      snapshot predates earlier queue entries' writes, and the
+      single-mapping/`processSingleMapping` case which persists nothing
+      (an unpersisted self-write just re-diffs next cycle). (2) Leaving
+      `ChangeDetection::cachedCollectionRevision`/`primeRevisionCache`
+      present-but-engine-unused: CONFIRMED — six backend families implement
+      them (akonadi ×2, remote ×2, local, universal ×2); removal is
+      cross-repo churn with WildPalms exposure, doc-comment approach is
+      right. (3) One-cycle re-diff lag after self-writes: CONFIRMED
+      acceptable — audit A3 proves the remote side never had the
+      optimization anyway, so this codifies actual behavior; H9 owns the
+      incremental-fingerprint optimization. Amendment 1: BaselineStore is
+      already at schema v6 (B4 hash columns), so H3 bumps v6→v7 — the
+      plan's "v5→v6" was stale. Amendment 2: `clearMappingV3` must also
+      clear the mapping's sync_tokens, otherwise an API-level baseline
+      wipe with surviving tokens re-opens A4. Also noted: the step-4 grep
+      obliges updating two `syncengine.h` doc comments. Clobber-token
+      clearing in `driveQueue` only (not the single-mapping clobber path)
+      was examined and is safe: single-mapping runs persist no tokens, and
+      a clobbered target's fresh fingerprint/ctag always diverges from any
+      stale stored token, so the mapping re-diffs. H3 is cleared to
+      implement as amended.
 - [ ] **H3** BaselineStore v6 sync_tokens + engine-owned tokens; persistRevision deleted
       (RED: O17 pin, O18 pin, skip-still-works, clobber-clears)
 - [ ] **H4** fast path on worker; **stall probe green**; cancel-during-fast-path test
