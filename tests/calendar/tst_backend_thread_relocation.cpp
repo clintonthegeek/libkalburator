@@ -98,6 +98,7 @@ private slots:
     void remote_constructThenMove_fetchPushDeleteWork();
     void local_constructThenMove_fetchStartSyncFingerprintRoundtrip();
     void fullEngineRun_relocatedBackends_completesAcrossThreeThreads();
+    void gateOps_areDeleted_afterSync();
 
     void stallProbe_relocatedBackends_stayResponsive();
 
@@ -385,6 +386,97 @@ void TstBackendThreadRelocation::fullEngineRun_relocatedBackends_completesAcross
     QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/reloc-evt-1.ics"))));
     QCOMPARE(sourceBackend->thread(), &ioThread);
     QCOMPARE(targetBackend->thread(), &ioThread);
+}
+
+// ---- H1.1: fetch-gate ops are cleaned up (no leaked children) --------------
+//
+// The two fetch gate blocks in SyncEngineWorker::dispatchSync (source ~2111,
+// target ~2242) never deleteLater() the FetchOperation they create, and both
+// backends parent their ops to `this` (LocalBackend::fetchItems, line 693) —
+// so every sync cycle permanently accumulates SyncOperation children. Pins
+// H1.1/O23: after a sync completes, neither backend should have any
+// SyncOperation children left, and a second cycle must not grow that count.
+
+void TstBackendThreadRelocation::gateOps_areDeleted_afterSync()
+{
+    QTemporaryDir sourceDir;
+    QTemporaryDir targetDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid());
+    const QString calId = QStringLiteral("cal-1");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+    QVERIFY(QDir().mkpath(targetDir.filePath(calId)));
+
+    {
+        QFile f(sourceDir.filePath(calId + QStringLiteral("/gate-evt-1.ics")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(seedIcs("gate-evt-1"));
+    }
+
+    auto *sourceBackend = new LocalBackend(sourceDir.path());
+    auto *targetBackend = new LocalBackend(targetDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->setDbPath(targetDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("gate-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("gate-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("gate-mapping");
+    mapping.sourceBackend   = QStringLiteral("gate-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("gate-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    };
+
+    runOnce();
+    QTRY_VERIFY(sourceBackend->findChildren<SyncOperation *>().isEmpty());
+    QTRY_VERIFY(targetBackend->findChildren<SyncOperation *>().isEmpty());
+
+    // Second cycle pins no per-cycle growth (a leak that only "happened to
+    // clear" once would still be a leak).
+    runOnce();
+    QTRY_VERIFY(sourceBackend->findChildren<SyncOperation *>().isEmpty());
+    QTRY_VERIFY(targetBackend->findChildren<SyncOperation *>().isEmpty());
+
+    delete sourceBackend;
+    delete targetBackend;
 }
 
 // ---- T1.5: GUI-stall probe -------------------------------------------------
