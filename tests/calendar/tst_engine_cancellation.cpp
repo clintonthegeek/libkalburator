@@ -90,6 +90,8 @@ private slots:
     void idempotentCancel();           // C6 — Group 2 Task 28
     void cancelAfterFinished();        // C7 — Group 2 Task 28
 
+    void overlappingRunSync_secondIsRejectedDistinctly(); // H1.3 — O22
+
     // Positive QFuture smoke tests.
     void singleMappingFutureCompletes();
     void multiMappingFutureReturnsList();
@@ -595,6 +597,40 @@ void TstEngineCancellation::idempotentCancel()
 
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), 30000);
     QVERIFY(future.isCanceled());
+}
+
+void TstEngineCancellation::overlappingRunSync_secondIsRejectedDistinctly()
+{
+    // H1.3/O22: a runSync() call while another is in flight must report a
+    // distinguishable failure, not a finished future with an empty result
+    // list (indistinguishable from a successful no-op run). Block the first
+    // run's fetch so it's still "syncing" when the second call arrives.
+    m_src->addIncidence(QString::fromLatin1(kCalendarId),
+                        makeEvent(QStringLiteral("evt-1"),
+                                  QStringLiteral("Event One")));
+    m_src->setFetchBlocking(true);
+
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    auto first = m_engine->runSync(req);
+
+    QTest::qWait(100);
+
+    auto second = m_engine->runSync(req);
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), 5000);
+    QVERIFY(!second.isCanceled());
+    QCOMPARE(second.resultCount(), 1);
+    const QList<SyncResult> results = second.resultAt(0);
+    QVERIFY2(!results.isEmpty(),
+             "an overlapping run must report a result, not an empty list "
+             "indistinguishable from a successful no-op");
+    const SyncResult rejected = results.first();
+    QVERIFY2(!rejected.success, "an overlapping run must be reported as a failure");
+    QVERIFY2(rejected.errorMessage.contains(QStringLiteral("rejected")),
+             qPrintable(rejected.errorMessage));
+
+    m_src->releaseFetchBlocker();
+    QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), 30000);
 }
 
 void TstEngineCancellation::cancelAfterFinished()
