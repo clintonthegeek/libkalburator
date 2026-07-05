@@ -1,7 +1,7 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phase H1 NOT STARTED. See §10 checklist — it is the single
+**Status:** Phase H1 done (2026-07-05); H2 next. See §10 checklist — it is the single
 source of truth for progress; update it in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
@@ -680,10 +680,10 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
 
 ## 10. Checklist (single source of truth — update in the landing commit)
 
-- [ ] **H1.1** gate await/cancel/delete (RED: `gateOps_areDeleted_afterSync`)
-- [ ] **H1.2** QNAM transferTimeout + FakeCalDavServer drop mode
-- [ ] **H1.3** distinguishable overlap rejection
-- [ ] **H1.4** delete dead `await<>`; fix localbackend comment + CLAUDE.md cancellation para
+- [x] **H1.1** gate await/cancel/delete (RED: `gateOps_areDeleted_afterSync`) — 2026-07-05
+- [x] **H1.2** QNAM transferTimeout + FakeCalDavServer drop mode — 2026-07-05
+- [x] **H1.3** distinguishable overlap rejection — 2026-07-05
+- [x] **H1.4** delete dead `await<>`; fix localbackend comment + CLAUDE.md cancellation para — 2026-07-05
 - [ ] **H2.1** runPropertyPhase marshaled per backend (RED: thread-recording stub)
 - [ ] **H2.2** dispatchFirstSync split per backend (RED: two-thread first sync)
 - [ ] **CP-A** strong-model ruling on H3 design recorded here: _(pending)_

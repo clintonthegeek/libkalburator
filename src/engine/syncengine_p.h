@@ -232,7 +232,7 @@ signals:
     // F2 Task 16: emitted from observeCancel() slot when cancellation
     // is forwarded from the engine side (via Task 17's queued
     // connection). Internal to the engine/worker pair. Used to wake
-    // nested QEventLoops in await<> and the conflict-pause loop.
+    // the fetch gate loops (dispatchSync) and the conflict-pause loop.
     void cancellationObserved();
 
     // Plan 1 Task 2 (2026-05-29) — engine→worker command-channel signals.
@@ -252,53 +252,6 @@ signals:
                                        const QString &mergedIcal);
 
 private:
-    /// F2 Task 16: run an inner QEventLoop until the operation
-    /// finishes OR cancellation is observed. On cancellation, request
-    /// the operation's own cancel() and re-enter the loop briefly
-    /// waiting for the operation to actually settle (operations are
-    /// not pre-emptible at the per-record level once started).
-    ///
-    /// Returns the same op pointer (caller still owns; typical
-    /// idiom: `auto *op = await(backend->fetchItems(id));` then
-    /// inspect op->state(), then op->deleteLater()).
-    ///
-    /// CRITICAL: must be called from the worker thread. Calling
-    /// from any other thread will run the inner QEventLoop on
-    /// that thread, defeating the cancellation observation
-    /// mechanism.
-    template <typename Op>
-    Op* await(Op *op)
-    {
-        static_assert(
-            std::is_base_of_v<SyncOperation, Op>,
-            "await<Op> requires Op to derive from SyncOperation");
-
-        if (!op) return op;
-        if (op->isFinished()) return op;
-
-        QEventLoop loop;
-        QObject::connect(op, &SyncOperation::finished,
-                         &loop, &QEventLoop::quit);
-        QObject::connect(this, &SyncEngineWorker::cancellationObserved,
-                         &loop, &QEventLoop::quit);
-        loop.exec();
-
-        if (m_cancelled.load(std::memory_order_acquire) && !op->isFinished()) {
-            op->cancel();
-            // Re-enter briefly waiting for the operation's own
-            // teardown (operations are not pre-emptible at the
-            // per-record level once started).
-            if (!op->isFinished()) {
-                QEventLoop teardownLoop;
-                QObject::connect(op, &SyncOperation::finished,
-                                 &teardownLoop, &QEventLoop::quit);
-                teardownLoop.exec();
-            }
-        }
-
-        return op;
-    }
-
     void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                           SyncBackendBase *src,
                           SyncBackendBase *tgt,

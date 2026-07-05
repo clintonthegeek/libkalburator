@@ -383,8 +383,17 @@ QNetworkAccessManager *RemoteCalendarBackend::nam() const
 {
     if (!m_nam) {
         m_nam = new QNetworkAccessManager(const_cast<RemoteCalendarBackend *>(this));
+        m_nam->setTransferTimeout(m_transferTimeoutMs);
     }
     return m_nam;
+}
+
+void RemoteCalendarBackend::setTransferTimeoutMs(int ms)
+{
+    m_transferTimeoutMs = ms;
+    if (m_nam) {
+        m_nam->setTransferTimeout(m_transferTimeoutMs);
+    }
 }
 
 void RemoteCalendarBackend::setDbPath(const QString &dbPath)

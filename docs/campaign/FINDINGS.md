@@ -220,7 +220,7 @@ thread; post-D1 the shared-I/O-thread plan). Cross-thread UB the moment backends
 distinct affinities. Either split into per-backend marshals or write "all sync backends
 share one I/O thread" into the D1 plan as a hard invariant.
 
-### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (OPEN, 2026-07-05)
+### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (OPEN, 2026-07-05; partially resolved by H1, 2026-07-05)
 
 Audit §B4 (with B5/B6 adjuncts). `davSyncRequest` sets no transferTimeout and no
 watchdog; engine marshals/gate-awaits are unbounded; a hung request leaves
@@ -229,7 +229,16 @@ watchdog; engine marshals/gate-awaits are unbounded; a hung request leaves
 restart. Also: cancellation is queued and cannot interrupt blocking marshals; the gate
 never calls `op->cancel()`; `stopWorkerThread` deadlocks pre-D1 if called mid-marshal.
 
-### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (OPEN, 2026-07-05)
+**H1 (2026-07-05) closed two of the four halves:** (a) H1.2 gives
+`RemoteCalendarBackend`'s lazy QNAM a 30s `setTransferTimeout` (test-overridable via
+`setTransferTimeoutMs`), so a stalled `davSyncRequest` now fails instead of hanging
+forever; (b) H1.3 makes the busy-rejection in `SyncEngine::runSync` report an explicit
+failed `SyncResult` (`"rejected: a sync is already running"`) instead of an empty list,
+so it's no longer indistinguishable from a successful no-op. Remaining halves (not
+H1's job): the fetch-gate `op->cancel()` call is now wired (H1.1, see O24), but
+`stopWorkerThread`'s mid-marshal deadlock risk is untouched — parked for a later phase.
+
+### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (partially resolved by H1.1, 2026-07-05)
 
 Audit §C1/C2. The dispatchSync gate ops (`syncengine.cpp:2122-2165`, `:2245-2282`) are
 never deleted — remote ops are unparented (leak until exit), local ops accumulate on the
@@ -238,13 +247,29 @@ snapshots/day at 120 s cadence. And the pipeline fetches each side twice (gate
 `fetchItems` + `loadRecords`→`fetchItems` again) with ~4 CTag PROPFINDs per mapping per
 cycle where one fetch + one PROPFIND would do.
 
-### O24 — the cancellation gate doesn't gate LocalBackend; F2 cancellation only ever tested against MockBackend's model (OPEN, 2026-07-05)
+**H1.1 (2026-07-05) closed the leak half:** both gate blocks now `deleteLater()` the
+fetch op on every exit path (success, cancelled, failed). Pinned by
+`gateOps_areDeleted_afterSync` (`tst_backend_thread_relocation.cpp`), which asserts zero
+`SyncOperation` children on either backend after one sync cycle, and still zero after a
+second (no per-cycle regrowth). The double-fetch half (gate `fetchItems` +
+`loadRecords`→`fetchItems` again) is unresolved — that's H5's `recordsFromLastFetch`
+single-fetch pipeline.
+
+### O24 — the cancellation gate doesn't gate LocalBackend; F2 cancellation only ever tested against MockBackend's model (RESOLVED by H1.1, 2026-07-05)
 
 Audit §C3. `LocalBackend::fetchItems` defers via `QTimer::singleShot`, so the gate sees
 a **Pending** op and its `state() == Running` check skips the await entirely — no
 cancellation window, full directory parse queued anyway into the leaked op. Remote
 passes the gate only via an AutoConnection same-thread coincidence. Check should be
 `!op->isFinished()`. Related: `SyncEngineWorker::await<Op>` is dead code (zero callers).
+
+**Resolved by H1 (2026-07-05):** H1.1 changed both fetch-gate await conditions from
+`state() == Running` to `!isFinished()`, so a `Pending` op (LocalBackend's shape) is
+now awaited correctly, and on cancellation the gate calls `fetchOp->cancel()` and
+re-enters a short teardown loop (mirroring the deleted `await<Op>`'s semantics) before
+returning. H1.4 deleted `SyncEngineWorker::await<Op>` itself (verified zero call sites
+via `grep -rn "await(" src/`) and fixed the false "sync runs in worker thread" comment
+in `localbackend.cpp`.
 
 ## Resolved
 

@@ -764,7 +764,8 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 
             currentFile++;
             emit fetchProgressChanged(calendarId, currentFile, totalFiles);
-            // Note: processEvents() removed - sync runs in worker thread
+            // Note: processEvents() removed - this lambda runs on the
+            // backend's own thread, not the sync worker thread.
         }
 
         qDebug() << "LocalBackend::fetchItems: Fetched" << items.size()

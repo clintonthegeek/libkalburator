@@ -79,6 +79,15 @@ public:
      */
     void setMultigetChunkSize(int size);
 
+    /**
+     * @brief Override the QNAM transfer timeout (default 30s, H1.2/O22).
+     *
+     * Re-applies to the existing QNAM if one has already been created.
+     * Test-only affordance so a dropped-request test doesn't have to wait
+     * out the real 30s timeout.
+     */
+    void setTransferTimeoutMs(int ms);
+
     void loadCalendars(const QString &collectionId) override;
 
     /**
@@ -351,6 +360,7 @@ private:
      */
     mutable QNetworkAccessManager *m_nam = nullptr;
     QNetworkAccessManager *nam() const;
+    int m_transferTimeoutMs = 30000; // H1.2/O22 — see setTransferTimeoutMs()
 
     QUrl m_url;
     QString m_username;

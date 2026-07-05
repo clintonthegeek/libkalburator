@@ -163,8 +163,11 @@ When writing or modifying tests in this directory:
 - **Cancellation** — call `future.cancel()`. The cancellation
   channel propagates through
   `QFutureWatcher::canceled → SyncEngine::onCancelObserved →
-  SyncEngineWorker::observeCancel` and wakes any nested
-  `QEventLoop` (via `await<Op>` and the conflict-pause slot).
+  SyncEngineWorker::observeCancel` and wakes the nested `QEventLoop`s
+  that gate cancellation: `dispatchSync`'s two fetch-gate loops
+  (source/target, H1.1) and the conflict-pause slot. (The `await<Op>`
+  template that used to be the shared idiom for this was dead code —
+  zero call sites — and was deleted in H1.4.)
 
 - **Write path** — `SyncBackend::storeItems()` / `updateItem()` /
   `writeFinished` were DELETED (canon-upgrade campaign; only stale
