@@ -122,6 +122,7 @@ public:
     QList<Kalburator::Sync::BackendRecord> loadRecords(const QString &collectionId) override
     {
         m_loadRecordsCallThread = QThread::currentThread();
+        ++m_loadRecordsCallCount;
         return LocalBackend::loadRecords(collectionId);
     }
 
@@ -137,6 +138,7 @@ public:
     QVariantMap m_lastAppliedProps;
     QThread *m_loadRecordsCallThread = nullptr;
     QThread *m_createRecordCallThread = nullptr;
+    int m_loadRecordsCallCount = 0;
 
 private:
     QColor m_stubColor;
@@ -160,6 +162,9 @@ private slots:
 
     void stallProbe_relocatedBackends_stayResponsive();
     void cancelDuringFastPath_reportsCancelled();
+
+    void singleFetch_localBackends_noRedundantRead();
+    void singleFetch_remoteBackend_noRedundantListing();
 
 private:
     // Harness for the T1.5 GUI-stall probe: a latency-injected
@@ -1041,6 +1046,192 @@ void TstBackendThreadRelocation::cancelDuringFastPath_reportsCancelled()
     // No mapping dispatch should have happened: the cancellation landed
     // while the fast path was still in flight on the worker thread.
     QVERIFY(QDir(localDir.filePath(calId)).entryList(QDir::Files).isEmpty());
+}
+
+// ---- H5: single-fetch pipeline (O23 remainder) -----------------------------
+//
+// dispatchSync's fetch gate blocks call fetchItems() as a cancellable gating
+// step, then IMMEDIATELY re-read the same collection via loadRecordsOrError()
+// — a second, fully redundant pass over the same data (a second full
+// directory scan for LocalBackend; a second listing+multiget round-trip for
+// RemoteCalendarBackend, which re-derives records by calling fetchItems()
+// again internally). H5 adds SyncBackendBase::recordsFromLastFetch(), served
+// from a single-shot memo captured at the gate's own fetchItems() call, and
+// wires dispatchSync to use it instead of loadRecordsOrError() when the gate
+// op succeeded.
+void TstBackendThreadRelocation::singleFetch_localBackends_noRedundantRead()
+{
+    QTemporaryDir sourceDir;
+    QTemporaryDir targetDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid());
+    const QString calId = QStringLiteral("cal-1");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+    QVERIFY(QDir().mkpath(targetDir.filePath(calId)));
+
+    {
+        QFile f(sourceDir.filePath(calId + QStringLiteral("/single-fetch-evt-1.ics")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(seedIcs("single-fetch-evt-1"));
+    }
+
+    auto *sourceBackend = new ThreadRecordingLocalBackend(sourceDir.path());
+    auto *targetBackend = new ThreadRecordingLocalBackend(targetDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->setDbPath(targetDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("single-fetch-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("single-fetch-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("single-fetch-mapping");
+    mapping.sourceBackend   = QStringLiteral("single-fetch-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("single-fetch-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+    int waited = 0;
+    constexpr int kSyncTimeoutMs = 30000;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    QVERIFY(future.isFinished());
+    QVERIFY(!future.isCanceled());
+
+    // The item landed on the target (sanity: the mapping actually ran).
+    QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/single-fetch-evt-1.ics"))));
+
+    // The single-fetch pipeline means dispatchSync never falls back to
+    // loadRecordsOrError() (and thus never calls loadRecords()) when the
+    // gate's own fetchItems() already succeeded — it serves the gate's own
+    // fetch results via recordsFromLastFetch() instead.
+    QCOMPARE(sourceBackend->m_loadRecordsCallCount, 0);
+    QCOMPARE(targetBackend->m_loadRecordsCallCount, 0);
+
+    delete sourceBackend;
+    delete targetBackend;
+}
+
+void TstBackendThreadRelocation::singleFetch_remoteBackend_noRedundantListing()
+{
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+    server.setSeedEvents(QString::fromLatin1(kPersonalHref), {seedIcs("single-fetch-remote-evt-1")});
+
+    QTemporaryDir cacheDir;
+    QTemporaryDir localDir;
+    QVERIFY(cacheDir.isValid() && localDir.isValid());
+    const QString calId = QStringLiteral("Personal");
+    QVERIFY(QDir().mkpath(localDir.filePath(calId)));
+
+    auto *remoteBackend = new RemoteCalendarBackend(server.baseUrl(),
+                                                     QStringLiteral("testuser"),
+                                                     QStringLiteral("testpass"));
+    remoteBackend->setCacheDir(cacheDir.path());
+    remoteBackend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    remoteBackend->registerCalendarUrl(
+        calId, server.baseUrl().toString() + QString::fromLatin1(kPersonalHref).mid(1));
+
+    auto *localBackend = new LocalBackend(localDir.path());
+    localBackend->setDbPath(localDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("single-fetch-remote"), remoteBackend);
+    registry.registerBackendInstance(QStringLiteral("single-fetch-local"), localBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("single-fetch-remote-mapping");
+    mapping.sourceBackend   = QStringLiteral("single-fetch-remote");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("single-fetch-local");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    };
+
+    // Cycle 1 establishes the mapping (first-sync overhead is out of H5's
+    // scope — dispatchFirstSync's own reads are a separate code path that
+    // also goes through loadRecordsOrError -> fetchItems(), independent of
+    // H5). Only cycle 2, a steady-state incremental sync, is what H5
+    // targets, so the fetchStarted spy is attached only for it.
+    runOnce();
+    QVERIFY(QFile::exists(localDir.filePath(calId + QStringLiteral("/single-fetch-remote-evt-1.ics"))));
+
+    QSignalSpy fetchStartedSpy(remoteBackend, &Kalburator::Sync::SyncBackendBase::fetchStarted);
+    server.setSeedEvents(QString::fromLatin1(kPersonalHref), {seedIcs("single-fetch-remote-evt-2")});
+    runOnce();
+    QVERIFY(QFile::exists(localDir.filePath(calId + QStringLiteral("/single-fetch-remote-evt-2.ics"))));
+
+    // A single incremental fetch pass must call fetchItems() (and thus emit
+    // fetchStarted) exactly once. Pre-H5, dispatchSync's loadRecordsOrError()
+    // fallback re-derives records by calling RemoteCalendarBackend::
+    // loadRecords(), which calls fetchItems() again — a second, fully
+    // redundant listing+multiget round trip.
+    QCOMPARE(fetchStartedSpy.count(), 1);
+
+    delete remoteBackend;
+    delete localBackend;
 }
 
 QTEST_GUILESS_MAIN(TstBackendThreadRelocation)
