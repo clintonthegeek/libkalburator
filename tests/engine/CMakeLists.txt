@@ -219,3 +219,19 @@ add_test(NAME tst_sync_token_soundness COMMAND tst_sync_token_soundness)
 set_tests_properties(tst_sync_token_soundness PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# CP-B live smoke — manual live-server probe (NOT a CI test). Drives a full
+# create/sync/modify/converge pass plus the pulled-cable (SIGSTOP) O22 check
+# against a real Radicale. See docs/campaign/2026-07-05-sync-hardening-phases.md
+# CP-B / H5.5. Same opt-in as tests/sync's primer probe.
+if(KALBURATOR_BUILD_LIVE_PROBES)
+    add_executable(live_cpb_smoke live_cpb_smoke.cpp)
+    target_link_libraries(live_cpb_smoke
+        PRIVATE
+            Qt6::Core
+            Qt6::Network
+            Qt6::Test
+            KF6::CalendarCore
+            $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+    )
+endif()

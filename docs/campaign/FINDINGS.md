@@ -327,6 +327,11 @@ so it's no longer indistinguishable from a successful no-op. Remaining halves (n
 H1's job): the fetch-gate `op->cancel()` call is now wired (H1.1, see O24), but
 `stopWorkerThread`'s mid-marshal deadlock risk is untouched — parked for a later phase.
 
+**CP-B live smoke (2026-07-05): the wedge is still reproducible on the KDAV job path**
+— H1.2's timeout only covers the backend's own QNAM (`davSyncRequest`), not the KDAV
+jobs that carry the item listing/fetch/write traffic. See **O25** for the live repro,
+root cause, and the H5.5 fix phase. O22 stays OPEN until H5.5 lands.
+
 ### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (RESOLVED, 2026-07-05)
 
 Audit §C1/C2. The dispatchSync gate ops (`syncengine.cpp:2122-2165`, `:2245-2282`) are
@@ -390,6 +395,45 @@ re-enters a short teardown loop (mirroring the deleted `await<Op>`'s semantics) 
 returning. H1.4 deleted `SyncEngineWorker::await<Op>` itself (verified zero call sites
 via `grep -rn "await(" src/`) and fixed the false "sync runs in worker thread" comment
 in `localbackend.cpp`.
+
+### O25 — KDAV job surface has NO transfer timeout; H1.2's fix never covered the primary traffic path (OPEN, found at CP-B live smoke, 2026-07-05)
+
+Found by CP-B's pulled-cable live check (scratch driver
+`tests/engine/live_cpb_smoke.cpp`, gated behind `KALBURATOR_BUILD_LIVE_PROBES`; real
+Radicale, both backends relocated onto one shared I/O thread — the H7 topology).
+SIGSTOP-freezing the server mid-cycle (sockets stay open, no responses — a true
+pulled-cable stall, not a connection error) produced exactly O22's wedge **despite
+H1.2**: the sync future never finished (>90 s with a 5 s `setTransferTimeoutMs`), the
+worker sat blocked in the fetch gate forever, and every subsequent `runSync` was
+(honestly, per H1.3) rejected with "a sync is already running".
+
+**Why H1.2 didn't cover it:** `RemoteCalendarBackend` has TWO network stacks. The
+`davSyncRequest`/`nam()` path (CTag PROPFINDs, `collectionRevision`) got the H1.2
+timeout — and it worked: the smoke's fast-path CTag query failed within its 5 s window.
+But the bulk traffic — `fetchItems`' `KDAV::DavItemsListJob` + multiget fetches, and
+the write path's `DavItemCreateJob`/`DavItemModifyJob`/`DavItemDeleteJob`,
+`DavCollectionsFetchJob` discovery — runs on **KDAV's internal QNAM**, which KDAV does
+not expose (no public `networkAccessManager()` accessor, no timeout API on
+`DavJobBase`; verified against the installed KF6 headers). H1.2's RED test drove
+`collectionRevision()` — an `m_nam` path — so it passed without ever exercising the
+KDAV surface. The gate awaits the fetch op unboundedly, so a KDAV job that never
+finishes wedges the engine permanently. O22 is therefore still live for the most
+common real-world stall (server/network dies mid-listing or mid-PUT).
+
+**Timeline observed live:** frozen server → fast-path PROPFIND times out at 5 s
+(fresh token empty → mapping correctly not skipped) → gate `fetchItems` →
+`DavItemsListJob` stalls indefinitely → future never finishes → engine wedged.
+
+**Fix direction (pre-decided at CP-B; phase H5.5 in the phase plan):** per-job
+watchdog in `RemoteCalendarBackend` — a small helper that starts a `QTimer`
+(`m_transferTimeoutMs`) alongside every KDAV job and calls `job->kill(KJob::EmitResult)`
+on expiry so the existing `result` handlers run their normal error path; timer torn
+down in the handler. RED test: point `fetchItems` at `FakeCalDavServer` with
+`setDropRequests(true)` (H1.2's drop mode already exists) and require the fetch op to
+finish Failed within the watchdog window; today it hangs. Same recipe for one write-path
+job. Release gate: v0.83 (H6) is BLOCKED until H5.5 lands and the CP-B pulled-cable
+smoke passes end-to-end (fail within timeout, recover after server resume, stranded
+item lands — the O17 live proof rides on the same re-run).
 
 ## Resolved
 

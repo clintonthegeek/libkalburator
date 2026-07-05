@@ -1,9 +1,12 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H5 done, CP-A recorded (2026-07-05). CP-B is next. See
-§10 checklist — it is the single source of truth for progress; update it
-in the same commit as the work.
+**Status:** Phases H1–H5 done; CP-A recorded (2026-07-05). CP-B review ran
+2026-07-05: all engineered checks pass, but the live pulled-cable smoke
+found **O25** (KDAV jobs have no timeout — the O22 wedge is still live on
+the primary traffic path). **H6/v0.83 is BLOCKED until the new phase H5.5
+lands and the smoke re-runs clean.** See §10 checklist — it is the single
+source of truth for progress; update it in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -567,6 +570,61 @@ and the NotSupported fallback still use them); no changes to fetch
 
 ---
 
+## 8b. Phase H5.5 — KDAV job watchdog (O25; added at CP-B, 2026-07-05)
+
+**Entry:** H5 landed, CP-B review recorded (this phase exists because CP-B's
+live smoke found O25). Read FINDINGS O25 first.
+**Finding closed:** O25 (and with it the remaining live half of O22's wedge).
+**Files:** `src/calendar/remotecalendarbackend.{h,cpp}`,
+`tests/sync/` or `tests/calendar/` (RED tests).
+
+### Design (decided at CP-B — do not re-design)
+
+`RemoteCalendarBackend` runs its bulk traffic through KDAV jobs
+(`DavItemsListJob`, item multiget/fetch, `DavItemCreateJob`,
+`DavItemModifyJob`, `DavItemDeleteJob`, `DavCollectionsFetchJob`) on KDAV's
+internal QNAM, which exposes no timeout API. H1.2's `setTransferTimeout`
+covers only the backend's own `nam()`. Fix: a per-job watchdog.
+
+1. Private helper on `RemoteCalendarBackend`:
+   `void startJobWithWatchdog(KJob *job)` (name flexible) — creates a
+   single-shot `QTimer` parented to the backend with interval
+   `m_transferTimeoutMs`, connects timeout → `job->kill(KJob::EmitResult)`
+   (EmitResult so every existing `result` handler runs its normal error
+   path — no new error plumbing), connects the job's `result` → stop +
+   `deleteLater` the timer, then `job->start()`.
+2. Route EVERY KDAV job start site in the file through it (grep
+   `new KDAV::`; each site currently relies on KJob autostart or calls
+   `start()` — make the start explicit via the helper).
+3. `setTransferTimeoutMs` needs no change (the helper reads the member at
+   job-start time). Killed jobs must surface as the op's normal failure
+   (`errorString` non-empty); verify the `davJobErrorMessage` path reports
+   something actionable for a killed job — if `KJob::kill` yields an empty
+   error string, set a fallback "timed out after N ms" message in the
+   helper via the op, not by subclassing KDAV types.
+
+**RED tests first** (use `FakeCalDavServer::setDropRequests(true)` — H1.2's
+drop mode): (a) `fetchItems` against a dropping server must complete with
+the op **Failed** within ~3× a 2000 ms `setTransferTimeoutMs` (today: hangs
+— cap with `QTRY_VERIFY_WITH_TIMEOUT`); (b) one write-path job (pushItems /
+createRecord route) same recipe. Optional third: engine-level — a full
+`runSync` against a dropping server finishes `success == false` and a
+subsequent `runSync` is accepted (the O22 end-to-end pin, cheap now that
+the fake does the stalling).
+
+**Acceptance gate (H5.5):** full suite green; new tests green; then re-run
+the CP-B live pulled-cable smoke (`live_cpb_smoke`, built with
+`-DKALBURATOR_BUILD_LIVE_PROBES=ON`, scratch Radicale + `RADICALE_PID` set)
+— all four phases must PASS, including fail-within-timeout, post-resume
+recovery, and the stranded item landing. FINDINGS O25 → Resolved, O22 →
+Resolved (all halves accounted: timeout both stacks, honest rejection,
+gate cancel; the `stopWorkerThread` mid-marshal deadlock note stays parked
+in H9).
+**Do NOT:** subclass or fork KDAV types; no engine changes; no changes to
+`davSyncRequest` (already covered by H1.2).
+
+---
+
 ## 9. CP-B — checkpoint: strong-model review + release v0.83 (H6)
 
 **Entry:** H1–H5 landed, suite fully green. **STOP unless strong model.**
@@ -760,8 +818,39 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       `recordFromFile()` didn't — different bytes/hash for the same file,
       manufacturing spurious Conflicts in place of genuine Deletes. Full
       suite 160/160 green. See FINDINGS O23 for the landing note.
-- [ ] **CP-B** strong-model review + live Radicale smoke; ruling: _(pending)_
-- [ ] **H6** merge → main, tag v0.83, roadmap §5 updated
+- [x] **CP-B** strong-model review + live Radicale smoke (2026-07-05, Fable) —
+      **review PASSED, release BLOCKED on a live-smoke finding (O25 → new
+      phase H5.5).** What was checked: (1) §6 spot checks all clean —
+      `grep cachedCollectionRevision|primeRevisionCache` over `src/engine/`
+      empty; `runPropertyPhase`'s four `DomainOperations` call sites and
+      `dispatchFirstSync`'s three-marshal split all run on the owning
+      backend's thread; gate blocks await `!isFinished()`, cancel on wake,
+      `deleteLater()` on every exit; QNAM timeout wired in `nam()` +
+      re-applied by `setTransferTimeoutMs`. (2) Full suite 160/160 green;
+      stall probe re-run 5× — no flake (654–655 ms, stable). (3) Scope skim
+      of all five H-phase landing commits: each stays inside its phase's
+      named files; H2's fifth unmarshaled call site and H5's
+      `QIODevice::Text` hash fix are in-scope surprises, properly documented.
+      One protocol deviation noted, no action: H3's RED tests landed in the
+      same commit as the implementation (plan §0.3 wants a separate RED
+      commit) and in `tests/engine/` rather than the planned
+      `tests/calendar/` — content verified sound. (4) Live smoke against
+      real Radicale (scratch instance, port 5233; system instance at 5232
+      currently has no test accounts configured — empty `users` file),
+      backends relocated to one shared I/O thread (H7 topology):
+      create→sync→modify(foreign)→sync→converge→settle→quiet-cycle ALL
+      PASS. (5) Pulled-cable (SIGSTOP mid-cycle): **FAILED** — sync future
+      never finished (>90 s vs 5 s configured timeout), engine wedged,
+      subsequent runs rejected. Root cause: KDAV jobs run on KDAV's
+      internal QNAM, untouched by H1.2's timeout → recorded as FINDINGS
+      **O25** with a pre-decided watchdog design in new phase **H5.5**.
+      The smoke driver is committed as `tests/engine/live_cpb_smoke.cpp`
+      (gated behind `KALBURATOR_BUILD_LIVE_PROBES`, OFF by default) for the
+      post-H5.5 re-run. H6 must not proceed until H5.5's acceptance gate —
+      including a clean re-run of all four smoke phases — passes.
+- [ ] **H5.5** KDAV job watchdog (O25/O22; RED: drop-mode fetch + write
+      timeouts) + clean re-run of the CP-B pulled-cable smoke
+- [ ] **H6** merge → main, tag v0.83, roadmap §5 updated (BLOCKED on H5.5)
 - [ ] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,
       call-site sweep, mid-sync-close teardown proof
 - [ ] **CP-C / H8** soak + adversarial live verification; campaign closed; H9 triaged
