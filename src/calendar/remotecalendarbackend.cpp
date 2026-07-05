@@ -26,6 +26,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QThread>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QXmlStreamReader>
@@ -203,13 +204,20 @@ struct DavResponse {
     bool transportOk() const { return error == QNetworkReply::NoError; }
 };
 
-DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
+DavResponse davSyncRequest(QNetworkAccessManager *nam, const QUrl &url,
+                           const QByteArray &verb,
                            const QString &username, const QString &password,
                            const QByteArray &body = {},
                            const QList<std::pair<QByteArray, QByteArray>> &rawHeaders = {},
                            const QByteArray &contentType =
                                QByteArrayLiteral("application/xml; charset=utf-8"))
 {
+    // Every raw-DAV entry point is reached via BlockingQueued from the sync
+    // worker, so it must already be running on the backend's (== nam's) own
+    // thread. Turns a future thread-affinity bug into a loud debug failure
+    // instead of a silent race (D1, invariant §1.1).
+    Q_ASSERT(QThread::currentThread() == nam->thread());
+
     QUrl cleanUrl = url;
     cleanUrl.setUserInfo(QString());
 
@@ -225,11 +233,10 @@ DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
         request.setRawHeader(h.first, h.second);
     }
 
-    QNetworkAccessManager nam;
     QEventLoop loop;
     DavResponse resp;
 
-    QNetworkReply *reply = nam.sendCustomRequest(request, verb, body);
+    QNetworkReply *reply = nam->sendCustomRequest(request, verb, body);
     QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
         resp.status =
             reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -359,6 +366,14 @@ RemoteCalendarBackend::RemoteCalendarBackend(const QUrl &url,
 }
 
 RemoteCalendarBackend::~RemoteCalendarBackend() = default;
+
+QNetworkAccessManager *RemoteCalendarBackend::nam() const
+{
+    if (!m_nam) {
+        m_nam = new QNetworkAccessManager(const_cast<RemoteCalendarBackend *>(this));
+    }
+    return m_nam;
+}
 
 void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 {
@@ -632,7 +647,7 @@ QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &c
 
     for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
         const DavResponse resp = davSyncRequest(
-            it.key(), QByteArrayLiteral("PROPFIND"), m_username, m_password,
+            nam(), it.key(), QByteArrayLiteral("PROPFIND"), m_username, m_password,
             kCtagPropfindBody, {{QByteArrayLiteral("Depth"), QByteArrayLiteral("1")}});
         if (!resp.transportOk()) {
             qWarning() << "RemoteCalendarBackend::fetchAllCtags: PROPFIND failed for"
@@ -665,7 +680,7 @@ QString RemoteCalendarBackend::fetchFreshCtag(const QString &calendarId)
     if (!davUrl) return QString();
 
     const DavResponse resp = davSyncRequest(
-        davUrl->url(), QByteArrayLiteral("PROPFIND"),
+        nam(), davUrl->url(), QByteArrayLiteral("PROPFIND"),
         m_username, m_password, kCtagPropfindBody,
         {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}});
     if (!resp.transportOk()) return QString();
@@ -1141,7 +1156,7 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
         "</C:mkcalendar>\n"
     ).arg(displayName.toHtmlEscaped(), componentSet);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("MKCALENDAR"),
                                             m_username, m_password,
                                             requestBody.toUtf8());
@@ -1238,7 +1253,7 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
         "</D:propertyupdate>\n"
     ).arg(propsXml);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("PROPPATCH"),
                                             m_username, m_password,
                                             requestBody.toUtf8());
@@ -1276,7 +1291,7 @@ bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QS
     const QUrl calendarUrl = crudCalendarUrl(calendarId);
     qDebug() << "RemoteCalendarBackend::deleteCalendar: Deleting calendar at" << safeUrlString(calendarUrl);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("DELETE"),
                                             m_username, m_password);
     qDebug() << "RemoteCalendarBackend::deleteCalendar: HTTP status" << resp.status;
@@ -1985,7 +2000,7 @@ QString RemoteCalendarBackend::getRawIcs(const QString &calendarId, const QStrin
     KDAV::DavUrl davUrl = *davUrlFor(calendarId);
     QUrl itemUrl = generateItemUrl(davUrl, uid);
 
-    const DavResponse resp = davSyncRequest(itemUrl, QByteArrayLiteral("GET"),
+    const DavResponse resp = davSyncRequest(nam(), itemUrl, QByteArrayLiteral("GET"),
                                             m_username, m_password);
     if (resp.status == 200 && resp.transportOk()) {
         return QString::fromUtf8(resp.body);
@@ -2019,7 +2034,7 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
     }
 
     const DavResponse resp = davSyncRequest(
-        itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
+        nam(), itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
         icsContent.toUtf8(), headers,
         QByteArrayLiteral("text/calendar; charset=utf-8"));
 

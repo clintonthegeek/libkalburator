@@ -19,6 +19,8 @@
 #include <memory>
 #include <optional>
 
+class QNetworkAccessManager;
+
 namespace Kalburator::Sync {
 
 class CalDavContentCache;
@@ -337,6 +339,19 @@ private:
 
     // No SyncStore member — CTags have their own CTagStore below
     std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setDbPath()
+
+    /**
+     * @brief Shared QNetworkAccessManager for all raw davSyncRequest() calls.
+     *
+     * Lazily created on first use (see nam()) so it acquires the thread
+     * affinity of whichever thread first issues a DAV request — the backend
+     * may be moveToThread()'d before that happens (D1), never after.
+     * Parented to `this`: destroyed with the backend, relocates with it if
+     * moved before first use.
+     */
+    mutable QNetworkAccessManager *m_nam = nullptr;
+    QNetworkAccessManager *nam() const;
+
     QUrl m_url;
     QString m_username;
     QString m_password;
