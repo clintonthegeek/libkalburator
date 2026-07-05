@@ -31,6 +31,7 @@
 //      backend-I/O) end-to-end.
 
 #include <QtTest/QtTest>
+#include <QColor>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -86,6 +87,61 @@ QByteArray seedIcs(const QByteArray &uid)
            "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 }
 
+// H2: a LocalBackend that records which thread each overridden call actually
+// executed on, so the property phase (H2.1) and first-sync mirror (H2.2)
+// tests can prove calls are marshaled onto the *backend's* thread rather
+// than running wherever the caller (SyncEngineWorker's own thread) happens
+// to be. Color/description are stubbed rather than backed by real files —
+// only the marshaling is under test here, not LocalBackend's metadata I/O.
+class ThreadRecordingLocalBackend : public LocalBackend
+{
+public:
+    using LocalBackend::LocalBackend;
+
+    void setStubColor(const QColor &c) { m_stubColor = c; }
+
+    QColor calendarColor(const QString & /*calendarId*/) const override
+    {
+        m_colorCallThread = QThread::currentThread();
+        return m_stubColor;
+    }
+
+    QString calendarDescription(const QString & /*calendarId*/) const override
+    {
+        return QString();
+    }
+
+    bool updateCalendar(const QString &collectionId, const QString &calendarId,
+                        const QVariantMap &properties) override
+    {
+        m_updateCallThread = QThread::currentThread();
+        m_lastAppliedProps = properties;
+        return LocalBackend::updateCalendar(collectionId, calendarId, properties);
+    }
+
+    QList<Kalburator::Sync::BackendRecord> loadRecords(const QString &collectionId) override
+    {
+        m_loadRecordsCallThread = QThread::currentThread();
+        return LocalBackend::loadRecords(collectionId);
+    }
+
+    QString createRecord(const QString &collectionId,
+                         const Kalburator::Sync::BackendRecord &record) override
+    {
+        m_createRecordCallThread = QThread::currentThread();
+        return LocalBackend::createRecord(collectionId, record);
+    }
+
+    mutable QThread *m_colorCallThread = nullptr;
+    QThread *m_updateCallThread = nullptr;
+    QVariantMap m_lastAppliedProps;
+    QThread *m_loadRecordsCallThread = nullptr;
+    QThread *m_createRecordCallThread = nullptr;
+
+private:
+    QColor m_stubColor;
+};
+
 } // namespace
 
 class TstBackendThreadRelocation : public QObject
@@ -99,6 +155,8 @@ private slots:
     void local_constructThenMove_fetchStartSyncFingerprintRoundtrip();
     void fullEngineRun_relocatedBackends_completesAcrossThreeThreads();
     void gateOps_areDeleted_afterSync();
+    void propertyPhase_relocatedBackends_marshaledPerBackend();
+    void firstSync_backendsOnDifferentThreads();
 
     void stallProbe_relocatedBackends_stayResponsive();
 
@@ -477,6 +535,208 @@ void TstBackendThreadRelocation::gateOps_areDeleted_afterSync()
 
     delete sourceBackend;
     delete targetBackend;
+}
+
+// ---- H2.1: property phase is marshaled per backend (O20) -------------------
+//
+// SyncEngineWorker::runPropertyPhase calls DomainOperations::collectionProperties
+// / applyCollectionProperties directly on the worker thread. Pre-D1 that was
+// always the same thread as the backend; D1 relocation makes it a genuinely
+// different thread, so those calls are live cross-thread UB against a
+// relocated backend. Pins H2.1: each call must execute on the *backend's*
+// thread, not the worker's.
+void TstBackendThreadRelocation::propertyPhase_relocatedBackends_marshaledPerBackend()
+{
+    QTemporaryDir sourceDir;
+    QTemporaryDir targetDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid());
+    const QString calId = QStringLiteral("cal-1");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+    QVERIFY(QDir().mkpath(targetDir.filePath(calId)));
+
+    auto *sourceBackend = new ThreadRecordingLocalBackend(sourceDir.path());
+    auto *targetBackend = new ThreadRecordingLocalBackend(targetDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->setDbPath(targetDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    // Source reports a color; target reports none — this is a one-sided
+    // diff (computeMapDiff's toApplyToTarget branch), not a conflict, so it
+    // exercises the exact applyCollectionProperties(tgt, ...) call site the
+    // audit flagged (syncengine.cpp ~3109).
+    sourceBackend->setStubColor(QColor(Qt::red));
+    targetBackend->setStubColor(QColor()); // invalid -> absent from tgtProps
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("d1-test-propphase-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(sourceBackend, [sourceBackend]() { delete sourceBackend; },
+                                  Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(targetBackend, [targetBackend]() { delete targetBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    sourceBackend->moveToThread(&ioThread);
+    targetBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("propphase-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("propphase-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("propphase-mapping");
+    mapping.sourceBackend   = QStringLiteral("propphase-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("propphase-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+    int waited = 0;
+    constexpr int kSyncTimeoutMs = 30000;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    QVERIFY(future.isFinished());
+    QVERIFY(!future.isCanceled());
+
+    QVERIFY2(sourceBackend->m_colorCallThread == &ioThread,
+             "collectionProperties(src, ...) did not execute on the source backend's thread");
+    QVERIFY2(targetBackend->m_colorCallThread == &ioThread,
+             "collectionProperties(tgt, ...) did not execute on the target backend's thread");
+    QVERIFY2(targetBackend->m_updateCallThread == &ioThread,
+             "applyCollectionProperties(tgt, ...) did not execute on the target backend's thread");
+    QCOMPARE(targetBackend->m_lastAppliedProps.value(QStringLiteral("color")).value<QColor>(),
+             QColor(Qt::red));
+}
+
+// ---- H2.2: dispatchFirstSync marshals each side onto its own thread (O21) --
+//
+// SyncEngineWorker::dispatchFirstSync's mirror lambda is marshaled once onto
+// srcBackend but calls tgt->loadRecordsOrError/createRecord/... from inside
+// that same lambda — so the target's calls silently execute on the source's
+// thread. Pins H2.2 with source and target relocated to two DIFFERENT I/O
+// threads: each backend's calls must land on its own thread.
+void TstBackendThreadRelocation::firstSync_backendsOnDifferentThreads()
+{
+    QTemporaryDir sourceDir;
+    QTemporaryDir targetDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid());
+    const QString calId = QStringLiteral("cal-1");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+    QVERIFY(QDir().mkpath(targetDir.filePath(calId)));
+
+    {
+        QFile f(sourceDir.filePath(calId + QStringLiteral("/first-evt-1.ics")));
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(seedIcs("first-evt-1"));
+    }
+
+    auto *sourceBackend = new ThreadRecordingLocalBackend(sourceDir.path());
+    auto *targetBackend = new ThreadRecordingLocalBackend(targetDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->setDbPath(targetDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThreadA;
+    ioThreadA.setObjectName(QStringLiteral("d1-test-firstsync-io-a"));
+    ioThreadA.start();
+    QThread ioThreadB;
+    ioThreadB.setObjectName(QStringLiteral("d1-test-firstsync-io-b"));
+    ioThreadB.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(sourceBackend, [sourceBackend]() { delete sourceBackend; },
+                                  Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(targetBackend, [targetBackend]() { delete targetBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThreadA.quit();
+        ioThreadA.wait();
+        ioThreadB.quit();
+        ioThreadB.wait();
+    });
+    sourceBackend->moveToThread(&ioThreadA);
+    targetBackend->moveToThread(&ioThreadB);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("firstsync-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("firstsync-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("firstsync-mapping");
+    mapping.sourceBackend   = QStringLiteral("firstsync-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("firstsync-target");
+    mapping.targetCalendar  = calId;
+    // dispatchFirstSync's fast path only fires for OneWayUpload with equal
+    // shapes and useQuickPath (true here: fresh BaselineStore, no baselines
+    // for this mapping yet) and an empty target — all true below.
+    mapping.mode            = SyncMode::OneWayUpload;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+    int waited = 0;
+    constexpr int kSyncTimeoutMs = 30000;
+    while (!future.isFinished() && waited < kSyncTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    QVERIFY(future.isFinished());
+    QVERIFY(!future.isCanceled());
+
+    QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/first-evt-1.ics"))));
+    QVERIFY2(sourceBackend->m_loadRecordsCallThread == &ioThreadA,
+             "source loadRecords did not execute on the source backend's own thread");
+    QVERIFY2(targetBackend->m_loadRecordsCallThread == &ioThreadB,
+             "target loadRecords did not execute on the target backend's own thread");
+    QVERIFY2(targetBackend->m_createRecordCallThread == &ioThreadB,
+             "target createRecord did not execute on the target backend's own thread");
 }
 
 // ---- T1.5: GUI-stall probe -------------------------------------------------
