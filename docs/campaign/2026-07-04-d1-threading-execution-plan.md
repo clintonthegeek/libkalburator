@@ -495,16 +495,17 @@ Stage 1 (libkalburator, branch `feature/d1-threading`):
       also found and fixed two unmarshaled engine→backend calls
       (`prepareSyncFastPath`/`persistRevision` called `ChangeDetection`
       methods directly; now via a `runOnBackendThread()` helper)
-- [ ] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms) —
-      **written, RED**: probe correctly measures a ~213ms stall even with
-      backends relocated. Root cause is NOT a T1.1-T1.4 gap — it's
-      `prepareSyncFastPath()` itself running synchronously on the caller's
-      thread before the worker thread starts. See FINDINGS.md O16 for full
-      detail + fix options. Blocked pending a decision on which fix
-      direction to take.
+- [x] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms) —
+      **resolved by hardening phase H4** (2026-07-05, see
+      `2026-07-05-sync-hardening-phases.md` §7 and FINDINGS.md O16): the
+      fast-path pre-pass moved off the caller thread onto the worker
+      thread via a new command-channel signal pair
+      (`fastPathRequested`/`fastPathReady`). Probe is green; full suite
+      160/160 for the first time in the campaign. The blocker-analysis doc
+      (`docs/campaign/archive/2026-07-05-d1-t1.5-stall-blocker-analysis.md`) is archived.
 - [ ] T1.6 threading contract docs + FCB/ProviderManager audit notes
 - [ ] Stage 1 gate: full suite green; merged --no-ff to main; roadmap §5 touched
-      — **cannot close while T1.5 is RED**
+      — T1.5 no longer blocks this; still pending T1.6 + the merge (H6)
 
 Stage 2 (PlanStan, branch `feature/d1-io-thread`):
 - [ ] T2.1 backends de-parented; ownership audit of all insert/delete paths

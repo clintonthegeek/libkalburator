@@ -1,7 +1,7 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H3 done, CP-A recorded (2026-07-05). H4 is next. See
+**Status:** Phases H1–H4 done, CP-A recorded (2026-07-05). H5 is next. See
 §10 checklist — it is the single source of truth for progress; update it
 in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
@@ -86,7 +86,7 @@ postmortems — violations get the work reverted):**
   `docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`
   (the audit — target model in its §1, findings A1–C4),
   `docs/campaign/FINDINGS.md` O16–O24 (terse per-finding versions),
-  `docs/campaign/2026-07-05-d1-t1.5-stall-blocker-analysis.md` (O16 deep
+  `docs/campaign/archive/2026-07-05-d1-t1.5-stall-blocker-analysis.md` (O16 deep
   dive).
 - **Line numbers in this doc** are against `feature/d1-threading` @
   `18d4631` and drift as phases land. Every reference names its symbol;
@@ -734,7 +734,17 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       clobber branch must clear `m_freshState` too, or a stale entry from a
       prior non-clobber run gets silently re-persisted right after
       `clearSyncTokens`. See FINDINGS O17 for the full landing note.
-- [ ] **H4** fast path on worker; **stall probe green**; cancel-during-fast-path test
+- [x] **H4** fast path on worker; **stall probe green**; cancel-during-fast-path test — 2026-07-05.
+      `driveQueue()`'s inline `prepareSyncFastPath()` call replaced with a
+      `fastPathRequested`/`fastPathReady` command-channel signal pair
+      (worker slot `SyncEngineWorker::prepareFastPath`, engine slot
+      `onFastPathReady` -> shared `finishDriveQueueSetup()` continuation).
+      `SyncEngine::FreshSyncState` made public (crosses the signal
+      boundary now). New test `cancelDuringFastPath_reportsCancelled`
+      pins the cancellation window; `stallProbe_relocatedBackends_
+      stayResponsive` green for the first time (5x re-run, no flake).
+      Full suite 160/160 green — first fully-green run of the campaign.
+      See FINDINGS O16 for the landing note.
 - [ ] **H5** recordsFromLastFetch single-fetch pipeline (RED: fetchStarted-once)
 - [ ] **CP-B** strong-model review + live Radicale smoke; ruling: _(pending)_
 - [ ] **H6** merge → main, tag v0.83, roadmap §5 updated

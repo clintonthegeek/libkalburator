@@ -113,7 +113,7 @@ changes during downtime (which the digest already handles). The digest fetch is 
 local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
 shows the digest fetch is hot. (Decided 2026-05-26.)
 
-### O16 — `prepareSyncFastPath()` still blocks the caller's thread for network I/O after D1 relocation (OPEN, 2026-07-05)
+### O16 — `prepareSyncFastPath()` still blocks the caller's thread for network I/O after D1 relocation (RESOLVED, H4, 2026-07-05)
 
 D1 Stage 1's T1.5 GUI-stall probe (`tests/calendar/tst_backend_thread_relocation.cpp`,
 `stallProbe_relocatedBackends_stayResponsive`) FAILS as of this writing: with both mapping
@@ -165,6 +165,26 @@ narrower, separate gap in the *pre-check* phase, not a regression in the fix's c
 
 Not fixed this session. Flagging here + in the D1 execution plan's checklist so Stage 1 doesn't
 get marked closed while this is open.
+
+**H4 fix (2026-07-05):** implemented fix direction 1 above. `driveQueue()` no longer calls
+`prepareSyncFastPath()` inline; it starts the worker thread early and emits
+`SyncEngineWorker::fastPathRequested(mappings, storedTokens, skipEnabled)` (new engine→worker
+command-channel signal, same `QueuedConnection` pattern as `processSyncRequested`). The batched
+per-backend revision query — same logic as before — moved to a new worker slot,
+`SyncEngineWorker::prepareFastPath()`; its `runOnBackendThread()` marshal now blocks the
+**worker** thread (already expected to block on backend I/O) instead of the caller. The worker
+emits `fastPathReady(skipped, freshState)` back to the engine (queued); `SyncEngine::
+onFastPathReady()` stores the results and calls the same `finishDriveQueueSetup()` continuation
+`driveQueue()` itself uses for the clobber/no-fast-path branch — including its cancelled-
+teardown path, so a `future.cancel()` landing while the fast path is still in flight on the
+worker reports canceled and dispatches no mapping (new test:
+`cancelDuringFastPath_reportsCancelled`). `SyncEngine::FreshSyncState` moved from a private
+nested struct to public (it now crosses the engine/worker signal boundary); its
+`Q_DECLARE_METATYPE` lives in the public `syncengine.h`, not the private `syncengine_p.h`,
+because moc-generated code for `SyncEngine` (built from `syncengine.h` alone) needs to see the
+specialization before any implicit instantiation of the unregistered-type fallback.
+`stallProbe_relocatedBackends_stayResponsive` — RED since the D1 stall-probe test landed —
+is green as of this fix; full suite 160/160 green for the first time in the campaign.
 
 ### O17 — failed apply phase + fetch-time CTag commit + skip fast-path strands changes (RESOLVED, H3, 2026-07-05)
 

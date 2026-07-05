@@ -4,7 +4,7 @@
 **Author:** Claude (Fable 5), independent re-derivation session
 **Provenance:** commissioned as a trust-but-verify pass over the D1 threading
 campaign after the T1.5 stall blocker
-(`2026-07-05-d1-t1.5-stall-blocker-analysis.md`). Nothing in that document was
+(`docs/campaign/archive/2026-07-05-d1-t1.5-stall-blocker-analysis.md`). Nothing in that document was
 taken on faith; every claim below was re-verified by reading the code on
 `feature/d1-threading` @ `6a4af95` and, where marked, by executing tests.
 **Line numbers** are against that revision; every reference names the
@@ -499,7 +499,7 @@ diff/merge/conflict core.
 
 - `docs/campaign/FINDINGS.md` — O16 (= B1 here); **O17–O24 added by this
   audit's commit**, one per A1/A2/A3/B2/B3/B4/C1+C2/C3.
-- `docs/campaign/2026-07-05-d1-t1.5-stall-blocker-analysis.md` — the T1.5
+- `docs/campaign/archive/2026-07-05-d1-t1.5-stall-blocker-analysis.md` — the T1.5
   blocker this audit was commissioned to verify; its §4 narrative is
   confirmed (EXEC), its Option A endorsed, its fix menu subsumed by §6.
 - `docs/campaign/2026-07-04-d1-threading-execution-plan.md` — §9 checklist

@@ -165,6 +165,10 @@ void SyncEngine::setupWorkerConnections()
             this, &SyncEngine::onWorkerSyncError, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
+    // H4 (O16): fast-path pre-pass result, reported back from the worker
+    // thread to the engine thread.
+    connect(m_worker, &SyncEngineWorker::fastPathReady,
+            this, &SyncEngine::onFastPathReady, Qt::QueuedConnection);
 
     // Engine→worker command channel (replaces string-form invokeMethod).
     // SyncEngine emits these *Requested signals on m_worker; Qt's
@@ -176,6 +180,9 @@ void SyncEngine::setupWorkerConnections()
             m_worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::resumeAfterConflictRequested,
             m_worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
+    // H4 (O16): dispatches the fast-path pre-pass onto the worker thread.
+    connect(m_worker, &SyncEngineWorker::fastPathRequested,
+            m_worker, &SyncEngineWorker::prepareFastPath, Qt::QueuedConnection);
 
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
@@ -360,10 +367,10 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     m_lastResult.startTime = QDateTime::currentDateTime();
 
     // P1.T3: prime the queue collaborator (clears lost resources,
-    // result accumulator, index, and sets DispatchMode::Queue). The
-    // filter (if any) was passed through from runSync()'s subset
-    // branch via the helper parameter.
-    m_queue.prime(m_syncMappings, std::move(filter));
+    // result accumulator, index, and sets DispatchMode::Queue). Not moved
+    // from `filter` (H4: the fast-path branch below reuses it below to
+    // scope which mappings get a stored-token lookup / dispatch).
+    m_queue.prime(m_syncMappings, filter);
 
     // Run active controllers first (they're fast, synchronous)
     for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
@@ -381,29 +388,64 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // a forced wipe+repush, and "unchanged" is judged against state the
     // clobber deliberately discards.
     if (!m_cancelled && !m_syncMappings.isEmpty() && !m_queueOverride.clobber) {
-        prepareSyncFastPath();
-    } else {
-        m_skippedMappingIds.clear();
-        // H3: a clobber deliberately discards prior state, so any stored
-        // sync-progress token must go with it — otherwise a clobbered
-        // mapping could skip next cycle against a token that no longer
-        // corresponds to anything real. Safe to over-clear (all enabled
-        // mappings, not just the filtered subset): worst case is one
-        // extra redundant re-diff, never a masked change. Also clear
-        // m_freshState: without prepareSyncFastPath() run (skipped on a
-        // clobber), a stale entry from a PRIOR non-clobber run would
-        // otherwise survive and onWorkerSyncCompleted would immediately
-        // re-persist it after this clearSyncTokens call — silently
-        // undoing the clear.
-        if (m_queueOverride.clobber && m_baselineStore) {
-            for (const auto &mapping : m_syncMappings) {
-                if (!mapping.enabled) continue;
-                m_baselineStore->clearSyncTokens(mapping.id);
+        // H4 (O16): the fast-path pre-pass used to run synchronously right
+        // here, on driveQueue()'s caller thread — the last engine-side
+        // GUI-thread-blocking I/O. It now dispatches to the worker thread
+        // (started early, for this purpose) via the same command-channel
+        // pattern as processSyncRequested/processSync; the continuation
+        // lives in onFastPathReady(). Reading stored tokens stays here:
+        // BaselineStore is fast local SQLite and engine-thread-affine.
+        startWorkerThread();
+
+        QList<SyncMapping> candidates;
+        QHash<QString, QPair<QString, QString>> storedTokens;
+        for (const auto &mapping : m_syncMappings) {
+            if (!mapping.enabled) continue;
+            if (filter && !filter->contains(mapping.id)) continue;
+            candidates.append(mapping);
+            if (m_baselineStore) {
+                storedTokens[mapping.id] = qMakePair(
+                    m_baselineStore->syncToken(mapping.id, QStringLiteral("source")),
+                    m_baselineStore->syncToken(mapping.id, QStringLiteral("target")));
             }
         }
-        m_freshState.clear();
+        emit m_worker->fastPathRequested(candidates, storedTokens, m_skipUnchangedMappings);
+        return; // continuation: onFastPathReady() -> finishDriveQueueSetup()
     }
 
+    m_skippedMappingIds.clear();
+    // H3: a clobber deliberately discards prior state, so any stored
+    // sync-progress token must go with it — otherwise a clobbered
+    // mapping could skip next cycle against a token that no longer
+    // corresponds to anything real. Safe to over-clear (all enabled
+    // mappings, not just the filtered subset): worst case is one
+    // extra redundant re-diff, never a masked change. Also clear
+    // m_freshState: without the fast-path pre-pass run (skipped on a
+    // clobber), a stale entry from a PRIOR non-clobber run would
+    // otherwise survive and onWorkerSyncCompleted would immediately
+    // re-persist it after this clearSyncTokens call — silently
+    // undoing the clear.
+    if (m_queueOverride.clobber && m_baselineStore) {
+        for (const auto &mapping : m_syncMappings) {
+            if (!mapping.enabled) continue;
+            m_baselineStore->clearSyncTokens(mapping.id);
+        }
+    }
+    m_freshState.clear();
+
+    finishDriveQueueSetup();
+}
+
+void SyncEngine::onFastPathReady(const QSet<QString> &skipped,
+                                 const QMap<QString, FreshSyncState> &fresh)
+{
+    m_skippedMappingIds = skipped;
+    m_freshState = fresh;
+    finishDriveQueueSetup();
+}
+
+void SyncEngine::finishDriveQueueSetup()
+{
     if (m_syncMappings.isEmpty() || m_cancelled) {
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
@@ -421,7 +463,8 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         return;
     }
 
-    // Start worker thread for mapping-based sync
+    // Start worker thread for mapping-based sync (idempotent — already
+    // running when this is reached via the fast-path branch above).
     startWorkerThread();
     processQueue();
 }
@@ -709,112 +752,6 @@ void SyncEngine::setSkipUnchangedMappings(bool enabled)
 {
     m_skipUnchangedMappings = enabled;
     qDebug() << "SyncEngine::setSkipUnchangedMappings:" << enabled;
-}
-
-void SyncEngine::prepareSyncFastPath()
-{
-    m_skippedMappingIds.clear();
-    m_freshState.clear();
-
-    if (!m_registry) return;
-
-    // Collect collection IDs per backend that implements Sync::ChangeDetection.
-    QMap<QString, QStringList> colIdsByBackend;
-    auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
-        SyncBackendBase *base = m_registry->backendInstance(backendId);
-        if (dynamic_cast<Sync::ChangeDetection*>(base))
-            colIdsByBackend[backendId].append(colId);
-    };
-    for (const auto &mapping : m_syncMappings) {
-        if (!mapping.enabled) continue;
-        collectChangeDetection(mapping.sourceBackend, mapping.sourceCalendar);
-        collectChangeDetection(mapping.targetBackend, mapping.targetCalendar);
-    }
-
-    // Fetch fresh revisions per backend (batched where the backend supports it).
-    // D1 finding: this pre-pass runs on runSync()'s caller thread, before
-    // startWorkerThread() — every other engine->backend call marshals via
-    // QMetaObject::invokeMethod(..., BlockingQueuedConnection) resolved
-    // against backend->thread() (see syncengine.cpp's ~19 other sites), but
-    // this one called straight through the ChangeDetection pointer. Harmless
-    // pre-D1 (backends always shared the caller's thread), but once backends
-    // relocate to their own I/O thread it is a genuine cross-thread QObject/
-    // SQLite access (surfaced by libkalburator/tests/calendar/
-    // tst_backend_thread_relocation.cpp case 3 as a "does not belong to the
-    // calling thread" QSqlDatabase warning). Marshal it like every other site.
-    QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
-    for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
-        SyncBackendBase *base = m_registry->backendInstance(it.key());
-        auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-        if (!cd) continue;
-        QStringList ids = it.value();
-        ids.removeDuplicates();
-        QMap<QString, QString> revs;
-        runOnBackendThread(base, [cd, ids, &revs]() {
-            revs = cd->collectionRevisions(ids);
-        });
-        for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
-            freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
-    }
-
-    if (!m_baselineStore) return;
-
-    int wouldSkipCount = 0;
-    int actualSkipCount = 0;
-    for (const auto &mapping : m_syncMappings) {
-        if (!mapping.enabled) continue;
-
-        FreshSyncState fresh;
-        bool sourceCovered = false;
-        bool targetCovered = false;
-        bool sourceUnchanged = false;
-        bool targetUnchanged = false;
-
-        // H3: the skip check now compares against the engine-owned
-        // sync-progress token (per mapping+side, in BaselineStore) rather
-        // than the backend's own cache-validity token. m_baselineStore is
-        // non-null here (checked above) and is engine-thread-affine, so
-        // this is a direct call, not a backend marshal.
-        auto checkSide = [&](const QString &backendId, const QString &colId,
-                              const QString &side,
-                              QString &outRevision, bool &covered, bool &unchanged) {
-            SyncBackendBase *base = m_registry->backendInstance(backendId);
-            auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-            if (!cd) return;
-            covered = true;
-            outRevision = freshRevisions.value(qMakePair(backendId, colId));
-            const QString stored = m_baselineStore->syncToken(mapping.id, side);
-            unchanged = !outRevision.isEmpty() && !stored.isEmpty()
-                        && outRevision == stored;
-        };
-
-        checkSide(mapping.sourceBackend, mapping.sourceCalendar, QStringLiteral("source"),
-                  fresh.sourceRevision, sourceCovered, sourceUnchanged);
-        checkSide(mapping.targetBackend, mapping.targetCalendar, QStringLiteral("target"),
-                  fresh.targetRevision, targetCovered, targetUnchanged);
-
-        m_freshState[mapping.id] = fresh;
-
-        const bool eligibleToSkip = sourceCovered && targetCovered
-                                     && sourceUnchanged && targetUnchanged;
-        if (eligibleToSkip) {
-            ++wouldSkipCount;
-            if (m_skipUnchangedMappings) {
-                m_skippedMappingIds.insert(mapping.id);
-                ++actualSkipCount;
-                qInfo() << "SyncEngine: skipping unchanged mapping" << mapping.id;
-            } else {
-                qInfo() << "SyncEngine: would skip unchanged mapping (flag off)"
-                        << mapping.id;
-            }
-        }
-    }
-
-    qDebug() << "SyncEngine::prepareSyncFastPath: of"
-             << m_syncMappings.size() << "mappings,"
-             << wouldSkipCount << "are unchanged;"
-             << actualSkipCount << "actually skipped (flag="
-             << m_skipUnchangedMappings << ")";
 }
 
 // F2 Task 21: multi-mapping driver — entry point for a queue run.
@@ -1396,6 +1333,13 @@ const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<ConflictResolution>("ConflictResolution");
     qRegisterMetaType<ConflictInfo>("ConflictInfo");
     qRegisterMetaType<SyncResult>("SyncResult");
+    // H4 (O16): fastPathRequested/fastPathReady queued-signal parameter types.
+    qRegisterMetaType<QList<SyncMapping>>("QList<SyncMapping>");
+    qRegisterMetaType<QHash<QString, QPair<QString, QString>>>(
+        "QHash<QString,QPair<QString,QString>>");
+    qRegisterMetaType<QSet<QString>>("QSet<QString>");
+    qRegisterMetaType<QMap<QString, SyncEngine::FreshSyncState>>(
+        "QMap<QString,SyncEngine::FreshSyncState>");
     return true;
 }();
 
@@ -1464,6 +1408,111 @@ void SyncEngineWorker::observeCancel()
     // block on the worker's m_mutex.
     m_cancelled.store(true, std::memory_order_release);
     emit cancellationObserved();
+}
+
+// H4 (O16): moved here from SyncEngine::prepareSyncFastPath, whose logic
+// this reproduces exactly (batched fresh-revision query per backend, per-
+// mapping skip decision) with one difference: the stored per-mapping
+// sync-progress tokens are now a parameter (read by the engine from
+// BaselineStore before dispatch) rather than a live BaselineStore lookup,
+// since the worker has no baseline-store thread affinity for this purpose.
+// The runOnBackendThread marshal below now blocks the WORKER thread
+// instead of the engine/caller thread — the whole point of this phase.
+void SyncEngineWorker::prepareFastPath(const QList<SyncMapping> &mappings,
+                                        const QHash<QString, QPair<QString, QString>> &storedTokens,
+                                        bool skipEnabled)
+{
+    QSet<QString> skipped;
+    QMap<QString, SyncEngine::FreshSyncState> freshState;
+
+    if (!m_registry) {
+        emit fastPathReady(skipped, freshState);
+        return;
+    }
+
+    // Collect collection IDs per backend that implements Sync::ChangeDetection.
+    QMap<QString, QStringList> colIdsByBackend;
+    auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
+        SyncBackendBase *base = m_registry->backendInstance(backendId);
+        if (dynamic_cast<Sync::ChangeDetection*>(base))
+            colIdsByBackend[backendId].append(colId);
+    };
+    for (const auto &mapping : mappings) {
+        collectChangeDetection(mapping.sourceBackend, mapping.sourceCalendar);
+        collectChangeDetection(mapping.targetBackend, mapping.targetCalendar);
+    }
+
+    // Fetch fresh revisions per backend (batched where the backend supports
+    // it). This marshal blocks the worker thread — a dedicated thread
+    // distinct from both the engine/caller thread and any backend I/O
+    // thread — so it no longer stalls anything user-visible (O16).
+    QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
+    for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
+        SyncBackendBase *base = m_registry->backendInstance(it.key());
+        auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
+        if (!cd) continue;
+        QStringList ids = it.value();
+        ids.removeDuplicates();
+        QMap<QString, QString> revs;
+        runOnBackendThread(base, [cd, ids, &revs]() {
+            revs = cd->collectionRevisions(ids);
+        });
+        for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
+            freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
+    }
+
+    int wouldSkipCount = 0;
+    int actualSkipCount = 0;
+    for (const auto &mapping : mappings) {
+        SyncEngine::FreshSyncState fresh;
+        bool sourceCovered = false;
+        bool targetCovered = false;
+        bool sourceUnchanged = false;
+        bool targetUnchanged = false;
+
+        const QPair<QString, QString> stored = storedTokens.value(mapping.id);
+
+        auto checkSide = [&](const QString &backendId, const QString &colId,
+                              const QString &storedToken,
+                              QString &outRevision, bool &covered, bool &unchanged) {
+            SyncBackendBase *base = m_registry->backendInstance(backendId);
+            auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
+            if (!cd) return;
+            covered = true;
+            outRevision = freshRevisions.value(qMakePair(backendId, colId));
+            unchanged = !outRevision.isEmpty() && !storedToken.isEmpty()
+                        && outRevision == storedToken;
+        };
+
+        checkSide(mapping.sourceBackend, mapping.sourceCalendar, stored.first,
+                  fresh.sourceRevision, sourceCovered, sourceUnchanged);
+        checkSide(mapping.targetBackend, mapping.targetCalendar, stored.second,
+                  fresh.targetRevision, targetCovered, targetUnchanged);
+
+        freshState[mapping.id] = fresh;
+
+        const bool eligibleToSkip = sourceCovered && targetCovered
+                                     && sourceUnchanged && targetUnchanged;
+        if (eligibleToSkip) {
+            ++wouldSkipCount;
+            if (skipEnabled) {
+                skipped.insert(mapping.id);
+                ++actualSkipCount;
+                qInfo() << "SyncEngineWorker: skipping unchanged mapping" << mapping.id;
+            } else {
+                qInfo() << "SyncEngineWorker: would skip unchanged mapping (flag off)"
+                        << mapping.id;
+            }
+        }
+    }
+
+    qDebug() << "SyncEngineWorker::prepareFastPath: of"
+             << mappings.size() << "mappings,"
+             << wouldSkipCount << "are unchanged;"
+             << actualSkipCount << "actually skipped (flag="
+             << skipEnabled << ")";
+
+    emit fastPathReady(skipped, freshState);
 }
 
 void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
