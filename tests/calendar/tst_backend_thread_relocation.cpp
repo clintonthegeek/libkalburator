@@ -159,6 +159,7 @@ private slots:
     void firstSync_backendsOnDifferentThreads();
 
     void stallProbe_relocatedBackends_stayResponsive();
+    void cancelDuringFastPath_reportsCancelled();
 
 private:
     // Harness for the T1.5 GUI-stall probe: a latency-injected
@@ -904,6 +905,142 @@ void TstBackendThreadRelocation::stallProbe_relocatedBackends_stayResponsive()
              qPrintable(QStringLiteral(
                  "GUI-analog thread stalled %1ms with backends relocated to their own I/O thread")
                             .arg(maxGap)));
+}
+
+// H4: pins the O16 fast-path fix's cancellation semantics. Pre-H4,
+// prepareSyncFastPath() runs synchronously on runSync()'s caller thread, so
+// runSync() itself blocks for as long as the backend's fresh-token query
+// takes (here, the fake server's injected 200ms delay) — there is no window
+// in which the caller can observe an in-flight fast path and cancel it.
+// Post-H4, runSync() returns near-instantly (the fast path is dispatched to
+// the worker thread via a queued signal), leaving a real window in which
+// future.cancel() can land while the worker is still awaiting the delayed
+// server response. The RED assertion below (runSync() must return inside
+// 50ms) is the direct O16 proof; the rest of the test pins that a
+// cancellation landing in that window is honoured (no mapping dispatched,
+// future reports canceled).
+void TstBackendThreadRelocation::cancelDuringFastPath_reportsCancelled()
+{
+    // The FakeCalDavServer must live on its own thread, not the test/"GUI"
+    // thread: pre-H4, runSync() blocks the GUI thread for the fast-path
+    // duration, so if the server shared that thread it could never pump its
+    // own QTcpServer/socket events to answer the delayed request — a
+    // self-deadlock distinct from the bug under test. See runStallProbe()
+    // above, which uses the same shape for the same reason.
+    auto *server = new FakeCalDavServer();
+    server->setResponseDelayMs(200);
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {seedIcs("cancel-evt-1")});
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("d1-test-cancel-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; }, Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QTemporaryDir localDir;
+    QVERIFY(cacheDir.isValid() && localDir.isValid());
+    const QString calId = QStringLiteral("Personal");
+    QVERIFY(QDir().mkpath(localDir.filePath(calId)));
+
+    auto *remoteBackend = new RemoteCalendarBackend(baseUrl,
+                                                     QStringLiteral("testuser"),
+                                                     QStringLiteral("testpass"));
+    remoteBackend->setCacheDir(cacheDir.path());
+    remoteBackend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    remoteBackend->registerCalendarUrl(
+        calId, baseUrl.toString() + QString::fromLatin1(kPersonalHref).mid(1));
+
+    auto *localBackend = new LocalBackend(localDir.path());
+    localBackend->setDbPath(localDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("d1-test-cancel-io"));
+    ioThread.start();
+    auto backendGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(remoteBackend, [remoteBackend]() { delete remoteBackend; },
+                                  Qt::BlockingQueuedConnection);
+        QMetaObject::invokeMethod(localBackend, [localBackend]() { delete localBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    remoteBackend->moveToThread(&ioThread);
+    localBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("cancel-remote"), remoteBackend);
+    registry.registerBackendInstance(QStringLiteral("cancel-local"), localBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("cancel-mapping");
+    mapping.sourceBackend   = QStringLiteral("cancel-remote");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("cancel-local");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+    engine.setSkipUnchangedMappings(true);
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+
+    QElapsedTimer callTimer;
+    callTimer.start();
+    auto future = engine.runSync(req);
+    const qint64 callElapsedMs = callTimer.elapsed();
+    QVERIFY2(callElapsedMs < 50,
+             qPrintable(QStringLiteral(
+                 "runSync() blocked the caller for %1ms — the fast-path pre-pass "
+                 "must run on the worker thread (O16), not synchronously here")
+                            .arg(callElapsedMs)));
+
+    future.cancel();
+
+    int waited = 0;
+    constexpr int kWaitTimeoutMs = 5000;
+    while (!future.isFinished() && waited < kWaitTimeoutMs) {
+        QTest::qWait(5);
+        waited += 5;
+    }
+    QVERIFY(future.isFinished());
+    QVERIFY(future.isCanceled());
+
+    // No mapping dispatch should have happened: the cancellation landed
+    // while the fast path was still in flight on the worker thread.
+    QVERIFY(QDir(localDir.filePath(calId)).entryList(QDir::Files).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TstBackendThreadRelocation)
