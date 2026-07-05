@@ -68,42 +68,28 @@ class CTagStore
 {
 public:
     explicit CTagStore(const QString &dbPath, const QString &backendId)
-        : m_backendId(backendId)
+        : m_dbPath(dbPath)
+        , m_backendId(backendId)
         , m_connectionName(QStringLiteral("CTagStore_%1_%2")
                                .arg(backendId)
                                .arg(reinterpret_cast<quintptr>(this)))
     {
         if (dbPath.isEmpty()) {
             qWarning() << "CTagStore: empty dbPath for backend" << backendId;
-            return;
         }
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
-        db.setDatabaseName(dbPath);
-        if (!db.open()) {
-            qWarning() << "CTagStore: failed to open" << dbPath
-                       << ":" << db.lastError().text();
-            QSqlDatabase::removeDatabase(m_connectionName);
-            m_connectionName.clear();
-            return;
-        }
-        ensureSchema();
     }
 
     ~CTagStore()
     {
-        if (!m_connectionName.isEmpty()) {
-            if (QSqlDatabase::contains(m_connectionName)) {
-                QSqlDatabase::database(m_connectionName).close();
-                QSqlDatabase::removeDatabase(m_connectionName);
-            }
+        if (QSqlDatabase::contains(m_connectionName)) {
+            QSqlDatabase::database(m_connectionName).close();
+            QSqlDatabase::removeDatabase(m_connectionName);
         }
     }
 
-    bool isValid() const { return !m_connectionName.isEmpty(); }
-
-    QString get(const QString &calendarId) const
+    QString get(const QString &calendarId)
     {
-        if (!isValid()) return QString();
+        if (!ensureOpen()) return QString();
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -118,7 +104,7 @@ public:
 
     bool set(const QString &calendarId, const QString &ctag)
     {
-        if (!isValid()) return false;
+        if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -136,7 +122,7 @@ public:
 
     bool clear(const QString &calendarId)
     {
-        if (!isValid()) return false;
+        if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -148,6 +134,29 @@ public:
     }
 
 private:
+    // Opens the SQLite connection on first use — deferred past construction
+    // so the connection's thread affinity is whichever thread first calls
+    // get/set/clear (the backend's own thread, post-D1-relocation), not
+    // whichever thread happened to call setDbPath() (D1 T1.2).
+    bool ensureOpen()
+    {
+        if (m_openAttempted) return m_open;
+        m_openAttempted = true;
+
+        if (m_dbPath.isEmpty()) return false;
+
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        db.setDatabaseName(m_dbPath);
+        if (!db.open()) {
+            qWarning() << "CTagStore: failed to open" << m_dbPath
+                       << ":" << db.lastError().text();
+            QSqlDatabase::removeDatabase(m_connectionName);
+            return false;
+        }
+        m_open = ensureSchema();
+        return m_open;
+    }
+
     bool ensureSchema()
     {
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
@@ -164,8 +173,11 @@ private:
         return ok;
     }
 
+    QString m_dbPath;
     QString m_backendId;
     QString m_connectionName;
+    bool m_openAttempted = false;
+    bool m_open = false;
 };
 
 // (CTagStore class ends above; RemoteCalendarBackend methods continue below in the same namespace)
