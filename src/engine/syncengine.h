@@ -452,11 +452,13 @@ private:
     /**
      * @brief Pre-pass: collect fresh revision tokens from every backend that
      * implements Sync::ChangeDetection (one batched query per backend). For
-     * each mapping, if both endpoints' fresh revision matches the stored baseline
-     * AND skipUnchangedMappings() is true, the mapping is skipped. Fresh state
-     * is stashed in m_freshState for write-back via primeRevisionCache() on success.
+     * each mapping, if both endpoints' fresh revision matches the engine-owned
+     * sync-progress token stored in BaselineStore (H3; per mapping+side) AND
+     * skipUnchangedMappings() is true, the mapping is skipped. Fresh state is
+     * stashed in m_freshState for write-back via BaselineStore::setSyncToken()
+     * on success (see onWorkerSyncCompleted).
      *
-     * Idempotent and best-effort. Missing revisions or baselines yield "no skip".
+     * Idempotent and best-effort. Missing revisions or tokens yield "no skip".
      */
     void prepareSyncFastPath();
 

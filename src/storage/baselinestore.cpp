@@ -15,7 +15,7 @@
 namespace Kalburator::Storage {
 
 namespace {
-constexpr int kSchemaVersion = 6;  // B4: blob_baselines_v3 source_hash/target_hash columns.
+constexpr int kSchemaVersion = 7;  // H3: sync_tokens table (engine-owned sync-progress tokens).
 } // namespace
 
 int BaselineStore::s_connectionCounter = 0;
@@ -186,6 +186,11 @@ bool BaselineStore::ensureSchemaAndVersion()
         return false;
     }
 
+    // H3: ensure sync_tokens table exists.
+    if (!ensureSchemaV7()) {
+        return false;
+    }
+
     // Single final user_version stamp for the full migration arc.
     // ensureSchemaV3/V5/V6 only create tables/columns; they do not stamp
     // user_version. This stamp covers everything up to kSchemaVersion.
@@ -326,6 +331,80 @@ bool BaselineStore::ensureSchemaV6()
     }
 
     return true;
+}
+
+bool BaselineStore::ensureSchemaV7()
+{
+    // H3: engine-owned sync-progress tokens, keyed per (mappingId, side).
+    // Additive table, idempotent CREATE TABLE IF NOT EXISTS — no data
+    // migration needed (a missing row just means "no skip", same as
+    // today's absent-baseline behavior).
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS sync_tokens ("
+            "  mapping_id TEXT NOT NULL,"
+            "  side       TEXT NOT NULL CHECK(side IN ('source','target')),"
+            "  token      TEXT NOT NULL,"
+            "  PRIMARY KEY (mapping_id, side)"
+            ")"))) {
+        setError(QStringLiteral("ensureSchemaV7: CREATE TABLE sync_tokens failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+// ===========================================================================
+// Sync-progress tokens (H3, schema v7)
+// ===========================================================================
+
+QString BaselineStore::syncToken(const QString &mappingId, const QString &side) const
+{
+    if (!m_isOpen) return {};
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT token FROM sync_tokens WHERE mapping_id = ? AND side = ?"));
+    q.addBindValue(mappingId);
+    q.addBindValue(side);
+    if (!q.exec() || !q.next()) return {};
+    return q.value(0).toString();
+}
+
+void BaselineStore::setSyncToken(const QString &mappingId, const QString &side,
+                                 const QString &token)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setSyncToken: store not open"));
+        return;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO sync_tokens (mapping_id, side, token) "
+        "VALUES (?, ?, ?)"));
+    q.addBindValue(mappingId);
+    q.addBindValue(side);
+    q.addBindValue(token);
+    if (!q.exec()) {
+        setError(QStringLiteral("setSyncToken: %1").arg(q.lastError().text()));
+    }
+}
+
+void BaselineStore::clearSyncTokens(const QString &mappingId)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearSyncTokens: store not open"));
+        return;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("DELETE FROM sync_tokens WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec()) {
+        setError(QStringLiteral("clearSyncTokens: %1").arg(q.lastError().text()));
+    }
 }
 
 // ===========================================================================
@@ -951,6 +1030,10 @@ bool BaselineStore::clearMappingV3(const QString &mappingId)
         setError(QStringLiteral("clearMappingV3: %1").arg(q.lastError().text()));
         return false;
     }
+    // H3/CP-A: a mapping-scoped baseline wipe must also drop its sync
+    // tokens — otherwise a surviving token could let the next sync skip
+    // a mapping with no baselines at all (the exact hole H3 closes).
+    clearSyncTokens(mappingId);
     return true;
 }
 

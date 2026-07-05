@@ -157,6 +157,24 @@ public:
     QDateTime lastSyncTime(const QString &mappingId) const;
 
     // -----------------------------------------------------------------------
+    // Sync-progress tokens (H3, schema v7).
+    //
+    // Per (mappingId, side) — side is "source" or "target" — the revision
+    // token (CTag / fingerprint / whatever Sync::ChangeDetection returns)
+    // that this mapping last successfully synced against, captured BEFORE
+    // that run's fetch (pre-fetch snapshot). Distinct from a backend's own
+    // fetch-time cache-validity token: this one is engine-owned,
+    // per-mapping, and written only on a successful mapping run. Written by
+    // SyncEngine::onWorkerSyncCompleted; consulted by
+    // SyncEngine::prepareSyncFastPath's skip check.
+    // -----------------------------------------------------------------------
+
+    QString syncToken(const QString &mappingId, const QString &side) const;
+    void    setSyncToken(const QString &mappingId, const QString &side,
+                         const QString &token);
+    void    clearSyncTokens(const QString &mappingId);
+
+    // -----------------------------------------------------------------------
     // Triple-keyed API — keyed by (backendId, collectionId, recordId).
     // Stored in blob_baselines.
     // @deprecated Use the v3 mapping-keyed API instead.
@@ -200,6 +218,7 @@ private:
     bool ensureSchemaV3();
     bool ensureSchemaV5();
     bool ensureSchemaV6();
+    bool ensureSchemaV7();
     void setError(const QString &message) const;
 };
 

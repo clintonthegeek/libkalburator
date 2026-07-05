@@ -384,6 +384,24 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         prepareSyncFastPath();
     } else {
         m_skippedMappingIds.clear();
+        // H3: a clobber deliberately discards prior state, so any stored
+        // sync-progress token must go with it — otherwise a clobbered
+        // mapping could skip next cycle against a token that no longer
+        // corresponds to anything real. Safe to over-clear (all enabled
+        // mappings, not just the filtered subset): worst case is one
+        // extra redundant re-diff, never a masked change. Also clear
+        // m_freshState: without prepareSyncFastPath() run (skipped on a
+        // clobber), a stale entry from a PRIOR non-clobber run would
+        // otherwise survive and onWorkerSyncCompleted would immediately
+        // re-persist it after this clearSyncTokens call — silently
+        // undoing the clear.
+        if (m_queueOverride.clobber && m_baselineStore) {
+            for (const auto &mapping : m_syncMappings) {
+                if (!mapping.enabled) continue;
+                m_baselineStore->clearSyncTokens(mapping.id);
+            }
+        }
+        m_freshState.clear();
     }
 
     if (m_syncMappings.isEmpty() || m_cancelled) {
@@ -425,10 +443,11 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     m_freshState.clear();
     m_skippedMappingIds.clear();
     // Note: this also means that single-mapping runSync does NOT update
-    // Phase-2 ctag/fingerprint baselines on success. That's correct —
-    // baseline updates happen as part of the multi-mapping pre-pass
-    // (prepareSyncFastPath), and a stale single-mapping baseline would
-    // be more dangerous than no baseline update.
+    // this mapping's sync-progress tokens (H3) on success. That's correct —
+    // token updates happen as part of the multi-mapping pre-pass
+    // (prepareSyncFastPath / onWorkerSyncCompleted's m_freshState lookup),
+    // and a stale single-mapping token would be more dangerous than no
+    // token update.
 
     // F2 Task 23 follow-up: cancel-precheck. If cancellation was
     // observed before the worker dispatches (e.g., the caller
@@ -751,25 +770,27 @@ void SyncEngine::prepareSyncFastPath()
         bool sourceUnchanged = false;
         bool targetUnchanged = false;
 
+        // H3: the skip check now compares against the engine-owned
+        // sync-progress token (per mapping+side, in BaselineStore) rather
+        // than the backend's own cache-validity token. m_baselineStore is
+        // non-null here (checked above) and is engine-thread-affine, so
+        // this is a direct call, not a backend marshal.
         auto checkSide = [&](const QString &backendId, const QString &colId,
+                              const QString &side,
                               QString &outRevision, bool &covered, bool &unchanged) {
             SyncBackendBase *base = m_registry->backendInstance(backendId);
             auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
             if (!cd) return;
             covered = true;
             outRevision = freshRevisions.value(qMakePair(backendId, colId));
-            // Marshaled for the same reason as collectionRevisions() above.
-            QString stored;
-            runOnBackendThread(base, [cd, colId, &stored]() {
-                stored = cd->cachedCollectionRevision(colId);
-            });
+            const QString stored = m_baselineStore->syncToken(mapping.id, side);
             unchanged = !outRevision.isEmpty() && !stored.isEmpty()
                         && outRevision == stored;
         };
 
-        checkSide(mapping.sourceBackend, mapping.sourceCalendar,
+        checkSide(mapping.sourceBackend, mapping.sourceCalendar, QStringLiteral("source"),
                   fresh.sourceRevision, sourceCovered, sourceUnchanged);
-        checkSide(mapping.targetBackend, mapping.targetCalendar,
+        checkSide(mapping.targetBackend, mapping.targetCalendar, QStringLiteral("target"),
                   fresh.targetRevision, targetCovered, targetUnchanged);
 
         m_freshState[mapping.id] = fresh;
@@ -1158,59 +1179,27 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             m_lastResult.errorMessage = result.errorMessage;
     }
 
-    // Persist fresh revisions so the next sync's pre-pass has up-to-date baselines.
+    // H3: persist this mapping's sync-progress tokens so the next sync's
+    // pre-pass can judge skip-eligibility. Only on success (a failed apply
+    // must not advance the token — O17: a stranded change must be retried,
+    // never masked as "unchanged"), and only using the pre-fetch snapshot
+    // prepareSyncFastPath captured BEFORE this run's fetch — never a live
+    // post-write re-query (that re-query was O18/O19's masking surface:
+    // a foreign edit landing between the fetch and this callback would be
+    // erased from the next diff by a post-write token). A pre-fetch token
+    // is never newer than the data actually synced, so a stale token costs
+    // at most one redundant re-diff cycle — accepted per CP-A.
     if (result.success && m_baselineStore) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
             const FreshSyncState &fresh = stateIt.value();
-            const SyncMapping *mapping = nullptr;
-            for (const auto &m : m_syncMappings) {
-                if (m.id == mappingId) { mapping = &m; break; }
+            if (!fresh.sourceRevision.isEmpty()) {
+                m_baselineStore->setSyncToken(mappingId, QStringLiteral("source"),
+                                              fresh.sourceRevision);
             }
-            if (mapping) {
-                // Phase B5 fix: re-query the LIVE revision now that the
-                // mapping has actually finished, instead of reusing the
-                // snapshot prepareSyncFastPath captured BEFORE this mapping
-                // ran. For a side this very sync wrote to (the common case
-                // is LocalBackend as target on a first/populating sync —
-                // its fingerprint is a directory content hash, so writing
-                // new files changes it), the pre-dispatch snapshot reflects
-                // the PRE-write state and is stale the instant this
-                // callback runs. Persisting that stale value costs the
-                // *next* sync's prepareSyncFastPath its skip-eligibility
-                // even though nothing has changed since THIS sync
-                // completed — a one-cycle lag that, for a real backend
-                // this campaign found could re-run a full busy cycle for
-                // no reason. Falls back to the pre-dispatch snapshot only
-                // if the live re-query comes back empty (e.g. a backend
-                // whose ChangeDetection needs a moment to settle).
-                // D1 finding (same class as prepareSyncFastPath()'s fix
-                // above): both calls went straight through the
-                // ChangeDetection pointer with no thread marshaling. Harmless
-                // pre-D1; a cross-thread QObject/SQLite access once backends
-                // relocate to their own I/O thread — onWorkerSyncCompleted
-                // runs on SyncEngine's own thread, not the backend's.
-                auto persistRevision = [&](const QString &backendId,
-                                           const QString &colId,
-                                           const QString &precomputed) {
-                    if (!m_registry) return;
-                    SyncBackendBase *base = m_registry->backendInstance(backendId);
-                    auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-                    if (!cd) return;
-                    QString live;
-                    runOnBackendThread(base, [cd, colId, &live]() {
-                        live = cd->collectionRevision(colId);
-                    });
-                    const QString revision = !live.isEmpty() ? live : precomputed;
-                    if (revision.isEmpty()) return;
-                    runOnBackendThread(base, [cd, colId, revision]() {
-                        cd->primeRevisionCache({{colId, revision}});
-                    });
-                };
-                persistRevision(mapping->sourceBackend, mapping->sourceCalendar,
-                                fresh.sourceRevision);
-                persistRevision(mapping->targetBackend, mapping->targetCalendar,
-                                fresh.targetRevision);
+            if (!fresh.targetRevision.isEmpty()) {
+                m_baselineStore->setSyncToken(mappingId, QStringLiteral("target"),
+                                              fresh.targetRevision);
             }
         }
     }

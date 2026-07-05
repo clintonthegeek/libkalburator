@@ -293,6 +293,12 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 - [x] — tag v0.81
 - [x] B4 N2 per-side baselines (the convergence fix) — landed 2026-07-04
 - [x] B5 convergence acceptance gate + fast path — landed 2026-07-04
+      (superseded by H3 per-mapping tokens, 2026-07-05: the fast path's
+      skip check now compares against BaselineStore's engine-owned
+      per-mapping sync-progress token, not backend-side
+      `cachedCollectionRevision`/`primeRevisionCache`; see
+      `docs/campaign/2026-07-05-sync-hardening-phases.md` §6 and
+      FINDINGS O17-O19)
 - [x] — tag v0.82 (libkalburator main @ `1e985e5`, 2026-07-04)
 - [x] C1 PlanStan mass-delete guard — landed
 - [x] C2 PlanStan spoke-loading fix — landed (residual found + fixed in C4)

@@ -1,9 +1,9 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H2 done, CP-A recorded (2026-07-05) — H3 cleared to
-implement as amended. See §10 checklist — it is the single source of truth
-for progress; update it in the same commit as the work.
+**Status:** Phases H1–H3 done, CP-A recorded (2026-07-05). H4 is next. See
+§10 checklist — it is the single source of truth for progress; update it
+in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -728,8 +728,12 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       a clobbered target's fresh fingerprint/ctag always diverges from any
       stale stored token, so the mapping re-diffs. H3 is cleared to
       implement as amended.
-- [ ] **H3** BaselineStore v6 sync_tokens + engine-owned tokens; persistRevision deleted
-      (RED: O17 pin, O18 pin, skip-still-works, clobber-clears)
+- [x] **H3** BaselineStore v7 sync_tokens + engine-owned tokens; persistRevision deleted
+      (RED: O17 pin, O18 pin, skip-still-works, clobber-clears) — 2026-07-05.
+      Also fixed a gap the phase's own change introduced: `driveQueue`'s
+      clobber branch must clear `m_freshState` too, or a stale entry from a
+      prior non-clobber run gets silently re-persisted right after
+      `clearSyncTokens`. See FINDINGS O17 for the full landing note.
 - [ ] **H4** fast path on worker; **stall probe green**; cancel-during-fast-path test
 - [ ] **H5** recordsFromLastFetch single-fetch pipeline (RED: fetchStarted-once)
 - [ ] **CP-B** strong-model review + live Radicale smoke; ruling: _(pending)_

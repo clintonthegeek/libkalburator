@@ -166,7 +166,7 @@ narrower, separate gap in the *pre-check* phase, not a regression in the fix's c
 Not fixed this session. Flagging here + in the D1 execution plan's checklist so Stage 1 doesn't
 get marked closed while this is open.
 
-### O17 — failed apply phase + fetch-time CTag commit + skip fast-path strands changes (OPEN, 2026-07-05)
+### O17 — failed apply phase + fetch-time CTag commit + skip fast-path strands changes (RESOLVED, H3, 2026-07-05)
 
 Highest-severity finding of the 2026-07-05 first-principles audit
 (`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`, §A1 — full
@@ -189,7 +189,33 @@ tokens behind (A4). Pre-fetch-snapshot semantics, the present-but-unused ChangeD
 methods, and the accepted one-cycle re-diff lag are all confirmed as pre-decided. H3 may
 proceed.
 
-### O18 — LocalBackend post-write fingerprint re-hash masks concurrent foreign edits (OPEN, 2026-07-05)
+**H3 (2026-07-05):** implemented as amended. BaselineStore gained a `sync_tokens` table
+(schema v7) keyed `(mapping_id, side)`; `SyncEngine::prepareSyncFastPath`'s skip check
+now compares each side's fresh revision against `BaselineStore::syncToken` instead of
+the backend's own `cachedCollectionRevision`; `onWorkerSyncCompleted` persists
+`m_freshState`'s pre-fetch snapshot via `setSyncToken` only on `result.success`, and
+persists nothing on failure. `driveQueue`'s clobber branch now also calls
+`clearSyncTokens` for every enabled mapping (and clears `m_freshState`, which a fix
+found necessary — see below). `clearMappingV3` clears `sync_tokens` too, per the CP-A
+amendment. Pinned by four new tests in
+`tests/engine/tst_sync_token_soundness.cpp`: `applyFailure_doesNotStrandChange` (O17,
+using `RemoteCalendarBackend`/`FakeCalDavServer` as source — whose `fetchItems` commits
+its own CTag on a complete fetch independent of apply success — and `MockBackend` as a
+target with injectable write failure), `foreignEditBetweenCycles_defeatsSkip` (O18),
+`settledMapping_keepsSkipping` (skip still works), and `clobberRun_clearsTokens`.
+While writing the clobber test, found and fixed a real gap this phase's own change
+introduced: `driveQueue`'s clobber branch calls `clearSyncTokens` but does not run
+`prepareSyncFastPath` (by design — clobber skips the fast path), so a stale
+`m_freshState` entry from a PRIOR non-clobber run would survive and
+`onWorkerSyncCompleted` would silently re-persist it right after the clear. Fixed by
+clearing `m_freshState` in the same branch. Existing tests `tst_engine_skip_unchanged`
+and `tst_sync_convergence` (`fastPathSkipsGenuinelyUnchangedMapping`) were updated to
+assert against `BaselineStore::syncToken` instead of backend-side
+`cachedCollectionRevision`/`primeRevisionCache` — their observed behavior (including the
+two-real-cycles-before-settle characteristic) is unchanged, only the underlying
+mechanism their comments describe.
+
+### O18 — LocalBackend post-write fingerprint re-hash masks concurrent foreign edits (RESOLVED, H3, 2026-07-05)
 
 Audit §A2. `persistRevision`'s live re-hash after a successful mapping is written
 **directly** into LocalBackend's persisted FingerprintStore (`localbackend.cpp:188-192` —
@@ -199,7 +225,15 @@ to the directory during the sync window, stamping it as already-synced → next 
 (delete `persistRevision`; LocalBackend computes its expected post-write fingerprint
 incrementally from its fetch snapshot + own write set).
 
-### O19 — remote half of persistRevision is inert; B5's one-cycle-lag goal never achieved for remote (OPEN, 2026-07-05)
+**H3 (2026-07-05):** `persistRevision` (and its live post-write re-query on both sides)
+is deleted outright. The engine now persists the pre-fetch snapshot
+(`prepareSyncFastPath`'s `m_freshState`) as each mapping+side's token in
+`BaselineStore::sync_tokens`, only on a successful run. A foreign edit landing after
+that snapshot is captured can never be absorbed into it, so it can't be masked — it
+shows up as a mismatch on the next fresh-vs-stored comparison. Pinned by
+`tst_sync_token_soundness::foreignEditBetweenCycles_defeatsSkip`.
+
+### O19 — remote half of persistRevision is inert; B5's one-cycle-lag goal never achieved for remote (RESOLVED, H3, 2026-07-05)
 
 Audit §A3. `RemoteCalendarBackend::primeRevisionCache` stages into in-memory
 `pendingCtag` (N5 fix) which the next fetch overwrites before it can be committed, and
@@ -207,6 +241,15 @@ Audit §A3. `RemoteCalendarBackend::primeRevisionCache` stages into in-memory
 skip (the exact lag B5's live re-query was written to remove), while the engine still
 pays one extra CTag PROPFIND per mapping per cycle **on the GUI thread** for the
 discarded result. Delete rather than repair (O17 rework).
+
+**H3 (2026-07-05):** deleted rather than repaired, per plan. The engine no longer calls
+`cachedCollectionRevision`/`primeRevisionCache` at all (grep-verified empty under
+`src/engine/`); both remain on the `ChangeDetection` interface, doc-commented as
+engine-unused, for backend-internal use and external consumers (WildPalms). The
+accepted cost is a one-cycle re-diff lag after any cycle that wrote (CP-A-confirmed
+safe-direction trade; see `tst_sync_convergence.cpp`'s
+`fastPathSkipsGenuinelyUnchangedMapping` comment for the mechanism under the new
+token design).
 
 ### O20 — `runPropertyPhase` calls backends directly from the worker thread — live UB pre-D1 (RESOLVED, H2.1, 2026-07-05)
 

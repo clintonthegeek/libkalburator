@@ -191,3 +191,31 @@ add_test(NAME tst_sync_convergence COMMAND tst_sync_convergence)
 set_tests_properties(tst_sync_convergence PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# H3 (sync-hardening campaign) — engine-owned sync-progress tokens.
+# Pins O17 (failed apply must not strand a change behind a wrongly-skipped
+# mapping), O18 (a foreign edit since the last stored token must defeat the
+# skip), that skip still works for genuinely idle cycles, and that a
+# clobber run clears a mapping's stored tokens.
+add_executable(tst_sync_token_soundness
+    tst_sync_token_soundness.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.h
+)
+target_include_directories(tst_sync_token_soundness
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+        ${CMAKE_CURRENT_SOURCE_DIR}/../calendar
+)
+target_link_libraries(tst_sync_token_soundness
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_sync_token_soundness COMMAND tst_sync_token_soundness)
+set_tests_properties(tst_sync_token_soundness PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
