@@ -166,6 +166,86 @@ narrower, separate gap in the *pre-check* phase, not a regression in the fix's c
 Not fixed this session. Flagging here + in the D1 execution plan's checklist so Stage 1 doesn't
 get marked closed while this is open.
 
+### O17 — failed apply phase + fetch-time CTag commit + skip fast-path strands changes (OPEN, 2026-07-05)
+
+Highest-severity finding of the 2026-07-05 first-principles audit
+(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`, §A1 — full
+scenario and fix there). `RemoteCalendarBackend::fetchItems` commits the fresh CTag at
+*fetch* time (correct for the content cache); `prepareSyncFastPath()` reads that same
+backend-global token as if it meant "this mapping is up to date." A mapping whose fetch
+succeeds but whose apply phase fails **without writing to the target** is skipped on every
+subsequent cycle — the fetched-but-never-applied delta is stranded until an unrelated
+server change bumps the ctag. Also bites mapping B when mapping A shares B's source
+collection. No threading involved; live today with `skipUnchangedMappings` on (PlanStan
+default). Fix: per-`(mappingId, side)` token consumption recorded by the engine in
+BaselineStore on mapping success, token captured atomically with the fetch (audit §1.4/§6
+step T1.7). Needs a RED test first.
+
+### O18 — LocalBackend post-write fingerprint re-hash masks concurrent foreign edits (OPEN, 2026-07-05)
+
+Audit §A2. `persistRevision`'s live re-hash after a successful mapping is written
+**directly** into LocalBackend's persisted FingerprintStore (`localbackend.cpp:188-192` —
+no N5-style staging, unlike the remote side). The re-hash includes any foreign edit made
+to the directory during the sync window, stamping it as already-synced → next cycles skip
+→ the edit is invisible until a second local change. Fix folded into O17's rework
+(delete `persistRevision`; LocalBackend computes its expected post-write fingerprint
+incrementally from its fetch snapshot + own write set).
+
+### O19 — remote half of persistRevision is inert; B5's one-cycle-lag goal never achieved for remote (OPEN, 2026-07-05)
+
+Audit §A3. `RemoteCalendarBackend::primeRevisionCache` stages into in-memory
+`pendingCtag` (N5 fix) which the next fetch overwrites before it can be committed, and
+`cachedCollectionRevision` reads only the persisted store — so post-push cycles never
+skip (the exact lag B5's live re-query was written to remove), while the engine still
+pays one extra CTag PROPFIND per mapping per cycle **on the GUI thread** for the
+discarded result. Delete rather than repair (O17 rework).
+
+### O20 — `runPropertyPhase` calls backends directly from the worker thread — live UB pre-D1 (OPEN, 2026-07-05)
+
+Audit §B2. `syncengine.cpp:3043-3087` invokes `collectionProperties` /
+`applyCollectionProperties` with no marshaling; via `CalendarDomainOperations` these are
+direct backend virtual calls — unsynchronized `m_calendars` reads and, on a
+color/description diff, a PROPPATCH (`RemoteCalendarBackend::updateCalendar`) issued
+from the worker thread on a foreign-thread QNAM. Already a cross-thread QObject access
+in production **today** (worker → GUI-thread backend); post-D1 the T1.1 Q_ASSERT turns
+it into a debug crash. Missed by the viability audit because it routes through
+`DomainOperations`, not a `SyncBackendBase*` invokeMethod.
+
+### O21 — `dispatchFirstSync` runs target-backend writes on the source backend's thread (OPEN, 2026-07-05)
+
+Audit §B3. The first-sync blob mirror (`syncengine.cpp:1786-1833`) marshals one lambda
+to the **source** backend's thread and calls `tgt->loadRecordsOrError/createRecord/
+updateRecord/deleteRecord` inside it. Same-thread only by coincidence (pre-D1 GUI
+thread; post-D1 the shared-I/O-thread plan). Cross-thread UB the moment backends have
+distinct affinities. Either split into per-backend marshals or write "all sync backends
+share one I/O thread" into the D1 plan as a hard invariant.
+
+### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (OPEN, 2026-07-05)
+
+Audit §B4 (with B5/B6 adjuncts). `davSyncRequest` sets no transferTimeout and no
+watchdog; engine marshals/gate-awaits are unbounded; a hung request leaves
+`m_isSyncing` true forever and every later `runSync()` returns a rejected future
+**indistinguishable from a successful empty run**. Sync dies silently until app
+restart. Also: cancellation is queued and cannot interrupt blocking marshals; the gate
+never calls `op->cancel()`; `stopWorkerThread` deadlocks pre-D1 if called mid-marshal.
+
+### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (OPEN, 2026-07-05)
+
+Audit §C1/C2. The dispatchSync gate ops (`syncengine.cpp:2122-2165`, `:2245-2282`) are
+never deleted — remote ops are unparented (leak until exit), local ops accumulate on the
+backend — each retaining the entire fetched collection (`setFetchedItems`), ~720
+snapshots/day at 120 s cadence. And the pipeline fetches each side twice (gate
+`fetchItems` + `loadRecords`→`fetchItems` again) with ~4 CTag PROPFINDs per mapping per
+cycle where one fetch + one PROPFIND would do.
+
+### O24 — the cancellation gate doesn't gate LocalBackend; F2 cancellation only ever tested against MockBackend's model (OPEN, 2026-07-05)
+
+Audit §C3. `LocalBackend::fetchItems` defers via `QTimer::singleShot`, so the gate sees
+a **Pending** op and its `state() == Running` check skips the await entirely — no
+cancellation window, full directory parse queued anyway into the leaked op. Remote
+passes the gate only via an AutoConnection same-thread coincidence. Check should be
+`!op->isFinished()`. Related: `SyncEngineWorker::await<Op>` is dead code (zero callers).
+
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)

@@ -10,6 +10,16 @@ and blocks on relocated backends' network I/O via `BlockingQueuedConnection`
 synchronously regardless of which thread does the work. Full detail + fix
 options: `docs/campaign/FINDINGS.md` O16. Needs a decision before Stage 1's
 gate can close — see §9 checklist for the specific blocked item.
+**2026-07-05 update:** a first-principles audit
+(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
+re-verified O16 and found eight further issues (FINDINGS.md O17–O24),
+including a no-threading-required data-stranding bug (O17) and two
+unmarshaled cross-thread call sites this plan's §0 viability audit missed
+(O20, live pre-D1; O21, latent under per-backend threads). The audit's §6
+proposes the unblock order: T1.6 worker-side fast path (closes O16) → T1.7
+token rework (O17–O19) → T1.8 marshaling completeness (O20–O21) → T1.9
+bounded waits (O22) → T1.10 single-fetch + op lifetime (O23–O24). Adopt or
+amend there before resuming Stage 1.
 Checklist in §9 is the live state; update it in the
 same commit as the work it describes.
 **Repos:** libkalburator (primary) + PlanStan (consumer adoption).
