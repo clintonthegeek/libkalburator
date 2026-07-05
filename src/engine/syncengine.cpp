@@ -38,6 +38,7 @@
 
 #include <QDebug>
 #include <QJsonArray>
+#include <QThread>
 #include <QJsonObject>
 #include <QHash>
 #include <QMap>
@@ -85,6 +86,28 @@ static QStringList materializedLoss(const Kalburator::Shape::Pipeline &pipe,
         lost << k;
     }
     return lost;
+}
+
+// D1: marshal a synchronous call onto a backend's own thread. Unlike the
+// engine's ~19 QMetaObject::invokeMethod(..., BlockingQueuedConnection)
+// sites reached from SyncEngineWorker's dedicated internal thread (which is,
+// by construction, never the same thread as any backend), the two call
+// sites this guards (prepareSyncFastPath / onWorkerSyncCompleted's
+// persistRevision) run on SyncEngine's OWN thread — pre-D1 that is always
+// the same thread as the backend (direct calls worked fine), and only
+// D1's backend relocation makes it a genuinely different thread sometimes.
+// Unconditional BlockingQueuedConnection deadlocks in the same-thread case
+// (posting an event to your own queue, then blocking waiting for yourself
+// to process it) — found by tst_sync_convergence / tst_engine_skip_unchanged
+// timing out after this fix was first written without the guard.
+template <typename Func>
+void runOnBackendThread(QObject *backend, Func &&fn)
+{
+    if (QThread::currentThread() == backend->thread()) {
+        fn();
+    } else {
+        QMetaObject::invokeMethod(backend, std::forward<Func>(fn), Qt::BlockingQueuedConnection);
+    }
 }
 
 } // anonymous namespace
@@ -680,6 +703,16 @@ void SyncEngine::prepareSyncFastPath()
     }
 
     // Fetch fresh revisions per backend (batched where the backend supports it).
+    // D1 finding: this pre-pass runs on runSync()'s caller thread, before
+    // startWorkerThread() — every other engine->backend call marshals via
+    // QMetaObject::invokeMethod(..., BlockingQueuedConnection) resolved
+    // against backend->thread() (see syncengine.cpp's ~19 other sites), but
+    // this one called straight through the ChangeDetection pointer. Harmless
+    // pre-D1 (backends always shared the caller's thread), but once backends
+    // relocate to their own I/O thread it is a genuine cross-thread QObject/
+    // SQLite access (surfaced by libkalburator/tests/calendar/
+    // tst_backend_thread_relocation.cpp case 3 as a "does not belong to the
+    // calling thread" QSqlDatabase warning). Marshal it like every other site.
     QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
     for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
         SyncBackendBase *base = m_registry->backendInstance(it.key());
@@ -687,7 +720,10 @@ void SyncEngine::prepareSyncFastPath()
         if (!cd) continue;
         QStringList ids = it.value();
         ids.removeDuplicates();
-        const QMap<QString, QString> revs = cd->collectionRevisions(ids);
+        QMap<QString, QString> revs;
+        runOnBackendThread(base, [cd, ids, &revs]() {
+            revs = cd->collectionRevisions(ids);
+        });
         for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
             freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
     }
@@ -712,7 +748,11 @@ void SyncEngine::prepareSyncFastPath()
             if (!cd) return;
             covered = true;
             outRevision = freshRevisions.value(qMakePair(backendId, colId));
-            const QString stored = cd->cachedCollectionRevision(colId);
+            // Marshaled for the same reason as collectionRevisions() above.
+            QString stored;
+            runOnBackendThread(base, [cd, colId, &stored]() {
+                stored = cd->cachedCollectionRevision(colId);
+            });
             unchanged = !outRevision.isEmpty() && !stored.isEmpty()
                         && outRevision == stored;
         };
@@ -1134,6 +1174,12 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                 // no reason. Falls back to the pre-dispatch snapshot only
                 // if the live re-query comes back empty (e.g. a backend
                 // whose ChangeDetection needs a moment to settle).
+                // D1 finding (same class as prepareSyncFastPath()'s fix
+                // above): both calls went straight through the
+                // ChangeDetection pointer with no thread marshaling. Harmless
+                // pre-D1; a cross-thread QObject/SQLite access once backends
+                // relocate to their own I/O thread — onWorkerSyncCompleted
+                // runs on SyncEngine's own thread, not the backend's.
                 auto persistRevision = [&](const QString &backendId,
                                            const QString &colId,
                                            const QString &precomputed) {
@@ -1141,10 +1187,15 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
                     SyncBackendBase *base = m_registry->backendInstance(backendId);
                     auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
                     if (!cd) return;
-                    const QString live = cd->collectionRevision(colId);
+                    QString live;
+                    runOnBackendThread(base, [cd, colId, &live]() {
+                        live = cd->collectionRevision(colId);
+                    });
                     const QString revision = !live.isEmpty() ? live : precomputed;
                     if (revision.isEmpty()) return;
-                    cd->primeRevisionCache({{colId, revision}});
+                    runOnBackendThread(base, [cd, colId, revision]() {
+                        cd->primeRevisionCache({{colId, revision}});
+                    });
                 };
                 persistRevision(mapping->sourceBackend, mapping->sourceCalendar,
                                 fresh.sourceRevision);
