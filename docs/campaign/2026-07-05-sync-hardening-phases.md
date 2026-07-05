@@ -1,7 +1,7 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phase H1 done (2026-07-05); H2 next. See §10 checklist — it is the single
+**Status:** Phases H1–H2 done (2026-07-05); CP-A next. See §10 checklist — it is the single
 source of truth for progress; update it in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
@@ -684,8 +684,8 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
 - [x] **H1.2** QNAM transferTimeout + FakeCalDavServer drop mode — 2026-07-05
 - [x] **H1.3** distinguishable overlap rejection — 2026-07-05
 - [x] **H1.4** delete dead `await<>`; fix localbackend comment + CLAUDE.md cancellation para — 2026-07-05
-- [ ] **H2.1** runPropertyPhase marshaled per backend (RED: thread-recording stub)
-- [ ] **H2.2** dispatchFirstSync split per backend (RED: two-thread first sync)
+- [x] **H2.1** runPropertyPhase marshaled per backend (RED: thread-recording stub) — 2026-07-05 (also fixed a 5th, previously-unlisted unmarshaled call site: the T9 baseline snapshot in unifiedContinueAfterConflicts)
+- [x] **H2.2** dispatchFirstSync split per backend (RED: two-thread first sync) — 2026-07-05
 - [ ] **CP-A** strong-model ruling on H3 design recorded here: _(pending)_
 - [ ] **H3** BaselineStore v6 sync_tokens + engine-owned tokens; persistRevision deleted
       (RED: O17 pin, O18 pin, skip-still-works, clobber-clears)

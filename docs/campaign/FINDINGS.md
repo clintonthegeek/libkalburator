@@ -200,7 +200,7 @@ skip (the exact lag B5's live re-query was written to remove), while the engine 
 pays one extra CTag PROPFIND per mapping per cycle **on the GUI thread** for the
 discarded result. Delete rather than repair (O17 rework).
 
-### O20 — `runPropertyPhase` calls backends directly from the worker thread — live UB pre-D1 (OPEN, 2026-07-05)
+### O20 — `runPropertyPhase` calls backends directly from the worker thread — live UB pre-D1 (RESOLVED, H2.1, 2026-07-05)
 
 Audit §B2. `syncengine.cpp:3043-3087` invokes `collectionProperties` /
 `applyCollectionProperties` with no marshaling; via `CalendarDomainOperations` these are
@@ -211,7 +211,19 @@ in production **today** (worker → GUI-thread backend); post-D1 the T1.1 Q_ASSE
 it into a debug crash. Missed by the viability audit because it routes through
 `DomainOperations`, not a `SyncBackendBase*` invokeMethod.
 
-### O21 — `dispatchFirstSync` runs target-backend writes on the source backend's thread (OPEN, 2026-07-05)
+**H2.1 (2026-07-05):** all four `runPropertyPhase` call sites now wrap the
+`collectionProperties`/`applyCollectionProperties` call in `runOnBackendThread(...)`.
+While writing the RED test (`propertyPhase_relocatedBackends_marshaledPerBackend`,
+`tst_backend_thread_relocation.cpp`) a **fifth, previously-unlisted call site** turned
+up: the T9 property-baseline snapshot in `unifiedContinueAfterConflicts`
+(`syncengine.cpp` ~3082, `opsUCC->collectionProperties(srcBackend, srcColId)`) — same
+unmarshaled direct-call shape, just outside `runPropertyPhase` proper. It masked the
+main fix (overwrote the recorded call-thread after the correctly-marshaled call ran) and
+is fixed the same way. Verified with a GDB breakpoint + backtrace that the marshaled
+call genuinely executes on the backend's own I/O thread (not just that the assertion
+passes) before landing.
+
+### O21 — `dispatchFirstSync` runs target-backend writes on the source backend's thread (RESOLVED, H2.2, 2026-07-05)
 
 Audit §B3. The first-sync blob mirror (`syncengine.cpp:1786-1833`) marshals one lambda
 to the **source** backend's thread and calls `tgt->loadRecordsOrError/createRecord/
@@ -219,6 +231,12 @@ updateRecord/deleteRecord` inside it. Same-thread only by coincidence (pre-D1 GU
 thread; post-D1 the shared-I/O-thread plan). Cross-thread UB the moment backends have
 distinct affinities. Either split into per-backend marshals or write "all sync backends
 share one I/O thread" into the D1 plan as a hard invariant.
+
+**H2.2 (2026-07-05):** split into three steps — source-thread load, target-thread load,
+then a target-thread apply of a create/update/delete list computed in between on the
+worker thread (no backend I/O in that middle step). Pinned by
+`firstSync_backendsOnDifferentThreads` with source and target relocated to two
+genuinely different I/O threads.
 
 ### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (OPEN, 2026-07-05; partially resolved by H1, 2026-07-05)
 

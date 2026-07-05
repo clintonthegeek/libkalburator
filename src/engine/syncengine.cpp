@@ -1789,58 +1789,82 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     int mirrorErrors = 0;
     QString mirrorReadErr;
 
-    // Task 10: inline the runBlobMirror body directly so Task 13 can
-    // delete the F1 facade without leaving a dangling internal caller.
-    // Marshalled to the source backend's thread because we walk both
-    // backends synchronously (same threading requirement as the old call).
+    // H2.2 (O21): each side's calls now marshal onto that side's OWN thread
+    // — previously the whole mirror (including the target's writes) ran
+    // inside a single lambda marshaled onto the source's thread, so the
+    // target backend's calls silently executed on the wrong thread whenever
+    // source and target are relocated to different I/O threads. The
+    // create/update/delete list computation between the two backend calls
+    // is pure (no backend I/O) and runs here on the worker thread.
+    QList<BackendRecord> srcRecords;
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, tgtWritable, &mirrorErrors, &mirrorReadErr]() {
-            QList<BackendRecord> srcRecords;
-            QList<BackendRecord> tgtRecords;
-            if (!src->loadRecordsOrError(colId, srcRecords, mirrorReadErr)) {
-                return;
-            }
-            if (!tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr)) {
-                return;
-            }
-            const auto tgtById = indexBlobById(tgtRecords);
+        [src, colId, &srcRecords, &mirrorReadErr]() {
+            src->loadRecordsOrError(colId, srcRecords, mirrorReadErr);
+        }, Qt::BlockingQueuedConnection);
 
-            // Copy source → target (create or update). Short-circuit &&: the
-            // write call is never invoked when the target is read-only, so
-            // mirrorErrors stays 0 and the success-completion path runs.
-            for (const auto &sr : srcRecords) {
-                const auto it = tgtById.constFind(sr.id);
-                if (it == tgtById.constEnd()) {
+    QList<BackendRecord> tgtRecords;
+    if (mirrorReadErr.isEmpty()) {
+        QMetaObject::invokeMethod(tgtBackend,
+            [tgt, colId, &tgtRecords, &mirrorReadErr]() {
+                tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr);
+            }, Qt::BlockingQueuedConnection);
+    }
+
+    if (mirrorReadErr.isEmpty()) {
+        const auto tgtById = indexBlobById(tgtRecords);
+
+        // Copy source → target (create or update). Short-circuit &&: the
+        // write call is never invoked when the target is read-only, so
+        // mirrorErrors stays 0 and the success-completion path runs.
+        QList<BackendRecord> toCreate;
+        QList<BackendRecord> toUpdate;
+        for (const auto &sr : srcRecords) {
+            const auto it = tgtById.constFind(sr.id);
+            if (it == tgtById.constEnd()) {
+                toCreate << sr;
+            } else if (it.value().contentHash != sr.contentHash) {
+                // Phase B4 (N2): this is a genuine cross-side native-bytes
+                // hash compare, the same shape as the N2 bug elsewhere in
+                // this file — but it does NOT need the per-side-baseline
+                // treatment. dispatchFirstSync only reaches this mirror
+                // body when the target collection was independently
+                // confirmed empty just above (targetEmpty), so tgtById is
+                // empty and this branch is unreached in the true
+                // first-sync case. It only fires if the target gained
+                // records in the narrow window between the emptiness
+                // check and this walk (a benign existing-item update,
+                // not the steady-state convergence path B4 fixes).
+                BackendRecord out = sr;
+                out.id = it.value().id;
+                toUpdate << out;
+            }
+        }
+
+        // Delete target records not in source.
+        const auto srcById = indexBlobById(srcRecords);
+        QStringList toDelete;
+        for (const auto &tr : tgtRecords) {
+            if (!srcById.contains(tr.id)) {
+                toDelete << tr.id;
+            }
+        }
+
+        QMetaObject::invokeMethod(tgtBackend,
+            [tgt, colId, tgtWritable, toCreate, toUpdate, toDelete, &mirrorErrors]() {
+                for (const auto &sr : toCreate) {
                     if (tgtWritable && tgt->createRecord(colId, sr).isEmpty())
                         ++mirrorErrors;
-                } else if (it.value().contentHash != sr.contentHash) {
-                    // Phase B4 (N2): this is a genuine cross-side native-bytes
-                    // hash compare, the same shape as the N2 bug elsewhere in
-                    // this file — but it does NOT need the per-side-baseline
-                    // treatment. dispatchFirstSync only reaches this mirror
-                    // body when the target collection was independently
-                    // confirmed empty just above (targetEmpty), so tgtById is
-                    // empty and this branch is unreached in the true
-                    // first-sync case. It only fires if the target gained
-                    // records in the narrow window between the emptiness
-                    // check and this walk (a benign existing-item update,
-                    // not the steady-state convergence path B4 fixes).
-                    BackendRecord out = sr;
-                    out.id = it.value().id;
+                }
+                for (const auto &out : toUpdate) {
                     if (tgtWritable && !tgt->updateRecord(out))
                         ++mirrorErrors;
                 }
-            }
-
-            // Delete target records not in source.
-            const auto srcById = indexBlobById(srcRecords);
-            for (const auto &tr : tgtRecords) {
-                if (!srcById.contains(tr.id)) {
-                    if (tgtWritable && !tgt->deleteRecord(tr.id))
+                for (const auto &id : toDelete) {
+                    if (tgtWritable && !tgt->deleteRecord(id))
                         ++mirrorErrors;
                 }
-            }
-        }, Qt::BlockingQueuedConnection);
+            }, Qt::BlockingQueuedConnection);
+    }
 
     if (!mirrorReadErr.isEmpty()) {
         SyncResult result;
@@ -3055,8 +3079,10 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                               .definitionFor(opsUCC->targetDomain());
             const QStringList keys = ddUCC ? ddUCC->baselineProperties() : QStringList{};
             if (!keys.isEmpty()) {
-                const QVariantMap collProps =
-                    opsUCC->collectionProperties(srcBackend, srcColId);
+                QVariantMap collProps;
+                runOnBackendThread(srcBackend, [&]() {
+                    collProps = opsUCC->collectionProperties(srcBackend, srcColId);
+                });
                 QVariantMap snapshot;
                 for (const auto &k : keys) {
                     if (collProps.contains(k))
@@ -3096,8 +3122,10 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
         return;
     }
 
-    const QVariantMap srcProps = ops->collectionProperties(src, srcCollectionId);
-    const QVariantMap tgtProps = ops->collectionProperties(tgt, tgtCollectionId);
+    QVariantMap srcProps;
+    runOnBackendThread(src, [&]() { srcProps = ops->collectionProperties(src, srcCollectionId); });
+    QVariantMap tgtProps;
+    runOnBackendThread(tgt, [&]() { tgtProps = ops->collectionProperties(tgt, tgtCollectionId); });
 
     if (srcProps.isEmpty() && tgtProps.isEmpty() && baseline.isEmpty()) {
         return;  // nothing to do
@@ -3106,11 +3134,15 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
     const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
     if (!diff.toApplyToTarget.isEmpty()) {
-        ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        runOnBackendThread(tgt, [&]() {
+            ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        });
     }
 
     if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
-        ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        runOnBackendThread(src, [&]() {
+            ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        });
     }
 
     // Conflict handling (v1, Task 7): resolve all conflicts as SourceWins.
@@ -3125,7 +3157,9 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
             }
         }
         if (!fromSrc.isEmpty()) {
-            ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+            runOnBackendThread(tgt, [&]() {
+                ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+            });
         }
     }
 }
