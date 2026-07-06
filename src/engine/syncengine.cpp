@@ -2841,14 +2841,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     // `dynamic_cast` to a concrete calendar writer is gone — the engine
     // no longer special-cases the calendar writer.
     //
-    // Threading values:
-    //   - BackendThread (default): classify + apply both run on the
-    //     backend's own thread, wrapped in a single
-    //     BlockingQueuedConnection.
-    //   - WorkerThread: classify runs on the backend thread; apply
-    //     runs on the worker thread (a writer that uses
-    //     BlockingQueuedConnection internally must not be called from
-    //     the backend thread).
+    // Threading values (H8.5/O27 — the guard decision always runs on the
+    // worker thread because it reaches the engine-thread baseline anchor via
+    // BlockingQueuedConnection; only the classify + apply placement varies):
+    //   - BackendThread (default): classify AND apply both run on the
+    //     backend's own thread, each via its own BlockingQueuedConnection,
+    //     with the guard resolved on the worker thread in between.
+    //   - WorkerThread: classify runs on the backend thread; apply runs
+    //     on the worker thread (a writer that uses BlockingQueuedConnection
+    //     internally must not be called from the backend thread).
     auto applyBatch = [this, &writeFailed, &writeError, &mappingId](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackendBase *backend,
@@ -2888,8 +2889,17 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // If no guard is registered, deletes proceed unconditionally
         // (backward compatible). If the guard returns false, the delete
         // list is cleared and creates/updates proceed normally.
-        auto applyWithGuard = [this, writer, &colId, &backendRegistryId]
-            (WriterBatch &batch) -> bool
+        //
+        // H8.5/O27: the guard decision MUST run on the worker thread — it
+        // reaches the engine-thread `m_baselineStoreAnchor` via a
+        // BlockingQueuedConnection, which must not be entered from a backend
+        // thread. The apply() itself is dispatched separately below, honoring
+        // the writer's threading() contract. Splitting the two is what lets a
+        // BackendThread writer's apply() run on the backend's own thread
+        // without nesting the guard's engine round-trip inside a backend-thread
+        // BlockingQueuedConnection.
+        auto resolveMassDeleteGuard = [this, &backendRegistryId]
+            (WriterBatch &batch)
         {
             // Clobber never consults the guard: no deletes are computed (the
             // wipe replaced the diff) and the clobber call IS the user's
@@ -2923,7 +2933,6 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     }
                 }
             }
-            return writer->apply(colId, batch.creates, batch.updates, batch.deletes);
         };
 
         WriterBatch batch;
@@ -2931,7 +2940,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
             // Writer manages its own backend-thread marshalling
             // (a WorkerThread writer uses BlockingQueuedConnection
-            // internally inside apply()).
+            // internally inside apply(), so apply() itself must run on the
+            // worker thread, NOT the backend thread).
             QString classifyErr1;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr1, toWrite]() {
                 batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr1);
@@ -2940,13 +2950,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 ok = false;
                 writeError = classifyErr1;
             } else {
-                ok = applyWithGuard(batch);
+                resolveMassDeleteGuard(batch);
+                ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
             }
         } else {
-            // BackendThread: classify on backend thread, then guard check +
-            // apply on worker thread to avoid re-entering the backend thread
-            // while invoking m_baselineStoreAnchor (which lives on the
-            // engine thread — see setDependencies docs in syncengine_p.h).
+            // BackendThread (default): classify on the backend thread, resolve
+            // the guard on the worker thread, then run apply() on the backend's
+            // OWN thread per recordwriter.h's contract. Pre-H8.5 the apply ran
+            // on the worker thread (O27) — a contract break that did QNAM I/O +
+            // etag-cache SQL cross-thread for every steady-state update.
             QString classifyErr2;
             QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
                 batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
@@ -2955,10 +2967,11 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 ok = false;
                 writeError = classifyErr2;
             } else {
-                // Apply (and guard check) run on the worker thread. For
-                // BackendThread writers the apply() implementation marshals
-                // back to the backend thread internally if needed.
-                ok = applyWithGuard(batch);
+                resolveMassDeleteGuard(batch);
+                Kalburator::Shape::RecordWriter *w = writer;
+                QMetaObject::invokeMethod(backend, [w, &colId, &batch, &ok]() {
+                    ok = w->apply(colId, batch.creates, batch.updates, batch.deletes);
+                }, Qt::BlockingQueuedConnection);
             }
         }
         if (!ok && !writeFailed) {

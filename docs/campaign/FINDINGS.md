@@ -494,7 +494,43 @@ flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
 standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
 under a sanitizer build.
 
-### O27 — `applyBatch`'s BackendThread branch runs `writer->apply()` on the worker thread — steady-state CalDAV *updates* do network I/O + SQL cross-thread (OPEN, found by CP-C/H8 live soak, 2026-07-06)
+### O27 — `applyBatch`'s BackendThread branch runs `writer->apply()` on the worker thread — steady-state CalDAV *updates* do network I/O + SQL cross-thread (RESOLVED by H8.5, 2026-07-06)
+
+**RESOLVED (H8.5, 2026-07-06).** `applyBatch` was split so the mass-delete
+guard decision still resolves on the worker thread (it reaches the
+engine-thread `m_baselineStoreAnchor` via `BlockingQueuedConnection`, which
+must not be entered from a backend thread), but `writer->apply()` now runs on
+the backend's OWN thread for `Threading::BackendThread` writers — marshaled
+via a second `QMetaObject::invokeMethod(backend, ...,
+Qt::BlockingQueuedConnection)` — honoring `recordwriter.h:34`. `WorkerThread`
+writers keep the direct worker-thread call (their `apply()` marshals
+internally). The three-marshal shape (classify → guard → apply) is what lets
+the guard's engine round-trip sit between the two backend-thread hops instead
+of nesting inside one — dissolving the deadlock the old contract-breaking
+shape was dodging. RED test:
+`tst_backend_thread_relocation::steadyStateWrites_appliesOnBackendThread`
+(target `LocalBackend` relocated to a dedicated I/O thread; a steady-state
+update+delete cycle must record `updateRecord`/`deleteRecord` on the backend's
+thread — pre-fix recorded the worker thread). Full suite 160/160 green.
+**Live re-run of the H8 40-edit modify pass** (PlanStan dev build against the
+fixed sibling, scratch Radicale :5233, both backends on the shared I/O
+thread): editing all 40 bulk `.ics` and letting the auto-sync push the
+modifications produced **zero** "Cannot create children" / "does not belong
+to the calling thread" / "database not open" lines (pre-fix: 41/41 updates
+emitted all three), `setRawIcs` logged "Updated ETag to:" for every update,
+and the on-disk `cached_items` etag rows matched the live server exactly
+(persist write now commits; pre-fix it silently failed every update). A clean
+SIGTERM restart skipped both mappings as unchanged (no spurious re-download of
+edited items), and a CTag-unchanged cycle served all items from the persistent
+cache with correct post-update content. Data converged both directions with no
+corruption. NOTE (orthogonal to O27): a *CTag-change* re-diff after restart
+still re-lists+re-downloads because the KDAV `EtagCache` that drives the
+delta's changed-item determination is not seeded from disk at startup — that
+is the separate roadmap-D2/H9 "persist/seed KDAV EtagCache" item, not this
+finding.
+
+Original report (for the record):
+
 
 Found by the CP-C/H8 live soak (PlanStan dev build, scratch Radicale :5233,
 both backends on the shared I/O thread — H7 topology). Editing 40 local

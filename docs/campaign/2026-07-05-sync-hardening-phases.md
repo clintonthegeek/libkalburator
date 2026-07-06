@@ -1004,7 +1004,29 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       convergence unaffected, verified by count). Pre-decided fix + RED
       recipe in §10b' (H8.5). Also **(6) teardown proof:** SIGTERM mid-
       bulk-sync exited clean in ~2 s.
-- [ ] **H8.5** applyBatch honors RecordWriter::BackendThread (O27; RED:
-      thread-recording stub on updateRecord/deleteRecord) — gates close-out
+- [x] **H8.5** applyBatch honors RecordWriter::BackendThread (O27; RED:
+      thread-recording stub on updateRecord/deleteRecord) — 2026-07-06.
+      Split `applyBatch`: the mass-delete guard decision still resolves on the
+      worker thread (it reaches the engine-thread `m_baselineStoreAnchor` via
+      BlockingQueuedConnection), but `writer->apply()` is now marshaled to the
+      backend's own thread for `Threading::BackendThread` writers via a second
+      `QMetaObject::invokeMethod(backend, ..., Qt::BlockingQueuedConnection)`;
+      `WorkerThread` writers keep the direct call. Three-marshal shape
+      (classify → guard → apply) dissolves the deadlock the old
+      contract-breaking shape dodged. RED
+      `steadyStateWrites_appliesOnBackendThread` (target LocalBackend on a
+      dedicated I/O thread) goes worker-thread→backend-thread; full suite
+      160/160 green (O26 flake passed this run too). **Live gate re-run
+      PASSED** (PlanStan dev build vs the fixed sibling, scratch Radicale
+      :5233, both backends on the shared I/O thread): 40-edit modify pass →
+      **zero** "Cannot create children" / "does not belong to the calling
+      thread" / "database not open" on the update path (pre-fix 41/41),
+      `setRawIcs` "Updated ETag to:" every update, on-disk `cached_items`
+      etags matched the live server exactly, clean SIGTERM restart skipped
+      unchanged (no spurious re-download) and served from the persistent cache
+      with correct content, data converged both ways. Orthogonal note: a
+      CTag-change re-diff after restart still re-lists because the KDAV
+      EtagCache isn't seeded from disk — separate roadmap-D2/H9 item, not O27.
+      FINDINGS O27 → Resolved.
 - [ ] **CP-C close-out (§10b item 3)** after H8.5: FINDINGS dispositions,
       doc archive, CLAUDE.md rewrite, H9 schedule/park decision
