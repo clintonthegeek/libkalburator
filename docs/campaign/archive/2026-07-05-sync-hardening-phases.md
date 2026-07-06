@@ -1,13 +1,15 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H5.5 done; **H6 done — v0.83 tagged 2026-07-05**
-(`feature/d1-threading` merged to `main` `--no-ff` @ `e32fac3`, annotated
-tag v0.83). CP-A + CP-B recorded (2026-07-05). All lib-side work (T1.1–T1.4,
-H1–H5.5) is on `main` and released; FINDINGS O16–O25 Resolved. **Next: H7 —
-PlanStan I/O-thread adoption** (repo `~/dev/PlanStan`, pin bump to v0.83,
-D0-mitigation removal, backend relocation). See §10 checklist — it is the
-single source of truth for progress; update it in the same commit as the work.
+**Date closed:** 2026-07-06
+**Status:** ✅ **CLOSED — campaign complete (2026-07-06).** Every §10 item is
+ticked. All lib-side phases (T1.1–T1.4, H1–H5.5) shipped in **v0.83**
+(2026-07-05); PlanStan I/O-thread adoption (H7) + live CP-C/H8 verification
+landed 2026-07-06; the final O27 applyBatch-contract fix (**H8.5**) shipped in
+**v0.84** (2026-07-06), with PlanStan's pin bumped v0.83→v0.84. FINDINGS
+O16–O27 all Resolved; O28 (post-crash phantom conflicts) and "seed KDAV
+EtagCache from disk" parked to roadmap D2/H9. This document is archived; it is
+retained as the campaign record. See §10 for the per-phase landing notes.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -1028,5 +1030,12 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       CTag-change re-diff after restart still re-lists because the KDAV
       EtagCache isn't seeded from disk — separate roadmap-D2/H9 item, not O27.
       FINDINGS O27 → Resolved.
-- [ ] **CP-C close-out (§10b item 3)** after H8.5: FINDINGS dispositions,
-      doc archive, CLAUDE.md rewrite, H9 schedule/park decision
+- [x] **CP-C close-out (§10b item 3)** — 2026-07-06. **Sync-hardening
+      campaign CLOSED.** FINDINGS O16–O27 all Resolved; O28 (post-crash
+      phantom conflicts) + "seed KDAV EtagCache from disk" parked to D2/H9
+      (see §10c). libkalburator tagged **v0.84** (O27/H8.5 patch atop v0.83);
+      PlanStan pin bumped v0.83→v0.84 and its CLAUDE.md campaign section
+      rewritten to "complete — see archive". Roadmap §5 D1 close-out + v0.84
+      lines added. This phase doc moved to `docs/campaign/archive/` with a
+      pointer left in FINDINGS. H9 = park (no scheduled work; items are
+      filed for pickup when a consumer needs them).

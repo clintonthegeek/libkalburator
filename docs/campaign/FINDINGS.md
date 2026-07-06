@@ -8,6 +8,13 @@ Two sections:
 
 Append, don't rewrite. New issues from any task go here, even off-topic.
 
+> **Sync-hardening campaign CLOSED 2026-07-06.** The phase plan
+> (`docs/campaign/2026-07-05-sync-hardening-phases.md`) is archived at
+> `docs/campaign/archive/2026-07-05-sync-hardening-phases.md`. It closed
+> FINDINGS **O16–O27** (all Resolved below); tags **v0.83** (H1–H6) and
+> **v0.84** (H8.5/O27). Still open from it: **O28** and a "seed KDAV
+> EtagCache from disk on startup" item, both parked to roadmap D2/H9.
+
 ---
 
 ## Open issues / watch items

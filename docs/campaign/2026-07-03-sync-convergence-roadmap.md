@@ -314,7 +314,17 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
 - [x] D1 N7 threading + O16–O25 hardening — **tagged v0.83 2026-07-05**
       (hardening H6): `feature/d1-threading` merged to `main` (`--no-ff`)
       as `e32fac3`. The sync-hardening campaign
-      (`docs/campaign/2026-07-05-sync-hardening-phases.md`) landed lib-side
-      phases T1.1–T1.4 + H1–H5.5, closing FINDINGS O16–O25. PlanStan
-      I/O-thread adoption remains open at hardening H7/H8.
-- [ ] D2 backlog triage
+      (`docs/campaign/archive/2026-07-05-sync-hardening-phases.md`) landed
+      lib-side phases T1.1–T1.4 + H1–H5.5, closing FINDINGS O16–O25.
+- [x] D1 close-out — PlanStan I/O-thread adoption (H7), live CP-C/H8
+      verification, and the O27 applyBatch contract fix (**H8.5**) all
+      landed. **Sync-hardening campaign CLOSED 2026-07-06**; phase doc
+      archived to `docs/campaign/archive/`. FINDINGS O16–O27 all Resolved;
+      O28 (post-crash phantom conflicts) parked to D2/H9.
+- [x] — tag **v0.84** (O27/H8.5 patch atop v0.83, 2026-07-06): steady-state
+      CalDAV updates now run `writer->apply()` on the backend's own thread
+      per `recordwriter.h`, eliminating the last live cross-thread QNAM/SQL
+      UB on the most common real-world path. PlanStan pin bumped v0.83→v0.84.
+- [ ] D2 backlog triage — now also holds O28 and the "seed KDAV EtagCache
+      from disk on startup" item (avoids the post-restart CTag-change
+      re-download surfaced during H8.5 live verification)
