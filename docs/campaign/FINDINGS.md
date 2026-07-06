@@ -494,6 +494,111 @@ flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
 standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
 under a sanitizer build.
 
+### O27 — `applyBatch`'s BackendThread branch runs `writer->apply()` on the worker thread — steady-state CalDAV *updates* do network I/O + SQL cross-thread (OPEN, found by CP-C/H8 live soak, 2026-07-06)
+
+Found by the CP-C/H8 live soak (PlanStan dev build, scratch Radicale :5233,
+both backends on the shared I/O thread — H7 topology). Editing 40 local
+`.ics` files and letting the 120s auto-sync push the modifications produced,
+for **every updated record**, live cross-thread violations in the app log:
+
+```
+QObject: Cannot create children for a parent that is in a different thread.
+(Parent is QNetworkAccessManager(0x...), parent's thread is QThread(0x...a0)
+ [backend I/O thread], current thread is QThread(0x...d78) [engine worker])
+qt.sql.qsqldatabase: QSqlDatabasePrivate::database: requested database does not belong to the calling thread.
+qt.sql.qsqlquery: QSqlQuery::prepare: database not open
+```
+
+**Root cause:** `RecordWriter::threading()` defaults to `BackendThread`,
+whose documented contract (`src/shape/recordwriter.h:34`) is "the engine
+wraps `apply()` in a BlockingQueuedConnection to the backend's own thread."
+The engine does not honor it: `applyBatch`'s BackendThread branch
+(`src/engine/syncengine.cpp` ~2945–2962, inside
+`unifiedContinueAfterConflicts`) marshals only the *classify* step to the
+backend thread, then calls `applyWithGuard(batch)` → `writer->apply()`
+**directly on the worker thread**, with a comment claiming "the apply()
+implementation marshals back to the backend thread internally if needed."
+`DefaultBlobWriter::apply` does no such marshalling — it calls
+`createRecord`/`updateRecord`/`deleteRecord` straight through, and
+`RemoteCalendarBackend::updateRecord` → `setRawIcs` does synchronous QNAM
+I/O (child QObject creation on a QNAM owned by the I/O thread — UB) plus
+thread-affine `QSqlDatabase` access (the etag/ctag cache writes **silently
+fail** with "database not open"). The branch's shape appears to be a
+deliberate deadlock dodge: `applyWithGuard` consults the mass-delete guard
+via a BlockingQueuedConnection to the engine-thread `m_baselineStoreAnchor`,
+which must not be entered from the backend thread — the fix traded a
+deadlock for a contract break.
+
+**Why H2/H7 missed it:** H2.1 marshaled `runPropertyPhase`'s
+DomainOperations sites and H2.2 split `dispatchFirstSync` (whose blob-mirror
+create/update/delete IS correctly marshaled, syncengine.cpp:1890); H7's
+sweep covered PlanStan GUI-side call sites. This path is engine-internal,
+update-only (creates route through the marshaled `pushItems` gate — which is
+why the 650-item initial push was clean), and no test asserts the writer
+contract.
+
+**Observed impact:** data converged (HTTP 204s; Qt networking tolerated the
+UB this run), but this is O20-class live UB on the *most common* real-world
+path — every steady-state modification pushed to a CalDAV server — and the
+per-item etag-cache persistence on that path never commits.
+
+**Impact scope-check (same soak, corrected):** an earlier read of the log
+suggested an infinite per-item re-push loop; counting disproved it — each
+of the 41 updates ran `setRawIcs` exactly once and the mapping skipped
+cleanly on later idle cycles. The reason convergence survives is that
+`setRawIcs` updates the **in-memory** `m_localEtags` before the persistent
+write fails, so within one app run the cache is coherent. The persistent
+failure ("database not open", one per update — 41/41 in the soak log)
+means the on-disk etag cache never learns post-update ETags: after an app
+**restart**, every previously-updated item re-downloads once on the next
+re-diff (cache rot, bounded). The campaign-blocking part of O27 is
+therefore the cross-thread QNAM/SQL UB itself — the exact class D1 exists
+to eliminate — not a convergence break.
+
+**Fix direction (pre-decided, CP-C, strong model):** split
+`applyWithGuard` — resolve the mass-delete guard decision on the worker
+thread FIRST (it only needs the batch + baseline count), then marshal the
+`writer->apply()` call to the backend's thread via
+`QMetaObject::invokeMethod(backend, ..., Qt::BlockingQueuedConnection)` for
+`Threading::BackendThread` writers, exactly as `recordwriter.h` promises
+(WorkerThread writers keep the current direct call). RED test: a
+thread-recording stub backend (H2.1's pattern) asserting
+`updateRecord`/`deleteRecord` execute on the backend's thread during a
+steady-state modify sync; today they record the worker thread. Fix phase:
+**H8.5** in the phase plan; campaign close (CP-C §3) is BLOCKED on it.
+
+### O28 — partial push + server crash leaves N same-UID/no-baseline records that re-conflict every cycle — recovery needs manual conflict resolution and busy-loops until then (OPEN, found by CP-C/H8 O17 live check, 2026-07-06)
+
+Found by CP-C/H8's kill-Radicale-mid-push pass: 30 new local items, server
+SIGKILLed after 7 creates had landed (6 logged + 1 whose 201 response died
+in flight). The failed mapping correctly persisted nothing (O17 fix
+working as designed), so the next cycle saw those 7 UIDs present on both
+sides with **no baseline** and byte-different content (local = original
+file bytes, remote = engine-serialized copy; PRODID/property-order differ,
+so contentHashes differ). Result: 7 conflicts, batch-deferred to the dock
+(hybrid threshold), mapping `success: false`, token not advanced —
+**every subsequent 120s cycle re-diffs all 680 records, re-detects the
+same 7 conflicts, and fails again**, indefinitely, until a user resolves
+them in the dock. The other 23 items pushed fine on the repair cycle; no
+data was lost or stranded (O17's actual acceptance holds).
+
+Safe-direction (conservative: never guess, never lose data) but two costs:
+(1) a crash the user never saw manufactures N phantom conflicts requiring
+manual resolution for records that are semantically identical; (2) until
+resolved, the mapping burns a full 680-record re-diff every cycle — the
+"busy cycles when idle" state the soak watches for.
+
+**Fix direction (H9 candidate, not campaign-blocking):** on
+same-UID/no-baseline pairs, compare *canonical* content (post-transcode)
+rather than native bytes before declaring conflict — byte-differing but
+canonically-equal pairs should silently adopt a baseline (either side's
+hash per-side, as the B4/N2 machinery already supports). Alternatively (or
+additionally) make `pushItems` treat a Created-on-server-but-response-lost
+item as adoptable on the next cycle via the ETag it can re-fetch. During
+H8 the state was cleared surgically (deleted the 7 server copies +
+`sync_conflicts` rows; next cycle re-created them cleanly with baselines)
+— noted here because the live vault intervention is not a product answer.
+
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)

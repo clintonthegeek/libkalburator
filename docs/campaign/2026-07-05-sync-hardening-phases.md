@@ -750,9 +750,54 @@ D0-mitigation todo).
    `docs/campaign/archive/` with a pointer left in FINDINGS. Decide
    H9's fate (schedule or park).
 
+## 10b'. Phase H8.5 — honor the RecordWriter BackendThread contract in applyBatch (O27; gates campaign close)
+
+Found live at CP-C/H8 (2026-07-06): `applyBatch`'s BackendThread branch
+(`src/engine/syncengine.cpp` ~2945–2962) runs `writer->apply()` on the
+**worker thread**, violating `recordwriter.h:34`'s documented contract, so
+every steady-state CalDAV *update* executes `setRawIcs`'s QNAM I/O and
+thread-affine QSql etag-cache writes cross-thread (live UB + silently
+failing cache persistence). Creates are unaffected (marshaled `pushItems`
+gate). Full evidence + root cause in FINDINGS **O27**.
+
+Pre-decided design (CP-C, strong model):
+
+1. **Split the guard from the apply.** In `applyBatch`, compute the
+   mass-delete-guard decision on the worker thread exactly as today
+   (`m_baselineStoreAnchor` BlockingQueuedConnection is engine-thread-safe
+   from there), mutating `batch.deletes` as needed — but do NOT call
+   `writer->apply()` inside that lambda.
+2. **Marshal the apply for BackendThread writers.** After the guard
+   decision, dispatch `writer->apply(colId, creates, updates, deletes)`
+   via `QMetaObject::invokeMethod(backend, ..., Qt::BlockingQueuedConnection)`
+   when `writer->threading() == Threading::BackendThread`; keep the direct
+   worker-thread call for `Threading::WorkerThread` writers (their apply()
+   marshals internally). This removes the deadlock the current shape was
+   dodging — the guard's engine-thread round-trip no longer nests inside a
+   backend-thread BlockingQueuedConnection.
+3. **RED first** (H2.1's thread-recording pattern): stub backend records
+   `QThread::currentThread()` in `updateRecord`/`deleteRecord`; a
+   steady-state modify sync (pre-seeded baseline, one changed record) must
+   record the backend's thread. Today it records the worker thread.
+4. **Acceptance gate:** RED test green; full libkalburator suite green
+   (O26 flake excepted); re-run the H8 40-edit live pass against scratch
+   Radicale with `QT_FATAL_WARNINGS` unset but the log grepped — zero
+   "Cannot create children" / "does not belong to the calling thread" /
+   "database not open" lines on the update path; etag cache rows visibly
+   updated (restart the app after an edit sync and confirm the next
+   re-diff serves that item from cache instead of re-downloading — the
+   bounded cache-rot symptom in FINDINGS O27's scope-check note). Then
+   CP-C §3 close-out may proceed.
+
 ## 10c. Phase H9 — deferred backlog (schedule at CP-C; file per-item plans when picked up)
 
 Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
+
+- **O28 post-crash phantom conflicts** (found CP-C/H8): same-UID/
+  no-baseline byte-differing pairs after a partial push re-conflict every
+  cycle (busy re-diff loop until manual dock resolution). Fix: canonical-
+  equality check before declaring baseline-less conflicts, or adopt-by-ETag
+  on create-response-lost. See FINDINGS O28.
 
 - **Backend op-queue serialization / async `davSyncRequest`** (audit
   B7 — nested-loop re-entrancy; the deepest remaining design debt).
@@ -927,4 +972,39 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       reproduce identically on `master` — see PlanStan
       `docs/bugs/preexisting-suite-failures-dev-offscreen.md`. **Next: CP-C/H8**
       (soak + adversarial live verification, strong-model checkpoint).
-- [ ] **CP-C / H8** soak + adversarial live verification; campaign closed; H9 triaged
+- [x] **CP-C / H8** soak + adversarial live verification — 2026-07-06 (Fable).
+      **Verification PASSED on all planned gates; campaign close BLOCKED on a
+      new finding (O27 → phase H8.5), same pattern as CP-B/O25.** Setup:
+      scratch Radicale :5233, fresh vault (local + caldav backends on the
+      shared I/O thread), `bulk` = 650 items, `soak` = 10, 120s auto-sync.
+      (1) N4/N7 saturation: 650-item initial push + fetch-back served from
+      cache, single-fetch pipeline confirmed (no redundant re-listing).
+      (2) Soak ≥30 min: RSS flat at 173.4 MB across 7+ consecutive idle
+      cycles after peaking 179 MB under load (O23 holds live); idle cycles
+      skip both mappings ("2 unchanged; 2 actually skipped") after the
+      accepted one-cycle re-diff lag; GUI responsive throughout.
+      (3) O17 kill-mid-push: SIGKILL after 7/30 creates landed → remaining
+      creates failed fast (no wedge), mapping success:false, token NOT
+      advanced (verified vs live fingerprint), server restarted → next
+      cycle repaired, 30/30 on server, no stranded item. Side-finding:
+      the 7 pre-kill copies (same-UID/no-baseline/byte-different)
+      re-conflict every cycle until manually resolved → FINDINGS **O28**
+      (H9 inventory, not campaign-blocking).
+      (4) O18 edit-mid-sync: foreign remote edit pulled to local ✓; a local
+      .ics edited 0.5 s into the pull cycle was picked up and pushed by the
+      very next cycle ✓ (no masking).
+      (5) Teardown: app closed mid-activity twice during the session — clean
+      exits, no hang (O22/B6 ordering holds).
+      **New finding O27:** the 40-edit modify pass exposed
+      `applyBatch`'s BackendThread branch calling `writer->apply()` on the
+      worker thread — every steady-state CalDAV update runs `setRawIcs`
+      QNAM I/O + etag-cache SQL cross-thread (live UB; the persistent
+      etag-cache write fails on every update — 41/41 in the soak log —
+      so updated items re-download once after each app restart; in-run
+      convergence unaffected, verified by count). Pre-decided fix + RED
+      recipe in §10b' (H8.5). Also **(6) teardown proof:** SIGTERM mid-
+      bulk-sync exited clean in ~2 s.
+- [ ] **H8.5** applyBatch honors RecordWriter::BackendThread (O27; RED:
+      thread-recording stub on updateRecord/deleteRecord) — gates close-out
+- [ ] **CP-C close-out (§10b item 3)** after H8.5: FINDINGS dispositions,
+      doc archive, CLAUDE.md rewrite, H9 schedule/park decision
