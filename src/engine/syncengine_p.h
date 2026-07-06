@@ -22,6 +22,10 @@
 
 #include <QObject>
 #include <QList>
+#include <QHash>
+#include <QMap>
+#include <QSet>
+#include <QPair>
 #include <QMutex>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -168,6 +172,22 @@ public slots:
     void setMassDeleteGuardFromEngine(Kalburator::Conflict::IMassDeleteGuard *guard);
 
     /**
+     * @brief H4 (O16): the fast-path pre-pass, moved off the engine/caller
+     * thread. Batch-queries fresh revisions per backend via
+     * Sync::ChangeDetection (marshaled onto each backend's own thread —
+     * that marshal now blocks the WORKER, never the engine/caller
+     * thread), compares against @p storedTokens, and computes the skip
+     * set + per-mapping FreshSyncState exactly as the pre-H4
+     * SyncEngine::prepareSyncFastPath did. Emits fastPathReady() back to
+     * the engine (queued) when done. @p storedTokens maps mappingId to
+     * (source token, target token), read by the engine from BaselineStore
+     * before dispatch (fast, local SQLite, engine-thread-affine).
+     */
+    void prepareFastPath(const QList<SyncMapping> &mappings,
+                         const QHash<QString, QPair<QString, QString>> &storedTokens,
+                         bool skipEnabled);
+
+    /**
      * @brief Resume after user resolves a conflict (monitored mode).
      * Called from main thread when user completes conflict resolution dialog.
      */
@@ -232,7 +252,7 @@ signals:
     // F2 Task 16: emitted from observeCancel() slot when cancellation
     // is forwarded from the engine side (via Task 17's queued
     // connection). Internal to the engine/worker pair. Used to wake
-    // nested QEventLoops in await<> and the conflict-pause loop.
+    // the fetch gate loops (dispatchSync) and the conflict-pause loop.
     void cancellationObserved();
 
     // Plan 1 Task 2 (2026-05-29) — engine→worker command-channel signals.
@@ -251,54 +271,25 @@ signals:
     void resumeAfterConflictRequested(ConflictResolution resolution,
                                        const QString &mergedIcal);
 
+    /**
+     * @brief H4 (O16): dispatches the fast-path pre-pass to the worker.
+     * Emitted by SyncEngine::driveQueue via
+     *   emit m_worker->fastPathRequested(mappings, storedTokens, skipEnabled);
+     * connected QueuedConnection to prepareFastPath(), same command-channel
+     * pattern as processSyncRequested above.
+     */
+    void fastPathRequested(const QList<SyncMapping> &mappings,
+                           const QHash<QString, QPair<QString, QString>> &storedTokens,
+                           bool skipEnabled);
+
+    /**
+     * @brief H4 (O16): reports the fast-path pre-pass result back to the
+     * engine thread (queued). Connected to SyncEngine::onFastPathReady.
+     */
+    void fastPathReady(const QSet<QString> &skipped,
+                       const QMap<QString, SyncEngine::FreshSyncState> &fresh);
+
 private:
-    /// F2 Task 16: run an inner QEventLoop until the operation
-    /// finishes OR cancellation is observed. On cancellation, request
-    /// the operation's own cancel() and re-enter the loop briefly
-    /// waiting for the operation to actually settle (operations are
-    /// not pre-emptible at the per-record level once started).
-    ///
-    /// Returns the same op pointer (caller still owns; typical
-    /// idiom: `auto *op = await(backend->fetchItems(id));` then
-    /// inspect op->state(), then op->deleteLater()).
-    ///
-    /// CRITICAL: must be called from the worker thread. Calling
-    /// from any other thread will run the inner QEventLoop on
-    /// that thread, defeating the cancellation observation
-    /// mechanism.
-    template <typename Op>
-    Op* await(Op *op)
-    {
-        static_assert(
-            std::is_base_of_v<SyncOperation, Op>,
-            "await<Op> requires Op to derive from SyncOperation");
-
-        if (!op) return op;
-        if (op->isFinished()) return op;
-
-        QEventLoop loop;
-        QObject::connect(op, &SyncOperation::finished,
-                         &loop, &QEventLoop::quit);
-        QObject::connect(this, &SyncEngineWorker::cancellationObserved,
-                         &loop, &QEventLoop::quit);
-        loop.exec();
-
-        if (m_cancelled.load(std::memory_order_acquire) && !op->isFinished()) {
-            op->cancel();
-            // Re-enter briefly waiting for the operation's own
-            // teardown (operations are not pre-emptible at the
-            // per-record level once started).
-            if (!op->isFinished()) {
-                QEventLoop teardownLoop;
-                QObject::connect(op, &SyncOperation::finished,
-                                 &teardownLoop, &QEventLoop::quit);
-                teardownLoop.exec();
-            }
-        }
-
-        return op;
-    }
-
     void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                           SyncBackendBase *src,
                           SyncBackendBase *tgt,
@@ -378,5 +369,19 @@ Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngineWorker::Request)
 // SyncEngineWorker::Mode was collapsed into SyncEngine::SyncBehavior in
 // Plan 1 Task 2 (2026-05-29). SyncBehavior already has Q_ENUM in
 // syncengine.h; no separate Q_DECLARE_METATYPE needed for the worker.
+
+// H4: SyncEngine::FreshSyncState's Q_DECLARE_METATYPE lives in the public
+// syncengine.h, right after the struct — moc-generated code for SyncEngine
+// (built from syncengine.h alone, without this private header) must see it
+// there, not here, or it implicitly instantiates the unregistered-type
+// fallback first and later conflicts with an explicit declaration in this
+// file. QList<SyncMapping>, QSet<QString>, and
+// QHash<QString,QPair<QString,QString>> need no declaration at all — Qt's
+// generic QMetaTypeId templates for QList/QSet/QHash/QMap/QPair (qmetatype.h's
+// Q_DECLARE_SEQUENTIAL_CONTAINER_METATYPE / Q_DECLARE_ASSOCIATIVE_CONTAINER_
+// METATYPE / std::pair machinery) already cover them once their element
+// types are registered. qRegisterMetaType calls for all of these live
+// alongside the other engineWorkerMetatypesRegistered registrations in
+// syncengine.cpp.
 
 #endif // KALBURATOR_SYNCENGINE_P_H

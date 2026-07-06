@@ -1,8 +1,21 @@
 # Phase D1 execution plan — DAV I/O off the GUI thread (→ v0.83)
 
 **Date:** 2026-07-04
-**Status:** NOT STARTED — checklist in §9 is the live state; update it in the
-same commit as the work it describes.
+**Status: SUPERSEDED (2026-07-05) — do not work from this document.**
+T1.1–T1.5 landed on `feature/d1-threading` and remain valid history
+(158→159 tests; T1.5's stall probe is intentionally RED pending the fix).
+A first-principles audit
+(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
+then re-verified the T1.5 blocker (FINDINGS O16) and found eight further
+issues (O17–O24), including a no-threading-required data-stranding bug and
+two unmarshaled cross-thread call sites this plan's §0 viability audit
+missed. The remaining work — O16–O24 plus this plan's Stages 2–4 (PlanStan
+adoption, v0.83) — is re-sequenced in
+**`docs/campaign/2026-07-05-sync-hardening-phases.md`**, which is now the
+live plan. This document is kept for its still-accurate reference
+material: the §0 history/postmortem constraints, the Stage 2–3 PlanStan
+construction-site and call-site inventories (consumed by hardening phase
+H7), and the §9 record of T1.1–T1.5.
 **Repos:** libkalburator (primary) + PlanStan (consumer adoption).
 **Baseline revisions for all file:line references below:** libkalburator
 `main` @ `928f318`, PlanStan `master` @ `ca17648b`. **Line numbers drift** —
@@ -475,13 +488,24 @@ move** → Stage 4 release steps 1-6.
 ## 9. Checklist (LIVE — update in the same commit as the work)
 
 Stage 1 (libkalburator, branch `feature/d1-threading`):
-- [ ] T1.1 shared lazily-created QNAM + entry assert
-- [ ] T1.2 CTagStore lazy-open
-- [ ] T1.3 FingerprintStore lazy-open
-- [ ] T1.4 relocation tests (remote / local / full-engine-on-io-thread)
-- [ ] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms)
+- [x] T1.1 shared lazily-created QNAM + entry assert
+- [x] T1.2 CTagStore lazy-open
+- [x] T1.3 FingerprintStore lazy-open
+- [x] T1.4 relocation tests (remote / local / full-engine-on-io-thread) —
+      also found and fixed two unmarshaled engine→backend calls
+      (`prepareSyncFastPath`/`persistRevision` called `ChangeDetection`
+      methods directly; now via a `runOnBackendThread()` helper)
+- [x] T1.5 GUI-stall probe + FakeCalDavServer latency hook (gate: <50 ms) —
+      **resolved by hardening phase H4** (2026-07-05, see
+      `2026-07-05-sync-hardening-phases.md` §7 and FINDINGS.md O16): the
+      fast-path pre-pass moved off the caller thread onto the worker
+      thread via a new command-channel signal pair
+      (`fastPathRequested`/`fastPathReady`). Probe is green; full suite
+      160/160 for the first time in the campaign. The blocker-analysis doc
+      (`docs/campaign/archive/2026-07-05-d1-t1.5-stall-blocker-analysis.md`) is archived.
 - [ ] T1.6 threading contract docs + FCB/ProviderManager audit notes
 - [ ] Stage 1 gate: full suite green; merged --no-ff to main; roadmap §5 touched
+      — T1.5 no longer blocks this; still pending T1.6 + the merge (H6)
 
 Stage 2 (PlanStan, branch `feature/d1-io-thread`):
 - [ ] T2.1 backends de-parented; ownership audit of all insert/delete paths

@@ -80,6 +80,11 @@ public:
      *
      * Empty string means "no persisted value" — engine treats as
      * changed (forces full sync, then primes cache for next time).
+     *
+     * Engine no longer calls this (sync-hardening H3, 2026-07-05); the
+     * engine's skip check now compares against its own per-mapping
+     * sync-progress token in BaselineStore instead. This method remains
+     * for backend-internal use and external consumers (e.g. WildPalms).
      */
     virtual QString cachedCollectionRevision(const QString &collectionId) const = 0;
 
@@ -90,6 +95,10 @@ public:
      * stored revision tokens. Backends that don't persist (rare;
      * only purely-stateless backends) override `persistsCollectionRevisions`
      * to return false.
+     *
+     * Engine no longer calls this (sync-hardening H3, 2026-07-05); see
+     * `cachedCollectionRevision`'s note above. This method remains for
+     * backend-internal use and external consumers (e.g. WildPalms).
      */
     virtual void primeRevisionCache(const QMap<QString, QString> &cache) = 0;
 

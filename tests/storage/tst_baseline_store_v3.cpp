@@ -52,7 +52,7 @@ private slots:
 };
 
 // ───────────────────────────────────────────────────────────────────────────
-// 1. Fresh DB: blob_baselines_v3 table exists and user_version == 5.
+// 1. Fresh DB: blob_baselines_v3 table exists and user_version == 7.
 // ───────────────────────────────────────────────────────────────────────────
 void TestBlobBaselineStoreV3::freshDb_hasV3Table()
 {
@@ -75,7 +75,7 @@ void TestBlobBaselineStoreV3::freshDb_hasV3Table()
             QSqlQuery q(db);
             q.exec(QStringLiteral("PRAGMA user_version"));
             QVERIFY(q.next());
-            QCOMPARE(q.value(0).toInt(), 6);  // B4: schema v6 (source_hash/target_hash added)
+            QCOMPARE(q.value(0).toInt(), 7);  // H3: schema v7 (sync_tokens table added)
 
             q.exec(QStringLiteral(
                 "SELECT name FROM sqlite_master WHERE type='table' "

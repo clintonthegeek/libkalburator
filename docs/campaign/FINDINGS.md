@@ -113,6 +113,387 @@ changes during downtime (which the digest already handles). The digest fetch is 
 local-DB read, so the warm-path is a marginal optimization. Revisit only if profiling
 shows the digest fetch is hot. (Decided 2026-05-26.)
 
+### O16 — `prepareSyncFastPath()` still blocks the caller's thread for network I/O after D1 relocation (RESOLVED, H4, 2026-07-05)
+
+D1 Stage 1's T1.5 GUI-stall probe (`tests/calendar/tst_backend_thread_relocation.cpp`,
+`stallProbe_relocatedBackends_stayResponsive`) FAILS as of this writing: with both mapping
+backends relocated to a dedicated I/O thread and a 200ms latency-injected fake CalDAV server,
+the calling ("GUI") thread still stalls ~213ms — almost exactly one network round-trip.
+
+Root cause: `SyncEngine::driveQueue()` calls `prepareSyncFastPath()` (line ~384)
+**synchronously, on whatever thread called `runSync()`**, *before* `startWorkerThread()`.
+`prepareSyncFastPath()` fetches fresh ctag/fingerprint revisions per backend
+(`collectionRevisions`, `cachedCollectionRevision`) to decide per-mapping skip-eligibility —
+this file's T1.4 fix (see the `runOnBackendThread()` helper added to `syncengine.cpp`) made
+those calls thread-*safe* (no more silent cross-thread QObject/SQLite access) by marshaling
+them via `QMetaObject::invokeMethod(base, ..., Qt::BlockingQueuedConnection)` when the backend
+lives on a different thread than the caller. That fix was necessary and correct, but it cannot
+by itself close the stall: `Qt::BlockingQueuedConnection` is *synchronous by definition* — it
+parks the calling thread until the target thread finishes, regardless of which thread actually
+does the work. Relocating the backend changes *who* performs the network I/O; it does not make
+the caller stop waiting for it.
+
+This is architecturally different from the ~19 pre-existing `BlockingQueuedConnection` sites in
+`syncengine.cpp`, which are all reached from `SyncEngineWorker`'s own dedicated
+`m_workerThread` — a thread that, by construction, is never the GUI/caller thread, so blocking
+it was always safe. `prepareSyncFastPath()` and `onWorkerSyncCompleted()`'s `persistRevision`
+(the same finding, smaller impact — it runs once per mapping *after* the worker already did the
+real work, so it adds a per-mapping tail stall rather than a per-sync head stall) are the two
+sites that run on the *caller's* thread instead, which pre-D1 was harmless (caller thread ==
+backend thread == a direct, already-fast call) and only becomes a real stall once backends
+relocate.
+
+**Scope note:** this is a materially smaller problem than the 120s bulk-transfer freeze (finding
+N7) that motivated D1 — it's bounded by one ctag/fingerprint round-trip per
+`ChangeDetection`-implementing backend per sync (typically the source AND target of every
+mapping), not by the size of the actual data being synced. D1's core deliverable — bulk
+fetch/push work no longer blocking the GUI — is proven working by
+`fullEngineRun_relocatedBackends_completesAcrossThreeThreads` in the same test file. This is a
+narrower, separate gap in the *pre-check* phase, not a regression in the fix's core mechanism.
+
+**Fix directions (not yet implemented, needs a decision before Stage 1 can close):**
+1. Make `prepareSyncFastPath()` run asynchronously as part of the worker thread's own sequence
+   (start the worker thread first; have it run the fast-path check, then decide skip-eligibility,
+   then process the queue — all before ever handing control back to the caller synchronously).
+   This is the architecturally clean fix and mirrors the existing worker-thread pattern, but it
+   touches `driveQueue()`'s control flow (cancellation, `m_isSyncing`, the DecSync active-
+   controller loop that currently runs inline before it) and needs its own test coverage.
+2. Accept the bounded stall for D1 and defer a full fix to D2, documenting the acceptance gate's
+   50ms threshold as "during the worker-thread-driven bulk phase" rather than the whole cycle.
+3. Disable `m_skipUnchangedMappings` (the fast-path feature) when backends are relocated, trading
+   away the optimization to avoid the stall — cheapest but regresses a real, shipped perf win.
+
+Not fixed this session. Flagging here + in the D1 execution plan's checklist so Stage 1 doesn't
+get marked closed while this is open.
+
+**H4 fix (2026-07-05):** implemented fix direction 1 above. `driveQueue()` no longer calls
+`prepareSyncFastPath()` inline; it starts the worker thread early and emits
+`SyncEngineWorker::fastPathRequested(mappings, storedTokens, skipEnabled)` (new engine→worker
+command-channel signal, same `QueuedConnection` pattern as `processSyncRequested`). The batched
+per-backend revision query — same logic as before — moved to a new worker slot,
+`SyncEngineWorker::prepareFastPath()`; its `runOnBackendThread()` marshal now blocks the
+**worker** thread (already expected to block on backend I/O) instead of the caller. The worker
+emits `fastPathReady(skipped, freshState)` back to the engine (queued); `SyncEngine::
+onFastPathReady()` stores the results and calls the same `finishDriveQueueSetup()` continuation
+`driveQueue()` itself uses for the clobber/no-fast-path branch — including its cancelled-
+teardown path, so a `future.cancel()` landing while the fast path is still in flight on the
+worker reports canceled and dispatches no mapping (new test:
+`cancelDuringFastPath_reportsCancelled`). `SyncEngine::FreshSyncState` moved from a private
+nested struct to public (it now crosses the engine/worker signal boundary); its
+`Q_DECLARE_METATYPE` lives in the public `syncengine.h`, not the private `syncengine_p.h`,
+because moc-generated code for `SyncEngine` (built from `syncengine.h` alone) needs to see the
+specialization before any implicit instantiation of the unregistered-type fallback.
+`stallProbe_relocatedBackends_stayResponsive` — RED since the D1 stall-probe test landed —
+is green as of this fix; full suite 160/160 green for the first time in the campaign.
+
+### O17 — failed apply phase + fetch-time CTag commit + skip fast-path strands changes (RESOLVED, H3, 2026-07-05)
+
+Highest-severity finding of the 2026-07-05 first-principles audit
+(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`, §A1 — full
+scenario and fix there). `RemoteCalendarBackend::fetchItems` commits the fresh CTag at
+*fetch* time (correct for the content cache); `prepareSyncFastPath()` reads that same
+backend-global token as if it meant "this mapping is up to date." A mapping whose fetch
+succeeds but whose apply phase fails **without writing to the target** is skipped on every
+subsequent cycle — the fetched-but-never-applied delta is stranded until an unrelated
+server change bumps the ctag. Also bites mapping B when mapping A shares B's source
+collection. No threading involved; live today with `skipUnchangedMappings` on (PlanStan
+default). Fix: per-`(mappingId, side)` token consumption recorded by the engine in
+BaselineStore on mapping success, token captured atomically with the fetch (audit §1.4/§6
+step T1.7). Needs a RED test first.
+
+**CP-A ruling (2026-07-05):** H3 design reviewed against post-H1/H2 code and CONFIRMED
+with two amendments (recorded in the phase plan §10, edited into its §6): BaselineStore
+schema bump is v6→v7 (not v5→v6 — B4 already stamped 6), and `clearMappingV3` must also
+clear the mapping's sync_tokens so an API-level baseline wipe can't leave skip-enabling
+tokens behind (A4). Pre-fetch-snapshot semantics, the present-but-unused ChangeDetection
+methods, and the accepted one-cycle re-diff lag are all confirmed as pre-decided. H3 may
+proceed.
+
+**H3 (2026-07-05):** implemented as amended. BaselineStore gained a `sync_tokens` table
+(schema v7) keyed `(mapping_id, side)`; `SyncEngine::prepareSyncFastPath`'s skip check
+now compares each side's fresh revision against `BaselineStore::syncToken` instead of
+the backend's own `cachedCollectionRevision`; `onWorkerSyncCompleted` persists
+`m_freshState`'s pre-fetch snapshot via `setSyncToken` only on `result.success`, and
+persists nothing on failure. `driveQueue`'s clobber branch now also calls
+`clearSyncTokens` for every enabled mapping (and clears `m_freshState`, which a fix
+found necessary — see below). `clearMappingV3` clears `sync_tokens` too, per the CP-A
+amendment. Pinned by four new tests in
+`tests/engine/tst_sync_token_soundness.cpp`: `applyFailure_doesNotStrandChange` (O17,
+using `RemoteCalendarBackend`/`FakeCalDavServer` as source — whose `fetchItems` commits
+its own CTag on a complete fetch independent of apply success — and `MockBackend` as a
+target with injectable write failure), `foreignEditBetweenCycles_defeatsSkip` (O18),
+`settledMapping_keepsSkipping` (skip still works), and `clobberRun_clearsTokens`.
+While writing the clobber test, found and fixed a real gap this phase's own change
+introduced: `driveQueue`'s clobber branch calls `clearSyncTokens` but does not run
+`prepareSyncFastPath` (by design — clobber skips the fast path), so a stale
+`m_freshState` entry from a PRIOR non-clobber run would survive and
+`onWorkerSyncCompleted` would silently re-persist it right after the clear. Fixed by
+clearing `m_freshState` in the same branch. Existing tests `tst_engine_skip_unchanged`
+and `tst_sync_convergence` (`fastPathSkipsGenuinelyUnchangedMapping`) were updated to
+assert against `BaselineStore::syncToken` instead of backend-side
+`cachedCollectionRevision`/`primeRevisionCache` — their observed behavior (including the
+two-real-cycles-before-settle characteristic) is unchanged, only the underlying
+mechanism their comments describe.
+
+### O18 — LocalBackend post-write fingerprint re-hash masks concurrent foreign edits (RESOLVED, H3, 2026-07-05)
+
+Audit §A2. `persistRevision`'s live re-hash after a successful mapping is written
+**directly** into LocalBackend's persisted FingerprintStore (`localbackend.cpp:188-192` —
+no N5-style staging, unlike the remote side). The re-hash includes any foreign edit made
+to the directory during the sync window, stamping it as already-synced → next cycles skip
+→ the edit is invisible until a second local change. Fix folded into O17's rework
+(delete `persistRevision`; LocalBackend computes its expected post-write fingerprint
+incrementally from its fetch snapshot + own write set).
+
+**H3 (2026-07-05):** `persistRevision` (and its live post-write re-query on both sides)
+is deleted outright. The engine now persists the pre-fetch snapshot
+(`prepareSyncFastPath`'s `m_freshState`) as each mapping+side's token in
+`BaselineStore::sync_tokens`, only on a successful run. A foreign edit landing after
+that snapshot is captured can never be absorbed into it, so it can't be masked — it
+shows up as a mismatch on the next fresh-vs-stored comparison. Pinned by
+`tst_sync_token_soundness::foreignEditBetweenCycles_defeatsSkip`.
+
+### O19 — remote half of persistRevision is inert; B5's one-cycle-lag goal never achieved for remote (RESOLVED, H3, 2026-07-05)
+
+Audit §A3. `RemoteCalendarBackend::primeRevisionCache` stages into in-memory
+`pendingCtag` (N5 fix) which the next fetch overwrites before it can be committed, and
+`cachedCollectionRevision` reads only the persisted store — so post-push cycles never
+skip (the exact lag B5's live re-query was written to remove), while the engine still
+pays one extra CTag PROPFIND per mapping per cycle **on the GUI thread** for the
+discarded result. Delete rather than repair (O17 rework).
+
+**H3 (2026-07-05):** deleted rather than repaired, per plan. The engine no longer calls
+`cachedCollectionRevision`/`primeRevisionCache` at all (grep-verified empty under
+`src/engine/`); both remain on the `ChangeDetection` interface, doc-commented as
+engine-unused, for backend-internal use and external consumers (WildPalms). The
+accepted cost is a one-cycle re-diff lag after any cycle that wrote (CP-A-confirmed
+safe-direction trade; see `tst_sync_convergence.cpp`'s
+`fastPathSkipsGenuinelyUnchangedMapping` comment for the mechanism under the new
+token design).
+
+### O20 — `runPropertyPhase` calls backends directly from the worker thread — live UB pre-D1 (RESOLVED, H2.1, 2026-07-05)
+
+Audit §B2. `syncengine.cpp:3043-3087` invokes `collectionProperties` /
+`applyCollectionProperties` with no marshaling; via `CalendarDomainOperations` these are
+direct backend virtual calls — unsynchronized `m_calendars` reads and, on a
+color/description diff, a PROPPATCH (`RemoteCalendarBackend::updateCalendar`) issued
+from the worker thread on a foreign-thread QNAM. Already a cross-thread QObject access
+in production **today** (worker → GUI-thread backend); post-D1 the T1.1 Q_ASSERT turns
+it into a debug crash. Missed by the viability audit because it routes through
+`DomainOperations`, not a `SyncBackendBase*` invokeMethod.
+
+**H2.1 (2026-07-05):** all four `runPropertyPhase` call sites now wrap the
+`collectionProperties`/`applyCollectionProperties` call in `runOnBackendThread(...)`.
+While writing the RED test (`propertyPhase_relocatedBackends_marshaledPerBackend`,
+`tst_backend_thread_relocation.cpp`) a **fifth, previously-unlisted call site** turned
+up: the T9 property-baseline snapshot in `unifiedContinueAfterConflicts`
+(`syncengine.cpp` ~3082, `opsUCC->collectionProperties(srcBackend, srcColId)`) — same
+unmarshaled direct-call shape, just outside `runPropertyPhase` proper. It masked the
+main fix (overwrote the recorded call-thread after the correctly-marshaled call ran) and
+is fixed the same way. Verified with a GDB breakpoint + backtrace that the marshaled
+call genuinely executes on the backend's own I/O thread (not just that the assertion
+passes) before landing.
+
+### O21 — `dispatchFirstSync` runs target-backend writes on the source backend's thread (RESOLVED, H2.2, 2026-07-05)
+
+Audit §B3. The first-sync blob mirror (`syncengine.cpp:1786-1833`) marshals one lambda
+to the **source** backend's thread and calls `tgt->loadRecordsOrError/createRecord/
+updateRecord/deleteRecord` inside it. Same-thread only by coincidence (pre-D1 GUI
+thread; post-D1 the shared-I/O-thread plan). Cross-thread UB the moment backends have
+distinct affinities. Either split into per-backend marshals or write "all sync backends
+share one I/O thread" into the D1 plan as a hard invariant.
+
+**H2.2 (2026-07-05):** split into three steps — source-thread load, target-thread load,
+then a target-thread apply of a create/update/delete list computed in between on the
+worker thread (no backend I/O in that middle step). Pinned by
+`firstSync_backendsOnDifferentThreads` with source and target relocated to two
+genuinely different I/O threads.
+
+### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (RESOLVED, H1+H5.5, 2026-07-05)
+
+**RESOLVED (H5.5, 2026-07-05).** The last live half — the KDAV bulk-traffic
+stack that H1.2's `nam()` timeout never covered — is closed by H5.5's per-job
+watchdog (see O25). All wedge surfaces are now accounted: transfer timeout on
+BOTH network stacks (H1.2 `nam()` + H5.5 KDAV jobs), honest busy-rejection
+(H1.3), and the fetch-gate `op->cancel()` on wake (H1.1). The CP-B live
+pulled-cable smoke passes end-to-end (fail-within-timeout, post-`SIGCONT`
+recovery, stranded item lands). Only the `stopWorkerThread` mid-marshal
+deadlock note remains parked in H9 (a distinct teardown-ordering concern, not
+the runtime wedge). Original finding + H1 partial below.
+
+
+
+Audit §B4 (with B5/B6 adjuncts). `davSyncRequest` sets no transferTimeout and no
+watchdog; engine marshals/gate-awaits are unbounded; a hung request leaves
+`m_isSyncing` true forever and every later `runSync()` returns a rejected future
+**indistinguishable from a successful empty run**. Sync dies silently until app
+restart. Also: cancellation is queued and cannot interrupt blocking marshals; the gate
+never calls `op->cancel()`; `stopWorkerThread` deadlocks pre-D1 if called mid-marshal.
+
+**H1 (2026-07-05) closed two of the four halves:** (a) H1.2 gives
+`RemoteCalendarBackend`'s lazy QNAM a 30s `setTransferTimeout` (test-overridable via
+`setTransferTimeoutMs`), so a stalled `davSyncRequest` now fails instead of hanging
+forever; (b) H1.3 makes the busy-rejection in `SyncEngine::runSync` report an explicit
+failed `SyncResult` (`"rejected: a sync is already running"`) instead of an empty list,
+so it's no longer indistinguishable from a successful no-op. Remaining halves (not
+H1's job): the fetch-gate `op->cancel()` call is now wired (H1.1, see O24), but
+`stopWorkerThread`'s mid-marshal deadlock risk is untouched — parked for a later phase.
+
+**CP-B live smoke (2026-07-05): the wedge is still reproducible on the KDAV job path**
+— H1.2's timeout only covers the backend's own QNAM (`davSyncRequest`), not the KDAV
+jobs that carry the item listing/fetch/write traffic. See **O25** for the live repro,
+root cause, and the H5.5 fix phase. (H5.5 landed 2026-07-05 — this half is now closed;
+see the RESOLVED banner at the top of this entry and O25.)
+
+### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (RESOLVED, 2026-07-05)
+
+Audit §C1/C2. The dispatchSync gate ops (`syncengine.cpp:2122-2165`, `:2245-2282`) are
+never deleted — remote ops are unparented (leak until exit), local ops accumulate on the
+backend — each retaining the entire fetched collection (`setFetchedItems`), ~720
+snapshots/day at 120 s cadence. And the pipeline fetches each side twice (gate
+`fetchItems` + `loadRecords`→`fetchItems` again) with ~4 CTag PROPFINDs per mapping per
+cycle where one fetch + one PROPFIND would do.
+
+**H1.1 (2026-07-05) closed the leak half:** both gate blocks now `deleteLater()` the
+fetch op on every exit path (success, cancelled, failed). Pinned by
+`gateOps_areDeleted_afterSync` (`tst_backend_thread_relocation.cpp`), which asserts zero
+`SyncOperation` children on either backend after one sync cycle, and still zero after a
+second (no per-cycle regrowth).
+
+**H5 (2026-07-05) closed the double-fetch half.** Added
+`SyncBackendBase::recordsFromLastFetch(collectionId, records, errorMessage)` — a
+single-shot memo of the most recent successful `fetchItems()`, served without new I/O,
+falling back to `loadRecordsOrError()` when the memo is absent (backends with no fetch
+cache, or a gate op that didn't succeed). `LocalBackend` and `RemoteCalendarBackend`
+populate the memo: `LocalBackend::fetchItems` builds the `BackendRecord` list inline from
+the bytes already in hand (no second disk read); `RemoteCalendarBackend::fetchItems`
+hooks `SyncOperation::finished` once (fires uniformly across every completion branch —
+cache hit, cache miss, full network fetch) rather than touching each of the ~9
+`op->complete()` call sites individually. `dispatchSync`'s two "Fetch source/target
+records" blocks now call `recordsFromLastFetch` instead of `loadRecordsOrError` whenever
+the gate's own `fetchItems()` succeeded.
+
+Landing also fixed a **latent hash-instability bug** this phase's own test surfaced:
+`LocalBackend::fetchItems`'s file read used `QIODevice::ReadOnly | QIODevice::Text`,
+while `recordFromFile()` (the `loadRecords()`/baseline path) read the same file without
+`Text` mode. `Text` mode strips `\r` on read, so the two paths produced different bytes
+— and therefore different `contentHash` values — for the identical file, which
+`perRecordDiff` read as "target changed since baseline", manufacturing a spurious
+Conflict in place of a genuine Delete (`tst_sync_convergence::remoteDeleteRemovesExactlyOneLocally`
+failure during H5 development). Fixed by dropping `QIODevice::Text` from `fetchItems`'s
+read, matching `recordFromFile()`.
+
+**RED tests** (`tst_backend_thread_relocation.cpp`): `singleFetch_localBackends_noRedundantRead`
+(a `recordsFromLastFetchFellBackCount` counter on a `LocalBackend` test subclass — isolates
+the gate's own fallback decision from unrelated legitimate re-reads elsewhere, e.g.
+`classifyForWriter`'s diff classification and the post-write hash-verification refetch,
+both out of this phase's scope) and `singleFetch_remoteBackend_noRedundantListing` (a
+`fetchStarted` `QSignalSpy` count on `RemoteCalendarBackend`, measured only on the
+steady-state second sync cycle — cycle 1's `dispatchFirstSync` fast path is a separate,
+out-of-scope code path with its own reads). Both confirmed RED against
+`feature/d1-threading` @ `16a5c14` (H4), GREEN after the fix. Full suite 160/160 green.
+
+### O24 — the cancellation gate doesn't gate LocalBackend; F2 cancellation only ever tested against MockBackend's model (RESOLVED by H1.1, 2026-07-05)
+
+Audit §C3. `LocalBackend::fetchItems` defers via `QTimer::singleShot`, so the gate sees
+a **Pending** op and its `state() == Running` check skips the await entirely — no
+cancellation window, full directory parse queued anyway into the leaked op. Remote
+passes the gate only via an AutoConnection same-thread coincidence. Check should be
+`!op->isFinished()`. Related: `SyncEngineWorker::await<Op>` is dead code (zero callers).
+
+**Resolved by H1 (2026-07-05):** H1.1 changed both fetch-gate await conditions from
+`state() == Running` to `!isFinished()`, so a `Pending` op (LocalBackend's shape) is
+now awaited correctly, and on cancellation the gate calls `fetchOp->cancel()` and
+re-enters a short teardown loop (mirroring the deleted `await<Op>`'s semantics) before
+returning. H1.4 deleted `SyncEngineWorker::await<Op>` itself (verified zero call sites
+via `grep -rn "await(" src/`) and fixed the false "sync runs in worker thread" comment
+in `localbackend.cpp`.
+
+### O25 — KDAV job surface has NO transfer timeout; H1.2's fix never covered the primary traffic path (RESOLVED, H5.5, 2026-07-05)
+
+**RESOLVED (H5.5, 2026-07-05).** Added a per-job watchdog on
+`RemoteCalendarBackend` (`startJobWithWatchdog(KJob*, onTimeout)`) and routed
+all nine KDAV job start sites (collections-fetch discovery, `fetchItems`
+list + multiget, `startSync`/`pushItems` creates, `deleteItems`/`removeItem`/
+`startSync` deletes, modify) through it. A single-shot `QTimer` of
+`m_transferTimeoutMs`, on expiry, detaches the job from our slots and runs an
+`onTimeout` that fails/settles the owning `SyncOperation` exactly as that
+site's `job->error()` branch would (a `settleIfDone` lambda was extracted in
+`deleteItems` to share the accounting tail with the timeout path, mirroring
+`pushItems`).
+
+**Design correction vs the CP-B pre-decision:** the phase plan's
+`job->kill(KJob::EmitResult)`-drives-the-existing-handler mechanism is INERT
+on KDAV 6.27.0 — `KJob::kill()` is a no-op unless the subclass overrides
+`doKill()` (default returns false, emits nothing), and no KDAV 6.27.0 job
+overrides it (verified against installed headers + KDE source `v6.27.0`;
+jobs track KIO subjobs manually with no abort path). Implementing the plan
+verbatim left both RED tests hanging. The watchdog now fails the op directly
+instead of relying on `kill()`; RED-recipe and acceptance gate unchanged.
+Full detail in the H5.5 §8b design block (implementation-time correction).
+
+**Verified:** RED tests `fetchItems_droppedRequests_failsWithinTimeout` /
+`pushItems_droppedRequests_failsWithinTimeout` (drop-mode server) go from
+hanging to failing Failed within ~3× a 2000 ms window; the CP-B live
+pulled-cable smoke re-ran ALL PASS — phase 4's frozen-server sync failed in
+9.5 s with `"Failed to list items: transfer timed out"` (the list-job
+watchdog), the engine accepted a fresh runSync after `SIGCONT`, and the
+stranded item landed (O17's live proof). Original finding below.
+
+
+
+Found by CP-B's pulled-cable live check (scratch driver
+`tests/engine/live_cpb_smoke.cpp`, gated behind `KALBURATOR_BUILD_LIVE_PROBES`; real
+Radicale, both backends relocated onto one shared I/O thread — the H7 topology).
+SIGSTOP-freezing the server mid-cycle (sockets stay open, no responses — a true
+pulled-cable stall, not a connection error) produced exactly O22's wedge **despite
+H1.2**: the sync future never finished (>90 s with a 5 s `setTransferTimeoutMs`), the
+worker sat blocked in the fetch gate forever, and every subsequent `runSync` was
+(honestly, per H1.3) rejected with "a sync is already running".
+
+**Why H1.2 didn't cover it:** `RemoteCalendarBackend` has TWO network stacks. The
+`davSyncRequest`/`nam()` path (CTag PROPFINDs, `collectionRevision`) got the H1.2
+timeout — and it worked: the smoke's fast-path CTag query failed within its 5 s window.
+But the bulk traffic — `fetchItems`' `KDAV::DavItemsListJob` + multiget fetches, and
+the write path's `DavItemCreateJob`/`DavItemModifyJob`/`DavItemDeleteJob`,
+`DavCollectionsFetchJob` discovery — runs on **KDAV's internal QNAM**, which KDAV does
+not expose (no public `networkAccessManager()` accessor, no timeout API on
+`DavJobBase`; verified against the installed KF6 headers). H1.2's RED test drove
+`collectionRevision()` — an `m_nam` path — so it passed without ever exercising the
+KDAV surface. The gate awaits the fetch op unboundedly, so a KDAV job that never
+finishes wedges the engine permanently. O22 is therefore still live for the most
+common real-world stall (server/network dies mid-listing or mid-PUT).
+
+**Timeline observed live:** frozen server → fast-path PROPFIND times out at 5 s
+(fresh token empty → mapping correctly not skipped) → gate `fetchItems` →
+`DavItemsListJob` stalls indefinitely → future never finishes → engine wedged.
+
+**Fix direction (pre-decided at CP-B; phase H5.5 in the phase plan):** per-job
+watchdog in `RemoteCalendarBackend` — a small helper that starts a `QTimer`
+(`m_transferTimeoutMs`) alongside every KDAV job and calls `job->kill(KJob::EmitResult)`
+on expiry so the existing `result` handlers run their normal error path; timer torn
+down in the handler. RED test: point `fetchItems` at `FakeCalDavServer` with
+`setDropRequests(true)` (H1.2's drop mode already exists) and require the fetch op to
+finish Failed within the watchdog window; today it hangs. Same recipe for one write-path
+job. Release gate: v0.83 (H6) is BLOCKED until H5.5 lands and the CP-B pulled-cable
+smoke passes end-to-end (fail within timeout, recover after server resume, stranded
+item lands — the O17 live proof rides on the same re-run).
+
+### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (OPEN, observed at H5.5, 2026-07-05)
+
+Observed during H5.5's full-suite acceptance run: `tst_engine_cancellation`
+(159/160 others green) SEGFAULTed once, then passed on 2 of the next 3
+isolated re-runs — a nondeterministic crash, ~1-in-3. **Not caused by H5.5:**
+the test drives `MockBackend` pairs only (`tst_engine_cancellation.cpp:108-129`,
+`:482-486`) and never touches `RemoteCalendarBackend` or the new
+`startJobWithWatchdog` path; H5.5's diff is confined to
+`remotecalendarbackend.{h,cpp}`. Almost certainly a pre-existing race in the
+cancellation teardown path (cancel-during-marshal against the mock), surfaced
+by chance under the parallel suite. Not triaged here (out of H5.5 scope);
+flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
+standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
+under a sanitizer build.
+
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)

@@ -7,10 +7,10 @@
 // in for the WP hub.
 //
 // What this test covers:
-//   1. The prime path — a real sync records fresh revisions on both sides
-//      (engine onWorkerSyncCompleted -> primeRevisionCache); the caches go
-//      from empty to populated.
-//   2. The skip decision — with both sides' cached revision matching their
+//   1. The prime path — a real sync records fresh sync-progress tokens on
+//      both sides (H3: engine onWorkerSyncCompleted -> BaselineStore::
+//      setSyncToken); the tokens go from empty to populated.
+//   2. The skip decision — with both sides' stored token matching their
 //      current content digest, prepareSyncFastPath skips the mapping.
 //   3. A source content change defeats the skip on the next pass.
 //
@@ -263,40 +263,43 @@ void TestEngineSkipUnchanged::settledMappingSkips_mutationDefeatsSkip()
         return f;
     };
 
-    // Record each side's current revision as its synced baseline — exactly
-    // what onWorkerSyncCompleted does via primeRevisionCache after a
-    // successful sync. Used to put the mapping into a known "settled" state.
-    auto primeToCurrent = [](GenericSqliteBackend *b, const QString &col) {
-        b->primeRevisionCache({{col, b->collectionRevision(col)}});
+    // Record each side's current revision as its synced sync-progress token
+    // (H3: engine-owned, in BaselineStore — exactly what
+    // onWorkerSyncCompleted::setSyncToken does after a successful sync).
+    // Used to put the mapping into a known "settled" state.
+    auto primeToCurrent = [&](GenericSqliteBackend *b, const QString &col,
+                              const QString &side) {
+        baselines.setSyncToken(mappingId, side, b->collectionRevision(col));
     };
 
-    // --- Prime path: a real first sync records fresh revisions on BOTH sides
-    // (the engine's onWorkerSyncCompleted -> primeRevisionCache path). No
-    // baseline yet, so it does not skip. We assert the caches went from empty
-    // to populated; the actual record propagation between two sqlite sinks is
-    // exercised elsewhere (and is irrelevant to the skip machinery). ---
+    // --- Prime path: a real first sync records fresh sync-progress tokens
+    // on BOTH sides (the engine's onWorkerSyncCompleted -> setSyncToken
+    // path, H3). No token yet, so it does not skip. We assert the tokens
+    // went from empty to populated; the actual record propagation between
+    // two sqlite sinks is exercised elsewhere (and is irrelevant to the
+    // skip machinery). ---
     {
-        QVERIFY(source->cachedCollectionRevision(sourceCollection).isEmpty());
-        QVERIFY(target->cachedCollectionRevision(targetCollection).isEmpty());
+        QVERIFY(baselines.syncToken(mappingId, QStringLiteral("source")).isEmpty());
+        QVERIFY(baselines.syncToken(mappingId, QStringLiteral("target")).isEmpty());
 
         auto f = runOnce();
         QVERIFY(f.isFinished());
         QVERIFY2(f.resultAt(0).first().success,
                  qUtf8Printable(QStringLiteral("first sync failed: ")
                                 + f.resultAt(0).first().errorMessage));
-        QVERIFY2(!sawSkipLog(mappingId), "first sync must not skip (no baseline)");
+        QVERIFY2(!sawSkipLog(mappingId), "first sync must not skip (no token)");
 
-        QVERIFY2(!source->cachedCollectionRevision(sourceCollection).isEmpty(),
-                 "engine must prime the source revision after a successful sync");
-        QVERIFY2(!target->cachedCollectionRevision(targetCollection).isEmpty(),
-                 "engine must prime the target revision after a successful sync");
+        QVERIFY2(!baselines.syncToken(mappingId, QStringLiteral("source")).isEmpty(),
+                 "engine must persist the source sync token after a successful sync");
+        QVERIFY2(!baselines.syncToken(mappingId, QStringLiteral("target")).isEmpty(),
+                 "engine must persist the target sync token after a successful sync");
     }
 
-    // --- Skip decision: with both sides' cached revision matching their
-    // current content digest (nothing changed since the recorded baseline),
+    // --- Skip decision: with both sides' stored token matching their
+    // current content digest (nothing changed since the recorded token),
     // prepareSyncFastPath must skip the mapping. ---
-    primeToCurrent(source.get(), sourceCollection);
-    primeToCurrent(target.get(), targetCollection);
+    primeToCurrent(source.get(), sourceCollection, QStringLiteral("source"));
+    primeToCurrent(target.get(), targetCollection, QStringLiteral("target"));
     {
         auto f = runOnce();
         QVERIFY(f.isFinished());

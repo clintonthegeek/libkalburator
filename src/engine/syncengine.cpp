@@ -38,6 +38,7 @@
 
 #include <QDebug>
 #include <QJsonArray>
+#include <QThread>
 #include <QJsonObject>
 #include <QHash>
 #include <QMap>
@@ -85,6 +86,28 @@ static QStringList materializedLoss(const Kalburator::Shape::Pipeline &pipe,
         lost << k;
     }
     return lost;
+}
+
+// D1: marshal a synchronous call onto a backend's own thread. Unlike the
+// engine's ~19 QMetaObject::invokeMethod(..., BlockingQueuedConnection)
+// sites reached from SyncEngineWorker's dedicated internal thread (which is,
+// by construction, never the same thread as any backend), the two call
+// sites this guards (prepareSyncFastPath / onWorkerSyncCompleted's
+// persistRevision) run on SyncEngine's OWN thread — pre-D1 that is always
+// the same thread as the backend (direct calls worked fine), and only
+// D1's backend relocation makes it a genuinely different thread sometimes.
+// Unconditional BlockingQueuedConnection deadlocks in the same-thread case
+// (posting an event to your own queue, then blocking waiting for yourself
+// to process it) — found by tst_sync_convergence / tst_engine_skip_unchanged
+// timing out after this fix was first written without the guard.
+template <typename Func>
+void runOnBackendThread(QObject *backend, Func &&fn)
+{
+    if (QThread::currentThread() == backend->thread()) {
+        fn();
+    } else {
+        QMetaObject::invokeMethod(backend, std::forward<Func>(fn), Qt::BlockingQueuedConnection);
+    }
 }
 
 } // anonymous namespace
@@ -142,6 +165,10 @@ void SyncEngine::setupWorkerConnections()
             this, &SyncEngine::onWorkerSyncError, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
+    // H4 (O16): fast-path pre-pass result, reported back from the worker
+    // thread to the engine thread.
+    connect(m_worker, &SyncEngineWorker::fastPathReady,
+            this, &SyncEngine::onFastPathReady, Qt::QueuedConnection);
 
     // Engine→worker command channel (replaces string-form invokeMethod).
     // SyncEngine emits these *Requested signals on m_worker; Qt's
@@ -153,6 +180,9 @@ void SyncEngine::setupWorkerConnections()
             m_worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
     connect(m_worker, &SyncEngineWorker::resumeAfterConflictRequested,
             m_worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
+    // H4 (O16): dispatches the fast-path pre-pass onto the worker thread.
+    connect(m_worker, &SyncEngineWorker::fastPathRequested,
+            m_worker, &SyncEngineWorker::prepareFastPath, Qt::QueuedConnection);
 
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
@@ -337,10 +367,10 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     m_lastResult.startTime = QDateTime::currentDateTime();
 
     // P1.T3: prime the queue collaborator (clears lost resources,
-    // result accumulator, index, and sets DispatchMode::Queue). The
-    // filter (if any) was passed through from runSync()'s subset
-    // branch via the helper parameter.
-    m_queue.prime(m_syncMappings, std::move(filter));
+    // result accumulator, index, and sets DispatchMode::Queue). Not moved
+    // from `filter` (H4: the fast-path branch below reuses it below to
+    // scope which mappings get a stored-token lookup / dispatch).
+    m_queue.prime(m_syncMappings, filter);
 
     // Run active controllers first (they're fast, synchronous)
     for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
@@ -358,11 +388,64 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // a forced wipe+repush, and "unchanged" is judged against state the
     // clobber deliberately discards.
     if (!m_cancelled && !m_syncMappings.isEmpty() && !m_queueOverride.clobber) {
-        prepareSyncFastPath();
-    } else {
-        m_skippedMappingIds.clear();
+        // H4 (O16): the fast-path pre-pass used to run synchronously right
+        // here, on driveQueue()'s caller thread — the last engine-side
+        // GUI-thread-blocking I/O. It now dispatches to the worker thread
+        // (started early, for this purpose) via the same command-channel
+        // pattern as processSyncRequested/processSync; the continuation
+        // lives in onFastPathReady(). Reading stored tokens stays here:
+        // BaselineStore is fast local SQLite and engine-thread-affine.
+        startWorkerThread();
+
+        QList<SyncMapping> candidates;
+        QHash<QString, QPair<QString, QString>> storedTokens;
+        for (const auto &mapping : m_syncMappings) {
+            if (!mapping.enabled) continue;
+            if (filter && !filter->contains(mapping.id)) continue;
+            candidates.append(mapping);
+            if (m_baselineStore) {
+                storedTokens[mapping.id] = qMakePair(
+                    m_baselineStore->syncToken(mapping.id, QStringLiteral("source")),
+                    m_baselineStore->syncToken(mapping.id, QStringLiteral("target")));
+            }
+        }
+        emit m_worker->fastPathRequested(candidates, storedTokens, m_skipUnchangedMappings);
+        return; // continuation: onFastPathReady() -> finishDriveQueueSetup()
     }
 
+    m_skippedMappingIds.clear();
+    // H3: a clobber deliberately discards prior state, so any stored
+    // sync-progress token must go with it — otherwise a clobbered
+    // mapping could skip next cycle against a token that no longer
+    // corresponds to anything real. Safe to over-clear (all enabled
+    // mappings, not just the filtered subset): worst case is one
+    // extra redundant re-diff, never a masked change. Also clear
+    // m_freshState: without the fast-path pre-pass run (skipped on a
+    // clobber), a stale entry from a PRIOR non-clobber run would
+    // otherwise survive and onWorkerSyncCompleted would immediately
+    // re-persist it after this clearSyncTokens call — silently
+    // undoing the clear.
+    if (m_queueOverride.clobber && m_baselineStore) {
+        for (const auto &mapping : m_syncMappings) {
+            if (!mapping.enabled) continue;
+            m_baselineStore->clearSyncTokens(mapping.id);
+        }
+    }
+    m_freshState.clear();
+
+    finishDriveQueueSetup();
+}
+
+void SyncEngine::onFastPathReady(const QSet<QString> &skipped,
+                                 const QMap<QString, FreshSyncState> &fresh)
+{
+    m_skippedMappingIds = skipped;
+    m_freshState = fresh;
+    finishDriveQueueSetup();
+}
+
+void SyncEngine::finishDriveQueueSetup()
+{
     if (m_syncMappings.isEmpty() || m_cancelled) {
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
@@ -380,7 +463,8 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         return;
     }
 
-    // Start worker thread for mapping-based sync
+    // Start worker thread for mapping-based sync (idempotent — already
+    // running when this is reached via the fast-path branch above).
     startWorkerThread();
     processQueue();
 }
@@ -402,10 +486,11 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     m_freshState.clear();
     m_skippedMappingIds.clear();
     // Note: this also means that single-mapping runSync does NOT update
-    // Phase-2 ctag/fingerprint baselines on success. That's correct —
-    // baseline updates happen as part of the multi-mapping pre-pass
-    // (prepareSyncFastPath), and a stale single-mapping baseline would
-    // be more dangerous than no baseline update.
+    // this mapping's sync-progress tokens (H3) on success. That's correct —
+    // token updates happen as part of the multi-mapping pre-pass
+    // (prepareSyncFastPath / onWorkerSyncCompleted's m_freshState lookup),
+    // and a stale single-mapping token would be more dangerous than no
+    // token update.
 
     // F2 Task 23 follow-up: cancel-precheck. If cancellation was
     // observed before the worker dispatches (e.g., the caller
@@ -513,9 +598,19 @@ QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
 {
     if (m_isSyncing || m_currentIface) {
         // Reject overlapping runs cleanly with a finished failed future.
+        // H1.3/O22: an empty result list is indistinguishable from a
+        // successful no-op run — report an explicit failed SyncResult
+        // instead, so callers (and PlanStan's SyncRunCoordinator) can tell
+        // "rejected: already running" apart from "nothing to do".
+        qWarning() << "SyncEngine::runSync: rejected — a sync is already running";
+        SyncResult rejectedResult;
+        rejectedResult.success = false;
+        rejectedResult.errorMessage =
+            QStringLiteral("rejected: a sync is already running");
+        rejectedResult.endTime = QDateTime::currentDateTime();
         QFutureInterface<QList<SyncResult>> rejected;
         rejected.reportStarted();
-        rejected.reportResult(QList<SyncResult>{});
+        rejected.reportResult(QList<SyncResult>{rejectedResult});
         rejected.reportFinished();
         return rejected.future();
     }
@@ -657,93 +752,6 @@ void SyncEngine::setSkipUnchangedMappings(bool enabled)
 {
     m_skipUnchangedMappings = enabled;
     qDebug() << "SyncEngine::setSkipUnchangedMappings:" << enabled;
-}
-
-void SyncEngine::prepareSyncFastPath()
-{
-    m_skippedMappingIds.clear();
-    m_freshState.clear();
-
-    if (!m_registry) return;
-
-    // Collect collection IDs per backend that implements Sync::ChangeDetection.
-    QMap<QString, QStringList> colIdsByBackend;
-    auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
-        SyncBackendBase *base = m_registry->backendInstance(backendId);
-        if (dynamic_cast<Sync::ChangeDetection*>(base))
-            colIdsByBackend[backendId].append(colId);
-    };
-    for (const auto &mapping : m_syncMappings) {
-        if (!mapping.enabled) continue;
-        collectChangeDetection(mapping.sourceBackend, mapping.sourceCalendar);
-        collectChangeDetection(mapping.targetBackend, mapping.targetCalendar);
-    }
-
-    // Fetch fresh revisions per backend (batched where the backend supports it).
-    QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
-    for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
-        SyncBackendBase *base = m_registry->backendInstance(it.key());
-        auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-        if (!cd) continue;
-        QStringList ids = it.value();
-        ids.removeDuplicates();
-        const QMap<QString, QString> revs = cd->collectionRevisions(ids);
-        for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
-            freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
-    }
-
-    if (!m_baselineStore) return;
-
-    int wouldSkipCount = 0;
-    int actualSkipCount = 0;
-    for (const auto &mapping : m_syncMappings) {
-        if (!mapping.enabled) continue;
-
-        FreshSyncState fresh;
-        bool sourceCovered = false;
-        bool targetCovered = false;
-        bool sourceUnchanged = false;
-        bool targetUnchanged = false;
-
-        auto checkSide = [&](const QString &backendId, const QString &colId,
-                              QString &outRevision, bool &covered, bool &unchanged) {
-            SyncBackendBase *base = m_registry->backendInstance(backendId);
-            auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-            if (!cd) return;
-            covered = true;
-            outRevision = freshRevisions.value(qMakePair(backendId, colId));
-            const QString stored = cd->cachedCollectionRevision(colId);
-            unchanged = !outRevision.isEmpty() && !stored.isEmpty()
-                        && outRevision == stored;
-        };
-
-        checkSide(mapping.sourceBackend, mapping.sourceCalendar,
-                  fresh.sourceRevision, sourceCovered, sourceUnchanged);
-        checkSide(mapping.targetBackend, mapping.targetCalendar,
-                  fresh.targetRevision, targetCovered, targetUnchanged);
-
-        m_freshState[mapping.id] = fresh;
-
-        const bool eligibleToSkip = sourceCovered && targetCovered
-                                     && sourceUnchanged && targetUnchanged;
-        if (eligibleToSkip) {
-            ++wouldSkipCount;
-            if (m_skipUnchangedMappings) {
-                m_skippedMappingIds.insert(mapping.id);
-                ++actualSkipCount;
-                qInfo() << "SyncEngine: skipping unchanged mapping" << mapping.id;
-            } else {
-                qInfo() << "SyncEngine: would skip unchanged mapping (flag off)"
-                        << mapping.id;
-            }
-        }
-    }
-
-    qDebug() << "SyncEngine::prepareSyncFastPath: of"
-             << m_syncMappings.size() << "mappings,"
-             << wouldSkipCount << "are unchanged;"
-             << actualSkipCount << "actually skipped (flag="
-             << m_skipUnchangedMappings << ")";
 }
 
 // F2 Task 21: multi-mapping driver — entry point for a queue run.
@@ -1108,48 +1116,27 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             m_lastResult.errorMessage = result.errorMessage;
     }
 
-    // Persist fresh revisions so the next sync's pre-pass has up-to-date baselines.
+    // H3: persist this mapping's sync-progress tokens so the next sync's
+    // pre-pass can judge skip-eligibility. Only on success (a failed apply
+    // must not advance the token — O17: a stranded change must be retried,
+    // never masked as "unchanged"), and only using the pre-fetch snapshot
+    // prepareSyncFastPath captured BEFORE this run's fetch — never a live
+    // post-write re-query (that re-query was O18/O19's masking surface:
+    // a foreign edit landing between the fetch and this callback would be
+    // erased from the next diff by a post-write token). A pre-fetch token
+    // is never newer than the data actually synced, so a stale token costs
+    // at most one redundant re-diff cycle — accepted per CP-A.
     if (result.success && m_baselineStore) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
             const FreshSyncState &fresh = stateIt.value();
-            const SyncMapping *mapping = nullptr;
-            for (const auto &m : m_syncMappings) {
-                if (m.id == mappingId) { mapping = &m; break; }
+            if (!fresh.sourceRevision.isEmpty()) {
+                m_baselineStore->setSyncToken(mappingId, QStringLiteral("source"),
+                                              fresh.sourceRevision);
             }
-            if (mapping) {
-                // Phase B5 fix: re-query the LIVE revision now that the
-                // mapping has actually finished, instead of reusing the
-                // snapshot prepareSyncFastPath captured BEFORE this mapping
-                // ran. For a side this very sync wrote to (the common case
-                // is LocalBackend as target on a first/populating sync —
-                // its fingerprint is a directory content hash, so writing
-                // new files changes it), the pre-dispatch snapshot reflects
-                // the PRE-write state and is stale the instant this
-                // callback runs. Persisting that stale value costs the
-                // *next* sync's prepareSyncFastPath its skip-eligibility
-                // even though nothing has changed since THIS sync
-                // completed — a one-cycle lag that, for a real backend
-                // this campaign found could re-run a full busy cycle for
-                // no reason. Falls back to the pre-dispatch snapshot only
-                // if the live re-query comes back empty (e.g. a backend
-                // whose ChangeDetection needs a moment to settle).
-                auto persistRevision = [&](const QString &backendId,
-                                           const QString &colId,
-                                           const QString &precomputed) {
-                    if (!m_registry) return;
-                    SyncBackendBase *base = m_registry->backendInstance(backendId);
-                    auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
-                    if (!cd) return;
-                    const QString live = cd->collectionRevision(colId);
-                    const QString revision = !live.isEmpty() ? live : precomputed;
-                    if (revision.isEmpty()) return;
-                    cd->primeRevisionCache({{colId, revision}});
-                };
-                persistRevision(mapping->sourceBackend, mapping->sourceCalendar,
-                                fresh.sourceRevision);
-                persistRevision(mapping->targetBackend, mapping->targetCalendar,
-                                fresh.targetRevision);
+            if (!fresh.targetRevision.isEmpty()) {
+                m_baselineStore->setSyncToken(mappingId, QStringLiteral("target"),
+                                              fresh.targetRevision);
             }
         }
     }
@@ -1346,6 +1333,13 @@ const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<ConflictResolution>("ConflictResolution");
     qRegisterMetaType<ConflictInfo>("ConflictInfo");
     qRegisterMetaType<SyncResult>("SyncResult");
+    // H4 (O16): fastPathRequested/fastPathReady queued-signal parameter types.
+    qRegisterMetaType<QList<SyncMapping>>("QList<SyncMapping>");
+    qRegisterMetaType<QHash<QString, QPair<QString, QString>>>(
+        "QHash<QString,QPair<QString,QString>>");
+    qRegisterMetaType<QSet<QString>>("QSet<QString>");
+    qRegisterMetaType<QMap<QString, SyncEngine::FreshSyncState>>(
+        "QMap<QString,SyncEngine::FreshSyncState>");
     return true;
 }();
 
@@ -1414,6 +1408,111 @@ void SyncEngineWorker::observeCancel()
     // block on the worker's m_mutex.
     m_cancelled.store(true, std::memory_order_release);
     emit cancellationObserved();
+}
+
+// H4 (O16): moved here from SyncEngine::prepareSyncFastPath, whose logic
+// this reproduces exactly (batched fresh-revision query per backend, per-
+// mapping skip decision) with one difference: the stored per-mapping
+// sync-progress tokens are now a parameter (read by the engine from
+// BaselineStore before dispatch) rather than a live BaselineStore lookup,
+// since the worker has no baseline-store thread affinity for this purpose.
+// The runOnBackendThread marshal below now blocks the WORKER thread
+// instead of the engine/caller thread — the whole point of this phase.
+void SyncEngineWorker::prepareFastPath(const QList<SyncMapping> &mappings,
+                                        const QHash<QString, QPair<QString, QString>> &storedTokens,
+                                        bool skipEnabled)
+{
+    QSet<QString> skipped;
+    QMap<QString, SyncEngine::FreshSyncState> freshState;
+
+    if (!m_registry) {
+        emit fastPathReady(skipped, freshState);
+        return;
+    }
+
+    // Collect collection IDs per backend that implements Sync::ChangeDetection.
+    QMap<QString, QStringList> colIdsByBackend;
+    auto collectChangeDetection = [&](const QString &backendId, const QString &colId) {
+        SyncBackendBase *base = m_registry->backendInstance(backendId);
+        if (dynamic_cast<Sync::ChangeDetection*>(base))
+            colIdsByBackend[backendId].append(colId);
+    };
+    for (const auto &mapping : mappings) {
+        collectChangeDetection(mapping.sourceBackend, mapping.sourceCalendar);
+        collectChangeDetection(mapping.targetBackend, mapping.targetCalendar);
+    }
+
+    // Fetch fresh revisions per backend (batched where the backend supports
+    // it). This marshal blocks the worker thread — a dedicated thread
+    // distinct from both the engine/caller thread and any backend I/O
+    // thread — so it no longer stalls anything user-visible (O16).
+    QMap<QPair<QString, QString>, QString> freshRevisions; // (backendId, colId) -> revision
+    for (auto it = colIdsByBackend.constBegin(); it != colIdsByBackend.constEnd(); ++it) {
+        SyncBackendBase *base = m_registry->backendInstance(it.key());
+        auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
+        if (!cd) continue;
+        QStringList ids = it.value();
+        ids.removeDuplicates();
+        QMap<QString, QString> revs;
+        runOnBackendThread(base, [cd, ids, &revs]() {
+            revs = cd->collectionRevisions(ids);
+        });
+        for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
+            freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
+    }
+
+    int wouldSkipCount = 0;
+    int actualSkipCount = 0;
+    for (const auto &mapping : mappings) {
+        SyncEngine::FreshSyncState fresh;
+        bool sourceCovered = false;
+        bool targetCovered = false;
+        bool sourceUnchanged = false;
+        bool targetUnchanged = false;
+
+        const QPair<QString, QString> stored = storedTokens.value(mapping.id);
+
+        auto checkSide = [&](const QString &backendId, const QString &colId,
+                              const QString &storedToken,
+                              QString &outRevision, bool &covered, bool &unchanged) {
+            SyncBackendBase *base = m_registry->backendInstance(backendId);
+            auto *cd = dynamic_cast<Sync::ChangeDetection*>(base);
+            if (!cd) return;
+            covered = true;
+            outRevision = freshRevisions.value(qMakePair(backendId, colId));
+            unchanged = !outRevision.isEmpty() && !storedToken.isEmpty()
+                        && outRevision == storedToken;
+        };
+
+        checkSide(mapping.sourceBackend, mapping.sourceCalendar, stored.first,
+                  fresh.sourceRevision, sourceCovered, sourceUnchanged);
+        checkSide(mapping.targetBackend, mapping.targetCalendar, stored.second,
+                  fresh.targetRevision, targetCovered, targetUnchanged);
+
+        freshState[mapping.id] = fresh;
+
+        const bool eligibleToSkip = sourceCovered && targetCovered
+                                     && sourceUnchanged && targetUnchanged;
+        if (eligibleToSkip) {
+            ++wouldSkipCount;
+            if (skipEnabled) {
+                skipped.insert(mapping.id);
+                ++actualSkipCount;
+                qInfo() << "SyncEngineWorker: skipping unchanged mapping" << mapping.id;
+            } else {
+                qInfo() << "SyncEngineWorker: would skip unchanged mapping (flag off)"
+                        << mapping.id;
+            }
+        }
+    }
+
+    qDebug() << "SyncEngineWorker::prepareFastPath: of"
+             << mappings.size() << "mappings,"
+             << wouldSkipCount << "are unchanged;"
+             << actualSkipCount << "actually skipped (flag="
+             << skipEnabled << ")";
+
+    emit fastPathReady(skipped, freshState);
 }
 
 void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
@@ -1728,58 +1827,82 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     int mirrorErrors = 0;
     QString mirrorReadErr;
 
-    // Task 10: inline the runBlobMirror body directly so Task 13 can
-    // delete the F1 facade without leaving a dangling internal caller.
-    // Marshalled to the source backend's thread because we walk both
-    // backends synchronously (same threading requirement as the old call).
+    // H2.2 (O21): each side's calls now marshal onto that side's OWN thread
+    // — previously the whole mirror (including the target's writes) ran
+    // inside a single lambda marshaled onto the source's thread, so the
+    // target backend's calls silently executed on the wrong thread whenever
+    // source and target are relocated to different I/O threads. The
+    // create/update/delete list computation between the two backend calls
+    // is pure (no backend I/O) and runs here on the worker thread.
+    QList<BackendRecord> srcRecords;
     QMetaObject::invokeMethod(srcBackend,
-        [src, tgt, colId, tgtWritable, &mirrorErrors, &mirrorReadErr]() {
-            QList<BackendRecord> srcRecords;
-            QList<BackendRecord> tgtRecords;
-            if (!src->loadRecordsOrError(colId, srcRecords, mirrorReadErr)) {
-                return;
-            }
-            if (!tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr)) {
-                return;
-            }
-            const auto tgtById = indexBlobById(tgtRecords);
+        [src, colId, &srcRecords, &mirrorReadErr]() {
+            src->loadRecordsOrError(colId, srcRecords, mirrorReadErr);
+        }, Qt::BlockingQueuedConnection);
 
-            // Copy source → target (create or update). Short-circuit &&: the
-            // write call is never invoked when the target is read-only, so
-            // mirrorErrors stays 0 and the success-completion path runs.
-            for (const auto &sr : srcRecords) {
-                const auto it = tgtById.constFind(sr.id);
-                if (it == tgtById.constEnd()) {
+    QList<BackendRecord> tgtRecords;
+    if (mirrorReadErr.isEmpty()) {
+        QMetaObject::invokeMethod(tgtBackend,
+            [tgt, colId, &tgtRecords, &mirrorReadErr]() {
+                tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr);
+            }, Qt::BlockingQueuedConnection);
+    }
+
+    if (mirrorReadErr.isEmpty()) {
+        const auto tgtById = indexBlobById(tgtRecords);
+
+        // Copy source → target (create or update). Short-circuit &&: the
+        // write call is never invoked when the target is read-only, so
+        // mirrorErrors stays 0 and the success-completion path runs.
+        QList<BackendRecord> toCreate;
+        QList<BackendRecord> toUpdate;
+        for (const auto &sr : srcRecords) {
+            const auto it = tgtById.constFind(sr.id);
+            if (it == tgtById.constEnd()) {
+                toCreate << sr;
+            } else if (it.value().contentHash != sr.contentHash) {
+                // Phase B4 (N2): this is a genuine cross-side native-bytes
+                // hash compare, the same shape as the N2 bug elsewhere in
+                // this file — but it does NOT need the per-side-baseline
+                // treatment. dispatchFirstSync only reaches this mirror
+                // body when the target collection was independently
+                // confirmed empty just above (targetEmpty), so tgtById is
+                // empty and this branch is unreached in the true
+                // first-sync case. It only fires if the target gained
+                // records in the narrow window between the emptiness
+                // check and this walk (a benign existing-item update,
+                // not the steady-state convergence path B4 fixes).
+                BackendRecord out = sr;
+                out.id = it.value().id;
+                toUpdate << out;
+            }
+        }
+
+        // Delete target records not in source.
+        const auto srcById = indexBlobById(srcRecords);
+        QStringList toDelete;
+        for (const auto &tr : tgtRecords) {
+            if (!srcById.contains(tr.id)) {
+                toDelete << tr.id;
+            }
+        }
+
+        QMetaObject::invokeMethod(tgtBackend,
+            [tgt, colId, tgtWritable, toCreate, toUpdate, toDelete, &mirrorErrors]() {
+                for (const auto &sr : toCreate) {
                     if (tgtWritable && tgt->createRecord(colId, sr).isEmpty())
                         ++mirrorErrors;
-                } else if (it.value().contentHash != sr.contentHash) {
-                    // Phase B4 (N2): this is a genuine cross-side native-bytes
-                    // hash compare, the same shape as the N2 bug elsewhere in
-                    // this file — but it does NOT need the per-side-baseline
-                    // treatment. dispatchFirstSync only reaches this mirror
-                    // body when the target collection was independently
-                    // confirmed empty just above (targetEmpty), so tgtById is
-                    // empty and this branch is unreached in the true
-                    // first-sync case. It only fires if the target gained
-                    // records in the narrow window between the emptiness
-                    // check and this walk (a benign existing-item update,
-                    // not the steady-state convergence path B4 fixes).
-                    BackendRecord out = sr;
-                    out.id = it.value().id;
+                }
+                for (const auto &out : toUpdate) {
                     if (tgtWritable && !tgt->updateRecord(out))
                         ++mirrorErrors;
                 }
-            }
-
-            // Delete target records not in source.
-            const auto srcById = indexBlobById(srcRecords);
-            for (const auto &tr : tgtRecords) {
-                if (!srcById.contains(tr.id)) {
-                    if (tgtWritable && !tgt->deleteRecord(tr.id))
+                for (const auto &id : toDelete) {
+                    if (tgtWritable && !tgt->deleteRecord(id))
                         ++mirrorErrors;
                 }
-            }
-        }, Qt::BlockingQueuedConnection);
+            }, Qt::BlockingQueuedConnection);
+    }
 
     if (!mirrorReadErr.isEmpty()) {
         SyncResult result;
@@ -2067,13 +2190,14 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // and abort the sync. Backends that don't override fetchItems() return a
     // immediately-failed op; we skip the QEventLoop for those and proceed
     // directly to loadRecordsOrError().
+    bool srcFetchSucceeded = false;
     {
         SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(srcBackend, [srcBackend, srcColId, &fetchOpRaw]() {
             fetchOpRaw = srcBackend->fetchItems(srcColId);
         }, Qt::BlockingQueuedConnection);
         QPointer<SyncOperation> fetchOp = fetchOpRaw;
-        if (fetchOp && fetchOp->state() == SyncOperation::Running) {
+        if (fetchOp && !fetchOp->isFinished()) {
             QEventLoop loop;
             // Connect BEFORE re-checking state: op may complete between the
             // BlockingQueuedConnection above and the loop.exec() call below.
@@ -2086,11 +2210,28 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
                     &loop, &QEventLoop::quit, Qt::DirectConnection);
             // Re-check: if already completed between the BlockingQueuedConnection
             // call and the connect() above, skip loop.exec() to avoid hanging.
-            if (fetchOp->state() == SyncOperation::Running)
+            // isFinished() (not state()==Running) catches ops that start life
+            // Pending and only flip to Running inside their own deferred
+            // callback (e.g. LocalBackend::fetchItems via QTimer::singleShot) —
+            // state()==Running alone missed those entirely (H1.1/O24).
+            if (!fetchOp->isFinished())
                 loop.exec();
+        }
+        if (m_cancelled.load(std::memory_order_acquire) && fetchOp && !fetchOp->isFinished()) {
+            // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it):
+            // request the op's own cancel(), then re-enter briefly waiting
+            // for it to actually settle (ops aren't pre-emptible mid-record).
+            fetchOp->cancel();
+            if (!fetchOp->isFinished()) {
+                QEventLoop teardownLoop;
+                connect(fetchOp.data(), &SyncOperation::finished,
+                        &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
+                teardownLoop.exec();
+            }
         }
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
+            if (fetchOp) fetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
@@ -2105,18 +2246,29 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         // the clobber wipe below, so the target is never destroyed when the
         // source can't be read.
         if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
+            fetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = fetchOp->errorString();
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        srcFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
+        if (fetchOp) fetchOp->deleteLater();
     }
     QList<BackendRecord> sourceRecords;
     {
         QString fetchErr;
-        QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &sourceRecords, &fetchErr]() {
-            srcBlob->loadRecordsOrError(srcColId, sourceRecords, fetchErr);
+        QMetaObject::invokeMethod(srcBackend, [srcBackend, srcBlob, srcColId, srcFetchSucceeded, &sourceRecords, &fetchErr]() {
+            // H5/O23: the gate's own fetchItems() already read this collection
+            // moments ago — serve its memo instead of a second, fully
+            // redundant read. NotSupported/null-op backends (no fetch cache)
+            // fall through to loadRecordsOrError() exactly as before.
+            if (srcFetchSucceeded) {
+                srcBackend->recordsFromLastFetch(srcColId, sourceRecords, fetchErr);
+            } else {
+                srcBlob->loadRecordsOrError(srcColId, sourceRecords, fetchErr);
+            }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
             m_currentResult.success = false;
@@ -2190,26 +2342,40 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     // --- Fetch target records (cross-thread) ---
     // Same cancellable gating pattern as source fetch above.
+    bool tgtFetchSucceeded = false;
     {
         SyncOperation *fetchOpRaw = nullptr;
         QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtColId, &fetchOpRaw]() {
             fetchOpRaw = tgtBackend->fetchItems(tgtColId);
         }, Qt::BlockingQueuedConnection);
         QPointer<SyncOperation> fetchOp = fetchOpRaw;
-        if (fetchOp && fetchOp->state() == SyncOperation::Running) {
+        if (fetchOp && !fetchOp->isFinished()) {
             QEventLoop loop;
             // Same race-fix as source fetch: connect before re-check so a
             // completed op in this window still wakes the loop via the
-            // already-queued finished() event.
+            // already-queued finished() event. isFinished() (not
+            // state()==Running) catches ops that start life Pending — see
+            // the source fetch gate above (H1.1/O24).
             connect(fetchOp.data(), &SyncOperation::finished,
                     &loop, &QEventLoop::quit, Qt::QueuedConnection);
             connect(this, &SyncEngineWorker::cancellationObserved,
                     &loop, &QEventLoop::quit, Qt::DirectConnection);
-            if (fetchOp->state() == SyncOperation::Running)
+            if (!fetchOp->isFinished())
                 loop.exec();
+        }
+        if (m_cancelled.load(std::memory_order_acquire) && fetchOp && !fetchOp->isFinished()) {
+            // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it).
+            fetchOp->cancel();
+            if (!fetchOp->isFinished()) {
+                QEventLoop teardownLoop;
+                connect(fetchOp.data(), &SyncOperation::finished,
+                        &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
+                teardownLoop.exec();
+            }
         }
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
+            if (fetchOp) fetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
@@ -2222,18 +2388,27 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         // the target was already wiped above; converting this to a reported
         // failure is the minimum guarantee for a fetch that fails post-wipe.
         if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
+            fetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = fetchOp->errorString();
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        tgtFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
+        if (fetchOp) fetchOp->deleteLater();
     }
     QList<BackendRecord> targetRecords;
     {
         QString fetchErr;
-        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &targetRecords, &fetchErr]() {
-            tgtBlob->loadRecordsOrError(tgtColId, targetRecords, fetchErr);
+        QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtBlob, tgtColId, tgtFetchSucceeded, &targetRecords, &fetchErr]() {
+            // H5/O23: same single-fetch-pipeline reasoning as the source
+            // block above.
+            if (tgtFetchSucceeded) {
+                tgtBackend->recordsFromLastFetch(tgtColId, targetRecords, fetchErr);
+            } else {
+                tgtBlob->loadRecordsOrError(tgtColId, targetRecords, fetchErr);
+            }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
             m_currentResult.success = false;
@@ -2960,8 +3135,10 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                               .definitionFor(opsUCC->targetDomain());
             const QStringList keys = ddUCC ? ddUCC->baselineProperties() : QStringList{};
             if (!keys.isEmpty()) {
-                const QVariantMap collProps =
-                    opsUCC->collectionProperties(srcBackend, srcColId);
+                QVariantMap collProps;
+                runOnBackendThread(srcBackend, [&]() {
+                    collProps = opsUCC->collectionProperties(srcBackend, srcColId);
+                });
                 QVariantMap snapshot;
                 for (const auto &k : keys) {
                     if (collProps.contains(k))
@@ -3001,8 +3178,10 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
         return;
     }
 
-    const QVariantMap srcProps = ops->collectionProperties(src, srcCollectionId);
-    const QVariantMap tgtProps = ops->collectionProperties(tgt, tgtCollectionId);
+    QVariantMap srcProps;
+    runOnBackendThread(src, [&]() { srcProps = ops->collectionProperties(src, srcCollectionId); });
+    QVariantMap tgtProps;
+    runOnBackendThread(tgt, [&]() { tgtProps = ops->collectionProperties(tgt, tgtCollectionId); });
 
     if (srcProps.isEmpty() && tgtProps.isEmpty() && baseline.isEmpty()) {
         return;  // nothing to do
@@ -3011,11 +3190,15 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
     const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
     if (!diff.toApplyToTarget.isEmpty()) {
-        ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        runOnBackendThread(tgt, [&]() {
+            ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        });
     }
 
     if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
-        ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        runOnBackendThread(src, [&]() {
+            ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        });
     }
 
     // Conflict handling (v1, Task 7): resolve all conflicts as SourceWins.
@@ -3030,7 +3213,9 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
             }
         }
         if (!fromSrc.isEmpty()) {
-            ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+            runOnBackendThread(tgt, [&]() {
+                ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
+            });
         }
     }
 }

@@ -22,6 +22,12 @@
 
 namespace Kalburator::Sync {
 
+// Forward declaration: defined in the anonymous namespace below fetchItems(),
+// which needs it to build the recordsFromLastFetch memo without a second
+// disk read.
+namespace { BackendRecord recordFromBytes(const QByteArray &bytes, const QString &uid,
+                                          const QDateTime &fileMtime); }
+
 // ============================================================================
 // FingerprintStore — private inner store for per-backend local directory fingerprints
 //
@@ -33,42 +39,28 @@ class FingerprintStore
 {
 public:
     explicit FingerprintStore(const QString &dbPath, const QString &backendId)
-        : m_backendId(backendId)
+        : m_dbPath(dbPath)
+        , m_backendId(backendId)
         , m_connectionName(QStringLiteral("FingerprintStore_%1_%2")
                                .arg(backendId)
                                .arg(reinterpret_cast<quintptr>(this)))
     {
         if (dbPath.isEmpty()) {
             qWarning() << "FingerprintStore: empty dbPath for backend" << backendId;
-            return;
         }
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
-        db.setDatabaseName(dbPath);
-        if (!db.open()) {
-            qWarning() << "FingerprintStore: failed to open" << dbPath
-                       << ":" << db.lastError().text();
-            QSqlDatabase::removeDatabase(m_connectionName);
-            m_connectionName.clear();
-            return;
-        }
-        ensureSchema();
     }
 
     ~FingerprintStore()
     {
-        if (!m_connectionName.isEmpty()) {
-            if (QSqlDatabase::contains(m_connectionName)) {
-                QSqlDatabase::database(m_connectionName).close();
-                QSqlDatabase::removeDatabase(m_connectionName);
-            }
+        if (QSqlDatabase::contains(m_connectionName)) {
+            QSqlDatabase::database(m_connectionName).close();
+            QSqlDatabase::removeDatabase(m_connectionName);
         }
     }
 
-    bool isValid() const { return !m_connectionName.isEmpty(); }
-
-    QString get(const QString &calendarId) const
+    QString get(const QString &calendarId)
     {
-        if (!isValid()) return QString();
+        if (!ensureOpen()) return QString();
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -83,7 +75,7 @@ public:
 
     bool set(const QString &calendarId, const QString &fingerprint)
     {
-        if (!isValid()) return false;
+        if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -100,6 +92,29 @@ public:
     }
 
 private:
+    // Opens the SQLite connection on first use — deferred past construction
+    // so the connection's thread affinity is whichever thread first calls
+    // get/set (the backend's own thread, post-D1-relocation), not whichever
+    // thread happened to call setDbPath() (D1 T1.3, mirrors CTagStore T1.2).
+    bool ensureOpen()
+    {
+        if (m_openAttempted) return m_open;
+        m_openAttempted = true;
+
+        if (m_dbPath.isEmpty()) return false;
+
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        db.setDatabaseName(m_dbPath);
+        if (!db.open()) {
+            qWarning() << "FingerprintStore: failed to open" << m_dbPath
+                       << ":" << db.lastError().text();
+            QSqlDatabase::removeDatabase(m_connectionName);
+            return false;
+        }
+        m_open = ensureSchema();
+        return m_open;
+    }
+
     bool ensureSchema()
     {
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
@@ -116,8 +131,11 @@ private:
         return ok;
     }
 
+    QString m_dbPath;
     QString m_backendId;
     QString m_connectionName;
+    bool m_openAttempted = false;
+    bool m_open = false;
 };
 
 // (FingerprintStore class ends above; LocalBackend methods continue below in the same namespace)
@@ -712,12 +730,14 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 
         if (totalFiles == 0) {
             op->setFetchedItems({});
+            m_lastFetchRecords[calendarId] = {};
             op->complete();
             emit fetchFinished(calendarId, true);
             return;
         }
 
         int currentFile = 0;
+        QList<BackendRecord> records;
 
         for (const QString &fileName : files) {
             if (op->state() == SyncOperation::Cancelled) {
@@ -727,7 +747,12 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 
             QString filePath = calDir.filePath(fileName);
             QFile file(filePath);
-            if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            // H5/O23: no QIODevice::Text here — it strips '\r' on read, which
+            // would make the recordsFromLastFetch memo's bytes (and hence
+            // contentHash) diverge from recordFromFile()'s raw read of the
+            // same file (loadRecords()'s path), silently manufacturing a
+            // spurious per-cycle "target changed" baseline mismatch.
+            if (!file.open(QIODevice::ReadOnly)) {
                 qWarning() << "LocalBackend::fetchItems: Failed to open" << filePath;
                 currentFile++;
                 emit fetchProgressChanged(calendarId, currentFile, totalFiles);
@@ -750,15 +775,22 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
                 emit itemFetched(calendarId, inc);
             }
 
+            // recordsFromLastFetch memo (H5/O23): one BackendRecord per file,
+            // built from the bytes already in hand (no second disk read).
+            records.append(recordFromBytes(data, fileName.chopped(4),
+                                            QFileInfo(filePath).lastModified()));
+
             currentFile++;
             emit fetchProgressChanged(calendarId, currentFile, totalFiles);
-            // Note: processEvents() removed - sync runs in worker thread
+            // Note: processEvents() removed - this lambda runs on the
+            // backend's own thread, not the sync worker thread.
         }
 
         qDebug() << "LocalBackend::fetchItems: Fetched" << items.size()
                  << "incidences for calendar" << calendarId;
 
         op->setFetchedItems(items);
+        m_lastFetchRecords[calendarId] = records;
         op->complete();
         emit fetchFinished(calendarId, true);
     });
@@ -972,24 +1004,16 @@ static QDateTime extractICalLastModified(const QByteArray &data)
     return dt;
 }
 
-// Build a BackendRecord from a file on disk.
-// Returns a null-opt if the file cannot be opened.
-static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
-    const QString &filePath,
-    const QString &uid)
+// Build a BackendRecord from already-read file bytes, avoiding a second
+// disk read when the caller (fetchItems) already has the bytes in hand.
+BackendRecord recordFromBytes(
+    const QByteArray &bytes,
+    const QString &uid,
+    const QDateTime &fileMtime)
 {
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qWarning() << "LocalBackend (blob): cannot open" << filePath;
-        return std::nullopt;
-    }
-    const QByteArray bytes = file.readAll();
-    file.close();
-
     const QByteArray hashBytes = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 
     const QDateTime icalLastMod = extractICalLastModified(bytes);
-    const QDateTime fileMtime   = QFileInfo(filePath).lastModified();
     // Pick the record's lastModified from the explicit iCal LAST-MODIFIED stamp
     // and the file mtime, preserving BOTH intents (PlanStan bug doc
     // sync-conflicts-lastwritewins-tie-bias.md, fix A2):
@@ -1020,6 +1044,22 @@ static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
     rec.lastModified = bestMod;
     rec.isDeleted   = false;
     return rec;
+}
+
+// Build a BackendRecord from a file on disk.
+// Returns a null-opt if the file cannot be opened.
+static std::optional<Kalburator::Sync::BackendRecord> recordFromFile(
+    const QString &filePath,
+    const QString &uid)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qWarning() << "LocalBackend (blob): cannot open" << filePath;
+        return std::nullopt;
+    }
+    const QByteArray bytes = file.readAll();
+    file.close();
+    return recordFromBytes(bytes, uid, QFileInfo(filePath).lastModified());
 }
 
 } // anonymous namespace
@@ -1120,6 +1160,20 @@ std::optional<BackendRecord> LocalBackend::loadRecord(const QString &recordId)
     const auto path = recordPathFor(recordId);
     if (!path) return std::nullopt;
     return recordFromFile(*path, recordId);
+}
+
+bool LocalBackend::recordsFromLastFetch(const QString &collectionId,
+                                        QList<BackendRecord> &records,
+                                        QString &errorMessage)
+{
+    auto it = m_lastFetchRecords.find(collectionId);
+    if (it == m_lastFetchRecords.end()) {
+        return SyncBackendBase::recordsFromLastFetch(collectionId, records, errorMessage);
+    }
+    records = it.value();
+    m_lastFetchRecords.erase(it); // single-shot
+    errorMessage.clear();
+    return true;
 }
 
 QString LocalBackend::createRecord(const QString &collectionId,

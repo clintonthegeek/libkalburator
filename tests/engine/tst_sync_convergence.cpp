@@ -200,10 +200,11 @@ QByteArray makeVEventWithSummary(const QString &uid, const QString &summary)
 //   (a) RemoteCalendarBackend's CTag persists across runOnce() calls in a way
 //       this test controls end-to-end (no reliance on ~/.cache surviving
 ///      between unrelated test runs), and
-//   (b) LocalBackend's fingerprint cache persists the same way, which is a
-//       precondition for SyncEngine::prepareSyncFastPath's skip-eligibility
-//       check (ChangeDetection::cachedCollectionRevision) to ever report
-//       "unchanged" instead of "no revision on file yet".
+//   (b) LocalBackend's fingerprint queries stay stable across runOnce() calls,
+//       which is a precondition for SyncEngine::prepareSyncFastPath's
+//       skip-eligibility check (H3: fresh revision vs the engine-owned
+//       per-mapping token in BaselineStore) to ever report "unchanged"
+//       instead of "no token on file yet".
 struct ConvergenceFixture
 {
     // Declaration order fixed to match the destruction order the original
@@ -823,44 +824,35 @@ void TstSyncConvergence::remoteDeleteRemovesExactlyOneLocally()
 // loadRecords' internal reuse) is moot for this path — it never runs even
 // once on an idle cycle.
 //
-// Investigation finding (this phase): a BRAND NEW collection needs TWO real
-// (non-skipped) sync cycles before the fast path can engage on the third,
-// not one — this is a genuine characteristic of RemoteCalendarBackend's
-// persisted CTagStore, not a bug this phase fixes:
-//   - Sync 1 (populate): RemoteCalendarBackend::fetchItems' OWN internal
-//     CTag-commit logic (remotecalendarbackend.cpp, the two "NOT committing
-//     CTag" guard sites) only stages `pendingCtag` when a STORED ctag
-//     already existed to compare a fresh fetch against (`if
-//     (!storedCtag.isEmpty()) freshCtag = fetchFreshCtag(...)`). On a truly
-//     virgin collection storedCtag is empty, so fetchItems' own commit path
-//     never fires — the persisted CTagStore stays empty after sync 1
-//     despite a fully successful mirror. SyncEngine::onWorkerSyncCompleted's
-//     post-completion primeRevisionCache() (this phase's one-cycle-lag fix,
-//     below) stages a live-queried ctag into `pendingCtag` regardless, but
-//     `primeRevisionCache()` deliberately only stages `pendingCtag` — it
-//     never writes the queryable CTagStore directly (the N5/B3 rule: only a
-//     COMPLETE fetchItems materialization may commit the trusted CTag).
-//   - Sync 2: prepareSyncFastPath's pre-pass still reads an empty
-//     `cachedCollectionRevision()` for the source (nothing committed it
-//     yet), so the mapping is correctly judged NOT skip-eligible and
-//     dispatches normally. That real dispatch's fetchItems call now finds
-//     the PREVIOUSLY-STAGED `pendingCtag` (from sync 1's post-completion
-//     prime) still present, completes with countSkipped==0, and — for the
-//     first time — actually commits it to the CTagStore.
-//   - Sync 3: cachedCollectionRevision() finally returns the committed
-//     value, matching the live fresh CTag (unchanged) — this is the first
-//     cycle that can actually skip.
+// Investigation finding: a BRAND NEW collection needs TWO real (non-skipped)
+// sync cycles before the fast path can engage on the third, not one — this
+// is a genuine characteristic of the engine-owned sync-progress token (H3,
+// BaselineStore::syncToken/setSyncToken), not a bug:
+//   - Sync 1 (populate): prepareSyncFastPath's pre-fetch snapshot captures
+//     the source's live ctag and the target's (still-empty-mirror)
+//     fingerprint BEFORE this run's fetch+apply. Since no token is stored
+//     yet, the mapping is correctly judged NOT skip-eligible and dispatches
+//     normally, populating the local mirror. On success, onWorkerSyncCompleted
+//     writes THIS pre-fetch snapshot as the stored token for both sides —
+//     per H3's design, the token is always the pre-fetch value, never a
+//     post-write re-query (a post-write re-query is exactly the O18 masking
+//     bug H3 closes). So after sync 1, the stored target token reflects the
+//     EMPTY mirror, not the just-populated one.
+//   - Sync 2: prepareSyncFastPath's fresh query now sees the source ctag
+//     unchanged (matches the stored token — source-side unchanged) but the
+//     target's fresh fingerprint reflects the POPULATED mirror, which does
+//     NOT match the stored (pre-population) token — so the mapping is still
+//     judged not skip-eligible and dispatches again. This second dispatch is
+//     a genuine no-op (content already converged), but its pre-fetch
+//     snapshot now captures the STEADY-STATE fingerprint on both sides;
+//     onWorkerSyncCompleted persists that as the new stored token.
+//   - Sync 3: the fresh query matches the sync-2-stored token on BOTH sides
+//     (nothing changed between sync 2's snapshot and its completion) — this
+//     is the first cycle that can actually skip.
 // This matches the roadmap's framing that a mirror only reaches its cheap
-// steady state after the initial population settles; it is not the "of 7
-// mappings, 0 are unchanged" under-reporting bug (that bug — a real
-// one-cycle staleness in the persisted revision cache — was fixed this
-// phase in SyncEngine::onWorkerSyncCompleted's persistRevision helper,
-// which now re-queries each side's LIVE revision after a mapping completes
-// instead of reusing the pre-dispatch snapshot; that fix is what lets the
-// LOCAL/target side engage the skip from sync 2 onward. The remote/source
-// side's extra cycle above is a separate, independent characteristic of
-// RemoteCalendarBackend's CTagStore commit rule, not something this phase
-// changes).
+// steady state after the initial population settles — the one-cycle lag is
+// an accepted cost of the pre-fetch-snapshot design (CP-A), never a masked
+// change: a stale token can only cost an extra redundant re-diff.
 void TstSyncConvergence::fastPathSkipsGenuinelyUnchangedMapping()
 {
     auto fx = makeConvergenceFixture(
@@ -870,9 +862,10 @@ void TstSyncConvergence::fastPathSkipsGenuinelyUnchangedMapping()
         /*skipUnchanged=*/true);
     QVERIFY(fx != nullptr);
 
-    // Sync 1: real work — populates the mirror. Primes the LOCAL fingerprint
-    // cache immediately (post-write live re-query — this phase's fix); does
-    // NOT yet commit the remote CTagStore (see the comment above).
+    // Sync 1: real work — populates the mirror. Stores this cycle's
+    // pre-fetch snapshot as both sides' sync-progress token (H3), which for
+    // the target reflects the PRE-population (empty-mirror) state — see the
+    // comment above.
     const SyncResult r1 = fx->runOnce();
     QVERIFY2(r1.success, qUtf8Printable(r1.errorMessage));
     QVERIFY(!r1.hasUnresolvedConflicts());
@@ -886,12 +879,14 @@ void TstSyncConvergence::fastPathSkipsGenuinelyUnchangedMapping()
     const int putsAfterSync1    = fx->server->requestCount(QByteArrayLiteral("PUT"));
     const int deletesAfterSync1 = fx->server->requestCount(QByteArrayLiteral("DELETE"));
 
-    // Sync 2: still real work (source's CTagStore isn't committed yet, so
-    // the mapping is correctly judged not-yet-skippable) — but this cycle
-    // finally commits the CTag for real. Content is unchanged throughout,
-    // so this must still be a write-free no-op on both sides even though it
-    // is NOT skipped outright — falsifiable via the per-B4 baseline
-    // machinery, same proof shape as secondSyncIsNoOp.
+    // Sync 2: still real work (the target's fresh fingerprint doesn't match
+    // sync 1's pre-population token, so the mapping is correctly judged
+    // not-yet-skippable) — but this cycle's own pre-fetch snapshot now
+    // reflects the steady-state mirror, so it's the token that lets sync 3
+    // skip. Content is unchanged throughout, so this must still be a
+    // write-free no-op on both sides even though it is NOT skipped outright
+    // — falsifiable via the per-B4 baseline machinery, same proof shape as
+    // secondSyncIsNoOp.
     const SyncResult r2 = fx->runOnce();
     QVERIFY2(r2.success, qUtf8Printable(r2.errorMessage));
     QVERIFY(!r2.hasUnresolvedConflicts());

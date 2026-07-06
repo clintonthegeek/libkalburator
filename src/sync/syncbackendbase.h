@@ -102,6 +102,19 @@ public:
     virtual SyncOperation* deleteItems(const QString &calendarId,
                                        const QStringList &uids);
 
+    /// Records equivalent to loadRecords(collectionId), but served from the
+    /// most recent successfully completed fetchItems() for that collection
+    /// when the backend can do so without new I/O (H5/O23: the dispatchSync
+    /// fetch gate already ran fetchItems() moments earlier; this avoids a
+    /// second, fully redundant read of the same collection). Single-shot:
+    /// once served, the memo is cleared, so a later call with no fresh
+    /// fetchItems() in between falls through to the default. Default:
+    /// delegates to loadRecordsOrError (correct for backends without a
+    /// fetch cache).
+    virtual bool recordsFromLastFetch(const QString &collectionId,
+                                      QList<BackendRecord> &records,
+                                      QString &errorMessage);
+
     // ========== Operation Tracking ==========
 
     virtual bool hasPendingOperations() const;

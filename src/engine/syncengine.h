@@ -156,6 +156,20 @@ public:
     };
     Q_ENUM(SyncBehavior)
 
+    /**
+     * @brief Per-mapping fresh revision state captured during the fast-path
+     * pre-pass (H4: computed on the worker thread, in
+     * SyncEngineWorker::prepareFastPath) and consumed by
+     * onWorkerSyncCompleted to persist sync-progress tokens on success.
+     * Public (rather than the pre-H4 private nesting) because it now
+     * crosses the engine/worker boundary as a signal parameter — see
+     * SyncEngineWorker::fastPathReady in syncengine_p.h.
+     */
+    struct FreshSyncState {
+        QString sourceRevision; // empty if source has no Sync::ChangeDetection
+        QString targetRevision; // empty if target has no Sync::ChangeDetection
+    };
+
     /// Injecting ctor (preferred): the engine reads shape state from
     /// `shape`, which the caller must also have handed to the
     /// PluginManager that populated it. Per-engine isolation lives here.
@@ -450,24 +464,13 @@ private:
     void advanceQueue();
 
     /**
-     * @brief Pre-pass: collect fresh revision tokens from every backend that
-     * implements Sync::ChangeDetection (one batched query per backend). For
-     * each mapping, if both endpoints' fresh revision matches the stored baseline
-     * AND skipUnchangedMappings() is true, the mapping is skipped. Fresh state
-     * is stashed in m_freshState for write-back via primeRevisionCache() on success.
-     *
-     * Idempotent and best-effort. Missing revisions or baselines yield "no skip".
+     * @brief H4: finishes the setup driveQueue() started — either directly
+     * (clobber run, cancelled, or no mappings) or as the continuation of
+     * onFastPathReady() once the worker's fast-path pre-pass returns.
+     * Runs the empty/cancelled teardown, or starts the worker thread and
+     * calls processQueue().
      */
-    void prepareSyncFastPath();
-
-    /**
-     * @brief Per-mapping fresh state captured during prepareSyncFastPath
-     * and consumed by onWorkerSyncCompleted to persist baselines on success.
-     */
-    struct FreshSyncState {
-        QString sourceRevision; // empty if source has no Sync::ChangeDetection
-        QString targetRevision; // empty if target has no Sync::ChangeDetection
-    };
+    void finishDriveQueueSetup();
 
     // Helper methods for sync algorithm
     void updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
@@ -486,6 +489,18 @@ private slots:
     void onWorkerSyncError(const QString &mappingId, const QString &errorMessage);
     void onWorkerTranscodingWarning(const QString &calendarId, const QString &uid,
                                      const QStringList &warnings);
+
+    /**
+     * @brief H4: invoked (queued, worker thread -> engine thread) when
+     * SyncEngineWorker::prepareFastPath finishes. Stores the skip set and
+     * fresh-state map, then calls finishDriveQueueSetup() — the same
+     * continuation driveQueue() itself uses for the clobber/no-fast-path
+     * branch. If cancellation landed while the fast path was in flight,
+     * finishDriveQueueSetup()'s cancelled-teardown branch fires and no
+     * mapping is ever dispatched.
+     */
+    void onFastPathReady(const QSet<QString> &skipped,
+                         const QMap<QString, FreshSyncState> &fresh);
 
     // F2 Task 17: invoked when m_currentWatcher fires canceled.
     // Forwards to the worker via queued connection.
@@ -577,5 +592,13 @@ using SyncEngine = Kalburator::Engine::SyncEngine;
 
 // Metatype declarations for SyncEngineWorker::Request / ::Mode live in
 // the private header syncengine_p.h alongside the class.
+
+// H4: declared here (not syncengine_p.h) because FreshSyncState now
+// crosses the SyncEngine/SyncEngineWorker signal boundary — moc-generated
+// code for SyncEngine (built from this header alone) must see the
+// specialization before any implicit instantiation of the unregistered-
+// type fallback, which a declaration in the private header (included only
+// by syncengine.cpp) would not guarantee.
+Q_DECLARE_METATYPE(Kalburator::Engine::SyncEngine::FreshSyncState)
 
 #endif // KALBURATOR_SYNCENGINE_H

@@ -41,6 +41,36 @@ kalburator_add_calendar_test(tst_localbackend)
 # readonly marker) ahead of the T3/T4 internal rewrites.
 kalburator_add_calendar_test(tst_localbackend_writepaths)
 
+# D1 T1.4 — backend thread-relocation proof: RemoteCalendarBackend and
+# LocalBackend must round-trip fetch/push/delete/startSync/fingerprint/ctag
+# correctly after moveToThread(), and a full SyncEngine run must complete
+# with both mapping backends parked on a dedicated I/O thread (three
+# distinct threads: test thread, engine's own internal worker thread,
+# backend I/O thread — invariant D1 execution plan §1.1).
+add_executable(tst_backend_thread_relocation
+    tst_backend_thread_relocation.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_compile_definitions(tst_backend_thread_relocation
+    PRIVATE KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+)
+target_include_directories(tst_backend_thread_relocation
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_backend_thread_relocation
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_calendar_test_stubs
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_thread_relocation COMMAND tst_backend_thread_relocation)
+set_tests_properties(tst_backend_thread_relocation PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
 add_executable(tst_remotecalendarbackend_blob_view
     tst_remotecalendarbackend_blob_view.cpp

@@ -56,36 +56,37 @@ The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a thi
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
 
-## Sync-convergence campaign — START HERE if working sync/CalDAV correctness
+## Sync-hardening campaign — START HERE if working sync/CalDAV/threading (the active campaign)
 
-Opened 2026-07-03 from a PlanStan investigation of a real-world Nextcloud
-account that never converged (120s soft-freeze, corrupted recurrence,
-non-converging diff, silent-empty-read risk). Full roadmap, evidence, exact
-file:line references, and RED-first test plans for every phase:
-`docs/campaign/2026-07-03-sync-convergence-roadmap.md` — its §5 "Phase status"
-checklist is the single source of truth for what's landed; update it in the
-same commit that lands or merges a phase (same discipline as the other two
-campaigns above).
+**If you are picking up sync work, your one entry point is
+`docs/campaign/2026-07-05-sync-hardening-phases.md`.** Read its §0 session
+protocol and work exactly one phase; its §10 checklist is the single source
+of truth for progress and must be updated in the same commit as the work.
+All lib-side phases happen on branch **`feature/d1-threading`** (merge to
+`main` + tag v0.83 only at its phase H6). The suite has **one intentionally
+RED test** (`tst_backend_thread_relocation::stallProbe_...`, the O16 gate,
+green at phase H4) — do not delete, skip, or weaken it.
 
-**Status (2026-07-04): Tracks A, B, and C are COMPLETE** — tagged v0.80,
-v0.81, v0.82; PlanStan pinned to v0.82 and live-verified (sync converges on a
-real account, fast path by cycle 2). D0 (apply-phase
-`ISyncHost::recordChanged` wiring) is merged to `main` @ `928f318`,
-**untagged** — it ships with D1 under v0.83. Full landed-work history:
-`docs/campaign/FINDINGS.md` and
-`docs/campaign/archive/2026-07-03-sync-convergence-tracks-a-b-c.md`.
+Lineage: the sync-convergence campaign (opened 2026-07-03 from a real
+Nextcloud account that never converged; roadmap
+`docs/campaign/2026-07-03-sync-convergence-roadmap.md`) completed Tracks
+A/B/C — tags v0.80–v0.82, PlanStan live-verified — and D0 is on `main`
+untagged. Its Phase D1 (threading) was then expanded into the hardening
+campaign after a 2026-07-05 first-principles audit
+(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
+found eight issues beyond the threading gap: FINDINGS **O16–O24**, including
+a data-stranding skip bug (O17) and live pre-D1 cross-thread UB (O20). The
+old D1 execution plan (`2026-07-04-d1-threading-execution-plan.md`) is
+SUPERSEDED — reference material only.
 
-**Remaining: Phase D1 (N7 — move DAV I/O off the GUI thread, tag v0.83), then
-D2 backlog triage.** D1 has a hand-off-ready, task-level execution plan
-written from a full cross-repo viability audit:
-**`docs/campaign/2026-07-04-d1-threading-execution-plan.md`** — if you are
-picking up D1, start there, work its tasks in order, and update its §9
-checklist in the same commit as each task. It supersedes the roadmap's D1
-sketch on any disagreement.
+Both repos (libkalburator + PlanStan) belong to this campaign until every
+phase in the hardening plan's §10 is closed. New issues found along the way
+get a new O-number in `docs/campaign/FINDINGS.md` — never silently absorbed.
 
-Work happens on short-lived feature branches per phase group (e.g.
-`feature/sync-stack-integrity-b1-b3`), merged `--no-ff` to `main` and tagged
-once its full-suite gate is green; branches are not kept around after merge.
+Work happens on short-lived feature branches per phase group, merged
+`--no-ff` to `main` and tagged once the full-suite gate is green; branches
+are not kept around after merge (the long-lived `feature/d1-threading` is
+the campaign exception, retired at H6).
 
 ## Phase-status docs are living documents
 
@@ -162,8 +163,11 @@ When writing or modifying tests in this directory:
 - **Cancellation** — call `future.cancel()`. The cancellation
   channel propagates through
   `QFutureWatcher::canceled → SyncEngine::onCancelObserved →
-  SyncEngineWorker::observeCancel` and wakes any nested
-  `QEventLoop` (via `await<Op>` and the conflict-pause slot).
+  SyncEngineWorker::observeCancel` and wakes the nested `QEventLoop`s
+  that gate cancellation: `dispatchSync`'s two fetch-gate loops
+  (source/target, H1.1) and the conflict-pause slot. (The `await<Op>`
+  template that used to be the shared idiom for this was dead code —
+  zero call sites — and was deleted in H1.4.)
 
 - **Write path** — `SyncBackend::storeItems()` / `updateItem()` /
   `writeFinished` were DELETED (canon-upgrade campaign; only stale

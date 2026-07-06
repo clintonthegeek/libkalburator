@@ -19,6 +19,9 @@
 #include <memory>
 #include <optional>
 
+class QNetworkAccessManager;
+class KJob;
+
 namespace Kalburator::Sync {
 
 class CalDavContentCache;
@@ -76,6 +79,15 @@ public:
      * behavior without generating hundreds of items (N4 fix).
      */
     void setMultigetChunkSize(int size);
+
+    /**
+     * @brief Override the QNAM transfer timeout (default 30s, H1.2/O22).
+     *
+     * Re-applies to the existing QNAM if one has already been created.
+     * Test-only affordance so a dropped-request test doesn't have to wait
+     * out the real 30s timeout.
+     */
+    void setTransferTimeoutMs(int ms);
 
     void loadCalendars(const QString &collectionId) override;
 
@@ -269,6 +281,9 @@ public:
     // Records
     QList<BackendRecord>         loadRecords(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
+    bool recordsFromLastFetch(const QString &collectionId,
+                              QList<BackendRecord> &records,
+                              QString &errorMessage) override;
     QString                      createRecord(const QString &collectionId,
                                               const BackendRecord &record) override;
     bool                         updateRecord(const BackendRecord &record) override;
@@ -337,6 +352,40 @@ private:
 
     // No SyncStore member — CTags have their own CTagStore below
     std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setDbPath()
+
+    /**
+     * @brief Shared QNetworkAccessManager for all raw davSyncRequest() calls.
+     *
+     * Lazily created on first use (see nam()) so it acquires the thread
+     * affinity of whichever thread first issues a DAV request — the backend
+     * may be moveToThread()'d before that happens (D1), never after.
+     * Parented to `this`: destroyed with the backend, relocates with it if
+     * moved before first use.
+     */
+    mutable QNetworkAccessManager *m_nam = nullptr;
+    QNetworkAccessManager *nam() const;
+    int m_transferTimeoutMs = 30000; // H1.2/O22 — see setTransferTimeoutMs()
+
+    /**
+     * @brief Start a KDAV job under a per-job transfer-timeout watchdog (H5.5/O25).
+     *
+     * KDAV's job classes run their traffic on KDAV's own internal network
+     * stack — untouched by the setTransferTimeout() we apply to nam() (H1.2)
+     * — and none of them override KJob::doKill(), so KJob::kill() is inert
+     * (returns false, emits nothing). A frozen/never-answering server would
+     * therefore hang the job, and with it the engine's fetch gate, forever
+     * (O25, the live half of O22). This wraps @p job in a single-shot QTimer
+     * of @p m_transferTimeoutMs; on expiry it detaches the job from our
+     * result handlers (so its eventual — possibly never — real completion
+     * cannot double-settle the operation) and runs @p onTimeout, which must
+     * fail/settle the owning SyncOperation exactly as that site's normal
+     * job-error branch would. Must be called on the backend's own thread
+     * (where every job is created). @p onTimeout may be empty for
+     * fire-and-forget jobs that own no operation.
+     */
+    void startJobWithWatchdog(KJob *job,
+                              const std::function<void()> &onTimeout = {});
+
     QUrl m_url;
     QString m_username;
     QString m_password;
@@ -408,6 +457,13 @@ private:
     // and processFetchedItems() — every site that parses raw ics text into
     // Incidence objects.
     QHash<QString, QByteArray> m_lastRawIcsByUid;
+
+    // H5/O23: single-shot memo of the last successful fetchItems() per
+    // collection, so recordsFromLastFetch() can serve it without a second
+    // listing+multiget round trip. Populated by a finished-signal hook in
+    // fetchItems() (fires uniformly across every completion branch — cache
+    // hit, cache miss, full network fetch); cleared once served.
+    QHash<QString, QList<BackendRecord>> m_lastFetchRecords;
 
     // Helper to get our cached etag string for a remote item URL
     QString cachedEtag(const QString &remoteUrl) const;

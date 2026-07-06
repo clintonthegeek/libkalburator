@@ -18,6 +18,7 @@
 #include <KDAV/DavItemDeleteJob>
 #include <KCalendarCore/ICalFormat>
 #include <KIO/Job>
+#include <KJob>
 
 #include <QPointer>
 #include <QDebug>
@@ -26,6 +27,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QThread>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QXmlStreamReader>
@@ -56,6 +58,10 @@ QUrl parentUrl(const QUrl &url)
 
 namespace Kalburator::Sync {
 
+// Forward declaration: defined in the anonymous namespace near loadRecords()
+// below, needed by the recordsFromLastFetch() memo hook in fetchItems().
+namespace { BackendRecord blobRecordFromIcal(const QString &uid, const QByteArray &icalBytes); }
+
 // ============================================================================
 // CTagStore — private inner store for per-backend CalDAV CTags
 //
@@ -67,42 +73,28 @@ class CTagStore
 {
 public:
     explicit CTagStore(const QString &dbPath, const QString &backendId)
-        : m_backendId(backendId)
+        : m_dbPath(dbPath)
+        , m_backendId(backendId)
         , m_connectionName(QStringLiteral("CTagStore_%1_%2")
                                .arg(backendId)
                                .arg(reinterpret_cast<quintptr>(this)))
     {
         if (dbPath.isEmpty()) {
             qWarning() << "CTagStore: empty dbPath for backend" << backendId;
-            return;
         }
-        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
-        db.setDatabaseName(dbPath);
-        if (!db.open()) {
-            qWarning() << "CTagStore: failed to open" << dbPath
-                       << ":" << db.lastError().text();
-            QSqlDatabase::removeDatabase(m_connectionName);
-            m_connectionName.clear();
-            return;
-        }
-        ensureSchema();
     }
 
     ~CTagStore()
     {
-        if (!m_connectionName.isEmpty()) {
-            if (QSqlDatabase::contains(m_connectionName)) {
-                QSqlDatabase::database(m_connectionName).close();
-                QSqlDatabase::removeDatabase(m_connectionName);
-            }
+        if (QSqlDatabase::contains(m_connectionName)) {
+            QSqlDatabase::database(m_connectionName).close();
+            QSqlDatabase::removeDatabase(m_connectionName);
         }
     }
 
-    bool isValid() const { return !m_connectionName.isEmpty(); }
-
-    QString get(const QString &calendarId) const
+    QString get(const QString &calendarId)
     {
-        if (!isValid()) return QString();
+        if (!ensureOpen()) return QString();
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -117,7 +109,7 @@ public:
 
     bool set(const QString &calendarId, const QString &ctag)
     {
-        if (!isValid()) return false;
+        if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -135,7 +127,7 @@ public:
 
     bool clear(const QString &calendarId)
     {
-        if (!isValid()) return false;
+        if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
@@ -147,6 +139,29 @@ public:
     }
 
 private:
+    // Opens the SQLite connection on first use — deferred past construction
+    // so the connection's thread affinity is whichever thread first calls
+    // get/set/clear (the backend's own thread, post-D1-relocation), not
+    // whichever thread happened to call setDbPath() (D1 T1.2).
+    bool ensureOpen()
+    {
+        if (m_openAttempted) return m_open;
+        m_openAttempted = true;
+
+        if (m_dbPath.isEmpty()) return false;
+
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), m_connectionName);
+        db.setDatabaseName(m_dbPath);
+        if (!db.open()) {
+            qWarning() << "CTagStore: failed to open" << m_dbPath
+                       << ":" << db.lastError().text();
+            QSqlDatabase::removeDatabase(m_connectionName);
+            return false;
+        }
+        m_open = ensureSchema();
+        return m_open;
+    }
+
     bool ensureSchema()
     {
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
@@ -163,8 +178,11 @@ private:
         return ok;
     }
 
+    QString m_dbPath;
     QString m_backendId;
     QString m_connectionName;
+    bool m_openAttempted = false;
+    bool m_open = false;
 };
 
 // (CTagStore class ends above; RemoteCalendarBackend methods continue below in the same namespace)
@@ -203,13 +221,20 @@ struct DavResponse {
     bool transportOk() const { return error == QNetworkReply::NoError; }
 };
 
-DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
+DavResponse davSyncRequest(QNetworkAccessManager *nam, const QUrl &url,
+                           const QByteArray &verb,
                            const QString &username, const QString &password,
                            const QByteArray &body = {},
                            const QList<std::pair<QByteArray, QByteArray>> &rawHeaders = {},
                            const QByteArray &contentType =
                                QByteArrayLiteral("application/xml; charset=utf-8"))
 {
+    // Every raw-DAV entry point is reached via BlockingQueued from the sync
+    // worker, so it must already be running on the backend's (== nam's) own
+    // thread. Turns a future thread-affinity bug into a loud debug failure
+    // instead of a silent race (D1, invariant §1.1).
+    Q_ASSERT(QThread::currentThread() == nam->thread());
+
     QUrl cleanUrl = url;
     cleanUrl.setUserInfo(QString());
 
@@ -225,11 +250,10 @@ DavResponse davSyncRequest(const QUrl &url, const QByteArray &verb,
         request.setRawHeader(h.first, h.second);
     }
 
-    QNetworkAccessManager nam;
     QEventLoop loop;
     DavResponse resp;
 
-    QNetworkReply *reply = nam.sendCustomRequest(request, verb, body);
+    QNetworkReply *reply = nam->sendCustomRequest(request, verb, body);
     QObject::connect(reply, &QNetworkReply::finished, &loop, [&]() {
         resp.status =
             reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -359,6 +383,66 @@ RemoteCalendarBackend::RemoteCalendarBackend(const QUrl &url,
 }
 
 RemoteCalendarBackend::~RemoteCalendarBackend() = default;
+
+QNetworkAccessManager *RemoteCalendarBackend::nam() const
+{
+    if (!m_nam) {
+        m_nam = new QNetworkAccessManager(const_cast<RemoteCalendarBackend *>(this));
+        m_nam->setTransferTimeout(m_transferTimeoutMs);
+    }
+    return m_nam;
+}
+
+void RemoteCalendarBackend::setTransferTimeoutMs(int ms)
+{
+    m_transferTimeoutMs = ms;
+    if (m_nam) {
+        m_nam->setTransferTimeout(m_transferTimeoutMs);
+    }
+}
+
+void RemoteCalendarBackend::startJobWithWatchdog(KJob *job,
+                                                 const std::function<void()> &onTimeout)
+{
+    // H5.5/O25: KDAV jobs carry their traffic on KDAV's internal network
+    // stack (not our nam(), so H1.2's setTransferTimeout never reaches them)
+    // and do not override KJob::doKill() — kill() is a no-op that emits
+    // nothing, so we cannot lean on the job's own error path. A single-shot
+    // watchdog fails the operation directly instead. m_transferTimeoutMs<=0
+    // disables the watchdog (unbounded wait, as before H5.5).
+    if (m_transferTimeoutMs > 0) {
+        auto *watchdog = new QTimer(this);
+        watchdog->setSingleShot(true);
+        watchdog->setInterval(m_transferTimeoutMs);
+        const int timeoutMs = m_transferTimeoutMs;
+
+        // Normal completion: tear the watchdog down.
+        connect(job, &KJob::result, watchdog, [watchdog]() {
+            watchdog->stop();
+            watchdog->deleteLater();
+        });
+
+        // Expiry: detach the job from every slot we own (so its eventual —
+        // possibly never — real completion can't double-settle the op),
+        // best-effort kill it (inert on KDAV but harmless), then run the
+        // caller's failure action. Context object is `job`: if the job is
+        // somehow destroyed first, this connection is auto-removed.
+        connect(watchdog, &QTimer::timeout, job, [this, job, watchdog, onTimeout, timeoutMs]() {
+            qWarning() << "RemoteCalendarBackend: KDAV job exceeded transfer timeout ("
+                       << timeoutMs << "ms) — abandoning it and failing the operation";
+            watchdog->deleteLater();
+            job->disconnect(this);
+            job->kill(KJob::Quietly);
+            if (onTimeout) {
+                onTimeout();
+            }
+        });
+
+        watchdog->start();
+    }
+
+    job->start();
+}
 
 void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 {
@@ -544,7 +628,10 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
         emit loadCalendarsFinished(collectionId, true);
     });
 
-    fetchJob->start();
+    startJobWithWatchdog(fetchJob, [this, collectionId]() {
+        emit loadCalendarsFinished(collectionId, false,
+                                   QStringLiteral("collections discovery timed out"));
+    });
 }
 
 const QString RemoteCalendarBackend::BackendTypeName = QStringLiteral("caldav");
@@ -632,7 +719,7 @@ QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &c
 
     for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
         const DavResponse resp = davSyncRequest(
-            it.key(), QByteArrayLiteral("PROPFIND"), m_username, m_password,
+            nam(), it.key(), QByteArrayLiteral("PROPFIND"), m_username, m_password,
             kCtagPropfindBody, {{QByteArrayLiteral("Depth"), QByteArrayLiteral("1")}});
         if (!resp.transportOk()) {
             qWarning() << "RemoteCalendarBackend::fetchAllCtags: PROPFIND failed for"
@@ -665,7 +752,7 @@ QString RemoteCalendarBackend::fetchFreshCtag(const QString &calendarId)
     if (!davUrl) return QString();
 
     const DavResponse resp = davSyncRequest(
-        davUrl->url(), QByteArrayLiteral("PROPFIND"),
+        nam(), davUrl->url(), QByteArrayLiteral("PROPFIND"),
         m_username, m_password, kCtagPropfindBody,
         {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}});
     if (!resp.transportOk()) return QString();
@@ -836,7 +923,9 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
         emit itemRemoved(calId, itemUid);
     });
 
-    deleteJob->start();
+    startJobWithWatchdog(deleteJob, [itemUid]() {
+        qWarning() << "RemoteCalendarBackend::removeItem: delete job timed out for" << itemUid;
+    });
 }
 
 
@@ -963,7 +1052,11 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
             checkDone();
         });
 
-        createJob->start();
+        startJobWithWatchdog(createJob, [inc, checkDone]() {
+            qWarning() << "RemoteCalendarBackend::startSync: create job timed out for"
+                       << inc->uid();
+            checkDone();
+        });
     }
 
     // Launch update jobs (modify with the cached ETag; 412 retries as force).
@@ -1005,7 +1098,10 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                     checkDone();
                 });
 
-        deleteJob->start();
+        startJobWithWatchdog(deleteJob, [uid, checkDone]() {
+            qWarning() << "RemoteCalendarBackend::startSync: delete job timed out for" << uid;
+            checkDone();
+        });
     }
 }
 
@@ -1053,7 +1149,11 @@ void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
                 checkDone();
             });
 
-    modifyJob->start();
+    startJobWithWatchdog(modifyJob, [inc, checkDone]() {
+        qWarning() << "RemoteCalendarBackend::launchStartSyncModify: modify job timed out for"
+                   << inc->uid();
+        checkDone();
+    });
 }
 
 void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString &etag,
@@ -1141,7 +1241,7 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
         "</C:mkcalendar>\n"
     ).arg(displayName.toHtmlEscaped(), componentSet);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("MKCALENDAR"),
                                             m_username, m_password,
                                             requestBody.toUtf8());
@@ -1238,7 +1338,7 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
         "</D:propertyupdate>\n"
     ).arg(propsXml);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("PROPPATCH"),
                                             m_username, m_password,
                                             requestBody.toUtf8());
@@ -1276,7 +1376,7 @@ bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QS
     const QUrl calendarUrl = crudCalendarUrl(calendarId);
     qDebug() << "RemoteCalendarBackend::deleteCalendar: Deleting calendar at" << safeUrlString(calendarUrl);
 
-    const DavResponse resp = davSyncRequest(calendarUrl,
+    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
                                             QByteArrayLiteral("DELETE"),
                                             m_username, m_password);
     qDebug() << "RemoteCalendarBackend::deleteCalendar: HTTP status" << resp.status;
@@ -1349,6 +1449,24 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 {
     auto *op = onOwnerThread(new FetchOperation(calendarId), this);
     registerOperation(op);
+
+    // H5/O23: capture this fetch's results into the recordsFromLastFetch()
+    // memo on every successful completion, regardless of which internal
+    // branch completed it (cache hit, cache miss, full network fetch).
+    // setFetchedItems() and m_lastRawIcsByUid are always populated before
+    // complete() is called, and finished() fires synchronously from
+    // complete() on this same thread, so both are ready here.
+    connect(op, &SyncOperation::finished, this, [this, op, calendarId]() {
+        if (op->state() != SyncOperation::Succeeded) return;
+        QList<BackendRecord> records;
+        for (const auto &incidence : op->fetchedItems()) {
+            if (incidence.isNull()) continue;
+            const QByteArray rawIcs = m_lastRawIcsByUid.value(incidence->uid());
+            records.append(blobRecordFromIcal(
+                incidence->uid(), !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence)));
+        }
+        m_lastFetchRecords[calendarId] = records;
+    });
 
     if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::fetchItems: No DAV URL for calendar:" << calendarId;
@@ -1648,13 +1766,29 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     (*runNextBatch)();
                 });
 
-                fetchJob->start();
+                startJobWithWatchdog(fetchJob, [this, op, calendarId, batchIndex, totalBatches]() {
+                    if (op->isFinished()) {
+                        return;
+                    }
+                    const QString errorMsg = QStringLiteral(
+                        "Failed to fetch items (batch %1/%2): transfer timed out")
+                            .arg(*batchIndex + 1).arg(totalBatches);
+                    op->fail(errorMsg);
+                    emit fetchFinished(calendarId, false, errorMsg);
+                });
             };
 
             (*runNextBatch)();
         });
 
-        listJob->start();
+        startJobWithWatchdog(listJob, [this, op, calendarId]() {
+            if (op->isFinished()) {
+                return;
+            }
+            const QString errorMsg = QStringLiteral("Failed to list items: transfer timed out");
+            op->fail(errorMsg);
+            emit fetchFinished(calendarId, false, errorMsg);
+        });
     }, Qt::QueuedConnection);
 
     return op;
@@ -1875,7 +2009,15 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                 settleIfDone();
             });
 
-            createJob->start();
+            startJobWithWatchdog(createJob, [op, uid, anyError, settleIfDone]() {
+                if (op->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::pushItems: create job timed out for" << uid;
+                op->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
         }
     }, Qt::QueuedConnection);
 
@@ -1911,6 +2053,25 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
     QMetaObject::invokeMethod(this, [this, op, davUrl, uids, remaining, anyError]() {
         op->setState(SyncOperation::Running);
 
+        // Shared accounting tail (parallel to pushItems' settleIfDone): decrement
+        // the outstanding-job counter and, on the last one, invalidate the CTag
+        // and settle the op. Reused by both the per-job result handler and the
+        // H5.5 watchdog so a timed-out delete settles identically to a failed one.
+        auto settleIfDone = [this, op, remaining, anyError]() {
+            if (--(*remaining) != 0) {
+                return;
+            }
+            if (!op->succeededUids().isEmpty()) {
+                clearCtag(op->calendarId());
+            }
+            if ((*anyError || !op->failedUids().isEmpty())
+                && op->succeededUids().isEmpty()) {
+                op->fail(QStringLiteral("All items failed to delete"));
+            } else {
+                op->complete();
+            }
+        };
+
         for (const QString &uid : uids) {
             QUrl itemUrl = generateItemUrl(davUrl, uid);
             KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
@@ -1926,7 +2087,7 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
             auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
 
             connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
-                    [this, op, uid, itemUrl, remaining, anyError](KJob *job) {
+                    [this, op, uid, itemUrl, anyError, settleIfDone](KJob *job) {
                 if (op->state() == SyncOperation::Cancelled) {
                     return;
                 }
@@ -1941,26 +2102,18 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                     qDebug() << "RemoteCalendarBackend::deleteItems: Deleted" << uid;
                 }
 
-                (*remaining)--;
-                if (*remaining == 0) {
-                    // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty()) {
-                        clearCtag(op->calendarId());
-                    }
-
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        if (op->succeededUids().isEmpty()) {
-                            op->fail(QStringLiteral("All items failed to delete"));
-                        } else {
-                            op->complete();  // Partial success
-                        }
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
             });
 
-            deleteJob->start();
+            startJobWithWatchdog(deleteJob, [op, uid, anyError, settleIfDone]() {
+                if (op->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::deleteItems: delete job timed out for" << uid;
+                op->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
         }
     }, Qt::QueuedConnection);
 
@@ -1985,7 +2138,7 @@ QString RemoteCalendarBackend::getRawIcs(const QString &calendarId, const QStrin
     KDAV::DavUrl davUrl = *davUrlFor(calendarId);
     QUrl itemUrl = generateItemUrl(davUrl, uid);
 
-    const DavResponse resp = davSyncRequest(itemUrl, QByteArrayLiteral("GET"),
+    const DavResponse resp = davSyncRequest(nam(), itemUrl, QByteArrayLiteral("GET"),
                                             m_username, m_password);
     if (resp.status == 200 && resp.transportOk()) {
         return QString::fromUtf8(resp.body);
@@ -2019,7 +2172,7 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
     }
 
     const DavResponse resp = davSyncRequest(
-        itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
+        nam(), itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
         icsContent.toUtf8(), headers,
         QByteArrayLiteral("text/calendar; charset=utf-8"));
 
@@ -2076,7 +2229,7 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 namespace {
 
 /// Build a BackendRecord from raw iCal bytes and a uid.
-static Kalburator::Sync::BackendRecord blobRecordFromIcal(
+Kalburator::Sync::BackendRecord blobRecordFromIcal(
     const QString &uid,
     const QByteArray &icalBytes)
 {
@@ -2195,6 +2348,20 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
 
     op->deleteLater();
     return result;
+}
+
+bool RemoteCalendarBackend::recordsFromLastFetch(const QString &collectionId,
+                                                 QList<BackendRecord> &records,
+                                                 QString &errorMessage)
+{
+    auto it = m_lastFetchRecords.find(collectionId);
+    if (it == m_lastFetchRecords.end()) {
+        return SyncBackendBase::recordsFromLastFetch(collectionId, records, errorMessage);
+    }
+    records = it.value();
+    m_lastFetchRecords.erase(it); // single-shot
+    errorMessage.clear();
+    return true;
 }
 
 std::optional<BackendRecord> RemoteCalendarBackend::loadRecord(const QString &recordId)
