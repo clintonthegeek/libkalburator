@@ -18,6 +18,8 @@
 #include <QTemporaryDir>
 #include <QTimeZone>
 
+#include <KCalendarCore/Event>
+
 #include "remotecalendarbackend.h"
 #include "iblobbackend.h"
 #include "backendrecord.h"
@@ -43,6 +45,8 @@ private slots:
     void ctagMatchServingZeroCachedItems_distrustsMatchAndRelists();
     void partialMaterialization_doesNotCommitCtag();
     void collectionRevision_droppedRequests_failsWithinTimeout();
+    void fetchItems_droppedRequests_failsWithinTimeout();
+    void pushItems_droppedRequests_failsWithinTimeout();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -451,6 +455,81 @@ void TestRemoteCalendarBackendBlobView::collectionRevision_droppedRequests_fails
              "collectionRevision must fail within the transfer timeout, not hang");
     QVERIFY2(revision.isEmpty(),
              "a dropped/never-answered PROPFIND must not report a revision");
+}
+
+void TestRemoteCalendarBackendBlobView::fetchItems_droppedRequests_failsWithinTimeout()
+{
+    // H5.5/O25: fetchItems() runs its item-listing traffic through
+    // KDAV::DavItemsListJob on KDAV's own internal network stack, which
+    // H1.2's setTransferTimeout() (on our nam()) never touches. Against a
+    // server that accepts the connection and never answers, the list job
+    // hangs forever, the FetchOperation never settles, and the engine's
+    // fetch gate wedges (O22). The per-job watchdog must fail the op within
+    // the transfer-timeout window. Pre-H5.5 this HANGS (capped by the QTRY
+    // bound → isFinished() stays false → RED).
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setDropRequests(true);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    // Pre-register (no discovery) — a fresh backend has no stored CTag, so
+    // fetchItems() skips the nam()-level CTag PROPFIND and goes straight to
+    // the KDAV list job, which is exactly the surface O25 is about.
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.setTransferTimeoutMs(2000);
+
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(fetchOp != nullptr);
+    // ~3x the 2000ms watchdog window: comfortably covers a single killed
+    // list job while still failing fast if the op wedges.
+    QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 7000);
+    QCOMPARE(fetchOp->state(), SyncOperation::Failed);
+    QVERIFY2(!fetchOp->errorString().isEmpty(),
+             "a timed-out KDAV list job must surface a non-empty error");
+}
+
+void TestRemoteCalendarBackendBlobView::pushItems_droppedRequests_failsWithinTimeout()
+{
+    // H5.5/O25: the write path (DavItemCreateJob) shares the same KDAV
+    // network stack and the same wedge. A push against a dropping server
+    // must settle Failed within the watchdog window rather than hang.
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setDropRequests(true);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.setTransferTimeoutMs(2000);
+
+    auto event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
+    event->setUid(QStringLiteral("h55-push-uid-1"));
+    event->setSummary(QStringLiteral("Watchdog push"));
+    event->setDtStart(QDateTime(QDate(2026, 7, 5), QTime(12, 0), QTimeZone::utc()));
+
+    PushOperation *pushOp =
+        backend.pushItems(QStringLiteral("Personal"),
+                          {event.staticCast<KCalendarCore::Incidence>()});
+    QVERIFY(pushOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 7000);
+    QCOMPARE(pushOp->state(), SyncOperation::Failed);
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)
