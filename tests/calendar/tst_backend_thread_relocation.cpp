@@ -152,11 +152,25 @@ public:
         return LocalBackend::createRecord(collectionId, record);
     }
 
+    bool updateRecord(const Kalburator::Sync::BackendRecord &record) override
+    {
+        m_updateRecordCallThread = QThread::currentThread();
+        return LocalBackend::updateRecord(record);
+    }
+
+    bool deleteRecord(const QString &recordId) override
+    {
+        m_deleteRecordCallThread = QThread::currentThread();
+        return LocalBackend::deleteRecord(recordId);
+    }
+
     mutable QThread *m_colorCallThread = nullptr;
     QThread *m_updateCallThread = nullptr;
     QVariantMap m_lastAppliedProps;
     QThread *m_loadRecordsCallThread = nullptr;
     QThread *m_createRecordCallThread = nullptr;
+    QThread *m_updateRecordCallThread = nullptr;
+    QThread *m_deleteRecordCallThread = nullptr;
     int m_loadRecordsCallCount = 0;
     int m_recordsFromLastFetchFellBackCount = 0;
 
@@ -185,6 +199,8 @@ private slots:
 
     void singleFetch_localBackends_noRedundantRead();
     void singleFetch_remoteBackend_noRedundantListing();
+
+    void steadyStateWrites_appliesOnBackendThread();
 
 private:
     // Harness for the T1.5 GUI-stall probe: a latency-injected
@@ -1279,6 +1295,141 @@ void TstBackendThreadRelocation::singleFetch_remoteBackend_noRedundantListing()
 
     delete remoteBackend;
     delete localBackend;
+}
+
+// ---- H8.5 / O27: steady-state writes honor RecordWriter::BackendThread ----
+//
+// applyBatch's BackendThread branch must marshal writer->apply() to the
+// backend's own thread (recordwriter.h:34). Pre-H8.5 it ran apply() — and
+// thus updateRecord()/deleteRecord() — directly on the worker thread, so
+// every steady-state CalDAV update did QNAM I/O + etag-cache SQL cross-thread
+// (live UB, the D1 class). This pins the fix with a target backend on a
+// dedicated I/O thread and asserts the record writes execute there, not on
+// the engine worker thread.
+void TstBackendThreadRelocation::steadyStateWrites_appliesOnBackendThread()
+{
+    QTemporaryDir sourceDir;
+    QTemporaryDir targetDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid());
+    const QString calId = QStringLiteral("cal-1");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+    QVERIFY(QDir().mkpath(targetDir.filePath(calId)));
+
+    // A SUMMARY-varied ics so an edit produces a different fingerprint (and
+    // thus a genuine steady-state update, not a no-op skip).
+    auto icsWithSummary = [](const QByteArray &uid, const QByteArray &summary) -> QByteArray {
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:" + uid + "\r\n"
+               "SUMMARY:" + summary + "\r\nDTSTART:20260601T120000Z\r\n"
+               "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    };
+
+    const QString evt1Path = sourceDir.filePath(calId + QStringLiteral("/o27-evt-1.ics"));
+    const QString evt2Path = sourceDir.filePath(calId + QStringLiteral("/o27-evt-2.ics"));
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(icsWithSummary("o27-evt-1", "Original"));
+    }
+    {
+        QFile f(evt2Path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(icsWithSummary("o27-evt-2", "ToDelete"));
+    }
+
+    // Source stays on the test thread; target is relocated to a dedicated I/O
+    // thread. OneWayUpload means source→target writes hit the target only, so
+    // the relocated backend is exactly where the steady-state update/delete
+    // land — the O27 surface.
+    auto *sourceBackend = new ThreadRecordingLocalBackend(sourceDir.path());
+    auto *targetBackend = new ThreadRecordingLocalBackend(targetDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->setDbPath(targetDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("d1-test-o27-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(targetBackend, [targetBackend]() { delete targetBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+        delete sourceBackend;
+    });
+    targetBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("o27-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("o27-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("o27-mapping");
+    mapping.sourceBackend   = QStringLiteral("o27-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("o27-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::OneWayUpload;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    };
+
+    // Cycle 1: first sync mirrors both events onto the (empty) target. This is
+    // dispatchFirstSync's blob-mirror path (already correctly marshaled since
+    // H2.2) — not what O27 is about; it just establishes the baseline.
+    runOnce();
+    QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/o27-evt-1.ics"))));
+    QVERIFY(QFile::exists(targetDir.filePath(calId + QStringLiteral("/o27-evt-2.ics"))));
+
+    // Steady-state edit: modify evt-1 (→ update) and remove evt-2 (→ delete).
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write(icsWithSummary("o27-evt-1", "Edited"));
+    }
+    QVERIFY(QFile::remove(evt2Path));
+
+    // Cycle 2 goes through the steady-state dispatchSync/applyBatch path — the
+    // O27 surface. Pre-H8.5, updateRecord()/deleteRecord() run on the engine
+    // worker thread; post-H8.5 they must run on the target backend's I/O thread.
+    runOnce();
+
+    QVERIFY(targetBackend->m_updateRecordCallThread != nullptr);
+    QVERIFY(targetBackend->m_deleteRecordCallThread != nullptr);
+    QCOMPARE(targetBackend->m_updateRecordCallThread, &ioThread);
+    QCOMPARE(targetBackend->m_deleteRecordCallThread, &ioThread);
 }
 
 QTEST_GUILESS_MAIN(TstBackendThreadRelocation)
