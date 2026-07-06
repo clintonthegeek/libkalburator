@@ -899,6 +899,32 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       the 1 is O26 (pre-existing MockBackend cancellation flake, passes
       5/5 in isolation, unrelated). Roadmap §5 D1 line + release table
       updated in the same commit. Next: **H7** (PlanStan adoption).
-- [ ] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,
-      call-site sweep, mid-sync-close teardown proof
+- [x] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,
+      call-site sweep, teardown proof — 2026-07-06 (PlanStan branch
+      `feature/d1-io-thread`). Pinned to **v0.83**; dropped the D0
+      `reloadModelEligibleCalendars` mitigation (engine `recordChanged` now
+      covers fresh-creation). Added `src/sync/backendinvoke.h` (the "one door":
+      `invokeOnBackend` / `queryBackendBlocking`) and routed every GUI-side
+      backend call through it; `CollectionController` owns one shared
+      `planstan-backend-io` `QThread` and relocates Local + Remote backends
+      (config-declared **and** provider-mirrored) onto it right after
+      construction/wiring. Teardown order load-bearing: `stopWorkerThread()`
+      then `stopBackendIoThread()` (moves backends back to the main thread —
+      provider-owned ones outlive CC — then quit+wait) before any backend
+      delete. Kill switch `PLANSTAN_SYNC_IO_THREAD`. **Simplification vs the
+      plan:** T2.3's BackendFacts cache was proven unnecessary — `backendType`
+      / `shapeFor` / `recurrenceCapabilities` are pure constants in
+      libkalburator, safe to read cross-thread; the metatype audit found the
+      one boundary-crossing non-builtin (`Incidence::Ptr`) already registered.
+      **Verified:** `tst_sync_conflicts` 123/0 and `tst_collectioncontroller`
+      28/0 with backends genuinely on the I/O thread (no "Cannot queue" /
+      "different thread" warnings; the pre-existing collectioncontroller
+      teardown-hang flake is *fixed* by the new ordering); live app against
+      scratch Radicale relocated the CalDAV backend and fetched an event via
+      real DAV on the I/O thread. Pre-existing dev/offscreen suite failures
+      (evicted-graph Not-Run, four fragile MainWindow-offscreen integration
+      tests, the `tst_collectionassembler` release-`Q_ASSERT` harness bug) all
+      reproduce identically on `master` — see PlanStan
+      `docs/bugs/preexisting-suite-failures-dev-offscreen.md`. **Next: CP-C/H8**
+      (soak + adversarial live verification, strong-model checkpoint).
 - [ ] **CP-C / H8** soak + adversarial live verification; campaign closed; H9 triaged
