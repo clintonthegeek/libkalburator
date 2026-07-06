@@ -273,7 +273,7 @@ parallelism is a separate risk/benefit decision.
 | v0.80 | A1 (per-kind dispatch Tasks 4–9) + A2 (N1 recurrence fix) | PlanStan pin bump; re-verify F4 GUI repro; delete/close F4 bug docs |
 | v0.81 | B1 (N3) + B2 (N4) + B3 (N5) | PlanStan pin bump; C1 guard lands alongside |
 | v0.82 | B4 (N2 per-side baselines, schema v5) + B5 (convergence gate + fast path) | PlanStan pin bump; flip `syncSkipUnchanged` default; C2/C3; **C4 live verification** (done) |
-| v0.83 | D1 (threading + shared QNAM) | PlanStan I/O-thread adoption; close `sequential-sync-performance.md` freeze half |
+| v0.83 | D0 + D1 (threading + shared QNAM) + sync-hardening H1–H5.5 (O16–O25) | PlanStan I/O-thread adoption (hardening H7); close `sequential-sync-performance.md` freeze half. **Consumer notes:** (a) engine no longer calls `cachedCollectionRevision`/`primeRevisionCache` — WildPalms must verify any independent usage; (b) BaselineStore schema **v7** (additive `sync_tokens` table, forward-only self-migrating) |
 
 Every lib phase: feature branch → RED tests → implement → full suite (157+ at
 baseline) → merge → update this roadmap's status line for that phase **in the
@@ -311,11 +311,10 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       and `PlanStan/CLAUDE.md`.
 - [x] D0 apply-phase `recordChanged` wiring — landed 2026-07-04 on `main`,
       untagged (ships with v0.83 alongside D1)
-- [ ] D1 N7 threading + O16–O24 hardening (tag v0.83) — **expanded into
-      the sync-hardening campaign** 2026-07-05:
-      `docs/campaign/2026-07-05-sync-hardening-phases.md` (live checklist
-      in its §10; lib-side T1.1–T1.5 already landed on
-      `feature/d1-threading`). This roadmap's D1 line closes when
-      hardening H6 tags v0.83; PlanStan adoption closes at hardening
-      H7/H8.
+- [x] D1 N7 threading + O16–O25 hardening — **tagged v0.83 2026-07-05**
+      (hardening H6): `feature/d1-threading` merged to `main` (`--no-ff`)
+      as `e32fac3`. The sync-hardening campaign
+      (`docs/campaign/2026-07-05-sync-hardening-phases.md`) landed lib-side
+      phases T1.1–T1.4 + H1–H5.5, closing FINDINGS O16–O25. PlanStan
+      I/O-thread adoption remains open at hardening H7/H8.
 - [ ] D2 backlog triage

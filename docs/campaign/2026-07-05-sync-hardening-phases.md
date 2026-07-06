@@ -1,15 +1,13 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H5 + **H5.5 done**; CP-A recorded (2026-07-05). CP-B
-review ran 2026-07-05 and found **O25** (KDAV jobs have no timeout — the O22
-wedge was still live on the primary traffic path), which blocked release.
-**H5.5 landed 2026-07-05** (per-job KDAV watchdog; corrected the CP-B
-`kill()` mechanism, which is inert on KDAV 6.27.0 — see §8b/FINDINGS O25) and
-the CP-B pulled-cable smoke re-ran ALL PASS. O25/O22 → Resolved. **H6/v0.83
-is now UNBLOCKED** (next: CP-B's H6 release mechanics — merge + tag). See §10
-checklist — it is the single source of truth for progress; update it in the
-same commit as the work.
+**Status:** Phases H1–H5.5 done; **H6 done — v0.83 tagged 2026-07-05**
+(`feature/d1-threading` merged to `main` `--no-ff` @ `e32fac3`, annotated
+tag v0.83). CP-A + CP-B recorded (2026-07-05). All lib-side work (T1.1–T1.4,
+H1–H5.5) is on `main` and released; FINDINGS O16–O25 Resolved. **Next: H7 —
+PlanStan I/O-thread adoption** (repo `~/dev/PlanStan`, pin bump to v0.83,
+D0-mitigation removal, backend relocation). See §10 checklist — it is the
+single source of truth for progress; update it in the same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -891,7 +889,16 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       `"Failed to list items: transfer timed out"`, engine accepted a fresh
       runSync after SIGCONT, stranded item landed (O17 live proof). O25 → Resolved,
       O22 → Resolved. H6/v0.83 is now unblocked.
-- [ ] **H6** merge → main, tag v0.83, roadmap §5 updated (BLOCKED on H5.5)
+- [x] **H6** merge → main, tag v0.83, roadmap §5 updated — 2026-07-05.
+      `feature/d1-threading` merged to `main` (`--no-ff`, merge commit
+      `e32fac3`); annotated tag **v0.83** at that commit naming D0, D1
+      T1.1–T1.4, H1–H5.5, FINDINGS O16–O25 dispositions, and the two
+      consumer-visible notes (engine no longer calls
+      `cachedCollectionRevision`/`primeRevisionCache`; BaselineStore
+      schema v7 additive/self-migrating). Pre-tag suite 159/160 green —
+      the 1 is O26 (pre-existing MockBackend cancellation flake, passes
+      5/5 in isolation, unrelated). Roadmap §5 D1 line + release table
+      updated in the same commit. Next: **H7** (PlanStan adoption).
 - [ ] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,
       call-site sweep, mid-sync-close teardown proof
 - [ ] **CP-C / H8** soak + adversarial live verification; campaign closed; H9 triaged
