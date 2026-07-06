@@ -18,6 +18,7 @@
 #include <KDAV/DavItemDeleteJob>
 #include <KCalendarCore/ICalFormat>
 #include <KIO/Job>
+#include <KJob>
 
 #include <QPointer>
 #include <QDebug>
@@ -400,6 +401,49 @@ void RemoteCalendarBackend::setTransferTimeoutMs(int ms)
     }
 }
 
+void RemoteCalendarBackend::startJobWithWatchdog(KJob *job,
+                                                 const std::function<void()> &onTimeout)
+{
+    // H5.5/O25: KDAV jobs carry their traffic on KDAV's internal network
+    // stack (not our nam(), so H1.2's setTransferTimeout never reaches them)
+    // and do not override KJob::doKill() — kill() is a no-op that emits
+    // nothing, so we cannot lean on the job's own error path. A single-shot
+    // watchdog fails the operation directly instead. m_transferTimeoutMs<=0
+    // disables the watchdog (unbounded wait, as before H5.5).
+    if (m_transferTimeoutMs > 0) {
+        auto *watchdog = new QTimer(this);
+        watchdog->setSingleShot(true);
+        watchdog->setInterval(m_transferTimeoutMs);
+        const int timeoutMs = m_transferTimeoutMs;
+
+        // Normal completion: tear the watchdog down.
+        connect(job, &KJob::result, watchdog, [watchdog]() {
+            watchdog->stop();
+            watchdog->deleteLater();
+        });
+
+        // Expiry: detach the job from every slot we own (so its eventual —
+        // possibly never — real completion can't double-settle the op),
+        // best-effort kill it (inert on KDAV but harmless), then run the
+        // caller's failure action. Context object is `job`: if the job is
+        // somehow destroyed first, this connection is auto-removed.
+        connect(watchdog, &QTimer::timeout, job, [this, job, watchdog, onTimeout, timeoutMs]() {
+            qWarning() << "RemoteCalendarBackend: KDAV job exceeded transfer timeout ("
+                       << timeoutMs << "ms) — abandoning it and failing the operation";
+            watchdog->deleteLater();
+            job->disconnect(this);
+            job->kill(KJob::Quietly);
+            if (onTimeout) {
+                onTimeout();
+            }
+        });
+
+        watchdog->start();
+    }
+
+    job->start();
+}
+
 void RemoteCalendarBackend::setDbPath(const QString &dbPath)
 {
     if (!dbPath.isEmpty() && !m_ctags) {
@@ -584,7 +628,10 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
         emit loadCalendarsFinished(collectionId, true);
     });
 
-    fetchJob->start();
+    startJobWithWatchdog(fetchJob, [this, collectionId]() {
+        emit loadCalendarsFinished(collectionId, false,
+                                   QStringLiteral("collections discovery timed out"));
+    });
 }
 
 const QString RemoteCalendarBackend::BackendTypeName = QStringLiteral("caldav");
@@ -876,7 +923,9 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
         emit itemRemoved(calId, itemUid);
     });
 
-    deleteJob->start();
+    startJobWithWatchdog(deleteJob, [itemUid]() {
+        qWarning() << "RemoteCalendarBackend::removeItem: delete job timed out for" << itemUid;
+    });
 }
 
 
@@ -1003,7 +1052,11 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
             checkDone();
         });
 
-        createJob->start();
+        startJobWithWatchdog(createJob, [inc, checkDone]() {
+            qWarning() << "RemoteCalendarBackend::startSync: create job timed out for"
+                       << inc->uid();
+            checkDone();
+        });
     }
 
     // Launch update jobs (modify with the cached ETag; 412 retries as force).
@@ -1045,7 +1098,10 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                     checkDone();
                 });
 
-        deleteJob->start();
+        startJobWithWatchdog(deleteJob, [uid, checkDone]() {
+            qWarning() << "RemoteCalendarBackend::startSync: delete job timed out for" << uid;
+            checkDone();
+        });
     }
 }
 
@@ -1093,7 +1149,11 @@ void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
                 checkDone();
             });
 
-    modifyJob->start();
+    startJobWithWatchdog(modifyJob, [inc, checkDone]() {
+        qWarning() << "RemoteCalendarBackend::launchStartSyncModify: modify job timed out for"
+                   << inc->uid();
+        checkDone();
+    });
 }
 
 void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString &etag,
@@ -1706,13 +1766,29 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     (*runNextBatch)();
                 });
 
-                fetchJob->start();
+                startJobWithWatchdog(fetchJob, [this, op, calendarId, batchIndex, totalBatches]() {
+                    if (op->isFinished()) {
+                        return;
+                    }
+                    const QString errorMsg = QStringLiteral(
+                        "Failed to fetch items (batch %1/%2): transfer timed out")
+                            .arg(*batchIndex + 1).arg(totalBatches);
+                    op->fail(errorMsg);
+                    emit fetchFinished(calendarId, false, errorMsg);
+                });
             };
 
             (*runNextBatch)();
         });
 
-        listJob->start();
+        startJobWithWatchdog(listJob, [this, op, calendarId]() {
+            if (op->isFinished()) {
+                return;
+            }
+            const QString errorMsg = QStringLiteral("Failed to list items: transfer timed out");
+            op->fail(errorMsg);
+            emit fetchFinished(calendarId, false, errorMsg);
+        });
     }, Qt::QueuedConnection);
 
     return op;
@@ -1933,7 +2009,15 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                 settleIfDone();
             });
 
-            createJob->start();
+            startJobWithWatchdog(createJob, [op, uid, anyError, settleIfDone]() {
+                if (op->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::pushItems: create job timed out for" << uid;
+                op->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
         }
     }, Qt::QueuedConnection);
 
@@ -1969,6 +2053,25 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
     QMetaObject::invokeMethod(this, [this, op, davUrl, uids, remaining, anyError]() {
         op->setState(SyncOperation::Running);
 
+        // Shared accounting tail (parallel to pushItems' settleIfDone): decrement
+        // the outstanding-job counter and, on the last one, invalidate the CTag
+        // and settle the op. Reused by both the per-job result handler and the
+        // H5.5 watchdog so a timed-out delete settles identically to a failed one.
+        auto settleIfDone = [this, op, remaining, anyError]() {
+            if (--(*remaining) != 0) {
+                return;
+            }
+            if (!op->succeededUids().isEmpty()) {
+                clearCtag(op->calendarId());
+            }
+            if ((*anyError || !op->failedUids().isEmpty())
+                && op->succeededUids().isEmpty()) {
+                op->fail(QStringLiteral("All items failed to delete"));
+            } else {
+                op->complete();
+            }
+        };
+
         for (const QString &uid : uids) {
             QUrl itemUrl = generateItemUrl(davUrl, uid);
             KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
@@ -1984,7 +2087,7 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
             auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
 
             connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
-                    [this, op, uid, itemUrl, remaining, anyError](KJob *job) {
+                    [this, op, uid, itemUrl, anyError, settleIfDone](KJob *job) {
                 if (op->state() == SyncOperation::Cancelled) {
                     return;
                 }
@@ -1999,26 +2102,18 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                     qDebug() << "RemoteCalendarBackend::deleteItems: Deleted" << uid;
                 }
 
-                (*remaining)--;
-                if (*remaining == 0) {
-                    // Invalidate stored CTag — the server's CTag changed due to our push
-                    if (!op->succeededUids().isEmpty()) {
-                        clearCtag(op->calendarId());
-                    }
-
-                    if (*anyError || !op->failedUids().isEmpty()) {
-                        if (op->succeededUids().isEmpty()) {
-                            op->fail(QStringLiteral("All items failed to delete"));
-                        } else {
-                            op->complete();  // Partial success
-                        }
-                    } else {
-                        op->complete();
-                    }
-                }
+                settleIfDone();
             });
 
-            deleteJob->start();
+            startJobWithWatchdog(deleteJob, [op, uid, anyError, settleIfDone]() {
+                if (op->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::deleteItems: delete job timed out for" << uid;
+                op->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
         }
     }, Qt::QueuedConnection);
 

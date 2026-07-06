@@ -20,6 +20,7 @@
 #include <optional>
 
 class QNetworkAccessManager;
+class KJob;
 
 namespace Kalburator::Sync {
 
@@ -364,6 +365,26 @@ private:
     mutable QNetworkAccessManager *m_nam = nullptr;
     QNetworkAccessManager *nam() const;
     int m_transferTimeoutMs = 30000; // H1.2/O22 — see setTransferTimeoutMs()
+
+    /**
+     * @brief Start a KDAV job under a per-job transfer-timeout watchdog (H5.5/O25).
+     *
+     * KDAV's job classes run their traffic on KDAV's own internal network
+     * stack — untouched by the setTransferTimeout() we apply to nam() (H1.2)
+     * — and none of them override KJob::doKill(), so KJob::kill() is inert
+     * (returns false, emits nothing). A frozen/never-answering server would
+     * therefore hang the job, and with it the engine's fetch gate, forever
+     * (O25, the live half of O22). This wraps @p job in a single-shot QTimer
+     * of @p m_transferTimeoutMs; on expiry it detaches the job from our
+     * result handlers (so its eventual — possibly never — real completion
+     * cannot double-settle the operation) and runs @p onTimeout, which must
+     * fail/settle the owning SyncOperation exactly as that site's normal
+     * job-error branch would. Must be called on the backend's own thread
+     * (where every job is created). @p onTimeout may be empty for
+     * fire-and-forget jobs that own no operation.
+     */
+    void startJobWithWatchdog(KJob *job,
+                              const std::function<void()> &onTimeout = {});
 
     QUrl m_url;
     QString m_username;

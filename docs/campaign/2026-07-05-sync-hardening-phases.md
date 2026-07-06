@@ -1,12 +1,15 @@
 # Sync-hardening campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-05
-**Status:** Phases H1–H5 done; CP-A recorded (2026-07-05). CP-B review ran
-2026-07-05: all engineered checks pass, but the live pulled-cable smoke
-found **O25** (KDAV jobs have no timeout — the O22 wedge is still live on
-the primary traffic path). **H6/v0.83 is BLOCKED until the new phase H5.5
-lands and the smoke re-runs clean.** See §10 checklist — it is the single
-source of truth for progress; update it in the same commit as the work.
+**Status:** Phases H1–H5 + **H5.5 done**; CP-A recorded (2026-07-05). CP-B
+review ran 2026-07-05 and found **O25** (KDAV jobs have no timeout — the O22
+wedge was still live on the primary traffic path), which blocked release.
+**H5.5 landed 2026-07-05** (per-job KDAV watchdog; corrected the CP-B
+`kill()` mechanism, which is inert on KDAV 6.27.0 — see §8b/FINDINGS O25) and
+the CP-B pulled-cable smoke re-ran ALL PASS. O25/O22 → Resolved. **H6/v0.83
+is now UNBLOCKED** (next: CP-B's H6 release mechanics — merge + tag). See §10
+checklist — it is the single source of truth for progress; update it in the
+same commit as the work.
 **Scope:** closes FINDINGS **O16–O24** (from the 2026-07-05 first-principles
 audit) and finishes the D1 threading work (PlanStan I/O-thread adoption,
 tag v0.83). Both repos — libkalburator (primary) and PlanStan (H7/H8) —
@@ -586,22 +589,42 @@ live smoke found O25). Read FINDINGS O25 first.
 internal QNAM, which exposes no timeout API. H1.2's `setTransferTimeout`
 covers only the backend's own `nam()`. Fix: a per-job watchdog.
 
+**IMPLEMENTATION-TIME CORRECTION (2026-07-05, Opus — the CP-B `kill()`
+mechanism is inert on KDAV 6.27.0):** the pre-decided step 1 below assumed
+`job->kill(KJob::EmitResult)` finishes the job so its existing `result`
+handler runs the error path. It does not: `KJob::kill()` is a no-op unless
+the subclass overrides `KJob::doKill()` (default returns `false`, emits
+nothing — `kjob.h:255`), and **no KDAV 6.27.0 job overrides `doKill()`**
+(verified against the installed headers and the KDE source at tag `v6.27.0`;
+`DavItemsListJob`/`DavJobBase` track KIO subjobs manually with no abort
+path). A verbatim implementation left both RED tests hanging. The mechanism
+was corrected to **fail the operation directly** instead of relying on
+`kill()`; the RED-test recipe and acceptance gate are unchanged.
+
 1. Private helper on `RemoteCalendarBackend`:
-   `void startJobWithWatchdog(KJob *job)` (name flexible) — creates a
-   single-shot `QTimer` parented to the backend with interval
-   `m_transferTimeoutMs`, connects timeout → `job->kill(KJob::EmitResult)`
-   (EmitResult so every existing `result` handler runs its normal error
-   path — no new error plumbing), connects the job's `result` → stop +
-   `deleteLater` the timer, then `job->start()`.
+   `void startJobWithWatchdog(KJob *job, const std::function<void()> &onTimeout)`
+   — creates a single-shot `QTimer` parented to the backend with interval
+   `m_transferTimeoutMs`, connects the job's `result` → stop + `deleteLater`
+   the timer, connects timeout → **detach the job from our slots
+   (`job->disconnect(this)`, so its eventual — possibly never — real
+   completion can't double-settle the op), best-effort `job->kill(Quietly)`
+   (harmless/inert), then run `onTimeout()`** which fails/settles the owning
+   `SyncOperation` exactly as that site's normal job-error branch would.
+   Then `job->start()`. `m_transferTimeoutMs <= 0` disables the watchdog.
 2. Route EVERY KDAV job start site in the file through it (grep
-   `new KDAV::`; each site currently relies on KJob autostart or calls
-   `start()` — make the start explicit via the helper).
+   `new KDAV::`; all nine already call `start()` explicitly — replace with
+   the helper). Each site supplies a small `onTimeout` lambda mirroring its
+   `job->error()` branch: the two `fetchItems` jobs `op->fail(...) + emit
+   fetchFinished(false)`; the write paths reuse the same
+   `checkDone()`/`settleIfDone()` accounting the success/error paths use (so
+   a timeout settles the shared per-op counter identically to a failure — a
+   `settleIfDone` lambda was extracted in `deleteItems` to match `pushItems`);
+   the fire-and-forget `removeItem` delete just logs.
 3. `setTransferTimeoutMs` needs no change (the helper reads the member at
-   job-start time). Killed jobs must surface as the op's normal failure
-   (`errorString` non-empty); verify the `davJobErrorMessage` path reports
-   something actionable for a killed job — if `KJob::kill` yields an empty
-   error string, set a fallback "timed out after N ms" message in the
-   helper via the op, not by subclassing KDAV types.
+   job-start time). Because the op is failed directly by `onTimeout`, its
+   `errorString` is set to an explicit "timed out" message per site — no
+   reliance on `davJobErrorMessage` or a killed job's (empty) `errorString`,
+   and no subclassing of KDAV types.
 
 **RED tests first** (use `FakeCalDavServer::setDropRequests(true)` — H1.2's
 drop mode): (a) `fetchItems` against a dropping server must complete with
@@ -848,8 +871,26 @@ Not in scope before CP-C. Inventory (audit + roadmap D2, deduped):
       (gated behind `KALBURATOR_BUILD_LIVE_PROBES`, OFF by default) for the
       post-H5.5 re-run. H6 must not proceed until H5.5's acceptance gate —
       including a clean re-run of all four smoke phases — passes.
-- [ ] **H5.5** KDAV job watchdog (O25/O22; RED: drop-mode fetch + write
-      timeouts) + clean re-run of the CP-B pulled-cable smoke
+- [x] **H5.5** KDAV job watchdog (O25/O22; RED: drop-mode fetch + write
+      timeouts) + clean re-run of the CP-B pulled-cable smoke — 2026-07-05.
+      Added `RemoteCalendarBackend::startJobWithWatchdog(KJob*, onTimeout)` and
+      routed all nine KDAV job start sites through it. **Design correction
+      (recorded in §8b + FINDINGS O25):** the CP-B `job->kill(EmitResult)`
+      mechanism is INERT on KDAV 6.27.0 — no KDAV job overrides `KJob::doKill()`
+      so `kill()` is a no-op that emits nothing (verified vs installed headers +
+      KDE source `v6.27.0`); a verbatim impl left both RED tests hanging. The
+      watchdog now fails the owning `SyncOperation` directly via a per-site
+      `onTimeout` (detaches the job first so a late real completion can't
+      double-settle; `deleteItems` grew a `settleIfDone` lambda to share the
+      accounting tail with the timeout path, mirroring `pushItems`). RED tests
+      `fetchItems_/pushItems_droppedRequests_failsWithinTimeout` go hang→green;
+      full suite 159/160 green (the 1 is O26, a pre-existing MockBackend-only
+      cancellation flake, ~1-in-3, unrelated to this diff — see FINDINGS O26).
+      **CP-B live pulled-cable smoke re-ran ALL PASS** (scratch Radicale :5233,
+      one shared I/O thread): phase 4's frozen-server sync failed in 9.5 s with
+      `"Failed to list items: transfer timed out"`, engine accepted a fresh
+      runSync after SIGCONT, stranded item landed (O17 live proof). O25 → Resolved,
+      O22 → Resolved. H6/v0.83 is now unblocked.
 - [ ] **H6** merge → main, tag v0.83, roadmap §5 updated (BLOCKED on H5.5)
 - [ ] **H7** PlanStan: pin bump, D0-mitigation removal, I/O thread, de-parent,
       call-site sweep, mid-sync-close teardown proof

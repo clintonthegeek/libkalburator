@@ -309,7 +309,19 @@ worker thread (no backend I/O in that middle step). Pinned by
 `firstSync_backendsOnDifferentThreads` with source and target relocated to two
 genuinely different I/O threads.
 
-### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (OPEN, 2026-07-05; partially resolved by H1, 2026-07-05)
+### O22 — no network timeouts anywhere ⇒ one stalled request silently and permanently wedges sync (RESOLVED, H1+H5.5, 2026-07-05)
+
+**RESOLVED (H5.5, 2026-07-05).** The last live half — the KDAV bulk-traffic
+stack that H1.2's `nam()` timeout never covered — is closed by H5.5's per-job
+watchdog (see O25). All wedge surfaces are now accounted: transfer timeout on
+BOTH network stacks (H1.2 `nam()` + H5.5 KDAV jobs), honest busy-rejection
+(H1.3), and the fetch-gate `op->cancel()` on wake (H1.1). The CP-B live
+pulled-cable smoke passes end-to-end (fail-within-timeout, post-`SIGCONT`
+recovery, stranded item lands). Only the `stopWorkerThread` mid-marshal
+deadlock note remains parked in H9 (a distinct teardown-ordering concern, not
+the runtime wedge). Original finding + H1 partial below.
+
+
 
 Audit §B4 (with B5/B6 adjuncts). `davSyncRequest` sets no transferTimeout and no
 watchdog; engine marshals/gate-awaits are unbounded; a hung request leaves
@@ -330,7 +342,8 @@ H1's job): the fetch-gate `op->cancel()` call is now wired (H1.1, see O24), but
 **CP-B live smoke (2026-07-05): the wedge is still reproducible on the KDAV job path**
 — H1.2's timeout only covers the backend's own QNAM (`davSyncRequest`), not the KDAV
 jobs that carry the item listing/fetch/write traffic. See **O25** for the live repro,
-root cause, and the H5.5 fix phase. O22 stays OPEN until H5.5 lands.
+root cause, and the H5.5 fix phase. (H5.5 landed 2026-07-05 — this half is now closed;
+see the RESOLVED banner at the top of this entry and O25.)
 
 ### O23 — worker gate FetchOperations leak with full payloads; every sync fetches twice (RESOLVED, 2026-07-05)
 
@@ -396,7 +409,38 @@ returning. H1.4 deleted `SyncEngineWorker::await<Op>` itself (verified zero call
 via `grep -rn "await(" src/`) and fixed the false "sync runs in worker thread" comment
 in `localbackend.cpp`.
 
-### O25 — KDAV job surface has NO transfer timeout; H1.2's fix never covered the primary traffic path (OPEN, found at CP-B live smoke, 2026-07-05)
+### O25 — KDAV job surface has NO transfer timeout; H1.2's fix never covered the primary traffic path (RESOLVED, H5.5, 2026-07-05)
+
+**RESOLVED (H5.5, 2026-07-05).** Added a per-job watchdog on
+`RemoteCalendarBackend` (`startJobWithWatchdog(KJob*, onTimeout)`) and routed
+all nine KDAV job start sites (collections-fetch discovery, `fetchItems`
+list + multiget, `startSync`/`pushItems` creates, `deleteItems`/`removeItem`/
+`startSync` deletes, modify) through it. A single-shot `QTimer` of
+`m_transferTimeoutMs`, on expiry, detaches the job from our slots and runs an
+`onTimeout` that fails/settles the owning `SyncOperation` exactly as that
+site's `job->error()` branch would (a `settleIfDone` lambda was extracted in
+`deleteItems` to share the accounting tail with the timeout path, mirroring
+`pushItems`).
+
+**Design correction vs the CP-B pre-decision:** the phase plan's
+`job->kill(KJob::EmitResult)`-drives-the-existing-handler mechanism is INERT
+on KDAV 6.27.0 — `KJob::kill()` is a no-op unless the subclass overrides
+`doKill()` (default returns false, emits nothing), and no KDAV 6.27.0 job
+overrides it (verified against installed headers + KDE source `v6.27.0`;
+jobs track KIO subjobs manually with no abort path). Implementing the plan
+verbatim left both RED tests hanging. The watchdog now fails the op directly
+instead of relying on `kill()`; RED-recipe and acceptance gate unchanged.
+Full detail in the H5.5 §8b design block (implementation-time correction).
+
+**Verified:** RED tests `fetchItems_droppedRequests_failsWithinTimeout` /
+`pushItems_droppedRequests_failsWithinTimeout` (drop-mode server) go from
+hanging to failing Failed within ~3× a 2000 ms window; the CP-B live
+pulled-cable smoke re-ran ALL PASS — phase 4's frozen-server sync failed in
+9.5 s with `"Failed to list items: transfer timed out"` (the list-job
+watchdog), the engine accepted a fresh runSync after `SIGCONT`, and the
+stranded item landed (O17's live proof). Original finding below.
+
+
 
 Found by CP-B's pulled-cable live check (scratch driver
 `tests/engine/live_cpb_smoke.cpp`, gated behind `KALBURATOR_BUILD_LIVE_PROBES`; real
@@ -434,6 +478,21 @@ finish Failed within the watchdog window; today it hangs. Same recipe for one wr
 job. Release gate: v0.83 (H6) is BLOCKED until H5.5 lands and the CP-B pulled-cable
 smoke passes end-to-end (fail within timeout, recover after server resume, stranded
 item lands — the O17 live proof rides on the same re-run).
+
+### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (OPEN, observed at H5.5, 2026-07-05)
+
+Observed during H5.5's full-suite acceptance run: `tst_engine_cancellation`
+(159/160 others green) SEGFAULTed once, then passed on 2 of the next 3
+isolated re-runs — a nondeterministic crash, ~1-in-3. **Not caused by H5.5:**
+the test drives `MockBackend` pairs only (`tst_engine_cancellation.cpp:108-129`,
+`:482-486`) and never touches `RemoteCalendarBackend` or the new
+`startJobWithWatchdog` path; H5.5's diff is confined to
+`remotecalendarbackend.{h,cpp}`. Almost certainly a pre-existing race in the
+cancellation teardown path (cancel-during-marshal against the mock), surfaced
+by chance under the parallel suite. Not triaged here (out of H5.5 scope);
+flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
+standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
+under a sanitizer build.
 
 ## Resolved
 
