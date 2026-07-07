@@ -56,37 +56,45 @@ The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a thi
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
 
-## Sync-hardening campaign — START HERE if working sync/CalDAV/threading (the active campaign)
+## Sync-excellence campaign — START HERE if working sync/CalDAV/threading (the active campaign)
 
 **If you are picking up sync work, your one entry point is
-`docs/campaign/2026-07-05-sync-hardening-phases.md`.** Read its §0 session
-protocol and work exactly one phase; its §10 checklist is the single source
-of truth for progress and must be updated in the same commit as the work.
-All lib-side phases happen on branch **`feature/d1-threading`** (merge to
-`main` + tag v0.83 only at its phase H6). The suite has **one intentionally
-RED test** (`tst_backend_thread_relocation::stallProbe_...`, the O16 gate,
-green at phase H4) — do not delete, skip, or weaken it.
+`docs/campaign/2026-07-07-sync-excellence-phases.md`.** Read its §0 session
+protocol and work exactly one phase (or one E5 stage); its §17 checklist is
+the single source of truth for progress and must be updated in the same
+commit as the work. All lib-side phases happen on branch
+**`feature/sync-excellence`** cut from `main` @ v0.84 (merge to `main` +
+tag at the optional post-E4 v0.85 point and at CP-B's **v0.90**).
 
-Lineage: the sync-convergence campaign (opened 2026-07-03 from a real
-Nextcloud account that never converged; roadmap
-`docs/campaign/2026-07-03-sync-convergence-roadmap.md`) completed Tracks
-A/B/C — tags v0.80–v0.82, PlanStan live-verified — and D0 is on `main`
-untagged. Its Phase D1 (threading) was then expanded into the hardening
-campaign after a 2026-07-05 first-principles audit
-(`docs/campaign/2026-07-05-first-principles-sync-architecture-audit.md`)
-found eight issues beyond the threading gap: FINDINGS **O16–O24**, including
-a data-stranding skip bug (O17) and live pre-D1 cross-thread UB (O20). The
-old D1 execution plan (`2026-07-04-d1-threading-execution-plan.md`) is
-SUPERSEDED — reference material only.
+The campaign in one breath: the final clearing-up of every known sync-engine
+fault, flaw, and inefficiency — honest stats and dead-code removal (E1), the
+O26 cancellation flake root-caused under TSAN (E2), cancellation/teardown
+honesty (E3), CalDAV write-path correctness pins (E4), then the deepest cut:
+**deleting the nested-event-loop re-entrancy** (audit B7 → O29) by making
+backend I/O operation-based end to end (E5, gated by strong-model checkpoint
+CP-A), EtagCache seeding (E6), **RFC 6578 `sync-collection`** (E7),
+post-crash phantom-conflict adoption (O28 → E8), signal/fingerprint polish
+(E9), release (CP-B, v0.90), PlanStan adoption (E10), and live verification
++ close (CP-C). The core stays **universal** — engine/`SyncBackendBase`
+contracts are domain- and backend-agnostic, tested neutrally first — with
+CalDAV as the first-class, RFC-conformant exemplar.
 
 Both repos (libkalburator + PlanStan) belong to this campaign until every
-phase in the hardening plan's §10 is closed. New issues found along the way
-get a new O-number in `docs/campaign/FINDINGS.md` — never silently absorbed.
+§17 item is closed. New issues found along the way get a new O-number in
+`docs/campaign/FINDINGS.md` — never silently absorbed. Strong-model
+checkpoints (CP-A/B/C) include live verification against real Radicale —
+both prior campaigns' live checkpoints each caught a blocking bug the full
+green suite missed (O25, O27); do not skip or soften them.
 
-Work happens on short-lived feature branches per phase group, merged
-`--no-ff` to `main` and tagged once the full-suite gate is green; branches
-are not kept around after merge (the long-lived `feature/d1-threading` is
-the campaign exception, retired at H6).
+Lineage (context only, all CLOSED): sync-convergence campaign (Tracks A–C,
+tags v0.80–v0.82; roadmap `docs/campaign/2026-07-03-sync-convergence-roadmap.md`,
+now closed end-to-end) → sync-hardening campaign (D1 threading + O16–O27,
+tags v0.83/v0.84; plan archived at
+`docs/campaign/archive/2026-07-05-sync-hardening-phases.md`). The
+architectural reference both campaigns and this one build on is the
+first-principles audit
+(`docs/campaign/archive/2026-07-05-first-principles-sync-architecture-audit.md`)
+— its §1 target model is what E5 finishes implementing.
 
 ## Phase-status docs are living documents
 

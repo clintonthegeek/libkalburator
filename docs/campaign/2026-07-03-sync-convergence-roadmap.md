@@ -236,6 +236,18 @@ parallelism is a separate risk/benefit decision.
 
 ### Phase D2 — backlog (file separately when picked up)
 
+> **Superseded pointer (2026-07-07):** D2 was expanded into the
+> **sync-excellence campaign** — the live, task-level plan is now
+> **`docs/campaign/2026-07-07-sync-excellence-phases.md`** (phases E1–E10 +
+> CP-A/B/C; tag v0.90 at its CP-B). Every item below has a numbered finding
+> and an owning phase: sync-collection → O36/E7, EtagCache seeding → O35/E6,
+> `updateRecord` fallback → O32/E4, `RecordMergerICal` → O31/E1, PROPPATCH
+> noise verification → E4. The campaign also owns O26 (cancellation flake),
+> O28 (post-crash phantom conflicts), O29 (audit-B7 nested-loop re-entrancy
+> — the async-backend rework), O30 (unpopulated SyncStats), O33
+> (cancellation gaps), and O34 (signal storm). The section below is the
+> original backlog sketch, kept for context only.
+
 - **RFC 6578 `sync-collection` REPORT:** replace the per-poll Depth:1 ETag
   PROPFIND (`DavItemsListJob`, `:1366`) with a sync-token delta for servers
   advertising `DAV: sync-collection` (Nextcloud does). Big win for very large
@@ -325,6 +337,9 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       CalDAV updates now run `writer->apply()` on the backend's own thread
       per `recordwriter.h`, eliminating the last live cross-thread QNAM/SQL
       UB on the most common real-world path. PlanStan pin bumped v0.83→v0.84.
-- [ ] D2 backlog triage — now also holds O28 and the "seed KDAV EtagCache
-      from disk on startup" item (avoids the post-restart CTag-change
-      re-download surfaced during H8.5 live verification)
+- [x] D2 backlog triage — **expanded into the sync-excellence campaign
+      2026-07-07** (`docs/campaign/2026-07-07-sync-excellence-phases.md`):
+      the D2 items plus O26/O28 and the newly seeded O29–O36 are now phases
+      E1–E10 with checkpoints CP-A/B/C; targets tag **v0.90** (optional
+      mid-campaign v0.85). This roadmap is CLOSED — Track D ends here; all
+      further sync work is tracked in the sync-excellence phase plan.

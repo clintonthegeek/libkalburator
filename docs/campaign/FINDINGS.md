@@ -12,8 +12,14 @@ Append, don't rewrite. New issues from any task go here, even off-topic.
 > (`docs/campaign/2026-07-05-sync-hardening-phases.md`) is archived at
 > `docs/campaign/archive/2026-07-05-sync-hardening-phases.md`. It closed
 > FINDINGS **O16–O27** (all Resolved below); tags **v0.83** (H1–H6) and
-> **v0.84** (H8.5/O27). Still open from it: **O28** and a "seed KDAV
-> EtagCache from disk on startup" item, both parked to roadmap D2/H9.
+> **v0.84** (H8.5/O27).
+>
+> **Sync-excellence campaign OPENED 2026-07-07.** The live phase plan is
+> **`docs/campaign/2026-07-07-sync-excellence-phases.md`** (phases E1–E10 +
+> CP-A/B/C; tags v0.85 optional mid-campaign, v0.90 at close). It owns the
+> open findings **O26, O28** and the newly seeded **O29–O36** below (the
+> hardening campaign's parked backlog plus the Discipline Log's accumulated
+> debts, promoted to numbered findings).
 
 ---
 
@@ -641,6 +647,104 @@ item as adoptable on the next cycle via the ETag it can re-fetch. During
 H8 the state was cleared surgically (deleted the 7 server copies +
 `sync_conflicts` rows; next cycle re-created them cleanly with baselines)
 — noted here because the live vault intervention is not a product answer.
+
+### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; OPEN → sync-excellence E5)
+
+Audit §3-B7, the deepest surviving design debt from the hardening campaign.
+`davSyncRequest` (`remotecalendarbackend.cpp:253`) and `awaitOperation`
+(`:333`, call sites `:2326/:2396/:2437`) spin nested `QEventLoop`s **on the
+backend's own thread** while a request is in flight. Nested loops process
+*all* queued events — including other calls marshaled to that backend — so
+any app-side backend use overlapping a running sync (editor save → PUT,
+calendar-list refresh) executes *in the middle of* the in-flight operation's
+wait, interleaving unguarded mutations of `pendingCtag`, `m_lastRawIcsByUid`,
+the shared EtagCache, and the content cache. Named candidate mechanism for
+the historical N5 corruption class. Fix (pre-decided, CP-A-reviewed): phase
+**E5** — per-collection FIFO op queue in `SyncBackendBase` (E5.1), async
+continuation-based `davSyncRequestAsync` (E5.2), writes as awaitable
+`WriteOperation`s replacing the blocking apply (E5.3). Grep gate at close:
+zero `QEventLoop` under `src/calendar/` + `src/sync/`. (Seeded 2026-07-07.)
+
+### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (OPEN → sync-excellence E1.1)
+
+Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified
+dispatch path writes the stats, yet two live readers consume them:
+`advanceQueue`'s aggregate `statsOk` (`syncengine.cpp:803-806` — vacuously
+true) and `onWorkerSyncCompleted`'s cancelled-path `skipped` classification
+(`:1168-1171`) — so every cancelled run is misreported `skipped=true`
+("never started") even after partial writes. Fix: populate both sides'
+stats from the `WriterBatch` apply counts in
+`unifiedContinueAfterConflicts`. (Seeded 2026-07-07.)
+
+### O31 — dead/misleading machinery: `updateSyncMetadata`, `RecordMergerICal`, engine-unused `primeRevisionCache` residue (OPEN → sync-excellence E1.2)
+
+Promoted from Discipline Log entries + roadmap D2. (a)
+`SyncEngine::updateSyncMetadata` + `makeCalendarRec` (`syncengine.cpp:912+`)
+— zero call sites; writes legacy-shaped baseline rows that would be
+invisible to `baselineHashesForMappingV4` if ever re-wired. Delete.
+(b) `RecordMergerICal` (`icalrecordmerger.cpp:33+`) parses canon JSON as
+iCal — `parseIcal` returns null and it silently degrades to side-picking;
+the active merger is `CanonJsonMerger`. Delete + registration.
+(c) `ChangeDetection::primeRevisionCache` is engine-unused since H3;
+decision (WildPalms grep evidence to be recorded here) whether the
+interface method goes entirely or stays doc-commented. (Seeded 2026-07-07.)
+
+### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (OPEN → sync-excellence E4)
+
+Promoted from roadmap D2. `RemoteCalendarBackend::updateRecord`
+(`remotecalendarbackend.cpp:2401-2424`): when the `m_localEtags` ownership
+lookup misses, a fallback loop PUTs the item into every registered calendar
+until one succeeds — wrong-calendar writes on multi-calendar backends and
+multiplied failed-PUT latency. Fix: resolve ownership via the persistent
+content cache, else fail loudly; never guess. Check `deleteRecord` for the
+same pattern. (Seeded 2026-07-07.)
+
+### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (OPEN → sync-excellence E3)
+
+Promoted from audit §C4. (a) `processSync` clears `m_cancelled` at dispatch
+(`syncengine.cpp:1542`): a cancel landing between queue advance and worker
+start is erased; the cancelled queue runs one more full mapping. (b)
+`driveQueue`'s active-controller loop (`:376-380`) calls
+`runActiveSync()` inline on the caller's (GUI) thread — a §1 role violation
+for whoever enables DecSync next. Related: `stopWorkerThread`'s mid-marshal
+deadlock for non-relocated consumers (O22's parked note) gets a bounded-wait
+diagnostic in E3 and its structural fix in E5.3. (Seeded 2026-07-07.)
+
+### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
+
+Promoted from audit §C4/roadmap D2. `LocalBackend`'s fetch emits
+`itemFetched(calendarId, inc)` once per incidence
+(`localbackend.cpp:772-775`) — post-relocation, one cross-thread queued
+event per item, thousands per fetch on big mirrors. Fix: batch
+`itemsFetched(calendarId, items)` at fetch-pass/multiget-chunk granularity;
+deprecate then remove the singular signal (PlanStan port at E10).
+(Seeded 2026-07-07.)
+
+### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (OPEN → sync-excellence E6)
+
+Promoted from the H8.5 verification note (see O27's NOTE) / roadmap D2.
+`m_etagCache` (`remotecalendarbackend.cpp:377`) is in-memory per session;
+`DavItemsListJob` computes its changed-set against it, so the first
+CTag-*changed* cycle after an app restart classifies every item as changed
+and re-downloads all of them even though `CalDavContentCache` holds current
+bytes keyed url+etag. Fix: lazily seed the EtagCache from the content
+cache's `(url, etag)` rows before the first listing per collection.
+(Seeded 2026-07-07.)
+
+### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (OPEN → sync-excellence E7)
+
+Promoted from roadmap D2. The delta enumeration is a Depth:1 PROPFIND of
+every item's getetag — O(collection size) response XML for a one-item
+change — and delete detection depends on the full listing
+(`remotecalendarbackend.cpp:2473`). RFC 6578's REPORT has the server
+compute changed + deleted (tombstones) hrefs since a sync-token. KDAV
+6.27.0 ships no sync-collection job (verified against installed headers),
+so E7 implements the REPORT on E5.2's async request primitive, with
+capability detection via supported-report-set, token persistence beside
+the CTag, RFC §3.3 token-invalidation fallback, and the CTag+PROPFIND path
+kept permanently as the fallback. The backend-owned sync-token is a
+*cache-validity* token — it must not be conflated with the engine's H3
+per-mapping sync-progress tokens. (Seeded 2026-07-07.)
 
 ## Resolved
 
