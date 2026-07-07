@@ -45,6 +45,11 @@ kalburator_add_engine_integration_test(tst_cancellation_reason)
 # path (commit 0595044); green only on the native post-collapse engine.
 kalburator_add_engine_integration_test(tst_engine_single_mapping_cancel)
 
+# Sync-excellence campaign E1.1 (FINDINGS O30) — pins SyncResult::
+# sourceStats/targetStats population by the unified steady-state write
+# path and the skipped-vs-partial-cancel distinction it enables.
+kalburator_add_engine_integration_test(tst_sync_result_stats)
+
 # Phase Ia.5 Task 7 — generic property-phase helper unit tests
 kalburator_add_engine_test(tst_property_phase)
 
