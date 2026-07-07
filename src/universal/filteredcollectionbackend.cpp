@@ -262,17 +262,6 @@ QString FilteredCollectionBackend::cachedCollectionRevision(const QString& colle
     return cd ? cd->cachedCollectionRevision(m_parentColId) : QString();
 }
 
-void FilteredCollectionBackend::primeRevisionCache(const QMap<QString, QString>& cache)
-{
-    auto* cd = parentChangeDetection();
-    if (!cd) return;
-    // Rewrite the virtual collection key to the parent collection id before
-    // forwarding; ignore any other keys.
-    auto it = cache.constFind(m_virtualColId);
-    if (it == cache.constEnd()) return;
-    cd->primeRevisionCache({{m_parentColId, it.value()}});
-}
-
 bool FilteredCollectionBackend::persistsCollectionRevisions() const
 {
     auto* cd = parentChangeDetection();

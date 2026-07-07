@@ -488,24 +488,4 @@ QString GenericSqliteBackend::cachedCollectionRevision(const QString &collection
     return synced.isValid() ? synced.toString() : QString();
 }
 
-void GenericSqliteBackend::primeRevisionCache(const QMap<QString, QString> &cache)
-{
-    if (!m_open)
-        return;
-    QSqlDatabase db = threadDb();
-    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it) {
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "INSERT INTO _collection_revisions (collection_id, synced_rev) "
-            "VALUES (?, ?) "
-            "ON CONFLICT(collection_id) DO UPDATE SET synced_rev = excluded.synced_rev"));
-        q.addBindValue(it.key());
-        q.addBindValue(it.value());
-        if (!q.exec()) {
-            qWarning() << "GenericSqliteBackend::primeRevisionCache: failed for"
-                       << it.key() << ":" << q.lastError().text();
-        }
-    }
-}
-
 } // namespace Kalburator::Sinks

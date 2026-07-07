@@ -665,29 +665,65 @@ continuation-based `davSyncRequestAsync` (E5.2), writes as awaitable
 `WriteOperation`s replacing the blocking apply (E5.3). Grep gate at close:
 zero `QEventLoop` under `src/calendar/` + `src/sync/`. (Seeded 2026-07-07.)
 
-### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (OPEN → sync-excellence E1.1)
+### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified
 dispatch path writes the stats, yet two live readers consume them:
 `advanceQueue`'s aggregate `statsOk` (`syncengine.cpp:803-806` — vacuously
 true) and `onWorkerSyncCompleted`'s cancelled-path `skipped` classification
 (`:1168-1171`) — so every cancelled run is misreported `skipped=true`
-("never started") even after partial writes. Fix: populate both sides'
-stats from the `WriterBatch` apply counts in
-`unifiedContinueAfterConflicts`. (Seeded 2026-07-07.)
+("never started") even after partial writes.
 
-### O31 — dead/misleading machinery: `updateSyncMetadata`, `RecordMergerICal`, engine-unused `primeRevisionCache` residue (OPEN → sync-excellence E1.2)
+Fixed: `unifiedContinueAfterConflicts`'s `applyBatch` helper now takes a
+`SyncStats&` out-param, populated from the actually-classified
+`WriterBatch` — `created`/`updated`/`deleted` on a successful apply,
+`errors` (the whole attempted batch) on a failed one — passed
+`m_currentResult.targetStats` at the target-apply call site and
+`m_currentResult.sourceStats` at the source-apply site. Unresolved-conflict
+count is mirrored into `targetStats.conflicts` once, after both applies.
+RED test `tests/engine/tst_sync_result_stats.cpp` (MockBackend pairs,
+domain-neutral) pins: a two-item create populates `targetStats.created==2`
+with `sourceStats` untouched; a cancel observed after a real apply reports
+`skipped==false`; a cancel observed before any apply (blocked fetch, the
+pre-existing-correct case) still reports `skipped==true`.
+
+### O31 — dead/misleading machinery: `updateSyncMetadata`, `RecordMergerICal`, engine-unused `primeRevisionCache` residue (Resolved 2026-07-07, sync-excellence E1.2)
 
 Promoted from Discipline Log entries + roadmap D2. (a)
 `SyncEngine::updateSyncMetadata` + `makeCalendarRec` (`syncengine.cpp:912+`)
 — zero call sites; writes legacy-shaped baseline rows that would be
-invisible to `baselineHashesForMappingV4` if ever re-wired. Delete.
-(b) `RecordMergerICal` (`icalrecordmerger.cpp:33+`) parses canon JSON as
-iCal — `parseIcal` returns null and it silently degrades to side-picking;
-the active merger is `CanonJsonMerger`. Delete + registration.
-(c) `ChangeDetection::primeRevisionCache` is engine-unused since H3;
-decision (WildPalms grep evidence to be recorded here) whether the
-interface method goes entirely or stays doc-commented. (Seeded 2026-07-07.)
+invisible to `baselineHashesForMappingV4` if ever re-wired. Deleted both
+(the comment at `syncengine.cpp:2340` documenting the legacy row shape
+`baselineHashesForMappingV4` filters was reworded to drop the dangling
+symbol reference rather than deleted, since the historical context it
+records is still load-bearing for that filter's own doc comment).
+(b) `RecordMergerICal` (`icalrecordmerger.{h,cpp}`) parsed canon JSON as
+iCal — `parseIcal` returned null and it silently degraded to side-picking;
+the active merger is `CanonJsonMerger`, unaffected. Deleted the merger,
+its CMakeLists registration, and its dedicated unit test
+(`tests/calendar/differs/tst_ical_record_merger.cpp`) — no registration
+site referenced it (already orphaned).
+(c) `ChangeDetection::primeRevisionCache` — engine-unused since H3;
+`~/dev/WildPalms` grep confirmed zero call sites (`primeRevisionCache`,
+`cachedCollectionRevision`), so the pure-virtual and every implementation
+were deleted outright: `AkonadiBackend`, `LocalBackend` (+ its now-dead
+private `setCachedFingerprint` helper — the A2 direct-store-write hazard),
+`RemoteCalendarBackend` (method body only — its `pendingCtag` staging
+field stays live, used elsewhere in that file's CTag-commit path, so the
+E1 "don't touch remotecalendarbackend.cpp diff/merge logic" guardrail was
+read as not covering this single dead-interface-method deletion),
+`AkonadiContactsBackend`, `RemoteContactsBackend` (inline stub),
+`GenericSqliteBackend`, `FilteredCollectionBackend`. Three tests that
+existed solely to exercise the deleted method were removed or trimmed:
+`tst_generic_sqlite_backend.cpp` (whole test), `tst_filtered_collection_backend.cpp`
+(whole test + the `FakeCDParent::primeRevisionCache` override + tracking
+fields + trailing calls in two other tests), `tst_backend_thread_relocation.cpp`
+(the primed-cache-round-trip half of one test; the fetch/collectionRevision
+half stays). `cachedCollectionRevision` stays everywhere per plan.
+`grep -rn "primeRevisionCache" src/ tests/` returns only a doc comment.
+
+Full suite: 160/160 green (including `tst_engine_cancellation`, the O26
+flake candidate — no reproduction this run).
 
 ### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (OPEN → sync-excellence E4)
 

@@ -152,7 +152,6 @@ public:
     QMap<QString, QString>
     collectionRevisions(const QStringList &collectionIds) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
-    void primeRevisionCache(const QMap<QString, QString> &cache) override;
 
     /**
      * @brief Check if discovered calendar supports VEVENT components.

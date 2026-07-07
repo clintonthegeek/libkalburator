@@ -71,7 +71,6 @@ public:
     // ("can't answer" → engine treats as changed, current behavior).
     QString collectionRevision(const QString& collectionId) override;
     QString cachedCollectionRevision(const QString& collectionId) const override;
-    void    primeRevisionCache(const QMap<QString, QString>& cache) override;
     bool    persistsCollectionRevisions() const override;
 
     // Accessors for tests / consumers.

@@ -1138,12 +1138,6 @@ QString AkonadiBackend::cachedCollectionRevision(const QString &collectionId) co
     return revisionStore()->token(collectionId);
 }
 
-void AkonadiBackend::primeRevisionCache(const QMap<QString, QString> &cache)
-{
-    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-        revisionStore()->setToken(it.key(), it.value());
-}
-
 } // namespace Kalburator::Sync
 
 #endif // HAVE_AKONADI

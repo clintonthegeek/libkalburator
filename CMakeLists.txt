@@ -161,7 +161,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalproperties.h
     src/calendar/calendarcanonproperties.h
     src/calendar/icalrecorddiffer.h
-    src/calendar/icalrecordmerger.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
     # Plan 6 Task 3 — VEVENT field mapping helpers
@@ -209,7 +208,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalproperties.cpp
     src/calendar/calendarcanonproperties.cpp
     src/calendar/icalrecorddiffer.cpp
-    src/calendar/icalrecordmerger.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers

@@ -64,6 +64,7 @@ using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::SyncDiff;
 using Kalburator::Sync::SyncChange;
 using Kalburator::Sync::SyncResult;
+using Kalburator::Sync::SyncStats;
 using Kalburator::Sync::SyncOperation;  // neutral op base; engine depends only on this (P3.T4)
 
 // Using declarations for pointer/reference types from Kalburator::Sync
@@ -471,11 +472,6 @@ private:
      * calls processQueue().
      */
     void finishDriveQueueSetup();
-
-    // Helper methods for sync algorithm
-    void updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
-                            const QList<SyncChange> &resolvedToTarget,
-                            const QList<SyncChange> &resolvedToSource);
 
 private slots:
     // Worker thread signal handlers

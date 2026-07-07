@@ -802,24 +802,6 @@ QString RemoteCalendarBackend::cachedCollectionRevision(const QString &collectio
     return ctag(collectionId);
 }
 
-void RemoteCalendarBackend::primeRevisionCache(const QMap<QString, QString> &cache)
-{
-    // N5 fix: stage into pendingCtag, never write the persisted CTag
-    // directly. fetchItems() already commits the persisted CTag itself,
-    // but only after verifying every item actually materialized
-    // (countSkipped == 0, no failed multiget batches) — writing here
-    // unconditionally would let a sync that completed with some items
-    // silently skipped still stamp the fresh CTag, so a later CTag-match
-    // short-circuit would serve that incomplete set as "current" forever
-    // after (the exact CTag-ahead-of-content-cache bug this campaign
-    // found). When fetchItems already committed the real CTag during this
-    // same sync (the common case), this pendingCtag value is simply
-    // superseded the next time fetchItems runs — never a second, competing
-    // write path into the trusted store.
-    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-        m_calendars[it.key()].pendingCtag = it.value();
-}
-
 QColor RemoteCalendarBackend::calendarColor(const QString &calendarId) const
 {
     // Return from cache (populated during discovery or after updateCalendar)

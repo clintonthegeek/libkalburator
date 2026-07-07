@@ -858,11 +858,15 @@ updated.
 
 ## 17. Checklist (single source of truth — update in the landing commit)
 
-- [ ] **E1.1** SyncStats wired from writer batches (RED: created-count,
-      cancelled-partial `skipped=false`, never-started `skipped=true`)
-- [ ] **E1.2** dead machinery deleted (updateSyncMetadata/makeCalendarRec,
+- [x] **E1.1** SyncStats wired from writer batches (RED: created-count,
+      cancelled-partial `skipped=false`, never-started `skipped=true`) —
+      2026-07-07, FINDINGS O30 Resolved
+- [x] **E1.2** dead machinery deleted (updateSyncMetadata/makeCalendarRec,
       RecordMergerICal); primeRevisionCache decision recorded (WildPalms
-      grep evidence in FINDINGS O31)
+      grep evidence in FINDINGS O31) — 2026-07-07, FINDINGS O31 Resolved.
+      WildPalms grep: zero call sites for `primeRevisionCache` and
+      `cachedCollectionRevision`; interface + all six backend
+      implementations deleted outright (not left doc-commented).
 - [ ] **E2** O26 root-caused under TSAN and fixed (mechanism named in
       FINDINGS; 50× repeat + 3× full-suite gates)
 - [ ] **E3** m_cancelled race fixed; DecSync controllers on worker;

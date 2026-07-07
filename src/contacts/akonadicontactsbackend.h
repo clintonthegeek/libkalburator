@@ -129,7 +129,6 @@ public:
     // === Sync::ChangeDetection ===
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
-    void    primeRevisionCache(const QMap<QString, QString> &cache) override;
 
 private slots:
     // Monitor callbacks for external changes

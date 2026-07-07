@@ -890,108 +890,6 @@ void SyncEngine::advanceQueue()
 // Helper Methods
 // ============================================================================
 
-namespace {
-
-// Build a CanonicalRecord for calendar iCal text (calendar/ical shape).
-// Used by updateSyncMetadata and harvestBaselinesAfterFirstSync when routing
-// through Storage::BaselineStore::setBaselineV3.
-Kalburator::Shape::CanonicalRecord makeCalendarRec(const QString &uid,
-                                                    const QString &icalText)
-{
-    Kalburator::Shape::CanonicalRecord rec;
-    rec.recordId = uid;
-    rec.shape    = Kalburator::Shape::Shape{
-        Kalburator::Shape::DomainId{QStringLiteral("calendar")},
-        Kalburator::Shape::EncodingId{QStringLiteral("ical")}};
-    rec.data     = icalText.toUtf8();
-    return rec;
-}
-
-} // namespace
-
-void SyncEngine::updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
-                                          const QList<SyncChange> &resolvedToTarget,
-                                          const QList<SyncChange> &resolvedToSource)
-{
-    if (!m_baselineStore) {
-        qDebug() << "SyncEngine::updateSyncMetadata - no BaselineStore, skipping baseline update";
-        return;
-    }
-
-    // Update baselines for all synced items
-    // After sync, the baseline becomes the current state
-
-    // For items that were synced to target (source is authoritative)
-    for (const auto &change : diff.toTarget) {
-        if (change.isConflict) {
-            continue;  // Don't update baseline for unresolved conflicts (handled below)
-        }
-
-        if (change.type == SyncChangeType::Deleted) {
-            // Remove baseline for deleted items
-            m_baselineStore->removeBaselineV3(mapping.id, change.uid);
-        } else if (change.sourceRecord.isValid()) {
-            // Update baseline to current source state
-            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.sourceRecord.icalData));
-        }
-    }
-
-    // For items that were synced to source (target is authoritative)
-    for (const auto &change : diff.toSource) {
-        if (change.isConflict) {
-            continue;
-        }
-
-        if (change.type == SyncChangeType::Deleted) {
-            m_baselineStore->removeBaselineV3(mapping.id, change.uid);
-        } else if (change.targetRecord.isValid()) {
-            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.targetRecord.icalData));
-        }
-    }
-
-    // IMPORTANT: Update baselines for RESOLVED conflicts
-    // These were originally conflicts but the user resolved them, so we need to
-    // update the baseline to prevent the same conflict from appearing again.
-
-    // Resolved conflicts that went to target (source record was chosen or merged)
-    for (const auto &change : resolvedToTarget) {
-        // Skip newly created items from Duplicate resolution - they'll be picked up on next sync
-        if (change.type == SyncChangeType::Created && change.baselineRecord.uid.isEmpty()) {
-            continue;
-        }
-
-        if (change.sourceRecord.isValid()) {
-            qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
-                     << change.uid << "(source wins/merged)";
-            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.sourceRecord.icalData));
-        }
-    }
-
-    // Resolved conflicts that went to source (target record was chosen)
-    for (const auto &change : resolvedToSource) {
-        if (change.type == SyncChangeType::Created && change.baselineRecord.uid.isEmpty()) {
-            continue;
-        }
-
-        if (change.targetRecord.isValid()) {
-            qDebug() << "SyncEngine::updateSyncMetadata - updating baseline for resolved conflict:"
-                     << change.uid << "(target wins)";
-            m_baselineStore->setBaselineV3(mapping.id, makeCalendarRec(change.uid, change.targetRecord.icalData));
-        }
-    }
-
-    // For unchanged items, ensure baseline exists
-    for (const QString &uid : diff.unchangedUids) {
-        if (!m_baselineStore->baselineV3(mapping.id, uid).has_value()) {
-            // This shouldn't happen in normal operation, but handle gracefully
-            qDebug() << "SyncEngine::updateSyncMetadata - unchanged item has no baseline:" << uid;
-        }
-    }
-
-    // Update last sync time
-    m_baselineStore->setLastSyncTime(mapping.id, QDateTime::currentDateTime());
-}
-
 // ============================================================================
 // Worker Thread Signal Handlers
 // ============================================================================
@@ -2439,8 +2337,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // sides' native bytes — see baselineentry.h and perrecorddiff.h.
     // baselineHashesForMappingV4() already filters out legacy non-hash rows
     // (e.g. the pre-unified calendar/ical baseline shape written by the
-    // now-dead SyncEngine::updateSyncMetadata) and transparently upgrades
-    // legacy single-hash rows to "both sides equal" (see its doc comment in
+    // engine's old per-mapping baseline-update helper — deleted E1.2/O31,
+    // sync-excellence campaign) and transparently upgrades legacy
+    // single-hash rows to "both sides equal" (see its doc comment in
     // baselinestore.cpp).
     QList<Kalburator::Engine::BaselineEntry> baselineEntries;
     if (!request.override.clobber && m_baselineStore && m_baselineStoreAnchor) {
@@ -2850,6 +2749,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     //   - WorkerThread: classify runs on the backend thread; apply runs
     //     on the worker thread (a writer that uses BlockingQueuedConnection
     //     internally must not be called from the backend thread).
+    // E1.1 (O30): applyBatch populates the caller-supplied SyncStats from
+    // the batch it actually classified/applied — created/updated/deleted
+    // from the applied counts, errors from a failed apply. This is what
+    // makes advanceQueue's statsOk check and the single-mapping skipped-
+    // vs-partial-cancel decision (onWorkerSyncCompleted) honest; before
+    // this, sourceStats/targetStats were never written in the unified path.
     auto applyBatch = [this, &writeFailed, &writeError, &mappingId](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackendBase *backend,
@@ -2857,7 +2762,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         const QString &colId,
         const QList<BackendRecord> &toWrite,
         const QString &backendRegistryId,
-        bool notifyHost)
+        bool notifyHost,
+        SyncStats &stats)
     {
         // Authority: never write to a backend that reports read-only for this
         // collection (e.g. an ACL change at runtime). Skip is a no-op, NOT a
@@ -2979,6 +2885,20 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             writeError = QStringLiteral("Write to %1 failed").arg(colId);
         }
 
+        // E1.1 (O30): record what this batch actually did. A failed apply
+        // reports the whole attempted batch as errors (apply() has no
+        // per-record failure granularity — it is one bool for the batch);
+        // a successful apply reports the real created/updated/deleted
+        // counts.
+        if (ok) {
+            stats.created += static_cast<int>(batch.creates.size());
+            stats.updated += static_cast<int>(batch.updates.size());
+            stats.deleted += static_cast<int>(batch.deletes.size());
+        } else {
+            stats.errors += static_cast<int>(
+                batch.creates.size() + batch.updates.size() + batch.deletes.size());
+        }
+
         // G.9.a closeout: tell the host about every record this batch
         // actually materialized, so a view bound to the host (e.g.
         // PlanStan's ItemLoadingCoordinator via
@@ -3046,7 +2966,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (!tgtWriter)
             tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
-                   m_currentRequest.mapping.targetBackend, /*notifyHost=*/false);
+                   m_currentRequest.mapping.targetBackend, /*notifyHost=*/false,
+                   m_currentResult.targetStats);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -3084,7 +3005,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (!srcWriter)
             srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
-                   m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true);
+                   m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true,
+                   m_currentResult.sourceStats);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -3168,6 +3090,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         }
         m_currentResult.success = !m_currentResult.hasUnresolvedConflicts();
     }
+    // E1.1 (O30): surface the mapping's unresolved-conflict count in the
+    // stats too (targetStats — conflicts are a property of the mapping's
+    // reconciliation, not inherently source- or target-owned; targetStats
+    // is the side already used as the mapping-level aggregate elsewhere
+    // in this function, e.g. baselineProperties above).
+    m_currentResult.targetStats.conflicts =
+        static_cast<int>(m_currentResult.unresolvedConflicts.size());
     m_currentResult.endTime = QDateTime::currentDateTime();
     qDebug() << "SyncEngineWorker::unifiedContinueAfterConflicts completed for" << mappingId;
     m_unifiedDiffer.reset();

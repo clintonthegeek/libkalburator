@@ -165,8 +165,6 @@ public:
     { Q_UNUSED(collectionId); return {}; }
     QString cachedCollectionRevision(const QString &collectionId) const override
     { Q_UNUSED(collectionId); return {}; }
-    void primeRevisionCache(const QMap<QString, QString> &cache) override
-    { Q_UNUSED(cache); }
     bool persistsCollectionRevisions() const override { return false; }
 
 private:

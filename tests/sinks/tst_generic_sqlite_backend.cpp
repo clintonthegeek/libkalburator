@@ -71,7 +71,6 @@ private slots:
     // Sync::ChangeDetection (hub-side skip-unchanged support).
     void revision_stableUntilWrite();
     void revision_changesOnCreateUpdateDelete();
-    void revision_primeCachedRoundTripAcrossInstances();
     void revision_unknownCollectionReturnsEmpty();
 };
 
@@ -378,41 +377,6 @@ void TestGenericSqliteBackend::revision_changesOnCreateUpdateDelete()
     QVERIFY(b.clearCollection(colId));
     QVERIFY2(b.collectionRevision(colId) != rBeforeClear,
              "clearCollection must bump the revision");
-}
-
-void TestGenericSqliteBackend::revision_primeCachedRoundTripAcrossInstances()
-{
-    QTemporaryDir tmp;
-    QVERIFY(tmp.isValid());
-    const QString dbPath = tmp.filePath(QStringLiteral("rev-persist.db"));
-    const QString colId = QStringLiteral("memo+plaintext");
-
-    QString fresh;
-    {
-        GenericSqliteBackend b(dbPath);
-        b.createCollection(makeCollection(colId, QStringLiteral("Memos")), kTestShape);
-        b.createRecord(colId, makeRecord(QStringLiteral("r1"), QByteArrayLiteral("a")));
-
-        // No baseline yet → cached is empty (engine treats as changed).
-        QVERIFY(b.cachedCollectionRevision(colId).isEmpty());
-
-        // The engine primes the cache with the fresh token after a sync.
-        fresh = b.collectionRevision(colId);
-        QVERIFY(!fresh.isEmpty());
-        b.primeRevisionCache({{colId, fresh}});
-        QCOMPARE(b.cachedCollectionRevision(colId), fresh);
-    }
-
-    // New instance over the same file: the primed baseline persists, and
-    // since nothing changed the fresh token still equals the cached one
-    // (the skip condition the engine checks).
-    GenericSqliteBackend b2(dbPath);
-    QCOMPARE(b2.cachedCollectionRevision(colId), fresh);
-    QCOMPARE(b2.collectionRevision(colId), fresh);
-
-    // A write makes fresh diverge from cached again.
-    b2.createRecord(colId, makeRecord(QStringLiteral("r2"), QByteArrayLiteral("b")));
-    QVERIFY(b2.collectionRevision(colId) != b2.cachedCollectionRevision(colId));
 }
 
 void TestGenericSqliteBackend::revision_unknownCollectionReturnsEmpty()
