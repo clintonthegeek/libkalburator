@@ -867,8 +867,15 @@ updated.
       WildPalms grep: zero call sites for `primeRevisionCache` and
       `cachedCollectionRevision`; interface + all six backend
       implementations deleted outright (not left doc-commented).
-- [ ] **E2** O26 root-caused under TSAN and fixed (mechanism named in
-      FINDINGS; 50× repeat + 3× full-suite gates)
+- [x] **E2** O26 root-caused under TSAN and fixed (mechanism named in
+      FINDINGS; 50× repeat + 3× full-suite gates) — 2026-07-07, FINDINGS
+      O26 Resolved. Fix confined to `src/calendar/mockbackend.{h,cpp}` (a
+      backend file — checked against E5's scope first per this phase's
+      gate; MockBackend's test-only blocking-thread simulation is
+      orthogonal to E5's real-backend nested-loop rework). A new
+      thread-registry TSAN artifact surfaced during verification, filed
+      separately as FINDINGS O37 (tool limitation, not an app bug, does
+      not block this item).
 - [ ] **E3** m_cancelled race fixed; DecSync controllers on worker;
       stopWorkerThread bounded-wait diagnostic
 - [ ] **E4** updateRecord owning-calendar restriction; ETag-precondition

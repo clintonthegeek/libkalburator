@@ -492,20 +492,66 @@ job. Release gate: v0.83 (H6) is BLOCKED until H5.5 lands and the CP-B pulled-ca
 smoke passes end-to-end (fail within timeout, recover after server resume, stranded
 item lands — the O17 live proof rides on the same re-run).
 
-### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (OPEN, observed at H5.5, 2026-07-05)
+### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (RESOLVED by sync-excellence E2, 2026-07-07)
 
-Observed during H5.5's full-suite acceptance run: `tst_engine_cancellation`
-(159/160 others green) SEGFAULTed once, then passed on 2 of the next 3
-isolated re-runs — a nondeterministic crash, ~1-in-3. **Not caused by H5.5:**
-the test drives `MockBackend` pairs only (`tst_engine_cancellation.cpp:108-129`,
-`:482-486`) and never touches `RemoteCalendarBackend` or the new
-`startJobWithWatchdog` path; H5.5's diff is confined to
-`remotecalendarbackend.{h,cpp}`. Almost certainly a pre-existing race in the
-cancellation teardown path (cancel-during-marshal against the mock), surfaced
-by chance under the parallel suite. Not triaged here (out of H5.5 scope);
-flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
-standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
-under a sanitizer build.
+**RESOLVED (E2, 2026-07-07).** Root-caused under TSAN (first repro,
+`build-tsan` with `-fsanitize=thread`): a genuine heap-use-after-free, not a
+scheduling fluke. Mechanism: `SyncEngineWorker::dispatchSync`'s
+fetch-cancellation teardown (`syncengine.cpp:2117-2126`, mirrored at the
+target-fetch gate `:2260-2269`) calls `fetchOp->cancel()` then checks
+`!fetchOp->isFinished()` to decide whether to wait (via a `QEventLoop` on
+`finished()`) before `deleteLater()`-ing the op. But `SyncOperation::cancel()`
+(`syncoperation.cpp:34-49`) unconditionally and *synchronously* flips state to
+the terminal `Cancelled` — so `isFinished()` is already `true` the instant
+`cancel()` returns, and the intended wait-loop can never fire. Meanwhile
+`MockBackend`'s blocking-fetch/push simulation (`mockbackend.cpp`, the
+`m_fetchBlocking`/`m_pushBlocking` branches) spawns a raw detached `QThread`
+that, on the original code, touched the same `SyncOperation*` directly
+(`op->state()`, `op->complete()`) from that background OS thread with no
+marshaling. The engine's `deleteLater()` fires on the main thread almost
+immediately after `cancel()`, racing that detached thread — TSAN caught the
+exact UAF (`SyncOperation::state()` read racing `FetchOperation::
+~FetchOperation()`).
+
+Fix (confined to `src/calendar/mockbackend.{h,cpp}`, a backend file — checked
+against E5's scope first per this phase's own gate, since E5's real target is
+production backends' nested-loop re-entrancy, not this test-only simulation
+class): the blocking-mode threads no longer touch `op`/`this` at all. A first
+attempt routed the completion through `QMetaObject::invokeMethod(op, ...,
+Qt::QueuedConnection)` — this still crashed under the plain (non-TSAN)
+parallel suite (`QObject::thread()` on a dangling `op`), because
+`invokeMethod`'s own thread-affinity lookup dereferences its context object
+before queuing; routing through a possibly-dangling `op` as context is exactly
+as unsafe as touching it directly. The real fix: marshal onto `this`
+(`MockBackend`) instead, which the new `~MockBackend()` keeps alive for the
+duration of any spawned blocking thread by `wait()`-ing each one
+(`m_blockingThreads`, a `QList<QPointer<QThread>>`) before the rest of
+destruction proceeds — the old destructor was `= default` and never joined
+these detached threads, so nothing prevented the backend (or its ops) from
+being destroyed out from under them. The invoked lambda re-resolves the
+operation via `m_pendingBlockingFetchOps`/`m_pendingBlockingPushOps`
+(`QHash<QString, QPointer<...>>`), touched only from `this`'s own thread —
+exactly where `QPointer`'s automatic null-on-delete is safe to observe.
+
+Also fixed in the same pass: `~MockBackend()`'s thread-join closes a second,
+related defect — without it, TSAN's own thread registry could abort
+(`sanitizer_thread_registry.cpp:186` `CHECK failed`, tid reuse) across
+back-to-back `TstEngineCancellation` slots in one process, present even before
+this fix (reproduced on the stock code, filed separately as **O37** since it's
+a TSAN-runtime artifact orthogonal to O26's named crash, not something E2 was
+scoped to chase).
+
+**Verification:** TSAN build, 200 isolated single-testcase repetitions across
+all 8 cancellation-relevant slots (`cancelBeforeStart`, `cancelDuringFetch`,
+`cancelDuringApply`, `cancelDuringConflictPause`,
+`cancelMultiMappingMidQueue`, `idempotentCancel`, `cancelAfterFinished`,
+`engineDestroyedMidSync_freesInterface`) — zero use-after-free, zero registry
+CHECK failures. Plain (non-TSAN) release build: 200/200 clean runs each for
+`tst_engine_cancellation` and `tst_engine_single_mapping_cancel`. Full
+parallel suite (`ctest -j 8`, 160 tests): 3/3 consecutive 100%-green runs
+(previously this exact pair SEGFAULTed reliably on run 1 with the naive
+`invokeMethod(op, ...)` fix, proving the isolated-slot TSAN passes alone
+would have been a false-green gate).
 
 ### O27 — `applyBatch`'s BackendThread branch runs `writer->apply()` on the worker thread — steady-state CalDAV *updates* do network I/O + SQL cross-thread (RESOLVED by H8.5, 2026-07-06)
 
@@ -781,6 +827,32 @@ the CTag, RFC §3.3 token-invalidation fallback, and the CTag+PROPFIND path
 kept permanently as the fallback. The backend-owned sync-token is a
 *cache-validity* token — it must not be conflated with the engine's H3
 per-mapping sync-progress tokens. (Seeded 2026-07-07.)
+
+### O37 — TSAN thread-registry `CHECK failed` under rapid QThread churn in `tst_engine_cancellation` (OPEN, tool artifact, seeded 2026-07-07 during E2)
+
+Surfaced while root-causing O26 under a TSAN build: running the full
+`tst_engine_cancellation` binary (all `TstEngineCancellation` slots in one
+process) intermittently aborts with `ThreadSanitizer: CHECK failed:
+sanitizer_thread_registry.cpp:186 "((live_.try_emplace(user_id,
+tid).second)) != (0)"` when `SyncEngine::startWorkerThread()`
+(`syncengine.cpp:211`) spins up a fresh worker `QThread` for the next test
+method shortly after the previous test's engine (and its worker thread) was
+destroyed. **Not an app bug:** `SyncEngine::stopWorkerThread()` already does
+the textbook-correct `m_workerThread.quit(); m_workerThread.wait();` join
+before returning (verified by reading the source), and this exact failure
+signature is reproducible on the *pre-O26-fix* code too (same line, same
+call chain) — it predates and is independent of the O26 UAF and its fix.
+Read as a TSAN-runtime limitation with pthread tid reuse outpacing TSAN's
+own internal registry bookkeeping under fast thread churn (likely aggravated
+by the very recent GCC 16.1.1 / compiler-rt pairing in this environment).
+**Impact:** blocks running `tst_engine_cancellation`'s full slot list as a
+single TSAN-instrumented process; does not reproduce for any slot run in
+isolation (verified 200x per slot, 8 slots, zero hits — see O26's
+Verification note) and does not reproduce at all in non-TSAN builds (3x
+full 160-test parallel suite green). No action taken — not chased under E2
+(out of its O26 scope) or any other numbered phase; revisit only if it
+starts blocking a CI/gate that runs the whole TSAN binary in one process,
+or if a compiler-rt/glibc upgrade is available to test against.
 
 ## Resolved
 
