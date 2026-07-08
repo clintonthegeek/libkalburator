@@ -858,18 +858,70 @@ updated.
 
 ## 17. Checklist (single source of truth — update in the landing commit)
 
-- [ ] **E1.1** SyncStats wired from writer batches (RED: created-count,
-      cancelled-partial `skipped=false`, never-started `skipped=true`)
-- [ ] **E1.2** dead machinery deleted (updateSyncMetadata/makeCalendarRec,
+- [x] **E1.1** SyncStats wired from writer batches (RED: created-count,
+      cancelled-partial `skipped=false`, never-started `skipped=true`) —
+      2026-07-07, FINDINGS O30 Resolved
+- [x] **E1.2** dead machinery deleted (updateSyncMetadata/makeCalendarRec,
       RecordMergerICal); primeRevisionCache decision recorded (WildPalms
-      grep evidence in FINDINGS O31)
-- [ ] **E2** O26 root-caused under TSAN and fixed (mechanism named in
-      FINDINGS; 50× repeat + 3× full-suite gates)
-- [ ] **E3** m_cancelled race fixed; DecSync controllers on worker;
-      stopWorkerThread bounded-wait diagnostic
-- [ ] **E4** updateRecord owning-calendar restriction; ETag-precondition
-      contracts pinned; PROPPATCH suppression verified
-- [ ] *(optional)* mid-campaign merge + tag **v0.85**
+      grep evidence in FINDINGS O31) — 2026-07-07, FINDINGS O31 Resolved.
+      WildPalms grep: zero call sites for `primeRevisionCache` and
+      `cachedCollectionRevision`; interface + all six backend
+      implementations deleted outright (not left doc-commented).
+- [x] **E2** O26 root-caused under TSAN and fixed (mechanism named in
+      FINDINGS; 50× repeat + 3× full-suite gates) — 2026-07-07, FINDINGS
+      O26 Resolved. Fix confined to `src/calendar/mockbackend.{h,cpp}` (a
+      backend file — checked against E5's scope first per this phase's
+      gate; MockBackend's test-only blocking-thread simulation is
+      orthogonal to E5's real-backend nested-loop rework). A new
+      thread-registry TSAN artifact surfaced during verification, filed
+      separately as FINDINGS O37 (tool limitation, not an app bug, does
+      not block this item).
+- [x] **E3** m_cancelled race fixed; DecSync controllers on worker;
+      stopWorkerThread bounded-wait diagnostic — 2026-07-07, FINDINGS O33
+      Resolved. processSync now only checks m_cancelled (never clears
+      it); the sole reset moved to worker slot resetCancellationFlag(),
+      invoked once per run from driveQueue()/processSingleMapping()
+      before that run's first mapping dispatches. DecSync active-
+      controller loop moved to the worker thread via a new
+      activeControllersRequested/runActiveControllers/
+      activeControllersReady command-channel round trip (mirrors
+      fastPathRequested/prepareFastPath); driveQueue()'s tail split into
+      continueDriveQueueSetup() so it can resume either synchronously or
+      as this round trip's continuation. stopWorkerThread's unbounded
+      wait() replaced by waitForWorkerWithDiagnostic() (new
+      src/engine/workerteardown.{h,cpp}): bounded wait, loud qCritical
+      diagnostic on expiry, then unbounded wait (never terminate()).
+      Three new tests: tst_engine_cancel_queue_race,
+      tst_decsync_active_controller_thread, tst_worker_teardown. Full
+      suite green (163/163, O26 flake not observed). Noted in FINDINGS
+      O33: DecSyncControllerStore's SQLite connection is thread-affine
+      to whichever thread constructed it, which is now a real gap since
+      runActiveSync() executes on the worker thread — out of E3's scope,
+      flagged for whoever enables DecSync for real.
+- [x] **E4** updateRecord owning-calendar restriction; ETag-precondition
+      contracts pinned; PROPPATCH suppression verified — 2026-07-07,
+      FINDINGS O32 Resolved. `updateRecord`/`deleteRecord` now route through
+      a new `findOwningCalendar(uid)` helper (ETag map, then
+      `CalDavContentCache::contains()`, new accessor); the try-all-calendars
+      fallback is deleted — a uid no registered calendar can show ownership
+      for now FAILS distinctly instead of guess-writing/guess-deleting.
+      `FakeCalDavServer` gained real RFC 7232 `If-Match`/`If-None-Match`
+      precondition enforcement on PUT (412s), previously a no-op fake — new
+      tests in `tst_remotecalendarbackend_blob_view.cpp` pin the ownership-
+      miss failure (RED against the old fallback), the stale-ETag 412 (no
+      silent overwrite), and the next-fetch pickup of the concurrent edit.
+      PROPPATCH suppression pinned by `tst_sync_convergence.cpp`'s new
+      `colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches` — passed
+      as-is; investigating why surfaced a real but out-of-scope gap, filed
+      as FINDINGS O38 (property-phase baseline argument is always empty;
+      T9's persisted baseline is written but never read back — masked in
+      the two-way already-converged case by `computeMapDiff`'s
+      same-value shortcut, but a real risk for asymmetric one-sided
+      property edits). Full suite green, 163/163, O26 flake not observed.
+- [x] *(optional)* mid-campaign merge + tag **v0.85** — 2026-07-07.
+      Pre-tag full suite: 163/163 green, O26 flake not observed.
+      `feature/sync-excellence` merged → `main` (`--no-ff`), tagged
+      v0.85 "correctness batch: O26, O30–O33 + write-path pins".
 - [ ] **CP-A** strong-model ruling on E5 design recorded here
 - [ ] **E5.1** per-collection FIFO op queue (neutral layer)
 - [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths

@@ -802,24 +802,6 @@ QString RemoteCalendarBackend::cachedCollectionRevision(const QString &collectio
     return ctag(collectionId);
 }
 
-void RemoteCalendarBackend::primeRevisionCache(const QMap<QString, QString> &cache)
-{
-    // N5 fix: stage into pendingCtag, never write the persisted CTag
-    // directly. fetchItems() already commits the persisted CTag itself,
-    // but only after verifying every item actually materialized
-    // (countSkipped == 0, no failed multiget batches) — writing here
-    // unconditionally would let a sync that completed with some items
-    // silently skipped still stamp the fresh CTag, so a later CTag-match
-    // short-circuit would serve that incomplete set as "current" forever
-    // after (the exact CTag-ahead-of-content-cache bug this campaign
-    // found). When fetchItems already committed the real CTag during this
-    // same sync (the common case), this pendingCtag value is simply
-    // superseded the next time fetchItems runs — never a second, competing
-    // write path into the trusted store.
-    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-        m_calendars[it.key()].pendingCtag = it.value();
-}
-
 QColor RemoteCalendarBackend::calendarColor(const QString &calendarId) const
 {
     // Return from cache (populated during discovery or after updateCalendar)
@@ -2398,47 +2380,60 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
     return ok ? record.id : QString{};
 }
 
+std::optional<QString> RemoteCalendarBackend::findOwningCalendar(const QString &uid) const
+{
+    // Pass 1: the ETag map — an item this backend instance has written or
+    // fetched. Cheap, in-memory, the common case.
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        if (it->davUrl.url().isEmpty()) continue;
+        const QUrl itemUrl = generateItemUrl(it->davUrl, uid);
+        const QString urlKey = normalizeUrlKey(itemUrl.toString());
+        if (m_localEtags.contains(urlKey)) return it.key();
+    }
+    // Pass 2: the persistent content cache — an item fetched in a prior
+    // session (this instance's ETag map is empty on a fresh construction).
+    if (m_contentCache) {
+        for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+            if (it->davUrl.url().isEmpty()) continue;
+            const QUrl itemUrl = generateItemUrl(it->davUrl, uid);
+            const QString urlKey = normalizeUrlKey(itemUrl.toString());
+            if (m_contentCache->contains(urlKey)) return it.key();
+        }
+    }
+    return std::nullopt;
+}
+
 bool RemoteCalendarBackend::updateRecord(const BackendRecord &record)
 {
     if (record.id.isEmpty() || record.data.isEmpty()) return false;
 
-    // Find which calendar this uid lives in.
-    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
-        if (it->davUrl.url().isEmpty()) continue;
-        QUrl itemUrl = generateItemUrl(it->davUrl, record.id);
-        QString urlKey = normalizeUrlKey(itemUrl.toString());
-
-        // Check if we have an ETag for this item (proxy for "this calendar owns it").
-        if (!m_localEtags.contains(urlKey)) continue;
-
-        return setRawIcs(it.key(), record.id, QString::fromUtf8(record.data));
+    const auto calId = findOwningCalendar(record.id);
+    if (!calId) {
+        // O32: never guess by trying every registered calendar — that can
+        // write the item into the WRONG calendar on a multi-calendar backend.
+        qWarning() << "RemoteCalendarBackend::updateRecord: uid not found in any owned calendar:" << record.id;
+        return false;
     }
 
-    // Fallback: try all registered calendars (first success wins).
-    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
-        if (it->davUrl.url().isEmpty()) continue;
-        if (setRawIcs(it.key(), record.id, QString::fromUtf8(record.data)))
-            return true;
-    }
-    qWarning() << "RemoteCalendarBackend::updateRecord: uid not found in any calendar:" << record.id;
-    return false;
+    return setRawIcs(*calId, record.id, QString::fromUtf8(record.data));
 }
 
 bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
 {
     if (recordId.isEmpty()) return false;
 
-    // Try all registered calendars; deleteItems returns success if the uid exists.
-    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
-        if (it->davUrl.url().isEmpty()) continue;
-        DeleteOperation *op = deleteItems(it.key(), QStringList{recordId});
-        if (!op) continue;
-
-        const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
-        op->deleteLater();
-        if (ok) return true;
+    const auto calId = findOwningCalendar(recordId);
+    if (!calId) {
+        qWarning() << "RemoteCalendarBackend::deleteRecord: uid not found in any owned calendar:" << recordId;
+        return false;
     }
-    return false;
+
+    DeleteOperation *op = deleteItems(*calId, QStringList{recordId});
+    if (!op) return false;
+
+    const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
+    op->deleteLater();
+    return ok;
 }
 
 // --- Change detection -------------------------------------------------------

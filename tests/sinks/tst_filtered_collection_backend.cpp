@@ -144,26 +144,14 @@ public:
     { return m_rev.value(id); }
     QString cachedCollectionRevision(const QString& id) const override
     { return m_cached.value(id); }
-    void primeRevisionCache(const QMap<QString, QString>& cache) override
-    {
-        for (auto it = cache.constBegin(); it != cache.constEnd(); ++it) {
-            m_cached.insert(it.key(), it.value());
-            m_lastPrimedKey = it.key();
-            m_lastPrimedValue = it.value();
-        }
-    }
 
     void setRev(const QString& id, const QString& r)    { m_rev.insert(id, r); }
     void setCached(const QString& id, const QString& r) { m_cached.insert(id, r); }
     QString cachedFor(const QString& id) const          { return m_cached.value(id); }
-    QString lastPrimedKey() const                       { return m_lastPrimedKey; }
-    QString lastPrimedValue() const                     { return m_lastPrimedValue; }
 
 private:
     QMap<QString, QString> m_rev;
     QMap<QString, QString> m_cached;
-    QString m_lastPrimedKey;
-    QString m_lastPrimedValue;
 };
 
 BackendRecord makeJsonRecord(const QString& id, const QJsonObject& obj)
@@ -246,7 +234,6 @@ private slots:
     // ---- Sync::ChangeDetection delegation (2026-06-14 hub-skip RFC) -------
     void revision_delegatesToParentTranslatingId();
     void cachedRevision_delegatesToParent();
-    void primeRevisionCache_forwardsToParentWithParentColId();
     void revision_parentWithoutChangeDetection_returnsEmpty();
     void revision_nullParent_returnsEmpty();
 };
@@ -912,27 +899,6 @@ void TestFilteredCollectionBackend::cachedRevision_delegatesToParent()
     QVERIFY(cd->cachedCollectionRevision(QStringLiteral("cal-1")).isEmpty());
 }
 
-void TestFilteredCollectionBackend::primeRevisionCache_forwardsToParentWithParentColId()
-{
-    FakeCDParent parent("p1", "cal-1", kCalendarCanonShape);
-    FilteredCollectionBackend v(&parent, "p1", "cal-1", "v1",
-                                RecordFilter{ PropertyId{"categories"},
-                                              RecordFilter::Op::Contains,
-                                              QStringLiteral("Work") });
-
-    auto* cd = dynamic_cast<Kalburator::Sync::ChangeDetection*>(&v);
-    QVERIFY(cd);
-    // Priming the virtual id forwards to the parent under the parent col id.
-    cd->primeRevisionCache({{QStringLiteral("v1"), QStringLiteral("7")}});
-    QCOMPARE(parent.lastPrimedKey(), QStringLiteral("cal-1"));
-    QCOMPARE(parent.lastPrimedValue(), QStringLiteral("7"));
-    QCOMPARE(parent.cachedFor(QStringLiteral("cal-1")), QStringLiteral("7"));
-
-    // Keys other than the virtual collection id are ignored.
-    cd->primeRevisionCache({{QStringLiteral("other"), QStringLiteral("13")}});
-    QCOMPARE(parent.lastPrimedKey(), QStringLiteral("cal-1"));  // unchanged
-}
-
 void TestFilteredCollectionBackend::revision_parentWithoutChangeDetection_returnsEmpty()
 {
     // A plain FakeParentBackend does not implement ChangeDetection.
@@ -946,7 +912,6 @@ void TestFilteredCollectionBackend::revision_parentWithoutChangeDetection_return
     QVERIFY(cd);
     QVERIFY(cd->collectionRevision(QStringLiteral("v1")).isEmpty());
     QVERIFY(cd->cachedCollectionRevision(QStringLiteral("v1")).isEmpty());
-    cd->primeRevisionCache({{QStringLiteral("v1"), QStringLiteral("1")}});  // no-op, no crash
 }
 
 void TestFilteredCollectionBackend::revision_nullParent_returnsEmpty()
@@ -968,7 +933,6 @@ void TestFilteredCollectionBackend::revision_nullParent_returnsEmpty()
     registry.unregisterBackendInstance("p1");  // FCB nulls its parent pointer
     QVERIFY(cd->collectionRevision(QStringLiteral("v1")).isEmpty());
     QVERIFY(cd->cachedCollectionRevision(QStringLiteral("v1")).isEmpty());
-    cd->primeRevisionCache({{QStringLiteral("v1"), QStringLiteral("1")}});  // no-op, no crash
     QVERIFY(cd->persistsCollectionRevisions());  // defaults to true with no parent
 }
 

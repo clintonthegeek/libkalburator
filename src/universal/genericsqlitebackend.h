@@ -84,7 +84,6 @@ public:
     // engine-primed baseline is persisted in _collection_revisions.synced_rev.
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
-    void    primeRevisionCache(const QMap<QString, QString> &cache) override;
     bool    persistsCollectionRevisions() const override { return true; }
 
 private:

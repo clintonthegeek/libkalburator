@@ -492,20 +492,66 @@ job. Release gate: v0.83 (H6) is BLOCKED until H5.5 lands and the CP-B pulled-ca
 smoke passes end-to-end (fail within timeout, recover after server resume, stranded
 item lands — the O17 live proof rides on the same re-run).
 
-### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (OPEN, observed at H5.5, 2026-07-05)
+### O26 — `tst_engine_cancellation` intermittently SEGFAULTs (RESOLVED by sync-excellence E2, 2026-07-07)
 
-Observed during H5.5's full-suite acceptance run: `tst_engine_cancellation`
-(159/160 others green) SEGFAULTed once, then passed on 2 of the next 3
-isolated re-runs — a nondeterministic crash, ~1-in-3. **Not caused by H5.5:**
-the test drives `MockBackend` pairs only (`tst_engine_cancellation.cpp:108-129`,
-`:482-486`) and never touches `RemoteCalendarBackend` or the new
-`startJobWithWatchdog` path; H5.5's diff is confined to
-`remotecalendarbackend.{h,cpp}`. Almost certainly a pre-existing race in the
-cancellation teardown path (cancel-during-marshal against the mock), surfaced
-by chance under the parallel suite. Not triaged here (out of H5.5 scope);
-flagged so it isn't mistaken for H-phase regression. Candidate for H9 or a
-standalone flake hunt — reproduce with repeated `ctest -R tst_engine_cancellation`
-under a sanitizer build.
+**RESOLVED (E2, 2026-07-07).** Root-caused under TSAN (first repro,
+`build-tsan` with `-fsanitize=thread`): a genuine heap-use-after-free, not a
+scheduling fluke. Mechanism: `SyncEngineWorker::dispatchSync`'s
+fetch-cancellation teardown (`syncengine.cpp:2117-2126`, mirrored at the
+target-fetch gate `:2260-2269`) calls `fetchOp->cancel()` then checks
+`!fetchOp->isFinished()` to decide whether to wait (via a `QEventLoop` on
+`finished()`) before `deleteLater()`-ing the op. But `SyncOperation::cancel()`
+(`syncoperation.cpp:34-49`) unconditionally and *synchronously* flips state to
+the terminal `Cancelled` — so `isFinished()` is already `true` the instant
+`cancel()` returns, and the intended wait-loop can never fire. Meanwhile
+`MockBackend`'s blocking-fetch/push simulation (`mockbackend.cpp`, the
+`m_fetchBlocking`/`m_pushBlocking` branches) spawns a raw detached `QThread`
+that, on the original code, touched the same `SyncOperation*` directly
+(`op->state()`, `op->complete()`) from that background OS thread with no
+marshaling. The engine's `deleteLater()` fires on the main thread almost
+immediately after `cancel()`, racing that detached thread — TSAN caught the
+exact UAF (`SyncOperation::state()` read racing `FetchOperation::
+~FetchOperation()`).
+
+Fix (confined to `src/calendar/mockbackend.{h,cpp}`, a backend file — checked
+against E5's scope first per this phase's own gate, since E5's real target is
+production backends' nested-loop re-entrancy, not this test-only simulation
+class): the blocking-mode threads no longer touch `op`/`this` at all. A first
+attempt routed the completion through `QMetaObject::invokeMethod(op, ...,
+Qt::QueuedConnection)` — this still crashed under the plain (non-TSAN)
+parallel suite (`QObject::thread()` on a dangling `op`), because
+`invokeMethod`'s own thread-affinity lookup dereferences its context object
+before queuing; routing through a possibly-dangling `op` as context is exactly
+as unsafe as touching it directly. The real fix: marshal onto `this`
+(`MockBackend`) instead, which the new `~MockBackend()` keeps alive for the
+duration of any spawned blocking thread by `wait()`-ing each one
+(`m_blockingThreads`, a `QList<QPointer<QThread>>`) before the rest of
+destruction proceeds — the old destructor was `= default` and never joined
+these detached threads, so nothing prevented the backend (or its ops) from
+being destroyed out from under them. The invoked lambda re-resolves the
+operation via `m_pendingBlockingFetchOps`/`m_pendingBlockingPushOps`
+(`QHash<QString, QPointer<...>>`), touched only from `this`'s own thread —
+exactly where `QPointer`'s automatic null-on-delete is safe to observe.
+
+Also fixed in the same pass: `~MockBackend()`'s thread-join closes a second,
+related defect — without it, TSAN's own thread registry could abort
+(`sanitizer_thread_registry.cpp:186` `CHECK failed`, tid reuse) across
+back-to-back `TstEngineCancellation` slots in one process, present even before
+this fix (reproduced on the stock code, filed separately as **O37** since it's
+a TSAN-runtime artifact orthogonal to O26's named crash, not something E2 was
+scoped to chase).
+
+**Verification:** TSAN build, 200 isolated single-testcase repetitions across
+all 8 cancellation-relevant slots (`cancelBeforeStart`, `cancelDuringFetch`,
+`cancelDuringApply`, `cancelDuringConflictPause`,
+`cancelMultiMappingMidQueue`, `idempotentCancel`, `cancelAfterFinished`,
+`engineDestroyedMidSync_freesInterface`) — zero use-after-free, zero registry
+CHECK failures. Plain (non-TSAN) release build: 200/200 clean runs each for
+`tst_engine_cancellation` and `tst_engine_single_mapping_cancel`. Full
+parallel suite (`ctest -j 8`, 160 tests): 3/3 consecutive 100%-green runs
+(previously this exact pair SEGFAULTed reliably on run 1 with the naive
+`invokeMethod(op, ...)` fix, proving the isolated-slot TSAN passes alone
+would have been a false-green gate).
 
 ### O27 — `applyBatch`'s BackendThread branch runs `writer->apply()` on the worker thread — steady-state CalDAV *updates* do network I/O + SQL cross-thread (RESOLVED by H8.5, 2026-07-06)
 
@@ -665,41 +711,98 @@ continuation-based `davSyncRequestAsync` (E5.2), writes as awaitable
 `WriteOperation`s replacing the blocking apply (E5.3). Grep gate at close:
 zero `QEventLoop` under `src/calendar/` + `src/sync/`. (Seeded 2026-07-07.)
 
-### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (OPEN → sync-excellence E1.1)
+### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified
 dispatch path writes the stats, yet two live readers consume them:
 `advanceQueue`'s aggregate `statsOk` (`syncengine.cpp:803-806` — vacuously
 true) and `onWorkerSyncCompleted`'s cancelled-path `skipped` classification
 (`:1168-1171`) — so every cancelled run is misreported `skipped=true`
-("never started") even after partial writes. Fix: populate both sides'
-stats from the `WriterBatch` apply counts in
-`unifiedContinueAfterConflicts`. (Seeded 2026-07-07.)
+("never started") even after partial writes.
 
-### O31 — dead/misleading machinery: `updateSyncMetadata`, `RecordMergerICal`, engine-unused `primeRevisionCache` residue (OPEN → sync-excellence E1.2)
+Fixed: `unifiedContinueAfterConflicts`'s `applyBatch` helper now takes a
+`SyncStats&` out-param, populated from the actually-classified
+`WriterBatch` — `created`/`updated`/`deleted` on a successful apply,
+`errors` (the whole attempted batch) on a failed one — passed
+`m_currentResult.targetStats` at the target-apply call site and
+`m_currentResult.sourceStats` at the source-apply site. Unresolved-conflict
+count is mirrored into `targetStats.conflicts` once, after both applies.
+RED test `tests/engine/tst_sync_result_stats.cpp` (MockBackend pairs,
+domain-neutral) pins: a two-item create populates `targetStats.created==2`
+with `sourceStats` untouched; a cancel observed after a real apply reports
+`skipped==false`; a cancel observed before any apply (blocked fetch, the
+pre-existing-correct case) still reports `skipped==true`.
+
+### O31 — dead/misleading machinery: `updateSyncMetadata`, `RecordMergerICal`, engine-unused `primeRevisionCache` residue (Resolved 2026-07-07, sync-excellence E1.2)
 
 Promoted from Discipline Log entries + roadmap D2. (a)
 `SyncEngine::updateSyncMetadata` + `makeCalendarRec` (`syncengine.cpp:912+`)
 — zero call sites; writes legacy-shaped baseline rows that would be
-invisible to `baselineHashesForMappingV4` if ever re-wired. Delete.
-(b) `RecordMergerICal` (`icalrecordmerger.cpp:33+`) parses canon JSON as
-iCal — `parseIcal` returns null and it silently degrades to side-picking;
-the active merger is `CanonJsonMerger`. Delete + registration.
-(c) `ChangeDetection::primeRevisionCache` is engine-unused since H3;
-decision (WildPalms grep evidence to be recorded here) whether the
-interface method goes entirely or stays doc-commented. (Seeded 2026-07-07.)
+invisible to `baselineHashesForMappingV4` if ever re-wired. Deleted both
+(the comment at `syncengine.cpp:2340` documenting the legacy row shape
+`baselineHashesForMappingV4` filters was reworded to drop the dangling
+symbol reference rather than deleted, since the historical context it
+records is still load-bearing for that filter's own doc comment).
+(b) `RecordMergerICal` (`icalrecordmerger.{h,cpp}`) parsed canon JSON as
+iCal — `parseIcal` returned null and it silently degraded to side-picking;
+the active merger is `CanonJsonMerger`, unaffected. Deleted the merger,
+its CMakeLists registration, and its dedicated unit test
+(`tests/calendar/differs/tst_ical_record_merger.cpp`) — no registration
+site referenced it (already orphaned).
+(c) `ChangeDetection::primeRevisionCache` — engine-unused since H3;
+`~/dev/WildPalms` grep confirmed zero call sites (`primeRevisionCache`,
+`cachedCollectionRevision`), so the pure-virtual and every implementation
+were deleted outright: `AkonadiBackend`, `LocalBackend` (+ its now-dead
+private `setCachedFingerprint` helper — the A2 direct-store-write hazard),
+`RemoteCalendarBackend` (method body only — its `pendingCtag` staging
+field stays live, used elsewhere in that file's CTag-commit path, so the
+E1 "don't touch remotecalendarbackend.cpp diff/merge logic" guardrail was
+read as not covering this single dead-interface-method deletion),
+`AkonadiContactsBackend`, `RemoteContactsBackend` (inline stub),
+`GenericSqliteBackend`, `FilteredCollectionBackend`. Three tests that
+existed solely to exercise the deleted method were removed or trimmed:
+`tst_generic_sqlite_backend.cpp` (whole test), `tst_filtered_collection_backend.cpp`
+(whole test + the `FakeCDParent::primeRevisionCache` override + tracking
+fields + trailing calls in two other tests), `tst_backend_thread_relocation.cpp`
+(the primed-cache-round-trip half of one test; the fetch/collectionRevision
+half stays). `cachedCollectionRevision` stays everywhere per plan.
+`grep -rn "primeRevisionCache" src/ tests/` returns only a doc comment.
 
-### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (OPEN → sync-excellence E4)
+Full suite: 160/160 green (including `tst_engine_cancellation`, the O26
+flake candidate — no reproduction this run).
+
+### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (Resolved 2026-07-07, sync-excellence E4)
 
 Promoted from roadmap D2. `RemoteCalendarBackend::updateRecord`
 (`remotecalendarbackend.cpp:2401-2424`): when the `m_localEtags` ownership
-lookup misses, a fallback loop PUTs the item into every registered calendar
-until one succeeds — wrong-calendar writes on multi-calendar backends and
-multiplied failed-PUT latency. Fix: resolve ownership via the persistent
-content cache, else fail loudly; never guess. Check `deleteRecord` for the
-same pattern. (Seeded 2026-07-07.)
+lookup missed, a fallback loop PUT the item into every registered calendar
+until one succeeded — wrong-calendar writes on multi-calendar backends and
+multiplied failed-PUT latency. `deleteRecord` shared the pattern (tried
+every registered calendar, first success wins).
 
-### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (OPEN → sync-excellence E3)
+**Fix:** both methods now route through a new
+`RemoteCalendarBackend::findOwningCalendar(uid)` helper: pass 1 checks the
+in-memory ETag map (an item this instance wrote or fetched); pass 2 checks
+the persistent `CalDavContentCache` (a new `contains(url)` accessor — an
+item fetched in a prior session). No match ⇒ FAIL with a distinct warning;
+never guess by writing/deleting against an unowned calendar.
+
+Also pinned (previously correct but untested — `FakeCalDavServer` always
+succeeded regardless of headers, so nothing could exercise them):
+`FakeCalDavServer` now enforces RFC 7232 `If-Match`/`If-None-Match`
+preconditions on PUT (412 on ETag mismatch or on an existing resource with
+`If-None-Match: *`). New tests in `tst_remotecalendarbackend_blob_view.cpp`:
+ownership-miss fails without a guess-write (zero PUTs, RED against the old
+fallback); a stale-ETag `updateRecord` surfaces the 412 rather than
+silently overwriting a concurrent server-side edit; the next `fetchItems`
+cycle after that 412 picks up the concurrent edit. The PROPPATCH-storm
+regression pin (roadmap D2's last item) is `tst_sync_convergence.cpp`'s new
+`colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches` — passed
+without further change (the property-phase suppression already worked for
+the steady-state case; see O38 for a related but distinct gap this
+uncovered).
+
+### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (Resolved 2026-07-07, sync-excellence E3)
 
 Promoted from audit §C4. (a) `processSync` clears `m_cancelled` at dispatch
 (`syncengine.cpp:1542`): a cancel landing between queue advance and worker
@@ -709,6 +812,38 @@ start is erased; the cancelled queue runs one more full mapping. (b)
 for whoever enables DecSync next. Related: `stopWorkerThread`'s mid-marshal
 deadlock for non-relocated consumers (O22's parked note) gets a bounded-wait
 diagnostic in E3 and its structural fix in E5.3. (Seeded 2026-07-07.)
+
+**Resolved 2026-07-07 (E3).** (a) `SyncEngineWorker::processSync` no longer
+clears `m_cancelled` at dispatch — it now only checks the flag and, if
+already true, short-circuits to a cancelled/skipped `SyncResult` without
+ever calling `dispatchSync`. The sole legitimate reset moved to a new
+worker slot `resetCancellationFlag()`, invoked once per run (queued) from
+`SyncEngine::driveQueue()` and `SyncEngine::processSingleMapping()` —
+before that run's first mapping is ever requested, so the reset can never
+race ahead of or erase an already-observed cancel. (b) The DecSync
+active-controller loop was extracted from `driveQueue()` into a new
+worker slot `runActiveControllers()`, dispatched via the same
+command-channel pattern as `fastPathRequested`/`prepareFastPath`
+(`activeControllersRequested` → `runActiveControllers` →
+`activeControllersReady` → `SyncEngine::onActiveControllersReady` →
+`continueDriveQueueSetup`). Pinned by `tst_decsync_active_controller_thread`
+(a `Qt::DirectConnection` on `DecSyncActiveController::progressChanged`
+records the thread `runActiveSync()` actually executed on — now the
+worker thread, not the caller thread) and
+`tst_engine_cancel_queue_race` (a cancel observed while mapping 1 is
+fetch-blocked stops the queue before mapping 2 ever writes). Note:
+`DecSyncActiveController`'s own internals (`DecSyncControllerStore`'s
+SQLite connection) remain thread-affine to whichever thread constructed
+them — now a real gap since `runActiveSync()` runs on the worker thread
+instead of the constructing thread. Out of E3's scope (not
+`syncengine.{h,cpp}`); flagged for whoever enables DecSync for real,
+per the original §C4 note. (c) `stopWorkerThread`'s unbounded `wait()`
+is now `waitForWorkerWithDiagnostic()` (new `src/engine/workerteardown.{h,cpp}`):
+a bounded wait (30 s default), a loud `qCritical` naming the
+"relocate backends" invariant on expiry, then an unbounded wait (never
+`terminate()`). Pinned by `tst_worker_teardown`. This is the honest
+interim per O22's parked note — the structural fix (the worker stops
+parking in blocking marshals for I/O-length work) is E5.3's job.
 
 ### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
 
@@ -745,6 +880,74 @@ the CTag, RFC §3.3 token-invalidation fallback, and the CTag+PROPFIND path
 kept permanently as the fallback. The backend-owned sync-token is a
 *cache-validity* token — it must not be conflated with the engine's H3
 per-mapping sync-progress tokens. (Seeded 2026-07-07.)
+
+### O37 — TSAN thread-registry `CHECK failed` under rapid QThread churn in `tst_engine_cancellation` (OPEN, tool artifact, seeded 2026-07-07 during E2)
+
+Surfaced while root-causing O26 under a TSAN build: running the full
+`tst_engine_cancellation` binary (all `TstEngineCancellation` slots in one
+process) intermittently aborts with `ThreadSanitizer: CHECK failed:
+sanitizer_thread_registry.cpp:186 "((live_.try_emplace(user_id,
+tid).second)) != (0)"` when `SyncEngine::startWorkerThread()`
+(`syncengine.cpp:211`) spins up a fresh worker `QThread` for the next test
+method shortly after the previous test's engine (and its worker thread) was
+destroyed. **Not an app bug:** `SyncEngine::stopWorkerThread()` already does
+the textbook-correct `m_workerThread.quit(); m_workerThread.wait();` join
+before returning (verified by reading the source), and this exact failure
+signature is reproducible on the *pre-O26-fix* code too (same line, same
+call chain) — it predates and is independent of the O26 UAF and its fix.
+Read as a TSAN-runtime limitation with pthread tid reuse outpacing TSAN's
+own internal registry bookkeeping under fast thread churn (likely aggravated
+by the very recent GCC 16.1.1 / compiler-rt pairing in this environment).
+**Impact:** blocks running `tst_engine_cancellation`'s full slot list as a
+single TSAN-instrumented process; does not reproduce for any slot run in
+isolation (verified 200x per slot, 8 slots, zero hits — see O26's
+Verification note) and does not reproduce at all in non-TSAN builds (3x
+full 160-test parallel suite green). No action taken — not chased under E2
+(out of its O26 scope) or any other numbered phase; revisit only if it
+starts blocking a CI/gate that runs the whole TSAN binary in one process,
+or if a compiler-rt/glibc upgrade is available to test against.
+
+### O38 — `runPropertyPhase`'s baseline argument is always empty; the persisted collection-property baseline (T9) is never read back (OPEN, found 2026-07-07 during E4's PROPPATCH-suppression pin)
+
+`SyncEngineWorker::dispatchSync` (`syncengine.cpp:2163`) calls
+`runPropertyPhase(ops, srcBackend, tgtBackend, srcColId, tgtColId,
+/*baseline=*/QVariantMap{}, request.mapping)` — the baseline argument is a
+literal empty map, unconditionally, every cycle. T9
+(`unifiedContinueAfterConflicts`, `syncengine.cpp:3153-3174`) persists a
+real snapshot via `BaselineStore::setCollectionBaseline` after every
+successful write, but nothing in `syncengine.cpp` ever calls
+`BaselineStore::collectionBaseline()` to read it back before the next
+cycle's property phase. The write half of the T9 contract exists; the read
+half doesn't.
+
+**Why E4's suppression test still passes:** `computeMapDiff`'s "both
+changed" branch (`propertydiff.cpp`) has a same-value shortcut — when
+`srcVal == tgtVal` it treats the pair as "already converged, no apply
+needed" regardless of what `baseVal` was. With baseline always `{}`, a
+key that both sides already agree on after a prior apply cycle hits
+`srcChanged=true, tgtChanged=true` (both differ from the empty baseline)
+but then `srcVal == tgtVal` short-circuits to no-op — the correct outcome,
+by coincidence rather than by design.
+
+**Where it actually bites:** an asymmetric one-sided edit. If only the
+target's color changes between cycles (source untouched since its last
+applied value), the empty baseline makes BOTH sides look "changed from
+baseline" even though only one genuinely diverged — `computeMapDiff` then
+routes it to the `conflicts` branch instead of `toApplyToSource`, i.e. a
+property phase that never reads its own persisted baseline back turns
+ordinary one-sided property edits into spurious every-cycle conflicts
+exactly like O28's record-level phantom conflicts, just for collection
+properties instead of records.
+
+**Not fixed here:** out of E4's stated scope (the phase's Files list is
+CalDAV write-path only) and the one test E4's design actually calls for
+passes without it. Fix shape for whoever picks this up: before calling
+`runPropertyPhase`, read `m_baselineStore->collectionBaseline(mappingId,
+srcColId)` (mirroring T9's write side) and pass it through instead of
+`QVariantMap{}`; add a RED test with one side's color changed and the
+other held constant across two cycles, asserting no conflict and exactly
+one PROPPATCH (today: a conflict every cycle, `toApplyToTarget` re-sent
+from the "conflict resolved SourceWins" default — never fully quiescing).
 
 ## Resolved
 

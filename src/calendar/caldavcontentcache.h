@@ -54,6 +54,11 @@ public:
     /// Evict one item.
     void remove(const QString &itemUrl);
 
+    /// True iff @p itemUrl has a cached row, regardless of its stored ETag.
+    /// Ownership-lookup helper: unlike content(), does not require knowing
+    /// the ETag in advance (E4/O32 — resolving which calendar owns a uid).
+    bool contains(const QString &itemUrl) const;
+
     struct Row {
         QString url;
         QString ical;

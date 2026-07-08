@@ -173,12 +173,6 @@ QString LocalBackend::cachedFingerprint(const QString &calendarId) const
     return QString();
 }
 
-void LocalBackend::setCachedFingerprint(const QString &calendarId, const QString &fingerprint)
-{
-    if (m_fingerprints)
-        m_fingerprints->set(calendarId, fingerprint);
-}
-
 // ---- Sync::ChangeDetection ----------------------------------------------
 
 QString LocalBackend::collectionRevision(const QString &collectionId)
@@ -189,12 +183,6 @@ QString LocalBackend::collectionRevision(const QString &collectionId)
 QString LocalBackend::cachedCollectionRevision(const QString &collectionId) const
 {
     return cachedFingerprint(collectionId);
-}
-
-void LocalBackend::primeRevisionCache(const QMap<QString, QString> &cache)
-{
-    for (auto it = cache.constBegin(); it != cache.constEnd(); ++it)
-        setCachedFingerprint(it.key(), it.value());
 }
 
 BackendCapabilities LocalBackend::capabilities() const

@@ -161,7 +161,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalproperties.h
     src/calendar/calendarcanonproperties.h
     src/calendar/icalrecorddiffer.h
-    src/calendar/icalrecordmerger.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
     # Plan 6 Task 3 — VEVENT field mapping helpers
@@ -209,7 +208,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalproperties.cpp
     src/calendar/calendarcanonproperties.cpp
     src/calendar/icalrecorddiffer.cpp
-    src/calendar/icalrecordmerger.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers
@@ -307,6 +305,7 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/syncengine.h
     src/engine/syncenginefuture.h
     src/engine/syncrequest.h
+    src/engine/workerteardown.h
 )
 # Private headers — AUTOMOC needs them in the target sources so Q_OBJECT
 # is processed, but they are not part of the library's public surface.
@@ -322,6 +321,7 @@ set(KALBURATOR_ENGINE_SOURCES
     src/engine/propertydiff.cpp
     src/engine/syncengine.cpp
     src/engine/syncenginefuture.cpp
+    src/engine/workerteardown.cpp
 )
 
 # Phase G — shape-pipeline architecture primitives.

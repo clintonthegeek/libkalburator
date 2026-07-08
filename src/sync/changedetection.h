@@ -89,20 +89,6 @@ public:
     virtual QString cachedCollectionRevision(const QString &collectionId) const = 0;
 
     /**
-     * @brief Prime the persisted revision cache.
-     *
-     * The engine calls this after a successful sync to update the
-     * stored revision tokens. Backends that don't persist (rare;
-     * only purely-stateless backends) override `persistsCollectionRevisions`
-     * to return false.
-     *
-     * Engine no longer calls this (sync-hardening H3, 2026-07-05); see
-     * `cachedCollectionRevision`'s note above. This method remains for
-     * backend-internal use and external consumers (e.g. WildPalms).
-     */
-    virtual void primeRevisionCache(const QMap<QString, QString> &cache) = 0;
-
-    /**
      * @brief Whether this backend persists collection revisions across
      * process restarts. Default: true.
      */

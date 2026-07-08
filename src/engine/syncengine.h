@@ -64,6 +64,7 @@ using Kalburator::Sync::ConflictInfo;
 using Kalburator::Sync::SyncDiff;
 using Kalburator::Sync::SyncChange;
 using Kalburator::Sync::SyncResult;
+using Kalburator::Sync::SyncStats;
 using Kalburator::Sync::SyncOperation;  // neutral op base; engine depends only on this (P3.T4)
 
 // Using declarations for pointer/reference types from Kalburator::Sync
@@ -472,10 +473,15 @@ private:
      */
     void finishDriveQueueSetup();
 
-    // Helper methods for sync algorithm
-    void updateSyncMetadata(const SyncMapping &mapping, const SyncDiff &diff,
-                            const QList<SyncChange> &resolvedToTarget,
-                            const QList<SyncChange> &resolvedToSource);
+    /**
+     * @brief E3 (O33b): continuation of driveQueue()'s setup, extracted
+     * so it can run either synchronously (no active controllers to
+     * dispatch) or as onActiveControllersReady()'s continuation (active
+     * controllers were dispatched to the worker first). Runs the
+     * fast-path pre-pass dispatch or the clobber/no-fast-path branch,
+     * exactly as the tail of driveQueue() did before this split.
+     */
+    void continueDriveQueueSetup(const std::optional<QSet<QString>> &filter);
 
 private slots:
     // Worker thread signal handlers
@@ -501,6 +507,15 @@ private slots:
      */
     void onFastPathReady(const QSet<QString> &skipped,
                          const QMap<QString, FreshSyncState> &fresh);
+
+    /**
+     * @brief E3 (O33b): invoked (queued, worker thread -> engine thread)
+     * when SyncEngineWorker::runActiveControllers finishes the DecSync
+     * active-controller loop. Resumes driveQueue()'s setup via
+     * continueDriveQueueSetup(), using the filter driveQueue() stashed
+     * in m_pendingQueueFilter before dispatching the loop.
+     */
+    void onActiveControllersReady();
 
     // F2 Task 17: invoked when m_currentWatcher fires canceled.
     // Forwards to the worker via queued connection.
@@ -575,6 +590,12 @@ private:
     // slot or accessor. Removed rather than folded into MappingQueue.
 
     QMap<QString, DecSyncActiveController*> m_activeControllers;
+
+    // E3 (O33b): the subset filter driveQueue() was called with, stashed
+    // across the async active-controller dispatch so
+    // onActiveControllersReady() -> continueDriveQueueSetup() can resume
+    // with the same filter driveQueue() would have used synchronously.
+    std::optional<QSet<QString>> m_pendingQueueFilter;
 
     // Helper to set up worker connections
     void setupWorkerConnections();

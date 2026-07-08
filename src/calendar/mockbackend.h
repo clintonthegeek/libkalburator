@@ -7,8 +7,10 @@
 #include <QHash>
 #include <QList>
 #include <QPair>
+#include <QPointer>
 #include <QSemaphore>
 #include <QStringList>
+#include <QThread>
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
@@ -41,7 +43,15 @@ class MockBackend : public SyncBackend
 public:
     explicit MockBackend(QObject *parent = nullptr);
     explicit MockBackend(const QString &backendId, QObject *parent = nullptr);
-    ~MockBackend() override = default;
+    // O26: fetchItems()/pushItems() blocking-mode threads are detached
+    // (finished->deleteLater, no wait()). Nothing previously joined them
+    // before the backend went away, so a fast-churning test suite could
+    // reuse an OS thread id before the old one was reaped — harmless
+    // outside a sanitizer, but it corrupts TSAN's thread registry
+    // (sanitizer_thread_registry.cpp CHECK failure) under back-to-back
+    // TestEngineCancellation slots. The destructor waits out any still-
+    // running blocking threads so none outlive the backend.
+    ~MockBackend() override;
 
     // =========================================================================
     // SyncBackend Interface
@@ -350,6 +360,19 @@ private:
     bool m_pushBlocking  = false;
     QSemaphore m_fetchBlocker;
     QSemaphore m_pushBlocker;
+    QList<QPointer<QThread>> m_blockingThreads;
+    // O26: the blocking-mode background threads must never touch a
+    // FetchOperation/PushOperation pointer directly (the engine may have
+    // deleteLater()'d it once cancelled, and QMetaObject::invokeMethod(op,
+    // ...) itself dereferences `op` to read its thread affinity before
+    // queuing — so routing through `op` as context is just as unsafe).
+    // Instead the background thread marshals onto `this` (kept alive for
+    // its lifetime by the ~MockBackend join above) and re-resolves the
+    // operation from these QPointer maps, which are only ever read/written
+    // on this backend's own thread — exactly where QPointer's automatic
+    // null-on-delete is safe to observe.
+    QHash<QString, QPointer<FetchOperation>> m_pendingBlockingFetchOps;
+    QHash<QString, QPointer<PushOperation>> m_pendingBlockingPushOps;
 
     // Test fixture: synchronous fetchItems failure with a silent read path.
     bool    m_fetchOpFailsSilently = false;

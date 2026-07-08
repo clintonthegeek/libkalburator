@@ -61,7 +61,6 @@ public:
     // accessors are private since Plan 7b T3 — one public face per concept.
     QString collectionRevision(const QString &collectionId) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
-    void primeRevisionCache(const QMap<QString, QString> &cache) override;
 
     /**
      * @brief Check if a calendar directory is writable.
@@ -175,7 +174,6 @@ private:
     /// directory does not exist. O(N) stat calls; ~100 ms for ~600 files.
     QString calendarFingerprint(const QString &calendarId) const;
     QString cachedFingerprint(const QString &calendarId) const;
-    void setCachedFingerprint(const QString &calendarId, const QString &fingerprint);
 
     // ---- Per-property VDir metadata accessors (updateCalendar's backend) ----
     QString calendarDisplayName(const QString &calendarId) const;

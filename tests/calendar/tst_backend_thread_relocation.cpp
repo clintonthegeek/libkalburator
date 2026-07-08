@@ -361,27 +361,16 @@ void TstBackendThreadRelocation::local_constructThenMove_fetchStartSyncFingerpri
     QTRY_COMPARE_WITH_TIMEOUT(completedSpy.count(), 1, kOpTimeoutMs);
     QVERIFY(QFile::exists(root.filePath(calId + QStringLiteral("/reloc-local-1.ics"))));
 
-    // Fingerprint round-trip via Sync::ChangeDetection — exercises T1.3's
-    // lazy-opened FingerprintStore entirely on ioThread. collectionRevision()
-    // only computes; the cache is populated by primeRevisionCache() (the
-    // engine's job after comparing revisions), which is what actually drives
-    // FingerprintStore::set() — cachedCollectionRevision() alone would stay
-    // empty forever without it.
+    // collectionRevision() (Sync::ChangeDetection) computes entirely on
+    // ioThread — exercises T1.3's lazy-opened FingerprintStore read path
+    // from a relocated backend. (primeRevisionCache()/setCachedFingerprint(),
+    // the write side, was deleted as dead machinery — E1.2/O31 — so there
+    // is no persisted-cache round-trip left to exercise here.)
     QString freshRevision;
     QMetaObject::invokeMethod(backend, [&]() {
         freshRevision = backend->collectionRevision(calId);
     }, Qt::BlockingQueuedConnection);
     QVERIFY(!freshRevision.isEmpty());
-
-    QMetaObject::invokeMethod(backend, [&]() {
-        backend->primeRevisionCache({{calId, freshRevision}});
-    }, Qt::BlockingQueuedConnection);
-
-    QString cachedRevision;
-    QMetaObject::invokeMethod(backend, [&]() {
-        cachedRevision = backend->cachedCollectionRevision(calId);
-    }, Qt::BlockingQueuedConnection);
-    QCOMPARE(cachedRevision, freshRevision);
 }
 
 // ---- Case 3: full SyncEngine run against relocated backends ---------------

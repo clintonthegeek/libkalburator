@@ -28,6 +28,17 @@ MockBackend::MockBackend(const QString &backendId, QObject *parent)
 {
 }
 
+MockBackend::~MockBackend()
+{
+    // O26: join any blocking-mode fetch/push threads still running so
+    // none outlive this backend (see the header comment on this dtor).
+    for (const QPointer<QThread> &t : std::as_const(m_blockingThreads)) {
+        if (t) {
+            t->wait();
+        }
+    }
+}
+
 void MockBackend::loadCalendars(const QString &collectionId)
 {
     logOperation(QStringLiteral("LOAD_CALENDARS"), collectionId);
@@ -210,23 +221,37 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
         // fetch mid-flight rather than racing the test thread
         // against a fast-completing op. Default off; only opted
         // into by tests that have called setFetchBlocking(true).
-        auto *thread = QThread::create([this, op, calendarId]() {
+        m_pendingBlockingFetchOps[calendarId] = op;
+        auto *thread = QThread::create([this, calendarId]() {
             m_fetchBlocker.acquire();
-            // Observe cancellation AFTER acquiring the semaphore so
-            // the test has a window to call op->cancel() before we
-            // complete. SyncOperation::cancel() transitions the
-            // op to Cancelled atomically, so checking state() here
-            // is the public-API observation point.
-            if (op->state() == SyncOperation::Cancelled) {
-                return;
-            }
-            QList<KCalendarCore::Incidence::Ptr> items =
-                m_calendars.value(calendarId).values();
-            op->setFetchedItems(items);
-            op->complete();
+            // O26 fix: the blocking wait happens on this raw background
+            // thread, which must not touch `op` (or anything affine to
+            // its owning thread) directly — the engine may have already
+            // deleteLater()'d it once cancelled (SyncOperation::cancel()
+            // flips state to the terminal Cancelled eagerly), and even
+            // QMetaObject::invokeMethod(op, ...) dereferences `op` to
+            // read its thread affinity before queuing, so routing
+            // through `op` as context is exactly as unsafe as touching
+            // it directly (confirmed: still a heap-use-after-free).
+            // Marshal onto `this` instead — kept alive for the duration
+            // of this thread by the ~MockBackend join — and re-resolve
+            // the operation from a QPointer map that only this backend's
+            // own thread ever reads, which is where QPointer's
+            // automatic null-on-delete is safe to observe.
+            QMetaObject::invokeMethod(this, [this, calendarId]() {
+                FetchOperation *op = m_pendingBlockingFetchOps.take(calendarId);
+                if (!op || op->state() == SyncOperation::Cancelled) {
+                    return;
+                }
+                QList<KCalendarCore::Incidence::Ptr> items =
+                    m_calendars.value(calendarId).values();
+                op->setFetchedItems(items);
+                op->complete();
+            }, Qt::QueuedConnection);
         });
         QObject::connect(thread, &QThread::finished,
                          thread, &QThread::deleteLater);
+        m_blockingThreads.append(thread);
         thread->start();
     } else {
         QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, this]() {
@@ -277,31 +302,37 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
         // F2 Task 22: blockable push, mirrors the fetch path. Used
         // by C3 (cancel during apply) which needs a PushOperation
         // that hangs until the test releases it.
+        m_pendingBlockingPushOps[calendarId] = op;
         auto *thread = QThread::create(
-            [this, op, calendarId, items]() {
+            [this, calendarId, items]() {
             m_pushBlocker.acquire();
-            // See fetchItems(): cancel() already transitions the op
-            // to Cancelled, so a state() check is the public-API
-            // observation point.
-            if (op->state() == SyncOperation::Cancelled) {
-                return;
-            }
-            auto &calendar = m_calendars[calendarId];
-            KCalendarCore::ICalFormat format;
-            QStringList succeededUids;
-            for (const auto &item : items) {
-                QString ical = format.toICalString(item);
-                auto clone = format.fromString(ical);
-                if (clone) {
-                    calendar[item->uid()] = clone;
-                    succeededUids.append(item->uid());
+            // O26 fix: see fetchItems() above — never touch `op` (or
+            // route through it as an invokeMethod context) from this
+            // raw background thread. Marshal onto `this` and re-resolve
+            // via the QPointer map instead.
+            QMetaObject::invokeMethod(this, [this, calendarId, items]() {
+                PushOperation *op = m_pendingBlockingPushOps.take(calendarId);
+                if (!op || op->state() == SyncOperation::Cancelled) {
+                    return;
                 }
-            }
-            op->setSucceededUids(succeededUids);
-            op->complete();
+                auto &calendar = m_calendars[calendarId];
+                KCalendarCore::ICalFormat format;
+                QStringList succeededUids;
+                for (const auto &item : items) {
+                    QString ical = format.toICalString(item);
+                    auto clone = format.fromString(ical);
+                    if (clone) {
+                        calendar[item->uid()] = clone;
+                        succeededUids.append(item->uid());
+                    }
+                }
+                op->setSucceededUids(succeededUids);
+                op->complete();
+            }, Qt::QueuedConnection);
         });
         QObject::connect(thread, &QThread::finished,
                          thread, &QThread::deleteLater);
+        m_blockingThreads.append(thread);
         thread->start();
     } else {
         QTimer::singleShot(m_operationDelayMs, this,
