@@ -64,6 +64,7 @@ class TstBackendReentrancyPin : public QObject
 private slots:
     void queuedCallDuringFetch_neverRunsNested();
     void fastPathRevisionQuery_throughFilteredView_neverRunsNested();
+    void concurrentFetchesOnSameCollection_serialize();
 };
 
 void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
@@ -291,6 +292,103 @@ void TstBackendReentrancyPin::fastPathRevisionQuery_throughFilteredView_neverRun
     // The pin: the revision query through the filtered view must never run its
     // network wait as a backend-thread nested loop (audit B7 / amendment A6).
     QCOMPARE(observedDepth.load(), 0);
+}
+
+// E5.2 (op-queue wiring) — CalDAV fetchItems now routes through E5.1's
+// per-collection FIFO queue, so two fetches on the SAME collection serialize:
+// the second's body must not start until the first finishes.
+//
+// RED (pre-wiring): fetchItems dispatched its body via its own
+// QMetaObject::invokeMethod(this, ...), so two concurrent fetches on one
+// collection both went Running and ran their bodies interleaved -> the second
+// is Running while the first still is -> FAIL.
+// GREEN (post-wiring): the second op stays Pending, held in the queue, until
+// the first settles.
+void TstBackendReentrancyPin::concurrentFetchesOnSameCollection_serialize()
+{
+    auto *server = new FakeCalDavServer();
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {seedIcs("serialize-evt-1")});
+    server->setCollectionCtag(QString::fromLatin1(kPersonalHref), QStringLiteral("ctag-S"));
+    server->setResponseDelayMs(300);
+
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("serialize-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; },
+                                  Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    auto *backend = new RemoteCalendarBackend(baseUrl,
+                                              QStringLiteral("testuser"),
+                                              QStringLiteral("testpass"));
+    backend->setCacheDir(cacheDir.path());
+    backend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("serialize-backend-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(backend, [backend]() { delete backend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    backend->moveToThread(&ioThread);
+
+    QSignalSpy loadFinishedSpy(backend, SIGNAL(loadCalendarsFinished(QString,bool,QString)));
+    QMetaObject::invokeMethod(backend, [&]() {
+        backend->loadCalendars(QStringLiteral("personal-coll"));
+    }, Qt::BlockingQueuedConnection);
+    QTRY_COMPARE_WITH_TIMEOUT(loadFinishedSpy.count(), 1, kOpTimeoutMs);
+    QVERIFY(loadFinishedSpy.first().at(1).toBool());
+
+    // Fetch #1 commits a stored CTag; subsequent fetches then take the ~300ms
+    // async CTag-PROPFIND path, giving a wide serialization window.
+    FetchOperation *warmup = nullptr;
+    QMetaObject::invokeMethod(backend, [&]() {
+        warmup = backend->fetchItems(QStringLiteral("Personal"));
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(warmup != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(warmup->isFinished(), kOpTimeoutMs);
+    QCOMPARE(warmup->state(), SyncOperation::Succeeded);
+    delete warmup;
+
+    // Two fetches on the SAME collection, posted back to back.
+    std::atomic<FetchOperation *> fa{nullptr};
+    std::atomic<FetchOperation *> fb{nullptr};
+    QMetaObject::invokeMethod(backend, [&]() {
+        fa.store(backend->fetchItems(QStringLiteral("Personal")));
+        fb.store(backend->fetchItems(QStringLiteral("Personal")));
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(fa.load() != nullptr);
+    QVERIFY(fb.load() != nullptr);
+
+    // Once A is Running (its body has begun, mid async CTag wait), B must still
+    // be Pending — held behind A in the collection's FIFO queue.
+    QTRY_VERIFY_WITH_TIMEOUT(fa.load()->state() == SyncOperation::Running, kOpTimeoutMs);
+    QCOMPARE(fb.load()->state(), SyncOperation::Pending);
+
+    QTRY_VERIFY_WITH_TIMEOUT(fa.load()->isFinished(), kOpTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(fb.load()->isFinished(), kOpTimeoutMs);
+    QCOMPARE(fa.load()->state(), SyncOperation::Succeeded);
+    QCOMPARE(fb.load()->state(), SyncOperation::Succeeded);
+    delete fa.load();
+    delete fb.load();
 }
 
 QTEST_MAIN(TstBackendReentrancyPin)

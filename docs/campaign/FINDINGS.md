@@ -761,6 +761,23 @@ interface + same-thread test callers) but is no longer backend-thread-
 nested-loop-reachable. Amendment edited into phase plan §8 (Stage E5.2, A6)
 and the §17 E5.2 checklist line.
 
+**E5.2 landed (2026-07-08).** Group A CTag path is async: `fetchFreshCtagAsync`
+(part 1) + `fetchAllCtagsAsync`/`collectionRevisionsAsync` (A6). The
+`ChangeDetection::collectionRevisionsAsync` neutral virtual (default = adapt the
+sync `collectionRevisions`) is overridden in `RemoteCalendarBackend`
+(davSyncRequestAsync PROPFINDs, no nested loop), forwarded in
+`FilteredCollectionBackend`, and the engine fast-path (`prepareFastPath`) now
+calls it, blocking the WORKER (not the backend thread) on a local `QEventLoop`
+whose quit is marshaled back from the backend continuation. `fetchAllCtags`
+carries the `ReentryGuard` tripwire. RemoteCalendarBackend's
+fetch/push/deleteItems now route through E5.1's `enqueueOperation` (their old
+per-entry `registerOperation` + ad hoc `QMetaObject::invokeMethod(this,…)`
+dispatch removed; early exits moved inside the queued body so they respect
+FIFO). Two re-entrancy pins GREEN (fetchItems body + filtered-view revision
+query) + a CalDAV same-collection serialization pin. Remaining under O29:
+E5.3 (writes → `applyRecords`, blocking apply retired, `awaitOperation`
+deleted). O29 stays OPEN until E5.3 closes it.
+
 ### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified

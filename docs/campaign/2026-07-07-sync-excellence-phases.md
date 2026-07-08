@@ -1243,20 +1243,32 @@ three) or add mapping-level parallelism.
       converges end-to-end through the queue (always passed — no
       starvation/deadlock). Full suite green, 164/164 (163 pre-existing +
       the new test), O26 flake not observed.
-- [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
-      (re-entrancy pin RED→GREEN). **Re-cut by amendment A5 (2026-07-08):**
-      converts **Group A only** (`fetchAllCtags`/`fetchFreshCtag`) + wires
+- [x] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
+      (re-entrancy pin RED→GREEN) — 2026-07-08. **Re-cut by amendment A5:**
+      converted **Group A only** (`fetchAllCtags`/`fetchFreshCtag`) + wired
       `RemoteCalendarBackend`'s fetch/push/delete entry points into E5.1's
       op queue (deferred from E5.1); Group B → E5.3, Group C → E11; the
       synchronous `davSyncRequest` helper survives E5 (annotated
-      `// O39/E11:`) and dies in E11. **Amendment A6 (2026-07-08):**
-      `fetchAllCtags` is dual-reachable — the CTag async conversion lands at
-      the `ChangeDetection` interface (`collectionRevisionsAsync`, default
-      sync fallback; `RemoteCalendarBackend` override; `FilteredCollection-
-      Backend` forwarder; engine fast-path switch), closing both the plural
-      backend-thread path and the singular filtered path structurally with no
-      residual. `fetchFreshCtagAsync` (`:805`) already landed; remaining:
-      `collectionRevisionsAsync` + the op-queue wiring (task 7).
+      `// O39/E11:`) and dies in E11. **Amendment A6:** `fetchAllCtags` was
+      dual-reachable — the CTag async conversion landed at the
+      `ChangeDetection` interface (`collectionRevisionsAsync`, default sync
+      fallback; `RemoteCalendarBackend` override via `fetchAllCtagsAsync`;
+      `FilteredCollectionBackend` forwarder; engine fast-path switched to the
+      async form, blocking the WORKER not the backend thread), closing both
+      the plural backend-thread path and the singular filtered path
+      structurally with no residual. Landed across three commits:
+      part 1 (`fetchFreshCtagAsync` + fetchItems body split, prior session),
+      A6 RED (`ChangeDetection::collectionRevisionsAsync` default +
+      `fetchAllCtags` ReentryGuard tripwire + the filtered-view revision pin,
+      RED at depth 1), A6 GREEN (RemoteCalendarBackend/FilteredCollection-
+      Backend/engine impls → depth 0), and the op-queue wiring (fetch/push/
+      delete → `enqueueOperation`, early exits moved inside the queued body;
+      new CalDAV same-collection serialization pin). Three pins GREEN in
+      `tst_backend_reentrancy_pin`; sync/calendar/engine subset green; full
+      suite green (see §10 note). `awaitOperation` and the surviving
+      `davSyncRequest`/`fetchAllCtags` helpers remain for E5.3 (Group B) /
+      E11 (Group C) as scheduled. FINDINGS O29 progress-noted (stays OPEN
+      until E5.3).
 - [ ] **E5.3** applyRecords write operations; blocking apply retired;
       O22 teardown note closed (mid-apply stopWorkerThread pin)
 - [ ] **E6** EtagCache seeded from content cache (restart re-download pin)

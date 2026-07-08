@@ -1579,7 +1579,6 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
 FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 {
     auto *op = onOwnerThread(new FetchOperation(calendarId), this);
-    registerOperation(op);
 
     // H5/O23: capture this fetch's results into the recordsFromLastFetch()
     // memo on every successful completion, regardless of which internal
@@ -1601,7 +1600,10 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
     if (!davUrlFor(calendarId)) {
         qWarning() << "RemoteCalendarBackend::fetchItems: No DAV URL for calendar:" << calendarId;
-        // Use QTimer to defer the failure so caller can connect to signals
+        // Track the op (enqueueOperation would, but this path bypasses the
+        // queue — a no-URL calendar never syncs, so it has nothing to serialize
+        // against) and defer the failure so the caller can connect signals.
+        registerOperation(op);
         QTimer::singleShot(0, op, [op, calendarId, this]() {
             op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
             emit fetchFinished(calendarId, false, QStringLiteral("No DAV URL registered"));
@@ -1609,16 +1611,29 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
         return op;
     }
 
-    // Initialize content cache on first fetch (lazy initialization)
+    // Initialize content cache on first fetch (lazy initialization). This runs
+    // SYNCHRONOUSLY before the queued op body — a load-bearing contract: the
+    // content-cache DB must exist by the time fetchItems() returns (WP-D8 +
+    // the cache-filename determinism test both assert it, and neither spins an
+    // event loop afterward). It is a local SQLite open, not the B7 nested-loop
+    // hazard, so keeping it out of the deferred body is safe.
     m_contentCache->ensureOpen();
 
     KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
-    // Start the operation. E5.2 / audit B7: the CTag PROPFIND is now async, so
-    // this body returns to the event loop before the network wait instead of
-    // spinning a nested QEventLoop — a call marshaled onto the backend thread
-    // mid-fetch no longer re-enters this op's suspended stack.
-    QMetaObject::invokeMethod(this, [this, op, davUrl, calendarId]() {
+    // E5.2: route the (network) op body through E5.1's per-collection FIFO
+    // queue. enqueueOperation registers the op and defers its body one
+    // event-loop turn, but only once this op reaches the front of calendarId's
+    // queue — so concurrent fetch/push/delete on the same collection serialize
+    // instead of interleaving their backend-thread state. The op starts life
+    // Pending and flips to Running inside the body when dequeued (the engine's
+    // fetch gate keys off isFinished(), not state()==Running — H1.1/O24).
+    //
+    // E5.2 / audit B7: the CTag PROPFIND is async, so this body returns to the
+    // event loop before the network wait instead of spinning a nested
+    // QEventLoop — a call marshaled onto the backend thread mid-fetch no longer
+    // re-enters this op's suspended stack.
+    enqueueOperation(calendarId, op, [this, op, davUrl, calendarId]() {
         // Guard held only for this synchronous span, which ends when the async
         // CTag PROPFIND is dispatched (or immediately, absent a stored CTag) —
         // see reentrancyDepth().
@@ -1678,7 +1693,7 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
                 continueFetchWithListing(op, calendarId, davUrl, freshCtag);
             });
-    }, Qt::QueuedConnection);
+    });
 
     return op;
 }
@@ -2065,30 +2080,28 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                                         const QList<KCalendarCore::Incidence::Ptr> &items)
 {
     auto *op = onOwnerThread(new PushOperation(calendarId, items), this);
-    registerOperation(op);
-
-    if (items.isEmpty()) {
-        QTimer::singleShot(0, op, [op]() {
-            op->complete();
-        });
-        return op;
-    }
-
-    if (!davUrlFor(calendarId)) {
-        QTimer::singleShot(0, op, [op, calendarId]() {
-            op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
-        });
-        return op;
-    }
-
-    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
     // Use shared counter to track completion
     auto remaining = std::make_shared<int>(items.size());
     auto anyError = std::make_shared<bool>(false);
 
-    QMetaObject::invokeMethod(this, [this, op, davUrl, items, remaining, anyError]() mutable {
+    // E5.2: serialize on calendarId via E5.1's per-collection FIFO queue (same
+    // shape as fetchItems). The empty-items and no-URL early exits now settle
+    // the op from inside the queued body, so they too respect FIFO ordering.
+    enqueueOperation(calendarId, op, [this, op, calendarId, items, remaining, anyError]() mutable {
         op->setState(SyncOperation::Running);
+
+        if (items.isEmpty()) {
+            op->complete();
+            return;
+        }
+
+        const auto maybeDavUrl = davUrlFor(calendarId);
+        if (!maybeDavUrl) {
+            op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
+            return;
+        }
+        const KDAV::DavUrl davUrl = *maybeDavUrl;
 
         // Initialize content cache so we can store pushed items for subsequent fetches
         m_contentCache->ensureOpen();
@@ -2171,7 +2184,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                 settleIfDone();
             });
         }
-    }, Qt::QueuedConnection);
+    });
 
     return op;
 }
@@ -2181,29 +2194,26 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
 {
     auto *op = onOwnerThread(new DeleteOperation(calendarId, uids), this);
-    registerOperation(op);
-
-    if (uids.isEmpty()) {
-        QTimer::singleShot(0, op, [op]() {
-            op->complete();
-        });
-        return op;
-    }
-
-    if (!davUrlFor(calendarId)) {
-        QTimer::singleShot(0, op, [op, calendarId]() {
-            op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
-        });
-        return op;
-    }
-
-    KDAV::DavUrl davUrl = *davUrlFor(calendarId);
 
     auto remaining = std::make_shared<int>(uids.size());
     auto anyError = std::make_shared<bool>(false);
 
-    QMetaObject::invokeMethod(this, [this, op, davUrl, uids, remaining, anyError]() {
+    // E5.2: serialize on calendarId via E5.1's per-collection FIFO queue (same
+    // shape as fetchItems/pushItems).
+    enqueueOperation(calendarId, op, [this, op, calendarId, uids, remaining, anyError]() {
         op->setState(SyncOperation::Running);
+
+        if (uids.isEmpty()) {
+            op->complete();
+            return;
+        }
+
+        const auto maybeDavUrl = davUrlFor(calendarId);
+        if (!maybeDavUrl) {
+            op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
+            return;
+        }
+        const KDAV::DavUrl davUrl = *maybeDavUrl;
 
         // Shared accounting tail (parallel to pushItems' settleIfDone): decrement
         // the outstanding-job counter and, on the last one, invalidate the CTag
@@ -2267,7 +2277,7 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                 settleIfDone();
             });
         }
-    }, Qt::QueuedConnection);
+    });
 
     return op;
 }
