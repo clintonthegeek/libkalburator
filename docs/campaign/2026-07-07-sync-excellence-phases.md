@@ -918,7 +918,10 @@ updated.
       the two-way already-converged case by `computeMapDiff`'s
       same-value shortcut, but a real risk for asymmetric one-sided
       property edits). Full suite green, 163/163, O26 flake not observed.
-- [ ] *(optional)* mid-campaign merge + tag **v0.85**
+- [x] *(optional)* mid-campaign merge + tag **v0.85** — 2026-07-07.
+      Pre-tag full suite: 163/163 green, O26 flake not observed.
+      `feature/sync-excellence` merged → `main` (`--no-ff`), tagged
+      v0.85 "correctness batch: O26, O30–O33 + write-path pins".
 - [ ] **CP-A** strong-model ruling on E5 design recorded here
 - [ ] **E5.1** per-collection FIFO op queue (neutral layer)
 - [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
