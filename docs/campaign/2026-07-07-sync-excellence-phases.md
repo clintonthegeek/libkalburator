@@ -1358,7 +1358,15 @@ three) or add mapping-level parallelism.
       confirmed already deleted (E5.2/A4); `RecordWriter::Threading`/
       `threading()` → zero hits. FINDINGS O29 → Resolved; O22's parked note
       (inside O33) → Resolved; audit doc B7 header → noted resolved.
-- [ ] **E6** EtagCache seeded from content cache (restart re-download pin)
+- [x] **E6** EtagCache seeded from content cache (restart re-download pin) —
+      2026-07-08, FINDINGS O35 Resolved. `CalDavContentCache::urlEtagPairs`
+      (new, content-free) feeds a lazy per-collection seed of `m_etagCache`
+      in `continueFetchWithListing`, once per backend-instance lifetime,
+      before the `DavItemsListJob` is created (`m_etagCacheSeededCalendars`
+      guard). RED test `tst_etagcache_seed.cpp` confirmed the pre-fix
+      restart-with-1-of-3-changed scenario re-downloaded all 3 items;
+      GREEN after the fix, plus a companion CTag-unchanged non-regression
+      pin. Full suite 165/165 green.
 - [ ] **E7** RFC 6578 sync-collection REPORT + token store + invalidation
       + fallback regression pin + live Radicale evidence
 - [ ] **E8** O28 canonical-equality adoption (crash-replay pin; blob

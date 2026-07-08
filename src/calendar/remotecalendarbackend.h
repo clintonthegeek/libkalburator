@@ -14,6 +14,7 @@
 #include <KDAV/EtagCache>
 #include <QUrl>
 #include <QMap>
+#include <QSet>
 #include <QColor>
 #include <QDateTime>
 #include <QStringList>
@@ -519,6 +520,11 @@ private:
     // path updates both via noteItemWritten/noteItemErased.
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
     QMap<QString, QString> m_localEtags;
+
+    // E6/O35: calendars whose m_etagCache rows have already been seeded from
+    // m_contentCache this backend instance's lifetime. Seeding is per-
+    // collection-once — see continueFetchWithListing().
+    QSet<QString> m_etagCacheSeededCalendars;
 
     // Persistent delta-sync payload cache (own SQLite connection; see
     // caldavcontentcache.h). Lazily opened on first fetchItems()/pushItems().

@@ -981,7 +981,7 @@ event per item, thousands per fetch on big mirrors. Fix: batch
 deprecate then remove the singular signal (PlanStan port at E10).
 (Seeded 2026-07-07.)
 
-### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (OPEN → sync-excellence E6)
+### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (Resolved 2026-07-08 — sync-excellence E6)
 
 Promoted from the H8.5 verification note (see O27's NOTE) / roadmap D2.
 `m_etagCache` (`remotecalendarbackend.cpp:377`) is in-memory per session;
@@ -991,6 +991,22 @@ and re-downloads all of them even though `CalDavContentCache` holds current
 bytes keyed url+etag. Fix: lazily seed the EtagCache from the content
 cache's `(url, etag)` rows before the first listing per collection.
 (Seeded 2026-07-07.)
+
+**Resolution (E6, 2026-07-08):** `CalDavContentCache` gained
+`urlEtagPairs(pathFragment)` (`caldavcontentcache.{h,cpp}`) — like
+`rowsByPathFragment()` but without loading `ical_content`, since seeding
+only needs the etags. `RemoteCalendarBackend::continueFetchWithListing`
+now seeds `m_etagCache` from these pairs the first time it runs for a
+given `calendarId` in the backend instance's lifetime (tracked by new
+`m_etagCacheSeededCalendars`), before constructing the `DavItemsListJob` —
+both the url keys (`normalizeUrlKey`'d) and the seeding site (only reached
+on a real CTag mismatch, never on the CTag-match short-circuit) line up
+exactly with the existing `noteItemWritten`/`noteItemErased` write paths.
+New test `tests/calendar/tst_etagcache_seed.cpp`: RED confirmed a 3-item
+restart-with-1-changed-item scenario re-downloaded all 3
+(`multigetReportCount()` 6 across both syncs instead of 4); GREEN after
+the fix. Companion pins the CTag-unchanged short-circuit is unaffected.
+Full suite 165/165 green.
 
 ### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (OPEN → sync-excellence E7)
 

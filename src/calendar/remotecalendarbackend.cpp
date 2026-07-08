@@ -1725,6 +1725,23 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
         m_calendars[calendarId].pendingCtag = freshCtag;
     }
 
+    // E6/O35: KDAV's EtagCache is in-memory and per-backend-instance, so a
+    // fresh instance (e.g. after an app restart) starts every collection's
+    // delta detection from nothing — the listing below would see every
+    // server item as "changed" even though m_contentCache already holds
+    // unchanged items' bytes under the correct ETag. Seed once per
+    // collection per instance lifetime, lazily here (not the constructor,
+    // which may run pre-relocation on the GUI thread) and BEFORE the
+    // DavItemsListJob below so its changed-set is computed against the
+    // persisted state.
+    if (!m_etagCacheSeededCalendars.contains(calendarId)) {
+        m_etagCacheSeededCalendars.insert(calendarId);
+        const auto seedRows = m_contentCache->urlEtagPairs(davUrl.url().path());
+        for (const auto &[url, etag] : seedRows) {
+            m_etagCache->setEtag(url, etag);
+        }
+    }
+
     // Fetch list of items with ETag comparison
     // DavItemsListJob compares server ETags against our EtagCache to identify changes
     KDAV::DavItemsListJob *listJob = new KDAV::DavItemsListJob(davUrl, m_etagCache, this);
