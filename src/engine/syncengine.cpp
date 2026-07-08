@@ -1422,10 +1422,33 @@ void SyncEngineWorker::prepareFastPath(const QList<SyncMapping> &mappings,
         if (!cd) continue;
         QStringList ids = it.value();
         ids.removeDuplicates();
+        // E5.2 / audit B7 (amendment A6): use the ASYNC revision query and block
+        // the WORKER (this) thread on the answer, never a backend thread. The
+        // async chain (e.g. CalDAV's fetchAllCtagsAsync) runs on the backend
+        // thread without a nested QEventLoop, so an app-side call marshaled onto
+        // the backend thread mid-query cannot re-enter it (the surviving
+        // B7-family loop the concrete-class fetchItems conversion left open,
+        // reachable via a filtered-CalDAV leg). The continuation marshals the
+        // result + loop-quit back here, so there is no cross-thread race on
+        // `revs` and no same-thread-deadlock hazard (all QueuedConnection).
         QMap<QString, QString> revs;
-        runOnBackendThread(base, [cd, ids, &revs]() {
-            revs = cd->collectionRevisions(ids);
-        });
+        {
+            QEventLoop loop;
+            QMetaObject::invokeMethod(base, [cd, ids, &revs, &loop]() {
+                cd->collectionRevisionsAsync(ids,
+                    [&revs, &loop](QMap<QString, QString> result) {
+                        // On the backend thread; hand off to the worker thread
+                        // (loop's thread), where `revs` is written and the loop
+                        // quits — after loop.exec() has begun.
+                        QMetaObject::invokeMethod(&loop,
+                            [&revs, &loop, result = std::move(result)]() {
+                                revs = result;
+                                loop.quit();
+                            }, Qt::QueuedConnection);
+                    });
+            }, Qt::QueuedConnection);
+            loop.exec();
+        }
         for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
             freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
     }

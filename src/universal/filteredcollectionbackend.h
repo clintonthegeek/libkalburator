@@ -70,6 +70,13 @@ public:
     // (satisfied when the parent is the sqlite hub); otherwise returns empty
     // ("can't answer" → engine treats as changed, current behavior).
     QString collectionRevision(const QString& collectionId) override;
+    // E5.2 / audit B7 (amendment A6): forward the async fresh-revision query to
+    // the parent's ChangeDetection so a filtered view over an async backend
+    // (e.g. CalDAV) never funnels through the default plural loop's synchronous,
+    // nested-loop singular query on the backend thread.
+    void    collectionRevisionsAsync(
+        const QStringList& collectionIds,
+        std::function<void(QMap<QString, QString>)> done) override;
     QString cachedCollectionRevision(const QString& collectionId) const override;
     bool    persistsCollectionRevisions() const override;
 

@@ -255,6 +255,37 @@ QString FilteredCollectionBackend::collectionRevision(const QString& collectionI
     return cd ? cd->collectionRevision(m_parentColId) : QString();
 }
 
+void FilteredCollectionBackend::collectionRevisionsAsync(
+    const QStringList& collectionIds,
+    std::function<void(QMap<QString, QString>)> done)
+{
+    auto* cd = parentChangeDetection();
+    if (!cd) {
+        // Parent gone or not a ChangeDetection: "can't answer" (empty map) —
+        // engine treats the view as changed. Matches the singular override.
+        done({});
+        return;
+    }
+    // A filtered view changes iff its parent collection changes, so query the
+    // parent for m_parentColId and stamp the answer under every requested
+    // virtual id (only m_virtualColId is ever really ours; the default plural
+    // loop over the singular override behaves identically, just synchronously).
+    cd->collectionRevisionsAsync(
+        {m_parentColId},
+        [collectionIds, virtualId = m_virtualColId, parentId = m_parentColId,
+         done = std::move(done)](QMap<QString, QString> revs) {
+            QMap<QString, QString> out;
+            const QString rev = revs.value(parentId);
+            if (!rev.isEmpty()) {
+                for (const QString& id : collectionIds) {
+                    if (id == virtualId)
+                        out.insert(id, rev);
+                }
+            }
+            done(out);
+        });
+}
+
 QString FilteredCollectionBackend::cachedCollectionRevision(const QString& collectionId) const
 {
     if (collectionId != m_virtualColId) return {};

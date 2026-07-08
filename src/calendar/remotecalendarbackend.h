@@ -170,6 +170,13 @@ public:
     QString collectionRevision(const QString &collectionId) override;
     QMap<QString, QString>
     collectionRevisions(const QStringList &collectionIds) override;
+    // E5.2 / audit B7 (amendment A6): the async fresh-revision query the engine
+    // fast-path uses. Overrides ChangeDetection's default (which would adapt the
+    // synchronous, nested-loop collectionRevisions) with a real
+    // davSyncRequestAsync-based CTag PROPFIND — no backend-thread nested loop.
+    void collectionRevisionsAsync(
+        const QStringList &collectionIds,
+        std::function<void(QMap<QString, QString>)> done) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
 
     /**
@@ -365,6 +372,18 @@ private:
      * result; network failures yield an empty map. Synchronous (QEventLoop).
      */
     QMap<QString, QString> fetchAllCtags(const QStringList &calendarIds);
+
+    /**
+     * @brief Async twin of fetchAllCtags (E5.2 / audit B7, amendment A6).
+     *
+     * Same grouping-by-parent-URL and one-PROPFIND-per-group behaviour, but
+     * each PROPFIND goes through davSyncRequestAsync — no nested QEventLoop on
+     * the backend thread. @p done is invoked exactly once, on the backend
+     * thread, after every group's reply has landed (a shared counter fans the
+     * per-group continuations back in). Backs collectionRevisionsAsync.
+     */
+    void fetchAllCtagsAsync(const QStringList &calendarIds,
+                            std::function<void(QMap<QString, QString>)> done);
 
     /**
      * @brief Second half of fetchItems(): merge network-fetched items with

@@ -875,6 +875,77 @@ RemoteCalendarBackend::collectionRevisions(const QStringList &collectionIds)
     return fetchAllCtags(collectionIds);
 }
 
+void RemoteCalendarBackend::fetchAllCtagsAsync(
+    const QStringList &calendarIds,
+    std::function<void(QMap<QString, QString>)> done)
+{
+    // Same grouping as fetchAllCtags (one Depth:1 PROPFIND per parent URL),
+    // but with NO nested QEventLoop — each group's PROPFIND runs through
+    // davSyncRequestAsync and its continuation lands on the backend thread.
+    QMap<QUrl, QStringList> groups;    // parentUrl -> [calId, ...]
+    QMap<QString, QString> hrefByCalId; // calId -> URL path (for match-back)
+    for (const QString &calId : calendarIds) {
+        const auto davUrl = davUrlFor(calId);
+        if (!davUrl) continue;
+        const QUrl url = davUrl->url();
+        QUrl parent = parentUrl(url);
+        parent.setUserName(QString());
+        parent.setPassword(QString());
+        groups[parent].append(calId);
+        hrefByCalId[calId] = url.path();
+    }
+
+    if (groups.isEmpty()) {
+        done({});
+        return;
+    }
+
+    // Fan the per-group replies back in: a shared result map + a countdown of
+    // outstanding groups. The last continuation to land invokes done(). No
+    // `this` capture is needed — parseCtagMultistatus is a free function — so
+    // the continuations stay safe if the backend/nam is torn down mid-flight
+    // (davSyncRequestAsync auto-disconnects them in that case).
+    auto result = std::make_shared<QMap<QString, QString>>();
+    auto remaining = std::make_shared<int>(groups.size());
+    auto hrefMap = std::make_shared<QMap<QString, QString>>(std::move(hrefByCalId));
+    auto sharedDone =
+        std::make_shared<std::function<void(QMap<QString, QString>)>>(std::move(done));
+
+    for (auto it = groups.constBegin(); it != groups.constEnd(); ++it) {
+        const QStringList calIds = it.value();
+        davSyncRequestAsync(
+            nam(), it.key(), QByteArrayLiteral("PROPFIND"),
+            m_username, m_password, kCtagPropfindBody,
+            {{QByteArrayLiteral("Depth"), QByteArrayLiteral("1")}},
+            QByteArrayLiteral("application/xml; charset=utf-8"),
+            [calIds, result, remaining, hrefMap, sharedDone](const DavResponse &resp) {
+                if (resp.transportOk()) {
+                    const QMap<QString, QString> ctagsByHref =
+                        parseCtagMultistatus(resp.body);
+                    for (const QString &calId : calIds) {
+                        const auto hrefIt =
+                            ctagsByHref.constFind(hrefMap->value(calId));
+                        if (hrefIt != ctagsByHref.constEnd())
+                            result->insert(calId, hrefIt.value());
+                    }
+                } else {
+                    qWarning() << "RemoteCalendarBackend::fetchAllCtagsAsync: "
+                                  "PROPFIND failed:" << resp.errorString;
+                }
+                if (--(*remaining) == 0) {
+                    (*sharedDone)(*result);
+                }
+            });
+    }
+}
+
+void RemoteCalendarBackend::collectionRevisionsAsync(
+    const QStringList &collectionIds,
+    std::function<void(QMap<QString, QString>)> done)
+{
+    fetchAllCtagsAsync(collectionIds, std::move(done));
+}
+
 QString RemoteCalendarBackend::cachedCollectionRevision(const QString &collectionId) const
 {
     return ctag(collectionId);
