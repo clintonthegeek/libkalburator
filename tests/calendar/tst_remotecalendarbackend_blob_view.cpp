@@ -39,6 +39,9 @@ private slots:
     void availableCollections_emptyWithoutRegisteredCalendars();
     void updateRecord_modifies_existing_record();
     void updateRecord_nonexistent_id_returns_error();
+    void updateRecord_multiCalendar_ownershipMiss_doesNotGuessWrite();
+    void updateRecord_concurrentServerEdit_surfaces412_noSilentOverwrite();
+    void updateRecord_after412_nextFetch_detectsConcurrentChange();
     void loadRecords_surfacesAuthoritativeLastModified_notNow();
     void loadRecords_chunksMultigetAcrossBatches();
     void loadRecords_failsWholeOpWhenABatchFails_noPartialResults();
@@ -164,6 +167,197 @@ void TestRemoteCalendarBackendBlobView::updateRecord_nonexistent_id_returns_erro
 
     QVERIFY2(!backend.updateRecord(rec),
              "updateRecord must return false when no calendars are registered");
+}
+
+void TestRemoteCalendarBackendBlobView::updateRecord_multiCalendar_ownershipMiss_doesNotGuessWrite()
+{
+    // O32: with multiple registered calendars and a uid that lives in NONE of
+    // them (no ETag-map hit, no content-cache hit), updateRecord must FAIL
+    // rather than guess by PUTting into the first registered calendar. The
+    // deleted try-all fallback used to "succeed" here by writing the record
+    // into a calendar that never owned it.
+    const QString personalHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString workHref = QStringLiteral("/calendars/testuser/work/");
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), personalHref},
+                         {QStringLiteral("Work"), workHref}});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"),
+                               server.baseUrl().toString() + personalHref.mid(1));
+    backend.registerCalendarUrl(QStringLiteral("Work"),
+                               server.baseUrl().toString() + workHref.mid(1));
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
+
+    BackendRecord rec;
+    rec.id   = QStringLiteral("nobody-owns-me");
+    rec.type = QStringLiteral("event");
+    rec.data =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:nobody-owns-me\r\nSUMMARY:Guess\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    QVERIFY2(!backend.updateRecord(rec),
+             "updateRecord must fail when no registered calendar owns the uid");
+    QCOMPARE(server.requestCount("PUT"), 0);
+    QVERIFY2(!server.hasEvent(personalHref, rec.id),
+             "must not have guess-written into Personal");
+    QVERIFY2(!server.hasEvent(workHref, rec.id),
+             "must not have guess-written into Work");
+}
+
+void TestRemoteCalendarBackendBlobView::updateRecord_concurrentServerEdit_surfaces412_noSilentOverwrite()
+{
+    // O32: setRawIcs already sends If-Match with the cached ETag — this pins
+    // that a real precondition failure (someone else edited the item on the
+    // server since our last fetch) surfaces as a FAILED updateRecord, never
+    // a silent overwrite or an auto-force retry (that auto-force is confined
+    // to the user-resolved-conflict startSync path, not this steady-state
+    // blob path).
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString uid = QStringLiteral("contested-uid");
+    const QByteArray origIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid\r\n"
+        "SUMMARY:Original\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, {origIcs});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
+
+    // fetchItems populates the backend's cached ETag for the seeded item.
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(fetchOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
+    QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
+
+    // Someone else edits the item directly on the server — bumps its ETag
+    // out from under our cached copy (out-of-band, no PUT from this backend).
+    const QByteArray concurrentIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid\r\n"
+        "SUMMARY:Edited By Someone Else\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    server.setSeedEvents(calHref, {concurrentIcs});
+
+    // Our stale-ETag update must fail — the server rejects the PUT (412).
+    BackendRecord rec;
+    rec.id   = uid;
+    rec.type = QStringLiteral("event");
+    rec.data =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid\r\n"
+        "SUMMARY:My Local Change\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    QVERIFY2(!backend.updateRecord(rec),
+             "a stale-ETag update must fail on 412, never auto-force");
+
+    // The concurrent edit must survive untouched — no silent overwrite.
+    const QList<QByteArray> stored = server.storedEvents(calHref);
+    QCOMPARE(stored.size(), 1);
+    QVERIFY2(stored.first().contains("Edited By Someone Else"),
+             "the concurrent server edit must not be clobbered by our stale PUT");
+}
+
+void TestRemoteCalendarBackendBlobView::updateRecord_after412_nextFetch_detectsConcurrentChange()
+{
+    // Companion to the 412 test above: after our push loses the race, the
+    // NEXT fetch must surface the concurrent edit (the engine's next sync
+    // cycle re-diffs against it) rather than silently keeping our stale
+    // local view.
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString uid = QStringLiteral("contested-uid-2");
+    const QByteArray origIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid-2\r\n"
+        "SUMMARY:Original\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setSeedEvents(calHref, {origIcs});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("Personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
+
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(fetchOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
+    QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
+
+    const QByteArray concurrentIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid-2\r\n"
+        "SUMMARY:Edited By Someone Else\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    server.setSeedEvents(calHref, {concurrentIcs});
+
+    BackendRecord rec;
+    rec.id   = uid;
+    rec.type = QStringLiteral("event");
+    rec.data =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VEVENT\r\nUID:contested-uid-2\r\n"
+        "SUMMARY:My Local Change\r\nDTSTART:20260601T120000Z\r\n"
+        "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    QVERIFY2(!backend.updateRecord(rec), "the stale-ETag update must fail on 412");
+
+    // Next fetch cycle: must pick up the concurrent server-side content.
+    FetchOperation *refetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(refetchOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(refetchOp->isFinished(), 8000);
+    QCOMPARE(refetchOp->state(), SyncOperation::Succeeded);
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    QCOMPARE(records.size(), 1);
+    QVERIFY2(records.first().data.contains("Edited By Someone Else"),
+             "the next fetch must surface the concurrent edit, not our stale local view");
 }
 
 void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastModified_notNow()

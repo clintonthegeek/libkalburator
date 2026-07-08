@@ -771,15 +771,36 @@ half stays). `cachedCollectionRevision` stays everywhere per plan.
 Full suite: 160/160 green (including `tst_engine_cancellation`, the O26
 flake candidate — no reproduction this run).
 
-### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (OPEN → sync-excellence E4)
+### O32 — `updateRecord` try-all-calendars fallback can write into the wrong calendar (Resolved 2026-07-07, sync-excellence E4)
 
 Promoted from roadmap D2. `RemoteCalendarBackend::updateRecord`
 (`remotecalendarbackend.cpp:2401-2424`): when the `m_localEtags` ownership
-lookup misses, a fallback loop PUTs the item into every registered calendar
-until one succeeds — wrong-calendar writes on multi-calendar backends and
-multiplied failed-PUT latency. Fix: resolve ownership via the persistent
-content cache, else fail loudly; never guess. Check `deleteRecord` for the
-same pattern. (Seeded 2026-07-07.)
+lookup missed, a fallback loop PUT the item into every registered calendar
+until one succeeded — wrong-calendar writes on multi-calendar backends and
+multiplied failed-PUT latency. `deleteRecord` shared the pattern (tried
+every registered calendar, first success wins).
+
+**Fix:** both methods now route through a new
+`RemoteCalendarBackend::findOwningCalendar(uid)` helper: pass 1 checks the
+in-memory ETag map (an item this instance wrote or fetched); pass 2 checks
+the persistent `CalDavContentCache` (a new `contains(url)` accessor — an
+item fetched in a prior session). No match ⇒ FAIL with a distinct warning;
+never guess by writing/deleting against an unowned calendar.
+
+Also pinned (previously correct but untested — `FakeCalDavServer` always
+succeeded regardless of headers, so nothing could exercise them):
+`FakeCalDavServer` now enforces RFC 7232 `If-Match`/`If-None-Match`
+preconditions on PUT (412 on ETag mismatch or on an existing resource with
+`If-None-Match: *`). New tests in `tst_remotecalendarbackend_blob_view.cpp`:
+ownership-miss fails without a guess-write (zero PUTs, RED against the old
+fallback); a stale-ETag `updateRecord` surfaces the 412 rather than
+silently overwriting a concurrent server-side edit; the next `fetchItems`
+cycle after that 412 picks up the concurrent edit. The PROPPATCH-storm
+regression pin (roadmap D2's last item) is `tst_sync_convergence.cpp`'s new
+`colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches` — passed
+without further change (the property-phase suppression already worked for
+the steady-state case; see O38 for a related but distinct gap this
+uncovered).
 
 ### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (Resolved 2026-07-07, sync-excellence E3)
 
@@ -885,6 +906,48 @@ full 160-test parallel suite green). No action taken — not chased under E2
 (out of its O26 scope) or any other numbered phase; revisit only if it
 starts blocking a CI/gate that runs the whole TSAN binary in one process,
 or if a compiler-rt/glibc upgrade is available to test against.
+
+### O38 — `runPropertyPhase`'s baseline argument is always empty; the persisted collection-property baseline (T9) is never read back (OPEN, found 2026-07-07 during E4's PROPPATCH-suppression pin)
+
+`SyncEngineWorker::dispatchSync` (`syncengine.cpp:2163`) calls
+`runPropertyPhase(ops, srcBackend, tgtBackend, srcColId, tgtColId,
+/*baseline=*/QVariantMap{}, request.mapping)` — the baseline argument is a
+literal empty map, unconditionally, every cycle. T9
+(`unifiedContinueAfterConflicts`, `syncengine.cpp:3153-3174`) persists a
+real snapshot via `BaselineStore::setCollectionBaseline` after every
+successful write, but nothing in `syncengine.cpp` ever calls
+`BaselineStore::collectionBaseline()` to read it back before the next
+cycle's property phase. The write half of the T9 contract exists; the read
+half doesn't.
+
+**Why E4's suppression test still passes:** `computeMapDiff`'s "both
+changed" branch (`propertydiff.cpp`) has a same-value shortcut — when
+`srcVal == tgtVal` it treats the pair as "already converged, no apply
+needed" regardless of what `baseVal` was. With baseline always `{}`, a
+key that both sides already agree on after a prior apply cycle hits
+`srcChanged=true, tgtChanged=true` (both differ from the empty baseline)
+but then `srcVal == tgtVal` short-circuits to no-op — the correct outcome,
+by coincidence rather than by design.
+
+**Where it actually bites:** an asymmetric one-sided edit. If only the
+target's color changes between cycles (source untouched since its last
+applied value), the empty baseline makes BOTH sides look "changed from
+baseline" even though only one genuinely diverged — `computeMapDiff` then
+routes it to the `conflicts` branch instead of `toApplyToSource`, i.e. a
+property phase that never reads its own persisted baseline back turns
+ordinary one-sided property edits into spurious every-cycle conflicts
+exactly like O28's record-level phantom conflicts, just for collection
+properties instead of records.
+
+**Not fixed here:** out of E4's stated scope (the phase's Files list is
+CalDAV write-path only) and the one test E4's design actually calls for
+passes without it. Fix shape for whoever picks this up: before calling
+`runPropertyPhase`, read `m_baselineStore->collectionBaseline(mappingId,
+srcColId)` (mirroring T9's write side) and pass it through instead of
+`QVariantMap{}`; add a RED test with one side's color changed and the
+other held constant across two cycles, asserting no conflict and exactly
+one PROPPATCH (today: a conflict every cycle, `toApplyToTarget` re-sent
+from the "conflict resolved SourceWins" default — never fully quiescing).
 
 ## Resolved
 

@@ -898,8 +898,26 @@ updated.
       to whichever thread constructed it, which is now a real gap since
       runActiveSync() executes on the worker thread — out of E3's scope,
       flagged for whoever enables DecSync for real.
-- [ ] **E4** updateRecord owning-calendar restriction; ETag-precondition
-      contracts pinned; PROPPATCH suppression verified
+- [x] **E4** updateRecord owning-calendar restriction; ETag-precondition
+      contracts pinned; PROPPATCH suppression verified — 2026-07-07,
+      FINDINGS O32 Resolved. `updateRecord`/`deleteRecord` now route through
+      a new `findOwningCalendar(uid)` helper (ETag map, then
+      `CalDavContentCache::contains()`, new accessor); the try-all-calendars
+      fallback is deleted — a uid no registered calendar can show ownership
+      for now FAILS distinctly instead of guess-writing/guess-deleting.
+      `FakeCalDavServer` gained real RFC 7232 `If-Match`/`If-None-Match`
+      precondition enforcement on PUT (412s), previously a no-op fake — new
+      tests in `tst_remotecalendarbackend_blob_view.cpp` pin the ownership-
+      miss failure (RED against the old fallback), the stale-ETag 412 (no
+      silent overwrite), and the next-fetch pickup of the concurrent edit.
+      PROPPATCH suppression pinned by `tst_sync_convergence.cpp`'s new
+      `colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches` — passed
+      as-is; investigating why surfaced a real but out-of-scope gap, filed
+      as FINDINGS O38 (property-phase baseline argument is always empty;
+      T9's persisted baseline is written but never read back — masked in
+      the two-way already-converged case by `computeMapDiff`'s
+      same-value shortcut, but a real risk for asymmetric one-sided
+      property edits). Full suite green, 163/163, O26 flake not observed.
 - [ ] *(optional)* mid-campaign merge + tag **v0.85**
 - [ ] **CP-A** strong-model ruling on E5 design recorded here
 - [ ] **E5.1** per-collection FIFO op queue (neutral layer)

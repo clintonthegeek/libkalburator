@@ -26,6 +26,10 @@ class QTcpSocket;
  *   REPORT  "/calendars/testuser/<cal>/"  -> calendar-query (ETag list)
  *                                            or calendar-multiget (full data)
  *   PUT     "/calendars/testuser/<cal>/<uid>.ics" -> store event
+ *                                            (honors If-Match / If-None-Match
+ *                                            preconditions — 412 on mismatch
+ *                                            or on an existing resource with
+ *                                            If-None-Match: *, E4/O32)
  *   MKCALENDAR <collection href>          -> 201 (or 405 if it exists)
  *   PROPPATCH  <collection href>          -> 207 if known, else 404
  *   DELETE     <collection href>          -> 204 if known, else 404
@@ -159,7 +163,7 @@ private:
     void handleReport(QTcpSocket *socket, const QString &path,
                       const QByteArray &body);
     void handlePut(QTcpSocket *socket, const QString &path,
-                   const QByteArray &body);
+                   const QByteArray &body, const QByteArray &headers);
     void handleDelete(QTcpSocket *socket, const QString &path);
     void handleMkCalendar(QTcpSocket *socket, const QString &path);
     void handleProppatch(QTcpSocket *socket, const QString &path);
@@ -182,6 +186,9 @@ private:
     static QString uidFromPath(const QString &path);
     static QString makeEtag(const QByteArray &data);
     static QList<QString> parseHrefsFromBody(const QByteArray &body);
+    /// Case-insensitive header lookup over the raw header block (everything
+    /// before "\r\n\r\n"). Empty if the header is absent.
+    static QByteArray headerValue(const QByteArray &headers, const QByteArray &name);
 
     bool m_return401 = false;
     bool m_return500 = false;

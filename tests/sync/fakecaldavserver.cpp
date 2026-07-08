@@ -282,7 +282,8 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
         handleReport(socket, path, body);
 
     } else if (method == "PUT") {
-        handlePut(socket, path, body);
+        const QByteArray headers = (headerEnd > 0) ? fullRequest.left(headerEnd) : QByteArray();
+        handlePut(socket, path, body, headers);
 
     } else if (method == "DELETE") {
         handleDelete(socket, path);
@@ -380,7 +381,8 @@ void FakeCalDavServer::handleReport(QTcpSocket *socket,
 
 void FakeCalDavServer::handlePut(QTcpSocket *socket,
                                  const QString &path,
-                                 const QByteArray &body)
+                                 const QByteArray &body,
+                                 const QByteArray &headers)
 {
     if (!path.endsWith(QStringLiteral(".ics"))) {
         writeResponse(socket, 400, "Bad Request", QByteArray());
@@ -402,6 +404,27 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
 
     QHash<QString, IcsRecord> &col = m_store[collectionHref];
     const bool isNew = !col.contains(uid);
+
+    // RFC 7232 preconditions (E4/O32 — real servers enforce these; a fake
+    // that always succeeds hides the difference between "wrote" and
+    // "silently clobbered a concurrent edit").
+    const QByteArray ifNoneMatch = headerValue(headers, "If-None-Match");
+    if (!ifNoneMatch.isEmpty() && ifNoneMatch.trimmed() == "*" && !isNew) {
+        writeResponse(socket, 412, "Precondition Failed", QByteArray());
+        return;
+    }
+    const QByteArray ifMatch = headerValue(headers, "If-Match");
+    if (!ifMatch.isEmpty()) {
+        if (isNew) {
+            // If-Match presupposes an existing resource.
+            writeResponse(socket, 412, "Precondition Failed", QByteArray());
+            return;
+        }
+        if (ifMatch.trimmed() != col.value(uid).etag.toUtf8()) {
+            writeResponse(socket, 412, "Precondition Failed", QByteArray());
+            return;
+        }
+    }
 
     IcsRecord rec;
     rec.data = body;
@@ -687,6 +710,23 @@ QString FakeCalDavServer::makeEtag(const QByteArray &data)
     const QByteArray hash =
         QCryptographicHash::hash(data, QCryptographicHash::Md5).toHex().left(12);
     return QStringLiteral("\"%1\"").arg(QString::fromLatin1(hash));
+}
+
+// static
+QByteArray FakeCalDavServer::headerValue(const QByteArray &headers, const QByteArray &name)
+{
+    const QList<QByteArray> lines = headers.split('\n');
+    for (const QByteArray &raw : lines) {
+        QByteArray line = raw;
+        if (line.endsWith('\r')) line.chop(1);
+        const int colon = line.indexOf(':');
+        if (colon < 0) continue;
+        const QByteArray lineName = line.left(colon).trimmed();
+        if (qstricmp(lineName.constData(), name.constData()) == 0) {
+            return line.mid(colon + 1).trimmed();
+        }
+    }
+    return QByteArray();
 }
 
 // static

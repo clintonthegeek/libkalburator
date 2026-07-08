@@ -415,6 +415,14 @@ private:
     /// The registered DAV URL, or nullopt when the calendar has none.
     std::optional<KDAV::DavUrl> davUrlFor(const QString &calendarId) const;
 
+    /// Resolve which registered calendar owns @p uid: first by the ETag map
+    /// (an item written or fetched through this backend instance), then by
+    /// the persistent content cache (an item fetched in a prior session).
+    /// nullopt when no registered calendar shows any record of the uid —
+    /// callers must FAIL rather than guess (O32: no try-all-calendars
+    /// fallback, which could write/delete against the wrong calendar).
+    std::optional<QString> findOwningCalendar(const QString &uid) const;
+
     /// Target URL for calendar-level CRUD (MKCALENDAR/PROPPATCH/DELETE):
     /// the registered per-calendar DAV URL when known (credentials stripped),
     /// else the derived calendarUrlForCrud(). Using the registered URL is

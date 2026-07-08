@@ -32,6 +32,7 @@
 // witnessed externally: fake-server request counters + on-disk file state.)
 
 #include <QtTest/QtTest>
+#include <QColor>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -380,6 +381,12 @@ private slots:
     // worker at all (so the "fetchItems runs twice" structural residual the
     // roadmap flags is moot for a fully-idle cycle).
     void fastPathSkipsGenuinelyUnchangedMapping();
+
+    // E4 item 3 (roadmap D2's last item) — property-phase PROPPATCH
+    // suppression: once a collection-property change (color) has been
+    // applied and its baseline snapshot persisted (T9), a subsequent quiet
+    // cycle with nothing further changed must issue ZERO PROPPATCHes.
+    void colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches();
 
 private:
     Kalburator::Shape::ShapeRegistries m_shape;
@@ -951,6 +958,41 @@ void TstSyncConvergence::fastPathSkipsGenuinelyUnchangedMapping()
         QVERIFY(f.open(QIODevice::ReadOnly));
         QCOMPARE(f.readAll(), aBytesAfterSync2);
     }
+}
+
+void TstSyncConvergence::colorChangeThenQuietCycle_secondCycleIssuesZeroProppatches()
+{
+    // skipUnchanged=false: every cycle dispatches fully (property phase
+    // included) rather than being skipped outright by the fast path — this
+    // test is about the property-diff suppression itself, not fast-path
+    // skip-eligibility (that's fastPathSkipsGenuinelyUnchangedMapping's job).
+    auto fx = makeConvergenceFixture(
+        m_shape,
+        { makeVEventWithSummary(QStringLiteral("evt-color"), QStringLiteral("Original")) },
+        QStringLiteral("ctag-fixed"),
+        /*skipUnchanged=*/false);
+    QVERIFY(fx != nullptr);
+
+    // Give the TARGET (LocalBackend) a color the source doesn't have yet —
+    // cycle 1's property phase must propagate it to source via PROPPATCH.
+    QVERIFY(fx->local->setCalendarColor(fx->localCollectionId, QColor(Qt::red)));
+
+    const SyncResult r1 = fx->runOnce();
+    QVERIFY2(r1.success, qUtf8Printable(r1.errorMessage));
+    QVERIFY(!r1.hasUnresolvedConflicts());
+
+    const int proppatchesAfterSync1 = fx->server->requestCount(QByteArrayLiteral("PROPPATCH"));
+    QVERIFY2(proppatchesAfterSync1 > 0,
+             "cycle 1 must have propagated the color change via PROPPATCH");
+
+    // Cycle 2: nothing changed anywhere since. The color-baseline snapshot
+    // T9 persisted after cycle 1 must suppress a re-apply — zero NEW
+    // PROPPATCHes.
+    const SyncResult r2 = fx->runOnce();
+    QVERIFY2(r2.success, qUtf8Printable(r2.errorMessage));
+    QVERIFY(!r2.hasUnresolvedConflicts());
+
+    QCOMPARE(fx->server->requestCount(QByteArrayLiteral("PROPPATCH")), proppatchesAfterSync1);
 }
 
 QTEST_MAIN(TstSyncConvergence)

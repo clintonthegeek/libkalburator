@@ -154,6 +154,24 @@ void CalDavContentCache::store(const QString &itemUrl, const QString &etag,
     }
 }
 
+bool CalDavContentCache::contains(const QString &itemUrl) const
+{
+    if (!m_open || itemUrl.isEmpty()) {
+        return false;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    if (!db.isOpen()) {
+        return false;
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("SELECT 1 FROM cached_items WHERE url = ?"));
+    query.addBindValue(itemUrl);
+
+    return query.exec() && query.next();
+}
+
 void CalDavContentCache::remove(const QString &itemUrl)
 {
     if (!m_open) {
