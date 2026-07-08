@@ -524,9 +524,21 @@ private:
     QUrl generateItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
     KDAV::DavUrl configuredDavUrl(const QString &rawUrl) const;
 
-    // Fresh CS:getctag via a Depth:0 PROPFIND on the calendar's URL (shared
-    // by fetchItems and modifiedSince). Empty when unregistered or on failure.
-    QString fetchFreshCtag(const QString &calendarId);
+    // Fresh CS:getctag via a Depth:0 PROPFIND on the calendar's URL, async
+    // (E5.2 / audit B7 — replaces the old synchronous nested-loop
+    // fetchFreshCtag). @p done is invoked on the backend thread with the fresh
+    // CTag, or an empty string when unregistered or on failure.
+    void fetchFreshCtagAsync(const QString &calendarId,
+                             std::function<void(const QString &)> done);
+
+    // Second half of fetchItems(), split out (E5.2) so it can run either
+    // synchronously (no stored CTag) or as the continuation of the async CTag
+    // PROPFIND: lists items (DavItemsListJob), fetches changed items via
+    // chunked multiget, and completes @p op. @p freshCtag is the CTag just
+    // observed (empty if none), staged as pendingCtag for post-fetch commit.
+    void continueFetchWithListing(FetchOperation *op, const QString &calendarId,
+                                  const KDAV::DavUrl &davUrl,
+                                  const QString &freshCtag);
 
     // Principal-path collection URL for MKCALENDAR / PROPPATCH / DELETE
     // (Radicale-style /<username>/<calendarId>/ when the base URL has no
