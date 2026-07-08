@@ -136,6 +136,27 @@ set_tests_properties(tst_remotecalendarbackend_blob_view PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# E6/O35 — EtagCache seeding from the persistent content cache across restarts.
+add_executable(tst_etagcache_seed
+    tst_etagcache_seed.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_etagcache_seed
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_etagcache_seed
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_etagcache_seed COMMAND tst_etagcache_seed)
+set_tests_properties(tst_etagcache_seed PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 kalburator_add_calendar_test(tst_remotecalendarbackend)
 
 if(KALBURATOR_HAVE_ORG_IO)
