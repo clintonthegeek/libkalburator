@@ -685,10 +685,11 @@ bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 {
     auto *op = new FetchOperation(calendarId, this);
-    registerOperation(op);
 
-    // Use deferred execution so signals can be connected before firing
-    QTimer::singleShot(0, this, [this, op, calendarId]() {
+    // E5.1: serialize per-collection via SyncBackendBase's FIFO queue
+    // (enqueueOperation already defers this functor to the next event-loop
+    // turn, same guarantee the old direct QTimer::singleShot(0, ...) gave).
+    enqueueOperation(calendarId, op, [this, op, calendarId]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -790,10 +791,8 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
                                         const QList<KCalendarCore::Incidence::Ptr> &items)
 {
     auto *op = new PushOperation(calendarId, items, this);
-    registerOperation(op);
 
-    // Use deferred execution
-    QTimer::singleShot(0, this, [this, op, calendarId, items]() {
+    enqueueOperation(calendarId, op, [this, op, calendarId, items]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -862,10 +861,8 @@ DeleteOperation* LocalBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
 {
     auto *op = new DeleteOperation(calendarId, uids, this);
-    registerOperation(op);
 
-    // Use deferred execution
-    QTimer::singleShot(0, this, [this, op, calendarId, uids]() {
+    enqueueOperation(calendarId, op, [this, op, calendarId, uids]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }

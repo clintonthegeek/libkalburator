@@ -1035,7 +1035,50 @@ updated.
       an O39 reference). `src/contacts/remotecontactsbackend.cpp`'s
       backend-thread loops are outside E5's files and gate; added to
       §16 residual inventory. Recorded in FINDINGS O29 same date.
-- [ ] **E5.1** per-collection FIFO op queue (neutral layer)
+- [x] **E5.1** per-collection FIFO op queue (neutral layer) — 2026-07-07.
+      `SyncBackendBase` gains a protected `enqueueOperation(collectionId, op,
+      startFunctor)` primitive (`src/sync/syncbackendbase.{h,cpp}`): a
+      per-collection `QList<QueuedOp>` queue plus an in-flight marker
+      (`QHash<QString, QPointer<SyncOperation>>`); at most one op per
+      collection runs at a time; the next dequeues from the previous one's
+      `finished` signal (also handles premature `QObject::destroyed`, per
+      amendment A1(i)); an op already terminal when its turn comes (e.g.
+      cancelled while still queued) is skipped without ever running its
+      body (A1(ii)). `registerOperation`/`cancelOperationsFor`/
+      `cancelAllOperations` are unchanged and already cover queued-not-yet-
+      dequeued ops (A1(iii)) since `registerOperation` fires at enqueue
+      time, before dequeue. The start functor is always deferred one
+      event-loop tick (`QTimer::singleShot(0, ...)`), preserving the
+      "caller can connect signals to the returned op before it starts"
+      guarantee every backend's own ad hoc `QTimer::singleShot(0, ...)`
+      gave previously. `LocalBackend::fetchItems/pushItems/deleteItems`
+      and `MockBackend::fetchItems/pushItems/deleteItems` now route through
+      it (their old direct `registerOperation()` + `QTimer::singleShot(0)`
+      wrapping is gone; MockBackend's synchronous test-fixture branches —
+      `m_fetchOpFailsSilently`, `m_useBaseFetchItems` — and its synchronous
+      `setState(Running)` moved inside the deferred functor, since queued
+      ops now start life Pending until dequeued, matching CP-A ruling (d);
+      the engine's fetch gate already treats fetchItems as
+      asynchronous-capable via `isFinished()`, confirmed by reading
+      `syncengine.cpp`'s existing gate comment, so this was a timing-only
+      change with no observable-behavior regression). `RemoteCalendarBackend`
+      (CalDAV) is deliberately NOT wired in this stage — its fetchItems body
+      still runs the nested-loop `davSyncRequest` internally, which E5.2
+      rewrites to async form; wiring the queue around a synchronous nested
+      loop now would be thrown away next session, so queueing CalDAV's
+      entry points is deferred to land naturally alongside E5.2's async
+      conversion. New RED-then-GREEN test
+      `tests/calendar/tst_backend_op_queue.cpp` (plan named
+      `tests/sync/`, moved to `tests/calendar/` since it needs
+      MockBackend/LocalBackend, which live there and require
+      `KF6::CalendarCore`/`kalburator_calendar_test_stubs`): (a) same-
+      collection ops serialize (RED confirmed: pre-fix both started on the
+      same tick), (b) different-collection ops overlap (always passed),
+      (c) cancel of a still-queued op never runs its body (RED confirmed),
+      (d) a full LocalBackend↔LocalBackend `SyncEngine::runSync()` still
+      converges end-to-end through the queue (always passed — no
+      starvation/deadlock). Full suite green, 164/164 (163 pre-existing +
+      the new test), O26 flake not observed.
 - [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
       (re-entrancy pin RED→GREEN)
 - [ ] **E5.3** applyRecords write operations; blocking apply retired;

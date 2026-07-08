@@ -36,6 +36,26 @@ kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
+
+# E5.1 — per-collection FIFO operation queue (SyncBackendBase::enqueueOperation).
+add_executable(tst_backend_op_queue tst_backend_op_queue.cpp)
+target_compile_definitions(tst_backend_op_queue
+    PRIVATE
+        KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+)
+target_link_libraries(tst_backend_op_queue
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_calendar_test_stubs
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_op_queue COMMAND tst_backend_op_queue)
+set_tests_properties(tst_backend_op_queue PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
 # Plan 7b T1 — default-lane pins for LocalBackend's write paths (startSync
 # via AsyncFileWriter, removeItem, updateCalendar metadata round-trip,
 # readonly marker) ahead of the T3/T4 internal rewrites.

@@ -28,6 +28,8 @@
 #include <QString>
 #include <QStringList>
 #include <QHash>
+#include <QPointer>
+#include <functional>
 
 #include "iblobbackend.h"   // pure interface (no QObject)
 #include "shape.h"          // Kalburator::Shape::Shape
@@ -179,7 +181,35 @@ protected:
     void registerOperation(SyncOperation *op);
     void unregisterOperation(SyncOperation *op);
 
+    // ========== E5.1: per-collection FIFO operation queue ==========
+    // Neutral primitive both layers' operation-producing entry points call
+    // (SyncBackendBase's own fetchItems/deleteItems and the calendar-typed
+    // SyncBackend subclass's pushItems/startSync): at most one operation per
+    // collection is ever in flight; `startFunctor` runs only once this op
+    // reaches the front of its collection's queue, always deferred to the
+    // next event-loop turn (Qt event loop must run once for
+    // `startFunctor` to fire — preserves the "caller connects signals to
+    // `op` before it starts" guarantee every entry point already relied on
+    // via its own QTimer::singleShot(0, ...)). `op` is registered for
+    // pending-operation tracking/cancellation exactly as before; cancelling
+    // a still-queued op (state flips to the terminal Cancelled) makes it
+    // skip its body entirely when its turn comes.
+    void enqueueOperation(const QString &collectionId, SyncOperation *op,
+                         std::function<void()> startFunctor);
+
     QHash<QString, QList<SyncOperation*>> m_pendingOperations;
+
+private:
+    struct QueuedOp {
+        QPointer<SyncOperation> op;
+        std::function<void()> startFunctor;
+    };
+
+    void onOperationSettled(const QString &collectionId, SyncOperation *op);
+    void maybeStartNext(const QString &collectionId);
+
+    QHash<QString, QList<QueuedOp>> m_opQueue;
+    QHash<QString, QPointer<SyncOperation>> m_opInFlight;
 };
 
 } // namespace Kalburator::Sync

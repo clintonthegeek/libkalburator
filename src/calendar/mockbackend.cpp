@@ -179,8 +179,15 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
     logOperation(QStringLiteral("FETCH"), calendarId);
 
     auto *op = new FetchOperation(calendarId, this);
-    registerOperation(op);
 
+    // E5.1: serialize per-collection via SyncBackendBase's FIFO queue. The
+    // fixture branches below (silent-fail / base-default) used to settle the
+    // op synchronously before this method returned; now they settle on the
+    // queue's deferred first tick instead — the engine's fetch gate already
+    // treats fetchItems() as asynchronous-capable (isFinished(), not a
+    // synchronous return-state check), so this is a same-tick-later change
+    // in timing only, not in observable behavior.
+    enqueueOperation(calendarId, op, [this, op, calendarId]() {
     // Test fixture: mimic a backend whose fetchItems fails synchronously (like
     // the scoped AkonadiBackend's "Unknown calendar" fast-fail) while its read
     // path (loadRecordsOrError) stays silent. The op is Failed at return — not
@@ -190,7 +197,7 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
                      ? QStringLiteral("Mock: fetchItems failed (silent read path)")
                      : m_fetchOpFailMessage);
         emit fetchFinished(calendarId, false, op->errorString());
-        return op;
+        return;
     }
 
     // Test fixture: mimic a backend that doesn't override fetchItems — the
@@ -199,7 +206,7 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
     if (m_useBaseFetchItems) {
         op->notSupported(QStringLiteral("fetchItems() not implemented (mock base mode)"));
         emit fetchFinished(calendarId, false, op->errorString());
-        return op;
+        return;
     }
 
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
@@ -273,6 +280,7 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
             op->complete();
         });
     }
+    });
 
     return op;
 }
@@ -285,7 +293,9 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
     }
 
     auto *op = new PushOperation(calendarId, items, this);
-    registerOperation(op);
+
+    // E5.1: serialize per-collection via SyncBackendBase's FIFO queue.
+    enqueueOperation(calendarId, op, [this, op, calendarId, items]() {
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
 
     // Unified failure injection: OnPush || OnStoreItems both drive
@@ -353,6 +363,7 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
             op->complete();
         });
     }
+    });
 
     return op;
 }
@@ -366,7 +377,9 @@ DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
     }
 
     auto *op = new DeleteOperation(calendarId, uids, this);
-    registerOperation(op);
+
+    // E5.1: serialize per-collection via SyncBackendBase's FIFO queue.
+    enqueueOperation(calendarId, op, [this, op, calendarId, uids]() {
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
 
     if (shouldFail(FailurePoint::OnDelete)) {
@@ -389,6 +402,7 @@ DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
             op->complete();
         });
     }
+    });
 
     return op;
 }
