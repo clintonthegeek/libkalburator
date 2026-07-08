@@ -305,6 +305,7 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/syncengine.h
     src/engine/syncenginefuture.h
     src/engine/syncrequest.h
+    src/engine/workerteardown.h
 )
 # Private headers — AUTOMOC needs them in the target sources so Q_OBJECT
 # is processed, but they are not part of the library's public surface.
@@ -320,6 +321,7 @@ set(KALBURATOR_ENGINE_SOURCES
     src/engine/propertydiff.cpp
     src/engine/syncengine.cpp
     src/engine/syncenginefuture.cpp
+    src/engine/workerteardown.cpp
 )
 
 # Phase G — shape-pipeline architecture primitives.

@@ -1,6 +1,7 @@
 #include "syncengine.h"
 #include "syncengine_p.h"
 #include "syncrequest.h"
+#include "workerteardown.h"
 #include "lastwritewins.h"
 #include "baselinestore.h"
 #include "baselineentry.h"
@@ -183,6 +184,12 @@ void SyncEngine::setupWorkerConnections()
     // H4 (O16): dispatches the fast-path pre-pass onto the worker thread.
     connect(m_worker, &SyncEngineWorker::fastPathRequested,
             m_worker, &SyncEngineWorker::prepareFastPath, Qt::QueuedConnection);
+    // E3 (O33b): dispatches the DecSync active-controller loop onto the
+    // worker thread; its completion resumes drive-queue setup.
+    connect(m_worker, &SyncEngineWorker::activeControllersRequested,
+            m_worker, &SyncEngineWorker::runActiveControllers, Qt::QueuedConnection);
+    connect(m_worker, &SyncEngineWorker::activeControllersReady,
+            this, &SyncEngine::onActiveControllersReady, Qt::QueuedConnection);
 
     // Note: Worker is deleted explicitly in stopWorkerThread() rather than
     // via finished->deleteLater, since the thread's event loop has exited
@@ -221,7 +228,11 @@ void SyncEngine::stopWorkerThread()
         }
 
         m_workerThread.quit();
-        m_workerThread.wait();
+        // E3 (O22 residue): bounded wait with a loud diagnostic on
+        // expiry, then an unbounded wait — see waitForWorkerWithDiagnostic's
+        // doc comment. Structural fix (worker stops parking in
+        // BlockingQueuedConnection marshals) is E5.3's job.
+        waitForWorkerWithDiagnostic(&m_workerThread);
 
         qDebug() << "SyncEngine: Worker thread stopped";
     }
@@ -372,14 +383,43 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // scope which mappings get a stored-token lookup / dispatch).
     m_queue.prime(m_syncMappings, filter);
 
-    // Run active controllers first (they're fast, synchronous)
-    for (auto it = m_activeControllers.constBegin(); it != m_activeControllers.constEnd(); ++it) {
-        if (m_cancelled) break;
+    // E3 (O33a): the worker's own cancellation flag is reset exactly
+    // once per run, here at the legitimate new-run entry point — never
+    // inside processSync() (see SyncEngineWorker::processSync's comment
+    // for the erasure race this replaces). startWorkerThread() is
+    // idempotent, so this is safe whether or not the loop below or the
+    // fast-path branch needs the thread too.
+    startWorkerThread();
+    QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::resetCancellationFlag,
+                              Qt::QueuedConnection);
+
+    if (!m_activeControllers.isEmpty()) {
+        // E3 (O33b): DecSyncActiveController::runActiveSync() touches
+        // backend-owned state, so it belongs on the worker thread (audit
+        // §1's role rules) — not inline here on driveQueue()'s caller
+        // thread. Dispatch the whole loop via the same command-channel
+        // pattern as fastPathRequested/prepareFastPath;
+        // onActiveControllersReady() resumes setup once every controller
+        // has run. m_pendingQueueFilter carries `filter` across the
+        // async gap the same way the fast-path branch below carries it
+        // synchronously.
         emit progressUpdated(0, m_syncMappings.size() + m_activeControllers.size(),
-                             tr("Syncing %1 (DecSync)").arg(it.key()));
-        it.value()->runActiveSync();
+                             tr("Syncing DecSync collections"));
+        m_pendingQueueFilter = filter;
+        emit m_worker->activeControllersRequested(m_activeControllers.values());
+        return; // continuation: onActiveControllersReady() -> continueDriveQueueSetup()
     }
 
+    continueDriveQueueSetup(filter);
+}
+
+void SyncEngine::onActiveControllersReady()
+{
+    continueDriveQueueSetup(m_pendingQueueFilter);
+}
+
+void SyncEngine::continueDriveQueueSetup(const std::optional<QSet<QString>> &filter)
+{
     // Phase-1 + Phase-2 perf: prime fresh CTags and fingerprints, decide
     // per-mapping skip eligibility. Best-effort; on failure we simply fall
     // back to per-call PROPFIND inside SyncEngineWorker.
@@ -534,6 +574,10 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
 
             // Start worker thread if not running
             startWorkerThread();
+            // E3 (O33a): legitimate new-run reset of the worker's own
+            // cancellation flag — see driveQueue()'s matching comment.
+            QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::resetCancellationFlag,
+                                      Qt::QueuedConnection);
 
             // Create request and invoke worker
             SyncEngineWorker::Request request;
@@ -1238,6 +1282,8 @@ const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<QSet<QString>>("QSet<QString>");
     qRegisterMetaType<QMap<QString, SyncEngine::FreshSyncState>>(
         "QMap<QString,SyncEngine::FreshSyncState>");
+    // E3 (O33b): activeControllersRequested's queued-signal parameter type.
+    qRegisterMetaType<QList<DecSyncActiveController*>>("QList<DecSyncActiveController*>");
     return true;
 }();
 
@@ -1306,6 +1352,31 @@ void SyncEngineWorker::observeCancel()
     // block on the worker's m_mutex.
     m_cancelled.store(true, std::memory_order_release);
     emit cancellationObserved();
+}
+
+void SyncEngineWorker::resetCancellationFlag()
+{
+    // E3 (O33a): the sole legitimate reset point — invoked once per run
+    // from SyncEngine's run entry points (driveQueue() /
+    // processSingleMapping()), queued so it is guaranteed to execute on
+    // the worker thread before that run's first processSyncRequested.
+    // See processSync()'s comment for the erasure race this replaces.
+    QMutexLocker locker(&m_mutex);
+    m_cancelled = false;
+}
+
+void SyncEngineWorker::runActiveControllers(const QList<DecSyncActiveController*> &controllers)
+{
+    // E3 (O33b): runs on the worker thread now (see this method's
+    // declaration comment in syncengine_p.h) — runActiveSync() touches
+    // backend-owned state, which belongs here per audit §1's role rules,
+    // not on driveQueue()'s caller thread.
+    for (auto *controller : controllers) {
+        if (!controller) continue;
+        if (isCancelled()) break;
+        controller->runActiveSync();
+    }
+    emit activeControllersReady();
 }
 
 // H4 (O16): moved here from SyncEngine::prepareSyncFastPath, whose logic
@@ -1433,11 +1504,29 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
              << (request.behavior == SyncEngine::SyncBehavior::Monitored
                      ? "(monitored)" : "(unmonitored)");
 
-    m_totalTimer.start();
-
+    // E3 (O33a / audit C4): this used to unconditionally clear
+    // m_cancelled here, which could erase a cancel that legitimately
+    // landed after this mapping was queued but before this call started
+    // (e.g. SyncEngine::stopWorkerThread()'s direct, non-queued
+    // m_worker->cancel() racing an already-posted processSyncRequested)
+    // — the queue would then run one full extra mapping despite the
+    // cancel. The reset now happens exactly once per run, from
+    // SyncEngine's run entry points (see resetCancellationFlag()); here
+    // we only check and, if already cancelled, short-circuit without
+    // ever starting dispatchSync.
     {
         QMutexLocker locker(&m_mutex);
-        m_cancelled = false;
+        if (m_cancelled) {
+            locker.unlock();
+            SyncResult cancelledResult;
+            cancelledResult.success = false;
+            cancelledResult.cancelled = true;
+            cancelledResult.skipped = true;
+            cancelledResult.startTime = QDateTime::currentDateTime();
+            cancelledResult.endTime = cancelledResult.startTime;
+            emit syncCompleted(request.mapping.id, cancelledResult);
+            return;
+        }
     }
     m_yieldedForConflict = false;
     m_unifiedConflictIdx = 0;

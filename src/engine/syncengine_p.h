@@ -206,6 +206,35 @@ public slots:
      */
     void observeCancel();
 
+    /**
+     * @brief E3 (O33a / audit C4): resets the worker's own cancellation
+     * flag for a new run. Previously this reset lived, wrongly, at the
+     * top of every processSync() call — which could erase a cancel that
+     * legitimately landed after a mapping was already queued but before
+     * that mapping's processSync began (e.g. SyncEngine::
+     * stopWorkerThread()'s direct, non-queued m_worker->cancel() call
+     * racing an already-posted processSyncRequested). The reset now
+     * happens exactly once per run, dispatched (queued) from
+     * SyncEngine's run entry points — driveQueue() and
+     * processSingleMapping() — before the first mapping of that run is
+     * ever requested. processSync() itself now only checks the flag; see
+     * its definition.
+     */
+    void resetCancellationFlag();
+
+    /**
+     * @brief E3 (O33b / audit C4): runs the DecSync active-controller
+     * loop that used to execute inline on driveQueue()'s caller thread —
+     * a §1 role violation (backend touches belong on the worker thread,
+     * never the caller/GUI thread). Dispatched from
+     * SyncEngine::driveQueue() via the same command-channel pattern as
+     * fastPathRequested/prepareFastPath; emits activeControllersReady()
+     * when every controller has run so the engine can resume drive-queue
+     * setup. Non-owning: the controllers remain owned by whoever
+     * registered them (SyncEngine::registerActiveController).
+     */
+    void runActiveControllers(const QList<DecSyncActiveController*> &controllers);
+
 private slots:
     /**
      * @brief F2 Task 20: handle cancellation that arrives while the
@@ -288,6 +317,22 @@ signals:
      */
     void fastPathReady(const QSet<QString> &skipped,
                        const QMap<QString, SyncEngine::FreshSyncState> &fresh);
+
+    /**
+     * @brief E3 (O33b): dispatches the DecSync active-controller loop to
+     * the worker. Emitted by SyncEngine::driveQueue via
+     *   emit m_worker->activeControllersRequested(controllers);
+     * connected QueuedConnection to runActiveControllers(), same
+     * command-channel pattern as fastPathRequested above.
+     */
+    void activeControllersRequested(const QList<DecSyncActiveController*> &controllers);
+
+    /**
+     * @brief E3 (O33b): reports that every active controller has run
+     * (queued, worker thread -> engine thread). Connected to
+     * SyncEngine::onActiveControllersReady.
+     */
+    void activeControllersReady();
 
 private:
     void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,

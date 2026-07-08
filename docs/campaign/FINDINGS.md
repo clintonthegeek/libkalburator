@@ -781,7 +781,7 @@ multiplied failed-PUT latency. Fix: resolve ownership via the persistent
 content cache, else fail loudly; never guess. Check `deleteRecord` for the
 same pattern. (Seeded 2026-07-07.)
 
-### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (OPEN → sync-excellence E3)
+### O33 — cancellation gaps: `processSync` erases in-flight cancels; DecSync active controllers run synchronously on the caller's thread (Resolved 2026-07-07, sync-excellence E3)
 
 Promoted from audit §C4. (a) `processSync` clears `m_cancelled` at dispatch
 (`syncengine.cpp:1542`): a cancel landing between queue advance and worker
@@ -791,6 +791,38 @@ start is erased; the cancelled queue runs one more full mapping. (b)
 for whoever enables DecSync next. Related: `stopWorkerThread`'s mid-marshal
 deadlock for non-relocated consumers (O22's parked note) gets a bounded-wait
 diagnostic in E3 and its structural fix in E5.3. (Seeded 2026-07-07.)
+
+**Resolved 2026-07-07 (E3).** (a) `SyncEngineWorker::processSync` no longer
+clears `m_cancelled` at dispatch — it now only checks the flag and, if
+already true, short-circuits to a cancelled/skipped `SyncResult` without
+ever calling `dispatchSync`. The sole legitimate reset moved to a new
+worker slot `resetCancellationFlag()`, invoked once per run (queued) from
+`SyncEngine::driveQueue()` and `SyncEngine::processSingleMapping()` —
+before that run's first mapping is ever requested, so the reset can never
+race ahead of or erase an already-observed cancel. (b) The DecSync
+active-controller loop was extracted from `driveQueue()` into a new
+worker slot `runActiveControllers()`, dispatched via the same
+command-channel pattern as `fastPathRequested`/`prepareFastPath`
+(`activeControllersRequested` → `runActiveControllers` →
+`activeControllersReady` → `SyncEngine::onActiveControllersReady` →
+`continueDriveQueueSetup`). Pinned by `tst_decsync_active_controller_thread`
+(a `Qt::DirectConnection` on `DecSyncActiveController::progressChanged`
+records the thread `runActiveSync()` actually executed on — now the
+worker thread, not the caller thread) and
+`tst_engine_cancel_queue_race` (a cancel observed while mapping 1 is
+fetch-blocked stops the queue before mapping 2 ever writes). Note:
+`DecSyncActiveController`'s own internals (`DecSyncControllerStore`'s
+SQLite connection) remain thread-affine to whichever thread constructed
+them — now a real gap since `runActiveSync()` runs on the worker thread
+instead of the constructing thread. Out of E3's scope (not
+`syncengine.{h,cpp}`); flagged for whoever enables DecSync for real,
+per the original §C4 note. (c) `stopWorkerThread`'s unbounded `wait()`
+is now `waitForWorkerWithDiagnostic()` (new `src/engine/workerteardown.{h,cpp}`):
+a bounded wait (30 s default), a loud `qCritical` naming the
+"relocate backends" invariant on expiry, then an unbounded wait (never
+`terminate()`). Pinned by `tst_worker_teardown`. This is the honest
+interim per O22's parked note — the structural fix (the worker stops
+parking in blocking marshals for I/O-length work) is E5.3's job.
 
 ### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
 

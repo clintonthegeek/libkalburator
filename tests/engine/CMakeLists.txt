@@ -225,6 +225,36 @@ set_tests_properties(tst_sync_token_soundness PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# Sync-excellence campaign E3 (FINDINGS O33a) — pins that a cancel
+# observed while mapping 1 is in flight stops the queue before mapping 2
+# ever writes anything, protecting against SyncEngineWorker::processSync's
+# former unconditional m_cancelled clear erasing an already-landed cancel.
+kalburator_add_engine_integration_test(tst_engine_cancel_queue_race)
+
+# Sync-excellence campaign E3 (FINDINGS O33b) — pins that the DecSync
+# active-controller loop (driveQueue()'s runActiveSync() dispatch) now
+# executes on the worker thread, not driveQueue()'s caller thread.
+add_executable(tst_decsync_active_controller_thread tst_decsync_active_controller_thread.cpp)
+target_link_libraries(tst_decsync_active_controller_thread
+    PRIVATE
+        Qt6::Core
+        Qt6::Sql
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+        kalburator_calendar_test_stubs
+)
+add_test(NAME tst_decsync_active_controller_thread COMMAND tst_decsync_active_controller_thread)
+set_tests_properties(tst_decsync_active_controller_thread PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+# Sync-excellence campaign E3 (O22 residue) — pins
+# waitForWorkerWithDiagnostic()'s bounded-wait-then-diagnostic-then-
+# unbounded-wait contract using a stub thread, without deliberately
+# deadlocking a real SyncEngine.
+kalburator_add_engine_test(tst_worker_teardown)
+
 # CP-B live smoke — manual live-server probe (NOT a CI test). Drives a full
 # create/sync/modify/converge pass plus the pulled-cable (SIGSTOP) O22 check
 # against a real Radicale. See docs/campaign/2026-07-05-sync-hardening-phases.md

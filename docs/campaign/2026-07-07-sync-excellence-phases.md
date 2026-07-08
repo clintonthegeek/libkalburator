@@ -876,8 +876,28 @@ updated.
       thread-registry TSAN artifact surfaced during verification, filed
       separately as FINDINGS O37 (tool limitation, not an app bug, does
       not block this item).
-- [ ] **E3** m_cancelled race fixed; DecSync controllers on worker;
-      stopWorkerThread bounded-wait diagnostic
+- [x] **E3** m_cancelled race fixed; DecSync controllers on worker;
+      stopWorkerThread bounded-wait diagnostic — 2026-07-07, FINDINGS O33
+      Resolved. processSync now only checks m_cancelled (never clears
+      it); the sole reset moved to worker slot resetCancellationFlag(),
+      invoked once per run from driveQueue()/processSingleMapping()
+      before that run's first mapping dispatches. DecSync active-
+      controller loop moved to the worker thread via a new
+      activeControllersRequested/runActiveControllers/
+      activeControllersReady command-channel round trip (mirrors
+      fastPathRequested/prepareFastPath); driveQueue()'s tail split into
+      continueDriveQueueSetup() so it can resume either synchronously or
+      as this round trip's continuation. stopWorkerThread's unbounded
+      wait() replaced by waitForWorkerWithDiagnostic() (new
+      src/engine/workerteardown.{h,cpp}): bounded wait, loud qCritical
+      diagnostic on expiry, then unbounded wait (never terminate()).
+      Three new tests: tst_engine_cancel_queue_race,
+      tst_decsync_active_controller_thread, tst_worker_teardown. Full
+      suite green (163/163, O26 flake not observed). Noted in FINDINGS
+      O33: DecSyncControllerStore's SQLite connection is thread-affine
+      to whichever thread constructed it, which is now a real gap since
+      runActiveSync() executes on the worker thread — out of E3's scope,
+      flagged for whoever enables DecSync for real.
 - [ ] **E4** updateRecord owning-calendar restriction; ETag-precondition
       contracts pinned; PROPPATCH suppression verified
 - [ ] *(optional)* mid-campaign merge + tag **v0.85**
