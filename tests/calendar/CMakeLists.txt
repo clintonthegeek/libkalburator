@@ -90,6 +90,28 @@ set_tests_properties(tst_backend_thread_relocation PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# E5.2 / audit B7: the backend-thread re-entrancy pin (uses FakeCalDavServer).
+add_executable(tst_backend_reentrancy_pin
+    tst_backend_reentrancy_pin.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_backend_reentrancy_pin
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_backend_reentrancy_pin
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_calendar_test_stubs
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_reentrancy_pin COMMAND tst_backend_reentrancy_pin)
+set_tests_properties(tst_backend_reentrancy_pin PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
 add_executable(tst_remotecalendarbackend_blob_view
     tst_remotecalendarbackend_blob_view.cpp

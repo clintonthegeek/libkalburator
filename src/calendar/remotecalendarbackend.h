@@ -89,6 +89,25 @@ public:
      */
     void setTransferTimeoutMs(int ms);
 
+    /**
+     * @brief Re-entrancy depth of the backend's synchronous operation bodies
+     * (E5.2 / audit B7).
+     *
+     * A backend-thread operation body (e.g. fetchItems') increments this on
+     * entry and decrements on exit via a scoped guard. It is > 0 exactly while
+     * such a body is on the stack. If a queued call is delivered onto the
+     * backend thread and observes a value > 0, it was run *nested inside* a
+     * suspended operation body — the B7 re-entrancy hazard a nested
+     * QEventLoop::exec() creates. Once the fetch/CTag paths are async (E5.2)
+     * the body returns to the event loop before any network wait, so any
+     * queued call delivered during that wait observes 0.
+     *
+     * Only meaningful when read from the backend's own thread (the counter is
+     * not synchronised — it is single-thread state by construction). Exposed
+     * for the E5.2 re-entrancy pin and as a permanent regression tripwire.
+     */
+    int reentrancyDepth() const { return m_reentrancyDepth; }
+
     void loadCalendars(const QString &collectionId) override;
 
     /**
@@ -318,6 +337,18 @@ signals:
     void calendarOperationError(const QString &calendarId, const QString &errorMessage);
 
 private:
+    // ---- B7 re-entrancy guard (E5.2) ----
+    // See reentrancyDepth(). Single-thread state (the backend's own thread);
+    // never touched cross-thread.
+    int m_reentrancyDepth = 0;
+    struct ReentryGuard {
+        int *depth;
+        explicit ReentryGuard(int *d) : depth(d) { ++(*depth); }
+        ~ReentryGuard() { --(*depth); }
+        ReentryGuard(const ReentryGuard &) = delete;
+        ReentryGuard &operator=(const ReentryGuard &) = delete;
+    };
+
     // ---- Stored-CTag store (persisted change-detection tokens) ----
     // Private since Plan 7 T6: the engine reaches these only through the
     // Sync::ChangeDetection overrides above; nothing else ever called them.

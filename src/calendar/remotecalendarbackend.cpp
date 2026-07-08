@@ -1467,6 +1467,13 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
 
     // Start the operation
     QMetaObject::invokeMethod(this, [this, op, davUrl, calendarId]() {
+        // B7 re-entrancy guard (E5.2): held for exactly the synchronous span
+        // of this body. Today that span includes fetchFreshCtag's nested
+        // QEventLoop, so a queued call delivered mid-wait observes depth 1
+        // (the hazard). Once the CTag path is async this body returns before
+        // the network wait, dropping depth to 0 during it — the E5.2 pin.
+        ReentryGuard reentryGuard(&m_reentrancyDepth);
+
         // Mark operation as running
         op->setState(SyncOperation::Running);
 
