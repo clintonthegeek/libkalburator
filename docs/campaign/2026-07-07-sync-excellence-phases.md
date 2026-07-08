@@ -433,6 +433,23 @@ thread). Cancellation of a queued-not-started op completes it Cancelled
 without starting it. The queue is invisible to callers — same signatures,
 same `SyncOperation*` returns (state `Pending` until dequeued).
 
+**CP-A amendment A1 (2026-07-07):** the operation-producing entry points
+span two layers — `fetchItems`/`deleteItems` are `SyncBackendBase`
+virtuals, but `pushItems`/`startSync` are calendar-typed (`SyncBackend`,
+`src/calendar/syncbackend.h`). The queue therefore lives in
+`SyncBackendBase` as a **protected neutral enqueue primitive** (e.g.
+`enqueueOperation(collectionId, SyncOperation*, start-functor)`) that
+BOTH the base entry points and the calendar-typed subclass entry points
+call; the queue itself never names a calendar type. Three contract
+details are binding: (i) queue advance fires on ANY terminal transition
+(`Succeeded`/`Failed`/`Cancelled`/`NotSupported`) AND on premature
+`QObject` destruction of the op (engine gates `deleteLater` ops they
+own — hold entries as `QPointer` and also connect `destroyed`);
+(ii) an op that is already finished at enqueue time (e.g. the base's
+immediately-failed `NotSupported` defaults) must never occupy the
+in-flight slot; (iii) `cancelOperationsFor`/`cancelAllOperations`
+traverse both queued and in-flight ops.
+
 **RED tests first** (`tests/sync/tst_backend_op_queue.cpp`, MockBackend +
 LocalBackend — neutral first per §0): (a) two `fetchItems` on the same
 collection: the second's body must not START until the first finishes
@@ -469,7 +486,21 @@ assert via sequence recording that it executes strictly BEFORE or AFTER
 the fetch operation's body, never between the fetch's request and its
 continuation (today the nested loop runs it mid-wait — RED). Plus: grep
 gate — after E5.2, `QEventLoop` appears in `src/calendar/` only in the
-E5.3-owned blob-CRUD sites (listed above), and after E5.3, not at all.
+E5.3-owned blob-CRUD sites (listed above) and `calendarmanager.cpp`
+(see A4), and after E5.3, only in `calendarmanager.cpp`.
+
+**CP-A amendment A4 (2026-07-07):** the original claim above ("only in
+the E5.3-owned blob-CRUD sites") was false against post-E4 code — two
+more `src/calendar/` files spin loops. (i) `icsfeedfetcher.{h,cpp}`:
+grep-verified ZERO call sites — dead code; E5.2 **deletes it** (and its
+CMake entry). (ii) `calendarmanager.cpp` (:583/:630/:677): three
+op-await loops that spin on the CALLER's (GUI) thread — live PlanStan
+consumers (`CollectionSession`, `MainWindow`). This is NOT B7's
+backend-thread re-entrancy mechanism, and converting the app-facing
+CalendarManager API to async is out of E5's scope — filed as FINDINGS
+**O39**; E5.2 annotates each of the three loops with an `// O39:`
+comment instead of converting them. The E5 acceptance grep gate is
+amended accordingly (below).
 
 ### Stage E5.3 — writes become operations; the blocking apply retires
 
@@ -491,7 +522,11 @@ calling into backends with thread-blocking record CRUD. Mechanism:
 3. The engine's `applyBatch` (in `unifiedContinueAfterConflicts`)
    replaces the H8.5 three-marshal shape with: resolve the mass-delete
    guard on the worker (unchanged — it blocks toward the engine-thread
-   anchor, which is safe from the worker), then start `applyRecords` via
+   anchor, which is safe from the worker; **CP-A amendment A2
+   (2026-07-07): the guard MUST resolve BEFORE the write op is
+   enqueued — the enqueued op carries the already-filtered delete list;
+   never move guard resolution into the backend-side op body**), then
+   start `applyRecords` via
    a queued invoke and AWAIT the operation with the same cancellable,
    watchdogged gate pattern as the fetch gates (H1.1 semantics: await
    `!isFinished()`, cancel on wake, `deleteLater` on exit). The worker
@@ -504,6 +539,15 @@ calling into backends with thread-blocking record CRUD. Mechanism:
    apply tail routes through `applyRecords`. Update the header contract
    text in the same commit; per CP-A item (c), coordinate the
    consumer-visible note for WildPalms in the CP-B tag message.
+   **CP-A amendment A3 (2026-07-07):** go further — DELETE the
+   `Threading` enum and `threading()` outright, and delete `applyBatch`'s
+   `WorkerThread` branch: grep across libkalburator, PlanStan, and
+   WildPalms found zero `threading()` overrides (the enum's only
+   implementation is the default), zero WildPalms references to
+   `RecordWriter` or `awaitOperation` at all. WildPalms' only lib-sync
+   surface is `SyncEngine` + the `itemFetched` signal (E9/E10
+   territory). The CP-B tag note shrinks to "Threading enum removed —
+   no known consumer implemented it".
 
 **RED tests first:** (a) re-run of H8.5's
 `steadyStateWrites_appliesOnBackendThread` must stay green (the thread
@@ -516,7 +560,9 @@ re-entrancy pin extended over a write: an app-side call during an
 in-flight apply never interleaves into it.
 
 **Acceptance gate (E5, after all three stages):** full suite green;
-`grep -rn "QEventLoop" src/calendar/ src/sync/` empty;
+`grep -rn "QEventLoop" src/calendar/ src/sync/` hits ONLY in
+`calendarmanager.cpp` and each hit carries an `// O39:` annotation
+(CP-A amendment A4; `icsfeedfetcher.{h,cpp}` deleted);
 `grep -rn "awaitOperation" src/` empty; FINDINGS O29 → Resolved; O22's
 parked teardown note → Resolved (pointing at E5.3's test c); audit B7 →
 noted resolved in the audit doc's header.
@@ -850,6 +896,15 @@ updated.
   written in the CalDAV backend; if/when a CardDAV backend matures,
   extract the REPORT helper to a shared DAV layer THEN (rule of three),
   not now.
+- **`src/contacts/remotecontactsbackend.cpp` nested loops** (noted at
+  CP-A) — the contacts backend spins backend-thread `QEventLoop`s in its
+  blob-view helpers, the same B7 shape E5 deletes from the calendar
+  backend. Outside E5's files and grep gate; apply audit §1.1 (reuse
+  E5.2's async-request pattern) when/if the contacts backend matures —
+  same rule-of-three logic as the CardDAV sync-collection line above.
+- **FINDINGS O39** (CalendarManager GUI-thread op-await loops + direct
+  cross-thread `pushItems` calls) — app-facing API conversion, filed at
+  CP-A, not sync-engine scope.
 - **RFC 6638 scheduling (iTIP/iMIP)** — application-layer feature
   (PlanStan `docs/todo/email-itip-scheduling-horizon.md`), not sync
   engine scope.
@@ -922,7 +977,64 @@ updated.
       Pre-tag full suite: 163/163 green, O26 flake not observed.
       `feature/sync-excellence` merged → `main` (`--no-ff`), tagged
       v0.85 "correctness batch: O26, O30–O33 + write-path pins".
-- [ ] **CP-A** strong-model ruling on E5 design recorded here
+- [x] **CP-A** strong-model ruling on E5 design recorded here —
+      2026-07-07, Fable-class model, reviewed against `main` @ v0.85.
+      **Ruling: E5's design is CONFIRMED with four amendments (edited
+      into §8's text directly); the three-stage cut stands.** Per-item:
+      (a) queue neutrality CONFIRMED — `SyncBackendBase` already owns
+      neutral op tracking (`registerOperation`/`m_pendingOperations`,
+      collection-keyed) and the neutral `SyncOperation`; but the
+      operation-producing entry points span two layers (`fetchItems`/
+      `deleteItems` on the base; `pushItems`/`startSync` calendar-typed
+      on `SyncBackend`), so the queue must be exposed as a protected
+      neutral enqueue primitive both layers call — amendment A1 states
+      this in E5.1, plus queue-advance-on-any-terminal-state/destroyed
+      and the immediately-finished-op rule. (b) mass-delete guard
+      CONFIRMED — verified in code (`resolveMassDeleteGuard`,
+      syncengine.cpp ~:2896): guard already resolves on the worker,
+      separate from the apply marshal, blocking toward the engine anchor
+      (baseline count) and the GUI (PlanStan `confirmOnGuiThread`) —
+      both safe from the worker since neither ever blocks toward it.
+      E5.3's shape preserves exactly this; amendment A2 pins that the
+      guard resolves BEFORE the write op is enqueued (the op carries the
+      already-filtered delete list). (c) `RecordWriter::Threading` —
+      CONFIRMED, strengthened: grep across libkalburator, PlanStan, and
+      WildPalms finds ZERO `threading()` overrides and zero WildPalms
+      references to `RecordWriter`/`awaitOperation` at all; the
+      `WorkerThread` branch in `applyBatch` is dead code in practice.
+      Amendment A3: E5.3 deletes the `Threading` enum and `threading()`
+      outright (not just supersedes the contract text) and deletes the
+      WorkerThread branch; WildPalms exposure is nil (its only lib-sync
+      surface is `SyncEngine`/`itemFetched` — E9/E10 territory, not
+      E5.3). (d) cancellation semantics CONFIRMED as designed: queued-
+      not-started → Cancelled without running the body, queue advances;
+      in-flight keeps today's cooperative cancel + await-settle gate
+      shape (ops aren't pre-emptible mid-record); `cancelOperationsFor`/
+      `cancelAllOperations` must traverse both queued and in-flight.
+      Ops now start life `Pending` until dequeued — the H1.1/O24 gate
+      already checks `isFinished()` (never `state()==Running`), so no
+      engine-side change needed; keep that discipline. (e) teardown
+      order SURVIVES and is re-derived: worker-first/backend-second
+      remains mandatory because the worker's cancel-then-await-settle
+      (and E5.3's new apply-op gate) needs a live backend thread to
+      settle in-flight ops; post-E5.3 the worker no longer parks in
+      BlockingQueuedConnection for I/O-length work, dissolving the O22
+      wedge as planned (E3's bounded-wait diagnostic stays as backstop
+      for the short classify marshals that remain). Stage boundaries:
+      three stages, independently landable — CONFIRMED as cut.
+      **Scope finding:** E5.2's claim that post-E4 `src/calendar/`
+      QEventLoops live only in the blob-CRUD sites is FALSE —
+      `calendarmanager.cpp` spins three GUI-thread op-await loops
+      (:583/:630/:677, live PlanStan consumers) and `icsfeedfetcher.cpp`
+      spins one with ZERO call sites (dead code). Amendment A4:
+      E5.2 deletes `icsfeedfetcher.{h,cpp}` (grep-verified orphan);
+      CalendarManager's loops are GUI-thread, NOT B7's backend-thread
+      mechanism, and converting that app-facing API is out of E5's
+      scope — filed as FINDINGS **O39**; the E5/CP-B grep gate is
+      amended to allow `calendarmanager.cpp` hits only (annotated with
+      an O39 reference). `src/contacts/remotecontactsbackend.cpp`'s
+      backend-thread loops are outside E5's files and gate; added to
+      §16 residual inventory. Recorded in FINDINGS O29 same date.
 - [ ] **E5.1** per-collection FIFO op queue (neutral layer)
 - [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
       (re-entrancy pin RED→GREEN)

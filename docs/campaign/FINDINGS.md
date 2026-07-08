@@ -711,6 +711,30 @@ continuation-based `davSyncRequestAsync` (E5.2), writes as awaitable
 `WriteOperation`s replacing the blocking apply (E5.3). Grep gate at close:
 zero `QEventLoop` under `src/calendar/` + `src/sync/`. (Seeded 2026-07-07.)
 
+**CP-A ruling (2026-07-07, Fable-class, reviewed against v0.85):** E5's
+design CONFIRMED with four amendments, edited into the phase plan §8
+directly; the three-stage cut stands. A1 — the op queue is a protected
+neutral enqueue primitive in `SyncBackendBase` (entry points span two
+layers: base `fetchItems`/`deleteItems`, calendar-typed
+`pushItems`/`startSync`); queue advances on any terminal state AND on op
+destruction; already-finished ops never occupy the in-flight slot. A2 —
+the mass-delete guard resolves on the worker BEFORE the write op is
+enqueued (verified: `resolveMassDeleteGuard` already runs worker-side,
+blocking only toward the engine anchor and GUI — safe directions, neither
+ever blocks toward the worker). A3 — `RecordWriter::Threading` and
+`threading()` are deleted outright, not just superseded: zero overrides
+exist across libkalburator/PlanStan/WildPalms; WildPalms has no
+`RecordWriter`/`awaitOperation` exposure at all (its only lib-sync
+surface is `SyncEngine` + `itemFetched`). A4 — E5.2's QEventLoop site
+list was incomplete against post-E4 code: `icsfeedfetcher.{h,cpp}` is a
+zero-caller orphan (E5.2 deletes it); `calendarmanager.cpp`'s three
+op-await loops (:583/:630/:677) are GUI-thread — not B7's backend-thread
+mechanism — out of E5 scope, filed as **O39**; the grep gate is amended
+to allow annotated calendarmanager.cpp hits only. The teardown-order
+invariant was re-derived and survives: worker-first remains mandatory
+(settling in-flight ops needs a live backend thread); E5.3 dissolves the
+O22 worker-parking wedge as planned.
+
 ### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified
@@ -948,6 +972,30 @@ srcColId)` (mirroring T9's write side) and pass it through instead of
 other held constant across two cycles, asserting no conflict and exactly
 one PROPPATCH (today: a conflict every cycle, `toApplyToTarget` re-sent
 from the "conflict resolved SourceWins" default — never fully quiescing).
+
+### O39 — CalendarManager blocks the GUI thread in nested op-await loops and calls backend op methods cross-thread (OPEN, filed 2026-07-07 at CP-A)
+
+Found while verifying E5.2's QEventLoop site list at CP-A.
+`CalendarManager` (`src/calendar/calendarmanager.cpp`) spins a nested
+`QEventLoop` awaiting `SyncOperation::finished` in three places
+(`createIncidence` :583, update :630, delete :677). Two distinct
+problems: (a) these loops run on the CALLER's thread — in PlanStan
+(`CollectionSession`, `MainWindow`) that is the GUI thread, so every
+editor save/delete pumps a nested event loop on the GUI thread until
+the backend round-trip settles (re-entrancy for GUI events: a user can
+trigger a second command mid-await); (b) the preceding
+`backend->pushItems(...)` calls are DIRECT cross-thread calls into a
+backend that post-D1/H7 lives on the I/O thread — the method body runs
+on the caller's thread up to `onOwnerThread`'s op re-parenting, relying
+on that helper's affinity push rather than the sanctioned marshal-first
+discipline (`PlanStan::invokeOnBackend` app-side / queued invoke
+lib-side). NOT B7 (the loops are not on the backend thread), so NOT E5
+scope — E5.2 only annotates the three loops with `// O39:` comments.
+Fix shape for whoever picks it up: make CalendarManager's mutation API
+async (return the op / a completion callback; PlanStan consumers already
+tolerate signal-driven completion), and route the backend calls through
+a queued invoke onto the backend thread. Decide at CP-C whether to
+schedule or park.
 
 ## Resolved
 
