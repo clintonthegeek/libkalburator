@@ -778,6 +778,51 @@ query) + a CalDAV same-collection serialization pin. Remaining under O29:
 E5.3 (writes → `applyRecords`, blocking apply retired, `awaitOperation`
 deleted). O29 stays OPEN until E5.3 closes it.
 
+**Resolved 2026-07-08 (E5.3).** `SyncBackendBase::applyRecords(collectionId,
+WriterBatch)` (`src/sync/syncbackendbase.{h,cpp}`, batch type moved to
+`src/sync/writerbatch.h`, return type `Kalburator::Sync::WriteOperation` —
+new, `src/sync/writeoperation.{h,cpp}`) replaces the engine's thread-blocking
+`RecordWriter::apply()` dispatch. Default impl (LocalBackend/MockBackend —
+no async internals) adapts `createRecord`/`updateRecord`/`deleteRecord`
+synchronously, returning an already-finished op — preserves MockBackend's
+`FailurePoint` injection unchanged. `RemoteCalendarBackend::applyRecords`
+overrides natively: creates → `DavItemCreateJob`, deletes →
+`DavItemDeleteJob` (same job types `pushItems`/`deleteItems` already used),
+updates → new `setRawIcsAsync` (async counterpart of `setRawIcs`, built on
+`davSyncRequestAsync` — no nested loop), all three routed through E5.1's
+per-collection queue and fanned in exactly like `pushItems`/`deleteItems`.
+`SyncEngineWorker::applyBatch` (`syncengine.cpp`) now calls `applyRecords()`
+via a `BlockingQueuedConnection` that only enqueues (returns immediately),
+then awaits the returned op with the SAME cancellable, watchdog-free gate
+shape the fetch gates already used (`QEventLoop` + `finished`
+`QueuedConnection` + `cancellationObserved` `DirectConnection`) — the worker
+never again parks in a blocking marshal for I/O-length work. E1.1 stats
+(created/updated/deleted/errors) are now populated per-record from the
+settled op's `succeededUids()`/`failedUids()` instead of one whole-batch
+bool (a batch with 1 failure among 50 successes no longer misreports all 50
+as errors). `awaitOperation` (`remotecalendarbackend.cpp`) is deleted from
+`createRecord`/`deleteRecord` (reimplemented as direct synchronous
+`davSyncRequest` PUT/DELETE, matching `updateRecord`'s existing
+`setRawIcs`-based shape) but **deliberately retained for its one remaining
+call site, `loadRecords()`** — a documented, narrow exception (see the
+function's comment in `remotecalendarbackend.cpp`): `loadRecords()` is a
+top-level, non-reentrant synchronous bridge never invoked from inside an
+in-flight operation's own body, so it is not an instance of the B7 hazard
+this campaign targets, and it remains a directly-tested public
+`IBlobBackend` entry point (20+ call sites across
+`tst_remotecalendarbackend_blob_view.cpp` and others) with no synchronous
+replacement that avoids hand-rolling a second REPORT/multiget XML client.
+CP-A amendment A3 lands too: `RecordWriter::Threading`/`threading()` deleted
+outright (zero overrides found repo-wide); `DefaultBlobWriter::apply()`
+itself now routes through `applyRecords()` for consistency. New RED tests:
+`writeCancel_reportsCancelledWithHonestStats` and
+`writeTeardown_engineDestroyed_completesWithoutDeadlock`
+(`tst_backend_thread_relocation.cpp`), `applyRecordsInFlight_neverRunsNested`
+(`tst_backend_reentrancy_pin.cpp`); `FakeCalDavServer` gained
+`setResponseDelayForMethod()` to isolate a slow write from a fast
+classify-read (needed to land a cancel/teardown genuinely mid-apply rather
+than mid-fetch). O29 fully Resolved.
+
 ### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified
@@ -911,6 +956,20 @@ a bounded wait (30 s default), a loud `qCritical` naming the
 `terminate()`). Pinned by `tst_worker_teardown`. This is the honest
 interim per O22's parked note — the structural fix (the worker stops
 parking in blocking marshals for I/O-length work) is E5.3's job.
+
+**O22's parked note Resolved 2026-07-08 (E5.3).** The structural fix
+landed: `SyncEngineWorker::applyBatch` no longer marshals a thread-blocking
+`RecordWriter::apply()` call — it invokes `SyncBackendBase::applyRecords()`
+(returns immediately, having only enqueued the write op) and awaits it in a
+cancellable `QEventLoop`, same as a fetch gate. `stopWorkerThread()` /
+`waitForWorkerWithDiagnostic()` (the E3 interim, still in place as a
+belt-and-braces bound) is pinned against a genuinely in-flight write by the
+new `writeTeardown_engineDestroyed_completesWithoutDeadlock`
+(`tst_backend_thread_relocation.cpp`): destroying a `SyncEngine` while its
+target backend is mid-apply behind a 60 s fake-server delay completes in
+well under 5 s — the diagnostic path is no longer expected to fire for any
+consumer whose backends are relocated (the D1 topology PlanStan/WildPalms
+both use).
 
 ### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
 
@@ -1254,3 +1313,46 @@ mapping completes, falling back to the pre-dispatch snapshot only if the live qu
 This — not the DTSTAMP bug — was the direct cause of the roadmap's "of 7 mappings, 0 are unchanged"
 real-world symptom for the LOCAL/target side (see the fast-path test's doc comment for the parallel,
 separate, NOT-a-bug one-cycle warm-up the REMOTE/source side's CTagStore still needs).
+
+### O40 — `stopWorkerThread()`'s cancel() never wakes an in-flight cancellable gate — only `future.cancel()`'s path did (found + Resolved 2026-07-08, sync-excellence E5.3)
+
+Found while writing E5.3's teardown RED test
+(`writeTeardown_engineDestroyed_completesWithoutDeadlock`). `SyncEngine::
+stopWorkerThread()` called `m_worker->cancel()` — a plain synchronous method
+that only sets the `m_cancelled` flag (mutex-guarded) — believing this was
+enough to unwind any in-flight gate the same way `future.cancel()` does.
+It is not: only `SyncEngineWorker::observeCancel()` (the queued slot
+`future.cancel()`'s `QFutureWatcher::canceled` → `SyncEngine::
+onCancelObserved` → queued-to-worker path invokes) actually `emit`s
+`cancellationObserved()`, the signal every cancellable gate (fetch gates,
+and now E5.3's write gate) connects to wake its nested `QEventLoop`. Calling
+`cancel()` alone during teardown left a genuinely in-flight write-await gate
+with nothing to wake it except the op's own `finished` signal — which, for
+a write stuck behind a slow/frozen network call, only fires when that
+backend-level watchdog (`m_transferTimeoutMs`, independent of engine/worker
+synchronization) eventually times out. Observed live in the RED test before
+the fix: `~SyncEngine()` blocked for the full 30s E3 bounded-wait window,
+logged the "worker thread did not stop" diagnostic, and only unblocked when
+the PUT watchdog separately fired at ~30s — at which point a dangling
+`WriteOperation` access (a separate bug, see the E5.3 landing note) crashed
+the process. This directly contradicted the sync-excellence plan's claim
+that "E5.3 structurally dissolves E3's `stopWorkerThread` interim" — without
+this fix, it did not, for teardown specifically (the `future.cancel()` path
+was never affected, since it already routed through `observeCancel()`).
+
+**Fix:** `stopWorkerThread()` now additionally queues `observeCancel()` onto
+the worker thread (`QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::
+observeCancel, Qt::QueuedConnection)`) alongside the existing synchronous
+`cancel()` call. Queued, not direct: `observeCancel()`'s
+`cancellationObserved` → `loop.quit()` wiring is a `Qt::DirectConnection`,
+safe only when both ends run on the same thread — a nested
+`QEventLoop::exec()` (e.g. the write-await gate) still pumps its own
+thread's full event queue, so the queued `observeCancel()` reaches and runs
+inside it, waking the loop promptly instead of after a network timeout.
+Verified: `writeTeardown_engineDestroyed_completesWithoutDeadlock` now
+completes in ~3s (a 60s server-side PUT delay, engine destroyed ~200ms into
+the write) instead of hitting the 30s+ bounded-wait/watchdog path.
+`waitForWorkerWithDiagnostic`'s bounded wait (E3) stays in place as a
+belt-and-braces backstop — it should no longer be the mechanism that
+actually ends an I/O-length wait for any consumer using the E5.3 write path
+or the pre-existing fetch gates.

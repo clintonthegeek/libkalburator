@@ -17,8 +17,10 @@
 #include "canonicalrecord.h"
 #include "recordwriter.h"
 // Phase K.4: the engine no longer dynamic_casts to a concrete writer;
-// writer-specific behaviour is mediated by IRecordWriter::threading()
-// and IRecordWriter::prepareForApply().
+// writer-specific behaviour is mediated by IRecordWriter::prepareForApply()
+// (E5.3 CP-A amendment A3 deleted IRecordWriter::threading() — the engine's
+// write path no longer calls RecordWriter::apply() at all; see
+// SyncEngineWorker::applyBatch and SyncBackendBase::applyRecords()).
 #include "iblobbackend.h"
 #include "syncconflictstore.h"
 #include "syncdiff.h"
@@ -224,14 +226,34 @@ void SyncEngine::stopWorkerThread()
 {
     if (m_workerThread.isRunning()) {
         if (m_worker) {
+            // Synchronous flag set (immediate visibility, unchanged from
+            // before E5.3) — but cancel() alone never wakes a nested
+            // QEventLoop already running on the worker thread (a fetch or
+            // E5.3 write-await gate): only cancellationObserved() does that,
+            // and only observeCancel() emits it. E5.3 (O22 residue): also
+            // queue observeCancel() onto the worker thread so a genuinely
+            // in-flight gate wakes promptly on engine teardown, not just on
+            // future.cancel() (which already routed through observeCancel()
+            // via onCancelObserved). Queued, not direct: observeCancel()
+            // must run ON the worker thread for its cancellationObserved
+            // DirectConnection-to-loop.quit() wiring to be same-thread-safe;
+            // a nested QEventLoop::exec() still pumps its thread's queued
+            // events, so this reaches the gate even while it's parked in
+            // loop.exec(). This is what "structurally dissolves E3's
+            // stopWorkerThread interim" (E5.3 design note) actually means in
+            // practice — waitForWorkerWithDiagnostic's bounded wait below
+            // should no longer be the thing that ends an I/O-length wait.
             m_worker->cancel();
+            QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::observeCancel,
+                                      Qt::QueuedConnection);
         }
 
         m_workerThread.quit();
         // E3 (O22 residue): bounded wait with a loud diagnostic on
         // expiry, then an unbounded wait — see waitForWorkerWithDiagnostic's
-        // doc comment. Structural fix (worker stops parking in
-        // BlockingQueuedConnection marshals) is E5.3's job.
+        // doc comment. Post-E5.3 this is a belt-and-braces backstop; the
+        // queued observeCancel() above should make an in-flight write/fetch
+        // gate settle well before this bound.
         waitForWorkerWithDiagnostic(&m_workerThread);
 
         qDebug() << "SyncEngine: Worker thread stopped";
@@ -1235,12 +1257,10 @@ inline IBlobBackend *asBlob(SyncBackendBase *b) { return static_cast<IBlobBacken
 // apply loop did — load the destination's existing record ids, then
 // route each post-merge record into creates / updates / deletes.
 // Must run on the backend's thread (loadRecords calls into the backend).
-struct WriterBatch {
-    QList<BackendRecord> creates;
-    QList<BackendRecord> updates;
-    QStringList          deletes;
-};
-
+//
+// E5.3: WriterBatch itself moved to sync/writerbatch.h (SyncBackendBase::
+// applyRecords() needs to name it too, and sync/ must not depend on
+// engine/) — this is now just the classification function.
 WriterBatch classifyForWriter(
     const QList<BackendRecord> &toWrite,
     IBlobBackend *backend,
@@ -2147,10 +2167,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // through the same unified dispatchSync path as all other domains.
     // Parity was established by Tasks 3–6: AskUser pause/resume, first-sync
     // fast-path, property-phase deferral, CustomMerge/Duplicate deferral.
-    // A WorkerThread writer's apply() is called on the worker thread (not
-    // wrapped in the outer BlockingQueuedConnection) by
-    // unifiedContinueAfterConflicts' applyBatch helper, which dispatches via
-    // IRecordWriter::threading().
+    // E5.3: unifiedContinueAfterConflicts' applyBatch helper calls
+    // SyncBackendBase::applyRecords() directly (no thread-affinity dispatch
+    // decision needed — applyRecords() never blocks; see applyBatch's own
+    // header comment).
 
     const auto &reg = m_shape.transformation;
     std::optional<Kalburator::Shape::Pipeline> srcToCanon = reg.compile(srcShape, canonical);
@@ -2847,26 +2867,33 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
 
     // Helper: apply a batch to a backend.
     //
-    // Phase K.4: writer dispatch is driven by `IRecordWriter::threading()`
-    // and per-call setup happens via `prepareForApply(ctx)`. The previous
-    // `dynamic_cast` to a concrete calendar writer is gone — the engine
-    // no longer special-cases the calendar writer.
+    // E5.3 (sync-excellence campaign, audit B7 / CP-A, 2026-07-08): the
+    // H8.5 three-marshal `writer->threading()` dispatch is GONE (the
+    // `Threading` enum and `threading()` are deleted from recordwriter.h —
+    // CP-A amendment A3). The engine no longer calls `RecordWriter::apply()`
+    // at all in the live write path: it calls `SyncBackendBase::
+    // applyRecords()` directly, which returns immediately with a
+    // `WriteOperation` this worker awaits the SAME cancellable, watchdogged
+    // way it awaits a fetch gate (dispatchSync's `srcFetchSucceeded`/
+    // `tgtFetchSucceeded` blocks) — no thread-affinity decision needed
+    // because nothing blocks. This structurally dissolves E3's
+    // `stopWorkerThread` interim and O22's last parked teardown note: the
+    // worker never again parks in a `BlockingQueuedConnection` for
+    // I/O-length work.
     //
-    // Threading values (H8.5/O27 — the guard decision always runs on the
-    // worker thread because it reaches the engine-thread baseline anchor via
-    // BlockingQueuedConnection; only the classify + apply placement varies):
-    //   - BackendThread (default): classify AND apply both run on the
-    //     backend's own thread, each via its own BlockingQueuedConnection,
-    //     with the guard resolved on the worker thread in between.
-    //   - WorkerThread: classify runs on the backend thread; apply runs
-    //     on the worker thread (a writer that uses BlockingQueuedConnection
-    //     internally must not be called from the backend thread).
+    // CP-A amendment A2: the mass-delete guard resolves BEFORE the write op
+    // is enqueued — the op that reaches applyRecords() always carries the
+    // already-filtered delete list; the guard itself still runs on THIS
+    // (worker) thread, since it reaches the engine-thread baseline anchor
+    // via BlockingQueuedConnection.
+    //
     // E1.1 (O30): applyBatch populates the caller-supplied SyncStats from
-    // the batch it actually classified/applied — created/updated/deleted
-    // from the applied counts, errors from a failed apply. This is what
-    // makes advanceQueue's statsOk check and the single-mapping skipped-
-    // vs-partial-cancel decision (onWorkerSyncCompleted) honest; before
-    // this, sourceStats/targetStats were never written in the unified path.
+    // the settled WriteOperation's succeeded/failedUids — per-record
+    // granularity the old single-bool `writer->apply()` return never had
+    // (a batch with 49 successes and 1 failure used to report all 50 as
+    // errors). This is what makes advanceQueue's statsOk check and the
+    // single-mapping skipped-vs-partial-cancel decision
+    // (onWorkerSyncCompleted) honest.
     auto applyBatch = [this, &writeFailed, &writeError, &mappingId](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackendBase *backend,
@@ -2908,14 +2935,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // (backward compatible). If the guard returns false, the delete
         // list is cleared and creates/updates proceed normally.
         //
-        // H8.5/O27: the guard decision MUST run on the worker thread — it
-        // reaches the engine-thread `m_baselineStoreAnchor` via a
-        // BlockingQueuedConnection, which must not be entered from a backend
-        // thread. The apply() itself is dispatched separately below, honoring
-        // the writer's threading() contract. Splitting the two is what lets a
-        // BackendThread writer's apply() run on the backend's own thread
-        // without nesting the guard's engine round-trip inside a backend-thread
-        // BlockingQueuedConnection.
+        // H8.5/O27 (still true post-E5.3): the guard decision MUST run on
+        // the worker thread — it reaches the engine-thread
+        // `m_baselineStoreAnchor` via a BlockingQueuedConnection, which must
+        // not be entered from a backend thread. CP-A amendment A2: this
+        // MUST resolve before applyRecords() is invoked — the op it
+        // produces carries the already-filtered delete list; the guard
+        // never runs inside the backend-side op body.
         auto resolveMassDeleteGuard = [this, &backendRegistryId]
             (WriterBatch &batch)
         {
@@ -2954,61 +2980,96 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         };
 
         WriterBatch batch;
-        if (writer->threading() ==
-            Kalburator::Shape::RecordWriter::Threading::WorkerThread) {
-            // Writer manages its own backend-thread marshalling
-            // (a WorkerThread writer uses BlockingQueuedConnection
-            // internally inside apply(), so apply() itself must run on the
-            // worker thread, NOT the backend thread).
-            QString classifyErr1;
-            QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr1, toWrite]() {
-                batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr1);
-            }, Qt::BlockingQueuedConnection);
-            if (!classifyErr1.isEmpty()) {
-                ok = false;
-                writeError = classifyErr1;
-            } else {
-                resolveMassDeleteGuard(batch);
-                ok = writer->apply(colId, batch.creates, batch.updates, batch.deletes);
-            }
+        QString classifyErr;
+        QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr, toWrite]() {
+            batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr);
+        }, Qt::BlockingQueuedConnection);
+
+        WriteOperation *writeOp = nullptr;
+        if (!classifyErr.isEmpty()) {
+            writeError = classifyErr;
         } else {
-            // BackendThread (default): classify on the backend thread, resolve
-            // the guard on the worker thread, then run apply() on the backend's
-            // OWN thread per recordwriter.h's contract. Pre-H8.5 the apply ran
-            // on the worker thread (O27) — a contract break that did QNAM I/O +
-            // etag-cache SQL cross-thread for every steady-state update.
-            QString classifyErr2;
-            QMetaObject::invokeMethod(backend, [blobBackend, colId, &batch, &classifyErr2, toWrite]() {
-                batch = classifyForWriter(toWrite, blobBackend, colId, &classifyErr2);
+            resolveMassDeleteGuard(batch);
+
+            // Kick applyRecords() on the backend thread. This returns
+            // immediately (E5.1's queue contract: it only creates+enqueues
+            // the op) — the actual I/O happens later, asynchronously, off
+            // this invoke.
+            WriteOperation *writeOpRaw = nullptr;
+            QMetaObject::invokeMethod(backend, [backend, colId, &batch, &writeOpRaw]() {
+                writeOpRaw = backend->applyRecords(colId, batch);
             }, Qt::BlockingQueuedConnection);
-            if (!classifyErr2.isEmpty()) {
-                ok = false;
-                writeError = classifyErr2;
-            } else {
-                resolveMassDeleteGuard(batch);
-                Kalburator::Shape::RecordWriter *w = writer;
-                QMetaObject::invokeMethod(backend, [w, &colId, &batch, &ok]() {
-                    ok = w->apply(colId, batch.creates, batch.updates, batch.deletes);
-                }, Qt::BlockingQueuedConnection);
+            QPointer<SyncOperation> pendingOp = writeOpRaw;
+
+            // Await exactly like the existing fetch gates (dispatchSync):
+            // isFinished() check, QEventLoop + finished-signal QueuedConnection
+            // + cancellationObserved DirectConnection, cancel-then-settle
+            // teardown.
+            if (pendingOp && !pendingOp->isFinished()) {
+                QEventLoop loop;
+                connect(pendingOp.data(), &SyncOperation::finished,
+                        &loop, &QEventLoop::quit, Qt::QueuedConnection);
+                connect(this, &SyncEngineWorker::cancellationObserved,
+                        &loop, &QEventLoop::quit, Qt::DirectConnection);
+                if (!pendingOp->isFinished())
+                    loop.exec();
             }
-        }
-        if (!ok && !writeFailed) {
-            writeFailed = true;
-            writeError = QStringLiteral("Write to %1 failed").arg(colId);
+            if (m_cancelled.load(std::memory_order_acquire)
+                && pendingOp && !pendingOp->isFinished()) {
+                pendingOp->cancel();
+                if (!pendingOp->isFinished()) {
+                    QEventLoop teardownLoop;
+                    connect(pendingOp.data(), &SyncOperation::finished,
+                            &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
+                    teardownLoop.exec();
+                }
+            }
+            writeOp = qobject_cast<WriteOperation *>(pendingOp.data());
         }
 
-        // E1.1 (O30): record what this batch actually did. A failed apply
-        // reports the whole attempted batch as errors (apply() has no
-        // per-record failure granularity — it is one bool for the batch);
-        // a successful apply reports the real created/updated/deleted
-        // counts.
-        if (ok) {
-            stats.created += static_cast<int>(batch.creates.size());
-            stats.updated += static_cast<int>(batch.updates.size());
-            stats.deleted += static_cast<int>(batch.deletes.size());
-        } else {
-            stats.errors += static_cast<int>(
-                batch.creates.size() + batch.updates.size() + batch.deletes.size());
+        // Preserves the pre-E5.3 semantics exactly: ANY per-record failure
+        // fails the whole batch (writeFailed=true), just like
+        // DefaultBlobWriter::apply()'s old "ok=false on the first failing
+        // record" loop — E5.3 changes WHERE/HOW the write runs, not what it
+        // computes (a partial write still blocks baseline persistence below,
+        // avoiding the N2-class phantom-delete risk the comment at this
+        // function's call sites documents). Requiring state()==Succeeded
+        // (not just failedUids().isEmpty()) also catches Cancelled: a write
+        // op settled by cancellation before any per-record callback ran has
+        // empty failedUids too, but must never be treated as "ok" — doing so
+        // would fall through to the baseline-save block below, which talks
+        // back to the engine thread via BlockingQueuedConnection and can
+        // deadlock against a concurrent ~SyncEngine() teardown (the same
+        // thread pair stopWorkerThread() is trying to unwind).
+        ok = classifyErr.isEmpty() && writeOp != nullptr
+            && writeOp->state() == SyncOperation::Succeeded
+            && writeOp->failedUids().isEmpty();
+
+        if (!ok && !writeFailed) {
+            writeFailed = true;
+            writeError = writeError.isEmpty()
+                ? QStringLiteral("Write to %1 failed").arg(colId)
+                : writeError;
+        }
+
+        // E1.1 (O30): record what this batch actually did, per record — the
+        // settled WriteOperation's succeeded/failedUids replace the old
+        // batch-wide boolean. Every record in the batch is counted exactly
+        // once (created/updated/deleted on success, errors otherwise —
+        // including a record that never got attempted at all, e.g. one
+        // still queued when a cancel landed): nothing is silently dropped
+        // or double-counted.
+        const QSet<QString> succeeded = writeOp
+            ? QSet<QString>(writeOp->succeededUids().cbegin(), writeOp->succeededUids().cend())
+            : QSet<QString>();
+        for (const auto &r : batch.creates) {
+            if (succeeded.contains(r.id)) ++stats.created; else ++stats.errors;
+        }
+        for (const auto &r : batch.updates) {
+            if (succeeded.contains(r.id)) ++stats.updated; else ++stats.errors;
+        }
+        for (const auto &id : batch.deletes) {
+            if (succeeded.contains(id)) ++stats.deleted; else ++stats.errors;
         }
 
         // G.9.a closeout: tell the host about every record this batch
@@ -3019,18 +3080,26 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // caller designates as authoritative (PlanStan: the source/primary
         // side of the mapping) notifies — recordChanged's contract re-reads
         // from that side regardless of which side actually changed, so
-        // notifying the other side would just be redundant work.
+        // notifying the other side would just be redundant work. Gate
+        // unchanged from pre-E5.3 (`ok` = whole batch, zero failures) — only
+        // the per-record stats accounting above became granular; host
+        // notification granularity is out of E5.3's scope.
         if (ok && notifyHost && m_controller) {
             for (const auto &r : batch.creates)
-                m_controller->recordChanged(mappingId, r.id,
-                    ISyncHost::ChangeKind::Created);
+                if (succeeded.contains(r.id))
+                    m_controller->recordChanged(mappingId, r.id,
+                        ISyncHost::ChangeKind::Created);
             for (const auto &r : batch.updates)
-                m_controller->recordChanged(mappingId, r.id,
-                    ISyncHost::ChangeKind::Updated);
+                if (succeeded.contains(r.id))
+                    m_controller->recordChanged(mappingId, r.id,
+                        ISyncHost::ChangeKind::Updated);
             for (const auto &id : batch.deletes)
-                m_controller->recordChanged(mappingId, id,
-                    ISyncHost::ChangeKind::Deleted);
+                if (succeeded.contains(id))
+                    m_controller->recordChanged(mappingId, id,
+                        ISyncHost::ChangeKind::Deleted);
         }
+
+        if (writeOp) writeOp->deleteLater();
     };
 
     // Phase B4 (N2 fix): per-side hashes of the bytes ACTUALLY WRITTEN this

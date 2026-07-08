@@ -65,6 +65,59 @@ SyncOperation* SyncBackendBase::deleteItems(const QString &calendarId,
 }
 
 // ============================================================================
+// E5.3: write-path entry point (default synchronous adapter)
+// ============================================================================
+
+WriteOperation* SyncBackendBase::applyRecords(const QString &collectionId,
+                                              const WriterBatch &batch)
+{
+    auto *op = new WriteOperation(collectionId, this);
+    op->setState(SyncOperation::Running);
+
+    // Same order DefaultBlobWriter::apply() always used: creates, then
+    // updates, then deletes. Routes through the exact same virtuals so
+    // MockBackend's FailurePoint injection (OnStoreItems/OnPush/OnDelete)
+    // keeps working unchanged for backends that reach applyRecords() via
+    // this default (LocalBackend, MockBackend — no async internals).
+    for (const auto &r : batch.creates) {
+        if (createRecord(collectionId, r).isEmpty()) {
+            op->addFailedUid(r.id);
+        } else {
+            op->addSucceededUid(r.id);
+        }
+    }
+    for (const auto &r : batch.updates) {
+        if (!updateRecord(r)) {
+            op->addFailedUid(r.id);
+        } else {
+            op->addSucceededUid(r.id);
+        }
+    }
+    for (const auto &id : batch.deletes) {
+        if (!deleteRecord(id)) {
+            op->addFailedUid(id);
+        } else {
+            op->addSucceededUid(id);
+        }
+    }
+
+    // Precedent (PushOperation/DeleteOperation via RemoteCalendarBackend's
+    // settleIfDone): fail only when something was attempted and NOTHING
+    // succeeded; otherwise complete (partial failures are reported via
+    // failedUids(), not a Failed op state) — this call returns already
+    // finished (isFinished() true), so callers never need to await it.
+    const int totalAttempted = static_cast<int>(
+        batch.creates.size() + batch.updates.size() + batch.deletes.size());
+    if (totalAttempted > 0 && op->succeededUids().isEmpty() && !op->failedUids().isEmpty()) {
+        op->fail(QStringLiteral("applyRecords: all %1 record(s) failed to apply")
+                    .arg(totalAttempted));
+    } else {
+        op->complete();
+    }
+    return op;
+}
+
+// ============================================================================
 // Operation Tracking
 // ============================================================================
 

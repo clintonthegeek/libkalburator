@@ -17,6 +17,8 @@
 #include "shape.h"
 #include "synctypes.h"
 #include "../sync/syncoperation.h"
+#include "../sync/writeoperation.h"  // E5.3: SyncBackendBase::applyRecords() return type
+#include "../sync/writerbatch.h"     // E5.3: SyncBackendBase::applyRecords() batch parameter type
 #include "shaperegistries.h"
 #include "syncengine.h"
 
@@ -67,6 +69,8 @@ using Kalburator::Sync::SyncBackendBase;
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::ICalendarCollection;
+using Kalburator::Sync::WriteOperation;  // E5.3: SyncBackendBase::applyRecords() return type
+using Kalburator::Sync::WriterBatch;     // E5.3: SyncBackendBase::applyRecords() batch parameter type
 
 /**
  * @brief Internal worker class — runs sync operations on a background thread.

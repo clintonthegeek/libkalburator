@@ -34,6 +34,8 @@
 #include "iblobbackend.h"   // pure interface (no QObject)
 #include "shape.h"          // Kalburator::Shape::Shape
 #include "syncoperation.h"  // neutral SyncOperation base (same dir)
+#include "writeoperation.h" // E5.3: applyRecords() return type (same dir)
+#include "writerbatch.h"    // E5.3: applyRecords() batch parameter type (same dir)
 
 namespace Kalburator::Sync {
 
@@ -103,6 +105,24 @@ public:
     virtual SyncOperation* fetchItems(const QString &calendarId);
     virtual SyncOperation* deleteItems(const QString &calendarId,
                                        const QStringList &uids);
+
+    /// E5.3 (audit B7 / CP-A): the engine's write-path entry point — replaces
+    /// the old thread-blocking dispatch through `RecordWriter::apply()`
+    /// (recordwriter.h). Applies a classified `WriterBatch` (creates/updates/
+    /// deletes) to `collectionId` and returns a `WriteOperation` tracking
+    /// per-record success/failure.
+    ///
+    /// Default implementation (correct for backends with no async internals
+    /// — LocalBackend, MockBackend): adapts the existing `createRecord`/
+    /// `updateRecord`/`deleteRecord` virtuals SYNCHRONOUSLY, one call per
+    /// record, in the same order `DefaultBlobWriter::apply()` always has
+    /// (creates, then updates, then deletes) — so backend failure-injection
+    /// test hooks (e.g. MockBackend::setFailurePoint) keep working unchanged.
+    /// The returned op is already finished (`isFinished()` true) before this
+    /// call returns; callers on backends with real async internals (e.g.
+    /// RemoteCalendarBackend, which overrides this) must not assume that.
+    virtual WriteOperation* applyRecords(const QString &collectionId,
+                                         const WriterBatch &batch);
 
     /// Records equivalent to loadRecords(collectionId), but served from the
     /// most recent successfully completed fetchItems() for that collection

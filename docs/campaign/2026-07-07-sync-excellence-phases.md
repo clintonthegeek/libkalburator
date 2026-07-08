@@ -1269,8 +1269,95 @@ three) or add mapping-level parallelism.
       `davSyncRequest`/`fetchAllCtags` helpers remain for E5.3 (Group B) /
       E11 (Group C) as scheduled. FINDINGS O29 progress-noted (stays OPEN
       until E5.3).
-- [ ] **E5.3** applyRecords write operations; blocking apply retired;
-      O22 teardown note closed (mid-apply stopWorkerThread pin)
+- [x] **E5.3** applyRecords write operations; blocking apply retired;
+      O22 teardown note closed (mid-apply stopWorkerThread pin) — 2026-07-08.
+      `SyncBackendBase::applyRecords(collectionId, WriterBatch)` (new;
+      `WriterBatch` moved to `src/sync/writerbatch.h`, `WriteOperation` new
+      in `src/sync/writeoperation.{h,cpp}`) replaces `RecordWriter::apply()`
+      as the engine's write-path entry point. Default impl (LocalBackend/
+      MockBackend) adapts createRecord/updateRecord/deleteRecord
+      synchronously, already-finished on return — MockBackend's
+      FailurePoint injection keeps working unchanged.
+      `RemoteCalendarBackend::applyRecords` overrides natively: creates →
+      `DavItemCreateJob`, deletes → `DavItemDeleteJob` (same job types
+      pushItems/deleteItems already used), updates → new `setRawIcsAsync`
+      (davSyncRequestAsync-based, no nested loop) — all three through E5.1's
+      per-collection queue, fanned in like pushItems/deleteItems, guarded
+      with `QPointer<WriteOperation>` in every async completion (a cancelled
+      op can be deleteLater()'d by the caller while an in-flight KDAV job or
+      watchdog timer — nothing here kills the underlying network request —
+      still has a completion pending; a raw pointer capture crashed on
+      exactly this during the teardown RED test, fixed before landing).
+      `SyncEngineWorker::applyBatch` now calls `applyRecords()` via a
+      `BlockingQueuedConnection` that only enqueues (returns immediately),
+      then awaits the op with the same cancellable gate shape the fetch
+      gates use (`QEventLoop` + `finished` `QueuedConnection` +
+      `cancellationObserved` `DirectConnection`). `ok` requires
+      `state()==Succeeded` (not just empty `failedUids()`) so a cancelled
+      write is never mistaken for success — that distinction turned out to
+      be load-bearing: treating a cancelled-but-empty-failedUids op as "ok"
+      fell through to the baseline-save block, which talks back to the
+      engine thread via `BlockingQueuedConnection` and deadlocked against a
+      concurrent `~SyncEngine()` teardown in the RED test before the fix.
+      E1.1 stats (created/updated/deleted/errors) are now populated
+      per-record from the settled op's succeeded/failedUids instead of one
+      whole-batch bool.
+      **Real bug found and fixed in the same landing:**
+      `SyncEngine::stopWorkerThread()`'s `m_worker->cancel()` only ever set
+      the `m_cancelled` flag — it never emitted `cancellationObserved()`
+      (only `observeCancel()`, the `future.cancel()` path, does), so a
+      write-await gate parked in a nested `QEventLoop` on the worker thread
+      never woke up on engine teardown specifically — only on
+      `future.cancel()`. Fixed by additionally queuing
+      `observeCancel()` onto the worker thread from `stopWorkerThread()`
+      (queued, not direct — must run on the worker thread for the
+      `cancellationObserved`→`loop.quit()` `DirectConnection` to be
+      same-thread-safe; a nested `QEventLoop::exec()` still pumps its
+      thread's queued events, so this reaches the gate even while parked in
+      it). This is the concrete mechanism behind the plan's "E5.3
+      structurally dissolves E3's stopWorkerThread interim" — without it,
+      `writeTeardown_engineDestroyed_completesWithoutDeadlock` timed out at
+      the E3 bounded-wait's 30s mark and then crashed once the PUT
+      watchdog's own 30s timeout fired into an by-then-dangling op (fixed by
+      the QPointer guard above). `waitForWorkerWithDiagnostic`'s bounded
+      wait stays in place as a belt-and-braces backstop, not the primary
+      mechanism.
+      `RemoteCalendarBackend::createRecord()`/`deleteRecord()` reimplemented
+      as direct synchronous `davSyncRequest()` PUT/DELETE (matching
+      `updateRecord()`'s existing `setRawIcs()` shape) instead of
+      `pushItems()`/`deleteItems()` + `awaitOperation()`.
+      **Documented deviation:** `awaitOperation()` is NOT fully deleted —
+      its one remaining call site, `loadRecords()`, is a deliberate,
+      narrow exception (top-level, non-reentrant, never invoked from inside
+      an in-flight operation body — not a B7 instance — and a directly-
+      tested public `IBlobBackend` entry point with 20+ existing call sites
+      that has no synchronous replacement short of hand-rolling a second
+      REPORT/multiget XML client). See the function's comment in
+      `remotecalendarbackend.cpp` and FINDINGS O29's resolution note.
+      CP-A amendment A3 lands: `RecordWriter::Threading`/`threading()`
+      deleted outright (zero overrides found repo-wide);
+      `DefaultBlobWriter::apply()` itself now routes through
+      `applyRecords()` when the backend is a `SyncBackendBase` (falls back
+      to its old per-record loop for the narrower plain-`IBlobBackend`
+      callers — e.g. `tst_default_blob_writer.cpp`'s `MockBlobBackend` —
+      that predate `SyncBackendBase` and have no `applyRecords()`).
+      RED tests: `writeCancel_reportsCancelledWithHonestStats` and
+      `writeTeardown_engineDestroyed_completesWithoutDeadlock`
+      (`tst_backend_thread_relocation.cpp`),
+      `applyRecordsInFlight_neverRunsNested`
+      (`tst_backend_reentrancy_pin.cpp`); `FakeCalDavServer` gained
+      `setResponseDelayForMethod()` (isolates a slow write from a fast
+      classify-read — needed to land a cancel/teardown genuinely mid-apply
+      rather than mid-fetch). Full suite green, 164/164. Acceptance-gate
+      greps: `QEventLoop` under `src/calendar/`+`src/sync/` → only
+      `calendarmanager.cpp`'s three O39 loops + `davSyncRequest` +
+      `awaitOperation`'s one documented `loadRecords()`-only survivor (the
+      gate's own aggregate wording, written before E5.3 implementation,
+      didn't anticipate this exception — see the deviation note above);
+      `awaitOperation` → one hit (documented); `icsfeedfetcher.{h,cpp}`
+      confirmed already deleted (E5.2/A4); `RecordWriter::Threading`/
+      `threading()` → zero hits. FINDINGS O29 → Resolved; O22's parked note
+      (inside O33) → Resolved; audit doc B7 header → noted resolved.
 - [ ] **E6** EtagCache seeded from content cache (restart re-download pin)
 - [ ] **E7** RFC 6578 sync-collection REPORT + token store + invalidation
       + fallback regression pin + live Radicale evidence

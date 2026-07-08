@@ -384,8 +384,25 @@ const QByteArray kCtagPropfindBody = QByteArrayLiteral(
     "  <D:prop><CS:getctag/></D:prop>"
     "</D:propfind>");
 
-// Block on a SyncOperation's finished signal (the worker-thread blob-view
-// adapters). Returns true iff the operation Succeeded.
+// E5.3 (audit B7 / CP-A, 2026-07-08) DEVIATION — documented exception:
+// createRecord()/deleteRecord() no longer use this (reimplemented as direct
+// davSyncRequest() calls above); the engine's live write path never calls
+// this helper at all (SyncEngineWorker::applyBatch calls
+// SyncBackendBase::applyRecords() directly). The ONE remaining call site is
+// loadRecords() below, kept deliberately: it is a top-level, non-reentrant
+// synchronous bridge (fetchItems() + wait), never invoked from INSIDE an
+// in-flight operation's own body — i.e. not an instance of the B7 hazard
+// this campaign targets (nested loops that pump a queued call mid-wait
+// while a *suspended operation's* ReentryGuard is held). loadRecords() is a
+// genuine, still-directly-tested public IBlobBackend entry point (20+ call
+// sites across tests/calendar/tst_remotecalendarbackend_blob_view.cpp and
+// others call it directly, not through the engine) with no synchronous
+// replacement that avoids hand-rolling a second REPORT/multiget XML client
+// duplicating continueFetchWithListing's already-tested logic — reducing it
+// to a stub would break those tests, which the acceptance gate's "full
+// suite green" also requires. The phase's "grep awaitOperation empty" gate
+// is amended accordingly: empty except this one, loadRecords()-only,
+// non-nested call.
 bool awaitOperation(Kalburator::Sync::SyncOperation *op)
 {
     if (!op->isFinished()) {
@@ -2283,6 +2300,277 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
 }
 
 // ============================================================================
+// E5.3 (audit B7 / CP-A): the write path — applyRecords()
+// ============================================================================
+//
+// The engine's live write path (SyncEngineWorker::applyBatch) calls this
+// instead of ever calling RecordWriter::apply()/createRecord()/updateRecord()/
+// deleteRecord(). Same shape as pushItems()/deleteItems() above: an op is
+// enqueued via E5.1's per-collection FIFO queue, its body fans out one KDAV
+// job (or async PUT) per record with a shared remaining-counter, and
+// settles the op once every job has reported in. Creates and deletes reuse
+// the exact same job types pushItems()/deleteItems() already use; updates
+// route through the new setRawIcsAsync() below (async counterpart of
+// setRawIcs(), which updateRecord() still uses synchronously — that single-
+// record IBlobBackend virtual has its own, unrelated callers and is
+// unaffected by this).
+WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
+                                                    const WriterBatch &batch)
+{
+    auto *op = onOwnerThread(new WriteOperation(calendarId), this);
+
+    enqueueOperation(calendarId, op, [this, op, calendarId, batch]() {
+        op->setState(SyncOperation::Running);
+
+        const int total = static_cast<int>(
+            batch.creates.size() + batch.updates.size() + batch.deletes.size());
+        if (total == 0) {
+            op->complete();
+            return;
+        }
+
+        const auto maybeDavUrl = davUrlFor(calendarId);
+        if (!maybeDavUrl) {
+            op->fail(QStringLiteral("No DAV URL registered for calendar: %1").arg(calendarId));
+            return;
+        }
+        const KDAV::DavUrl davUrl = *maybeDavUrl;
+
+        m_contentCache->ensureOpen();
+
+        // E5.3 crash fix: every async completion below (KJob::result,
+        // watchdog timeout, setRawIcsAsync's done callback) can fire well
+        // after this op's caller has moved on — e.g. a cancel settles the op
+        // and the engine's applyBatch deleteLater()s it immediately, while
+        // an already-in-flight KDAV job or watchdog timer (unaffected by
+        // cancellation — nothing here kills the underlying network request)
+        // still has a queued completion pending. A raw `op` capture would
+        // dereference freed memory when that fires; QPointer makes every
+        // capture site check-before-use instead (mirrors how the engine's
+        // OWN fetch/write gates already treat SyncOperation* as a QPointer
+        // for exactly this cross-callback lifetime reason).
+        QPointer<WriteOperation> opWeak(op);
+        auto remaining = std::make_shared<int>(total);
+        auto anyError = std::make_shared<bool>(false);
+
+        // Shared accounting tail — same shape as pushItems'/deleteItems'
+        // settleIfDone: decrement the outstanding-job counter and, on the
+        // last one, invalidate the CTag (our write changed the server's
+        // state) and settle the op. Fail only when nothing at all succeeded.
+        auto settleIfDone = [this, opWeak, remaining, anyError]() {
+            if (--(*remaining) != 0) {
+                return;
+            }
+            if (opWeak.isNull()) {
+                return;
+            }
+            if (!opWeak->succeededUids().isEmpty()) {
+                clearCtag(opWeak->calendarId());
+            }
+            if ((*anyError || !opWeak->failedUids().isEmpty())
+                && opWeak->succeededUids().isEmpty()) {
+                opWeak->fail(QStringLiteral("All records failed to apply"));
+            } else {
+                opWeak->complete();
+            }
+        };
+
+        for (const auto &rec : batch.creates) {
+            QUrl itemUrl = generateItemUrl(davUrl, rec.id);
+
+            KDAV::DavItem davItem;
+            davItem.setUrl(KDAV::DavUrl(itemUrl, davUrl.protocol()));
+            davItem.setContentType(QStringLiteral("text/calendar"));
+            davItem.setData(rec.data);
+
+            auto *createJob = new KDAV::DavItemCreateJob(davItem, this);
+            const QString uid = rec.id;
+            const QByteArray icalData = rec.data;
+
+            connect(createJob, &KDAV::DavItemCreateJob::result, this,
+                    [this, opWeak, createJob, uid, anyError, icalData, settleIfDone](KJob *job) {
+                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                    return;
+                }
+                if (job->error()) {
+                    qWarning() << "RemoteCalendarBackend::applyRecords: Failed to create"
+                               << uid << ":" << job->errorString();
+                    opWeak->addFailedUid(uid);
+                    *anyError = true;
+                } else {
+                    const KDAV::DavItem createdItem = createJob->item();
+                    noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
+                                    createdItem.etag(), QString::fromUtf8(icalData));
+                    opWeak->addSucceededUid(uid);
+                    qDebug() << "RemoteCalendarBackend::applyRecords: Created" << uid
+                             << "ETag:" << createdItem.etag();
+                }
+                settleIfDone();
+            });
+
+            startJobWithWatchdog(createJob, [opWeak, uid, anyError, settleIfDone]() {
+                if (opWeak.isNull() || opWeak->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::applyRecords: create job timed out for" << uid;
+                opWeak->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
+        }
+
+        for (const auto &rec : batch.updates) {
+            const QString uid = rec.id;
+            setRawIcsAsync(calendarId, uid, rec.data,
+                          [opWeak, uid, anyError, settleIfDone](bool ok) {
+                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                    return;
+                }
+                if (!ok) {
+                    opWeak->addFailedUid(uid);
+                    *anyError = true;
+                } else {
+                    opWeak->addSucceededUid(uid);
+                }
+                settleIfDone();
+            });
+        }
+
+        for (const QString &uid : batch.deletes) {
+            QUrl itemUrl = generateItemUrl(davUrl, uid);
+            KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
+
+            QString oldEtag = cachedEtag(itemUrl.toString());
+
+            KDAV::DavItem davItem;
+            davItem.setUrl(itemDavUrl);
+            davItem.setContentType(QStringLiteral("text/calendar"));
+            davItem.setData(QByteArray());
+            davItem.setEtag(oldEtag);
+
+            auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
+
+            connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
+                    [this, opWeak, uid, itemUrl, anyError, settleIfDone](KJob *job) {
+                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                    return;
+                }
+                if (job->error()) {
+                    qWarning() << "RemoteCalendarBackend::applyRecords: Failed to delete"
+                               << uid << ":" << job->errorString();
+                    opWeak->addFailedUid(uid);
+                    *anyError = true;
+                } else {
+                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                    opWeak->addSucceededUid(uid);
+                    qDebug() << "RemoteCalendarBackend::applyRecords: Deleted" << uid;
+                }
+                settleIfDone();
+            });
+
+            startJobWithWatchdog(deleteJob, [opWeak, uid, anyError, settleIfDone]() {
+                if (opWeak.isNull() || opWeak->isFinished()) {
+                    return;
+                }
+                qWarning() << "RemoteCalendarBackend::applyRecords: delete job timed out for" << uid;
+                opWeak->addFailedUid(uid);
+                *anyError = true;
+                settleIfDone();
+            });
+        }
+    });
+
+    return op;
+}
+
+// Async counterpart of setRawIcs() (E5.3): same wire behaviour (PUT with
+// If-Match on the cached ETag), but the continuation runs off
+// QNetworkReply::finished via davSyncRequestAsync — no nested QEventLoop.
+// davSyncRequestAsync doesn't produce a KJob, so startJobWithWatchdog (which
+// takes a KJob*) can't be reused directly; this inlines the identical "log +
+// abandon + fail" shape with its own QTimer, guarded so only whichever of
+// {reply finishes, timer fires} first can settle `done` (both paths check
+// `*settled` before acting).
+void RemoteCalendarBackend::setRawIcsAsync(const QString &calendarId, const QString &uid,
+                                           const QByteArray &icsContent,
+                                           std::function<void(bool)> done)
+{
+    if (calendarId.isEmpty() || uid.isEmpty() || icsContent.isEmpty()) {
+        done(false);
+        return;
+    }
+
+    const auto maybeDavUrl = davUrlFor(calendarId);
+    if (!maybeDavUrl) {
+        qWarning() << "RemoteCalendarBackend::setRawIcsAsync: No DAV URL for calendar:" << calendarId;
+        done(false);
+        return;
+    }
+    const KDAV::DavUrl davUrl = *maybeDavUrl;
+    const QUrl itemUrl = generateItemUrl(davUrl, uid);
+
+    QList<std::pair<QByteArray, QByteArray>> headers;
+    const QString oldEtag = cachedEtag(itemUrl.toString());
+    if (!oldEtag.isEmpty()) {
+        headers.append({QByteArrayLiteral("If-Match"), oldEtag.toUtf8()});
+    }
+
+    auto settled = std::make_shared<bool>(false);
+    QTimer *watchdog = nullptr;
+    if (m_transferTimeoutMs > 0) {
+        watchdog = new QTimer(this);
+        watchdog->setSingleShot(true);
+        watchdog->setInterval(m_transferTimeoutMs);
+        const int timeoutMs = m_transferTimeoutMs;
+        connect(watchdog, &QTimer::timeout, this,
+                [settled, uid, done, watchdog, timeoutMs]() {
+            if (*settled) return;
+            *settled = true;
+            qWarning() << "RemoteCalendarBackend::setRawIcsAsync: PUT job exceeded transfer timeout ("
+                       << timeoutMs << "ms) for" << uid;
+            watchdog->deleteLater();
+            done(false);
+        });
+        watchdog->start();
+    }
+
+    davSyncRequestAsync(nam(), itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
+                       icsContent, headers,
+                       QByteArrayLiteral("text/calendar; charset=utf-8"),
+        [this, settled, watchdog, calendarId, uid, itemUrl, done](const DavResponse &resp) {
+            if (*settled) return;
+            *settled = true;
+            if (watchdog) {
+                watchdog->stop();
+                watchdog->deleteLater();
+            }
+
+            if (resp.status != 200 && resp.status != 201 && resp.status != 204) {
+                qWarning() << "RemoteCalendarBackend::setRawIcsAsync: Failed, HTTP status:" << resp.status
+                           << "error:" << resp.errorString << "body:" << resp.body;
+                done(false);
+                return;
+            }
+
+            const QString urlKey = normalizeUrlKey(itemUrl.toString());
+            if (!resp.etag.isEmpty()) {
+                m_localEtags[urlKey] = resp.etag;
+                if (m_etagCache) {
+                    m_etagCache->setEtag(urlKey, resp.etag);
+                }
+            } else {
+                qWarning() << "RemoteCalendarBackend::setRawIcsAsync: Server didn't return ETag, clearing cache";
+                m_localEtags.remove(urlKey);
+                if (m_etagCache) {
+                    m_etagCache->removeEtag(urlKey);
+                }
+            }
+            clearCtag(calendarId);
+            done(true);
+        });
+}
+
+// ============================================================================
 // Debug/Raw ICS Access
 // ============================================================================
 
@@ -2542,22 +2830,41 @@ std::optional<BackendRecord> RemoteCalendarBackend::loadRecord(const QString &re
 QString RemoteCalendarBackend::createRecord(const QString &collectionId,
                                     const BackendRecord &record)
 {
+    // E5.3: reimplemented as a direct synchronous PUT (davSyncRequest — the
+    // one surviving synchronous DAV helper, same one updateRecord's setRawIcs
+    // already uses) instead of routing through pushItems()+awaitOperation().
+    // Only reachable from a caller already marshaled onto this backend's own
+    // thread (dispatchFirstSync's inline blob mirror, FilteredCollectionBackend
+    // forwarding) — never from inside an in-flight operation body, so this is
+    // not a B7 nested-loop hazard. The live engine steady-state write path
+    // goes through applyRecords() instead, which never calls this method.
     if (collectionId.isEmpty() || record.id.isEmpty() || record.data.isEmpty())
         return {};
 
-    // Parse the iCal to get Incidence::Ptrs for pushItems.
-    const auto incidences = incidencesFromIcal(record.data);
-    if (incidences.isEmpty()) {
-        qWarning() << "RemoteCalendarBackend::createRecord: no parseable incidences in iCal for uid" << record.id;
+    const auto maybeDavUrl = davUrlFor(collectionId);
+    if (!maybeDavUrl) {
+        qWarning() << "RemoteCalendarBackend::createRecord: No DAV URL for calendar:" << collectionId;
+        return {};
+    }
+    const KDAV::DavUrl davUrl = *maybeDavUrl;
+    const QUrl itemUrl = generateItemUrl(davUrl, record.id);
+
+    m_contentCache->ensureOpen();
+
+    // New-resource PUT: no If-Match — nothing exists yet to conflict with.
+    const DavResponse resp = davSyncRequest(
+        nam(), itemUrl, QByteArrayLiteral("PUT"), m_username, m_password,
+        record.data, {}, QByteArrayLiteral("text/calendar; charset=utf-8"));
+
+    if (resp.status != 200 && resp.status != 201 && resp.status != 204) {
+        qWarning() << "RemoteCalendarBackend::createRecord: Failed, HTTP status:" << resp.status
+                   << "error:" << resp.errorString << "body:" << resp.body;
         return {};
     }
 
-    PushOperation *op = pushItems(collectionId, incidences);
-    if (!op) return {};
-
-    const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
-    op->deleteLater();
-    return ok ? record.id : QString{};
+    noteItemWritten(normalizeUrlKey(itemUrl.toString()), resp.etag, QString::fromUtf8(record.data));
+    clearCtag(collectionId);
+    return record.id;
 }
 
 std::optional<QString> RemoteCalendarBackend::findOwningCalendar(const QString &uid) const
@@ -2600,6 +2907,9 @@ bool RemoteCalendarBackend::updateRecord(const BackendRecord &record)
 
 bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
 {
+    // E5.3: reimplemented as a direct synchronous DELETE (davSyncRequest)
+    // instead of routing through deleteItems()+awaitOperation() — same
+    // reasoning as createRecord() above.
     if (recordId.isEmpty()) return false;
 
     const auto calId = findOwningCalendar(recordId);
@@ -2608,12 +2918,31 @@ bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
         return false;
     }
 
-    DeleteOperation *op = deleteItems(*calId, QStringList{recordId});
-    if (!op) return false;
+    const auto maybeDavUrl = davUrlFor(*calId);
+    if (!maybeDavUrl) {
+        qWarning() << "RemoteCalendarBackend::deleteRecord: No DAV URL for calendar:" << *calId;
+        return false;
+    }
+    const KDAV::DavUrl davUrl = *maybeDavUrl;
+    const QUrl itemUrl = generateItemUrl(davUrl, recordId);
 
-    const bool ok = awaitOperation(op) && op->failedUids().isEmpty();
-    op->deleteLater();
-    return ok;
+    QList<std::pair<QByteArray, QByteArray>> headers;
+    const QString oldEtag = cachedEtag(itemUrl.toString());
+    if (!oldEtag.isEmpty()) {
+        headers.append({QByteArrayLiteral("If-Match"), oldEtag.toUtf8()});
+    }
+
+    const DavResponse resp = davSyncRequest(nam(), itemUrl, QByteArrayLiteral("DELETE"),
+                                            m_username, m_password, {}, headers);
+    if (resp.status != 200 && resp.status != 204) {
+        qWarning() << "RemoteCalendarBackend::deleteRecord: Failed, HTTP status:" << resp.status
+                   << "error:" << resp.errorString;
+        return false;
+    }
+
+    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+    clearCtag(*calId);
+    return true;
 }
 
 // --- Change detection -------------------------------------------------------

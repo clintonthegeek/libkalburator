@@ -6,6 +6,8 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "../sync/changedetection.h"
+#include "../sync/writeoperation.h"  // E5.3: applyRecords() return type
+#include "../sync/writerbatch.h"     // E5.3: applyRecords() batch parameter type
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/DavItem>
@@ -274,10 +276,29 @@ public:
     DeleteOperation* deleteItems(const QString &calendarId,
                                  const QStringList &uids) override;
 
+    // E5.3 (audit B7 / CP-A): the engine's write path. Drives the existing
+    // KDAV job chains (create -> DavItemCreateJob, update -> the new async
+    // setRawIcsAsync, delete -> DavItemDeleteJob) through E5.1's per-collection
+    // FIFO queue, fanned in exactly like pushItems/deleteItems. Supersedes
+    // the engine ever calling RecordWriter::apply() against this backend.
+    Kalburator::Sync::WriteOperation* applyRecords(const QString &collectionId,
+                                                   const Kalburator::Sync::WriterBatch &batch) override;
+
     // Debug/Raw ICS access
     QString getRawIcs(const QString &calendarId, const QString &uid) const override;
     bool setRawIcs(const QString &calendarId, const QString &uid,
                    const QString &icsContent) override;
+
+    // Async counterpart of setRawIcs() (E5.3): same wire behaviour (PUT with
+    // If-Match on the cached ETag), but the continuation runs off
+    // QNetworkReply::finished — no nested QEventLoop — via davSyncRequestAsync.
+    // `done(true)` on 200/201/204, `done(false)` otherwise (network failure,
+    // rejected write, or watchdog timeout). Only called from applyRecords()'s
+    // update loop; exposed on the class (not file-local) so it can share
+    // startJobWithWatchdog-equivalent timeout handling with `this` as context.
+    void setRawIcsAsync(const QString &calendarId, const QString &uid,
+                        const QByteArray &icsContent,
+                        std::function<void(bool)> done);
 
     // =========================================================================
     // IBlobBackend overrides (Phase D Task 13)
@@ -288,9 +309,16 @@ public:
     // contentHash  = SHA-256 of the bytes (NOT the ETag — content equality)
     // lastModified = QDateTime::currentDateTimeUtc() (ETag-opaque; no getlastmodified)
     //
-    // All methods that need network I/O wrap async KDAV jobs in QEventLoop::exec.
-    // This is acceptable because the blob view is called from the engine worker (worker thread).
-    // Phase F revisits true async; Phase D blocks on the worker thread.
+    // E5.3 update: createRecord()/deleteRecord() are direct synchronous
+    // davSyncRequest() PUT/DELETE calls (no nested QEventLoop of their own);
+    // updateRecord() routes through the (pre-existing, unchanged) synchronous
+    // setRawIcs(), also davSyncRequest()-based. None of the three await a
+    // KDAV job via QEventLoop::exec any more — the engine's own write path
+    // never calls them at all (SyncEngineWorker::applyBatch calls
+    // applyRecords() directly); they remain as synchronous IBlobBackend
+    // entry points for other direct callers (dispatchFirstSync's inline blob
+    // mirror, FilteredCollectionBackend forwarding), always invoked already
+    // marshaled onto this backend's own thread.
     // =========================================================================
 
     // Identity
