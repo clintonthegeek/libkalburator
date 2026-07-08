@@ -754,6 +754,15 @@ void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendar
 
 QMap<QString, QString> RemoteCalendarBackend::fetchAllCtags(const QStringList &calendarIds)
 {
+    // E5.2 / audit B7 tripwire (amendment A6): this synchronous helper spins
+    // davSyncRequest's nested QEventLoop on the backend thread. Holding the
+    // re-entrancy guard across it makes any call marshaled onto the backend
+    // thread mid-query observe depth 1 — the same seam the fetchItems body
+    // uses. The async fast-path (collectionRevisionsAsync -> fetchAllCtagsAsync)
+    // does NOT come through here, so it observes depth 0. Inert (an int
+    // inc/dec); a permanent regression tripwire for the CTag path.
+    ReentryGuard reentryGuard(&m_reentrancyDepth);
+
     QMap<QString, QString> result;
     if (calendarIds.isEmpty()) return result;
 

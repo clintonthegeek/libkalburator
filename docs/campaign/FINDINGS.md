@@ -735,6 +735,32 @@ invariant was re-derived and survives: worker-first remains mandatory
 (settling in-flight ops needs a live backend thread); E5.3 dissolves the
 O22 worker-parking wedge as planned.
 
+**CP-A addendum A6 (2026-07-08, blessed by the campaign owner as a
+checkpoint ruling):** an E5.2 in-flight trace found `fetchAllCtags`
+(`remotecalendarbackend.cpp:755`) dual-reachable and only half-closed by
+A5's "convert the plural override" phrasing. Plural path
+(`collectionRevisions()` → engine fast-path `syncengine.cpp:1427`, backend
+thread) is the live B7 mechanism; singular path (`collectionRevision()`, the
+`ChangeDetection` interface method) is reached by
+`FilteredCollectionBackend::collectionRevision` (`filteredcollectionbackend.cpp:255`),
+which — because `FilteredCollectionBackend` does NOT override the plural —
+funnels the engine's backend-thread fast-path *through* the synchronous
+singular into a nested `QEventLoop` on the backend thread for any
+filtered-CalDAV topology. Latent, not live (PlanStan calls the plural
+override directly, no filter; WildPalms references neither
+`FilteredCollectionBackend` nor `ChangeDetection` — grep-verified). Ruling:
+close it at the interface, not the concrete class — add
+`ChangeDetection::collectionRevisionsAsync` (neutral virtual, default =
+adapt the existing synchronous `collectionRevisions`, mirroring E5.3's
+`applyRecords` pattern), override it in `RemoteCalendarBackend` via
+`davSyncRequestAsync`, forward it in `FilteredCollectionBackend`, and switch
+the engine fast-path to call it (blocking the worker, never the backend
+thread). Both paths close structurally; no annotated-synchronous survivor,
+no §16 residual. The synchronous `fetchAllCtags` helper survives (singular
+interface + same-thread test callers) but is no longer backend-thread-
+nested-loop-reachable. Amendment edited into phase plan §8 (Stage E5.2, A6)
+and the §17 E5.2 checklist line.
+
 ### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
 Promoted from the 2026-07-04 Discipline Log entry. Nothing in the unified

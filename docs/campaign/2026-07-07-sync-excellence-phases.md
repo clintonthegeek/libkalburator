@@ -544,6 +544,71 @@ Nothing is orphaned: all seven sites have a named owner (A→E5.2, B→E5.3,
 C→E11); the helper's death is scheduled into E11; O39 is promoted from a
 filed finding to a checklisted phase (§14a).
 
+**Amendment A6 (2026-07-08) — Group A's `fetchAllCtags` is dual-reachable;
+the CTag path goes async at the `ChangeDetection` interface, not just on the
+concrete backend.** Tracing `fetchAllCtags` (`:755`) — not `fetchFreshCtag`,
+which A5 already routed async via `fetchFreshCtagAsync` — shows two callers
+with different threading, only one of which A5's "convert the plural
+override" phrasing actually closes:
+
+- **Plural — `collectionRevisions()` (`:864`):** the engine fast-path
+  (`syncengine.cpp:1427`, `runOnBackendThread` — body runs ON the backend
+  thread, worker blocks). PlanStan's live path. The real B7 mechanism.
+- **Singular — `collectionRevision()` (`:858`):** the `ChangeDetection`
+  interface method. Its only non-test caller is
+  `FilteredCollectionBackend::collectionRevision`
+  (`src/universal/filteredcollectionbackend.cpp:255`), which forwards to its
+  wrapped parent.
+
+The trap: `FilteredCollectionBackend` does **not** override the plural
+`collectionRevisions`, so it inherits `ChangeDetection`'s default plural,
+which loops over the *singular* `collectionRevision`. A filtered wrapper over
+a CalDAV backend, driven by the engine's backend-thread fast-path, therefore
+funnels *through* the synchronous singular → `fetchAllCtags` →
+`davSyncRequest`'s nested `QEventLoop` **on the backend thread** — a
+surviving B7-family loop. Converting only `RemoteCalendarBackend`'s concrete
+plural override to an async form bypasses this route entirely and does NOT
+close it. (No CURRENT topology hits this: PlanStan is calendar-only, no
+filter, and calls the plural override directly; WildPalms references neither
+`FilteredCollectionBackend` nor `ChangeDetection` — grep-verified 2026-07-08,
+consistent with CP-A's "SyncEngine + `itemFetched` only" finding. The hazard
+is latent — a future filtered-CalDAV leg — not live.)
+
+**Decided (blessed as a CP-A addendum, 2026-07-08 — see O29):** close it
+structurally, at the interface, using E5.3's own `applyRecords` pattern (a
+neutral virtual with a default synchronous adaptation), NOT a concrete-class
+override. E5.2 adds to `ChangeDetection`:
+
+```cpp
+virtual void collectionRevisionsAsync(
+    const QStringList &ids,
+    std::function<void(QMap<QString, QString>)> done)
+{   // default: adapt the existing synchronous query (correct for every
+    // backend whose revision query has no nested loop — Local, GenericSqlite,
+    // Akonadi×2, contacts; they are untouched)
+    done(collectionRevisions(ids));
+}
+```
+
+`RemoteCalendarBackend` overrides it with a real `davSyncRequestAsync`-based
+implementation (`fetchAllCtags`'s PROPFIND, no nested loop). The engine
+fast-path (`syncengine.cpp:1427`) calls the async form and blocks the
+**worker** (not the backend thread) on the same await shape the fetch gates
+use. `FilteredCollectionBackend` forwards the async call to its parent — so
+the filtered-CalDAV topology is closed too, with **no** annotated-synchronous
+survivor and **no** §16 residual. The synchronous `fetchAllCtags` helper
+itself still survives (its singular `collectionRevision` interface caller and
+same-thread test callers keep it), exactly as `davSyncRequest` survives per
+A5; it is no longer reachable via a backend-thread nested loop once the
+fast-path uses the async form. E5.2's scope thus gains one item: the
+`ChangeDetection::collectionRevisionsAsync` interface addition + its
+`RemoteCalendarBackend` override + `FilteredCollectionBackend` forwarder +
+the engine fast-path switch. RED test: the E5.2 re-entrancy pin, extended to
+a `FilteredCollectionBackend` wrapping a latency-injected CalDAV fake — an
+app-side call marshaled onto the backend thread during an in-flight
+fast-path revision query must not interleave into it (today: the default-loop
+singular nested loop runs it mid-wait — RED).
+
 ### Stage E5.3 — writes become operations; the blocking apply retires
 
 **Design (decided, CP-A reviews it):** the engine's apply phase stops
@@ -1184,7 +1249,14 @@ three) or add mapping-level parallelism.
       `RemoteCalendarBackend`'s fetch/push/delete entry points into E5.1's
       op queue (deferred from E5.1); Group B → E5.3, Group C → E11; the
       synchronous `davSyncRequest` helper survives E5 (annotated
-      `// O39/E11:`) and dies in E11.
+      `// O39/E11:`) and dies in E11. **Amendment A6 (2026-07-08):**
+      `fetchAllCtags` is dual-reachable — the CTag async conversion lands at
+      the `ChangeDetection` interface (`collectionRevisionsAsync`, default
+      sync fallback; `RemoteCalendarBackend` override; `FilteredCollection-
+      Backend` forwarder; engine fast-path switch), closing both the plural
+      backend-thread path and the singular filtered path structurally with no
+      residual. `fetchFreshCtagAsync` (`:805`) already landed; remaining:
+      `collectionRevisionsAsync` + the op-queue wiring (task 7).
 - [ ] **E5.3** applyRecords write operations; blocking apply retired;
       O22 teardown note closed (mid-apply stopWorkerThread pin)
 - [ ] **E6** EtagCache seeded from content cache (restart re-download pin)

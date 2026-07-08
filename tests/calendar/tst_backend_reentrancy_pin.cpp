@@ -33,8 +33,14 @@
 #include "fakecaldavserver.h"
 #include "remotecalendarbackend.h"
 #include "syncbackend.h"
+#include "filteredcollectionbackend.h"
+#include "changedetection.h"
+#include "recordfilter.h"
 
 using namespace Kalburator::Sync;
+using Kalburator::Shape::PropertyId;
+using Kalburator::Shape::RecordFilter;
+using Kalburator::Sinks::FilteredCollectionBackend;
 
 namespace {
 
@@ -57,6 +63,7 @@ class TstBackendReentrancyPin : public QObject
 
 private slots:
     void queuedCallDuringFetch_neverRunsNested();
+    void fastPathRevisionQuery_throughFilteredView_neverRunsNested();
 };
 
 void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
@@ -166,6 +173,123 @@ void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
 
     // The pin: a call marshaled onto the backend thread mid-fetch must never
     // run nested inside the operation body (audit B7).
+    QCOMPARE(observedDepth.load(), 0);
+}
+
+// E5.2 amendment A6 — the fast-path revision query through a filtered view.
+//
+// A `FilteredCollectionBackend` wrapping a CalDAV backend does NOT override
+// the plural `collectionRevisions`, so pre-fix it inherits the default plural
+// loop over the singular `collectionRevision`, which forwards to the parent's
+// synchronous `fetchAllCtags` -> `davSyncRequest`'s nested QEventLoop ON THE
+// BACKEND THREAD. Driven by the engine's backend-thread fast-path, that is a
+// surviving B7-family loop the concrete-class fetchItems conversion does not
+// close.
+//
+// This pins the async fix at the interface: the engine fast-path calls
+// `collectionRevisionsAsync`, which the FCB forwards to the parent's async
+// override (no nested loop). A call marshaled onto the backend thread during
+// the in-flight revision query must observe reentrancyDepth() == 0.
+//
+// RED (pre-A6): FCB has no async override; the default adapts the synchronous
+// `collectionRevisions`, whose fetchAllCtags holds the ReentryGuard across the
+// nested loop that pumps the queued probe mid-wait -> depth 1 -> FAIL.
+// GREEN (post-A6): FCB forwards `collectionRevisionsAsync` to the parent's
+// `fetchAllCtagsAsync` (davSyncRequestAsync, no nested loop) -> depth 0.
+void TstBackendReentrancyPin::fastPathRevisionQuery_throughFilteredView_neverRunsNested()
+{
+    auto *server = new FakeCalDavServer();
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {seedIcs("rev-evt-1")});
+    server->setCollectionCtag(QString::fromLatin1(kPersonalHref), QStringLiteral("ctag-A"));
+    server->setResponseDelayMs(300);
+
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("rev-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; },
+                                  Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    auto *backend = new RemoteCalendarBackend(baseUrl,
+                                              QStringLiteral("testuser"),
+                                              QStringLiteral("testpass"));
+    backend->setCacheDir(cacheDir.path());
+    backend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    // A filtered view over the CalDAV backend's "Personal" collection — the
+    // topology amendment A6 closes. Parent pointer is borrowed; both objects
+    // live on the same backend I/O thread.
+    auto *view = new FilteredCollectionBackend(
+        backend, QStringLiteral("remote-parent"),
+        QStringLiteral("Personal"), QStringLiteral("v-work"),
+        RecordFilter{ PropertyId{"categories"}, RecordFilter::Op::Contains,
+                      QStringLiteral("Work") });
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("rev-backend-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(backend, [backend, view]() {
+            delete view;
+            delete backend;
+        }, Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    backend->moveToThread(&ioThread);
+    view->moveToThread(&ioThread);
+
+    // Discovery so the parent's davUrlFor("Personal") resolves to the real
+    // calendar href — the revision PROPFIND then hits a real (delayed) 207.
+    QSignalSpy loadFinishedSpy(backend, SIGNAL(loadCalendarsFinished(QString,bool,QString)));
+    QMetaObject::invokeMethod(backend, [&]() {
+        backend->loadCalendars(QStringLiteral("personal-coll"));
+    }, Qt::BlockingQueuedConnection);
+    QTRY_COMPARE_WITH_TIMEOUT(loadFinishedSpy.count(), 1, kOpTimeoutMs);
+    QVERIFY(loadFinishedSpy.first().at(1).toBool());
+
+    // Kick the revision query on the FILTERED VIEW's ChangeDetection interface
+    // (exactly what the engine fast-path does), then immediately post the depth
+    // probe onto the backend thread. Both invokes are queued to the same I/O
+    // thread in order: pre-fix the query invoke runs synchronously and spins the
+    // nested loop, which pumps the probe mid-wait (depth 1); post-fix the query
+    // invoke kicks the async PROPFIND and returns, so the probe runs at depth 0.
+    std::atomic<int> observedDepth{-1};
+    std::atomic<bool> probeRan{false};
+    std::atomic<bool> queryDone{false};
+
+    ChangeDetection *cd = view;
+    QMetaObject::invokeMethod(view, [&]() {
+        cd->collectionRevisionsAsync(
+            {QStringLiteral("v-work")},
+            [&](QMap<QString, QString>) { queryDone.store(true); });
+    }, Qt::QueuedConnection);
+
+    QMetaObject::invokeMethod(backend, [&]() {
+        observedDepth.store(backend->reentrancyDepth());
+        probeRan.store(true);
+    }, Qt::QueuedConnection);
+
+    QTRY_VERIFY_WITH_TIMEOUT(probeRan.load(), kOpTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(queryDone.load(), kOpTimeoutMs);
+
+    // The pin: the revision query through the filtered view must never run its
+    // network wait as a backend-thread nested loop (audit B7 / amendment A6).
     QCOMPARE(observedDepth.load(), 0);
 }
 
