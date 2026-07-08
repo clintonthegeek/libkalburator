@@ -79,6 +79,23 @@ public:
     /// whichever thread is polling for a freeze.
     void setResponseDelayMs(int ms) { m_responseDelayMs = ms; }
 
+    /// E5.3: delay only requests of @p method (e.g. "PUT", "DELETE") by
+    /// @p ms, leaving every other method's response timing at whatever
+    /// setResponseDelayMs() (default 0) says. Lets a test isolate a slow
+    /// WRITE phase from a fast READ/classify phase — setResponseDelayMs()
+    /// alone can't do this (it delays every method uniformly), which made
+    /// it impossible to land a cancel/teardown precisely "mid-apply"
+    /// without also stalling the classify read that always precedes it.
+    /// Pass ms <= 0 to clear a previously-set per-method delay.
+    void setResponseDelayForMethod(const QByteArray &method, int ms)
+    {
+        if (ms > 0) {
+            m_perMethodDelayMs[method] = ms;
+        } else {
+            m_perMethodDelayMs.remove(method);
+        }
+    }
+
     /// Fail the Nth calendar-multiget REPORT (1-based) with a 500 response
     /// instead of serving it normally. 0 (the default) means never fail.
     /// Lets tests exercise N4's chunked-batch error path without needing a
@@ -194,6 +211,7 @@ private:
     bool m_return500 = false;
     bool m_dropRequests = false;
     int m_responseDelayMs = 0;
+    QHash<QByteArray, int> m_perMethodDelayMs;  // E5.3: per-method response delay override
     int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
     int m_multigetReportCount = 0;      // reset on startListening()
     QHash<QString, QString> m_ctagByHref;  // href -> CS:getctag value, if configured

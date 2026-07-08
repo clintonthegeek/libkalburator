@@ -65,6 +65,11 @@ private slots:
     void queuedCallDuringFetch_neverRunsNested();
     void fastPathRevisionQuery_throughFilteredView_neverRunsNested();
     void concurrentFetchesOnSameCollection_serialize();
+
+    // E5.3 RED (d): the write path (applyRecords) extends the same pin over
+    // a write — an app-side call marshaled onto the backend thread during an
+    // in-flight applyRecords() must never run nested inside it.
+    void applyRecordsInFlight_neverRunsNested();
 };
 
 void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
@@ -389,6 +394,98 @@ void TstBackendReentrancyPin::concurrentFetchesOnSameCollection_serialize()
     QCOMPARE(fb.load()->state(), SyncOperation::Succeeded);
     delete fa.load();
     delete fb.load();
+}
+
+// E5.3 (audit B7 / CP-A) — the write path (applyRecords) extends this pin
+// over a create. applyRecords()'s body is entirely callback-driven (KDAV
+// job signals / QNetworkReply::finished) — it returns to the event loop
+// immediately after kicking off the create job, never spinning a nested
+// wait — so a call marshaled onto the backend thread while the create is
+// still in flight (delayed via FakeCalDavServer's per-method PUT delay)
+// must observe reentrancyDepth() == 0, exactly like a fetch.
+void TstBackendReentrancyPin::applyRecordsInFlight_neverRunsNested()
+{
+    auto *server = new FakeCalDavServer();
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {});
+    server->setResponseDelayForMethod(QByteArrayLiteral("PUT"), 300);
+
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("apply-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; },
+                                  Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    auto *backend = new RemoteCalendarBackend(baseUrl,
+                                              QStringLiteral("testuser"),
+                                              QStringLiteral("testpass"));
+    backend->setCacheDir(cacheDir.path());
+    backend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("apply-backend-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(backend, [backend]() { delete backend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+    });
+    backend->moveToThread(&ioThread);
+
+    QSignalSpy loadFinishedSpy(backend, SIGNAL(loadCalendarsFinished(QString,bool,QString)));
+    QMetaObject::invokeMethod(backend, [&]() {
+        backend->loadCalendars(QStringLiteral("personal-coll"));
+    }, Qt::BlockingQueuedConnection);
+    QTRY_COMPARE_WITH_TIMEOUT(loadFinishedSpy.count(), 1, kOpTimeoutMs);
+    QVERIFY(loadFinishedSpy.first().at(1).toBool());
+
+    WriterBatch batch;
+    BackendRecord rec;
+    rec.id = QStringLiteral("apply-evt-1");
+    rec.data = seedIcs("apply-evt-1");
+    batch.creates.append(rec);
+
+    std::atomic<WriteOperation *> writeOp{nullptr};
+    QMetaObject::invokeMethod(backend, [&]() {
+        writeOp.store(backend->applyRecords(QStringLiteral("Personal"), batch));
+    }, Qt::QueuedConnection);
+
+    QTRY_VERIFY_WITH_TIMEOUT(writeOp.load() != nullptr
+                             && writeOp.load()->state() == SyncOperation::Running,
+                             kOpTimeoutMs);
+
+    std::atomic<int> observedDepth{-1};
+    std::atomic<bool> probeRan{false};
+    QMetaObject::invokeMethod(backend, [&]() {
+        observedDepth.store(backend->reentrancyDepth());
+        probeRan.store(true);
+    }, Qt::QueuedConnection);
+
+    QTRY_VERIFY_WITH_TIMEOUT(probeRan.load(), kOpTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(writeOp.load()->isFinished(), kOpTimeoutMs);
+    QCOMPARE(writeOp.load()->state(), SyncOperation::Succeeded);
+    QVERIFY(writeOp.load()->succeededUids().contains(QStringLiteral("apply-evt-1")));
+    delete writeOp.load();
+
+    // The pin: a call marshaled onto the backend thread mid-apply must never
+    // run nested inside the operation body (audit B7, extended to writes).
+    QCOMPARE(observedDepth.load(), 0);
 }
 
 QTEST_MAIN(TstBackendReentrancyPin)

@@ -42,6 +42,8 @@
 #include <QTimeZone>
 #include <QTimer>
 
+#include <memory>
+
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
 
@@ -201,6 +203,15 @@ private slots:
     void singleFetch_remoteBackend_noRedundantListing();
 
     void steadyStateWrites_appliesOnBackendThread();
+
+    // E5.3 RED (b): mid-apply cancel settles the write op and the run
+    // reports cancelled with honest (not silently dropped/double-counted)
+    // stats.
+    void writeCancel_reportsCancelledWithHonestStats();
+
+    // E5.3 RED (c): engine destroyed while a slow write is in flight
+    // completes teardown without deadlock (O22's final closure).
+    void writeTeardown_engineDestroyed_completesWithoutDeadlock();
 
 private:
     // Harness for the T1.5 GUI-stall probe: a latency-injected
@@ -1419,6 +1430,391 @@ void TstBackendThreadRelocation::steadyStateWrites_appliesOnBackendThread()
     QVERIFY(targetBackend->m_deleteRecordCallThread != nullptr);
     QCOMPARE(targetBackend->m_updateRecordCallThread, &ioThread);
     QCOMPARE(targetBackend->m_deleteRecordCallThread, &ioThread);
+}
+
+// ---- E5.3 (audit B7 / CP-A): the write path becomes an awaited operation --
+//
+// SyncEngineWorker::applyBatch no longer marshals RecordWriter::apply() as a
+// thread-blocking call; it invokes SyncBackendBase::applyRecords() (which
+// returns immediately, having only enqueued the op) and awaits the returned
+// WriteOperation exactly like the existing fetch gates — cancellable via
+// cancellationObserved, settled via the op's own finished signal.
+//
+// writeCancel_reportsCancelledWithHonestStats pins the cancel side: a cancel
+// that lands while the write op is genuinely in flight must settle the op
+// (Cancelled) and decorate the SyncResult as cancelled, with stats that
+// honestly reflect what happened — nothing silently dropped from the count,
+// nothing falsely reported as landed. Isolating "mid write, not mid
+// classify-read" requires FakeCalDavServer's new per-method delay
+// (setResponseDelayForMethod): a uniform delay (setResponseDelayMs) would
+// also stall classifyForWriter's target read, which runs BEFORE applyRecords
+// and is not itself cancellable — burning the one cancellationObserved
+// emission before the write-await loop's connection to it even exists, so
+// the (still un-cancelled) write would then just run to completion.
+void TstBackendThreadRelocation::writeCancel_reportsCancelledWithHonestStats()
+{
+    auto *server = new FakeCalDavServer();
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {});
+
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("e53-cancel-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; }, Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QTemporaryDir sourceDir;
+    QVERIFY(cacheDir.isValid() && sourceDir.isValid());
+    const QString calId = QStringLiteral("Personal");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+
+    auto icsWithSummary = [](const QByteArray &uid, const QByteArray &summary) -> QByteArray {
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:" + uid + "\r\n"
+               "SUMMARY:" + summary + "\r\nDTSTART:20260601T120000Z\r\n"
+               "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    };
+
+    const QString evt1Path = sourceDir.filePath(calId + QStringLiteral("/e53-cancel-evt-1.ics"));
+    const QString evt2Path = sourceDir.filePath(calId + QStringLiteral("/e53-cancel-evt-2.ics"));
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(icsWithSummary("e53-cancel-evt-1", "Original"));
+    }
+    {
+        QFile f(evt2Path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(icsWithSummary("e53-cancel-evt-2", "ToDelete"));
+    }
+
+    auto *sourceBackend = new LocalBackend(sourceDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    auto *targetBackend = new RemoteCalendarBackend(baseUrl,
+                                                     QStringLiteral("testuser"),
+                                                     QStringLiteral("testpass"));
+    targetBackend->setCacheDir(cacheDir.path());
+    targetBackend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->registerCalendarUrl(
+        calId, baseUrl.toString() + QString::fromLatin1(kPersonalHref).mid(1));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("e53-cancel-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(targetBackend, [targetBackend]() { delete targetBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+        delete sourceBackend;
+    });
+    targetBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("e53-cancel-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("e53-cancel-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+    engine.setSyncConflictStore(&conflictStore);
+    engine.setConflictManager(&conflictManager);
+    engine.setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("e53-cancel-mapping");
+    mapping.sourceBackend   = QStringLiteral("e53-cancel-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("e53-cancel-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::OneWayUpload;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine.setSyncMappings({mapping});
+
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    };
+
+    // Cycle 1 (no delay anywhere yet): first-sync mirrors both events onto
+    // the target — dispatchFirstSync's inline blob mirror, not applyBatch;
+    // establishes the baseline cycle 2 edits.
+    runOnce();
+
+    // Steady-state edit: evt-1 -> update, evt-2 -> delete. Only PUT/DELETE
+    // (the write) are delayed — PROPFIND/REPORT/GET (discovery + the
+    // classify read) stay fast, so cancellationObserved's one emission
+    // lands while THIS test's write-await loop is the live listener.
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write(icsWithSummary("e53-cancel-evt-1", "Edited"));
+    }
+    QVERIFY(QFile::remove(evt2Path));
+
+    QMetaObject::invokeMethod(server, [server]() {
+        server->setResponseDelayForMethod(QByteArrayLiteral("PUT"), 4000);
+        server->setResponseDelayForMethod(QByteArrayLiteral("DELETE"), 4000);
+    }, Qt::BlockingQueuedConnection);
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+
+    // A brief, bounded head start before cancelling — without it, cancel()
+    // can land before the fast-path pre-pass even finishes, and E3's
+    // "already cancelled at dispatch" short-circuit (processSync) skips the
+    // mapping before it ever reaches applyRecords at all. That's a genuine,
+    // separate cancellation path (already covered by
+    // cancelDuringFastPath_reportsCancelled) — this test targets
+    // specifically a write genuinely in flight, which needs dispatch to
+    // have actually started first. The classify/fetch reads are fast
+    // (unthrottled), so 200ms is comfortably past them and well before the
+    // 4s PUT/DELETE delay resolves.
+    QTest::qWait(200);
+    future.cancel();
+
+    int waited = 0;
+    constexpr int kWaitTimeoutMs = 15000;
+    while (!future.isFinished() && waited < kWaitTimeoutMs) {
+        QTest::qWait(10);
+        waited += 10;
+    }
+    QVERIFY(future.isFinished());
+    // future.isCanceled() (QFuture's own contract) is the authoritative
+    // cancellation signal here — SyncEngine::lastSyncResult().cancelled is
+    // NOT reliably set for the Single-mapping dispatch path: SyncEngine::
+    // onWorkerSyncCompleted only decorates a LOCAL `finalResult` copy with
+    // cancelled=true (used for the QFuture's reported result) and never
+    // assigns that back onto m_lastResult itself, a pre-existing gap
+    // (predates E5.3, out of its scope — the per-mapping SyncResult's own
+    // `cancelled` field, checked below via targetStats, is what E5.3 makes
+    // honest).
+    QVERIFY(future.isCanceled());
+
+    const SyncResult result = engine.lastSyncResult();
+
+    // Honesty (E1.1): with the write genuinely still in flight (4s PUT/DELETE
+    // delay, cancelled almost immediately), neither of this cycle's 2 writes
+    // can have landed — the settled WriteOperation's failedUids covers
+    // exactly what was attempted. Nothing silently dropped from the count
+    // (errors accounts for both attempted records) and nothing falsely
+    // reported as created/updated/deleted when it never reached the server.
+    QCOMPARE(result.targetStats.created, 0);
+    QCOMPARE(result.targetStats.updated, 0);
+    QCOMPARE(result.targetStats.deleted, 0);
+    QVERIFY2(result.targetStats.errors >= 2,
+             qPrintable(QStringLiteral("expected both attempted writes accounted for as errors, got %1")
+                        .arg(result.targetStats.errors)));
+
+    // Ground truth: the edited/deleted records never actually reached the
+    // server (the PUT/DELETE that would carry them is still sitting behind
+    // the 4s delay when the test tears down below). loadRecord() ends up in
+    // davSyncRequest(), which asserts it runs on the backend's own thread —
+    // marshal it there, same as every other targetBackend call in this test.
+    std::optional<BackendRecord> groundTruth;
+    QMetaObject::invokeMethod(targetBackend, [targetBackend, &groundTruth]() {
+        groundTruth = targetBackend->loadRecord(QStringLiteral("e53-cancel-evt-1"));
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(!groundTruth.has_value() || groundTruth->data.contains("Original"));
+}
+
+// writeTeardown_engineDestroyed_completesWithoutDeadlock pins the teardown
+// side (O22's final closure): destroying the SyncEngine while a write is
+// genuinely in flight must complete within a bounded time. Pre-E5.3, the
+// worker could be parked in a BlockingQueuedConnection marshal for the
+// I/O-length apply() call, and only the E3 interim's bounded-wait-then-
+// diagnostic (waitForWorkerWithDiagnostic) kept that from being an
+// unbounded hang. Post-E5.3, the worker never blocks for I/O-length work at
+// all (it awaits the WriteOperation in a cancellable QEventLoop, same as a
+// fetch gate) — this test proves stopWorkerThread() (called from
+// ~SyncEngine) tears down promptly even with a slow write in flight, well
+// under both the fake server's own (much longer) delay and what an
+// unbounded-wait deadlock would look like.
+void TstBackendThreadRelocation::writeTeardown_engineDestroyed_completesWithoutDeadlock()
+{
+    auto *server = new FakeCalDavServer();
+    server->setSeedEvents(QString::fromLatin1(kPersonalHref), {});
+
+    QThread serverThread;
+    serverThread.setObjectName(QStringLiteral("e53-teardown-fake-server"));
+    serverThread.start();
+    server->moveToThread(&serverThread);
+
+    bool listening = false;
+    QUrl baseUrl;
+    QMetaObject::invokeMethod(server, [server, &listening, &baseUrl]() {
+        listening = server->startListening();
+        baseUrl = server->baseUrl();
+    }, Qt::BlockingQueuedConnection);
+    QVERIFY(listening);
+    auto serverGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(server, [server]() { delete server; }, Qt::BlockingQueuedConnection);
+        serverThread.quit();
+        serverThread.wait();
+    });
+
+    QTemporaryDir cacheDir;
+    QTemporaryDir sourceDir;
+    QVERIFY(cacheDir.isValid() && sourceDir.isValid());
+    const QString calId = QStringLiteral("Personal");
+    QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
+
+    auto icsWithSummary = [](const QByteArray &uid, const QByteArray &summary) -> QByteArray {
+        return "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:" + uid + "\r\n"
+               "SUMMARY:" + summary + "\r\nDTSTART:20260601T120000Z\r\n"
+               "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    };
+
+    const QString evt1Path = sourceDir.filePath(calId + QStringLiteral("/e53-teardown-evt-1.ics"));
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(icsWithSummary("e53-teardown-evt-1", "Original"));
+    }
+
+    auto *sourceBackend = new LocalBackend(sourceDir.path());
+    sourceBackend->setDbPath(sourceDir.filePath(QStringLiteral(".kalburator-sync.db")));
+
+    auto *targetBackend = new RemoteCalendarBackend(baseUrl,
+                                                     QStringLiteral("testuser"),
+                                                     QStringLiteral("testpass"));
+    targetBackend->setCacheDir(cacheDir.path());
+    targetBackend->setDbPath(cacheDir.filePath(QStringLiteral(".kalburator-sync.db")));
+    targetBackend->registerCalendarUrl(
+        calId, baseUrl.toString() + QString::fromLatin1(kPersonalHref).mid(1));
+
+    QThread ioThread;
+    ioThread.setObjectName(QStringLiteral("e53-teardown-io"));
+    ioThread.start();
+    auto ioThreadGuard = qScopeGuard([&]() {
+        QMetaObject::invokeMethod(targetBackend, [targetBackend]() { delete targetBackend; },
+                                  Qt::BlockingQueuedConnection);
+        ioThread.quit();
+        ioThread.wait();
+        delete sourceBackend;
+    });
+    targetBackend->moveToThread(&ioThread);
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(QStringLiteral("e53-teardown-source"), sourceBackend);
+    registry.registerBackendInstance(QStringLiteral("e53-teardown-target"), targetBackend);
+
+    Test::StubSyncHost host(&registry);
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(calId);
+    host.stubCollection()->addCalendarWithId(calId, hostCal);
+
+    QTemporaryDir engineDbDir;
+    QVERIFY(engineDbDir.isValid());
+    const QString engineDbPath = engineDbDir.filePath(QStringLiteral(".kalburator-sync.db"));
+    Kalburator::Storage::BaselineStore baselines(engineDbPath);
+    SyncConflictStore conflictStore(engineDbPath);
+    ConflictManager conflictManager;
+    conflictManager.setSyncConflictStore(&conflictStore);
+
+    auto engine = std::make_unique<SyncEngine>(&registry, &host, m_shape);
+    engine->setBaselineStore(&baselines);
+    engine->setSyncConflictStore(&conflictStore);
+    engine->setConflictManager(&conflictManager);
+    engine->setCollection(host.stubCollection());
+
+    SyncMapping mapping;
+    mapping.id              = QStringLiteral("e53-teardown-mapping");
+    mapping.sourceBackend   = QStringLiteral("e53-teardown-source");
+    mapping.sourceCalendar  = calId;
+    mapping.targetBackend   = QStringLiteral("e53-teardown-target");
+    mapping.targetCalendar  = calId;
+    mapping.mode            = SyncMode::OneWayUpload;
+    mapping.conflictPolicy  = ConflictResolution::LastWriteWins;
+    mapping.enabled         = true;
+    engine->setSyncMappings({mapping});
+
+    {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine->runSync(req);
+        int waited = 0;
+        constexpr int kSyncTimeoutMs = 30000;
+        while (!future.isFinished() && waited < kSyncTimeoutMs) {
+            QTest::qWait(10);
+            waited += 10;
+        }
+        QVERIFY(future.isFinished());
+        QVERIFY(!future.isCanceled());
+    }
+
+    // Steady-state edit -> a real applyBatch/applyRecords write next cycle.
+    {
+        QFile f(evt1Path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write(icsWithSummary("e53-teardown-evt-1", "Edited"));
+    }
+
+    // A MUCH longer delay than any bound this test asserts on the destructor
+    // — if teardown ever regressed to waiting out the write, this would fail
+    // loudly (timeout) rather than silently passing by coincidence.
+    QMetaObject::invokeMethod(server, [server]() {
+        server->setResponseDelayForMethod(QByteArrayLiteral("PUT"), 60000);
+    }, Qt::BlockingQueuedConnection);
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine->runSync(req);
+    Q_UNUSED(future);
+
+    // Give the worker a brief, bounded moment to actually reach the write
+    // gate (classify + enqueue) before destroying the engine — without this
+    // the destructor might race ahead of the sync even starting the mapping,
+    // which wouldn't exercise the teardown-mid-apply path at all.
+    QTest::qWait(200);
+
+    QElapsedTimer teardownTimer;
+    teardownTimer.start();
+    engine.reset();  // ~SyncEngine() -> stopWorkerThread()
+    const qint64 teardownMs = teardownTimer.elapsed();
+
+    QVERIFY2(teardownMs < 5000,
+             qPrintable(QStringLiteral(
+                 "~SyncEngine() took %1ms with a write genuinely in flight behind a "
+                 "60s server delay — the worker must never block for I/O-length "
+                 "work post-E5.3 (O22's final closure)").arg(teardownMs)));
 }
 
 QTEST_GUILESS_MAIN(TstBackendThreadRelocation)

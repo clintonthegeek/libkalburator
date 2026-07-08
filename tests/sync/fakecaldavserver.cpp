@@ -152,8 +152,31 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
             // open. Deliberately not handleRequest() nor a disconnect.
             return;
         }
-        if (m_responseDelayMs > 0) {
-            QTimer::singleShot(m_responseDelayMs, this, [this, socket, request]() {
+
+        // E5.3: per-method delay override, checked before the uniform
+        // m_responseDelayMs — lets a test isolate a slow write from a fast
+        // read/classify phase (setResponseDelayMs() alone delays every
+        // method identically). Method is the first whitespace-separated
+        // token of the request line; cheap to peek here without disturbing
+        // handleRequest()'s own (identical) parse below.
+        int delayMs = m_responseDelayMs;
+        if (!m_perMethodDelayMs.isEmpty()) {
+            const int firstNewline = request.indexOf("\r\n");
+            if (firstNewline > 0) {
+                const QByteArray requestLine = request.left(firstNewline);
+                const int firstSpace = requestLine.indexOf(' ');
+                if (firstSpace > 0) {
+                    const QByteArray method = requestLine.left(firstSpace);
+                    const auto it = m_perMethodDelayMs.constFind(method);
+                    if (it != m_perMethodDelayMs.constEnd()) {
+                        delayMs = it.value();
+                    }
+                }
+            }
+        }
+
+        if (delayMs > 0) {
+            QTimer::singleShot(delayMs, this, [this, socket, request]() {
                 handleRequest(socket, request);
             });
         } else {
