@@ -502,6 +502,48 @@ CalendarManager API to async is out of E5's scope — filed as FINDINGS
 comment instead of converting them. The E5 acceptance grep gate is
 amended accordingly (below).
 
+**Amendment A5 (2026-07-08) — the `davSyncRequest` call sites are three
+groups with three owners; the helper does NOT die in E5.2.** Tracing how
+each of the seven synchronous `davSyncRequest` sites is *reached* (not
+just where it sits) splits them cleanly:
+
+- **Group A — CTag/PROPFIND (the actual B7 mechanism):** `fetchAllCtags`
+  (`:721`) and `fetchFreshCtag` (`:754`). `fetchFreshCtag` is spun
+  *inside* `fetchItems`'s own async op body (`:1481`); `fetchAllCtags` is
+  reached through the worker fast-path marshal (`collectionRevisions`,
+  `syncengine.cpp` `prepareFastPath` → `runOnBackendThread`) and via
+  `modifiedSince` (`:2448`). Backend-thread nested loops running inside
+  already-async operations — exactly audit B7. **E5.2 converts these and
+  ONLY these** (matches this stage's title, "the fetch/CTag paths").
+- **Group B — raw-ICS blob CRUD:** `setRawIcs` (`:2156`, ← `updateRecord`
+  `:2418`) and `getRawIcs` (`:2123`, ← `loadRecord` `:2354`). E5.3's
+  design bullet 2 already names "update → async `setRawIcs`"; these are
+  part of the write-op / blob-read restructure. **E5.3 owns them.**
+- **Group C — calendar-collection CRUD:** `createCalendar` (`:1226`),
+  `updateCalendar` (`:1323`), `deleteCalendar` (`:1361`). Reached ONLY
+  from CalendarManager's synchronous `bool` GUI-thread API and
+  `calendardomainoperations.cpp`, never through the engine op pipeline;
+  their two consumers are oppositely threaded (libkalburator's own tests
+  call same-thread; PlanStan marshals onto the backend io-thread).
+  Converting them forces CalendarManager's collection-CRUD API async —
+  the SAME app-facing-API work A4 carved out as O39. **Owned by the new
+  phase E11 (below), which absorbs O39.**
+
+Consequence: the original E5.2 clause "the synchronous `davSyncRequest`
+is deleted when its last internal call site converts" is WRONG as
+sequenced — its last callers (Group C) are O39/E11 work, explicitly
+outside E5. So: the synchronous `davSyncRequest` helper **survives E5**
+(Groups B and C keep it alive through E5.3), and its deletion moves to
+**E11**, which removes its last callers. Until then the surviving
+helper's `QEventLoop` (`remotecalendarbackend.cpp:253`) carries an
+`// O39/E11:` annotation, and the E5 grep gate allows it — the same
+mechanism A4 used for `calendarmanager.cpp`. `awaitOperation` still dies
+in E5.3 as originally planned (Group B is its last user).
+
+Nothing is orphaned: all seven sites have a named owner (A→E5.2, B→E5.3,
+C→E11); the helper's death is scheduled into E11; O39 is promoted from a
+filed finding to a checklisted phase (§14a).
+
 ### Stage E5.3 — writes become operations; the blocking apply retires
 
 **Design (decided, CP-A reviews it):** the engine's apply phase stops
@@ -561,8 +603,11 @@ in-flight apply never interleaves into it.
 
 **Acceptance gate (E5, after all three stages):** full suite green;
 `grep -rn "QEventLoop" src/calendar/ src/sync/` hits ONLY in
-`calendarmanager.cpp` and each hit carries an `// O39:` annotation
-(CP-A amendment A4; `icsfeedfetcher.{h,cpp}` deleted);
+`calendarmanager.cpp` (three `// O39:` loops, A4) and
+`remotecalendarbackend.cpp`'s ONE surviving `davSyncRequest` helper
+(annotated `// O39/E11:`, amendment A5 — kept alive by Group C calendar
+CRUD until E11 deletes it); every hit carries its annotation;
+`icsfeedfetcher.{h,cpp}` deleted;
 `grep -rn "awaitOperation" src/` empty; FINDINGS O29 → Resolved; O22's
 parked teardown note → Resolved (pointing at E5.3's test c); audit B7 →
 noted resolved in the audit doc's header.
@@ -861,6 +906,58 @@ in §10.
 app run clean including mid-sync editor save and mid-sync close; docs
 updated.
 
+## 14b. Phase E11 — app-facing CalendarManager async API (absorbs O39)
+
+**Added 2026-07-08 by E5.2 amendment A5** — promotes FINDINGS O39 from a
+parked residual to a scheduled, checklisted phase so the last B7-family
+loops in the calendar backend, and the synchronous `davSyncRequest`
+helper itself, actually die inside this campaign rather than nowhere.
+
+**Entry:** E5 landed (all three stages), E10 landed. **Repo:
+`~/dev/libkalburator`** for the backend/CalendarManager changes, with a
+coordinated **`~/dev/PlanStan`** follow-up if the CalendarManager
+signature shifts (the three GUI-thread consumers are PlanStan's
+`CollectionSession`/`MainWindow`). Read amendment A5 (§8, Stage E5.2)
+and FINDINGS O39 first.
+
+**Scope — the two loop families A5/A4 deferred here:**
+1. **Group C calendar-collection CRUD** (`createCalendar` `:1226`,
+   `updateCalendar` `:1323`, `deleteCalendar` `:1361` in
+   `remotecalendarbackend.cpp`): convert their backend-internal
+   `davSyncRequest` bodies to `davSyncRequestAsync` continuation form.
+   The dual-threaded-consumer problem is the crux (see A5): libkalburator's
+   own tests + CalendarManager call these same-thread; PlanStan marshals
+   them onto the backend io-thread. The correct shape is an
+   operation-returning async backend method whose *caller* (worker or GUI,
+   never the backend thread) blocks on the op — same rule E5.2 applied to
+   Group A. `calendardomainoperations.cpp:49` (`updateCalendar`) converts
+   with them.
+2. **CalendarManager's app-facing CRUD API** (`createIncidence`/
+   `updateIncidence`/`deleteIncidence` — the three `// O39:` GUI-thread
+   op-await loops at `calendarmanager.cpp` :583/:630/:677, plus the direct
+   cross-thread `pushItems`/`deleteItems` calls): convert to async so the
+   GUI thread never spins an op-await loop.
+
+**Deletes here:** the synchronous `davSyncRequest` helper
+(`remotecalendarbackend.cpp:224`) and its `// O39/E11:`-annotated
+`QEventLoop` — Group C is its last caller; and the three
+`calendarmanager.cpp` `QEventLoop`s.
+
+**RED tests first:** (a) a re-entrancy pin over a calendar-CRUD op (same
+shape as E5.2's, extended to `createCalendar`); (b) a GUI-thread test
+that `createIncidence` no longer spins a nested loop (instrument the
+event loop / assert via a sequence recorder that no unrelated queued slot
+runs mid-call).
+
+**Acceptance gate (E11):** full libkalburator suite green + PlanStan
+suite green (if touched); `grep -rn "QEventLoop" src/calendar/ src/sync/`
+EMPTY (the A4/A5 carve-outs are now all converted — this is the gate
+E5 could not yet meet); `grep -rn "davSyncRequest\b\|awaitOperation" src/`
+empty; FINDINGS O39 → Resolved; audit B7 family fully closed in the
+calendar backend.
+**Do NOT:** touch `src/contacts/` (still §16 residual, its own rule-of-
+three) or add mapping-level parallelism.
+
 ## 15. CP-C — live verification + campaign close (STOP unless strong model)
 
 1. **Soak:** PlanStan dev build against scratch Radicale, 120 s
@@ -878,7 +975,8 @@ updated.
    1 CTag PROPFIND (quiet collections) + 1 sync-collection REPORT +
    1 multiget of exactly the changed hrefs + ETag-guarded PUTs of
    exactly the changed records. Record the log excerpt in §10.
-4. **Close out:** FINDINGS O26, O28–O36 all Resolved; roadmap §5 ticked
+4. **Close out:** FINDINGS O26, O28–O36 **and O39** (E11) all Resolved;
+   roadmap §5 ticked
    through v0.90; both CLAUDE.md campaign sections rewritten to
    "complete — see archive"; this doc moved to `docs/campaign/archive/`
    with a pointer left in FINDINGS; decide the fate of the §16 residual
@@ -902,9 +1000,10 @@ updated.
   backend. Outside E5's files and grep gate; apply audit §1.1 (reuse
   E5.2's async-request pattern) when/if the contacts backend matures —
   same rule-of-three logic as the CardDAV sync-collection line above.
-- **FINDINGS O39** (CalendarManager GUI-thread op-await loops + direct
-  cross-thread `pushItems` calls) — app-facing API conversion, filed at
-  CP-A, not sync-engine scope.
+- ~~**FINDINGS O39**~~ — **PROMOTED to phase E11 (§14b) by amendment A5
+  (2026-07-08).** No longer residual: CalendarManager GUI-thread op-await
+  loops + Group C calendar-CRUD backend loops + the synchronous
+  `davSyncRequest` helper all convert/die in E11, in-campaign.
 - **RFC 6638 scheduling (iTIP/iMIP)** — application-layer feature
   (PlanStan `docs/todo/email-itip-scheduling-horizon.md`), not sync
   engine scope.
@@ -1080,7 +1179,12 @@ updated.
       starvation/deadlock). Full suite green, 164/164 (163 pre-existing +
       the new test), O26 flake not observed.
 - [ ] **E5.2** async davSyncRequest; nested loops out of fetch/CTag paths
-      (re-entrancy pin RED→GREEN)
+      (re-entrancy pin RED→GREEN). **Re-cut by amendment A5 (2026-07-08):**
+      converts **Group A only** (`fetchAllCtags`/`fetchFreshCtag`) + wires
+      `RemoteCalendarBackend`'s fetch/push/delete entry points into E5.1's
+      op queue (deferred from E5.1); Group B → E5.3, Group C → E11; the
+      synchronous `davSyncRequest` helper survives E5 (annotated
+      `// O39/E11:`) and dies in E11.
 - [ ] **E5.3** applyRecords write operations; blocking apply retired;
       O22 teardown note closed (mid-apply stopWorkerThread pin)
 - [ ] **E6** EtagCache seeded from content cache (restart re-download pin)
@@ -1093,4 +1197,8 @@ updated.
 - [ ] **CP-B** strong-model review + live smoke + merge + tag **v0.90**
 - [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
       re-asserted, mid-sync editor-save live proof)
+- [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
+      Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
+      loops converted; synchronous `davSyncRequest` helper deleted;
+      `grep QEventLoop src/calendar/ src/sync/` finally EMPTY; O39 Resolved
 - [ ] **CP-C** soak + adversarial + efficiency audit + campaign close

@@ -146,7 +146,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalcodec.h
     src/calendar/iconflictpresenter.h
     src/calendar/iconflictresolver.h
-    src/calendar/icsfeedfetcher.h
     src/calendar/isynchost.h
     src/calendar/localbackend.h
     src/calendar/logicalcalendarbuilder.h
@@ -191,7 +190,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/decsyncgarbagecollector.cpp
     src/calendar/decsynclib.cpp
     src/calendar/holidaysubscriptionbackend.cpp
-    src/calendar/icsfeedfetcher.cpp
     src/calendar/isynchost.cpp
     src/calendar/localbackend.cpp
     src/calendar/logicalcalendarbuilder.cpp

@@ -31,7 +31,6 @@ if(KALBURATOR_HAVE_ORG_IO)
     target_compile_definitions(tst_backend_signals PRIVATE KALBURATOR_HAVE_ORG_IO)
 endif()
 
-kalburator_add_calendar_test(tst_icsfeedfetcher)
 kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)

@@ -973,7 +973,7 @@ other held constant across two cycles, asserting no conflict and exactly
 one PROPPATCH (today: a conflict every cycle, `toApplyToTarget` re-sent
 from the "conflict resolved SourceWins" default — never fully quiescing).
 
-### O39 — CalendarManager blocks the GUI thread in nested op-await loops and calls backend op methods cross-thread (OPEN, filed 2026-07-07 at CP-A)
+### O39 — CalendarManager blocks the GUI thread in nested op-await loops and calls backend op methods cross-thread (SCHEDULED as phase E11, 2026-07-08; filed 2026-07-07 at CP-A)
 
 Found while verifying E5.2's QEventLoop site list at CP-A.
 `CalendarManager` (`src/calendar/calendarmanager.cpp`) spins a nested
@@ -994,8 +994,18 @@ scope — E5.2 only annotates the three loops with `// O39:` comments.
 Fix shape for whoever picks it up: make CalendarManager's mutation API
 async (return the op / a completion callback; PlanStan consumers already
 tolerate signal-driven completion), and route the backend calls through
-a queued invoke onto the backend thread. Decide at CP-C whether to
-schedule or park.
+a queued invoke onto the backend thread.
+
+**Update 2026-07-08 (E5.2 amendment A5):** promoted from "decide at CP-C"
+to a scheduled campaign phase — **E11** (§14b of the phase plan). E11's
+scope expands beyond these three GUI loops to also absorb the Group C
+calendar-collection CRUD backend loops (`createCalendar`/`updateCalendar`/
+`deleteCalendar`) discovered to share the app-facing-API-conversion
+character, and to delete the synchronous `davSyncRequest` helper (Group C
+is its last caller). Rationale: keeping O39 parked would leave the
+`davSyncRequest` helper's `QEventLoop` alive past campaign close, so the
+"grep QEventLoop empty" end-state B7 promises would never be reached —
+E11 makes that end-state achievable in-campaign. Resolved when E11 lands.
 
 ## Resolved
 
