@@ -1,11 +1,12 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — E1–E9 + CP-A + CP-B complete; **v0.90 tagged
+**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** complete; **v0.90 tagged
 2026-07-09** (v0.90.1 same day, O43). Remaining: E12 (O41, added at
 CP-B, gates CP-C), E10 (PlanStan adoption — substantially landed, one
-interactive gate item left), E13 (O44 PlanStan GUI-freeze presentation
-fix, added post-E10, gates CP-C), E11 (CalendarManager async API), CP-C.
+interactive gate item left, now unblocked by E13), E11 (CalendarManager
+async API), CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly on
+the H8 rig, found during E13's live check — not scoped to a phase yet).
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1683,13 +1684,34 @@ driven because the window freezes.
       scheduled as phase **E13** (§14d) — run the in-editor-save proof
       after E13 lands (its live gate makes the window usable at the
       required item count), in the E13 session or at CP-C.
-- [ ] **E13** PlanStan sync-presentation GUI-freeze fix (O44, §14d —
+- [x] **E13** PlanStan sync-presentation GUI-freeze fix (O44, §14d —
       plan doc: PlanStan
-      `docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`):
-      batch model insert (libkalcal `addIncidences`), unchanged-skip on
-      re-delivered items, widget refresh debounce, recordChanged GUI
-      tail marshaled off the worker thread; four RED tests green; live
-      500-item push with a responsive window; O44 Resolved. Gates CP-C.
+      `docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`) —
+      2026-07-09, FINDINGS O44 Resolved. E13.1 (libkalcal
+      `GlobalIncidenceModel::addIncidences`, one insert bracket per
+      batch), E13.2 (unchanged-skip on re-delivered items via
+      KCalendarCore deep equality, not timestamp shortcuts — O41 already
+      proved those unreliable), E13.3 (`TagDockWidget::refreshTags`
+      debounced on the FlowingDateNavigator pattern; audit of the plan's
+      named check list found no other PlanStan offenders — libkalcal
+      calendar-views scenes have the same pattern but are out of this
+      phase's named scope, flagged for later), E13.4 (`recordChanged`'s
+      GUI-mutating tail marshaled via `QMetaObject::invokeMethod(...,
+      Qt::QueuedConnection)`, both Deleted and Created/Updated arms) all
+      landed. Four RED tests (batch-insert signal count, unchanged-skip,
+      widget-debounce run-count, thread-pin via a genuine foreign
+      QThread) all green. Full PlanStan suite: no new failures vs the
+      documented dev/offscreen baseline. Live spot-check on the H8
+      scratch-Radicale rig: two full 500-item auto-sync cycles, no
+      crash/assertion/log-flood, E6 skip-unchanged engaging correctly —
+      but this session's tool environment had no GUI-automation
+      (xdotool/grim/wmctrl), so the interactive "window stays clickable
+      during an active push" half of the gate could not be driven
+      headlessly and is deferred to a human-at-the-GUI session (per the
+      phase plan's own allowance). Live run also surfaced an unrelated
+      CalDAV create-timeout issue on this rig (filed **O45**, does not
+      implicate E13's presentation-only diff). Unblocks the E10 leftover
+      gate item (in-editor Save during sync) for a future session.
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
       Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
       loops converted; synchronous `davSyncRequest` helper deleted;

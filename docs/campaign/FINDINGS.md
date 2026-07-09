@@ -1686,7 +1686,7 @@ planned E10 deletion of the deprecated per-item `itemFetched` signal
 the batched `itemsFetched`; `tst_backend_signals` ported to batch
 assertions).
 
-### O44 — PlanStan presentation-side sync churn: GUI-thread busy-storm freezes on large fetch/sync (quadratic per-item signal fanout) + `recordChanged`'s GUI tail runs on the engine worker thread (OPEN, found 2026-07-09 post-E10; PlanStan/libkalcal-side, scheduled as phase E13, sequenced before CP-C)
+### O44 — PlanStan presentation-side sync churn: GUI-thread busy-storm freezes on large fetch/sync (quadratic per-item signal fanout) + `recordChanged`'s GUI tail runs on the engine worker thread (RESOLVED 2026-07-09, phase E13)
 
 Found diagnosing the hard GUI freeze that blocked E10's interactive
 in-editor-save gate item live (500-item push, 730-item vault: window
@@ -1726,3 +1726,70 @@ tail) — all PlanStan/libkalcal-side, zero libkalburator changes. Gates
 CP-C: the CP-C soak's "GUI responsive" assertion at 650+ items fails
 without it, and the E10 leftover (in-editor Save during sync) is
 un-runnable while the window freezes.
+
+**Resolved 2026-07-09.** All four RED tests green (batch-insert signal
+count, unchanged-skip, widget-debounce run-count, thread-pin via a
+genuine foreign QThread). Full PlanStan suite: no new failures vs the
+documented dev/offscreen baseline (18/123 fail, identical composition —
+13 evicted-subsystem Not-Runs, `tst_collectionassembler`'s pre-existing
+release-build `Q_ASSERT` gap, and the four pre-existing integration/
+sync-workflow harness failures). Widget-debounce audit of the plan's
+named check list (datepickerdock, temporalribbon(dock), collectionexplorer,
+CategoryManager::refresh triggers) found no other offenders in PlanStan;
+separately found the same full-rescan-per-signal pattern in libkalcal's
+calendar-views scenes (AgendaScene/MonthScene/YearScene/ScheduleView/
+RangeAgendaView) — NOT fixed here (not named in the E13 plan, larger
+risk surface); flag for a future finding if it proves load-bearing.
+Live spot-check on the H8 scratch-Radicale rig (700-item vault, local
+`bulk` fetch of 500 items each cycle): two full auto-sync cycles
+completed with no crash, no assertion, no per-item log flood, and E6
+skip-unchanged correctly engaging on the second cycle for the settled
+`soak` mapping — consistent with the fix. **Caveat:** this session's
+tool environment has no GUI-automation (no `xdotool`/`grim`/`wmctrl`),
+so the interactive "window accepts clicks during an active push"
+half of the acceptance gate could not be driven headlessly; it is
+deferred to a session with a human at the GUI, per the phase plan's own
+allowance. The live run also surfaced an unrelated CalDAV-transport
+issue — filed as **O45** — that blocked the `bulk` mapping's remote
+push both times; it does not implicate E13's diff (presentation-layer
+only, zero contact with the CalDAV write path) and does not gate E13.
+
+### O45 — CalDAV create jobs against the H8 scratch-Radicale rig time out 100%, every retry, with zero successes (OPEN, found 2026-07-09 during E13's live spot-check; efficiency/correctness triage needed, not yet scoped to a phase)
+
+Live spot-check for E13's acceptance gate (H8 scratch-Radicale rig,
+`AcidTestH8.kalb`, `bulk` mapping — 500 local items, 355 already
+adopted on the remote via E8's canonical-equality baseline adoption,
+145 genuinely new). Every one of the 145 `RemoteCalendarBackend::
+applyRecords` create jobs hit the 30000 ms KDAV transfer timeout —
+`SyncRunCoordinator` reported `target: "... !0 E145"` (145/145 failed,
+0 succeeded) — on TWO independent app launches in the same session,
+the second with no other process touching the window. Radicale itself
+was not the bottleneck: a manual `curl -X PUT` against the same
+collection while the app's sync was still retrying returned `201` in
+30 ms. The first launch also had a confound (a proactive incidence
+editor the user had open, unconfirmed whether it contributed), but the
+second launch reproduced the identical 100%-failure shape with no
+editor open and no other window interaction, which rules out an
+editor-modal explanation.
+
+**Hypothesis (untested):** the KDAV job dispatch path fires many create
+jobs concurrently against a single-threaded dev Radicale process; if
+Radicale serializes them and the per-PUT rate is the ~1–2 items/s this
+rig has shown before (`h8-live-verification-setup` memory), jobs queued
+behind ~30+ others would individually exceed the 30 s per-job timeout
+even though the server is healthy and each individual request is fast
+in isolation — i.e. a timeout-budget-vs-concurrency mismatch, not a
+transport failure. Alternative: something specific to concurrent
+*create* dispatch (as opposed to the GET/REPORT traffic that worked
+fine for `soak`) hangs client-side before the request is even sent.
+Not root-caused; needs a session with request-level tracing (Radicale's
+own debug log already captures method/path/timing) to distinguish "all
+145 requests queued server-side and individually starved" from "some
+requests never left the client."
+
+**Scope note:** out of E13 (zero contact with CalDAV code) and not
+observed at CP-B's live smoke (which pushed only 40 items — likely
+under whatever concurrency threshold triggers this). Decide at CP-C
+whether this is a rig artifact (single-threaded dev Radicale can't
+sustain the app's concurrency at 100+ item pushes) or a genuine client-
+side create-dispatch bug worth its own phase.
