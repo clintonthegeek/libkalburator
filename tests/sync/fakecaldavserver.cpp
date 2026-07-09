@@ -69,6 +69,8 @@ bool FakeCalDavServer::startListening()
     m_requestCounts.clear();
     m_multigetReportCount = 0;
     m_syncCollectionReportCount = 0;
+    m_serialQueue.clear();   // O45
+    m_serialBusy = false;    // O45
     if (!listen(QHostAddress::LocalHost, 0))
         return false;
     m_lastBoundPort = serverPort();
@@ -193,28 +195,17 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
             return;
         }
 
-        // E5.3: per-method delay override, checked before the uniform
-        // m_responseDelayMs — lets a test isolate a slow write from a fast
-        // read/classify phase (setResponseDelayMs() alone delays every
-        // method identically). Method is the first whitespace-separated
-        // token of the request line; cheap to peek here without disturbing
-        // handleRequest()'s own (identical) parse below.
-        int delayMs = m_responseDelayMs;
-        if (!m_perMethodDelayMs.isEmpty()) {
-            const int firstNewline = request.indexOf("\r\n");
-            if (firstNewline > 0) {
-                const QByteArray requestLine = request.left(firstNewline);
-                const int firstSpace = requestLine.indexOf(' ');
-                if (firstSpace > 0) {
-                    const QByteArray method = requestLine.left(firstSpace);
-                    const auto it = m_perMethodDelayMs.constFind(method);
-                    if (it != m_perMethodDelayMs.constEnd()) {
-                        delayMs = it.value();
-                    }
-                }
-            }
+        // O45: serialized mode — FIFO across all connections, one request
+        // (including its delay) served at a time; models a single-threaded
+        // server whose burst DRAIN RATE, not per-request latency, is the
+        // bottleneck.
+        if (m_serializeResponses) {
+            m_serialQueue.append({QPointer<QTcpSocket>(socket), request});
+            processSerialQueue();
+            return;
         }
 
+        const int delayMs = delayForRequest(request);
         if (delayMs > 0) {
             QTimer::singleShot(delayMs, this, [this, socket, request]() {
                 handleRequest(socket, request);
@@ -226,6 +217,55 @@ void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
 
     QObject::connect(socket, &QTcpSocket::disconnected,
                      socket, &QObject::deleteLater);
+}
+
+// E5.3: per-method delay override, checked before the uniform
+// m_responseDelayMs — lets a test isolate a slow write from a fast
+// read/classify phase (setResponseDelayMs() alone delays every method
+// identically). Method is the first whitespace-separated token of the
+// request line; cheap to peek here without disturbing handleRequest()'s
+// own (identical) parse. (Extracted into a helper at O45 so the serialized
+// queue path computes the same delay.)
+int FakeCalDavServer::delayForRequest(const QByteArray &request) const
+{
+    int delayMs = m_responseDelayMs;
+    if (!m_perMethodDelayMs.isEmpty()) {
+        const int firstNewline = request.indexOf("\r\n");
+        if (firstNewline > 0) {
+            const QByteArray requestLine = request.left(firstNewline);
+            const int firstSpace = requestLine.indexOf(' ');
+            if (firstSpace > 0) {
+                const QByteArray method = requestLine.left(firstSpace);
+                const auto it = m_perMethodDelayMs.constFind(method);
+                if (it != m_perMethodDelayMs.constEnd()) {
+                    delayMs = it.value();
+                }
+            }
+        }
+    }
+    return delayMs;
+}
+
+// O45: serve the serialized queue one request at a time. The delay elapses
+// BEFORE each response is written and the next request is only dequeued
+// after that, so the queue drains at one request per delay — the Nth queued
+// request completes N x delay after it arrived, regardless of how many
+// connections the client opened.
+void FakeCalDavServer::processSerialQueue()
+{
+    if (m_serialBusy || m_serialQueue.isEmpty()) {
+        return;
+    }
+    m_serialBusy = true;
+    const auto entry = m_serialQueue.takeFirst();
+    const int delayMs = qMax(0, delayForRequest(entry.second));
+    QTimer::singleShot(delayMs, this, [this, entry]() {
+        if (entry.first) {
+            handleRequest(entry.first, entry.second);
+        }
+        m_serialBusy = false;
+        processSerialQueue();
+    });
 }
 
 void FakeCalDavServer::writeResponse(QTcpSocket *socket,

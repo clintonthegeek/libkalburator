@@ -6,9 +6,11 @@
 #include <QHostAddress>
 #include <QList>
 #include <QPair>
+#include <QPointer>
 #include <QSet>
 #include <QString>
 #include <QTcpServer>
+#include <QTcpSocket>
 #include <QUrl>
 
 class QTcpSocket;
@@ -95,6 +97,15 @@ public:
             m_perMethodDelayMs.remove(method);
         }
     }
+
+    /// O45: serve at most ONE request at a time, FIFO across all
+    /// connections — a request's response delay (setResponseDelayMs /
+    /// setResponseDelayForMethod) blocks every request queued behind it.
+    /// Models a single-threaded server (dev Radicale): a burst of N
+    /// concurrent requests drains at one per delay, so the Nth request's
+    /// wall-clock completion is N x delay after dispatch even though each
+    /// individual request is fast once served.
+    void setSerializeResponses(bool on) { m_serializeResponses = on; }
 
     /// E8/O28: kill the fake mid-push, simulating a SIGKILLed server
     /// process. After @p n item write requests (PUT create/update, or
@@ -261,9 +272,19 @@ private:
     /// before "\r\n\r\n"). Empty if the header is absent.
     static QByteArray headerValue(const QByteArray &headers, const QByteArray &name);
 
+    /// O45: delay (in ms) for @p request per the per-method override map,
+    /// falling back to the uniform m_responseDelayMs.
+    int delayForRequest(const QByteArray &request) const;
+
+    /// O45: dequeue-and-serve loop for setSerializeResponses(true).
+    void processSerialQueue();
+
     bool m_return401 = false;
     bool m_return500 = false;
     bool m_dropRequests = false;
+    bool m_serializeResponses = false;   // O45
+    bool m_serialBusy = false;           // O45
+    QList<QPair<QPointer<QTcpSocket>, QByteArray>> m_serialQueue;  // O45
     int m_responseDelayMs = 0;
     int m_dieAfterNWrites = 0;     // E8/O28: 0 = never die
     int m_writesSinceRevive = 0;   // reset by setDieAfterNWrites()/reviveOnSamePort()
