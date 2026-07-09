@@ -1847,6 +1847,10 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
             emit itemFetched(calendarId, incidence);
         }
     }
+    // E9.1 (sync-excellence campaign, O34): batch signal, once per
+    // cache-hit-all pass, with the full item list — see itemFetched's
+    // deprecation comment (syncbackend.h).
+    emit itemsFetched(calendarId, cachedIncidences);
     return cachedIncidences;
 }
 
@@ -2156,6 +2160,11 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
                      << (countSkipped > 0 ? QString(" (%1 skipped)").arg(countSkipped)
                                           : QString());
 
+            // E9.1 (sync-excellence campaign, O34): batch signal, once per
+            // partial-cache-hit pass, with the full item list — see
+            // itemFetched's deprecation comment (syncbackend.h).
+            emit itemsFetched(calendarId, fetchedIncidences);
+
             // N5 fix: only commit the pending CTag when every item
             // actually materialized. A skip here means the content
             // cache is missing bytes for an item the CTag says is
@@ -2365,6 +2374,11 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
              << countFromCache << "from cache"
              << (countSkipped > 0 ? QString(", %1 skipped)").arg(countSkipped)
                                   : QStringLiteral(")"));
+
+    // E9.1 (sync-excellence campaign, O34): batch signal, once per
+    // full/mixed network+cache multiget pass, with the full item list —
+    // see itemFetched's deprecation comment (syncbackend.h).
+    emit itemsFetched(calendarId, fetchedIncidences);
 
     // N5 fix: only commit the pending CTag when every item materialized
     // (this function is only reached after every multiget batch already

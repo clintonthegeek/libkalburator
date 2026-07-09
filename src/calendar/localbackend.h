@@ -6,7 +6,9 @@
 
 #include <QDateTime>
 #include <QHash>
+#include <QMap>
 #include <QObject>
+#include <QPair>
 #include <QString>
 #include <QColor>
 #include <KCalendarCore/MemoryCalendar>
@@ -145,6 +147,15 @@ public:
     bool                         updateRecord(const BackendRecord &record) override;
     bool                         deleteRecord(const QString &recordId) override;
 
+    /// E9.2 (sync-excellence campaign, O34): overrides the
+    /// SyncBackendBase default synchronous adapter so LocalBackend can
+    /// layer an incremental expected-fingerprint computation on top —
+    /// removes the accepted one-cycle re-diff lag after self-writes, the
+    /// sound way (no full re-scan, no foreign-edit absorption). See
+    /// m_lastFetchFingerprintSnapshot's doc comment.
+    WriteOperation* applyRecords(const QString &collectionId,
+                                 const WriterBatch &batch) override;
+
     // Change detection — consults m_fingerprints to short-circuit unchanged dirs
     QList<BackendRecord> modifiedSince(const QString &collectionId,
                                        const QDateTime &since) override;
@@ -175,6 +186,15 @@ private:
     QString calendarFingerprint(const QString &calendarId) const;
     QString cachedFingerprint(const QString &calendarId) const;
 
+    /// E9.2 (sync-excellence campaign, O34): shared hashing core for
+    /// calendarFingerprint()'s full-rescan path AND applyRecords()'s
+    /// incremental path — guarantees the incremental value is bit-identical
+    /// to what a full rescan of the same on-disk state would produce.
+    /// QMap sorts by key (filename) regardless of insertion order, so
+    /// callers don't need to pre-sort.
+    static QString hashFingerprintEntries(
+        const QMap<QString, QPair<qint64, qint64>> &entries);
+
     // ---- Per-property VDir metadata accessors (updateCalendar's backend) ----
     QString calendarDisplayName(const QString &calendarId) const;
     bool setCalendarDisplayName(const QString &calendarId, const QString &name);
@@ -193,6 +213,18 @@ private:
     // collection, so recordsFromLastFetch() can serve it without a second
     // directory scan. Cleared once served (see recordsFromLastFetch()).
     QHash<QString, QList<BackendRecord>> m_lastFetchRecords;
+
+    // E9.2 (sync-excellence campaign, O34): per-collection snapshot of
+    // (filename -> (mtimeMs, size)) captured at the END of the most recent
+    // fetchItems() pass for that collection — NOT single-shot (unlike
+    // m_lastFetchRecords): applyRecords() patches it in place on every
+    // successful write so it stays valid as the base for the NEXT write in
+    // the same backend-instance lifetime, and reads it (without clearing)
+    // to compute the incremental post-write fingerprint. A collectionId
+    // absent from this map means "no fetch-time snapshot available yet" —
+    // applyRecords() must fall back to leaving WriteOperation::
+    // resultRevision() empty rather than guess.
+    QHash<QString, QMap<QString, QPair<qint64, qint64>>> m_lastFetchFingerprintSnapshot;
 
     // Private per-backend fingerprint store (persisted to .kalburator-sync.db)
     std::unique_ptr<FingerprintStore> m_fingerprints;

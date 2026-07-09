@@ -1003,7 +1003,7 @@ well under 5 s — the diagnostic path is no longer expected to fire for any
 consumer whose backends are relocated (the D1 topology PlanStan/WildPalms
 both use).
 
-### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
+### O34 — `itemFetched` per-incidence signal storm (Resolved 2026-07-09 — sync-excellence E9)
 
 Promoted from audit §C4/roadmap D2. `LocalBackend`'s fetch emits
 `itemFetched(calendarId, inc)` once per incidence
@@ -1012,6 +1012,85 @@ event per item, thousands per fetch on big mirrors. Fix: batch
 `itemsFetched(calendarId, items)` at fetch-pass/multiget-chunk granularity;
 deprecate then remove the singular signal (PlanStan port at E10).
 (Seeded 2026-07-07.)
+
+**Resolution (E9, 2026-07-09) — two independent sub-items, both landed:**
+
+**E9.1 (signal batching):** `SyncBackend` (`syncbackend.h`) gained
+`itemsFetched(calendarId, items)` alongside `itemFetched`, which is now
+doc-commented `@deprecated` (removal at E10 once PlanStan's
+`ItemLoadingCoordinator` ports to the batch form — do not remove yet).
+Emitted once per natural fetch-pass/chunk boundary, never debounced: (1)
+`LocalBackend::fetchItems` — once after its single per-directory loop
+completes (`localbackend.cpp`); (2)-(4) `RemoteCalendarBackend` — once each
+in `serveCachedItems` (also covers the sync-collection full-snapshot
+reconstruction path, which calls it), the partial-cache-hit branch of
+`fetchItems`, and `processFetchedItems` (the full/mixed network+cache
+multiget path) (`remotecalendarbackend.cpp`). RED test
+`testLocalBackend_fetchItems_emitsItemsFetchedBatched`
+(`tst_backend_signals.cpp`) pins a 50-item fetch: `itemFetched` still fires
+50 times (unchanged), `itemsFetched` fires exactly once with the full
+50-item list.
+
+**E9.2 (incremental expected-fingerprint, removes the H3 one-cycle re-diff
+lag for LocalBackend the sound way — audit A2):** `WriteOperation`
+(`writeoperation.h`) gained `resultRevision()`/`setResultRevision()` —
+empty by default ("no revision computed"; `RemoteCalendarBackend` never
+sets it, per design: no server-side CTag guessing). `LocalBackend` now
+tracks `m_lastFetchFingerprintSnapshot` (per-collection `filename ->
+(mtimeMs, size)`), captured at the end of every `fetchItems()` pass
+(`localbackend.cpp`/`.h`). `LocalBackend::applyRecords()` (new override —
+previously used `SyncBackendBase`'s default synchronous adapter unchanged)
+delegates to that same base dispatch for the actual create/update/delete,
+then patches the snapshot in place using ONLY the files the settled
+`WriteOperation::succeededUids()` actually wrote/deleted (stat exactly
+those, via the existing `icsPathFor`; deleted files' entries removed
+outright — no directory re-list), and sets the re-hashed result as
+`resultRevision()`. The hashing itself was extracted into a shared
+`LocalBackend::hashFingerprintEntries()` static helper, fed by a
+`QMap<QString, QPair<qint64,qint64>>` (sorted by key regardless of
+insertion order) so the incremental value is guaranteed bit-identical to
+what `calendarFingerprint()`'s full rescan would produce for the same
+on-disk state — `calendarFingerprint()` itself now builds the same QMap
+shape and calls the shared helper. A collection with no prior fetch-time
+snapshot (no preceding `fetchItems()` in this backend instance's lifetime)
+leaves `resultRevision()` empty — never guessed.
+
+Engine side: `SyncEngineWorker` gained
+`m_lastAppliedTargetRevision`/`m_lastAppliedSourceRevision` (reset at the
+top of every `unifiedContinueAfterConflicts` run), populated by
+`applyBatch`'s new optional `QString *outRevision` out-parameter at its two
+call sites (target, then source). `SyncEngine::onWorkerSyncCompleted`'s
+existing H3 token-write block (`syncengine.cpp`, unchanged call site)
+now takes a local copy of the pre-fetch `FreshSyncState` and overrides
+`.targetRevision`/`.sourceRevision` with the worker's captured value ONLY
+when non-empty, before the existing `setSyncToken` calls — the token
+STORE, its persistence gating (`result.success`), and engine ownership of
+sync-progress tokens are completely unchanged; only the VALUE fed in for a
+side whose backend computed a fresher one. Cross-thread read safety: the
+worker-thread writes happen strictly before `syncCompleted()` is emitted
+each cycle and are never touched again until the NEXT
+`unifiedContinueAfterConflicts` reset, so reading them from
+`onWorkerSyncCompleted` (which only runs after that queued signal is
+delivered) is safe by the same happens-before argument the rest of the
+worker/engine split already relies on.
+
+Two new RED-turned-green tests in `tst_sync_token_soundness.cpp`:
+`writingCycleImmediatelyFollowedByQuietCycle_skips` (a local<->local
+mapping's quiet cycle immediately after a writing cycle is now
+skip-eligible — pre-E9.2 only the cycle AFTER that skipped, the accepted
+lag) and `foreignEditDuringWritingCycle_defeatsIncrementalSkip` (the safety
+pin: a foreign edit landing directly in the target's directory right after
+the writing cycle still defeats the very next cycle's skip — the
+incremental patch only ever touches files LocalBackend itself wrote, so it
+cannot absorb a change to a file it never touched). Both confirmed RED
+beforehand via `git stash` of the implementation files (a) failed for the
+stated reason (`sawSkipLog` false); (b) passed vacuously (no mechanism yet
+to over-absorb).
+
+Full suite 167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir
+build -j 8`; `tst_engine_cancellation` — O26 — not observed flaking).
+`docs/campaign/archive/2026-07-05-sync-hardening-phases.md`'s H3
+"accepted costs" paragraph annotated: local-side lag removed by E9.
 
 ### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (Resolved 2026-07-08 — sync-excellence E6)
 

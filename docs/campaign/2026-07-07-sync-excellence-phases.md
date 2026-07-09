@@ -1455,8 +1455,40 @@ three) or add mapping-level parallelism.
       `src/calendar/eventcanonfields.cpp`, no phase assigned). Full suite
       167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir build -j 8`,
       O26 flake not observed; `tst_phantom_conflict_adoption` new at 1.01s).
-- [ ] **E9** itemsFetched batching; LocalBackend incremental
-      expected-fingerprint (lag removed; O18 pin re-run)
+- [x] **E9** itemsFetched batching + LocalBackend incremental
+      expected-fingerprint — 2026-07-09, FINDINGS O34 Resolved. E9.1:
+      `SyncBackend::itemsFetched(calendarId, items)` added
+      (`syncbackend.h`), `itemFetched` doc-commented `@deprecated`
+      (removed at E10); emitted once per fetch pass/chunk from
+      `LocalBackend::fetchItems` and `RemoteCalendarBackend`'s three
+      fetch paths (`serveCachedItems` — also covers the E7 sync-collection
+      snapshot-reconstruction path — the partial-cache-hit branch, and
+      `processFetchedItems`). RED `testLocalBackend_fetchItems_
+      emitsItemsFetchedBatched` (`tst_backend_signals.cpp`): 50-item fetch,
+      itemFetched still 50 calls, itemsFetched exactly 1. E9.2:
+      `WriteOperation::resultRevision()` (`writeoperation.h`, empty
+      default — RemoteCalendarBackend never sets it, no CTag guessing);
+      `LocalBackend::applyRecords()` override layers an incremental
+      post-write fingerprint (fetch-time snapshot patched with only the
+      files it wrote/deleted, via new `m_lastFetchFingerprintSnapshot` +
+      shared `hashFingerprintEntries()` helper — bit-identical to a full
+      `calendarFingerprint()` rescan by construction) on top of the
+      unchanged `SyncBackendBase::applyRecords()` dispatch.
+      `SyncEngineWorker` captures it per-side
+      (`m_lastAppliedTargetRevision`/`m_lastAppliedSourceRevision`, via
+      `applyBatch`'s new `outRevision` out-param);
+      `SyncEngine::onWorkerSyncCompleted`'s existing H3 token-write block
+      overrides the pre-fetch `FreshSyncState` value with it when
+      non-empty, before the unchanged `setSyncToken` calls — token
+      ownership/persistence gating untouched, only the value. Two RED
+      tests in `tst_sync_token_soundness.cpp`
+      (`writingCycleImmediatelyFollowedByQuietCycle_skips`,
+      `foreignEditDuringWritingCycle_defeatsIncrementalSkip` — the
+      no-foreign-edit-absorption safety pin), both confirmed RED via
+      `git stash` of the implementation before landing it. Full suite
+      167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir build -j 8`,
+      O26 flake not observed). Archived hardening plan's H3 "accepted
+      costs" paragraph annotated: local-side lag removed by E9.
 - [ ] **CP-B** strong-model review + live smoke + merge + tag **v0.90**
 - [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
       re-asserted, mid-sync editor-save live proof)

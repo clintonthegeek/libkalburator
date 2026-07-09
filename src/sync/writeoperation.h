@@ -42,6 +42,20 @@ public:
     /// timeout — see RemoteCalendarBackend::applyRecords()).
     QStringList failedUids() const { return m_failedUids; }
 
+    /// E9.2 (sync-excellence campaign, O34): the backend's own expected
+    /// post-write collection revision/fingerprint, computed incrementally
+    /// from its fetch-time snapshot plus exactly the files THIS call wrote
+    /// or deleted (no full re-scan, no foreign-edit absorption). Empty for
+    /// backends that don't compute one (the default; remote CalDAV always
+    /// stays empty here — no server-side CTag guessing). The engine, not
+    /// the backend, decides whether/where to persist this as a
+    /// sync-progress token (see SyncEngineWorker::applyBatch /
+    /// SyncEngine::FreshSyncState) — engine ownership of sync-progress
+    /// tokens (the two-token architecture) is unchanged; this only
+    /// supplies a fresher VALUE than the pre-fetch snapshot would.
+    QString resultRevision() const { return m_resultRevision; }
+    void setResultRevision(const QString &revision) { m_resultRevision = revision; }
+
     // Modification methods (called by backends)
     void addSucceededUid(const QString &uid);
     void addFailedUid(const QString &uid);
@@ -49,6 +63,7 @@ public:
 private:
     QStringList m_succeededUids;
     QStringList m_failedUids;
+    QString m_resultRevision;
 };
 
 } // namespace Kalburator::Sync
