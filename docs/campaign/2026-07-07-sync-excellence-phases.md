@@ -1605,6 +1605,28 @@ O41 → Resolved.
       `PalmCalendarBackend` ported to batched `itemsFetched`;
       `tst_backend_signals` ported); lib suite 168/168. E10 UNBLOCKED —
       PlanStan re-pins to v0.90.1 and resumes at step 3.
+      — 2026-07-09 resumed post-v0.90.1: steps 3–5 done except ONE gate
+      item. PlanStan pinned v0.90.1 (commit `6ef246d7`): full suite shows
+      no new failures vs the dev/offscreen baseline;
+      `tst_collectioncontroller` 3/3 clean (was 5/5 SEGV at v0.90);
+      `tst_sync_conflicts` 123/0 relocated. **Live (scratch Radicale
+      :5233, AcidTestH8 vault):** auto-sync-on-load pushed a 730-item
+      bulk + 11-item soak baseline; a mid-sync file-watcher edit was
+      staged and pushed clean; **restart** ran `prepareFastPath` across
+      teardown with backends on the I/O thread — ZERO O43 crashes (the
+      exact v0.90 crash window) — with **E6 skip-unchanged** (`skipping
+      unchanged mapping soak`) and **E7 sync-collection delta**
+      (`sync-collection fetched 200 changed`) both engaging post-restart;
+      a graceful window-close during an active sync run tore down clean
+      (`closeCollection` → `Worker thread stopped`, no hang, no O43). Docs
+      updated (PlanStan CLAUDE.md status + pin section;
+      `sequential-sync-performance.md` annotated with the E6/E7 levers).
+      **Still outstanding (deferred to the CP-C GUI session):** the
+      interactive *in-editor* Save DURING a sync cycle — the E5.1
+      serialization live proof from the editor widget specifically; the
+      filesystem-edit staging path was exercised, but not the editor Save
+      button (needs a human at the GUI; could not be driven headless).
+      Branch not yet merged to PlanStan `master`.
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
       Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
       loops converted; synchronous `davSyncRequest` helper deleted;
