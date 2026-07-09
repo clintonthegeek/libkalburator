@@ -1624,3 +1624,49 @@ capability next to the token in CTagStore (survives restart, zero races);
 when the flag is unset (one extra small PROPFIND, self-healing); (c)
 PlanStan-side: await `loadCalendarsFinished` before the first auto-sync
 (fixes the race but leaves the capability amnesia to (a)/(b)).
+
+### O43 — `prepareFastPath`'s A6 revision-query marshal is teardown-unsafe: a pending backend-thread lambda outlives the worker's stack frame and invokes a dangling `QEventLoop*` (OPEN, found 2026-07-09 at E10; deterministic SEGV in PlanStan's suite — BLOCKS E10's acceptance gate)
+
+Found at E10 step 1 (PlanStan pin bump v0.84 → v0.90). PlanStan's
+`tst_collectioncontroller::testAutoSyncOnLoadDeferredUntilSyncInfraReady`
+segfaults 5/5 (was 28/0 green at v0.84 per the H7 verification record), so
+the E10 gate ("PlanStan suite green") cannot pass until this is fixed.
+
+**Mechanism** (`src/engine/syncengine.cpp`,
+`SyncEngineWorker::prepareFastPath`, the E5.2/amendment-A6 async revision
+query): the worker posts a QueuedConnection lambda onto the backend's
+thread capturing `&revs` and `&loop` — both on the worker's STACK — then
+blocks in `loop.exec()`. If the engine is torn down while that lambda is
+still pending on the backend thread (PlanStan's `~CollectionController`
+stops the engine worker FIRST — `QThread::quit()` sets `quitNow`, which
+exits nested event loops too, so `loop.exec()` returns and
+`prepareFastPath`'s frame unwinds), the pending lambda now holds dangling
+stack pointers. `stopBackendIoThread()`'s subsequent blocking invoke
+flushes the backend I/O thread's queue, the stale lambda runs, its
+continuation calls `QMetaObject::invokeMethod(&loop, …)` on the dead
+`QEventLoop` → SIGSEGV (SEGV_MAPERR inside `invokeMethodImpl`). Verified
+against the crash stacks: the crashing backend-I/O thread is inside
+`ChangeDetection::collectionRevisionsAsync`'s continuation while the main
+thread waits in `stopBackendIoThread()`'s `QLatch` and the test frame is
+`~SyncTestHarness → ~CollectionController`.
+
+**Why the lib suite missed it:** the trigger needs (a) backends on a
+thread distinct from the worker, (b) teardown racing an in-flight
+fast-path preparation — i.e. destroy-immediately-after-triggering-sync,
+which PlanStan's auto-sync-on-load test does and the lib's neutral
+engine tests don't. The same window exists live: app close mid-sync
+(exactly the E10/CP-C close-mid-sync proof) can land in it.
+
+**Fix direction (decide before re-attempting E10; candidates):**
+(a) heap-own the rendezvous — put `revs`/the loop-quit handoff behind a
+`std::shared_ptr` state block co-owned by the pending lambda, with an
+`aborted`/generation flag checked before touching the loop, so an
+unwound `prepareFastPath` leaves the pending lambda harmless; (b) fence
+teardown — `stopWorkerThread()` (or the engine) must drain/invalidate
+continuations it posted to backend threads before the worker frame
+unwinds (matches E5.3's cancellation-honesty work, O40's sibling);
+(c) both — (a) is the minimal safe shape, (b) alone still leaves the
+loop-exit ordering fragile. Any fix lands lib-side as v0.90.1 (the patch
+tag E10 already anticipated for the `itemFetched` deletion) with a RED
+test that quits the worker mid-`prepareFastPath` with a pending
+backend-thread revision query.

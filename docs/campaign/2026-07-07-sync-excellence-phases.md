@@ -1583,6 +1583,21 @@ O41 → Resolved.
       audited; O41 Resolved. Gates CP-C.
 - [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
       re-asserted, mid-sync editor-save live proof)
+      — 2026-07-09 IN PROGRESS, **BLOCKED on new FINDINGS O43** (PlanStan
+      branch `feature/sync-excellence-adoption`): steps 1–2 done (pin
+      v0.90, `itemsFetched` batch port in ItemLoadingCoordinator +
+      CollectionController + tst_sync_directions;
+      tst_collectioncontroller's removed-`primeRevisionCache` probe
+      reworked onto `modifiedSince()`/`cachedCollectionRevision()`);
+      step 3 partially verified — `tst_sync_conflicts` 123/0 relocated,
+      no cross-thread warnings — but `tst_collectioncontroller`
+      SEGFAULTs 5/5 in `testAutoSyncOnLoadDeferredUntilSyncInfraReady`:
+      v0.90's `prepareFastPath` A6 marshal leaves a pending
+      backend-thread lambda holding dangling worker-stack pointers when
+      teardown quits the worker mid-query (was green at v0.84). Lib-side
+      fix required (v0.90.1, together with the planned `itemFetched`
+      deletion) before the E10 gate can run — see FINDINGS **O43** for
+      the full mechanism + pre-analyzed fix candidates.
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
       Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
       loops converted; synchronous `davSyncRequest` helper deleted;
