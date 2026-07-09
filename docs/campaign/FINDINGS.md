@@ -662,7 +662,7 @@ thread-recording stub backend (H2.1's pattern) asserting
 steady-state modify sync; today they record the worker thread. Fix phase:
 **H8.5** in the phase plan; campaign close (CP-C §3) is BLOCKED on it.
 
-### O28 — partial push + server crash leaves N same-UID/no-baseline records that re-conflict every cycle — recovery needs manual conflict resolution and busy-loops until then (OPEN, found by CP-C/H8 O17 live check, 2026-07-06)
+### O28 — partial push + server crash leaves N same-UID/no-baseline records that re-conflict every cycle — recovery needs manual conflict resolution and busy-loops until then (Resolved 2026-07-08 — sync-excellence E8)
 
 Found by CP-C/H8's kill-Radicale-mid-push pass: 30 new local items, server
 SIGKILLed after 7 creates had landed (6 logged + 1 whose 201 response died
@@ -693,6 +693,38 @@ item as adoptable on the next cycle via the ETag it can re-fetch. During
 H8 the state was cleared surgically (deleted the 7 server copies +
 `sync_conflicts` rows; next cycle re-created them cleanly with baselines)
 — noted here because the live vault intervention is not a product answer.
+
+**Resolution (2026-07-08, sync-excellence E8):** RED-test investigation
+(`tests/engine/tst_phantom_conflict_adoption.cpp`) found the "fix
+direction" above had ALREADY landed, unannounced, as a side effect of the
+Phase B4/N2 per-side-baseline work (commit `6c36df4`, 2026-07-04 — *before*
+this finding was even filed): `perrecorddiff.cpp`'s `hasS && hasT && !hasB`
+branch already gates conflict declaration on `differ.equal()` (the domain's
+`createCanonicalDiffer()`) and silently emits NO op when canonically equal;
+`syncengine.cpp`'s `unifiedContinueAfterConflicts` independently re-scans
+for exactly those silently-skipped ids and writes each side's own
+`contentHash` as its baseline via `setBaselineHashesV4`. An engine-level
+replay of the exact H8 crash shape (LocalBackend source with N new local
+`.ics` files, `RemoteCalendarBackend` target, `FakeCalDavServer` gaining
+`setDieAfterNWrites()`/`reviveOnSamePort()` to simulate a SIGKILL-and-
+restart) confirms: for the literal O28 shape (PRODID/property-order-only
+difference, `CREATED`/`LAST-MODIFIED` present and matching on both sides),
+the repair cycle produces **zero** phantom conflicts and adopts baselines
+for every survivor — no diff/merge code change was needed. E8's actual
+delta: added an `qInfo()` observability line on each silent adoption
+(`syncengine.cpp`'s implicit-seed loop previously adopted baselines with
+zero logging — invisible in production logs) and three new regression
+tests that had never existed for this path: the crash-replay itself, a
+guard that a genuinely-different same-UID/no-baseline pair still conflicts
+(over-adoption guard), and a blob-domain (no canonical pipeline) pin that
+byte-different no-baseline pairs still conflict there (domain-neutrality —
+uses a new minimal `ShapedTestBackend` fixture since `MockBackend` is
+hardcoded to iCal internally). SyncStats needs no change: adopted records
+never enter `engineDiff` at all, so E1.1's create/update/conflict counters
+already correctly count them as neither. See **O41** for a distinct,
+real bug this investigation surfaced along the way (out of E8's scope to
+fix: it lives in the calendar canon *write* path, not the no-baseline
+conflict classification).
 
 ### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; OPEN → sync-excellence E5)
 
@@ -1409,3 +1441,64 @@ the write) instead of hitting the 30s+ bounded-wait/watchdog path.
 belt-and-braces backstop — it should no longer be the mechanism that
 actually ends an I/O-length wait for any consumer using the E5.3 write path
 or the pre-existing fetch gates.
+
+### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (OPEN, found 2026-07-08 during E8's O28 RED-test investigation, not campaign-blocking)
+
+Found while writing E8's crash-replay RED test
+(`tests/engine/tst_phantom_conflict_adoption.cpp`): an EARLY version of the
+fixture wrote synthetic local `.ics` files with `DTSTAMP` but no explicit
+`CREATED`/`LAST-MODIFIED` properties (plausible for content dropped in by
+some external tool — RFC 5545 makes both optional). That version DID
+reproduce phantom conflicts on the repair cycle, but for a different reason
+than O28 described (PRODID/property-order): `perrecorddiff.cpp`'s
+`differ.diff()` on the no-baseline pair showed `created`/`lastModified` as
+the ONLY changed properties, not any content field.
+
+Root cause: `eventcanonfields.cpp`'s ical→canon encoder (the read/diff
+side) deliberately only trusts a LITERAL `CREATED:`/`LAST-MODIFIED:` line
+in the source bytes (`extractICalPropertyLiteral`), never
+`KCalendarCore::Incidence::created()/lastModified()`'s construction-time
+"now" default — a fix already landed for the read side (see that file's
+"Phase B5 finding" comment, guarding against exactly this class of bug).
+But nothing guards the WRITE side symmetrically: when a record whose canon
+JSON has no `"created"`/`"lastModified"` key gets pushed as a brand-new
+create, the canon→ical materialization builds a `KCalendarCore::Incidence`
+with those fields unset, and `KCalendarCore::ICalFormat::toICalString`
+appears to serialize its own defaulted "now" into the outbound bytes
+regardless. The server then stores real `CREATED`/`LAST-MODIFIED` lines
+that were never in the canon record. On the NEXT fetch, the target's
+ical→canon read (correctly, per the read-side fix) finds these literal
+lines and includes them in canon — while the source side (whose original
+bytes still lack them) does not. The two canon records permanently
+disagree on `created`/`lastModified`, `differ.equal()` returns false
+forever, and any same-UID/no-baseline pair in this shape can never
+canonically-adopt (E8's fix) OR reach steady-state no-op convergence
+(secondSyncIsNoOp's class of test) for as long as the source keeps
+omitting those fields — which, since nothing ever backfills them into the
+source, is forever.
+
+**Not campaign-blocking:** E8's own RED test uses a fixture with explicit
+matching `CREATED`/`LAST-MODIFIED` (the realistic shape — most real
+calendar clients emit both), which reproduces O28's literal
+PRODID/property-order-only symptom faithfully and passes clean; this
+finding is a distinct, narrower gap (records that structurally never had
+these fields) than what O28 described or E8 owns. Out of E8's file scope
+(`src/engine/`, `tests/engine/`) — the bug lives in
+`src/calendar/eventcanonfields.cpp`'s write-side canon materialization
+(and possibly other `*canonfields.cpp` files sharing the pattern —
+`journalcanonfields.cpp`'s read side already guards with `.isValid()`
+checks but wasn't audited here for the same write-side asymmetry).
+
+**Fix direction (untriaged, no phase assigned yet):** either (a) make the
+canon→ical write stage leave `CREATED`/`LAST-MODIFIED` unset when canon
+has no such key (requires confirming `ICalFormat::toICalString` can be
+told not to stamp defaults — may need constructing the `Incidence` with
+`setCreated()`/`setLastModified()` explicitly skipped, or post-processing
+the serialized bytes to strip a KCalendarCore-injected default), or (b)
+backfill: on first successful create, re-read the server's own
+authoritative `CREATED`/`LAST-MODIFIED` back into the LOCAL side's stored
+baseline hash context too (asymmetric-but-consistent, cheaper, but leaves
+the local .ics file itself still lacking the fields — only the diff
+machinery would agree). Needs live verification against a real CalDAV
+server (Radicale may itself normalize `CREATED` differently than the fake)
+before committing to either direction.

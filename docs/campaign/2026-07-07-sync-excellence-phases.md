@@ -1419,8 +1419,42 @@ three) or add mapping-level parallelism.
       probe fired too (207, 294 bytes, before either REPORT). Scratch
       Radicale process killed after capture. Roadmap D2's sync-collection
       line ticked (`2026-07-03-sync-convergence-roadmap.md`).
-- [ ] **E8** O28 canonical-equality adoption (crash-replay pin; blob
-      neutrality pin)
+- [x] **E8** O28 canonical-equality adoption (crash-replay pin; blob
+      neutrality pin) — 2026-07-08, FINDINGS O28 Resolved. RED-test
+      investigation found the "fix direction" O28 called for had already
+      landed, unannounced, as a side effect of the pre-campaign Phase
+      B4/N2 per-side-baseline work (`6c36df4`, 2026-07-04 — before O28 was
+      even filed 2026-07-06): `perrecorddiff.cpp`'s `hasS && hasT &&
+      !hasB` branch already gates conflict declaration on
+      `differ.equal()` (silently emits no op when canonically equal);
+      `syncengine.cpp`'s `unifiedContinueAfterConflicts` independently
+      re-scans those silently-skipped ids and writes each side's own
+      `contentHash` as baseline via `setBaselineHashesV4`. An engine-level
+      crash replay (new `tests/engine/tst_phantom_conflict_adoption.cpp`:
+      LocalBackend source with real `.ics` files, `RemoteCalendarBackend`
+      target, `FakeCalDavServer` gaining `setDieAfterNWrites()`/
+      `reviveOnSamePort()` to simulate SIGKILL-then-restart) confirms
+      zero phantom conflicts and full baseline adoption for O28's literal
+      shape (PRODID/property-order-only difference) — no diff/merge code
+      change needed. E8's actual delta: an `qInfo()` line on each silent
+      adoption in `syncengine.cpp`'s implicit-seed loop (previously
+      logged nothing — invisible in production), and three new tests that
+      never existed for this path — the crash replay itself, an
+      over-adoption guard (genuinely-different same-UID/no-baseline pair
+      still conflicts), and a domain-neutrality pin (blob domain, no
+      canonical pipeline, byte-different no-baseline pairs still
+      conflict — via a new minimal `ShapedTestBackend` fixture since
+      `MockBackend` is hardcoded to iCal internally). RED test for the
+      log line confirmed failing for the stated reason before the
+      `qInfo()` was added (verified via `git stash`); all 5 tests green
+      after. Investigation surfaced a real, distinct, out-of-E8-scope bug
+      along the way — filed as **FINDINGS O41** (calendar canon write
+      path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" for
+      records whose source bytes never had them, defeating canonical
+      equality for that narrower shape; lives in
+      `src/calendar/eventcanonfields.cpp`, no phase assigned). Full suite
+      167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir build -j 8`,
+      O26 flake not observed; `tst_phantom_conflict_adoption` new at 1.01s).
 - [ ] **E9** itemsFetched batching; LocalBackend incremental
       expected-fingerprint (lag removed; O18 pin re-run)
 - [ ] **CP-B** strong-model review + live smoke + merge + tag **v0.90**

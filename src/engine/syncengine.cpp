@@ -2532,6 +2532,27 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             e.sourceHash = srcRec.contentHash;
             e.targetHash = tgtRec.contentHash;
             implicitBaselines.append(e);
+
+            // E8 (FINDINGS O28): this is the silent-adoption path for a
+            // same-id/no-baseline pair whose byte-different native
+            // serializations are canonically equal — the exact shape a
+            // partial-push-then-crash repair cycle leaves behind (N
+            // records that landed on the target before the crash now have
+            // no baseline and never will byte-match the source's native
+            // bytes). Before this branch existed the diff had already
+            // (correctly, per perRecordDiff's own semanticallyEqual check)
+            // emitted NO Conflict op for these ids, so nothing here
+            // overrides an existing decision — this only WRITES the
+            // baseline that lets subsequent cycles skip the semantic
+            // recheck. One info line per adopted id: a crash-repair cycle
+            // that silently adopts N records should be visible in logs
+            // even though it produces no conflict and no create/update op
+            // (SyncStats correctly counts neither, since these ids never
+            // enter engineDiff at all).
+            qInfo() << "SyncEngineWorker: adopted baseline for" << tgtRec.id
+                    << "in mapping" << mappingId
+                    << "(no prior baseline, canonically equal to source — "
+                       "not a conflict)";
         }
         if (!implicitBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;

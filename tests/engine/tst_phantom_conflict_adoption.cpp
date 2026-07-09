@@ -35,6 +35,7 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
+#include <algorithm>
 #include <memory>
 
 #include "backendconfiguration.h"
@@ -110,6 +111,37 @@ private:
     BackendRegistry *m_registry = nullptr;
 };
 
+// E8: captures qInfo() lines emitted while installed, so a test can assert
+// the silent-adoption path actually logs (SyncEngine's own qInstallMessageHandler-
+// free logging otherwise goes to stderr/journal with nothing a test can grep).
+// Chains to whatever handler was previously installed so other QtTest
+// expectations (QWARN, etc.) keep working normally.
+QtMessageHandler g_previousMessageHandler = nullptr;
+QStringList *g_capturedMessages = nullptr;
+
+void capturingMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg)
+{
+    if (g_capturedMessages && type == QtInfoMsg)
+        g_capturedMessages->append(msg);
+    if (g_previousMessageHandler)
+        g_previousMessageHandler(type, ctx, msg);
+}
+
+struct ScopedMessageCapture {
+    QStringList messages;
+    ScopedMessageCapture()
+    {
+        g_capturedMessages = &messages;
+        g_previousMessageHandler = qInstallMessageHandler(capturingMessageHandler);
+    }
+    ~ScopedMessageCapture()
+    {
+        qInstallMessageHandler(g_previousMessageHandler);
+        g_previousMessageHandler = nullptr;
+        g_capturedMessages = nullptr;
+    }
+};
+
 bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
 {
     if (f.isFinished()) return true;
@@ -127,7 +159,17 @@ QByteArray makeVEventOriginalBytes(const QString &uid, const QString &summary)
     // property order than what RemoteCalendarBackend's own KCalendarCore
     // round-trip serialization would produce for the same logical event —
     // exactly the O28 scenario ("local = original bytes, remote = engine-
-    // serialized copy; PRODID/property order differ").
+    // serialized copy; PRODID/property order differ"). CREATED/LAST-MODIFIED
+    // are given explicit, fixed values (not left absent) — eventcanonfields.cpp
+    // (Phase B5 finding) only trusts a LITERAL "CREATED"/"LAST-MODIFIED"
+    // property in the source bytes rather than KCalendarCore's
+    // construction-time "now" default specifically so two independent
+    // parses of the same logical content never manufacture a fake diff on
+    // these fields; a synthetic fixture that omitted them entirely would
+    // instead trip that exact asymmetry (the write path DOES let
+    // KCalendarCore stamp a real CREATED/LAST-MODIFIED onto outbound bytes
+    // once server round-tripped) for an unrelated reason, muddying this
+    // test's actual target (byte-format-only differences).
     QByteArray v;
     v += "BEGIN:VCALENDAR\r\n";
     v += "PRODID:-//SomeOtherApp//NONSGML v1.0//EN\r\n";
@@ -138,6 +180,8 @@ QByteArray makeVEventOriginalBytes(const QString &uid, const QString &summary)
     v += "UID:" + uid.toUtf8() + "\r\n";
     v += "SUMMARY:" + summary.toUtf8() + "\r\n";
     v += "DTSTAMP:20260701T120000Z\r\n";
+    v += "CREATED:20260701T120000Z\r\n";
+    v += "LAST-MODIFIED:20260701T120000Z\r\n";
     v += "END:VEVENT\r\n";
     v += "END:VCALENDAR\r\n";
     return v;
@@ -421,15 +465,24 @@ void TstPhantomConflictAdoption::crashMidPush_nextCycleAdoptsSilently_noPhantomC
     QVERIFY2(survivorUids.size() < N, "expected at least one create to be interrupted by the crash");
 
     // ── Simulate the operator restarting the crashed server process on the
-    //    same address (a real restart binds the same port).
+    //    same address (a real restart binds the same port). Disable the
+    //    death budget — a real restarted process doesn't re-crash on cue;
+    //    the repair cycle must be able to push every remaining create.
 
     QVERIFY(server.reviveOnSamePort());
+    server.setDieAfterNWrites(0);
 
     // ── Cycle 2: the repair cycle. The K already-landed records now exist
     //    on BOTH sides with NO baseline and byte-different (but canonically
     //    identical) content — exactly O28's phantom-conflict shape.
 
-    const SyncResult r2 = runOnce();
+    SyncResult r2;
+    QStringList adoptionLogLines;
+    {
+        ScopedMessageCapture capture;
+        r2 = runOnce();
+        adoptionLogLines = capture.messages;
+    }
 
     QVERIFY2(r2.unresolvedConflicts.isEmpty(),
              qUtf8Printable(QStringLiteral("expected zero phantom conflicts, got %1")
@@ -454,6 +507,17 @@ void TstPhantomConflictAdoption::crashMidPush_nextCycleAdoptsSilently_noPhantomC
                  qUtf8Printable(QStringLiteral("expected an adopted baseline for %1").arg(uid)));
         QVERIFY(!byId.value(uid).sourceHash.isEmpty());
         QVERIFY(!byId.value(uid).targetHash.isEmpty());
+    }
+
+    // E8: the silent-adoption path must be observable — one info line per
+    // adopted survivor id (today: no such log exists at all).
+    for (const QString &uid : survivorUids) {
+        const bool logged = std::any_of(adoptionLogLines.cbegin(), adoptionLogLines.cend(),
+            [&](const QString &line) {
+                return line.contains(QStringLiteral("adopted baseline")) && line.contains(uid);
+            });
+        QVERIFY2(logged, qUtf8Printable(
+            QStringLiteral("expected an 'adopted baseline' info line for %1").arg(uid)));
     }
 
     // ── Cycle 3: nothing changed since cycle 2 — must be a hard no-op (the
