@@ -1825,3 +1825,23 @@ under whatever concurrency threshold triggers this). Decide at CP-C
 whether this is a rig artifact (single-threaded dev Radicale can't
 sustain the app's concurrency at 100+ item pushes) or a genuine client-
 side create-dispatch bug worth its own phase.
+
+**Second reproduction (2026-07-09, E10's interactive-editor-Save gate,
+new rig `AcidTestE10Gate.kalb`, scratch Radicale on :5234, 400-item
+calendar):** identical shape — `SyncRunCoordinator` reported `target:
+"+45 ~0 -0 =0 !0 E55"` (55/100 new creates timed out client-side) — but
+this time the SERVER-side evidence was checked directly: after the
+client-reported failure, `find .../collections/.../e10gate -iname
+'*.ics' | wc -l` showed **all 300 of the FIRST batch's items present**
+on disk, byte-content matching what the client sent (confirmed
+CREATED/LAST-MODIFIED absence round-tripped correctly per E12). The
+next sync cycle's delta fetch found the "failed" creates already on the
+server and silently adopted them via E8's canonical-equality baseline
+path (`adopted baseline for "e10gate-NNN" ... canonically equal to
+source — not a conflict`), not as phantom conflicts. This strengthens
+the timeout-budget-vs-concurrency hypothesis over a transport/data-loss
+bug: **the writes are landing, the client just gives up waiting before
+seeing the response** under this rig's request volume. Does not
+implicate E10's actual target (the interactive Save round-tripped
+correctly regardless — see E10's §17 entry). Still not root-caused;
+still decide at CP-C.

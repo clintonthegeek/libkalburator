@@ -1,13 +1,16 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** complete; **v0.90
-tagged 2026-07-09** (v0.90.1 same day, O43); E12 (O41 Resolved) landed same
-day on `feature/e12-canon-timestamp-write-fix`, not yet merged/tagged.
-Remaining: E10 (PlanStan adoption — substantially landed, one interactive
-gate item left, now unblocked by E13), E11 (CalendarManager async API),
-CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly on the H8 rig,
-found during E13's live check — not scoped to a phase yet).
+**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** + **E10** all
+complete; **v0.90 tagged 2026-07-09** (v0.90.1 same day, O43); E12 (O41
+Resolved) merged to `main` same day (past v0.90.1, no new tag cut yet).
+E10's last gate item (interactive in-editor Save during an active sync)
+closed 2026-07-09 in a human-at-the-GUI session — E10 fully done, branch
+`feature/sync-excellence-adoption` not yet merged to PlanStan `master`.
+Remaining: E11 (CalendarManager async API), CP-C. New FINDINGS **O45**
+(CalDAV create-timeout anomaly, reproduced twice now — H8 rig during
+E13's live check, and again on the E10 gate rig — client/rig artifact,
+not scoped to a phase yet).
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1642,8 +1645,8 @@ driven because the window freezes.
       full suite 168/168; live kill-mid-push re-run against a real
       scratch Radicale (new opt-in probe `live_e12_smoke.cpp`) recovered
       with zero phantom conflicts. See FINDINGS O41 for full detail.
-- [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
-      re-asserted, mid-sync editor-save live proof)
+- [x] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
+      re-asserted, mid-sync editor-save live proof) — **DONE 2026-07-09**
       — 2026-07-09 IN PROGRESS, **BLOCKED on new FINDINGS O43** (PlanStan
       branch `feature/sync-excellence-adoption`): steps 1–2 done (pin
       v0.90, `itemsFetched` batch port in ItemLoadingCoordinator +
@@ -1693,6 +1696,20 @@ driven because the window freezes.
       scheduled as phase **E13** (§14d) — run the in-editor-save proof
       after E13 lands (its live gate makes the window usable at the
       required item count), in the E13 session or at CP-C.
+      — 2026-07-09 final: **last gate item DONE**, human-at-the-GUI
+      session post-E13. New rig `AcidTestE10Gate.kalb` (scratch Radicale
+      :5234, 400-item calendar). User opened an item in the editor and
+      clicked Save while `RemoteCalendarBackend::applyRecords` was
+      actively creating OTHER records on the same mapping — log-confirmed
+      bracketing (`applyRecords: Created "..."` before AND after
+      `IncidenceMutator::applyIncidenceUpdate` /
+      `UpdateIncidenceCommand::redo`). No crash, no freeze, clean
+      lock/unlock. Edit round-tripped correctly: local `.ics` and the
+      server's stored copy matched byte-for-byte on the edited `SUMMARY`
+      after the next cycle pushed it (`target: "+0 ~1"`). The run also
+      hit **O45** again (client-reported create-job timeouts even though
+      the records land server-side) — confirms O45 is a rig/client-
+      dispatch artifact independent of this gate. E10 fully closed.
 - [x] **E13** PlanStan sync-presentation GUI-freeze fix (O44, §14d —
       plan doc: PlanStan
       `docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`) —
