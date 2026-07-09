@@ -187,6 +187,29 @@ QByteArray makeVEventOriginalBytes(const QString &uid, const QString &summary)
     return v;
 }
 
+// O41 (E12) RED (a): the timestamp-LESS twin of makeVEventOriginalBytes —
+// the exact early-fixture variant the E8/O28 investigation discarded because
+// it reproduced phantom conflicts for a DIFFERENT reason (O41's canon
+// write-side stamping, not O28's PRODID/property-order noise). No CREATED
+// or LAST-MODIFIED at all, matching real content some external tool might
+// drop into the local mirror (RFC 5545 makes both optional).
+QByteArray makeVEventOriginalBytesNoTimestamps(const QString &uid, const QString &summary)
+{
+    QByteArray v;
+    v += "BEGIN:VCALENDAR\r\n";
+    v += "PRODID:-//SomeOtherApp//NONSGML v1.0//EN\r\n";
+    v += "VERSION:2.0\r\n";
+    v += "BEGIN:VEVENT\r\n";
+    v += "DTSTART:20260705T090000Z\r\n";
+    v += "DTEND:20260705T100000Z\r\n";
+    v += "UID:" + uid.toUtf8() + "\r\n";
+    v += "SUMMARY:" + summary.toUtf8() + "\r\n";
+    v += "DTSTAMP:20260701T120000Z\r\n";
+    v += "END:VEVENT\r\n";
+    v += "END:VCALENDAR\r\n";
+    return v;
+}
+
 // Minimal in-memory SyncBackend with a configurable Shape, used by test (c)
 // to exercise a domain with NO canonical transcode pipeline (blob) — the
 // engine's real MockBackend (src/calendar/mockbackend.h) is hardcoded to
@@ -297,6 +320,17 @@ private slots:
     // fix: zero conflicts, all N present both sides, baselines adopted,
     // mapping success == true.
     void crashMidPush_nextCycleAdoptsSilently_noPhantomConflicts();
+
+    // O41 (E12) RED (a): identical protocol to the above, but the source
+    // .ics files literally have no CREATED/LAST-MODIFIED at all. Before the
+    // E12 fix: cycle 2's canon write-side stamps wall-clock "now" onto the
+    // pushed bytes' CREATED/LAST-MODIFIED, the target's next read finds
+    // those literal lines while the source's canon (still built from the
+    // original timestamp-less bytes) does not, differ.equal() returns false
+    // forever, and the repair cycle re-declares phantom conflicts for the
+    // survivors instead of adopting — the live CP-B mechanism. After the fix:
+    // zero conflicts, same as the timestamp-present sibling test.
+    void crashMidPush_timestampLessSource_nextCycleAdoptsSilently_noPhantomConflicts();
 
     // RED (b): guard against over-adoption. Two sides independently seeded
     // with the SAME uid but genuinely DIFFERENT content, no baseline —
@@ -523,6 +557,183 @@ void TstPhantomConflictAdoption::crashMidPush_nextCycleAdoptsSilently_noPhantomC
     // ── Cycle 3: nothing changed since cycle 2 — must be a hard no-op (the
     //    adopted baselines must actually stick, not just paper over cycle
     //    2's diff).
+
+    const int putsAfterCycle2 = server.requestCount(QByteArrayLiteral("PUT"));
+    const SyncResult r3 = runOnce();
+    QVERIFY2(r3.success, qUtf8Printable(r3.errorMessage));
+    QVERIFY(r3.unresolvedConflicts.isEmpty());
+    QCOMPARE(server.requestCount(QByteArrayLiteral("PUT")), putsAfterCycle2);
+    QCOMPARE(server.storedEvents(href).size(), N);
+}
+
+void TstPhantomConflictAdoption::crashMidPush_timestampLessSource_nextCycleAdoptsSilently_noPhantomConflicts()
+{
+    const int N = 10; // total new local items
+    const int K = 4;  // items that land on the "server" before it dies
+
+    FakeCalDavServer server;
+    const QString href = QStringLiteral("/calendars/testuser/personal/");
+    server.setCalendarComponents(href, { QStringLiteral("VEVENT") });
+    QVERIFY(server.startListening());
+    server.setDieAfterNWrites(K);
+
+    BackendConfiguration cfg;
+    cfg.id          = QStringLiteral("phantom-conflict-notimestamps-account");
+    cfg.type        = QStringLiteral("caldav");
+    cfg.displayName = QStringLiteral("Fake CalDAV (O41/E12)");
+    cfg.connectionParams.insert(QStringLiteral("url"),      server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+
+    CalDavProvider provider;
+    provider.load(cfg);
+    QVERIFY(waitForFutureBool(provider.connect(), 5000));
+    QVERIFY(provider.isConnected());
+
+    const auto cols = provider.collections();
+    QVERIFY(!cols.isEmpty());
+    const QString collId = cols.first().id;
+
+    std::unique_ptr<IBlobBackend> rawRemote = provider.createBackend(collId);
+    QVERIFY(rawRemote != nullptr);
+    auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
+    QVERIFY(remote != nullptr);
+    const QString remoteBackendId = remote->backendId();
+
+    QTemporaryDir remoteStateDir;
+    QVERIFY(remoteStateDir.isValid());
+    remote->setDbPath(remoteStateDir.filePath(QStringLiteral("ctags.db")));
+    remote->setCacheDir(remoteStateDir.path());
+
+    QTemporaryDir localDir;
+    QVERIFY(localDir.isValid());
+    LocalBackend local(localDir.path());
+    const QString localBackendId = local.backendId();
+    const QString localCollectionId = QStringLiteral("mirror");
+    {
+        CollectionInfo info;
+        info.id   = localCollectionId;
+        info.name = localCollectionId;
+        info.type = QStringLiteral("calendar");
+        QVERIFY(!local.createCollection(info).isEmpty());
+    }
+    QTemporaryDir fingerprintDir;
+    QVERIFY(fingerprintDir.isValid());
+    local.setDbPath(fingerprintDir.filePath(QStringLiteral("fingerprints.db")));
+
+    const QString mirrorDir = QDir(localDir.path()).filePath(localCollectionId);
+    QStringList uids;
+    for (int i = 0; i < N; ++i) {
+        const QString uid = QStringLiteral("phantom-notimestamps-%1").arg(i);
+        uids << uid;
+        const QString path = QDir(mirrorDir).filePath(uid + QStringLiteral(".ics"));
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        const QByteArray bytes = makeVEventOriginalBytesNoTimestamps(
+            uid, QStringLiteral("Phantom Item %1").arg(i));
+        QCOMPARE(f.write(bytes), qint64(bytes.size()));
+    }
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(localBackendId,  &local);
+    registry.registerBackendInstance(remoteBackendId, remote);
+
+    CapturingSyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setSkipUnchangedMappings(false);
+
+    QTemporaryDir baselineDir;
+    QVERIFY(baselineDir.isValid());
+    BaselineStore baselines(baselineDir.filePath(QStringLiteral("baselines.db")));
+    engine.setBaselineStore(&baselines);
+
+    SyncMapping mapping;
+    mapping.id             = QStringLiteral("phantom-conflict-notimestamps-mapping");
+    mapping.sourceBackend  = localBackendId;
+    mapping.sourceCalendar = localCollectionId;
+    mapping.targetBackend  = remoteBackendId;
+    mapping.targetCalendar = collId;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::AskUser;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    auto runOnce = [&]() -> SyncResult {
+        SyncRequest req;
+        req.mappingIds = { mapping.id };
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto future = engine.runSync(req);
+        QDeadlineTimer deadline(kSyncTimeoutMs);
+        while (!future.isFinished() && !deadline.hasExpired())
+            QTest::qWait(10);
+        if (!future.isFinished()) {
+            SyncResult timedOut;
+            timedOut.success = false;
+            timedOut.errorMessage = QStringLiteral("sync did not finish within timeout");
+            return timedOut;
+        }
+        return future.resultAt(0).first();
+    };
+
+    const SyncResult r1 = runOnce();
+    QVERIFY2(!r1.success, "cycle 1 must fail: not every create could reach the dead server");
+
+    QStringList survivorUids;
+    for (const QString &uid : uids) {
+        if (server.hasEvent(href, uid))
+            survivorUids << uid;
+    }
+    QVERIFY2(!survivorUids.isEmpty(), "expected at least one create to land before the crash");
+    QVERIFY2(survivorUids.size() < N, "expected at least one create to be interrupted by the crash");
+
+    QVERIFY(server.reviveOnSamePort());
+    server.setDieAfterNWrites(0);
+
+    // ── Cycle 2: the repair cycle. Before the E12 fix, this is where O41
+    //    bites: the K survivors' CREATED/LAST-MODIFIED-less local bytes now
+    //    have a server copy that KCalendarCore stamped real timestamps into
+    //    on push, so the two sides' canon permanently disagree and the
+    //    survivors phantom-conflict instead of adopting.
+
+    SyncResult r2;
+    QStringList adoptionLogLines;
+    {
+        ScopedMessageCapture capture;
+        r2 = runOnce();
+        adoptionLogLines = capture.messages;
+    }
+
+    QVERIFY2(r2.unresolvedConflicts.isEmpty(),
+             qUtf8Printable(QStringLiteral("expected zero phantom conflicts, got %1")
+                                 .arg(r2.unresolvedConflicts.size())));
+    QVERIFY2(r2.success, qUtf8Printable(r2.errorMessage));
+
+    QCOMPARE(server.storedEvents(href).size(), N);
+    QDir dir(mirrorDir);
+    QCOMPARE(dir.entryList({ QStringLiteral("*.ics") }, QDir::Files).size(), N);
+    for (const QString &uid : uids)
+        QVERIFY2(server.hasEvent(href, uid), qUtf8Printable(uid));
+
+    const auto hashes = baselines.baselineHashesForMappingV4(mapping.id);
+    QHash<QString, BaselineStore::BaselineHashes> byId;
+    for (const auto &h : hashes) byId.insert(h.recordId, h);
+    for (const QString &uid : survivorUids) {
+        QVERIFY2(byId.contains(uid),
+                 qUtf8Printable(QStringLiteral("expected an adopted baseline for %1").arg(uid)));
+        QVERIFY(!byId.value(uid).sourceHash.isEmpty());
+        QVERIFY(!byId.value(uid).targetHash.isEmpty());
+    }
+
+    for (const QString &uid : survivorUids) {
+        const bool logged = std::any_of(adoptionLogLines.cbegin(), adoptionLogLines.cend(),
+            [&](const QString &line) {
+                return line.contains(QStringLiteral("adopted baseline")) && line.contains(uid);
+            });
+        QVERIFY2(logged, qUtf8Printable(
+            QStringLiteral("expected an 'adopted baseline' info line for %1").arg(uid)));
+    }
+
+    // ── Cycle 3: must stay a hard no-op — the adopted baselines must stick.
 
     const int putsAfterCycle2 = server.requestCount(QByteArrayLiteral("PUT"));
     const SyncResult r3 = runOnce();

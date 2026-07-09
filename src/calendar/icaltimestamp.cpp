@@ -51,4 +51,19 @@ QDateTime extractICalPropertyLiteral(const QByteArray &icalBytes, const QString 
     return extractProperty(QString::fromUtf8(icalBytes), propertyName);
 }
 
+QByteArray stripICalPropertyLine(const QByteArray &icalBytes, const QString &propertyName)
+{
+    if (icalBytes.isEmpty())
+        return icalBytes;
+    // Same anchor/parameter shape as extractProperty's match, but captures
+    // the whole line (any value) plus its line terminator so removal
+    // doesn't leave a blank line behind.
+    const QRegularExpression re(
+        QStringLiteral("^%1(?:;[^:\\r\\n]*)?:[^\\r\\n]*\\r?\\n").arg(propertyName),
+        QRegularExpression::MultilineOption | QRegularExpression::CaseInsensitiveOption);
+    QString text = QString::fromUtf8(icalBytes);
+    text.remove(re);
+    return text.toUtf8();
+}
+
 }  // namespace Kalburator::Calendar

@@ -1,6 +1,7 @@
 #include "journalcanonfields.h"
 
 #include "canonenvelope.h"
+#include "icaltimestamp.h"
 
 #include <KCalendarCore/ICalFormat>
 
@@ -43,15 +44,23 @@ QString classToString(KCalendarCore::Incidence::Secrecy cls)
 namespace Kalburator::Calendar {
 
 QJsonObject journalFieldsToCanon(const KCalendarCore::Journal::Ptr& journal,
-                                 const QByteArray& /*originalBytes*/)
+                                 const QByteArray& originalBytes)
 {
     QJsonObject obj;
-    if (journal->created().isValid())
-        obj.insert(QStringLiteral("created"),
-                   journal->created().toUTC().toString(Qt::ISODate));
-    if (journal->lastModified().isValid())
-        obj.insert(QStringLiteral("lastModified"),
-                   journal->lastModified().toUTC().toString(Qt::ISODate));
+    // O41 read-side fix: journal->created()/lastModified() return a
+    // construction-time default ("now") when the source lacks an explicit
+    // CREATED/LAST-MODIFIED property (same class of bug as the Phase B5
+    // finding already fixed in eventcanonfields.cpp/vtodocanonfields.cpp —
+    // journalcanonfields.cpp never got the same guard). Only emit these
+    // fields when the property is LITERALLY present in the source bytes.
+    const QDateTime created = Kalburator::Calendar::extractICalPropertyLiteral(
+        originalBytes, QStringLiteral("CREATED"));
+    const QDateTime lastMod = Kalburator::Calendar::extractICalPropertyLiteral(
+        originalBytes, QStringLiteral("LAST-MODIFIED"));
+    if (created.isValid())
+        obj.insert(QStringLiteral("created"), created.toUTC().toString(Qt::ISODate));
+    if (lastMod.isValid())
+        obj.insert(QStringLiteral("lastModified"), lastMod.toUTC().toString(Qt::ISODate));
     if (journal->revision() > 0)
         obj.insert(QStringLiteral("sequence"), journal->revision());
     if (!journal->summary().isEmpty())
@@ -113,13 +122,22 @@ QByteArray canonObjectToJournalBytes(const QJsonObject& obj)
     const QString uid = obj.value(QStringLiteral("uid")).toString();
     if (!uid.isEmpty())
         journal->setUid(uid);
+    // O41 write-side fix (same as eventcanonfields.cpp — see its comment):
+    // strip the KCalendarCore-injected "now" default post-serialization
+    // when canon never had the corresponding key.
+    bool hadCreated = false;
+    bool hadLastModified = false;
     {
         const QString created = obj.value(QStringLiteral("created")).toString();
-        if (!created.isEmpty())
+        if (!created.isEmpty()) {
             journal->setCreated(QDateTime::fromString(created, Qt::ISODate));
+            hadCreated = true;
+        }
         const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
-        if (!lastMod.isEmpty())
+        if (!lastMod.isEmpty()) {
             journal->setLastModified(QDateTime::fromString(lastMod, Qt::ISODate));
+            hadLastModified = true;
+        }
     }
     if (const QJsonValue seq = obj.value(QStringLiteral("sequence")); !seq.isUndefined())
         journal->setRevision(seq.toInt());
@@ -182,7 +200,15 @@ QByteArray canonObjectToJournalBytes(const QJsonObject& obj)
             journal->setNonKDECustomProperty(it.key().toLatin1(), it.value().toString());
     }
     KCalendarCore::ICalFormat fmt;
-    return fmt.toICalString(journal).toUtf8();
+    QByteArray icalBytes = fmt.toICalString(journal).toUtf8();
+
+    // ---- Strip KCalendarCore-injected created/lastModified defaults -------
+    if (!hadCreated)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("CREATED"));
+    if (!hadLastModified)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
+
+    return icalBytes;
 }
 
 Kalburator::Shape::LossProfile canonToVjournalLoss()

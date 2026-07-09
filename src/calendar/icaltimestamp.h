@@ -33,4 +33,19 @@ QDateTime extractICalTimestamp(const QByteArray &icalBytes);
 QDateTime extractICalPropertyLiteral(const QByteArray &icalBytes,
                                       const QString &propertyName);
 
+/// Remove a named property's line (and its line terminator) from serialized
+/// iCal bytes, wherever it appears. No-op if the property isn't present.
+///
+/// Exists for the write-side twin of the bug extractICalPropertyLiteral
+/// documents (O41): KCalendarCore::Incidence's created()/lastModified()
+/// always hold a valid construction-time "now" — there is no API to leave
+/// them unset — so KCalendarCore::ICalFormat::toICalString() unconditionally
+/// stamps CREATED/LAST-MODIFIED into the serialized bytes even when the
+/// canon record never had that field. Canon→ical materialization must call
+/// this to strip the injected default when the corresponding canon key was
+/// absent, or the write side silently manufactures data the read side
+/// (which trusts literal presence only) will disagree about forever.
+QByteArray stripICalPropertyLine(const QByteArray &icalBytes,
+                                  const QString &propertyName);
+
 }  // namespace Kalburator::Calendar

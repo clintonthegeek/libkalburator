@@ -501,6 +501,64 @@ private slots:
                  qPrintable(QStringLiteral("unfolded RRULE must survive intact; got: %1")
                      .arg(QString::fromUtf8(output))));
     }
+
+    // O41 (E12) RED (b): a source with NO CREATED/LAST-MODIFIED at all (both
+    // properties absent — plausible for content dropped in by some external
+    // tool, RFC 5545 makes both optional) must round-trip through canon and
+    // back to iCal WITHOUT KCalendarCore stamping wall-clock "now" defaults
+    // into the outbound bytes. Before the E12 fix, canonObjectToEventBytes
+    // left created()/lastModified() unset on the KCalendarCore::Event, but
+    // KCalendarCore::ICalFormat::toICalString() stamped real values anyway —
+    // a second forward-pass over those OUTPUT bytes would then find literal
+    // CREATED/LAST-MODIFIED lines the original canon never had, permanently
+    // disagreeing with a source that keeps omitting them (the live O41
+    // phantom-conflict mechanism).
+    void timestampLessSourceRoundTripsWithoutManufacturedStamps()
+    {
+        const QByteArray noTimestamps =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:no-timestamps-event@example.com\r\n"
+            "DTSTAMP:20260601T120000Z\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "SUMMARY:No Created Or LastModified\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon1 = fwd.transform(noTimestamps);
+        QVERIFY2(!canon1.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj1 = parse(canon1);
+        QVERIFY2(!obj1.contains(QStringLiteral("created")),
+                 "canon must not have a created key when the source lacks CREATED");
+        QVERIFY2(!obj1.contains(QStringLiteral("lastModified")),
+                 "canon must not have a lastModified key when the source lacks LAST-MODIFIED");
+
+        const QByteArray icalOut = rev.transform(canon1);
+        QVERIFY2(!icalOut.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(!icalOut.contains("CREATED:"),
+                 qPrintable(QStringLiteral("write side must not manufacture CREATED; got: %1")
+                     .arg(QString::fromUtf8(icalOut))));
+        QVERIFY2(!icalOut.contains("LAST-MODIFIED:"),
+                 qPrintable(QStringLiteral("write side must not manufacture LAST-MODIFIED; got: %1")
+                     .arg(QString::fromUtf8(icalOut))));
+
+        // Re-fetch: a second forward pass over the materialized bytes must
+        // land on the SAME canon (no created/lastModified key either side) —
+        // the round-trip pin that fails forever before this fix.
+        const QByteArray canon2 = fwd.transform(icalOut);
+        const QJsonObject obj2 = parse(canon2);
+        QVERIFY2(!obj2.contains(QStringLiteral("created")),
+                 "re-fetched canon must still lack created");
+        QVERIFY2(!obj2.contains(QStringLiteral("lastModified")),
+                 "re-fetched canon must still lack lastModified");
+    }
 };
 
 QTEST_GUILESS_MAIN(TestCalendarCanonRoundtrip)

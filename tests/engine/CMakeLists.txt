@@ -308,4 +308,18 @@ if(KALBURATOR_BUILD_LIVE_PROBES)
             KF6::CalendarCore
             $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
     )
+
+    # E12 live smoke — manual live-server probe (NOT a CI test, delete after
+    # the phase closes). Re-runs the CP-B kill-mid-push protocol with
+    # timestamp-less source events against a real Radicale. See
+    # docs/campaign/2026-07-07-sync-excellence-phases.md §14c.
+    add_executable(live_e12_smoke live_e12_smoke.cpp)
+    target_link_libraries(live_e12_smoke
+        PRIVATE
+            Qt6::Core
+            Qt6::Network
+            Qt6::Test
+            KF6::CalendarCore
+            $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+    )
 endif()

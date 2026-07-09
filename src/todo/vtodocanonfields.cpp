@@ -292,20 +292,29 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     }
 
     // ---- created / lastModified --------------------------------------------
+    // O41 write-side fix (same as eventcanonfields.cpp — see its comment):
+    // strip the KCalendarCore-injected "now" default post-serialization
+    // when canon never had the corresponding key.
+    bool hadCreated = false;
+    bool hadLastModified = false;
     {
         const QString created = obj.value(QStringLiteral("created")).toString();
         if (!created.isEmpty()) {
             const QDateTime dt = QDateTime::fromString(created, Qt::ISODate);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 todo->setCreated(dt);
+                hadCreated = true;
+            }
         }
     }
     {
         const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
         if (!lastMod.isEmpty()) {
             const QDateTime dt = QDateTime::fromString(lastMod, Qt::ISODate);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 todo->setLastModified(dt);
+                hadLastModified = true;
+            }
         }
     }
 
@@ -493,6 +502,12 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
 
     // ---- Serialize to iCal -------------------------------------------------
     QByteArray icalBytes = serializeTodo(todo);
+
+    // ---- Strip KCalendarCore-injected created/lastModified defaults -------
+    if (!hadCreated)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("CREATED"));
+    if (!hadLastModified)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
 
     // ---- Inject verbatim recurrence lines ----------------------------------
     // KCalendarCore's serialiser may not preserve recurrence lines verbatim.
