@@ -3406,15 +3406,23 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
 
     const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
+    // E11 (audit B7 / FINDINGS O39): applyCollectionProperties() is void and
+    // its result was never consumed here even when it ran synchronously —
+    // this call was always fire-and-forget from runPropertyPhase's
+    // perspective. Now that CalendarDomainOperations::applyCollectionProperties
+    // uses updateCalendarAsync internally (no nested QEventLoop on the
+    // backend thread), a plain queued marshal onto the backend's own thread
+    // is enough; no blocking wait needed. By-value captures because the
+    // queued call outlives this function's stack frame.
     if (!diff.toApplyToTarget.isEmpty()) {
-        runOnBackendThread(tgt, [&]() {
-            ops->applyCollectionProperties(tgt, tgtCollectionId, diff.toApplyToTarget);
+        QMetaObject::invokeMethod(tgt, [ops, tgt, tgtCollectionId, props = diff.toApplyToTarget]() {
+            ops->applyCollectionProperties(tgt, tgtCollectionId, props);
         });
     }
 
     if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
-        runOnBackendThread(src, [&]() {
-            ops->applyCollectionProperties(src, srcCollectionId, diff.toApplyToSource);
+        QMetaObject::invokeMethod(src, [ops, src, srcCollectionId, props = diff.toApplyToSource]() {
+            ops->applyCollectionProperties(src, srcCollectionId, props);
         });
     }
 
@@ -3430,7 +3438,7 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
             }
         }
         if (!fromSrc.isEmpty()) {
-            runOnBackendThread(tgt, [&]() {
+            QMetaObject::invokeMethod(tgt, [ops, tgt, tgtCollectionId, fromSrc]() {
                 ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
             });
         }

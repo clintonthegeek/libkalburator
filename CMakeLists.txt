@@ -539,6 +539,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/writerbatch.h
     # Neutral backend capability mixin (Plan 9: moved from src/backend/)
     src/sync/changedetection.h
+    # E11: generalized async-blocking rendezvous (audit B7 / FINDINGS O39)
+    src/sync/blockonasync.h
     # Phase K.7.1: account-neutral IProvider adapter
     src/sync/neutralprovider.h
     # Phase L.1: Akonadi first-class provider (gated on HAVE_AKONADI)

@@ -1,16 +1,21 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** + **E10** all
-complete; **v0.90 tagged 2026-07-09** (v0.90.1 same day, O43); E12 (O41
-Resolved) merged to `main` same day (past v0.90.1, no new tag cut yet).
-E10's last gate item (interactive in-editor Save during an active sync)
-closed 2026-07-09 in a human-at-the-GUI session — E10 fully done, branch
-`feature/sync-excellence-adoption` not yet merged to PlanStan `master`.
-Remaining: E11 (CalendarManager async API), CP-C. New FINDINGS **O45**
-(CalDAV create-timeout anomaly, reproduced twice now — H8 rig during
-E13's live check, and again on the E10 gate rig — client/rig artifact,
-not scoped to a phase yet).
+**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** + **E10** +
+**E11** all complete; **v0.90 tagged 2026-07-09** (v0.90.1 same day, O43);
+E12 (O41 Resolved) merged to `main` same day (past v0.90.1, no new tag cut
+yet). E10's last gate item (interactive in-editor Save during an active
+sync) closed 2026-07-09 in a human-at-the-GUI session — E10 fully done,
+branch `feature/sync-excellence-adoption` not yet merged to PlanStan
+`master`. **E11 landed 2026-07-09** on `libkalburator` branch
+`feature/e11-calendarmanager-async-api` (not yet merged to `main`),
+FINDINGS O39 Resolved — see §14b's amended acceptance-gate entry for the
+correction to its original `davSyncRequest`-deletion claim (the helper
+survives; only Group C's calls into it converted). Full libkalburator
+suite 168/168; no PlanStan source changes required. Remaining: merge E11
+to `main`, CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly,
+reproduced twice now — H8 rig during E13's live check, and again on the
+E10 gate rig — client/rig artifact, not scoped to a phase yet).
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1024,11 +1029,29 @@ event loop / assert via a sequence recorder that no unrelated queued slot
 runs mid-call).
 
 **Acceptance gate (E11):** full libkalburator suite green + PlanStan
-suite green (if touched); `grep -rn "QEventLoop" src/calendar/ src/sync/`
-EMPTY (the A4/A5 carve-outs are now all converted — this is the gate
-E5 could not yet meet); `grep -rn "davSyncRequest\b\|awaitOperation" src/`
-empty; FINDINGS O39 → Resolved; audit B7 family fully closed in the
-calendar backend.
+suite green (if touched); FINDINGS O39 → Resolved; audit B7 family fully
+closed in the calendar backend.
+
+**Landed 2026-07-09 — gate amended during implementation (see FINDINGS
+O39's Resolved entry for the full correction):** this section's original
+"`grep QEventLoop` EMPTY" / "`grep davSyncRequest\|awaitOperation` empty"
+text was wrong — `davSyncRequest` has five legitimate callers beyond Group
+C (`fetchAllCtags` A6, `getRawIcs`/`setRawIcs`, `createRecord`/
+`deleteRecord`'s E5.3 deviation), none of them B7 hazards, and none of
+them convert in this phase. The helper and its `QEventLoop` **survive**.
+The real, met gate: Group C's three calls into `davSyncRequest` are gone
+(converted to `createCalendarAsync`/`updateCalendarAsync`/
+`deleteCalendarAsync` + a new `Kalburator::Sync::blockOnAsync`/
+`callOnOwnerThreadBlocking` rendezvous, `src/sync/blockonasync.h`);
+`CalendarManager`'s three incidence-CRUD `QEventLoop`s are gone (async,
+signal-fan-in, no loop); every `QEventLoop` remaining in `src/calendar/` +
+`src/sync/` is either a documented non-reentrant top-level bridge
+(`davSyncRequest`, `awaitOperation`/`loadRecords`) or a caller-thread
+rendezvous (`blockonasync.h`) that never nests inside a backend-thread
+operation — full libkalburator suite 168/168, no PlanStan source changes
+required (PlanStan doesn't call the three incidence-CRUD methods; its
+Group C call sites go through `CalendarManager`'s LogicalCalendar-level
+wrappers, whose public signatures didn't change).
 **Do NOT:** touch `src/contacts/` (still §16 residual, its own rule-of-
 three) or add mapping-level parallelism.
 
@@ -1738,8 +1761,18 @@ driven because the window freezes.
       CalDAV create-timeout issue on this rig (filed **O45**, does not
       implicate E13's presentation-only diff). Unblocks the E10 leftover
       gate item (in-editor Save during sync) for a future session.
-- [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
-      Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
-      loops converted; synchronous `davSyncRequest` helper deleted;
-      `grep QEventLoop src/calendar/ src/sync/` finally EMPTY; O39 Resolved
+- [x] **E11** app-facing CalendarManager async API (absorbs O39, §14b) —
+      landed 2026-07-09 on `feature/e11-calendarmanager-async-api` (not yet
+      merged to `main`): Group C calendar-CRUD (`createCalendar`/
+      `updateCalendar`/`deleteCalendar`) converted to an `*Async` trio +
+      the new `Kalburator::Sync::blockOnAsync`/`callOnOwnerThreadBlocking`
+      rendezvous (`src/sync/blockonasync.h`); CalendarManager's three
+      incidence-CRUD GUI `QEventLoop`s converted to async fan-in
+      (`void` return, signal-driven completion). **Gate correction**
+      (§14b): `davSyncRequest` was NOT Group C's last caller as originally
+      claimed — it survives for 5 other legitimate non-B7 callers
+      (`fetchAllCtags` A6, `getRawIcs`/`setRawIcs`, `createRecord`/
+      `deleteRecord`'s E5.3 deviation); only Group C's calls into it
+      converted. Full suite 168/168; no PlanStan changes needed. O39
+      Resolved.
 - [ ] **CP-C** soak + adversarial + efficiency audit + campaign close

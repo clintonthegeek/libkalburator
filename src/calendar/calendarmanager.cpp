@@ -6,6 +6,7 @@
 #include "syncoperation.h"  // complete PushOperation (calendar consumer; no longer transitive via syncengine.h)
 #include "icalendarcollection.h"
 #include "syncengine.h"
+#include "blockonasync.h"
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimeZone>
@@ -89,11 +90,18 @@ CreationResult CalendarManager::createCalendar(const LogicalCalendar &logCal)
             qDebug() << "CalendarManager: Creating calendar on backend"
                      << binding.backendId << ":" << binding.calendarId;
 
-            success = backend->createCalendar(
-                collectionId,
-                binding.calendarId,
-                logCal.displayName,
-                logCal.type);
+            // E11 (audit B7 / FINDINGS O39): this call had NO marshal wrapper
+            // at all — a direct, unguarded cross-thread call into a backend
+            // that lives on its own I/O thread post-H7. blockOnAsync both
+            // marshals onto the backend's thread AND avoids the old
+            // davSyncRequest nested-loop hazard the sync createCalendar()
+            // used to hide (that override is gone from RemoteCalendarBackend).
+            success = Kalburator::Sync::blockOnAsync<bool>(
+                backend, [&](std::function<void(bool)> done) {
+                    backend->createCalendarAsync(
+                        collectionId, binding.calendarId,
+                        logCal.displayName, logCal.type, std::move(done));
+                });
 
             if (success) {
                 // Clear needsCreation flag in config
@@ -186,7 +194,14 @@ bool CalendarManager::updateCalendar(const QString &logicalCalendarId,
         // Only update backend if it supports calendar updates
         if (backend->supportsCalendarCreation()) {
             QString collectionId = m_collection->id();
-            if (!backend->updateCalendar(collectionId, binding.calendarId, properties)) {
+            // E11: see the createCalendar call above — same unguarded
+            // cross-thread gap, same blockOnAsync fix.
+            const bool ok = Kalburator::Sync::blockOnAsync<bool>(
+                backend, [&](std::function<void(bool)> done) {
+                    backend->updateCalendarAsync(
+                        collectionId, binding.calendarId, properties, std::move(done));
+                });
+            if (!ok) {
                 qWarning() << "CalendarManager: Failed to update calendar on"
                           << binding.backendId;
                 allSucceeded = false;
@@ -307,7 +322,13 @@ DeletionResult CalendarManager::deleteCalendar(const QString &logicalCalendarId,
             qDebug() << "CalendarManager: Deleting calendar from backend"
                      << binding.backendId << ":" << binding.calendarId;
 
-            bool success = backend->deleteCalendar(collectionId, binding.calendarId);
+            // E11: see the createCalendar call above — same unguarded
+            // cross-thread gap, same blockOnAsync fix.
+            bool success = Kalburator::Sync::blockOnAsync<bool>(
+                backend, [&](std::function<void(bool)> done) {
+                    backend->deleteCalendarAsync(
+                        collectionId, binding.calendarId, std::move(done));
+                });
             result.backendResults[binding.backendId] = success;
 
             if (!success) {
@@ -551,154 +572,189 @@ bool CalendarManager::updateBinding(const QString &logicalCalendarId,
 
 // ========== IMMEDIATE Incidence CRUD ==========
 
-bool CalendarManager::createIncidence(const QString &logicalCalendarId,
+// E11 (audit B7 / FINDINGS O39): shared fan-in for createIncidence/
+// updateIncidence/deleteIncidence. Both problems O39 named are closed here:
+// (a) no QEventLoop — each binding's op is awaited by connecting `finished`
+// asynchronously, never by nesting a loop on the caller's (GUI) thread; (b)
+// the op-producing call itself (pushItems/deleteItems) is marshaled onto the
+// backend's own thread via callOnOwnerThreadBlocking instead of executing
+// its state-touching prologue directly on the caller's thread.
+namespace {
+struct IncidenceOpFanIn {
+    int remaining;
+    bool allSucceeded = true;
+};
+} // namespace
+
+void CalendarManager::createIncidence(const QString &logicalCalendarId,
                                       const KCalendarCore::Incidence::Ptr &incidence)
 {
     if (!m_configManager || !incidence) {
         emit operationFailed(QStringLiteral("createIncidence"), tr("Invalid parameters"));
-        return false;
+        return;
     }
 
     LogicalCalendar logCal = m_configManager->logicalCalendar(logicalCalendarId);
     if (!logCal.isValid()) {
         emit operationFailed(QStringLiteral("createIncidence"),
                             tr("Calendar not found: %1").arg(logicalCalendarId));
-        return false;
+        return;
     }
 
     qDebug() << "CalendarManager::createIncidence:" << incidence->uid()
              << "to" << logCal.displayName;
 
-    bool allSucceeded = true;
+    const auto bindings = logCal.enabledBindings();
+    auto fanIn = std::make_shared<IncidenceOpFanIn>();
+    fanIn->remaining = static_cast<int>(bindings.size());
+    if (fanIn->remaining == 0) return;
 
-    for (const auto &binding : logCal.enabledBindings()) {
+    for (const auto &binding : bindings) {
         SyncBackend *backend = m_controller->backendById(binding.backendId);
-        if (!backend) continue;
+        if (!backend) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceCreated(logicalCalendarId, incidence->uid());
+            continue;
+        }
 
-        // Push to backend
-        auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
-        if (pushOp) {
-            // O39: GUI-thread op-await loop, out of E5's backend-thread
-            // re-entrancy scope (CP-A amendment A4). Converting this
-            // app-facing API to async is filed separately as FINDINGS O39.
-            QEventLoop loop;
-            connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
-            loop.exec();
+        auto *pushOp = Kalburator::Sync::callOnOwnerThreadBlocking<PushOperation *>(
+            backend, [backend, binding, incidence]() {
+                return backend->pushItems(binding.calendarId, {incidence});
+            });
+        if (!pushOp) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceCreated(logicalCalendarId, incidence->uid());
+            continue;
+        }
 
+        connect(pushOp, &SyncOperation::finished, this,
+                [this, pushOp, fanIn, logicalCalendarId, uid = incidence->uid(),
+                 backendId = binding.backendId]() {
             if (pushOp->state() != SyncOperation::Succeeded) {
-                allSucceeded = false;
+                fanIn->allSucceeded = false;
                 emit operationFailed(QStringLiteral("createIncidence"),
-                                    tr("Failed on %1: %2").arg(binding.backendId, pushOp->errorString()));
+                                    tr("Failed on %1: %2").arg(backendId, pushOp->errorString()));
             }
             pushOp->deleteLater();
-        }
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded) {
+                emit incidenceCreated(logicalCalendarId, uid);
+            }
+        });
     }
-
-    if (allSucceeded) {
-        emit incidenceCreated(logicalCalendarId, incidence->uid());
-    }
-
-    return allSucceeded;
 }
 
-bool CalendarManager::updateIncidence(const QString &logicalCalendarId,
+void CalendarManager::updateIncidence(const QString &logicalCalendarId,
                                       const KCalendarCore::Incidence::Ptr &incidence)
 {
     if (!m_configManager || !incidence) {
         emit operationFailed(QStringLiteral("updateIncidence"), tr("Invalid parameters"));
-        return false;
+        return;
     }
 
     LogicalCalendar logCal = m_configManager->logicalCalendar(logicalCalendarId);
     if (!logCal.isValid()) {
         emit operationFailed(QStringLiteral("updateIncidence"),
                             tr("Calendar not found: %1").arg(logicalCalendarId));
-        return false;
+        return;
     }
 
     qDebug() << "CalendarManager::updateIncidence:" << incidence->uid()
              << "in" << logCal.displayName;
 
-    bool allSucceeded = true;
+    const auto bindings = logCal.enabledBindings();
+    auto fanIn = std::make_shared<IncidenceOpFanIn>();
+    fanIn->remaining = static_cast<int>(bindings.size());
+    if (fanIn->remaining == 0) return;
 
-    for (const auto &binding : logCal.enabledBindings()) {
+    for (const auto &binding : bindings) {
         SyncBackend *backend = m_controller->backendById(binding.backendId);
-        if (!backend) continue;
+        if (!backend) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceUpdated(logicalCalendarId, incidence->uid());
+            continue;
+        }
 
         // Push update to backend (same as create in push model)
-        auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
-        if (pushOp) {
-            // O39: GUI-thread op-await loop, out of E5's backend-thread
-            // re-entrancy scope (CP-A amendment A4). Converting this
-            // app-facing API to async is filed separately as FINDINGS O39.
-            QEventLoop loop;
-            connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
-            loop.exec();
+        auto *pushOp = Kalburator::Sync::callOnOwnerThreadBlocking<PushOperation *>(
+            backend, [backend, binding, incidence]() {
+                return backend->pushItems(binding.calendarId, {incidence});
+            });
+        if (!pushOp) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceUpdated(logicalCalendarId, incidence->uid());
+            continue;
+        }
 
+        connect(pushOp, &SyncOperation::finished, this,
+                [this, pushOp, fanIn, logicalCalendarId, uid = incidence->uid(),
+                 backendId = binding.backendId]() {
             if (pushOp->state() != SyncOperation::Succeeded) {
-                allSucceeded = false;
+                fanIn->allSucceeded = false;
                 emit operationFailed(QStringLiteral("updateIncidence"),
-                                    tr("Failed on %1: %2").arg(binding.backendId, pushOp->errorString()));
+                                    tr("Failed on %1: %2").arg(backendId, pushOp->errorString()));
             }
             pushOp->deleteLater();
-        }
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded) {
+                emit incidenceUpdated(logicalCalendarId, uid);
+            }
+        });
     }
-
-    if (allSucceeded) {
-        emit incidenceUpdated(logicalCalendarId, incidence->uid());
-    }
-
-    return allSucceeded;
 }
 
-bool CalendarManager::deleteIncidence(const QString &logicalCalendarId,
+void CalendarManager::deleteIncidence(const QString &logicalCalendarId,
                                       const QString &uid)
 {
     if (!m_configManager || uid.isEmpty()) {
         emit operationFailed(QStringLiteral("deleteIncidence"), tr("Invalid parameters"));
-        return false;
+        return;
     }
 
     LogicalCalendar logCal = m_configManager->logicalCalendar(logicalCalendarId);
     if (!logCal.isValid()) {
         emit operationFailed(QStringLiteral("deleteIncidence"),
                             tr("Calendar not found: %1").arg(logicalCalendarId));
-        return false;
+        return;
     }
 
     qDebug() << "CalendarManager::deleteIncidence:" << uid
              << "from" << logCal.displayName;
 
-    bool allSucceeded = true;
+    const auto bindings = logCal.enabledBindings();
+    auto fanIn = std::make_shared<IncidenceOpFanIn>();
+    fanIn->remaining = static_cast<int>(bindings.size());
+    if (fanIn->remaining == 0) return;
 
-    for (const auto &binding : logCal.enabledBindings()) {
+    for (const auto &binding : bindings) {
         SyncBackend *backend = m_controller->backendById(binding.backendId);
-        if (!backend) continue;
+        if (!backend) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceDeleted(logicalCalendarId, uid);
+            continue;
+        }
 
-        // Delete from backend
-        auto *deleteOp = backend->deleteItems(binding.calendarId, {uid});
-        if (deleteOp) {
-            // O39: GUI-thread op-await loop, out of E5's backend-thread
-            // re-entrancy scope (CP-A amendment A4). Converting this
-            // app-facing API to async is filed separately as FINDINGS O39.
-            QEventLoop loop;
-            connect(deleteOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
-            loop.exec();
+        auto *deleteOp = Kalburator::Sync::callOnOwnerThreadBlocking<SyncOperation *>(
+            backend, [backend, binding, uid]() {
+                return backend->deleteItems(binding.calendarId, {uid});
+            });
+        if (!deleteOp) {
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded)
+                emit incidenceDeleted(logicalCalendarId, uid);
+            continue;
+        }
 
+        connect(deleteOp, &SyncOperation::finished, this,
+                [this, deleteOp, fanIn, logicalCalendarId, uid, backendId = binding.backendId]() {
             if (deleteOp->state() != SyncOperation::Succeeded) {
-                allSucceeded = false;
+                fanIn->allSucceeded = false;
                 emit operationFailed(QStringLiteral("deleteIncidence"),
-                                    tr("Failed on %1: %2").arg(binding.backendId, deleteOp->errorString()));
+                                    tr("Failed on %1: %2").arg(backendId, deleteOp->errorString()));
             }
             deleteOp->deleteLater();
-        }
+            if (--fanIn->remaining == 0 && fanIn->allSucceeded) {
+                emit incidenceDeleted(logicalCalendarId, uid);
+            }
+        });
     }
-
-    if (allSucceeded) {
-        emit incidenceDeleted(logicalCalendarId, uid);
-    }
-
-    return allSucceeded;
 }
 
 // ========== Transcoding Integration ==========
