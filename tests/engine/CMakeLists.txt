@@ -255,6 +255,33 @@ set_tests_properties(tst_decsync_active_controller_thread PROPERTIES
 # deadlocking a real SyncEngine.
 kalburator_add_engine_test(tst_worker_teardown)
 
+# Sync-excellence campaign E8 (FINDINGS O28) — post-crash phantom-conflict
+# adoption. LocalBackend (source, real .ics files) -> SyncEngine::runSync
+# -> RemoteCalendarBackend (target) -> FakeCalDavServer with
+# setDieAfterNWrites(), replaying the H8 kill-mid-push live incident.
+add_executable(tst_phantom_conflict_adoption
+    tst_phantom_conflict_adoption.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../sync/fakecaldavserver.h
+)
+target_include_directories(tst_phantom_conflict_adoption
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+        ${CMAKE_CURRENT_SOURCE_DIR}/../calendar
+)
+target_link_libraries(tst_phantom_conflict_adoption
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_phantom_conflict_adoption COMMAND tst_phantom_conflict_adoption)
+set_tests_properties(tst_phantom_conflict_adoption PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # CP-B live smoke — manual live-server probe (NOT a CI test). Drives a full
 # create/sync/modify/converge pass plus the pulled-cable (SIGSTOP) O22 check
 # against a real Radicale. See docs/campaign/2026-07-05-sync-hardening-phases.md

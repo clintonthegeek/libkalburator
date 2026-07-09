@@ -96,6 +96,26 @@ public:
         }
     }
 
+    /// E8/O28: kill the fake mid-push, simulating a SIGKILLed server
+    /// process. After @p n item write requests (PUT create/update, or
+    /// item DELETE) have had their response sent since the last
+    /// startListening()/reviveOnSamePort(), the fake stops listening
+    /// entirely (QTcpServer::close()) — every subsequent connection
+    /// attempt gets ECONNREFUSED at the TCP level, exactly like a real
+    /// client trying to reach a process that no longer exists (not
+    /// setDropRequests()'s "accepted but silent" shape, which simulates a
+    /// hung server, not a dead one). Pass 0 (the default) to disable.
+    void setDieAfterNWrites(int n) { m_dieAfterNWrites = n; m_writesSinceRevive = 0; }
+
+    /// Bring the fake back to life after setDieAfterNWrites() killed it —
+    /// re-listens on the SAME port it was using before death (so a test's
+    /// already-registered backend URL, captured from baseUrl() before the
+    /// death, stays valid), and resets the die-after-N counter so a
+    /// second round of writes gets a fresh budget. No-op (returns true)
+    /// if the fake never died. Returns false if re-binding the captured
+    /// port fails.
+    bool reviveOnSamePort();
+
     /// Fail the Nth calendar-multiget REPORT (1-based) with a 500 response
     /// instead of serving it normally. 0 (the default) means never fail.
     /// Lets tests exercise N4's chunked-batch error path without needing a
@@ -195,6 +215,9 @@ private:
     };
 
     void handleRequest(QTcpSocket *socket, const QByteArray &fullRequest);
+    /// E8/O28: counts one item write toward setDieAfterNWrites()'s budget;
+    /// closes the listening socket once the budget is exhausted.
+    void maybeDieAfterWrite();
     void handleReport(QTcpSocket *socket, const QString &path,
                       const QByteArray &body);
     void handleSyncCollectionReport(QTcpSocket *socket, const QString &collectionHref,
@@ -242,6 +265,9 @@ private:
     bool m_return500 = false;
     bool m_dropRequests = false;
     int m_responseDelayMs = 0;
+    int m_dieAfterNWrites = 0;     // E8/O28: 0 = never die
+    int m_writesSinceRevive = 0;   // reset by setDieAfterNWrites()/reviveOnSamePort()
+    quint16 m_lastBoundPort = 0;   // captured in startListening() for reviveOnSamePort()
     QHash<QByteArray, int> m_perMethodDelayMs;  // E5.3: per-method response delay override
     int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
     int m_multigetReportCount = 0;      // reset on startListening()

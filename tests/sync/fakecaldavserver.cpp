@@ -69,7 +69,35 @@ bool FakeCalDavServer::startListening()
     m_requestCounts.clear();
     m_multigetReportCount = 0;
     m_syncCollectionReportCount = 0;
-    return listen(QHostAddress::LocalHost, 0);
+    if (!listen(QHostAddress::LocalHost, 0))
+        return false;
+    m_lastBoundPort = serverPort();
+    return true;
+}
+
+bool FakeCalDavServer::reviveOnSamePort()
+{
+    if (isListening())
+        return true; // never died — nothing to revive
+    m_writesSinceRevive = 0;
+    if (!listen(QHostAddress::LocalHost, m_lastBoundPort))
+        return false;
+    m_lastBoundPort = serverPort();
+    return true;
+}
+
+void FakeCalDavServer::maybeDieAfterWrite()
+{
+    if (m_dieAfterNWrites <= 0)
+        return;
+    ++m_writesSinceRevive;
+    if (m_writesSinceRevive >= m_dieAfterNWrites) {
+        // Stop accepting new connections — subsequent connect() attempts
+        // fail with ECONNREFUSED, exactly like a client reaching for a
+        // process that has been SIGKILLed. Does not affect the response
+        // already in flight on the current (already-accepted) socket.
+        close();
+    }
 }
 
 int FakeCalDavServer::requestCount(const QByteArray &method) const
@@ -526,6 +554,7 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
     } else {
         writeResponse(socket, 204, "No Content", QByteArray(), etagHeader);
     }
+    maybeDieAfterWrite();
 }
 
 void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
@@ -570,6 +599,7 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
     colIt->remove(uid);
     logChange(collectionHref, uid, /*deleted=*/true);
     writeResponse(socket, 204, "No Content", QByteArray());
+    maybeDieAfterWrite();
 }
 
 QString FakeCalDavServer::xmlForPrincipal() const
