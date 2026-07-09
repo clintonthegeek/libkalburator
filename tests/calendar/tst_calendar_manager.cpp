@@ -286,11 +286,15 @@ void TestCalendarManager::deleteCalendar_deleteFromAll_deletesBackendsAndConfig(
 
 void TestCalendarManager::createIncidence_pushesToAllEnabledBindings_emitsSignal()
 {
+    // E11 (audit B7 / FINDINGS O39): createIncidence is now genuinely async
+    // (no nested QEventLoop) — completion is signal-driven, so the test must
+    // spin the event loop (QSignalSpy::wait()) instead of checking a return
+    // value that no longer exists.
     seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
     QSignalSpy created(m_mgr.get(), &CalendarManager::incidenceCreated);
-    const bool ok = m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
-                                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
-    QVERIFY(ok);
+    m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
+                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QVERIFY(created.wait());
     QVERIFY(m_backendA->allUids(QString::fromLatin1(kCalId)).contains(QStringLiteral("evt-1")));
     QVERIFY(m_backendB->allUids(QString::fromLatin1(kCalIdB)).contains(QStringLiteral("evt-1")));
     QCOMPARE(created.count(), 1);
@@ -300,11 +304,14 @@ void TestCalendarManager::createIncidence_pushesToAllEnabledBindings_emitsSignal
 void TestCalendarManager::updateIncidence_pushesUpdate_emitsSignal()
 {
     seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    QSignalSpy created(m_mgr.get(), &CalendarManager::incidenceCreated);
     m_mgr->createIncidence(QString::fromLatin1(kLogicalId), makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QVERIFY(created.wait());
+
     QSignalSpy updated(m_mgr.get(), &CalendarManager::incidenceUpdated);
-    const bool ok = m_mgr->updateIncidence(QString::fromLatin1(kLogicalId),
-                                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One (edited)")));
-    QVERIFY(ok);
+    m_mgr->updateIncidence(QString::fromLatin1(kLogicalId),
+                           makeEvent(QStringLiteral("evt-1"), QStringLiteral("One (edited)")));
+    QVERIFY(updated.wait());
     QCOMPARE(updated.count(), 1);
     auto fetched = m_backendA->incidence(QString::fromLatin1(kCalId), QStringLiteral("evt-1"));
     QVERIFY(fetched);
@@ -314,10 +321,13 @@ void TestCalendarManager::updateIncidence_pushesUpdate_emitsSignal()
 void TestCalendarManager::deleteIncidence_removesFromBackends_emitsSignal()
 {
     seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
+    QSignalSpy created(m_mgr.get(), &CalendarManager::incidenceCreated);
     m_mgr->createIncidence(QString::fromLatin1(kLogicalId), makeEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+    QVERIFY(created.wait());
+
     QSignalSpy deleted(m_mgr.get(), &CalendarManager::incidenceDeleted);
-    const bool ok = m_mgr->deleteIncidence(QString::fromLatin1(kLogicalId), QStringLiteral("evt-1"));
-    QVERIFY(ok);
+    m_mgr->deleteIncidence(QString::fromLatin1(kLogicalId), QStringLiteral("evt-1"));
+    QVERIFY(deleted.wait());
     QCOMPARE(deleted.count(), 1);
     QVERIFY(!m_backendA->allUids(QString::fromLatin1(kCalId)).contains(QStringLiteral("evt-1")));
     QVERIFY(!m_backendB->allUids(QString::fromLatin1(kCalIdB)).contains(QStringLiteral("evt-1")));
@@ -332,9 +342,9 @@ void TestCalendarManager::createIncidence_backendPushFails_returnsFalse_emitsOpe
     seedTwoBackendCalendar(m_host.get(), m_backendA.get(), m_backendB.get());
     m_backendA->setFailurePoint(MockBackend::FailurePoint::OnPush, 0, QStringLiteral("injected push failure"));
     QSignalSpy failed(m_mgr.get(), &CalendarManager::operationFailed);
-    const bool ok = m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
-                                           makeEvent(QStringLiteral("evt-x"), QStringLiteral("X")));
-    QVERIFY(!ok);
+    m_mgr->createIncidence(QString::fromLatin1(kLogicalId),
+                           makeEvent(QStringLiteral("evt-x"), QStringLiteral("X")));
+    QVERIFY(failed.wait());
     QVERIFY(failed.count() >= 1);
 }
 

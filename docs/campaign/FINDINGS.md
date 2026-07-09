@@ -1273,6 +1273,47 @@ is its last caller). Rationale: keeping O39 parked would leave the
 "grep QEventLoop empty" end-state B7 promises would never be reached —
 E11 makes that end-state achievable in-campaign. Resolved when E11 lands.
 
+**RESOLVED (2026-07-09, E11 landed).** Both problems (a)/(b) closed:
+`CalendarManager::createIncidence`/`updateIncidence`/`deleteIncidence`
+are now `void` and genuinely async (fan-in over `SyncOperation::finished`,
+no `QEventLoop`), and their `pushItems`/`deleteItems` dispatch goes through
+a new `Kalburator::Sync::callOnOwnerThreadBlocking` marshal
+(`src/sync/blockonasync.h`) instead of a raw cross-thread call. Group C
+(`RemoteCalendarBackend::createCalendar`/`updateCalendar`/`deleteCalendar`)
+converted to an `*Async` trio on `SyncBackend`
+(mirrors `ChangeDetection::collectionRevisionsAsync`, E5.2/A6); the sync
+overrides are deleted from `RemoteCalendarBackend` (falls back to
+`SyncBackend`'s `return false` default — a poison pill, nothing should call
+the sync form on this backend). All callers (this repo's
+`CalendarDomainOperations::applyCollectionProperties`,
+`CalendarManager`'s LogicalCalendar-level `createCalendar`/`updateCalendar`/
+`deleteCalendar`, and the write-path test suite) migrated to the Async form,
+using a new generalized `Kalburator::Sync::blockOnAsync<T>` rendezvous
+helper (same heap-owned, mutex-guarded, O43-teardown-hardened shape as the
+engine fast-path's inline `Rendezvous`) where a synchronous answer is
+needed.
+
+**Correction to the phase plan's §14b acceptance gate, discovered during
+implementation:** §14b claimed Group C was `davSyncRequest`'s LAST caller
+and scheduled the helper's deletion. That was stale by the time E11
+landed — `fetchAllCtags()` (A6, deliberately kept synchronous, tripwire-
+guarded), `getRawIcs()`/`setRawIcs()` (debug-only accessors), and
+`createRecord()`/`deleteRecord()` (the E5.3 documented top-level-bridge
+deviation) all call `davSyncRequest` directly too, and none are B7 hazards
+(none run from inside an in-flight operation's own body). **`davSyncRequest`
+and its `QEventLoop` survive E11** — only Group C's calls into it are gone.
+The acceptance gate is amended the same way A5/A6 amended earlier ones: the
+real end-state is `grep -rn "davSyncRequest\b" src/` returning exactly
+those five legitimate non-reentrant call sites (down from Group C's three
+plus those five), and `grep -rn "QEventLoop" src/calendar/ src/sync/`
+returning only `davSyncRequest`'s own loop, `awaitOperation`'s (the
+documented `loadRecords()` exception), and the new `blockOnAsync`/
+`blockonasync.h` rendezvous loops (worker/GUI-thread blocking helpers, not
+backend-thread nested loops — not a B7 instance). Audit B7 family is fully
+closed in the calendar backend: every remaining `QEventLoop` is either a
+non-reentrant top-level bridge (pre-existing, out of scope) or a caller-
+thread rendezvous that never re-enters a backend mid-operation.
+
 ## Resolved
 
 ### O7 — Ambient-Context default bundle removed (resolved 2026-05-27)

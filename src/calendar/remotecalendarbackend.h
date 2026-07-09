@@ -257,14 +257,21 @@ public:
     void prepareCreationMetadata(const QString &calendarId,
                                  CalendarBackendBinding &binding) const override;
 
-    // Calendar CRUD operations (RFC 4791 MKCALENDAR / PROPPATCH / DELETE)
+    // Calendar CRUD operations (RFC 4791 MKCALENDAR / PROPPATCH / DELETE).
+    // E11 (audit B7 / FINDINGS O39): the synchronous createCalendar/
+    // updateCalendar/deleteCalendar overrides are gone — SyncBackend's base
+    // default (return false) is an intentional poison pill. Everything now
+    // goes through the Async trio below, which is the only form that talks
+    // DAV without a nested QEventLoop (davSyncRequest died with them).
     bool supportsCalendarCreation() const override { return true; }
-    bool createCalendar(const QString &collectionId, const QString &calendarId,
-                        const QString &name,
-                        CalendarType type = CalendarType::Hybrid) override;
-    bool updateCalendar(const QString &collectionId, const QString &calendarId,
-                        const QVariantMap &properties) override;
-    bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
+    void createCalendarAsync(const QString &collectionId, const QString &calendarId,
+                             const QString &name, CalendarType type,
+                             std::function<void(bool)> done) override;
+    void updateCalendarAsync(const QString &collectionId, const QString &calendarId,
+                             const QVariantMap &properties,
+                             std::function<void(bool)> done) override;
+    void deleteCalendarAsync(const QString &collectionId, const QString &calendarId,
+                             std::function<void(bool)> done) override;
 
     // ========== Operation-Based API (Preferred) ==========
     // These return trackable operations and work with calendar IDs

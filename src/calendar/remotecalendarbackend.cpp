@@ -424,13 +424,22 @@ DavResponse davSyncRequest(QNetworkAccessManager *nam, const QUrl &url,
                            const QByteArray &contentType =
                                QByteArrayLiteral("application/xml; charset=utf-8"))
 {
-    // O39/E11: the last synchronous DAV entry point. Still reached by the
-    // Group C calendar-collection CRUD (create/update/deleteCalendar) and the
-    // Group B raw-ICS paths (get/setRawIcs); those convert in E5.3 (B) and
-    // E11 (C), and THIS helper — with its nested QEventLoop — is deleted when
-    // its last caller goes. Every current caller runs on the backend's
-    // (== nam's) own thread; the assert turns a future thread-affinity bug
-    // into a loud failure instead of a silent race (D1, invariant §1.1).
+    // E11 correction (2026-07-09): the phase plan's §14b claimed Group C
+    // (create/update/deleteCalendar) was this helper's LAST caller and
+    // scheduled its deletion once Group C converted. That was stale — by
+    // the time E11 landed, Group C had already stopped being the only
+    // survivor: fetchAllCtags() (A6, deliberately kept synchronous, tripwire-
+    // guarded), getRawIcs()/setRawIcs() (debug-only accessors), and
+    // createRecord()/deleteRecord() (E5.3's documented top-level-bridge
+    // deviation, see the comment above this function) all still call it
+    // directly and are NOT B7 hazards (none are invoked from inside an
+    // in-flight operation's own body). Group C's calls converted to
+    // davSyncRequestAsync in E11 and this helper's nested QEventLoop no
+    // longer survives group C, but the helper itself stays — it has five
+    // legitimate non-reentrant callers left. Every current caller runs on
+    // the backend's (== nam's) own thread; the assert turns a future
+    // thread-affinity bug into a loud failure instead of a silent race (D1,
+    // invariant §1.1).
     Q_ASSERT(QThread::currentThread() == nam->thread());
 
     QNetworkRequest request =
@@ -1609,12 +1618,13 @@ QUrl RemoteCalendarBackend::crudCalendarUrl(const QString &calendarId) const
     return calendarUrlForCrud(calendarId);
 }
 
-bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QString &calendarId,
-                                    const QString &name, CalendarType type)
+void RemoteCalendarBackend::createCalendarAsync(const QString &collectionId, const QString &calendarId,
+                                    const QString &name, CalendarType type,
+                                    std::function<void(bool)> done)
 {
     const QUrl calendarUrl = crudCalendarUrl(calendarId);
 
-    qDebug() << "RemoteCalendarBackend::createCalendar: Creating calendar at" << safeUrlString(calendarUrl)
+    qDebug() << "RemoteCalendarBackend::createCalendarAsync: Creating calendar at" << safeUrlString(calendarUrl)
              << "type:" << static_cast<int>(type);
 
     // Build component set based on CalendarType
@@ -1646,59 +1656,64 @@ bool RemoteCalendarBackend::createCalendar(const QString &collectionId, const QS
         "</C:mkcalendar>\n"
     ).arg(displayName.toHtmlEscaped(), componentSet);
 
-    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
-                                            QByteArrayLiteral("MKCALENDAR"),
-                                            m_username, m_password,
-                                            requestBody.toUtf8());
-    qDebug() << "RemoteCalendarBackend::createCalendar: HTTP status" << resp.status;
+    davSyncRequestAsync(nam(), calendarUrl, QByteArrayLiteral("MKCALENDAR"),
+                        m_username, m_password, requestBody.toUtf8(), {},
+                        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, collectionId, calendarId, calendarUrl, type, done = std::move(done)]
+        (const DavResponse &resp) {
+            qDebug() << "RemoteCalendarBackend::createCalendarAsync: HTTP status" << resp.status;
 
-    // Register the calendar URL helper (used on success)
-    auto registerCalendar = [this, calendarId, calendarUrl, type]() {
-        QUrl davCalendarUrl = calendarUrl;
-        davCalendarUrl.setUserName(m_username);
-        davCalendarUrl.setPassword(m_password);
-        CalendarFacts &facts = m_calendars[calendarId];
-        facts.davUrl = configuredDavUrl(davCalendarUrl.toString());
+            // Register the calendar URL helper (used on success)
+            auto registerCalendar = [this, calendarId, calendarUrl, type]() {
+                QUrl davCalendarUrl = calendarUrl;
+                davCalendarUrl.setUserName(m_username);
+                davCalendarUrl.setPassword(m_password);
+                CalendarFacts &facts = m_calendars[calendarId];
+                facts.davUrl = configuredDavUrl(davCalendarUrl.toString());
 
-        // Store the calendar type so discoveredCalendar().calendarType() reports it
-        if (type == CalendarType::Event) {
-            facts.contentTypes = KDAV::DavCollection::Events;
-        } else if (type == CalendarType::Todo) {
-            facts.contentTypes = KDAV::DavCollection::Todos;
-        } else {
-            facts.contentTypes = KDAV::DavCollection::Events | KDAV::DavCollection::Todos;
-        }
-        facts.hasContentTypes = true;
-    };
+                // Store the calendar type so discoveredCalendar().calendarType() reports it
+                if (type == CalendarType::Event) {
+                    facts.contentTypes = KDAV::DavCollection::Events;
+                } else if (type == CalendarType::Todo) {
+                    facts.contentTypes = KDAV::DavCollection::Todos;
+                } else {
+                    facts.contentTypes = KDAV::DavCollection::Events | KDAV::DavCollection::Todos;
+                }
+                facts.hasContentTypes = true;
+            };
 
-    if (resp.status == 201) {
-        qDebug() << "RemoteCalendarBackend::createCalendar: Calendar created successfully:" << calendarId;
-        registerCalendar();
-        emit calendarCreated(collectionId, calendarId);
-        emit calendarDiscovered(collectionId, calendarId);
-        return true;
-    }
-    if (resp.status == 405 || resp.status == 409) {
-        // Idempotent: 405 Method Not Allowed or 409 Conflict means calendar already exists
-        qDebug() << "RemoteCalendarBackend::createCalendar: Calendar already exists:" << calendarId << "(HTTP" << resp.status << ")";
-        registerCalendar();
-        return true;
-    }
-    const QString errorMessage = !resp.transportOk()
-        ? resp.errorString
-        : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
-    qWarning() << "RemoteCalendarBackend::createCalendar: Failed:" << errorMessage
-               << "HTTP status:" << resp.status;
-    emit calendarOperationError(calendarId, errorMessage);
-    return false;
+            if (resp.status == 201) {
+                qDebug() << "RemoteCalendarBackend::createCalendarAsync: Calendar created successfully:" << calendarId;
+                registerCalendar();
+                emit calendarCreated(collectionId, calendarId);
+                emit calendarDiscovered(collectionId, calendarId);
+                done(true);
+                return;
+            }
+            if (resp.status == 405 || resp.status == 409) {
+                // Idempotent: 405 Method Not Allowed or 409 Conflict means calendar already exists
+                qDebug() << "RemoteCalendarBackend::createCalendarAsync: Calendar already exists:" << calendarId << "(HTTP" << resp.status << ")";
+                registerCalendar();
+                done(true);
+                return;
+            }
+            const QString errorMessage = !resp.transportOk()
+                ? resp.errorString
+                : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
+            qWarning() << "RemoteCalendarBackend::createCalendarAsync: Failed:" << errorMessage
+                       << "HTTP status:" << resp.status;
+            emit calendarOperationError(calendarId, errorMessage);
+            done(false);
+        });
 }
 
-bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QString &calendarId,
-                                    const QVariantMap &properties)
+void RemoteCalendarBackend::updateCalendarAsync(const QString &collectionId, const QString &calendarId,
+                                    const QVariantMap &properties,
+                                    std::function<void(bool)> done)
 {
     const QUrl calendarUrl = crudCalendarUrl(calendarId);
 
-    qDebug() << "RemoteCalendarBackend::updateCalendar: Updating calendar at" << safeUrlString(calendarUrl);
+    qDebug() << "RemoteCalendarBackend::updateCalendarAsync: Updating calendar at" << safeUrlString(calendarUrl);
 
     // Build PROPPATCH request body for CalDAV
     QString propsXml;
@@ -1728,8 +1743,9 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
     }
 
     if (propsXml.isEmpty()) {
-        qDebug() << "RemoteCalendarBackend::updateCalendar: No supported properties to update";
-        return true;
+        qDebug() << "RemoteCalendarBackend::updateCalendarAsync: No supported properties to update";
+        done(true);
+        return;
     }
 
     QString requestBody = QStringLiteral(
@@ -1743,69 +1759,77 @@ bool RemoteCalendarBackend::updateCalendar(const QString &collectionId, const QS
         "</D:propertyupdate>\n"
     ).arg(propsXml);
 
-    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
-                                            QByteArrayLiteral("PROPPATCH"),
-                                            m_username, m_password,
-                                            requestBody.toUtf8());
-    qDebug() << "RemoteCalendarBackend::updateCalendar: HTTP status" << resp.status;
+    davSyncRequestAsync(nam(), calendarUrl, QByteArrayLiteral("PROPPATCH"),
+                        m_username, m_password, requestBody.toUtf8(), {},
+                        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, collectionId, calendarId, properties, done = std::move(done)]
+        (const DavResponse &resp) {
+            qDebug() << "RemoteCalendarBackend::updateCalendarAsync: HTTP status" << resp.status;
 
-    // 207 Multi-Status is the expected response for PROPPATCH
-    if (resp.status == 207 || resp.status == 200 || resp.status == 204) {
-        qDebug() << "RemoteCalendarBackend::updateCalendar: Calendar updated successfully:" << calendarId;
+            // 207 Multi-Status is the expected response for PROPPATCH
+            if (resp.status == 207 || resp.status == 200 || resp.status == 204) {
+                qDebug() << "RemoteCalendarBackend::updateCalendarAsync: Calendar updated successfully:" << calendarId;
 
-        // Update local cache to reflect the change
-        if (properties.contains(QStringLiteral("color"))) {
-            QColor color = properties.value(QStringLiteral("color")).value<QColor>();
-            if (!color.isValid()) {
-                color = QColor(properties.value(QStringLiteral("color")).toString());
+                // Update local cache to reflect the change
+                if (properties.contains(QStringLiteral("color"))) {
+                    QColor color = properties.value(QStringLiteral("color")).value<QColor>();
+                    if (!color.isValid()) {
+                        color = QColor(properties.value(QStringLiteral("color")).toString());
+                    }
+                    if (color.isValid()) {
+                        m_calendars[calendarId].color = color;
+                    }
+                }
+
+                emit calendarUpdated(collectionId, calendarId);
+                done(true);
+                return;
             }
-            if (color.isValid()) {
-                m_calendars[calendarId].color = color;
-            }
-        }
-
-        emit calendarUpdated(collectionId, calendarId);
-        return true;
-    }
-    const QString errorMessage = !resp.transportOk()
-        ? resp.errorString
-        : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
-    qWarning() << "RemoteCalendarBackend::updateCalendar: Failed:" << errorMessage
-               << "HTTP status:" << resp.status;
-    emit calendarOperationError(calendarId, errorMessage);
-    return false;
+            const QString errorMessage = !resp.transportOk()
+                ? resp.errorString
+                : QStringLiteral("Unexpected HTTP status: %1").arg(resp.status);
+            qWarning() << "RemoteCalendarBackend::updateCalendarAsync: Failed:" << errorMessage
+                       << "HTTP status:" << resp.status;
+            emit calendarOperationError(calendarId, errorMessage);
+            done(false);
+        });
 }
 
-bool RemoteCalendarBackend::deleteCalendar(const QString &collectionId, const QString &calendarId)
+void RemoteCalendarBackend::deleteCalendarAsync(const QString &collectionId, const QString &calendarId,
+                                    std::function<void(bool)> done)
 {
     const QUrl calendarUrl = crudCalendarUrl(calendarId);
-    qDebug() << "RemoteCalendarBackend::deleteCalendar: Deleting calendar at" << safeUrlString(calendarUrl);
+    qDebug() << "RemoteCalendarBackend::deleteCalendarAsync: Deleting calendar at" << safeUrlString(calendarUrl);
 
-    const DavResponse resp = davSyncRequest(nam(), calendarUrl,
-                                            QByteArrayLiteral("DELETE"),
-                                            m_username, m_password);
-    qDebug() << "RemoteCalendarBackend::deleteCalendar: HTTP status" << resp.status;
+    davSyncRequestAsync(nam(), calendarUrl, QByteArrayLiteral("DELETE"),
+                        m_username, m_password, {}, {},
+                        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, collectionId, calendarId, done = std::move(done)](const DavResponse &resp) {
+            qDebug() << "RemoteCalendarBackend::deleteCalendarAsync: HTTP status" << resp.status;
 
-    // 200 OK or 204 No Content are both valid DELETE responses
-    if (resp.status == 200 || resp.status == 204) {
-        qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar deleted successfully:" << calendarId;
-        m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
-        emit calendarDeleted(collectionId, calendarId);
-        return true;
-    }
-    if (resp.status == 404) {
-        // Calendar doesn't exist - return false to indicate it wasn't deleted
-        qDebug() << "RemoteCalendarBackend::deleteCalendar: Calendar not found:" << calendarId;
-        m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
-        return false;
-    }
-    QString errorMessage = resp.errorString;
-    if (errorMessage.isEmpty()) {
-        errorMessage = QStringLiteral("HTTP status: %1").arg(resp.status);
-    }
-    qWarning() << "RemoteCalendarBackend::deleteCalendar: Failed:" << errorMessage;
-    emit calendarOperationError(calendarId, errorMessage);
-    return false;
+            // 200 OK or 204 No Content are both valid DELETE responses
+            if (resp.status == 200 || resp.status == 204) {
+                qDebug() << "RemoteCalendarBackend::deleteCalendarAsync: Calendar deleted successfully:" << calendarId;
+                m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
+                emit calendarDeleted(collectionId, calendarId);
+                done(true);
+                return;
+            }
+            if (resp.status == 404) {
+                // Calendar doesn't exist - report false to indicate it wasn't deleted
+                qDebug() << "RemoteCalendarBackend::deleteCalendarAsync: Calendar not found:" << calendarId;
+                m_calendars[calendarId].davUrl = KDAV::DavUrl();  // keep other facts (old per-map remove)
+                done(false);
+                return;
+            }
+            QString errorMessage = resp.errorString;
+            if (errorMessage.isEmpty()) {
+                errorMessage = QStringLiteral("HTTP status: %1").arg(resp.status);
+            }
+            qWarning() << "RemoteCalendarBackend::deleteCalendarAsync: Failed:" << errorMessage;
+            emit calendarOperationError(calendarId, errorMessage);
+            done(false);
+        });
 }
 
 QUrl RemoteCalendarBackend::calendarUrlForCrud(const QString &calendarId) const

@@ -28,6 +28,7 @@
 #include "fakecaldavserver.h"
 #include "remotecalendarbackend.h"
 #include "syncbackend.h"
+#include "blockonasync.h"
 
 using namespace Kalburator::Sync;
 
@@ -51,6 +52,39 @@ QByteArray seedIcs(const QByteArray &uid)
            "BEGIN:VEVENT\r\nUID:" + uid + "\r\n"
            "SUMMARY:Seeded\r\nDTSTART:20260601T120000Z\r\n"
            "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+}
+
+// E11 (audit B7 / FINDINGS O39): RemoteCalendarBackend's sync createCalendar/
+// updateCalendar/deleteCalendar overrides are gone — every caller, including
+// these tests, goes through the *Async form + blockOnAsync. Same-thread here
+// (test and backend share a thread), so blockOnAsync degrades to draining
+// this thread's own queue via loop.exec() — no real cross-thread hop.
+bool syncCreateCalendar(RemoteCalendarBackend &backend, const QString &collectionId,
+                        const QString &calendarId, const QString &name,
+                        CalendarType type = CalendarType::Hybrid)
+{
+    return Kalburator::Sync::blockOnAsync<bool>(
+        &backend, [&](std::function<void(bool)> done) {
+            backend.createCalendarAsync(collectionId, calendarId, name, type, std::move(done));
+        });
+}
+
+bool syncUpdateCalendar(RemoteCalendarBackend &backend, const QString &collectionId,
+                        const QString &calendarId, const QVariantMap &properties)
+{
+    return Kalburator::Sync::blockOnAsync<bool>(
+        &backend, [&](std::function<void(bool)> done) {
+            backend.updateCalendarAsync(collectionId, calendarId, properties, std::move(done));
+        });
+}
+
+bool syncDeleteCalendar(RemoteCalendarBackend &backend, const QString &collectionId,
+                        const QString &calendarId)
+{
+    return Kalburator::Sync::blockOnAsync<bool>(
+        &backend, [&](std::function<void(bool)> done) {
+            backend.deleteCalendarAsync(collectionId, calendarId, std::move(done));
+        });
 }
 
 } // namespace
@@ -266,7 +300,7 @@ void TstRemoteCalendarBackendWritePaths::createCalendar_201_registers_url_and_em
     QSignalSpy createdSpy(&backend, &RemoteCalendarBackend::calendarCreated);
     QSignalSpy discoveredSpy(&backend, &RemoteCalendarBackend::calendarDiscovered);
 
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects"),
                                    CalendarType::Event));
@@ -292,7 +326,7 @@ void TstRemoteCalendarBackendWritePaths::discoveredCalendar_aggregates_url_type_
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
 
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects"),
                                    CalendarType::Event));
@@ -319,12 +353,12 @@ void TstRemoteCalendarBackendWritePaths::createCalendar_405_is_idempotent_succes
 
     QSignalSpy createdSpy(&backend, &RemoteCalendarBackend::calendarCreated);
 
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
     // Second create: server answers 405; backend treats as already-exists
     // success and does NOT re-emit calendarCreated.
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
     QCOMPARE(createdSpy.count(), 1);
@@ -340,7 +374,7 @@ void TstRemoteCalendarBackendWritePaths::updateCalendar_proppatch_updates_color_
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
 
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
 
@@ -351,7 +385,7 @@ void TstRemoteCalendarBackendWritePaths::updateCalendar_proppatch_updates_color_
     props.insert(QStringLiteral("displayName"), QStringLiteral("Renamed"));
     props.insert(QStringLiteral("color"), red);
 
-    QVERIFY(backend.updateCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncUpdateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"), props));
 
     QCOMPARE(server.requestCount("PROPPATCH"), 1);
@@ -376,7 +410,7 @@ void TstRemoteCalendarBackendWritePaths::updateCalendar_prefixedId_followsRegist
                                   QStringLiteral("testpass"));
 
     // A real calendar exists on the server at /testuser/projects/.
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
     const QString href =
@@ -392,7 +426,7 @@ void TstRemoteCalendarBackendWritePaths::updateCalendar_prefixedId_followsRegist
     QVariantMap props;
     props.insert(QStringLiteral("displayName"), QStringLiteral("Renamed"));
 
-    QVERIFY2(backend.updateCalendar(QStringLiteral("coll-1"), prefixedId, props),
+    QVERIFY2(syncUpdateCalendar(backend, QStringLiteral("coll-1"), prefixedId, props),
              "updateCalendar must follow the registered DAV URL for a prefixed id");
     QCOMPARE(server.requestCount("PROPPATCH"), 1);
 }
@@ -406,19 +440,19 @@ void TstRemoteCalendarBackendWritePaths::deleteCalendar_204_unregisters_then_404
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
 
-    QVERIFY(backend.createCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncCreateCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects"),
                                    QStringLiteral("Projects")));
 
     QSignalSpy deletedSpy(&backend, &RemoteCalendarBackend::calendarDeleted);
 
-    QVERIFY(backend.deleteCalendar(QStringLiteral("coll-1"),
+    QVERIFY(syncDeleteCalendar(backend, QStringLiteral("coll-1"),
                                    QStringLiteral("projects")));
     QCOMPARE(deletedSpy.count(), 1);
     QVERIFY(backend.discoveredCalendar(QStringLiteral("projects")).davUrl().isEmpty());
 
     // Second delete: the collection is gone server-side -> 404 -> false.
-    QVERIFY(!backend.deleteCalendar(QStringLiteral("coll-1"),
+    QVERIFY(!syncDeleteCalendar(backend, QStringLiteral("coll-1"),
                                     QStringLiteral("projects")));
 }
 

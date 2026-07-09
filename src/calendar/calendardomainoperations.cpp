@@ -1,6 +1,7 @@
 #include "calendardomainoperations.h"
 
 #include <QColor>
+#include <QDebug>
 
 #include "recordwriter.h"
 #include "syncbackend.h"
@@ -46,7 +47,21 @@ void CalendarDomainOperations::applyCollectionProperties(
 {
     auto *syncBackend = qobject_cast<Kalburator::Sync::SyncBackend *>(backend);
     if (!syncBackend || props.isEmpty()) return;
-    syncBackend->updateCalendar(collectionId, collectionId, props);
+    // E11 (audit B7 / FINDINGS O39): this method's caller (SyncEngine's
+    // per-mapping property-sync step) already marshals it onto the
+    // backend's own thread before calling in; the old synchronous
+    // updateCalendar() then spun davSyncRequest's nested QEventLoop THERE —
+    // the B7 hazard. updateCalendarAsync's continuation lands on this same
+    // thread's normal event loop instead, so no blocking wrapper is needed
+    // here: this method was always fire-and-forget from the caller's
+    // perspective (void, result never consumed), and stays that way.
+    syncBackend->updateCalendarAsync(collectionId, collectionId, props,
+        [collectionId](bool ok) {
+            if (!ok) {
+                qWarning() << "CalendarDomainOperations::applyCollectionProperties:"
+                           << "updateCalendarAsync failed for" << collectionId;
+            }
+        });
 }
 
 } // namespace Kalburator::Calendar

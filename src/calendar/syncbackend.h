@@ -37,6 +37,8 @@
 #include <QSharedPointer>
 #include <QVariantMap>
 #include <QColor>
+
+#include <functional>
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/Recurrence>
@@ -235,6 +237,41 @@ public:
     virtual bool deleteCalendar(const QString &collectionId, const QString &calendarId) {
         Q_UNUSED(collectionId); Q_UNUSED(calendarId);
         return false;
+    }
+
+    /**
+     * @brief Async siblings of the calendar-CRUD trio above (E11 / audit B7,
+     * absorbs FINDINGS O39's Group C).
+     *
+     * Same relationship as `ChangeDetection::collectionRevisions()` /
+     * `collectionRevisionsAsync()`: the default adapts the synchronous form
+     * (correct for every backend whose CRUD has no nested loop — Local,
+     * DecSync, Org, Akonadi, Mock). Only `RemoteCalendarBackend` overrides
+     * these for real, using `davSyncRequestAsync` — its own sync
+     * `createCalendar`/`updateCalendar`/`deleteCalendar` overrides are gone
+     * (E11 Stage 1), so callers MUST go through the Async form + a
+     * `blockOnAsync`-style rendezvous on a non-backend thread (see
+     * `src/sync/blockonasync.h`) to get a synchronous answer.
+     */
+    virtual void createCalendarAsync(const QString &collectionId,
+                                     const QString &calendarId,
+                                     const QString &name,
+                                     CalendarType type,
+                                     std::function<void(bool)> done) {
+        done(createCalendar(collectionId, calendarId, name, type));
+    }
+
+    virtual void updateCalendarAsync(const QString &collectionId,
+                                     const QString &calendarId,
+                                     const QVariantMap &properties,
+                                     std::function<void(bool)> done) {
+        done(updateCalendar(collectionId, calendarId, properties));
+    }
+
+    virtual void deleteCalendarAsync(const QString &collectionId,
+                                     const QString &calendarId,
+                                     std::function<void(bool)> done) {
+        done(deleteCalendar(collectionId, calendarId));
     }
 
     // ========== Calendar Property Getters ==========

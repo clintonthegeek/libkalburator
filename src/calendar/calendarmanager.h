@@ -184,33 +184,41 @@ public:
     // ========== IMMEDIATE Incidence CRUD ==========
 
     /**
-     * @brief Create incidence on ALL enabled bindings IMMEDIATELY.
+     * @brief Create incidence on ALL enabled bindings, asynchronously (E11 /
+     * audit B7, FINDINGS O39).
+     *
+     * No longer blocks the caller's thread on the backend round-trip (the
+     * old synchronous form spun a nested QEventLoop here — a GUI-thread
+     * re-entrancy hazard). Dispatch is fire-and-forget; completion is
+     * signal-driven: `incidenceCreated` fires once every enabled binding's
+     * push has settled successfully, `operationFailed` fires (per binding)
+     * on any failure. Connect to those signals instead of relying on a
+     * return value.
      *
      * @param logicalCalendarId The logical calendar to create incidence in
      * @param incidence The incidence to create
-     * @return true if creation succeeded on all backends
      */
-    bool createIncidence(const QString &logicalCalendarId,
+    void createIncidence(const QString &logicalCalendarId,
                          const KCalendarCore::Incidence::Ptr &incidence);
 
     /**
-     * @brief Update incidence on ALL enabled bindings IMMEDIATELY.
+     * @brief Update incidence on ALL enabled bindings, asynchronously.
+     * See createIncidence() for the async/signal-driven contract.
      *
      * @param logicalCalendarId The logical calendar containing the incidence
      * @param incidence The updated incidence
-     * @return true if update succeeded on all backends
      */
-    bool updateIncidence(const QString &logicalCalendarId,
+    void updateIncidence(const QString &logicalCalendarId,
                          const KCalendarCore::Incidence::Ptr &incidence);
 
     /**
-     * @brief Delete incidence from ALL enabled bindings IMMEDIATELY.
+     * @brief Delete incidence from ALL enabled bindings, asynchronously.
+     * See createIncidence() for the async/signal-driven contract.
      *
      * @param logicalCalendarId The logical calendar containing the incidence
      * @param uid The UID of the incidence to delete
-     * @return true if deletion succeeded on all backends
      */
-    bool deleteIncidence(const QString &logicalCalendarId,
+    void deleteIncidence(const QString &logicalCalendarId,
                          const QString &uid);
 
     // ========== Transcoding Integration ==========
