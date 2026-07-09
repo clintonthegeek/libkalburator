@@ -1367,8 +1367,58 @@ three) or add mapping-level parallelism.
       restart-with-1-of-3-changed scenario re-downloaded all 3 items;
       GREEN after the fix, plus a companion CTag-unchanged non-regression
       pin. Full suite 165/165 green.
-- [ ] **E7** RFC 6578 sync-collection REPORT + token store + invalidation
-      + fallback regression pin + live Radicale evidence
+- [x] **E7** RFC 6578 sync-collection REPORT + token store + invalidation
+      + fallback regression pin + live Radicale evidence — 2026-07-08,
+      FINDINGS O36 Resolved. `src/calendar/remotecalendarbackend.{h,cpp}`:
+      capability detection (Depth:0 supported-report-set PROPFIND, once per
+      calendar at discovery, fanned in before loadCalendarsFinished;
+      `CalendarFacts::supportsSyncCollection`, default false — primed
+      calendars never probe, permanent fallback); `CTagStore` gained an
+      additive self-migrating `sync_token` column (PRAGMA table_info +
+      ALTER TABLE, same pattern as BaselineStore::ensureSchemaV6) and its
+      `set()`/new `setToken()` moved to update-else-insert so a plain CTag
+      commit can't null out a stored token; `continueFetchWithSyncCollection`
+      issues the Depth:0 REPORT via davSyncRequestAsync, applies 404-
+      tombstone deletions directly (no listing), multigets changed hrefs via
+      the existing chunked-batch machinery, then reconstructs the FULL
+      current-collection snapshot via serveCachedItems() before completing
+      the op (recordsFromLastFetch()'s H5/O23 contract is a full snapshot
+      every cycle — a delta-only result would have looked like every other
+      item got deleted); token invalidation (409/410/507) clears the token
+      and falls back to continueFetchWithListing, which
+      bootstrapSyncTokenIfNeeded() then re-tokens via one empty-token
+      REPORT. `tests/sync/fakecaldavserver.{h,cpp}`: per-collection change
+      journal (logChange, fed by setSeedEvents/removeEvent/PUT/DELETE)
+      whose length IS the sync-token, setSupportsSyncCollection/
+      setInvalidateSyncTokens knobs, syncCollectionReportCount(). Five new
+      RED-turned-green tests in `tests/calendar/tst_sync_collection_report.cpp`
+      cover §10(a)-(e); RED confirmed against the pre-E7 backend via a
+      scoped `git stash` of just the two backend files (steady-state/
+      deletion/invalidation/restart all failed for "today's full listing
+      runs" reasons; the unsupported-server regression pin passed trivially
+      as expected, since it pins unchanged pre-E7 behavior). Full suite
+      166/166 green (165 pre-E7 + this phase's new test file). Live
+      verification: a scratch Radicale 3.7.5 instance (127.0.0.1:5233,
+      MKCOL'd a fresh `e7cal` collection) driven directly via
+      RemoteCalendarBackend (new `tests/sync/live_sync_collection_probe.cpp`,
+      gated by `-DKALBURATOR_BUILD_LIVE_PROBES=ON`, mirrors
+      live_radicale_primer_probe's pattern) — seeded 3 events, first
+      loadRecords() (3 items), edited one, second loadRecords() (still 3 —
+      full snapshot reconstruction confirmed live too). Radicale's debug
+      log shows the real REPORT sync-collection traffic:
+      ```
+      REPORT request for '/testuser1/e7cal/' with depth '0' ... 'Mozilla/5.0'
+      REPORT response status for '/testuser1/e7cal/' with depth '0' in 0.003
+        seconds gzip 472 bytes (sync-token getetag sync-collection): 207 Multi-Status
+      ... (second cycle, after the edit)
+      REPORT request for '/testuser1/e7cal/' with depth '0' ... 'Mozilla/5.0'
+      REPORT response status for '/testuser1/e7cal/' with depth '0' in 0.001
+        seconds gzip 472 bytes (sync-token getetag sync-collection): 207 Multi-Status
+      ```
+      and a Depth:0 PROPFIND on the same collection confirms the capability
+      probe fired too (207, 294 bytes, before either REPORT). Scratch
+      Radicale process killed after capture. Roadmap D2's sync-collection
+      line ticked (`2026-07-03-sync-convergence-roadmap.md`).
 - [ ] **E8** O28 canonical-equality adoption (crash-replay pin; blob
       neutrality pin)
 - [ ] **E9** itemsFetched batching; LocalBackend incremental

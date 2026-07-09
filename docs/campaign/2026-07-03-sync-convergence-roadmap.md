@@ -251,7 +251,8 @@ parallelism is a separate risk/benefit decision.
 - **RFC 6578 `sync-collection` REPORT:** replace the per-poll Depth:1 ETag
   PROPFIND (`DavItemsListJob`, `:1366`) with a sync-token delta for servers
   advertising `DAV: sync-collection` (Nextcloud does). Big win for very large
-  calendars; keep CTag+PROPFIND as fallback.
+  calendars; keep CTag+PROPFIND as fallback. **DONE — sync-excellence E7,
+  2026-07-08 (FINDINGS O36 Resolved).**
 - **Persist/seed the KDAV `EtagCache`:** it is in-memory per session, so the
   first fetch after every app open multigets *every* item even though
   `CalDavContentCache` (persistent, keyed url+etag) holds the bytes. Seed the

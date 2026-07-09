@@ -422,11 +422,88 @@ private:
      * multiget batches have completed successfully — @p fetchedItemsMap must
      * be the complete accumulation across every batch; a caller must never
      * invoke this with a partial map (i.e. after a batch failure).
+     *
+     * @p davUrl is threaded through (E7/O36) so the completion can hand off
+     * to bootstrapSyncTokenIfNeeded() before settling @p op.
      */
     void processFetchedItems(FetchOperation *op, const QString &calendarId,
+                              const KDAV::DavUrl &davUrl,
                               const KDAV::DavItem::List &allItems,
                               const QMap<QString, QString> &serverEtags,
                               const QMap<QString, KDAV::DavItem> &fetchedItemsMap);
+
+    // ---- Sync-token store (RFC 6578 sync-collection, E7/O36) ----
+    // Backend cache-validity token, persisted alongside the CTag in the same
+    // CTagStore row. NOTE the layering (load-bearing, see §10 of the
+    // sync-excellence phase plan): this is NOT the engine's per-mapping H3
+    // sync-progress token — the two must never be conflated. Private for the
+    // same reason ctag()/setCtag()/clearCtag() are: nothing outside this
+    // class touches it.
+    QString syncToken(const QString &calendarId) const;
+    void setSyncToken(const QString &calendarId, const QString &token);
+    void clearSyncToken(const QString &calendarId);
+
+    /**
+     * @brief Probe DAV:supported-report-set for @p calendarId (E7/O36).
+     *
+     * Depth:0 PROPFIND issued once per calendar right after discovery.
+     * Records whether the server advertises RFC 6578 sync-collection in
+     * m_calendars[calendarId].supportsSyncCollection (false — the permanent-
+     * fallback default — until/unless this observes it advertised). @p done
+     * is invoked on the backend thread once the probe settles, success or
+     * failure alike; a failed probe never fails the caller, it just leaves
+     * the calendar on the CTag+listing fallback forever.
+     */
+    void probeSyncCollectionSupport(const QString &calendarId, std::function<void()> done);
+
+    /**
+     * @brief RFC 6578 REPORT sync-collection fetch path (E7/O36).
+     *
+     * Issued instead of continueFetchWithListing's Depth:1 listing when the
+     * collection advertises the capability AND a stored sync-token exists.
+     * Falls back to continueFetchWithListing on token invalidation (RFC
+     * 6578 §3.3: HTTP 409/410/507) or any other unexpected/unparseable
+     * response — the CTag+listing path is the permanent fallback, never
+     * weakened by this addition.
+     */
+    void continueFetchWithSyncCollection(FetchOperation *op, const QString &calendarId,
+                                         const KDAV::DavUrl &davUrl,
+                                         const QString &freshCtag,
+                                         const QString &storedToken);
+
+    /**
+     * @brief Second half of continueFetchWithSyncCollection() (E7/O36).
+     *
+     * Multigets the changed hrefs, then completes @p op. Tombstones in
+     * @p deletedHrefs are applied by the caller before batching starts (no
+     * multiget needed for a deletion). Commits @p newToken (and the CTag)
+     * only when every changed href materialized — same N5 completeness
+     * discipline as processFetchedItems, applied to the token instead of
+     * just the CTag.
+     */
+    void completeSyncCollectionFetch(FetchOperation *op, const QString &calendarId,
+                                     const KDAV::DavUrl &davUrl,
+                                     const QMap<QString, QString> &changedHrefs,
+                                     const QStringList &deletedHrefs,
+                                     const QString &newToken,
+                                     const QString &freshCtag,
+                                     const QMap<QString, KDAV::DavItem> &fetchedItemsMap);
+
+    /**
+     * @brief Acquire an initial sync-token once a full listing settles (E7/O36).
+     *
+     * Design step 3's "capture from the initial REPORT": right after the
+     * (one-time, per collection-lifetime) full listing fetch materializes
+     * successfully, a sync-collection-capable calendar with no stored token
+     * yet issues one empty-token REPORT to learn the server's current
+     * sync-token, so every later cycle can use continueFetchWithSyncCollection
+     * instead of relisting forever. A no-op (@p continuation runs
+     * immediately) when the calendar isn't capable or already has a token.
+     * @p continuation always runs eventually, regardless of the probe's
+     * outcome.
+     */
+    void bootstrapSyncTokenIfNeeded(const QString &calendarId, const KDAV::DavUrl &davUrl,
+                                    std::function<void()> continuation);
 
     // No SyncStore member — CTags have their own CTagStore below
     std::unique_ptr<CTagStore> m_ctags; // Owned; constructed lazily in setDbPath()
@@ -485,6 +562,13 @@ private:
         bool hasContentTypes = false;
         /// Discovery/fetch ctag awaiting persist-after-successful-fetch.
         QString pendingCtag;
+        /// E7/O36: whether this collection's supported-report-set PROPFIND
+        /// (probed once at discovery, see probeSyncCollectionSupport())
+        /// advertised RFC 6578 sync-collection. False — the permanent CTag+
+        /// listing fallback — for unprobed calendars (including every
+        /// primed calendar: priming deliberately issues zero PROPFINDs, so
+        /// it never runs this probe either).
+        bool supportsSyncCollection = false;
     };
     // QMap keeps key-sorted iteration: availableCollections() ordering and
     // the first-match-wins scans in loadRecord/updateRecord/deleteRecord

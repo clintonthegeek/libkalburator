@@ -1008,7 +1008,7 @@ restart-with-1-changed-item scenario re-downloaded all 3
 the fix. Companion pins the CTag-unchanged short-circuit is unaffected.
 Full suite 165/165 green.
 
-### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (OPEN → sync-excellence E7)
+### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (Resolved 2026-07-08 — sync-excellence E7)
 
 Promoted from roadmap D2. The delta enumeration is a Depth:1 PROPFIND of
 every item's getetag — O(collection size) response XML for a one-item
@@ -1022,6 +1022,43 @@ the CTag, RFC §3.3 token-invalidation fallback, and the CTag+PROPFIND path
 kept permanently as the fallback. The backend-owned sync-token is a
 *cache-validity* token — it must not be conflated with the engine's H3
 per-mapping sync-progress tokens. (Seeded 2026-07-07.)
+
+**Resolution (2026-07-08):** implemented exactly as designed, confined to
+`src/calendar/remotecalendarbackend.{h,cpp}` and
+`tests/sync/fakecaldavserver.{h,cpp}`. Capability detection: a Depth:0
+`supported-report-set` PROPFIND fired once per calendar right after
+discovery (fanned in before `loadCalendarsFinished`), recorded as
+`CalendarFacts::supportsSyncCollection` (default false — primed calendars,
+which deliberately issue zero PROPFINDs, never probe and so stay on the
+permanent fallback). Token store: `CTagStore` gained an additive,
+self-migrating `sync_token` column (`PRAGMA table_info` probe + `ALTER
+TABLE`, same pattern as `BaselineStore::ensureSchemaV6`); its `set()` and
+new `setToken()` both moved from `INSERT OR REPLACE` to update-else-insert
+so a plain CTag commit can no longer null out a previously-stored token.
+Fetch path: `continueFetchWithSyncCollection` issues the Depth:0 REPORT via
+`davSyncRequestAsync`, applies 404-tombstone deletions directly
+(`noteItemErased`, no listing), multigets the changed hrefs through the
+existing chunked-batch machinery, and — the one real design subtlety
+beyond §10's text — reconstructs the FULL current-collection snapshot via
+`serveCachedItems()` before calling `op->complete()`, because
+`recordsFromLastFetch()`'s H5/O23 contract is a full snapshot every cycle
+(same as the CTag+listing path); returning only the delta would have
+looked to the engine's diff like everything else in the collection was
+deleted. Token invalidation (409/410/507) clears the stored token and
+falls back to `continueFetchWithListing` for that cycle;
+`bootstrapSyncTokenIfNeeded` (an empty-token REPORT run once after any
+full-listing cycle) re-acquires a token afterward. `FakeCalDavServer`
+gained a per-collection change journal (`logChange`, fed by
+`setSeedEvents`/`removeEvent`/PUT/DELETE) whose length IS the collection's
+sync-token, `setSupportsSyncCollection`/`setInvalidateSyncTokens` knobs,
+and `syncCollectionReportCount()`. Five new RED-turned-green tests in
+`tests/calendar/tst_sync_collection_report.cpp` cover §10(a)-(e); RED
+confirmed against the pre-E7 backend (steady-state/deletion/invalidation/
+restart scenarios all failed for "today's full listing runs" reasons; the
+unsupported-server regression pin passed trivially, as expected). Full
+suite 166/166 green. Live-verified against a scratch Radicale 3.7.5
+instance — see `docs/campaign/2026-07-07-sync-excellence-phases.md` §17's
+E7 entry for the server-log evidence.
 
 ### O37 — TSAN thread-registry `CHECK failed` under rapid QThread churn in `tst_engine_cancellation` (OPEN, tool artifact, seeded 2026-07-07 during E2)
 

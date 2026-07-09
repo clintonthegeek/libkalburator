@@ -107,19 +107,36 @@ public:
         return QString();
     }
 
+    // E7/O36: update-else-insert rather than the old INSERT OR REPLACE — a
+    // REPLACE re-inserts the whole row, which would silently null out
+    // sync_token (a column NOT in this statement's column list) on every
+    // plain CTag commit. UPDATE only touches the ctag column, so a
+    // previously-set sync_token survives a CTag-only commit untouched.
     bool set(const QString &calendarId, const QString &ctag)
     {
         if (!ensureOpen()) return false;
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-        QSqlQuery q(db);
-        q.prepare(QStringLiteral(
-            "INSERT OR REPLACE INTO remote_ctags "
-            "(backend_id, calendar_id, ctag) VALUES (?, ?, ?)"));
-        q.addBindValue(m_backendId);
-        q.addBindValue(calendarId);
-        q.addBindValue(ctag);
-        if (!q.exec()) {
-            qWarning() << "CTagStore::set failed:" << q.lastError().text();
+
+        QSqlQuery upd(db);
+        upd.prepare(QStringLiteral(
+            "UPDATE remote_ctags SET ctag = ? WHERE backend_id = ? AND calendar_id = ?"));
+        upd.addBindValue(ctag);
+        upd.addBindValue(m_backendId);
+        upd.addBindValue(calendarId);
+        if (!upd.exec()) {
+            qWarning() << "CTagStore::set failed:" << upd.lastError().text();
+            return false;
+        }
+        if (upd.numRowsAffected() > 0) return true;
+
+        QSqlQuery ins(db);
+        ins.prepare(QStringLiteral(
+            "INSERT INTO remote_ctags (backend_id, calendar_id, ctag) VALUES (?, ?, ?)"));
+        ins.addBindValue(m_backendId);
+        ins.addBindValue(calendarId);
+        ins.addBindValue(ctag);
+        if (!ins.exec()) {
+            qWarning() << "CTagStore::set insert failed:" << ins.lastError().text();
             return false;
         }
         return true;
@@ -132,6 +149,73 @@ public:
         QSqlQuery q(db);
         q.prepare(QStringLiteral(
             "DELETE FROM remote_ctags "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        return q.exec();
+    }
+
+    // ---- E7/O36: RFC 6578 sync-token, persisted alongside the CTag ----
+
+    QString getToken(const QString &calendarId)
+    {
+        if (!ensureOpen()) return QString();
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "SELECT sync_token FROM remote_ctags "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        q.addBindValue(m_backendId);
+        q.addBindValue(calendarId);
+        if (q.exec() && q.next())
+            return q.value(0).toString();
+        return QString();
+    }
+
+    bool setToken(const QString &calendarId, const QString &token)
+    {
+        if (!ensureOpen()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+
+        QSqlQuery upd(db);
+        upd.prepare(QStringLiteral(
+            "UPDATE remote_ctags SET sync_token = ? "
+            "WHERE backend_id = ? AND calendar_id = ?"));
+        upd.addBindValue(token);
+        upd.addBindValue(m_backendId);
+        upd.addBindValue(calendarId);
+        if (!upd.exec()) {
+            qWarning() << "CTagStore::setToken failed:" << upd.lastError().text();
+            return false;
+        }
+        if (upd.numRowsAffected() > 0) return true;
+
+        // No row yet for this (backend_id, calendar_id) — the sync-token
+        // bootstrap can land before the first CTag commit (it runs right
+        // after the first full listing, same fetch cycle). Insert a row
+        // with an empty ctag; the CTag commit that follows uses the same
+        // update-else-insert set() above and will not clobber this token.
+        QSqlQuery ins(db);
+        ins.prepare(QStringLiteral(
+            "INSERT INTO remote_ctags (backend_id, calendar_id, ctag, sync_token) "
+            "VALUES (?, ?, '', ?)"));
+        ins.addBindValue(m_backendId);
+        ins.addBindValue(calendarId);
+        ins.addBindValue(token);
+        if (!ins.exec()) {
+            qWarning() << "CTagStore::setToken insert failed:" << ins.lastError().text();
+            return false;
+        }
+        return true;
+    }
+
+    bool clearToken(const QString &calendarId)
+    {
+        if (!ensureOpen()) return false;
+        QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+        QSqlQuery q(db);
+        q.prepare(QStringLiteral(
+            "UPDATE remote_ctags SET sync_token = NULL "
             "WHERE backend_id = ? AND calendar_id = ?"));
         q.addBindValue(m_backendId);
         q.addBindValue(calendarId);
@@ -173,9 +257,44 @@ private:
             "  ctag         TEXT NOT NULL,"
             "  PRIMARY KEY (backend_id, calendar_id)"
             ")"));
-        if (!ok)
+        if (!ok) {
             qWarning() << "CTagStore::ensureSchema failed:" << q.lastError().text();
-        return ok;
+            return false;
+        }
+        return ensureSyncTokenColumn(db);
+    }
+
+    // E7/O36: additive, self-migrating column for the RFC 6578 sync-token.
+    // SQLite has no "ADD COLUMN IF NOT EXISTS", so probe the column set via
+    // PRAGMA table_info first — idempotent, safe on every open. Same pattern
+    // as BaselineStore::ensureSchemaV6's source_hash/target_hash columns.
+    bool ensureSyncTokenColumn(QSqlDatabase &db)
+    {
+        bool hasSyncToken = false;
+        {
+            QSqlQuery info(db);
+            if (!info.exec(QStringLiteral("PRAGMA table_info(remote_ctags)"))) {
+                qWarning() << "CTagStore::ensureSyncTokenColumn: table_info failed:"
+                           << info.lastError().text();
+                return false;
+            }
+            while (info.next()) {
+                if (info.value(1).toString() == QLatin1String("sync_token")) {
+                    hasSyncToken = true;
+                    break;
+                }
+            }
+        }
+        if (hasSyncToken) return true;
+
+        QSqlQuery alter(db);
+        if (!alter.exec(QStringLiteral(
+                "ALTER TABLE remote_ctags ADD COLUMN sync_token TEXT"))) {
+            qWarning() << "CTagStore::ensureSyncTokenColumn: ADD COLUMN failed:"
+                       << alter.lastError().text();
+            return false;
+        }
+        return true;
     }
 
     QString m_dbPath;
@@ -384,6 +503,82 @@ const QByteArray kCtagPropfindBody = QByteArrayLiteral(
     "  <D:prop><CS:getctag/></D:prop>"
     "</D:propfind>");
 
+// E7/O36: capability-detection PROPFIND — asks a collection which REPORTs
+// it supports (RFC 3253 §3.1.5). Radicale >=3 and Nextcloud both include
+// sync-collection in the answer.
+const QByteArray kSupportedReportSetPropfindBody = QByteArrayLiteral(
+    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+    "<D:propfind xmlns:D=\"DAV:\">"
+    "  <D:prop><D:supported-report-set/></D:prop>"
+    "</D:propfind>");
+
+// True if a supported-report-set PROPFIND response (@p xml) advertises the
+// RFC 6578 sync-collection REPORT. Namespace-agnostic (local element name
+// only), matching this file's other multistatus parsers.
+bool parseSupportsSyncCollection(const QByteArray &xml)
+{
+    QXmlStreamReader reader(xml);
+    while (!reader.atEnd()) {
+        reader.readNext();
+        if (reader.isStartElement() && reader.name() == u"sync-collection") {
+            return true;
+        }
+    }
+    return false;
+}
+
+// One RFC 6578 sync-collection REPORT's parsed delta.
+struct SyncCollectionDelta {
+    QMap<QString, QString> changedHrefs; // href (path) -> getetag
+    QStringList deletedHrefs;            // href (path); a 404-status response
+    QString newToken;                    // the multistatus's sibling <D:sync-token>
+};
+
+// Parses a REPORT sync-collection 207 multistatus body. <D:response> entries
+// with a 404 status are deletion tombstones (RFC 6578 §3.6); everything else
+// with a getetag is a changed href. <D:sync-token> is a sibling of the
+// <D:response> elements, not nested inside one.
+SyncCollectionDelta parseSyncCollectionMultistatus(const QByteArray &xml)
+{
+    SyncCollectionDelta delta;
+    QXmlStreamReader reader(xml);
+    QString currentHref;
+    QString currentEtag;
+    QString currentStatus;
+    bool inResponse = false;
+    while (!reader.atEnd()) {
+        reader.readNext();
+        if (reader.isStartElement()) {
+            if (reader.name() == u"response") {
+                inResponse = true;
+                currentHref.clear();
+                currentEtag.clear();
+                currentStatus.clear();
+            } else if (inResponse && reader.name() == u"href") {
+                currentHref = reader.readElementText();
+            } else if (inResponse && reader.name() == u"getetag") {
+                currentEtag = reader.readElementText();
+            } else if (inResponse && reader.name() == u"status") {
+                currentStatus = reader.readElementText();
+            } else if (!inResponse && reader.name() == u"sync-token") {
+                delta.newToken = reader.readElementText();
+            }
+        } else if (reader.isEndElement() && reader.name() == u"response") {
+            inResponse = false;
+            if (currentHref.isEmpty()) continue;
+            if (currentStatus.contains(QStringLiteral("404"))) {
+                delta.deletedHrefs << currentHref;
+            } else if (!currentEtag.isEmpty()) {
+                delta.changedHrefs.insert(currentHref, currentEtag);
+            }
+        }
+    }
+    if (reader.hasError()) {
+        qWarning() << "parseSyncCollectionMultistatus: XML parse error:" << reader.errorString();
+    }
+    return delta;
+}
+
 // E5.3 (audit B7 / CP-A, 2026-07-08) DEVIATION — documented exception:
 // createRecord()/deleteRecord() no longer use this (reimplemented as direct
 // davSyncRequest() calls above); the engine's live write path never calls
@@ -554,6 +749,25 @@ void RemoteCalendarBackend::clearCtag(const QString &calendarId)
         m_ctags->clear(calendarId);
 }
 
+QString RemoteCalendarBackend::syncToken(const QString &calendarId) const
+{
+    if (m_ctags)
+        return m_ctags->getToken(calendarId);
+    return QString();
+}
+
+void RemoteCalendarBackend::setSyncToken(const QString &calendarId, const QString &token)
+{
+    if (m_ctags)
+        m_ctags->setToken(calendarId, token);
+}
+
+void RemoteCalendarBackend::clearSyncToken(const QString &calendarId)
+{
+    if (m_ctags)
+        m_ctags->clearToken(calendarId);
+}
+
 // Static factory method for BackendRegistry
 SyncBackend* RemoteCalendarBackend::create(const QVariantMap &config, QObject *parent)
 {
@@ -657,6 +871,7 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
         }
 
         const auto collections = fetchJob->collections();
+        QStringList discoveredIds;
         for (const KDAV::DavCollection &col : collections) {
             // Identify calendar collections by content type flags
             if (col.contentTypes() & (KDAV::DavCollection::Events | KDAV::DavCollection::Todos | KDAV::DavCollection::Calendar)) {
@@ -694,11 +909,27 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
                          << ", content types:" << col.contentTypes();
 
                 emit calendarDiscovered(collectionId, calId);
+                discoveredIds << calId;
             }
         }
 
-        // Signal that loadCalendars has finished
-        emit loadCalendarsFinished(collectionId, true);
+        // E7/O36: probe each newly discovered calendar's supported-report-set
+        // (design step 1) so fetchItems can choose the sync-collection REPORT
+        // path over the Depth:1 listing fallback. Fanned in before
+        // loadCalendarsFinished so a caller that awaits that signal already
+        // has accurate capabilities by the time it calls fetchItems.
+        if (discoveredIds.isEmpty()) {
+            emit loadCalendarsFinished(collectionId, true);
+            return;
+        }
+        auto remaining = std::make_shared<int>(discoveredIds.size());
+        for (const QString &calId : discoveredIds) {
+            probeSyncCollectionSupport(calId, [this, collectionId, remaining]() {
+                if (--(*remaining) == 0) {
+                    emit loadCalendarsFinished(collectionId, true);
+                }
+            });
+        }
     });
 
     startJobWithWatchdog(fetchJob, [this, collectionId]() {
@@ -853,6 +1084,32 @@ void RemoteCalendarBackend::fetchFreshCtagAsync(
             }
             const QMap<QString, QString> ctags = parseCtagMultistatus(resp.body);
             done(ctags.isEmpty() ? QString() : ctags.first());
+        });
+}
+
+void RemoteCalendarBackend::probeSyncCollectionSupport(const QString &calendarId,
+                                                        std::function<void()> done)
+{
+    // E7/O36 design step 1. m_calendars[calendarId].supportsSyncCollection
+    // already defaults to false (the permanent CTag+listing fallback), so a
+    // missing URL or a failed/unparseable probe just leaves it there.
+    const auto davUrl = davUrlFor(calendarId);
+    if (!davUrl) {
+        done();
+        return;
+    }
+
+    davSyncRequestAsync(
+        nam(), davUrl->url(), QByteArrayLiteral("PROPFIND"),
+        m_username, m_password, kSupportedReportSetPropfindBody,
+        {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}},
+        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, calendarId, done = std::move(done)](const DavResponse &resp) {
+            if (resp.transportOk() && resp.status == 207
+                && parseSupportsSyncCollection(resp.body)) {
+                m_calendars[calendarId].supportsSyncCollection = true;
+            }
+            done();
         });
 }
 
@@ -1708,7 +1965,21 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                     clearCtag(calendarId);
                 }
 
-                continueFetchWithListing(op, calendarId, davUrl, freshCtag);
+                // E7/O36 design step 3: something changed (or there was no
+                // CTag to compare — storedCtag is non-empty on this branch,
+                // see the isEmpty() early-out above it). A sync-collection-
+                // capable calendar with a stored token gets the server to
+                // compute the delta directly; everyone else (no capability,
+                // or capable but no token yet — e.g. this collection's very
+                // first fetch through this branch) keeps the existing
+                // Depth:1 listing fallback, forever.
+                const QString storedToken = syncToken(calendarId);
+                if (m_calendars.value(calendarId).supportsSyncCollection
+                    && !storedToken.isEmpty()) {
+                    continueFetchWithSyncCollection(op, calendarId, davUrl, freshCtag, storedToken);
+                } else {
+                    continueFetchWithListing(op, calendarId, davUrl, freshCtag);
+                }
             });
     });
 
@@ -1810,9 +2081,11 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
         if (allItems.isEmpty()) {
             // No items - complete with empty list
             emit fetchStarted(calendarId, 0);
-            op->setFetchedItems({});
-            op->complete();
-            emit fetchFinished(calendarId, true);
+            bootstrapSyncTokenIfNeeded(calendarId, davUrl, [this, op, calendarId]() {
+                op->setFetchedItems({});
+                op->complete();
+                emit fetchFinished(calendarId, true);
+            });
             return;
         }
 
@@ -1901,9 +2174,12 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
                            << "item(s) served incomplete from cache";
             }
 
-            op->setFetchedItems(fetchedIncidences);
-            op->complete();
-            emit fetchFinished(calendarId, true);
+            bootstrapSyncTokenIfNeeded(calendarId, davUrl,
+                [this, op, calendarId, fetchedIncidences]() {
+                    op->setFetchedItems(fetchedIncidences);
+                    op->complete();
+                    emit fetchFinished(calendarId, true);
+                });
             return;
         }
 
@@ -1931,7 +2207,7 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
         *runNextBatch = [this, op, calendarId, davUrl, hrefBatches, fetchedItemsMap,
                           batchIndex, runNextBatch, allItems, serverEtags, totalBatches]() {
             if (*batchIndex >= hrefBatches.size()) {
-                processFetchedItems(op, calendarId, allItems, serverEtags, *fetchedItemsMap);
+                processFetchedItems(op, calendarId, davUrl, allItems, serverEtags, *fetchedItemsMap);
                 return;
             }
 
@@ -1996,6 +2272,7 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
 }
 
 void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QString &calendarId,
+                                                 const KDAV::DavUrl &davUrl,
                                                  const KDAV::DavItem::List &allItems,
                                                  const QMap<QString, QString> &serverEtags,
                                                  const QMap<QString, KDAV::DavItem> &fetchedItemsMap)
@@ -2102,6 +2379,291 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
         }
     } else {
         qWarning() << "RemoteCalendarBackend::fetchItems: NOT committing CTag for"
+                   << calendarId << "-" << countSkipped << "item(s) skipped";
+    }
+
+    bootstrapSyncTokenIfNeeded(calendarId, davUrl, [this, op, calendarId, fetchedIncidences]() {
+        op->setFetchedItems(fetchedIncidences);
+        op->complete();
+        emit fetchFinished(calendarId, true);
+    });
+}
+
+void RemoteCalendarBackend::bootstrapSyncTokenIfNeeded(const QString &calendarId,
+                                                       const KDAV::DavUrl &davUrl,
+                                                       std::function<void()> continuation)
+{
+    if (!m_calendars.value(calendarId).supportsSyncCollection
+        || !syncToken(calendarId).isEmpty()) {
+        continuation();
+        return;
+    }
+
+    // E7/O36 design step 3 ("capture from the initial REPORT"): the full
+    // listing this call follows just materialized every item — acquire the
+    // collection's CURRENT sync-token via one empty-token REPORT so every
+    // later cycle can use continueFetchWithSyncCollection instead of
+    // relisting forever. Best-effort: any failure here just leaves the
+    // calendar on the CTag+listing fallback for one more cycle, it does not
+    // fail @p continuation.
+    const QByteArray body = QByteArrayLiteral(
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        "<D:sync-collection xmlns:D=\"DAV:\">"
+        "<D:sync-token/>"
+        "<D:sync-level>1</D:sync-level>"
+        "<D:prop><D:getetag/></D:prop>"
+        "</D:sync-collection>");
+
+    davSyncRequestAsync(nam(), davUrl.url(), QByteArrayLiteral("REPORT"),
+                        m_username, m_password, body,
+                        {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}},
+                        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, calendarId, continuation](const DavResponse &resp) {
+            if (resp.transportOk() && resp.status == 207) {
+                const SyncCollectionDelta delta = parseSyncCollectionMultistatus(resp.body);
+                if (!delta.newToken.isEmpty()) {
+                    setSyncToken(calendarId, delta.newToken);
+                }
+            }
+            continuation();
+        });
+}
+
+void RemoteCalendarBackend::continueFetchWithSyncCollection(FetchOperation *op,
+                                                             const QString &calendarId,
+                                                             const KDAV::DavUrl &davUrl,
+                                                             const QString &freshCtag,
+                                                             const QString &storedToken)
+{
+    if (!freshCtag.isEmpty()) {
+        m_calendars[calendarId].pendingCtag = freshCtag;
+    }
+
+    const QByteArray body = QByteArrayLiteral(
+        "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+        "<D:sync-collection xmlns:D=\"DAV:\">"
+        "<D:sync-token>") + storedToken.toUtf8() + QByteArrayLiteral("</D:sync-token>"
+        "<D:sync-level>1</D:sync-level>"
+        "<D:prop><D:getetag/></D:prop>"
+        "</D:sync-collection>");
+
+    davSyncRequestAsync(nam(), davUrl.url(), QByteArrayLiteral("REPORT"),
+                        m_username, m_password, body,
+                        {{QByteArrayLiteral("Depth"), QByteArrayLiteral("0")}},
+                        QByteArrayLiteral("application/xml; charset=utf-8"),
+        [this, op, calendarId, davUrl, freshCtag](const DavResponse &resp) {
+            if (op->state() == SyncOperation::Cancelled) {
+                emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
+                return;
+            }
+            // RFC 6578 §3.3: the server rejects an unrecognized/expired
+            // sync-token with 409/410/507 (a valid-sync-token precondition
+            // failure). Checked BEFORE the transport-error branch below —
+            // Qt's QNetworkAccessManager surfaces any non-2xx HTTP status as
+            // a QNetworkReply error (transportOk() == false), but
+            // davResponseFromReply still populates the real HTTP status via
+            // HttpStatusCodeAttribute regardless of resp.error, so
+            // resp.status is trustworthy here. Clear the stale token and
+            // fall back to a full listing for THIS cycle —
+            // bootstrapSyncTokenIfNeeded() re-acquires a fresh token once
+            // that listing completes.
+            if (resp.status == 409 || resp.status == 410 || resp.status == 507) {
+                qWarning() << "RemoteCalendarBackend::fetchItems: sync-token invalid for"
+                           << calendarId << "(HTTP" << resp.status
+                           << ") - clearing token, falling back to full listing";
+                clearSyncToken(calendarId);
+                continueFetchWithListing(op, calendarId, davUrl, freshCtag);
+                return;
+            }
+            if (!resp.transportOk()) {
+                const QString errorMsg = QStringLiteral(
+                    "sync-collection REPORT failed: %1").arg(resp.errorString);
+                op->fail(errorMsg);
+                emit fetchFinished(calendarId, false, errorMsg);
+                return;
+            }
+            if (resp.status != 207) {
+                const QString errorMsg = QStringLiteral(
+                    "sync-collection REPORT returned unexpected status %1")
+                        .arg(resp.status);
+                op->fail(errorMsg);
+                emit fetchFinished(calendarId, false, errorMsg);
+                return;
+            }
+
+            const SyncCollectionDelta delta = parseSyncCollectionMultistatus(resp.body);
+            if (delta.newToken.isEmpty()) {
+                // Malformed/unparseable response — fail soft to the listing
+                // path rather than trust a delta we can't verify landed.
+                qWarning() << "RemoteCalendarBackend::fetchItems: sync-collection "
+                              "REPORT for" << calendarId
+                           << "carried no sync-token - falling back to full listing";
+                continueFetchWithListing(op, calendarId, davUrl, freshCtag);
+                return;
+            }
+
+            // Tombstones apply immediately — sync-collection's other O36
+            // half is that deletions no longer need a full listing either.
+            for (const QString &hrefPath : delta.deletedHrefs) {
+                QUrl itemUrl = davUrl.url();
+                itemUrl.setPath(hrefPath);
+                noteItemErased(normalizeUrlKey(itemUrl.toString()));
+            }
+
+            if (delta.changedHrefs.isEmpty()) {
+                // Nothing to download, but recordsFromLastFetch()'s contract
+                // (H5/O23) is a FULL current-collection snapshot every
+                // cycle, same as the listing path — a delta-only result
+                // would look to the engine's diff like everything else in
+                // the collection just got deleted. Tombstones (if any) were
+                // already applied to the content cache above, so re-reading
+                // it now yields exactly the current set.
+                auto currentIncidences = serveCachedItems(calendarId, davUrl);
+                emit fetchStarted(calendarId, currentIncidences.size());
+                op->setFetchedItems(currentIncidences);
+                op->complete();
+                emit fetchFinished(calendarId, true);
+                setSyncToken(calendarId, delta.newToken);
+                if (!freshCtag.isEmpty()) setCtag(calendarId, freshCtag);
+                return;
+            }
+
+            emit fetchStarted(calendarId, delta.changedHrefs.size());
+
+            QStringList urlsToFetch;
+            for (auto it = delta.changedHrefs.constBegin(); it != delta.changedHrefs.constEnd(); ++it) {
+                QUrl itemUrl = davUrl.url();
+                itemUrl.setPath(it.key());
+                urlsToFetch << itemUrl.toDisplayString();
+            }
+
+            QList<QStringList> hrefBatches;
+            for (int i = 0; i < urlsToFetch.size(); i += m_multigetChunkSize)
+                hrefBatches.append(urlsToFetch.mid(i, m_multigetChunkSize));
+
+            auto fetchedItemsMap = std::make_shared<QMap<QString, KDAV::DavItem>>();
+            auto batchIndex = std::make_shared<int>(0);
+            auto runNextBatch = std::make_shared<std::function<void()>>();
+            const int totalBatches = hrefBatches.size();
+
+            *runNextBatch = [this, op, calendarId, davUrl, hrefBatches, fetchedItemsMap,
+                              batchIndex, runNextBatch, delta, freshCtag, totalBatches]() {
+                if (*batchIndex >= hrefBatches.size()) {
+                    completeSyncCollectionFetch(op, calendarId, davUrl,
+                                                delta.changedHrefs, delta.deletedHrefs,
+                                                delta.newToken, freshCtag, *fetchedItemsMap);
+                    return;
+                }
+
+                KDAV::DavItemsFetchJob *fetchJob =
+                    new KDAV::DavItemsFetchJob(davUrl, hrefBatches.at(*batchIndex), this);
+
+                connect(fetchJob, &KDAV::DavItemsFetchJob::result, this,
+                        [this, op, calendarId, fetchJob, fetchedItemsMap, batchIndex,
+                         runNextBatch, totalBatches](KJob *fj) {
+                    if (op->state() == SyncOperation::Cancelled) {
+                        emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
+                        return;
+                    }
+                    if (fj->error()) {
+                        const QString errorMsg = QStringLiteral(
+                            "sync-collection multiget failed (batch %1/%2): %3")
+                                .arg(*batchIndex + 1).arg(totalBatches)
+                                .arg(davJobErrorMessage(static_cast<KDAV::DavJobBase *>(fj)));
+                        op->fail(errorMsg);
+                        emit fetchFinished(calendarId, false, errorMsg);
+                        return;
+                    }
+                    for (const auto &davItem : fetchJob->items()) {
+                        (*fetchedItemsMap)[normalizeUrlKey(davItem.url().url().toString())] = davItem;
+                    }
+                    ++(*batchIndex);
+                    (*runNextBatch)();
+                });
+
+                startJobWithWatchdog(fetchJob, [this, op, calendarId, batchIndex, totalBatches]() {
+                    if (op->isFinished()) return;
+                    const QString errorMsg = QStringLiteral(
+                        "sync-collection multiget timed out (batch %1/%2)")
+                            .arg(*batchIndex + 1).arg(totalBatches);
+                    op->fail(errorMsg);
+                    emit fetchFinished(calendarId, false, errorMsg);
+                });
+            };
+
+            (*runNextBatch)();
+        });
+}
+
+void RemoteCalendarBackend::completeSyncCollectionFetch(
+    FetchOperation *op, const QString &calendarId, const KDAV::DavUrl &davUrl,
+    const QMap<QString, QString> &changedHrefs, const QStringList &deletedHrefs,
+    const QString &newToken, const QString &freshCtag,
+    const QMap<QString, KDAV::DavItem> &fetchedItemsMap)
+{
+    int countFetched = 0;
+    int countSkipped = 0;
+
+    // Store every changed item's fresh content into the persistent cache +
+    // both ETag stores. Deliberately does NOT build the op's result from
+    // just these items — see the serveCachedItems() call below.
+    for (auto it = changedHrefs.constBegin(); it != changedHrefs.constEnd(); ++it) {
+        QUrl itemUrl = davUrl.url();
+        itemUrl.setPath(it.key());
+        const QString urlKey = normalizeUrlKey(itemUrl.toString());
+
+        const auto fetchedIt = fetchedItemsMap.constFind(urlKey);
+        if (fetchedIt == fetchedItemsMap.constEnd()) {
+            qWarning() << "RemoteCalendarBackend::fetchItems: sync-collection multiget "
+                          "response missing item:" << urlKey;
+            ++countSkipped;
+            continue;
+        }
+
+        const QByteArray icalData = fetchedIt->data();
+        const QString etag = fetchedIt->etag();
+        if (icalData.isEmpty() || etag.isEmpty()) {
+            ++countSkipped;
+            continue;
+        }
+
+        m_contentCache->store(urlKey, etag, QString::fromUtf8(icalData));
+        m_localEtags[urlKey] = etag;
+        if (m_etagCache) m_etagCache->setEtag(urlKey, etag);
+        ++countFetched;
+    }
+
+    // recordsFromLastFetch()'s contract (H5/O23) is a FULL current-collection
+    // snapshot every cycle — the same contract the CTag+listing path honors
+    // by processing every item (cache-hit or network-fetched) on every
+    // cycle. A sync-collection cycle only downloads the delta, but the
+    // content cache now holds the union of "everything seen before" plus
+    // "what just changed" minus "what the caller already erased for
+    // deletedHrefs" — re-reading it whole reconstructs the same full
+    // snapshot the listing path would have produced, without a listing.
+    auto fetchedIncidences = serveCachedItems(calendarId, davUrl);
+
+    qDebug() << "RemoteCalendarBackend::fetchItems: sync-collection fetched"
+             << countFetched << "changed," << deletedHrefs.size()
+             << "deleted, snapshot now" << fetchedIncidences.size()
+             << "for calendar" << calendarId
+             << (countSkipped > 0 ? QString(" (%1 skipped)").arg(countSkipped) : QString());
+
+    // N5 discipline, applied to the token: only commit the new sync-token
+    // (and CTag) when every changed href actually materialized. Committing
+    // on a partial result would let the NEXT cycle's delta start counting
+    // from a token that already claims these hrefs are caught up, silently
+    // losing them forever.
+    if (countSkipped == 0) {
+        setSyncToken(calendarId, newToken);
+        const QString pendingCtag = m_calendars.value(calendarId).pendingCtag;
+        if (!pendingCtag.isEmpty()) {
+            setCtag(calendarId, pendingCtag);
+        } else if (!freshCtag.isEmpty()) {
+            setCtag(calendarId, freshCtag);
+        }
+    } else {
+        qWarning() << "RemoteCalendarBackend::fetchItems: NOT committing sync-token for"
                    << calendarId << "-" << countSkipped << "item(s) skipped";
     }
 
