@@ -726,7 +726,7 @@ real bug this investigation surfaced along the way (out of E8's scope to
 fix: it lives in the calendar canon *write* path, not the no-baseline
 conflict classification).
 
-### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; OPEN → sync-excellence E5)
+### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; Resolved 2026-07-08 — sync-excellence E5; stale OPEN header fixed at CP-B 2026-07-09)
 
 Audit §3-B7, the deepest surviving design debt from the hardening campaign.
 `davSyncRequest` (`remotecalendarbackend.cpp:253`) and `awaitOperation`
@@ -1521,7 +1521,7 @@ belt-and-braces backstop — it should no longer be the mechanism that
 actually ends an I/O-length wait for any consumer using the E5.3 write path
 or the pre-existing fetch gates.
 
-### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (OPEN, found 2026-07-08 during E8's O28 RED-test investigation, not campaign-blocking)
+### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (OPEN, found 2026-07-08 during E8's O28 RED-test investigation; ELEVATED at CP-B 2026-07-09 — live-reproduced, scheduled as phase E12, must be Resolved before CP-C)
 
 Found while writing E8's crash-replay RED test
 (`tests/engine/tst_phantom_conflict_adoption.cpp`): an EARLY version of the
@@ -1581,3 +1581,46 @@ the local .ics file itself still lacking the fields — only the diff
 machinery would agree). Needs live verification against a real CalDAV
 server (Radicale may itself normalize `CREATED` differently than the fake)
 before committing to either direction.
+
+**CP-B live confirmation (2026-07-09):** the CP-B smoke's kill-mid-push run
+(PlanStan dev app against scratch Radicale :5233, 40 minimal VEVENTs with no
+`CREATED`/`DTSTAMP`/`LAST-MODIFIED` in the source `.ics`, SIGKILL with 12
+pushed) reproduced this LIVE: the repair cycle flagged all 12
+already-pushed records as conflicts (`!12`, mapping `success: false`), and
+every subsequent cycle re-presented them — the vault never converges and
+the conflict store accumulates duplicate unresolved rows (48 rows for the
+12 UIDs after 4 cycles; that store-side dedup gap is filed separately in
+PlanStan `docs/bugs/sync-conflict-store-duplicate-rows.md`). The isolation
+re-run with the identical protocol but `CREATED`/`DTSTAMP`/`LAST-MODIFIED`
+present in the source bytes recovered perfectly (10 silent adoptions with
+E8's qInfo line, +30 pushed, zero conflicts, converged) — E8's machinery is
+sound; this canon write-side stamp is the sole live phantom producer.
+Radicale does NOT normalize `CREATED` itself (the stored server copy's
+timestamps are exactly the push-time stamps KCalendarCore injected), which
+answers this entry's open live-verification question. Elevated: scheduled
+as phase E12 (see the campaign plan §14c), gating CP-C.
+
+### O42 — first sync of each app process never uses `sync-collection`: the fetch races the supported-report-set probe, and the capability is in-memory only (OPEN, found 2026-07-09 at CP-B; efficiency only — decide at CP-C's efficiency audit, candidates E10/E11)
+
+Found during the CP-B live smoke's restart-plus-one-remote-edit proof.
+`RemoteCalendarBackend` only takes the RFC 6578 `sync-collection` path
+when `m_calendars[calId].supportsSyncCollection` is true AND a stored
+sync-token exists (`remotecalendarbackend.cpp` fetch decision, E7 design
+step 3). The token persists (CTagStore `sync_tokens`), but the capability
+flag is populated ONLY by `probeSyncCollectionSupport()` during
+`loadCalendars()` discovery. PlanStan's auto-sync-on-load drives the first
+fetch through the primed/registered-URL path WITHOUT awaiting discovery:
+in the CP-B logs the first sync run's fetch (listing path, "Delta sync -
+11 total, 1 changed") completed BEFORE the "discovered calendar" lines
+appeared. Result: the first sync of every app process pays the Depth:1
+ETag listing (correctness unaffected — E6's seeded cache still limited the
+run to exactly 1 item download); every later cycle in the same process
+uses sync-collection correctly (confirmed live, both for a tick-driven
+pull and for the post-SIGSTOP recovery cycle).
+
+**Fix candidates (pick at CP-C / fold into E10 or E11):** (a) persist the
+capability next to the token in CTagStore (survives restart, zero races);
+(b) have the fetch path lazily probe supported-report-set on first fetch
+when the flag is unset (one extra small PROPFIND, self-healing); (c)
+PlanStan-side: await `loadCalendarsFinished` before the first auto-sync
+(fixes the race but leaves the capability amnesia to (a)/(b)).

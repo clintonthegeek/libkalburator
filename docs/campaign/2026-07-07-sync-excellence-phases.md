@@ -1,7 +1,9 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — no phase started.
+**Status:** OPEN — E1–E9 + CP-A + CP-B complete; **v0.90 tagged
+2026-07-09**. Remaining: E12 (O41, added at CP-B, gates CP-C), E10
+(PlanStan adoption), E11 (CalendarManager async API), CP-C.
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1023,6 +1025,39 @@ calendar backend.
 **Do NOT:** touch `src/contacts/` (still §16 residual, its own rule-of-
 three) or add mapping-level parallelism.
 
+## 14c. Phase E12 — O41 canon write-side timestamp stamping (added at CP-B)
+
+**Added 2026-07-09 by the CP-B ruling** — the CP-B live smoke reproduced
+FINDINGS O41 live (kill-mid-push of timestamp-less source events → 12
+permanent phantom conflicts, never converges), elevating it from parked
+residual to campaign-blocking. E8's adoption machinery itself passed the
+same live protocol clean once the source bytes carried
+`CREATED`/`LAST-MODIFIED` — the bug is solely the canon→ical write side.
+
+**Entry:** v0.90 tagged. **Repo: `~/dev/libkalburator`**, branch from
+`main`. Read FINDINGS O41 in full (root cause + CP-B live confirmation +
+fix directions (a)/(b)) first. Independent of E10/E11 ordering; must land
+before CP-C.
+
+**Scope:** `src/calendar/eventcanonfields.cpp` canon→ical materialization
+(and an audit of the sibling `*canonfields.cpp` write sides for the same
+asymmetry — `journalcanonfields.cpp`, `todocanonfields.cpp`). Decide
+between O41's fix directions (a) leave-unset (preferred if
+`ICalFormat::toICalString` permits) and (b) backfill-from-server; state
+the decision in the landing commit.
+
+**RED tests first:** (a) engine-level replay of E8's crash shape with the
+timestamp-LESS fixture (the exact early-fixture variant
+`tst_phantom_conflict_adoption.cpp`'s E8 investigation discarded) — must
+show zero phantom conflicts after the fix; (b) a round-trip pin: a canon
+record with no `created`/`lastModified` keys pushed then re-fetched
+compares canonically equal.
+
+**Acceptance gate (E12):** full suite green; both RED tests green; a live
+re-run of the CP-B kill-mid-push protocol with timestamp-less events
+(scratch Radicale :5233) recovers with ZERO phantom conflicts; FINDINGS
+O41 → Resolved.
+
 ## 15. CP-C — live verification + campaign close (STOP unless strong model)
 
 1. **Soak:** PlanStan dev build against scratch Radicale, 120 s
@@ -1489,7 +1524,63 @@ three) or add mapping-level parallelism.
       167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir build -j 8`,
       O26 flake not observed). Archived hardening plan's H3 "accepted
       costs" paragraph annotated: local-side lag removed by E9.
-- [ ] **CP-B** strong-model review + live smoke + merge + tag **v0.90**
+- [x] **CP-B** strong-model review + live smoke + merge + tag **v0.90** —
+      2026-07-09, Fable-class model. **Ruling:** PASS with two findings
+      filed and one phase added; release approved.
+      **Review:** all grep gates pass as amended (E1 dead-machinery grep
+      empty; `QEventLoop`/`awaitOperation` hits are exactly the documented
+      E5.3 deviations — calendarmanager.cpp's three O39 loops,
+      `davSyncRequest` + its E11 annotation, and the `loadRecords()`-only
+      `awaitOperation` survivor). Landing-commit diffstats skimmed E5.1–E9:
+      no scope creep, all inside phase-named files. E5.2 re-entrancy pins
+      (`tst_backend_reentrancy_pin`, all four slots) and the stall probe
+      (`stallProbe_relocatedBackends_stayResponsive`) 5× each: 10/10, no
+      flake. Two-token architecture survived E7/E9: engine tokens live
+      only in BaselineStore, read/written only by syncengine.cpp;
+      backend's RFC 6578 token lives in CTagStore; zero
+      CTagStore/EtagCache references under `src/engine/`; backend never
+      touches BaselineStore. Full suite 167/167 green, O26 flake not
+      observed. Stale O29 FINDINGS header (said OPEN, body said Resolved)
+      fixed.
+      **Live smoke** (PlanStan dev app built with
+      `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR` against the branch, scratch
+      Radicale :5233, H8 rig; rig note — bare-MKCALENDAR collections need
+      a `displayname` PROPPATCH or discovery IDs mismatch the vault
+      bindings and the orphan-calendar dialog holds `m_syncInProgress`
+      forever, starving every later auto-tick):
+      (1) create→sync→modify→converge PASS (remote create pulled as `+1`,
+      remote modify as `~1`, untouched mapping skipped, E1.1 stats honest
+      throughout); (2) pulled-cable SIGSTOP PASS (PROPFIND + sync-collection
+      REPORT both fail within timeout, run completes `success: false`, no
+      hang; post-SIGCONT cycle recovers via sync-collection and pulls the
+      edit); (3) kill-mid-push: FAILED first with 40 timestamp-less
+      events — 12 permanent phantom conflicts, live repro of FINDINGS
+      **O41** (pre-existing canon write-side bug, NOT a branch regression);
+      isolation re-run with `CREATED`/`LAST-MODIFIED` present PASSED clean
+      (10 silent adoptions logged by E8's observability line, +30 pushed,
+      zero conflicts) — E8's designed shape holds live; O41 elevated and
+      scheduled as **phase E12** (§14c), gating CP-C; PlanStan-side
+      conflict-store dedup gap filed in PlanStan
+      `docs/bugs/sync-conflict-store-duplicate-rows.md`;
+      (4) sync-collection REPORT in Radicale's log PASS (getetag REPORTs
+      server-side + lib's "sync-collection fetched 1 changed" both on a
+      tick pull and the post-cable recovery); (5) restart + 1 remote edit
+      PASS on the byte-count that matters — exactly 1 item from network,
+      10 from cache, zero GETs (E6 proof) — but the restart cycle used the
+      listing fallback, not sync-collection: the first fetch of each app
+      process races the supported-report-set probe and the capability is
+      in-memory only — filed as FINDINGS **O42** (efficiency only; decide
+      at CP-C, candidates E10/E11).
+      **Release:** merged `feature/sync-excellence` → `main` (`--no-ff`),
+      tagged **v0.90** with the O-dispositions and the four
+      consumer-visible notes (applyRecords supersedes RecordWriter
+      blocking apply; `itemFetched`→`itemsFetched` deprecation; CTagStore
+      additive sync-token column; `primeRevisionCache` removed). Roadmap
+      §5 updated.
+- [ ] **E12** O41 canon write-side timestamp stamping (§14c, added at
+      CP-B): timestamp-less sources survive kill-mid-push with zero
+      phantom conflicts live; sibling `*canonfields.cpp` write sides
+      audited; O41 Resolved. Gates CP-C.
 - [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
       re-asserted, mid-sync editor-save live proof)
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
