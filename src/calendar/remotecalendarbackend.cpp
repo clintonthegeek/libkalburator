@@ -2958,6 +2958,13 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
 // setRawIcs(), which updateRecord() still uses synchronously — that single-
 // record IBlobBackend virtual has its own, unrelated callers and is
 // unaffected by this).
+// O45: how many write jobs applyRecords() keeps in flight at once. Small
+// enough that a dispatched job's watchdog competes with at most three
+// siblings for the server (worst-case latency ~= 4x one request's service
+// time, far under the timeout unless the server is genuinely unresponsive);
+// large enough to keep the connection pool busy against real servers.
+static constexpr int kMaxInFlightWriteJobs = 4;
+
 WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
                                                     const WriterBatch &batch)
 {
@@ -3019,109 +3026,157 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
             }
         };
 
+        // O45 (CP-C ruling): dispatch through a bounded in-flight window
+        // instead of starting every job up-front. All-at-once dispatch made
+        // each job's wall-clock watchdog measure QUEUE POSITION, not server
+        // health: any batch larger than (server drain rate x timeout)
+        // self-reported spurious timeouts even though every request landed
+        // (O45's live shape — 145/145 creates "timed out", all present on
+        // the server's disk). A job's watchdog now starts when the job
+        // actually dispatches, competing with at most
+        // kMaxInFlightWriteJobs-1 siblings, so it fires only on a genuinely
+        // unresponsive server. The loops below only ENQUEUE starters; the
+        // single (*pump)() call after them begins dispatch.
+        auto pendingStarters = std::make_shared<QList<std::function<void()>>>();
+        auto inFlight = std::make_shared<int>(0);
+        auto pump = std::make_shared<std::function<void()>>();
+        *pump = [opWeak, pendingStarters, inFlight]() {
+            while (*inFlight < kMaxInFlightWriteJobs && !pendingStarters->isEmpty()) {
+                if (opWeak.isNull() || opWeak->isFinished()) {
+                    // Cancelled/settled mid-batch: never start further
+                    // writes; drop the starters (and their captures).
+                    pendingStarters->clear();
+                    break;
+                }
+                ++(*inFlight);
+                auto starter = pendingStarters->takeFirst();
+                starter();
+            }
+        };
+        // Per-record completion tail: free the window slot, dispatch the
+        // next starter, then run the batch accounting above. Must run
+        // EXACTLY once per record (the watchdog path disconnects the job's
+        // result handler, so the two paths can't both fire).
+        auto recordDone = [inFlight, pump, settleIfDone]() {
+            --(*inFlight);
+            (*pump)();
+            settleIfDone();
+        };
+
         for (const auto &rec : batch.creates) {
-            QUrl itemUrl = generateItemUrl(davUrl, rec.id);
-
-            KDAV::DavItem davItem;
-            davItem.setUrl(KDAV::DavUrl(itemUrl, davUrl.protocol()));
-            davItem.setContentType(QStringLiteral("text/calendar"));
-            davItem.setData(rec.data);
-
-            auto *createJob = new KDAV::DavItemCreateJob(davItem, this);
             const QString uid = rec.id;
             const QByteArray icalData = rec.data;
+            pendingStarters->append([this, opWeak, davUrl, uid, icalData, anyError,
+                                     recordDone]() {
+                QUrl itemUrl = generateItemUrl(davUrl, uid);
 
-            connect(createJob, &KDAV::DavItemCreateJob::result, this,
-                    [this, opWeak, createJob, uid, anyError, icalData, settleIfDone](KJob *job) {
-                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
-                    return;
-                }
-                if (job->error()) {
-                    qWarning() << "RemoteCalendarBackend::applyRecords: Failed to create"
-                               << uid << ":" << job->errorString();
+                KDAV::DavItem davItem;
+                davItem.setUrl(KDAV::DavUrl(itemUrl, davUrl.protocol()));
+                davItem.setContentType(QStringLiteral("text/calendar"));
+                davItem.setData(icalData);
+
+                auto *createJob = new KDAV::DavItemCreateJob(davItem, this);
+
+                connect(createJob, &KDAV::DavItemCreateJob::result, this,
+                        [this, opWeak, createJob, uid, anyError, icalData, recordDone](KJob *job) {
+                    if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                        return;
+                    }
+                    if (job->error()) {
+                        qWarning() << "RemoteCalendarBackend::applyRecords: Failed to create"
+                                   << uid << ":" << job->errorString();
+                        opWeak->addFailedUid(uid);
+                        *anyError = true;
+                    } else {
+                        const KDAV::DavItem createdItem = createJob->item();
+                        noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
+                                        createdItem.etag(), QString::fromUtf8(icalData));
+                        opWeak->addSucceededUid(uid);
+                        qDebug() << "RemoteCalendarBackend::applyRecords: Created" << uid
+                                 << "ETag:" << createdItem.etag();
+                    }
+                    recordDone();
+                });
+
+                startJobWithWatchdog(createJob, [opWeak, uid, anyError, recordDone]() {
+                    if (opWeak.isNull() || opWeak->isFinished()) {
+                        return;
+                    }
+                    qWarning() << "RemoteCalendarBackend::applyRecords: create job timed out for" << uid;
                     opWeak->addFailedUid(uid);
                     *anyError = true;
-                } else {
-                    const KDAV::DavItem createdItem = createJob->item();
-                    noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
-                                    createdItem.etag(), QString::fromUtf8(icalData));
-                    opWeak->addSucceededUid(uid);
-                    qDebug() << "RemoteCalendarBackend::applyRecords: Created" << uid
-                             << "ETag:" << createdItem.etag();
-                }
-                settleIfDone();
-            });
-
-            startJobWithWatchdog(createJob, [opWeak, uid, anyError, settleIfDone]() {
-                if (opWeak.isNull() || opWeak->isFinished()) {
-                    return;
-                }
-                qWarning() << "RemoteCalendarBackend::applyRecords: create job timed out for" << uid;
-                opWeak->addFailedUid(uid);
-                *anyError = true;
-                settleIfDone();
+                    recordDone();
+                });
             });
         }
 
         for (const auto &rec : batch.updates) {
             const QString uid = rec.id;
-            setRawIcsAsync(calendarId, uid, rec.data,
-                          [opWeak, uid, anyError, settleIfDone](bool ok) {
-                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
-                    return;
-                }
-                if (!ok) {
-                    opWeak->addFailedUid(uid);
-                    *anyError = true;
-                } else {
-                    opWeak->addSucceededUid(uid);
-                }
-                settleIfDone();
+            const QByteArray icalData = rec.data;
+            pendingStarters->append([this, opWeak, calendarId, uid, icalData, anyError,
+                                     recordDone]() {
+                setRawIcsAsync(calendarId, uid, icalData,
+                              [opWeak, uid, anyError, recordDone](bool ok) {
+                    if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                        return;
+                    }
+                    if (!ok) {
+                        opWeak->addFailedUid(uid);
+                        *anyError = true;
+                    } else {
+                        opWeak->addSucceededUid(uid);
+                    }
+                    recordDone();
+                });
             });
         }
 
         for (const QString &uid : batch.deletes) {
-            QUrl itemUrl = generateItemUrl(davUrl, uid);
-            KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
+            pendingStarters->append([this, opWeak, davUrl, uid, anyError, recordDone]() {
+                QUrl itemUrl = generateItemUrl(davUrl, uid);
+                KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
 
-            QString oldEtag = cachedEtag(itemUrl.toString());
+                QString oldEtag = cachedEtag(itemUrl.toString());
 
-            KDAV::DavItem davItem;
-            davItem.setUrl(itemDavUrl);
-            davItem.setContentType(QStringLiteral("text/calendar"));
-            davItem.setData(QByteArray());
-            davItem.setEtag(oldEtag);
+                KDAV::DavItem davItem;
+                davItem.setUrl(itemDavUrl);
+                davItem.setContentType(QStringLiteral("text/calendar"));
+                davItem.setData(QByteArray());
+                davItem.setEtag(oldEtag);
 
-            auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
+                auto *deleteJob = new KDAV::DavItemDeleteJob(davItem, this);
 
-            connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
-                    [this, opWeak, uid, itemUrl, anyError, settleIfDone](KJob *job) {
-                if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
-                    return;
-                }
-                if (job->error()) {
-                    qWarning() << "RemoteCalendarBackend::applyRecords: Failed to delete"
-                               << uid << ":" << job->errorString();
+                connect(deleteJob, &KDAV::DavItemDeleteJob::result, this,
+                        [this, opWeak, uid, itemUrl, anyError, recordDone](KJob *job) {
+                    if (opWeak.isNull() || opWeak->state() == SyncOperation::Cancelled) {
+                        return;
+                    }
+                    if (job->error()) {
+                        qWarning() << "RemoteCalendarBackend::applyRecords: Failed to delete"
+                                   << uid << ":" << job->errorString();
+                        opWeak->addFailedUid(uid);
+                        *anyError = true;
+                    } else {
+                        noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                        opWeak->addSucceededUid(uid);
+                        qDebug() << "RemoteCalendarBackend::applyRecords: Deleted" << uid;
+                    }
+                    recordDone();
+                });
+
+                startJobWithWatchdog(deleteJob, [opWeak, uid, anyError, recordDone]() {
+                    if (opWeak.isNull() || opWeak->isFinished()) {
+                        return;
+                    }
+                    qWarning() << "RemoteCalendarBackend::applyRecords: delete job timed out for" << uid;
                     opWeak->addFailedUid(uid);
                     *anyError = true;
-                } else {
-                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
-                    opWeak->addSucceededUid(uid);
-                    qDebug() << "RemoteCalendarBackend::applyRecords: Deleted" << uid;
-                }
-                settleIfDone();
-            });
-
-            startJobWithWatchdog(deleteJob, [opWeak, uid, anyError, settleIfDone]() {
-                if (opWeak.isNull() || opWeak->isFinished()) {
-                    return;
-                }
-                qWarning() << "RemoteCalendarBackend::applyRecords: delete job timed out for" << uid;
-                opWeak->addFailedUid(uid);
-                *anyError = true;
-                settleIfDone();
+                    recordDone();
+                });
             });
         }
+
+        (*pump)();
     });
 
     return op;

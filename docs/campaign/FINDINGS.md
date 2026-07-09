@@ -1673,7 +1673,7 @@ against a real server, not just the fake), revived on the same port,
 repair cycle recovered with ZERO phantom conflicts, all 12 present both
 sides, a third cycle stayed a hard no-op. FINDINGS O41 → Resolved.
 
-### O42 — first sync of each app process never uses `sync-collection`: the fetch races the supported-report-set probe, and the capability is in-memory only (OPEN, found 2026-07-09 at CP-B; efficiency only — decide at CP-C's efficiency audit, candidates E10/E11)
+### O42 — first sync of each app process never uses `sync-collection`: the fetch races the supported-report-set probe, and the capability is in-memory only (RESOLVED 2026-07-09 at CP-C; fix candidate (b) — lazy first-fetch probe)
 
 Found during the CP-B live smoke's restart-plus-one-remote-edit proof.
 `RemoteCalendarBackend` only takes the RFC 6578 `sync-collection` path
@@ -1697,6 +1697,22 @@ capability next to the token in CTagStore (survives restart, zero races);
 when the flag is unset (one extra small PROPFIND, self-healing); (c)
 PlanStan-side: await `loadCalendarsFinished` before the first auto-sync
 (fixes the race but leaves the capability amnesia to (a)/(b)).
+
+**Resolution (2026-07-09, CP-C ruling — candidate (b)):** `CalendarFacts`
+gained `syncCollectionProbed` (per-instance, set by
+`probeSyncCollectionSupport()` on completion, success or failure);
+`fetchItems`' path decision lazily runs the probe when the calendar is
+unprobed AND a persisted sync-token exists, then decides REPORT vs
+listing with an accurate capability. Candidate (a) was REJECTED for a
+downgrade hazard: only 409/410/507 REPORT failures fall back to listing,
+so a persisted-true capability against a server that stopped advertising
+sync-collection would fail every fetch cycle with no self-heal; the
+per-instance probe is self-healing by construction. Candidate (c)
+rejected: leaves the amnesia, adds app-side coupling. Cost: one Depth:0
+PROPFIND on the first fetch of a process, only for token-holding
+calendars. RED test
+`tst_sync_collection_report::firstFetchBeforeDiscovery_storedToken_usesReport`
+(0 sync-collection REPORTs pre-fix, 1 REPORT + 1 multiget post-fix).
 
 ### O43 — `prepareFastPath`'s A6 revision-query marshal is teardown-unsafe: a pending backend-thread lambda outlives the worker's stack frame and invokes a dangling `QEventLoop*` (RESOLVED 2026-07-09, v0.90.1; found same day at E10 — deterministic SEGV in PlanStan's suite, blocked E10's acceptance gate)
 
@@ -1827,7 +1843,7 @@ issue — filed as **O45** — that blocked the `bulk` mapping's remote
 push both times; it does not implicate E13's diff (presentation-layer
 only, zero contact with the CalDAV write path) and does not gate E13.
 
-### O45 — CalDAV create jobs against the H8 scratch-Radicale rig time out 100%, every retry, with zero successes (OPEN, found 2026-07-09 during E13's live spot-check; efficiency/correctness triage needed, not yet scoped to a phase)
+### O45 — CalDAV create jobs against the H8 scratch-Radicale rig time out 100%, every retry, with zero successes (RESOLVED 2026-07-09 at CP-C; genuine client-side bug, NOT a rig artifact — bounded in-flight write-dispatch window)
 
 Live spot-check for E13's acceptance gate (H8 scratch-Radicale rig,
 `AcidTestH8.kalb`, `bulk` mapping — 500 local items, 355 already
@@ -1886,3 +1902,36 @@ seeing the response** under this rig's request volume. Does not
 implicate E10's actual target (the interactive Save round-tripped
 correctly regardless — see E10's §17 entry). Still not root-caused;
 still decide at CP-C.
+
+**Root cause + resolution (2026-07-09, CP-C ruling):** the
+timeout-budget-vs-concurrency hypothesis was CONFIRMED structurally and
+by deterministic reproduction — this is a client-side design flaw, not a
+rig artifact. `RemoteCalendarBackend::applyRecords` dispatched every
+create/delete job up-front, and each job's `startJobWithWatchdog` timer
+(30 s, H5.5) starts at DISPATCH time, so the watchdog measured queue
+position, not server health: any batch larger than
+(server drain rate × timeout) self-reported spurious timeouts even
+though every request eventually landed (both live reproductions' exact
+shape — items present on disk, client reported E145/E55). A
+progress-based batch watchdog was considered and REJECTED by the RED
+test itself: a KDAV create job issues a trailing ETag-fetch request
+after its PUT, which queues behind the remaining PUTs on a serialized
+server, so NO job completes until nearly the whole batch drains
+(observed: 40/40 RED failures, matching live 145/145 — not just the
+tail) and a no-progress window would fire spuriously too. Fix: a
+**bounded in-flight dispatch window** (`kMaxInFlightWriteJobs = 4`) —
+the create/update/delete loops enqueue starters; at most 4 jobs run at
+once; each job's watchdog starts at true dispatch and competes with at
+most 3 siblings, so it fires only on a genuinely unresponsive server.
+Cancel/teardown semantics preserved (starters are dropped once the op
+is finished; the E5.3 QPointer guards and O43-era teardown tests
+unchanged). RED tests in new `tst_bulk_write_dispatch.cpp`:
+`slowButHealthyServer_bulkCreatesAllSucceed` (40 creates, serialized
+150 ms/request fake via new `FakeCalDavServer::setSerializeResponses`,
+1.5 s timeout — 40/40 failed pre-fix, 40/40 succeed post-fix) and
+`genuinelyStalledServer_failsWithinTimeout` (stall honesty preserved).
+Residual note: `pushItems`/`deleteItems` (CalendarManager's single-item
+incidence CRUD paths) and the chunked multiget fetch keep the
+all-at-once shape — their batch sizes are structurally small (single
+incidences; few large chunks), so they cannot hit the drain-rate
+threshold; noted here rather than changed.
