@@ -1521,7 +1521,7 @@ belt-and-braces backstop — it should no longer be the mechanism that
 actually ends an I/O-length wait for any consumer using the E5.3 write path
 or the pre-existing fetch gates.
 
-### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (OPEN, found 2026-07-08 during E8's O28 RED-test investigation; ELEVATED at CP-B 2026-07-09 — live-reproduced, scheduled as phase E12, must be Resolved before CP-C)
+### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (RESOLVED 2026-07-09, phase E12, branch `feature/e12-canon-timestamp-write-fix`)
 
 Found while writing E8's crash-replay RED test
 (`tests/engine/tst_phantom_conflict_adoption.cpp`): an EARLY version of the
@@ -1599,6 +1599,38 @@ Radicale does NOT normalize `CREATED` itself (the stored server copy's
 timestamps are exactly the push-time stamps KCalendarCore injected), which
 answers this entry's open live-verification question. Elevated: scheduled
 as phase E12 (see the campaign plan §14c), gating CP-C.
+
+**Resolution (E12, 2026-07-09):** fix direction (a) — leave-unset —
+confirmed empirically NOT directly achievable via KCalendarCore's public
+API: `KCalendarCore::Incidence::created()`/`lastModified()` hold a valid
+construction-time "now" from the moment an `Event`/`Todo`/`Journal` object
+is constructed, with no setter to mark them absent, and
+`ICalFormat::toICalString()` unconditionally serializes both. Landed as
+"(a) via post-processing": a new `Kalburator::Calendar::stripICalPropertyLine`
+helper (`src/calendar/icaltimestamp.{h,cpp}`) removes a named property's
+line from serialized iCal bytes; `eventcanonfields.cpp`,
+`vtodocanonfields.cpp`, and `journalcanonfields.cpp`'s canon→ical write
+sides now track whether canon had a `created`/`lastModified` key and strip
+the corresponding line post-serialization when it didn't. The sibling
+audit found `journalcanonfields.cpp` had BOTH the write-side bug AND had
+never received the Phase B5 READ-side fix (`journalFieldsToCanon` was
+still trusting `journal->created()/lastModified()`'s construction-time
+default directly, discarding the `originalBytes` parameter it was passed)
+— fixed to use `extractICalPropertyLiteral` like `eventcanonfields.cpp`/
+`vtodocanonfields.cpp` already did. RED tests: (a) engine-level
+`tst_phantom_conflict_adoption::crashMidPush_timestampLessSource_
+nextCycleAdoptsSilently_noPhantomConflicts` (timestamp-less twin of the
+E8 crash-replay fixture) and (b)
+`tst_calendar_canon_roundtrip::timestampLessSourceRoundTripsWithoutManufacturedStamps`
+(round-trip pin), both green; full suite 168/168, zero regressions. Live
+re-run of the CP-B kill-mid-push protocol against a real scratch Radicale
+(new probe `tests/engine/live_e12_smoke.cpp`, opt-in
+`KALBURATOR_BUILD_LIVE_PROBES`): 12 timestamp-less local creates, killed
+Radicale mid-push (1 survivor landed with no CREATED/LAST-MODIFIED line in
+the stored bytes — confirms Radicale does not normalize and the fix holds
+against a real server, not just the fake), revived on the same port,
+repair cycle recovered with ZERO phantom conflicts, all 12 present both
+sides, a third cycle stayed a hard no-op. FINDINGS O41 → Resolved.
 
 ### O42 — first sync of each app process never uses `sync-collection`: the fetch races the supported-report-set probe, and the capability is in-memory only (OPEN, found 2026-07-09 at CP-B; efficiency only — decide at CP-C's efficiency audit, candidates E10/E11)
 

@@ -445,20 +445,34 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     }
 
     // ---- created / lastModified --------------------------------------------
+    // O41 write-side fix: KCalendarCore::Incidence always carries a valid
+    // construction-time "now" for created()/lastModified() — there is no
+    // API to leave them unset — so toICalString() below will stamp them
+    // into the outbound bytes regardless of whether canon has these keys.
+    // Track absence here and strip the injected default post-serialization
+    // (see stripICalPropertyLine's doc comment) so the write side stays
+    // symmetric with the read side above, which only trusts literal
+    // presence in the source bytes.
+    bool hadCreated = false;
+    bool hadLastModified = false;
     {
         const QString created = obj.value(QStringLiteral("created")).toString();
         if (!created.isEmpty()) {
             const QDateTime dt = QDateTime::fromString(created, Qt::ISODate);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 event->setCreated(dt);
+                hadCreated = true;
+            }
         }
     }
     {
         const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
         if (!lastMod.isEmpty()) {
             const QDateTime dt = QDateTime::fromString(lastMod, Qt::ISODate);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 event->setLastModified(dt);
+                hadLastModified = true;
+            }
         }
     }
 
@@ -689,6 +703,12 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
 
     // ---- Serialize to iCal -------------------------------------------------
     QByteArray icalBytes = serializeEvent(event);
+
+    // ---- Strip KCalendarCore-injected created/lastModified defaults -------
+    if (!hadCreated)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("CREATED"));
+    if (!hadLastModified)
+        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
 
     // ---- Inject verbatim recurrence lines ----------------------------------
     if (!recurrenceArr.isEmpty() && !icalBytes.isEmpty()) {

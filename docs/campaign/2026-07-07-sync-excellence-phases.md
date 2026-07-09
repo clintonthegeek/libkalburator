@@ -1,12 +1,13 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** complete; **v0.90 tagged
-2026-07-09** (v0.90.1 same day, O43). Remaining: E12 (O41, added at
-CP-B, gates CP-C), E10 (PlanStan adoption — substantially landed, one
-interactive gate item left, now unblocked by E13), E11 (CalendarManager
-async API), CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly on
-the H8 rig, found during E13's live check — not scoped to a phase yet).
+**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** complete; **v0.90
+tagged 2026-07-09** (v0.90.1 same day, O43); E12 (O41 Resolved) landed same
+day on `feature/e12-canon-timestamp-write-fix`, not yet merged/tagged.
+Remaining: E10 (PlanStan adoption — substantially landed, one interactive
+gate item left, now unblocked by E13), E11 (CalendarManager async API),
+CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly on the H8 rig,
+found during E13's live check — not scoped to a phase yet).
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1629,10 +1630,18 @@ driven because the window freezes.
       blocking apply; `itemFetched`→`itemsFetched` deprecation; CTagStore
       additive sync-token column; `primeRevisionCache` removed). Roadmap
       §5 updated.
-- [ ] **E12** O41 canon write-side timestamp stamping (§14c, added at
+- [x] **E12** O41 canon write-side timestamp stamping (§14c, added at
       CP-B): timestamp-less sources survive kill-mid-push with zero
       phantom conflicts live; sibling `*canonfields.cpp` write sides
-      audited; O41 Resolved. Gates CP-C.
+      audited; O41 Resolved. Gates CP-C. **DONE 2026-07-09** (branch
+      `feature/e12-canon-timestamp-write-fix`): fix direction (a) via
+      post-serialization stripping (`stripICalPropertyLine`, new in
+      `icaltimestamp.{h,cpp}`) applied to `eventcanonfields.cpp`,
+      `vtodocanonfields.cpp`, `journalcanonfields.cpp` (which also got a
+      previously-missed Phase B5 read-side fix); two RED tests green;
+      full suite 168/168; live kill-mid-push re-run against a real
+      scratch Radicale (new opt-in probe `live_e12_smoke.cpp`) recovered
+      with zero phantom conflicts. See FINDINGS O41 for full detail.
 - [ ] **E10** PlanStan adoption (pin bump, itemsFetched port, invariants
       re-asserted, mid-sync editor-save live proof)
       — 2026-07-09 IN PROGRESS, **BLOCKED on new FINDINGS O43** (PlanStan
