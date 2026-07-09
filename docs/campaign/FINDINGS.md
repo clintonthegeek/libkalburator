@@ -1685,3 +1685,44 @@ planned E10 deletion of the deprecated per-item `itemFetched` signal
 (all seven lib backends + WildPalms' PalmCalendarBackend now emit only
 the batched `itemsFetched`; `tst_backend_signals` ported to batch
 assertions).
+
+### O44 — PlanStan presentation-side sync churn: GUI-thread busy-storm freezes on large fetch/sync (quadratic per-item signal fanout) + `recordChanged`'s GUI tail runs on the engine worker thread (OPEN, found 2026-07-09 post-E10; PlanStan/libkalcal-side, scheduled as phase E13, sequenced before CP-C)
+
+Found diagnosing the hard GUI freeze that blocked E10's interactive
+in-editor-save gate item live (500-item push, 730-item vault: window
+stops repainting, clicks dead, KWin "Not Responding"). NOT an engine
+fault — E5/H7's off-thread work is verified live and holds. Two distinct
+sub-findings, both in PlanStan/libkalcal presentation code, both owned
+by new phase **E13** (campaign plan §14d; full diagnosis + decided
+design in PlanStan
+`docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`):
+
+**(a) GUI-thread busy storm, O(n²).** The E10 batch signal delivers one
+queued event per fetch pass (correct), but PlanStan's
+`ItemLoadingCoordinator::onItemsFetched` then mutates
+`GlobalIncidenceModel` per item (per-row begin/endInsertRows or
+per-item `dataChanged`, plus a MemoryCalendar delete+add observer pair
+per updated item), and widgets like `TagDockWidget` run a full model
+rescan on EVERY `rowsInserted`/`dataChanged`/`rowsRemoved` with no
+debounce. n items × O(n) handlers × several widgets = minutes of
+unprocessed GUI events. Worse, every sync cycle re-delivers the primary
+side's full fetch and the coordinator updates every item even when
+unchanged — the GUI-side inefficiency twin of what E6/E7 fixed on the
+network side, re-running the storm on each 120 s auto-tick.
+
+**(b) Cross-thread model mutation.** `SyncEngine` invokes
+`ISyncHost::recordChanged` as a direct virtual call on the engine
+worker thread (`syncengine.cpp:3175-3188`, source side,
+`notifyHost=true`). PlanStan's override marshals its backend re-read
+correctly but then calls `onItemFetched`/`onItemDeleted` directly —
+mutating a GUI-affine `QAbstractItemModel` with live views attached
+from the worker thread. Data race / UB on every source-writing cycle.
+Latent since Phase P T4; exposed to real concurrency when H7 moved the
+engine worker off the GUI thread.
+
+**Fix:** phase E13 (E13.1 batch model insert, E13.2 unchanged-skip,
+E13.3 widget debounce, E13.4 queued marshal of the recordChanged GUI
+tail) — all PlanStan/libkalcal-side, zero libkalburator changes. Gates
+CP-C: the CP-C soak's "GUI responsive" assertion at 650+ items fails
+without it, and the E10 leftover (in-editor Save during sync) is
+un-runnable while the window freezes.

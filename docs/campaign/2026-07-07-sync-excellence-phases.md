@@ -2,8 +2,10 @@
 
 **Date opened:** 2026-07-07
 **Status:** OPEN — E1–E9 + CP-A + CP-B complete; **v0.90 tagged
-2026-07-09**. Remaining: E12 (O41, added at CP-B, gates CP-C), E10
-(PlanStan adoption), E11 (CalendarManager async API), CP-C.
+2026-07-09** (v0.90.1 same day, O43). Remaining: E12 (O41, added at
+CP-B, gates CP-C), E10 (PlanStan adoption — substantially landed, one
+interactive gate item left), E13 (O44 PlanStan GUI-freeze presentation
+fix, added post-E10, gates CP-C), E11 (CalendarManager async API), CP-C.
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1058,7 +1060,56 @@ re-run of the CP-B kill-mid-push protocol with timestamp-less events
 (scratch Radicale :5233) recovers with ZERO phantom conflicts; FINDINGS
 O41 → Resolved.
 
+## 14d. Phase E13 — PlanStan sync-presentation GUI-freeze fix (O44, added post-E10)
+
+**Added 2026-07-09**, diagnosed in the session after E10's live gate:
+the hard GUI freeze that blocked E10's interactive in-editor-save proof
+(500-item push → window "Not Responding") is NOT residual engine
+misbehavior — E5/H7's off-thread work holds live. It is a
+PlanStan/libkalcal **presentation-side busy storm**: per-item model
+mutation with per-row signals, undebounced full-model-refresh widget
+handlers (O(n²)), full re-delivery of every fetched item to the GUI on
+every sync cycle even when unchanged (the GUI-side twin of what E6/E7
+fixed on the network), plus one genuine thread bug —
+`CollectionController::recordChanged`'s GUI tail mutates
+`GlobalIncidenceModel` on the engine worker thread. Full mechanism in
+FINDINGS **O44**.
+
+**Entry:** E10 steps 1–5 landed (batch `itemsFetched` is E13's
+prerequisite and is in). **Repos: `~/dev/PlanStan`** (branch
+`feature/sync-excellence-adoption`, same unmerged branch as E10) **+
+`~/dev/libkalcal`** (sibling live checkout; separate commits/pushes).
+Zero libkalburator changes — the engine is out of bounds for this phase.
+
+**The plan for this phase lives in PlanStan:**
+**`docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`** — read
+it in full; its Design block is pre-decided per §0. Summary of its four
+independently-landable tasks: **E13.1** `GlobalIncidenceModel::
+addIncidences()` batch insert, one begin/endInsertRows per batch
+(libkalcal) + `onItemsFetched` routes new items through it; **E13.2**
+unchanged-skip in `onItemsFetched`'s existing-entry path via
+KCalendarCore deep equality (NOT timestamps — O41's lesson), so a
+settled auto-tick emits zero model signals; **E13.3** debounce
+`TagDockWidget::refreshTags` (+ audit and debounce every
+rowsInserted/dataChanged→full-refresh handler); **E13.4** queue-marshal
+`recordChanged`'s `onItemFetched`/`onItemDeleted` tail onto the GUI
+thread (backend re-read stays on the worker).
+
+**Acceptance gate (E13):** the four RED tests in the plan doc green
+(batch-signal count, zero-churn re-delivery, debounce count, GUI-thread
+pin for recordChanged); full PlanStan suite green (known dev/offscreen
+noise excepted); live: collection open + active 500-item push with the
+window painting and accepting clicks (H8 rig). FINDINGS O44 → Resolved.
+Gates CP-C: the soak's "GUI responsive" line and the E10 leftover
+(in-editor Save during sync) are unmeetable without it.
+
 ## 15. CP-C — live verification + campaign close (STOP unless strong model)
+
+**Entry:** E10, E12, **E13** (and E11 if scheduled before close) all
+ticked in §17. E13 is a hard gate: without it the soak's
+"GUI responsive" assertion fails at the mandated item count, and the
+E10 leftover proof (in-editor Save during an active sync) cannot be
+driven because the window freezes.
 
 1. **Soak:** PlanStan dev build against scratch Radicale, 120 s
    auto-sync, ≥30 min, 650+ item calendar (reuse the H8 rig — see the
@@ -1627,6 +1678,18 @@ O41 → Resolved.
       filesystem-edit staging path was exercised, but not the editor Save
       button (needs a human at the GUI; could not be driven headless).
       Branch not yet merged to PlanStan `master`.
+      — 2026-07-09 addendum: the freeze that blocked that gate item is
+      diagnosed (FINDINGS **O44**, presentation-side, not engine) and
+      scheduled as phase **E13** (§14d) — run the in-editor-save proof
+      after E13 lands (its live gate makes the window usable at the
+      required item count), in the E13 session or at CP-C.
+- [ ] **E13** PlanStan sync-presentation GUI-freeze fix (O44, §14d —
+      plan doc: PlanStan
+      `docs/plans/2026-07-09-e13-sync-gui-freeze-presentation.md`):
+      batch model insert (libkalcal `addIncidences`), unchanged-skip on
+      re-delivered items, widget refresh debounce, recordChanged GUI
+      tail marshaled off the worker thread; four RED tests green; live
+      500-item push with a responsive window; O44 Resolved. Gates CP-C.
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
       Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
       loops converted; synchronous `davSyncRequest` helper deleted;
