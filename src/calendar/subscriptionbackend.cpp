@@ -67,13 +67,17 @@ FetchOperation* SubscriptionBackend::fetchItems(const QString &calendarId)
 
         qDebug() << "SubscriptionBackend::fetchItems: Got" << events.size() << "events for" << calendarId;
 
-        // Emit itemFetched for each event (same pattern as LocalBackend)
+        // Batch-form streaming (E9/E10): one itemsFetched per fetch pass
+        // (same pattern as LocalBackend).
+        QList<KCalendarCore::Incidence::Ptr> streamed;
         for (const auto &event : events) {
             if (event) {
                 event->setReadOnly(true);
-                emit itemFetched(calendarId, event);
+                streamed.append(event);
             }
         }
+        if (!streamed.isEmpty())
+            emit itemsFetched(calendarId, streamed);
 
         op->setFetchedItems(events);
         op->complete();

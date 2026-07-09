@@ -790,10 +790,8 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
                 continue;
             }
 
-            // Emit itemFetched for EACH incidence as we parse it
             for (const auto &inc : incidences) {
                 items.append(inc);
-                emit itemFetched(calendarId, inc);
             }
 
             // recordsFromLastFetch memo (H5/O23): one BackendRecord per file,
@@ -811,8 +809,7 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
                  << "incidences for calendar" << calendarId;
 
         // E9.1 (sync-excellence campaign, O34): batch signal, once per
-        // fetch pass, with the full item list — see itemFetched's
-        // deprecation comment (syncbackend.h).
+        // fetch pass, with the full item list (syncbackend.h).
         emit itemsFetched(calendarId, items);
 
         op->setFetchedItems(items);

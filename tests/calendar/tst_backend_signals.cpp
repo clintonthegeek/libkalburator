@@ -160,34 +160,36 @@ private slots:
         op->deleteLater();
     }
 
-    void testLocalBackend_fetchItems_emitsItemFetchedForEachItem() {
+    void testLocalBackend_fetchItems_emitsItemsFetchedForAllItems() {
         // Setup
         QString calDir = m_tempDir.filePath("item_fetched_test");
         writeTestIcsFiles(calDir, 10);
 
         LocalBackend backend(m_tempDir.path());
 
-        // Spy on itemFetched signal
-        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
-        QVERIFY(itemFetchedSpy.isValid());
+        // E10/v0.90.1: the per-item itemFetched signal is deleted; the
+        // batch itemsFetched carries every fetched incidence.
+        QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
+        QVERIFY(itemsFetchedSpy.isValid());
 
         // Execute fetch
         FetchOperation *op = backend.fetchItems("item_fetched_test");
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QVERIFY(finishedSpy.wait(5000));
 
-        // Verify itemFetched was emitted for each item
-        QCOMPARE(itemFetchedSpy.count(), 10);
-
-        // Verify each signal has the correct calendar ID
-        for (int i = 0; i < itemFetchedSpy.count(); i++) {
-            QList<QVariant> args = itemFetchedSpy.at(i);
+        // Every fetched item arrives, each with the correct calendar ID.
+        int totalItems = 0;
+        for (int i = 0; i < itemsFetchedSpy.count(); i++) {
+            QList<QVariant> args = itemsFetchedSpy.at(i);
             QCOMPARE(args.at(0).toString(), QStringLiteral("item_fetched_test"));
-            // Verify incidence is valid
-            auto incidence = args.at(1).value<Incidence::Ptr>();
-            QVERIFY(incidence);
-            QVERIFY(!incidence->uid().isEmpty());
+            const auto items = args.at(1).value<QList<Incidence::Ptr>>();
+            for (const auto &incidence : items) {
+                QVERIFY(incidence);
+                QVERIFY(!incidence->uid().isEmpty());
+            }
+            totalItems += items.size();
         }
+        QCOMPARE(totalItems, 10);
 
         op->deleteLater();
     }
@@ -202,8 +204,6 @@ private slots:
 
         LocalBackend backend(m_tempDir.path());
 
-        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
-        QVERIFY(itemFetchedSpy.isValid());
         QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
         QVERIFY(itemsFetchedSpy.isValid());
 
@@ -212,13 +212,9 @@ private slots:
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QVERIFY(finishedSpy.wait(5000));
 
-        // Today (pre-E9.1): itemFetched fires once per incidence, 50 times;
-        // itemsFetched does not exist / never fires. Post-E9.1: itemsFetched
-        // fires exactly once, with all 50 items, in fewer calls than the
-        // per-item signal.
-        QCOMPARE(itemFetchedSpy.count(), 50);
+        // E9.1: itemsFetched fires exactly once per fetch pass with the
+        // full item list (the per-item itemFetched was deleted at E10).
         QCOMPARE(itemsFetchedSpy.count(), 1);
-        QVERIFY(itemsFetchedSpy.count() < itemFetchedSpy.count());
 
         QList<QVariant> args = itemsFetchedSpy.at(0);
         QCOMPARE(args.at(0).toString(), QStringLiteral("items_fetched_batch_test"));
@@ -308,9 +304,9 @@ private slots:
         connect(&backend, &SyncBackend::fetchStarted, this, [&signalOrder]() {
             signalOrder.append("fetchStarted");
         });
-        connect(&backend, &SyncBackend::itemFetched, this, [&signalOrder]() {
-            if (!signalOrder.contains("itemFetched")) {
-                signalOrder.append("itemFetched");
+        connect(&backend, &SyncBackend::itemsFetched, this, [&signalOrder]() {
+            if (!signalOrder.contains("itemsFetched")) {
+                signalOrder.append("itemsFetched");
             }
         });
         connect(&backend, &SyncBackend::fetchProgressChanged, this, [&signalOrder]() {
@@ -327,7 +323,7 @@ private slots:
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QVERIFY(finishedSpy.wait(5000));
 
-        // Verify order: fetchStarted -> itemFetched/progress -> fetchFinished
+        // Verify order: fetchStarted -> itemsFetched/progress -> fetchFinished
         QVERIFY(signalOrder.size() >= 3);
         QCOMPARE(signalOrder.first(), QStringLiteral("fetchStarted"));
         QCOMPARE(signalOrder.last(), QStringLiteral("fetchFinished"));
@@ -435,7 +431,7 @@ private slots:
 
         // Spy on signals
         QSignalSpy fetchStartedSpy(&backend, &SyncBackend::fetchStarted);
-        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
+        QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
         QSignalSpy fetchFinishedSpy(&backend, &SyncBackend::fetchFinished);
 
         // Execute fetch
@@ -448,7 +444,8 @@ private slots:
         QCOMPARE(fetchStartedSpy.first().at(0).toString(), QStringLiteral("mock_fetch_test"));
         QCOMPARE(fetchStartedSpy.first().at(1).toInt(), 5);
 
-        QCOMPARE(itemFetchedSpy.count(), 5);
+        QCOMPARE(itemsFetchedSpy.count(), 1);  // one batch per fetch pass
+        QCOMPARE(itemsFetchedSpy.first().at(1).value<QList<Incidence::Ptr>>().size(), 5);
 
         QCOMPARE(fetchFinishedSpy.count(), 1);
         QCOMPARE(fetchFinishedSpy.first().at(1).toBool(), true);  // success
@@ -557,7 +554,7 @@ private slots:
     // ========================================================================
     // OrgBackend Signal Tests
     // OrgBackend::fetchItems emits streaming fetch signals (fetchStarted,
-    // itemFetched, fetchProgressChanged, fetchFinished).
+    // itemsFetched, fetchProgressChanged, fetchFinished).
     // OrgBackend::pushItems also emits streaming write signals.
     // ========================================================================
 
@@ -588,7 +585,7 @@ private slots:
         op->deleteLater();
     }
 
-    void testOrgBackend_fetchItems_emitsItemFetchedForEachItem() {
+    void testOrgBackend_fetchItems_emitsItemsFetchedForAllItems() {
         // Setup
         QString orgDir = m_tempDir.filePath("org_item_fetched");
         QDir().mkpath(orgDir);
@@ -596,22 +593,20 @@ private slots:
 
         OrgBackend backend(orgDir);
 
-        // Spy on itemFetched signal
-        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
-        QVERIFY(itemFetchedSpy.isValid());
+        // E10/v0.90.1: batch signal — one emission per fetch pass.
+        QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
+        QVERIFY(itemsFetchedSpy.isValid());
 
         FetchOperation *op = backend.fetchItems("test_cal");
         QSignalSpy finishedSpy(op, &SyncOperation::finished);
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
 
-        // Verify itemFetched was emitted for each item
-        QCOMPARE(itemFetchedSpy.count(), 8);
-
-        // Verify each signal has valid data
-        for (int i = 0; i < itemFetchedSpy.count(); i++) {
-            QList<QVariant> args = itemFetchedSpy.at(i);
-            QCOMPARE(args.at(0).toString(), QStringLiteral("test_cal"));
-            auto incidence = args.at(1).value<Incidence::Ptr>();
+        QCOMPARE(itemsFetchedSpy.count(), 1);
+        QList<QVariant> args = itemsFetchedSpy.at(0);
+        QCOMPARE(args.at(0).toString(), QStringLiteral("test_cal"));
+        const auto items = args.at(1).value<QList<Incidence::Ptr>>();
+        QCOMPARE(items.size(), 8);
+        for (const auto &incidence : items) {
             QVERIFY(incidence);
             QVERIFY(!incidence->uid().isEmpty());
         }
@@ -823,7 +818,7 @@ private slots:
 
         // Now test fetching with streaming signals
         QSignalSpy fetchStartedSpy(&backend, &SyncBackend::fetchStarted);
-        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
+        QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
         QSignalSpy fetchProgressSpy(&backend, &SyncBackend::fetchProgressChanged);
         QSignalSpy fetchFinishedSpy(&backend, &SyncBackend::fetchFinished);
 
@@ -833,7 +828,10 @@ private slots:
 
         // Verify fetch streaming signals were emitted
         QVERIFY2(fetchStartedSpy.count() >= 1, "fetchStarted should be emitted");
-        QVERIFY2(itemFetchedSpy.count() >= 5, "itemFetched should be emitted for each item");
+        int streamedItems = 0;
+        for (int i = 0; i < itemsFetchedSpy.count(); i++)
+            streamedItems += itemsFetchedSpy.at(i).at(1).value<QList<Incidence::Ptr>>().size();
+        QVERIFY2(streamedItems >= 5, "itemsFetched should carry every fetched item");
         QVERIFY2(fetchProgressSpy.count() >= 1, "fetchProgressChanged should be emitted");
         QVERIFY2(fetchFinishedSpy.count() >= 1, "fetchFinished should be emitted");
 

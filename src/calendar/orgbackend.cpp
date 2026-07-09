@@ -345,13 +345,16 @@ FetchOperation* OrgBackend::fetchItems(const QString &calendarId)
                 m_planningData.insert(uid, result.planning);
 
                 fetchedItems.append(result.incidence);
-                emit itemFetched(calendarId, result.incidence);
                 currentProgress++;
                 emit fetchProgressChanged(calendarId, currentProgress, totalCount);
             });
 
         qDebug() << "OrgBackend::fetchItems: Fetched" << fetchedItems.size()
                  << "incidences for calendar" << calendarId;
+
+        // Batch-form streaming (E9/E10): one itemsFetched per fetch pass.
+        if (!fetchedItems.isEmpty())
+            emit itemsFetched(calendarId, fetchedItems);
 
         op->setFetchedItems(fetchedItems);
         op->complete();

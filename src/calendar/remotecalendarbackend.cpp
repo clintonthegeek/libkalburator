@@ -1844,12 +1844,10 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
             // from — see m_lastRawIcsByUid's doc comment.
             m_lastRawIcsByUid[incidence->uid()] = row.ical.toUtf8();
             cachedIncidences.append(incidence);
-            emit itemFetched(calendarId, incidence);
         }
     }
     // E9.1 (sync-excellence campaign, O34): batch signal, once per
-    // cache-hit-all pass, with the full item list — see itemFetched's
-    // deprecation comment (syncbackend.h).
+    // cache-hit-all pass, with the full item list (syncbackend.h).
     emit itemsFetched(calendarId, cachedIncidences);
     return cachedIncidences;
 }
@@ -2148,7 +2146,6 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
                     // m_lastRawIcsByUid's doc comment.
                     m_lastRawIcsByUid[incidence->uid()] = cachedIcal.toUtf8();
                     fetchedIncidences.append(incidence);
-                    emit itemFetched(calendarId, incidence);
                 }
 
                 currentItem++;
@@ -2161,8 +2158,7 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
                                           : QString());
 
             // E9.1 (sync-excellence campaign, O34): batch signal, once per
-            // partial-cache-hit pass, with the full item list — see
-            // itemFetched's deprecation comment (syncbackend.h).
+            // partial-cache-hit pass, with the full item list (syncbackend.h).
             emit itemsFetched(calendarId, fetchedIncidences);
 
             // N5 fix: only commit the pending CTag when every item
@@ -2361,7 +2357,6 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
             // doc comment.
             m_lastRawIcsByUid[incidence->uid()] = icalData.toUtf8();
             fetchedIncidences.append(incidence);
-            emit itemFetched(calendarId, incidence);
         }
 
         currentItem++;
@@ -2376,8 +2371,8 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
                                   : QStringLiteral(")"));
 
     // E9.1 (sync-excellence campaign, O34): batch signal, once per
-    // full/mixed network+cache multiget pass, with the full item list —
-    // see itemFetched's deprecation comment (syncbackend.h).
+    // full/mixed network+cache multiget pass, with the full item list
+    // (syncbackend.h).
     emit itemsFetched(calendarId, fetchedIncidences);
 
     // N5 fix: only commit the pending CTag when every item materialized

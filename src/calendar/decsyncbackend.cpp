@@ -389,6 +389,7 @@ FetchOperation* DecSyncBackend::fetchItems(const QString &calendarId)
             }
 
             int processed = 0;
+            QList<KCalendarCore::Incidence::Ptr> chunkItems;
             while (*pos < total && processed < CHUNK_SIZE) {
                 const auto &[uid, entry] = entries->at(*pos);
 
@@ -409,7 +410,7 @@ FetchOperation* DecSyncBackend::fetchItems(const QString &calendarId)
                         }
 
                         items->append(inc);
-                        emit itemFetched(calendarId, inc);
+                        chunkItems.append(inc);
                     }
                 }
 
@@ -417,6 +418,11 @@ FetchOperation* DecSyncBackend::fetchItems(const QString &calendarId)
                 processed++;
                 emit fetchProgressChanged(calendarId, *pos, total);
             }
+
+            // Batch-form streaming (E9/E10): one itemsFetched per chunk —
+            // the natural pass boundary for this chunked deserializer.
+            if (!chunkItems.isEmpty())
+                emit itemsFetched(calendarId, chunkItems);
 
             if (*pos < total) {
                 // More items to process — yield and schedule next chunk

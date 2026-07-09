@@ -1598,6 +1598,13 @@ O41 → Resolved.
       fix required (v0.90.1, together with the planned `itemFetched`
       deletion) before the E10 gate can run — see FINDINGS **O43** for
       the full mechanism + pre-analyzed fix candidates.
+      — 2026-07-09 later same day: **O43 RESOLVED, v0.90.1 tagged** —
+      heap-owned mutex-guarded rendezvous (candidate (a)); RED
+      `tst_fastpath_teardown_race` SEGV 3/3 → green 5/5; per-item
+      `itemFetched` DELETED (five remaining lib backends + WildPalms
+      `PalmCalendarBackend` ported to batched `itemsFetched`;
+      `tst_backend_signals` ported); lib suite 168/168. E10 UNBLOCKED —
+      PlanStan re-pins to v0.90.1 and resumes at step 3.
 - [ ] **E11** app-facing CalendarManager async API (absorbs O39, §14b):
       Group C calendar-CRUD loops + CalendarManager incidence-CRUD GUI
       loops converted; synchronous `davSyncRequest` helper deleted;

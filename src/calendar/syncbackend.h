@@ -326,25 +326,13 @@ Q_SIGNALS:
 
     // ========== Streaming Fetch Events (calendar-typed) ==========
 
-    /// Per-item streaming fetch — calendar-typed (Incidence::Ptr).
-    ///
-    /// @deprecated (E9, sync-excellence campaign, O34): emitted once PER
-    /// INCIDENCE — a cross-thread queued signal per item once backends are
-    /// relocated to their own thread, thousands of queued events on big
-    /// mirrors. Superseded by the batched @ref itemsFetched, emitted once
-    /// per fetch pass / multiget chunk. Kept alongside itemsFetched for one
-    /// release (deprecation window); removed at E10 once PlanStan's
-    /// ItemLoadingCoordinator (and any other consumer) has been ported to
-    /// the batch form. Do NOT add new consumers of this signal.
-    void itemFetched(const QString &calendarId,
-                     const KCalendarCore::Incidence::Ptr &incidence);
-
     /// Batched streaming fetch (E9, sync-excellence campaign, O34): fires
     /// once per fetch pass (LocalBackend) or per multiget chunk / cache
     /// pass (RemoteCalendarBackend) with the FULL list of incidences that
     /// pass fetched or served — not debounced/timer-batched, only natural
-    /// pass/chunk boundaries. The batch-form replacement for the
-    /// per-incidence @ref itemFetched.
+    /// pass/chunk boundaries. The batch-form replacement for the per-item
+    /// itemFetched signal, DELETED at E10/v0.90.1 after its one-release
+    /// deprecation window (every backend now emits the batch form).
     void itemsFetched(const QString &calendarId,
                       const QList<KCalendarCore::Incidence::Ptr> &items);
 };

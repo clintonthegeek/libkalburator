@@ -432,10 +432,12 @@ FetchOperation* AkonadiBackend::fetchItems(const QString &calendarId)
             m_itemsByCalendar[calendarId][incidence->uid()] = item;
             fetched.append(incidence);
 
-            Q_EMIT itemFetched(calendarId, incidence);
             current++;
             Q_EMIT fetchProgressChanged(calendarId, current, total);
         }
+        // Batch-form streaming (E9/E10): one itemsFetched per fetch pass.
+        if (!fetched.isEmpty())
+            Q_EMIT itemsFetched(calendarId, fetched);
 
         op->setFetchedItems(fetched);
         op->complete();
@@ -759,8 +761,9 @@ void AkonadiBackend::onItemAdded(const Akonadi::Item &item, const Akonadi::Colle
     // Track the item
     m_itemsByCalendar[calId][incidence->uid()] = item;
 
-    // Emit as fetched item for live updates
-    Q_EMIT itemFetched(calId, incidence);
+    // Emit as fetched item for live updates (batch of one — the monitor
+    // delivers single-item change notifications).
+    Q_EMIT itemsFetched(calId, {incidence});
 }
 
 void AkonadiBackend::onItemChanged(const Akonadi::Item &item, const QSet<QByteArray> &parts)
@@ -778,8 +781,8 @@ void AkonadiBackend::onItemChanged(const Akonadi::Item &item, const QSet<QByteAr
     // Update tracked item
     m_itemsByCalendar[calId][incidence->uid()] = item;
 
-    // Emit as fetched item (same as added - updated data)
-    Q_EMIT itemFetched(calId, incidence);
+    // Emit as fetched item (same as added - updated data; batch of one)
+    Q_EMIT itemsFetched(calId, {incidence});
 }
 
 void AkonadiBackend::onItemRemoved(const Akonadi::Item &item)

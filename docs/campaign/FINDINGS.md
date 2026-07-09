@@ -1625,7 +1625,7 @@ when the flag is unset (one extra small PROPFIND, self-healing); (c)
 PlanStan-side: await `loadCalendarsFinished` before the first auto-sync
 (fixes the race but leaves the capability amnesia to (a)/(b)).
 
-### O43 — `prepareFastPath`'s A6 revision-query marshal is teardown-unsafe: a pending backend-thread lambda outlives the worker's stack frame and invokes a dangling `QEventLoop*` (OPEN, found 2026-07-09 at E10; deterministic SEGV in PlanStan's suite — BLOCKS E10's acceptance gate)
+### O43 — `prepareFastPath`'s A6 revision-query marshal is teardown-unsafe: a pending backend-thread lambda outlives the worker's stack frame and invokes a dangling `QEventLoop*` (RESOLVED 2026-07-09, v0.90.1; found same day at E10 — deterministic SEGV in PlanStan's suite, blocked E10's acceptance gate)
 
 Found at E10 step 1 (PlanStan pin bump v0.84 → v0.90). PlanStan's
 `tst_collectioncontroller::testAutoSyncOnLoadDeferredUntilSyncInfraReady`
@@ -1670,3 +1670,18 @@ loop-exit ordering fragile. Any fix lands lib-side as v0.90.1 (the patch
 tag E10 already anticipated for the `itemFetched` deletion) with a RED
 test that quits the worker mid-`prepareFastPath` with a pending
 backend-thread revision query.
+
+**Resolution (2026-07-09, tagged v0.90.1):** fix candidate (a) — the
+rendezvous (`loop` + `revs` pointers) now lives in a heap-owned,
+mutex-guarded state block co-owned by the lambda posted to the backend
+thread; `prepareFastPath` nulls both pointers under the mutex before its
+frame (and the `QEventLoop`) dies, so a late continuation drops the
+result instead of invoking a dangling pointer. The second hop stays safe
+unguarded: it is posted under the same mutex (loop provably alive at
+post time) and `~QObject` removes any still-undelivered metacall. RED
+test `tests/engine/tst_fastpath_teardown_race.cpp` (SEGV 3/3 pre-fix,
+green 5/5 post-fix); full suite 168/168. Shipped together with the
+planned E10 deletion of the deprecated per-item `itemFetched` signal
+(all seven lib backends + WildPalms' PalmCalendarBackend now emit only
+the batched `itemsFetched`; `tst_backend_signals` ported to batch
+assertions).

@@ -1471,23 +1471,55 @@ void SyncEngineWorker::prepareFastPath(const QList<SyncMapping> &mappings,
         // reachable via a filtered-CalDAV leg). The continuation marshals the
         // result + loop-quit back here, so there is no cross-thread race on
         // `revs` and no same-thread-deadlock hazard (all QueuedConnection).
+        //
+        // O43 (2026-07-09): the rendezvous must be HEAP-owned and co-owned by
+        // the lambda posted to the backend thread. QThread::quit() during
+        // engine teardown exits this nested loop too (quitNow), unwinding this
+        // frame while the query may still be PENDING on the backend thread; a
+        // raw `&loop`/`&revs` capture then dangles and the late continuation
+        // SEGVs (deterministic in PlanStan's close-mid-sync / destroy-after-
+        // auto-sync-on-load window; pinned by tst_fastpath_teardown_race).
+        // `loop` is nulled under the mutex before the frame dies, so a late
+        // continuation drops the result instead. The post-to-loop hop stays
+        // safe without further guarding: it is posted under the same mutex
+        // (so the QEventLoop is alive at post time) and ~QObject removes any
+        // still-undelivered metacall targeted at the loop.
         QMap<QString, QString> revs;
         {
+            struct Rendezvous {
+                QMutex mutex;
+                QEventLoop *loop = nullptr;         // guarded by mutex
+                QMap<QString, QString> *revs = nullptr; // guarded by mutex
+            };
+            auto rv = std::make_shared<Rendezvous>();
             QEventLoop loop;
-            QMetaObject::invokeMethod(base, [cd, ids, &revs, &loop]() {
+            rv->loop = &loop;
+            rv->revs = &revs;
+            QMetaObject::invokeMethod(base, [cd, ids, rv]() {
                 cd->collectionRevisionsAsync(ids,
-                    [&revs, &loop](QMap<QString, QString> result) {
+                    [rv](QMap<QString, QString> result) {
                         // On the backend thread; hand off to the worker thread
                         // (loop's thread), where `revs` is written and the loop
-                        // quits — after loop.exec() has begun.
-                        QMetaObject::invokeMethod(&loop,
-                            [&revs, &loop, result = std::move(result)]() {
-                                revs = result;
-                                loop.quit();
+                        // quits — after loop.exec() has begun. If the worker
+                        // frame already unwound (teardown), drop the result.
+                        QMutexLocker lock(&rv->mutex);
+                        if (!rv->loop)
+                            return;
+                        QMetaObject::invokeMethod(rv->loop,
+                            [rv, result = std::move(result)]() {
+                                if (rv->revs)
+                                    *rv->revs = result;
+                                if (rv->loop)
+                                    rv->loop->quit();
                             }, Qt::QueuedConnection);
                     });
             }, Qt::QueuedConnection);
             loop.exec();
+            // Invalidate BEFORE ~loop so a pending backend-thread continuation
+            // either posts while the loop is provably alive or drops cleanly.
+            QMutexLocker lock(&rv->mutex);
+            rv->loop = nullptr;
+            rv->revs = nullptr;
         }
         for (auto rit = revs.constBegin(); rit != revs.constEnd(); ++rit)
             freshRevisions[qMakePair(it.key(), rit.key())] = rit.value();
