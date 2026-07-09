@@ -1118,6 +1118,11 @@ void RemoteCalendarBackend::probeSyncCollectionSupport(const QString &calendarId
                 && parseSupportsSyncCollection(resp.body)) {
                 m_calendars[calendarId].supportsSyncCollection = true;
             }
+            // O42: probed even on failure — a transport error leaves the
+            // listing fallback for this instance's lifetime (same outcome a
+            // failed discovery-time probe always had), rather than paying a
+            // re-probe every fetch cycle against a dead/non-advertising URL.
+            m_calendars[calendarId].syncCollectionProbed = true;
             done();
         });
 }
@@ -2000,6 +2005,33 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
                 // first fetch through this branch) keeps the existing
                 // Depth:1 listing fallback, forever.
                 const QString storedToken = syncToken(calendarId);
+
+                // O42: the capability flag is in-memory and normally
+                // populated by discovery's probe — but a consumer may drive
+                // the first fetch of a process BEFORE discovery completes
+                // (PlanStan's auto-sync-on-load). A persisted token proves a
+                // prior process probed successfully, so paying the Depth:1
+                // listing here is pure waste: lazily probe once, then decide.
+                // Deliberately NOT persisted (fix candidate (a)): a stored
+                // capability would keep forcing the REPORT against a server
+                // that stopped advertising it, and only 409/410/507 fall
+                // back — a fresh per-instance probe is self-healing.
+                if (!m_calendars.value(calendarId).syncCollectionProbed
+                    && !storedToken.isEmpty()) {
+                    probeSyncCollectionSupport(
+                        calendarId, [this, op, calendarId, davUrl, freshCtag]() {
+                            const QString token = syncToken(calendarId);
+                            if (m_calendars.value(calendarId).supportsSyncCollection
+                                && !token.isEmpty()) {
+                                continueFetchWithSyncCollection(op, calendarId, davUrl,
+                                                                freshCtag, token);
+                            } else {
+                                continueFetchWithListing(op, calendarId, davUrl, freshCtag);
+                            }
+                        });
+                    return;
+                }
+
                 if (m_calendars.value(calendarId).supportsSyncCollection
                     && !storedToken.isEmpty()) {
                     continueFetchWithSyncCollection(op, calendarId, davUrl, freshCtag, storedToken);
