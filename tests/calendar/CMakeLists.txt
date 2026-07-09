@@ -31,11 +31,30 @@ if(KALBURATOR_HAVE_ORG_IO)
     target_compile_definitions(tst_backend_signals PRIVATE KALBURATOR_HAVE_ORG_IO)
 endif()
 
-kalburator_add_calendar_test(tst_icsfeedfetcher)
 kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
+
+# E5.1 — per-collection FIFO operation queue (SyncBackendBase::enqueueOperation).
+add_executable(tst_backend_op_queue tst_backend_op_queue.cpp)
+target_compile_definitions(tst_backend_op_queue
+    PRIVATE
+        KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+)
+target_link_libraries(tst_backend_op_queue
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_calendar_test_stubs
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_op_queue COMMAND tst_backend_op_queue)
+set_tests_properties(tst_backend_op_queue PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
 # Plan 7b T1 — default-lane pins for LocalBackend's write paths (startSync
 # via AsyncFileWriter, removeItem, updateCalendar metadata round-trip,
 # readonly marker) ahead of the T3/T4 internal rewrites.
@@ -71,6 +90,28 @@ set_tests_properties(tst_backend_thread_relocation PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# E5.2 / audit B7: the backend-thread re-entrancy pin (uses FakeCalDavServer).
+add_executable(tst_backend_reentrancy_pin
+    tst_backend_reentrancy_pin.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_backend_reentrancy_pin
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_backend_reentrancy_pin
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_calendar_test_stubs
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_reentrancy_pin COMMAND tst_backend_reentrancy_pin)
+set_tests_properties(tst_backend_reentrancy_pin PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
 add_executable(tst_remotecalendarbackend_blob_view
     tst_remotecalendarbackend_blob_view.cpp
@@ -92,6 +133,48 @@ target_link_libraries(tst_remotecalendarbackend_blob_view
 )
 add_test(NAME tst_remotecalendarbackend_blob_view COMMAND tst_remotecalendarbackend_blob_view)
 set_tests_properties(tst_remotecalendarbackend_blob_view PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+# E6/O35 — EtagCache seeding from the persistent content cache across restarts.
+add_executable(tst_etagcache_seed
+    tst_etagcache_seed.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_etagcache_seed
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_etagcache_seed
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_etagcache_seed COMMAND tst_etagcache_seed)
+set_tests_properties(tst_etagcache_seed PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+# E7/O36 — RFC 6578 sync-collection REPORT delta sync.
+add_executable(tst_sync_collection_report
+    tst_sync_collection_report.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_sync_collection_report
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_sync_collection_report
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_sync_collection_report COMMAND tst_sync_collection_report)
+set_tests_properties(tst_sync_collection_report PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 

@@ -343,7 +343,7 @@ call), but only if teardown order is engine-first, I/O-thread-last —
 an invariant PlanStan's Stage 3 must state and enforce, because reversing
 it recreates the same hang.
 
-### B7 — MEDIUM (design) — nested event loops on the backend thread admit uncontrolled re-entrancy; plausible root cause of the N5 corruption class (READ)
+### B7 — MEDIUM (design) — nested event loops on the backend thread admit uncontrolled re-entrancy; plausible root cause of the N5 corruption class (READ) — RESOLVED 2026-07-08, sync-excellence campaign phase E5 (E5.1 op queue, E5.2 async CTag path, E5.3 `applyRecords` write operations; see FINDINGS.md O29)
 
 Every `davSyncRequest` call and `awaitOperation` spin a nested `QEventLoop`
 **on the backend's thread** while a request is in flight. Nested loops

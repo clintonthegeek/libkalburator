@@ -79,6 +79,43 @@ public:
     /// whichever thread is polling for a freeze.
     void setResponseDelayMs(int ms) { m_responseDelayMs = ms; }
 
+    /// E5.3: delay only requests of @p method (e.g. "PUT", "DELETE") by
+    /// @p ms, leaving every other method's response timing at whatever
+    /// setResponseDelayMs() (default 0) says. Lets a test isolate a slow
+    /// WRITE phase from a fast READ/classify phase — setResponseDelayMs()
+    /// alone can't do this (it delays every method uniformly), which made
+    /// it impossible to land a cancel/teardown precisely "mid-apply"
+    /// without also stalling the classify read that always precedes it.
+    /// Pass ms <= 0 to clear a previously-set per-method delay.
+    void setResponseDelayForMethod(const QByteArray &method, int ms)
+    {
+        if (ms > 0) {
+            m_perMethodDelayMs[method] = ms;
+        } else {
+            m_perMethodDelayMs.remove(method);
+        }
+    }
+
+    /// E8/O28: kill the fake mid-push, simulating a SIGKILLed server
+    /// process. After @p n item write requests (PUT create/update, or
+    /// item DELETE) have had their response sent since the last
+    /// startListening()/reviveOnSamePort(), the fake stops listening
+    /// entirely (QTcpServer::close()) — every subsequent connection
+    /// attempt gets ECONNREFUSED at the TCP level, exactly like a real
+    /// client trying to reach a process that no longer exists (not
+    /// setDropRequests()'s "accepted but silent" shape, which simulates a
+    /// hung server, not a dead one). Pass 0 (the default) to disable.
+    void setDieAfterNWrites(int n) { m_dieAfterNWrites = n; m_writesSinceRevive = 0; }
+
+    /// Bring the fake back to life after setDieAfterNWrites() killed it —
+    /// re-listens on the SAME port it was using before death (so a test's
+    /// already-registered backend URL, captured from baseUrl() before the
+    /// death, stays valid), and resets the die-after-N counter so a
+    /// second round of writes gets a fresh budget. No-op (returns true)
+    /// if the fake never died. Returns false if re-binding the captured
+    /// port fails.
+    bool reviveOnSamePort();
+
     /// Fail the Nth calendar-multiget REPORT (1-based) with a 500 response
     /// instead of serving it normally. 0 (the default) means never fail.
     /// Lets tests exercise N4's chunked-batch error path without needing a
@@ -100,6 +137,24 @@ public:
     /// DavItemsListJob issues more than one of those per fetch for reasons
     /// unrelated to multiget chunking). Reset on startListening().
     int multigetReportCount() const { return m_multigetReportCount; }
+
+    /// E7/O36: advertise RFC 6578 sync-collection in supported-report-set
+    /// PROPFIND responses (Radicale >=3 and Nextcloud both do) and answer
+    /// REPORT sync-collection requests with a real delta computed from this
+    /// fake's per-collection change journal (see logChange()). Off by
+    /// default so every pre-E7 test exercising the CTag+listing fallback is
+    /// unaffected.
+    void setSupportsSyncCollection(bool on) { m_supportsSyncCollection = on; }
+
+    /// When true, every REPORT sync-collection carrying a non-empty
+    /// sync-token gets HTTP 410 Gone instead of a delta — simulates RFC
+    /// 6578 §3.3 token invalidation (e.g. after server-side DB maintenance
+    /// expires old tokens).
+    void setInvalidateSyncTokens(bool on) { m_invalidateSyncTokens = on; }
+
+    /// Number of REPORT sync-collection requests received (a subset of
+    /// requestCount("REPORT")). Reset on startListening().
+    int syncCollectionReportCount() const { return m_syncCollectionReportCount; }
 
     /// Emulate a NextCloud-style deployment (RFC 6764 well-known discovery):
     ///   - the DAV endpoints live under @p contextPath (e.g. "/remote.php/dav")
@@ -160,8 +215,13 @@ private:
     };
 
     void handleRequest(QTcpSocket *socket, const QByteArray &fullRequest);
+    /// E8/O28: counts one item write toward setDieAfterNWrites()'s budget;
+    /// closes the listening socket once the budget is exhausted.
+    void maybeDieAfterWrite();
     void handleReport(QTcpSocket *socket, const QString &path,
                       const QByteArray &body);
+    void handleSyncCollectionReport(QTcpSocket *socket, const QString &collectionHref,
+                                    const QByteArray &body);
     void handlePut(QTcpSocket *socket, const QString &path,
                    const QByteArray &body, const QByteArray &headers);
     void handleDelete(QTcpSocket *socket, const QString &path);
@@ -181,11 +241,22 @@ private:
     QByteArray xmlForCalendarMultiget(const QString &collectionHref,
                                       const QList<QString> &hrefs) const;
     QByteArray xmlForCtag(const QString &collectionHref) const;
+    QByteArray xmlForSupportedReportSet(const QString &collectionHref) const;
+    QByteArray xmlForSyncCollection(const QString &collectionHref, int clientToken) const;
+
+    /// Append one mutation to @p collectionHref's change journal (E7/O36).
+    /// Every PUT/DELETE and every setSeedEvents()/removeEvent() call (real
+    /// writes and out-of-band server-side simulation alike) logs here; the
+    /// journal's length IS the collection's current sync-token, and REPORT
+    /// sync-collection answers a stored token T with every entry after
+    /// index T, deduped to the last state per uid.
+    void logChange(const QString &collectionHref, const QString &uid, bool deleted);
 
     static QString uidFromIcs(const QByteArray &ics);
     static QString uidFromPath(const QString &path);
     static QString makeEtag(const QByteArray &data);
     static QList<QString> parseHrefsFromBody(const QByteArray &body);
+    static QString parseSyncTokenFromBody(const QByteArray &body);
     /// Case-insensitive header lookup over the raw header block (everything
     /// before "\r\n\r\n"). Empty if the header is absent.
     static QByteArray headerValue(const QByteArray &headers, const QByteArray &name);
@@ -194,6 +265,10 @@ private:
     bool m_return500 = false;
     bool m_dropRequests = false;
     int m_responseDelayMs = 0;
+    int m_dieAfterNWrites = 0;     // E8/O28: 0 = never die
+    int m_writesSinceRevive = 0;   // reset by setDieAfterNWrites()/reviveOnSamePort()
+    quint16 m_lastBoundPort = 0;   // captured in startListening() for reviveOnSamePort()
+    QHash<QByteArray, int> m_perMethodDelayMs;  // E5.3: per-method response delay override
     int m_failNthMultigetReport = 0;    // 0 = never fail; else 1-based index
     int m_multigetReportCount = 0;      // reset on startListening()
     QHash<QString, QString> m_ctagByHref;  // href -> CS:getctag value, if configured
@@ -207,6 +282,20 @@ private:
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
     /// then by UID.
     QHash<QString, QHash<QString, IcsRecord>> m_store;
+
+    // ---- E7/O36: RFC 6578 sync-collection ----
+    struct ChangeEntry {
+        QString uid;
+        bool deleted = false;
+    };
+    bool m_supportsSyncCollection = false;
+    bool m_invalidateSyncTokens = false;
+    int m_syncCollectionReportCount = 0;  // reset on startListening()
+    /// collectionHref -> chronological mutations. The journal's size() at
+    /// any moment IS that collection's current sync-token (as a decimal
+    /// string); a REPORT with client token T is answered with entries
+    /// [T, size()).
+    QHash<QString, QList<ChangeEntry>> m_changeLog;
 };
 
 #endif // KALBURATOR_TESTS_FAKECALDAVSERVER_H

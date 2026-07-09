@@ -662,7 +662,7 @@ thread-recording stub backend (H2.1's pattern) asserting
 steady-state modify sync; today they record the worker thread. Fix phase:
 **H8.5** in the phase plan; campaign close (CP-C §3) is BLOCKED on it.
 
-### O28 — partial push + server crash leaves N same-UID/no-baseline records that re-conflict every cycle — recovery needs manual conflict resolution and busy-loops until then (OPEN, found by CP-C/H8 O17 live check, 2026-07-06)
+### O28 — partial push + server crash leaves N same-UID/no-baseline records that re-conflict every cycle — recovery needs manual conflict resolution and busy-loops until then (Resolved 2026-07-08 — sync-excellence E8)
 
 Found by CP-C/H8's kill-Radicale-mid-push pass: 30 new local items, server
 SIGKILLed after 7 creates had landed (6 logged + 1 whose 201 response died
@@ -694,7 +694,39 @@ H8 the state was cleared surgically (deleted the 7 server copies +
 `sync_conflicts` rows; next cycle re-created them cleanly with baselines)
 — noted here because the live vault intervention is not a product answer.
 
-### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; OPEN → sync-excellence E5)
+**Resolution (2026-07-08, sync-excellence E8):** RED-test investigation
+(`tests/engine/tst_phantom_conflict_adoption.cpp`) found the "fix
+direction" above had ALREADY landed, unannounced, as a side effect of the
+Phase B4/N2 per-side-baseline work (commit `6c36df4`, 2026-07-04 — *before*
+this finding was even filed): `perrecorddiff.cpp`'s `hasS && hasT && !hasB`
+branch already gates conflict declaration on `differ.equal()` (the domain's
+`createCanonicalDiffer()`) and silently emits NO op when canonically equal;
+`syncengine.cpp`'s `unifiedContinueAfterConflicts` independently re-scans
+for exactly those silently-skipped ids and writes each side's own
+`contentHash` as its baseline via `setBaselineHashesV4`. An engine-level
+replay of the exact H8 crash shape (LocalBackend source with N new local
+`.ics` files, `RemoteCalendarBackend` target, `FakeCalDavServer` gaining
+`setDieAfterNWrites()`/`reviveOnSamePort()` to simulate a SIGKILL-and-
+restart) confirms: for the literal O28 shape (PRODID/property-order-only
+difference, `CREATED`/`LAST-MODIFIED` present and matching on both sides),
+the repair cycle produces **zero** phantom conflicts and adopts baselines
+for every survivor — no diff/merge code change was needed. E8's actual
+delta: added an `qInfo()` observability line on each silent adoption
+(`syncengine.cpp`'s implicit-seed loop previously adopted baselines with
+zero logging — invisible in production logs) and three new regression
+tests that had never existed for this path: the crash-replay itself, a
+guard that a genuinely-different same-UID/no-baseline pair still conflicts
+(over-adoption guard), and a blob-domain (no canonical pipeline) pin that
+byte-different no-baseline pairs still conflict there (domain-neutrality —
+uses a new minimal `ShapedTestBackend` fixture since `MockBackend` is
+hardcoded to iCal internally). SyncStats needs no change: adopted records
+never enter `engineDiff` at all, so E1.1's create/update/conflict counters
+already correctly count them as neither. See **O41** for a distinct,
+real bug this investigation surfaced along the way (out of E8's scope to
+fix: it lives in the calendar canon *write* path, not the no-baseline
+conflict classification).
+
+### O29 — nested QEventLoops on the backend thread admit uncontrolled re-entrancy (audit B7, promoted; Resolved 2026-07-08 — sync-excellence E5; stale OPEN header fixed at CP-B 2026-07-09)
 
 Audit §3-B7, the deepest surviving design debt from the hardening campaign.
 `davSyncRequest` (`remotecalendarbackend.cpp:253`) and `awaitOperation`
@@ -710,6 +742,118 @@ the historical N5 corruption class. Fix (pre-decided, CP-A-reviewed): phase
 continuation-based `davSyncRequestAsync` (E5.2), writes as awaitable
 `WriteOperation`s replacing the blocking apply (E5.3). Grep gate at close:
 zero `QEventLoop` under `src/calendar/` + `src/sync/`. (Seeded 2026-07-07.)
+
+**CP-A ruling (2026-07-07, Fable-class, reviewed against v0.85):** E5's
+design CONFIRMED with four amendments, edited into the phase plan §8
+directly; the three-stage cut stands. A1 — the op queue is a protected
+neutral enqueue primitive in `SyncBackendBase` (entry points span two
+layers: base `fetchItems`/`deleteItems`, calendar-typed
+`pushItems`/`startSync`); queue advances on any terminal state AND on op
+destruction; already-finished ops never occupy the in-flight slot. A2 —
+the mass-delete guard resolves on the worker BEFORE the write op is
+enqueued (verified: `resolveMassDeleteGuard` already runs worker-side,
+blocking only toward the engine anchor and GUI — safe directions, neither
+ever blocks toward the worker). A3 — `RecordWriter::Threading` and
+`threading()` are deleted outright, not just superseded: zero overrides
+exist across libkalburator/PlanStan/WildPalms; WildPalms has no
+`RecordWriter`/`awaitOperation` exposure at all (its only lib-sync
+surface is `SyncEngine` + `itemFetched`). A4 — E5.2's QEventLoop site
+list was incomplete against post-E4 code: `icsfeedfetcher.{h,cpp}` is a
+zero-caller orphan (E5.2 deletes it); `calendarmanager.cpp`'s three
+op-await loops (:583/:630/:677) are GUI-thread — not B7's backend-thread
+mechanism — out of E5 scope, filed as **O39**; the grep gate is amended
+to allow annotated calendarmanager.cpp hits only. The teardown-order
+invariant was re-derived and survives: worker-first remains mandatory
+(settling in-flight ops needs a live backend thread); E5.3 dissolves the
+O22 worker-parking wedge as planned.
+
+**CP-A addendum A6 (2026-07-08, blessed by the campaign owner as a
+checkpoint ruling):** an E5.2 in-flight trace found `fetchAllCtags`
+(`remotecalendarbackend.cpp:755`) dual-reachable and only half-closed by
+A5's "convert the plural override" phrasing. Plural path
+(`collectionRevisions()` → engine fast-path `syncengine.cpp:1427`, backend
+thread) is the live B7 mechanism; singular path (`collectionRevision()`, the
+`ChangeDetection` interface method) is reached by
+`FilteredCollectionBackend::collectionRevision` (`filteredcollectionbackend.cpp:255`),
+which — because `FilteredCollectionBackend` does NOT override the plural —
+funnels the engine's backend-thread fast-path *through* the synchronous
+singular into a nested `QEventLoop` on the backend thread for any
+filtered-CalDAV topology. Latent, not live (PlanStan calls the plural
+override directly, no filter; WildPalms references neither
+`FilteredCollectionBackend` nor `ChangeDetection` — grep-verified). Ruling:
+close it at the interface, not the concrete class — add
+`ChangeDetection::collectionRevisionsAsync` (neutral virtual, default =
+adapt the existing synchronous `collectionRevisions`, mirroring E5.3's
+`applyRecords` pattern), override it in `RemoteCalendarBackend` via
+`davSyncRequestAsync`, forward it in `FilteredCollectionBackend`, and switch
+the engine fast-path to call it (blocking the worker, never the backend
+thread). Both paths close structurally; no annotated-synchronous survivor,
+no §16 residual. The synchronous `fetchAllCtags` helper survives (singular
+interface + same-thread test callers) but is no longer backend-thread-
+nested-loop-reachable. Amendment edited into phase plan §8 (Stage E5.2, A6)
+and the §17 E5.2 checklist line.
+
+**E5.2 landed (2026-07-08).** Group A CTag path is async: `fetchFreshCtagAsync`
+(part 1) + `fetchAllCtagsAsync`/`collectionRevisionsAsync` (A6). The
+`ChangeDetection::collectionRevisionsAsync` neutral virtual (default = adapt the
+sync `collectionRevisions`) is overridden in `RemoteCalendarBackend`
+(davSyncRequestAsync PROPFINDs, no nested loop), forwarded in
+`FilteredCollectionBackend`, and the engine fast-path (`prepareFastPath`) now
+calls it, blocking the WORKER (not the backend thread) on a local `QEventLoop`
+whose quit is marshaled back from the backend continuation. `fetchAllCtags`
+carries the `ReentryGuard` tripwire. RemoteCalendarBackend's
+fetch/push/deleteItems now route through E5.1's `enqueueOperation` (their old
+per-entry `registerOperation` + ad hoc `QMetaObject::invokeMethod(this,…)`
+dispatch removed; early exits moved inside the queued body so they respect
+FIFO). Two re-entrancy pins GREEN (fetchItems body + filtered-view revision
+query) + a CalDAV same-collection serialization pin. Remaining under O29:
+E5.3 (writes → `applyRecords`, blocking apply retired, `awaitOperation`
+deleted). O29 stays OPEN until E5.3 closes it.
+
+**Resolved 2026-07-08 (E5.3).** `SyncBackendBase::applyRecords(collectionId,
+WriterBatch)` (`src/sync/syncbackendbase.{h,cpp}`, batch type moved to
+`src/sync/writerbatch.h`, return type `Kalburator::Sync::WriteOperation` —
+new, `src/sync/writeoperation.{h,cpp}`) replaces the engine's thread-blocking
+`RecordWriter::apply()` dispatch. Default impl (LocalBackend/MockBackend —
+no async internals) adapts `createRecord`/`updateRecord`/`deleteRecord`
+synchronously, returning an already-finished op — preserves MockBackend's
+`FailurePoint` injection unchanged. `RemoteCalendarBackend::applyRecords`
+overrides natively: creates → `DavItemCreateJob`, deletes →
+`DavItemDeleteJob` (same job types `pushItems`/`deleteItems` already used),
+updates → new `setRawIcsAsync` (async counterpart of `setRawIcs`, built on
+`davSyncRequestAsync` — no nested loop), all three routed through E5.1's
+per-collection queue and fanned in exactly like `pushItems`/`deleteItems`.
+`SyncEngineWorker::applyBatch` (`syncengine.cpp`) now calls `applyRecords()`
+via a `BlockingQueuedConnection` that only enqueues (returns immediately),
+then awaits the returned op with the SAME cancellable, watchdog-free gate
+shape the fetch gates already used (`QEventLoop` + `finished`
+`QueuedConnection` + `cancellationObserved` `DirectConnection`) — the worker
+never again parks in a blocking marshal for I/O-length work. E1.1 stats
+(created/updated/deleted/errors) are now populated per-record from the
+settled op's `succeededUids()`/`failedUids()` instead of one whole-batch
+bool (a batch with 1 failure among 50 successes no longer misreports all 50
+as errors). `awaitOperation` (`remotecalendarbackend.cpp`) is deleted from
+`createRecord`/`deleteRecord` (reimplemented as direct synchronous
+`davSyncRequest` PUT/DELETE, matching `updateRecord`'s existing
+`setRawIcs`-based shape) but **deliberately retained for its one remaining
+call site, `loadRecords()`** — a documented, narrow exception (see the
+function's comment in `remotecalendarbackend.cpp`): `loadRecords()` is a
+top-level, non-reentrant synchronous bridge never invoked from inside an
+in-flight operation's own body, so it is not an instance of the B7 hazard
+this campaign targets, and it remains a directly-tested public
+`IBlobBackend` entry point (20+ call sites across
+`tst_remotecalendarbackend_blob_view.cpp` and others) with no synchronous
+replacement that avoids hand-rolling a second REPORT/multiget XML client.
+CP-A amendment A3 lands too: `RecordWriter::Threading`/`threading()` deleted
+outright (zero overrides found repo-wide); `DefaultBlobWriter::apply()`
+itself now routes through `applyRecords()` for consistency. New RED tests:
+`writeCancel_reportsCancelledWithHonestStats` and
+`writeTeardown_engineDestroyed_completesWithoutDeadlock`
+(`tst_backend_thread_relocation.cpp`), `applyRecordsInFlight_neverRunsNested`
+(`tst_backend_reentrancy_pin.cpp`); `FakeCalDavServer` gained
+`setResponseDelayForMethod()` to isolate a slow write from a fast
+classify-read (needed to land a cancel/teardown genuinely mid-apply rather
+than mid-fetch). O29 fully Resolved.
 
 ### O30 — `SyncResult::sourceStats/targetStats` are read but never populated (Resolved 2026-07-07, sync-excellence E1.1)
 
@@ -845,7 +989,21 @@ a bounded wait (30 s default), a loud `qCritical` naming the
 interim per O22's parked note — the structural fix (the worker stops
 parking in blocking marshals for I/O-length work) is E5.3's job.
 
-### O34 — `itemFetched` per-incidence signal storm (OPEN → sync-excellence E9)
+**O22's parked note Resolved 2026-07-08 (E5.3).** The structural fix
+landed: `SyncEngineWorker::applyBatch` no longer marshals a thread-blocking
+`RecordWriter::apply()` call — it invokes `SyncBackendBase::applyRecords()`
+(returns immediately, having only enqueued the write op) and awaits it in a
+cancellable `QEventLoop`, same as a fetch gate. `stopWorkerThread()` /
+`waitForWorkerWithDiagnostic()` (the E3 interim, still in place as a
+belt-and-braces bound) is pinned against a genuinely in-flight write by the
+new `writeTeardown_engineDestroyed_completesWithoutDeadlock`
+(`tst_backend_thread_relocation.cpp`): destroying a `SyncEngine` while its
+target backend is mid-apply behind a 60 s fake-server delay completes in
+well under 5 s — the diagnostic path is no longer expected to fire for any
+consumer whose backends are relocated (the D1 topology PlanStan/WildPalms
+both use).
+
+### O34 — `itemFetched` per-incidence signal storm (Resolved 2026-07-09 — sync-excellence E9)
 
 Promoted from audit §C4/roadmap D2. `LocalBackend`'s fetch emits
 `itemFetched(calendarId, inc)` once per incidence
@@ -855,7 +1013,86 @@ event per item, thousands per fetch on big mirrors. Fix: batch
 deprecate then remove the singular signal (PlanStan port at E10).
 (Seeded 2026-07-07.)
 
-### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (OPEN → sync-excellence E6)
+**Resolution (E9, 2026-07-09) — two independent sub-items, both landed:**
+
+**E9.1 (signal batching):** `SyncBackend` (`syncbackend.h`) gained
+`itemsFetched(calendarId, items)` alongside `itemFetched`, which is now
+doc-commented `@deprecated` (removal at E10 once PlanStan's
+`ItemLoadingCoordinator` ports to the batch form — do not remove yet).
+Emitted once per natural fetch-pass/chunk boundary, never debounced: (1)
+`LocalBackend::fetchItems` — once after its single per-directory loop
+completes (`localbackend.cpp`); (2)-(4) `RemoteCalendarBackend` — once each
+in `serveCachedItems` (also covers the sync-collection full-snapshot
+reconstruction path, which calls it), the partial-cache-hit branch of
+`fetchItems`, and `processFetchedItems` (the full/mixed network+cache
+multiget path) (`remotecalendarbackend.cpp`). RED test
+`testLocalBackend_fetchItems_emitsItemsFetchedBatched`
+(`tst_backend_signals.cpp`) pins a 50-item fetch: `itemFetched` still fires
+50 times (unchanged), `itemsFetched` fires exactly once with the full
+50-item list.
+
+**E9.2 (incremental expected-fingerprint, removes the H3 one-cycle re-diff
+lag for LocalBackend the sound way — audit A2):** `WriteOperation`
+(`writeoperation.h`) gained `resultRevision()`/`setResultRevision()` —
+empty by default ("no revision computed"; `RemoteCalendarBackend` never
+sets it, per design: no server-side CTag guessing). `LocalBackend` now
+tracks `m_lastFetchFingerprintSnapshot` (per-collection `filename ->
+(mtimeMs, size)`), captured at the end of every `fetchItems()` pass
+(`localbackend.cpp`/`.h`). `LocalBackend::applyRecords()` (new override —
+previously used `SyncBackendBase`'s default synchronous adapter unchanged)
+delegates to that same base dispatch for the actual create/update/delete,
+then patches the snapshot in place using ONLY the files the settled
+`WriteOperation::succeededUids()` actually wrote/deleted (stat exactly
+those, via the existing `icsPathFor`; deleted files' entries removed
+outright — no directory re-list), and sets the re-hashed result as
+`resultRevision()`. The hashing itself was extracted into a shared
+`LocalBackend::hashFingerprintEntries()` static helper, fed by a
+`QMap<QString, QPair<qint64,qint64>>` (sorted by key regardless of
+insertion order) so the incremental value is guaranteed bit-identical to
+what `calendarFingerprint()`'s full rescan would produce for the same
+on-disk state — `calendarFingerprint()` itself now builds the same QMap
+shape and calls the shared helper. A collection with no prior fetch-time
+snapshot (no preceding `fetchItems()` in this backend instance's lifetime)
+leaves `resultRevision()` empty — never guessed.
+
+Engine side: `SyncEngineWorker` gained
+`m_lastAppliedTargetRevision`/`m_lastAppliedSourceRevision` (reset at the
+top of every `unifiedContinueAfterConflicts` run), populated by
+`applyBatch`'s new optional `QString *outRevision` out-parameter at its two
+call sites (target, then source). `SyncEngine::onWorkerSyncCompleted`'s
+existing H3 token-write block (`syncengine.cpp`, unchanged call site)
+now takes a local copy of the pre-fetch `FreshSyncState` and overrides
+`.targetRevision`/`.sourceRevision` with the worker's captured value ONLY
+when non-empty, before the existing `setSyncToken` calls — the token
+STORE, its persistence gating (`result.success`), and engine ownership of
+sync-progress tokens are completely unchanged; only the VALUE fed in for a
+side whose backend computed a fresher one. Cross-thread read safety: the
+worker-thread writes happen strictly before `syncCompleted()` is emitted
+each cycle and are never touched again until the NEXT
+`unifiedContinueAfterConflicts` reset, so reading them from
+`onWorkerSyncCompleted` (which only runs after that queued signal is
+delivered) is safe by the same happens-before argument the rest of the
+worker/engine split already relies on.
+
+Two new RED-turned-green tests in `tst_sync_token_soundness.cpp`:
+`writingCycleImmediatelyFollowedByQuietCycle_skips` (a local<->local
+mapping's quiet cycle immediately after a writing cycle is now
+skip-eligible — pre-E9.2 only the cycle AFTER that skipped, the accepted
+lag) and `foreignEditDuringWritingCycle_defeatsIncrementalSkip` (the safety
+pin: a foreign edit landing directly in the target's directory right after
+the writing cycle still defeats the very next cycle's skip — the
+incremental patch only ever touches files LocalBackend itself wrote, so it
+cannot absorb a change to a file it never touched). Both confirmed RED
+beforehand via `git stash` of the implementation files (a) failed for the
+stated reason (`sawSkipLog` false); (b) passed vacuously (no mechanism yet
+to over-absorb).
+
+Full suite 167/167 green (`WAYLAND_DISPLAY=wayland-0 ctest --test-dir
+build -j 8`; `tst_engine_cancellation` — O26 — not observed flaking).
+`docs/campaign/archive/2026-07-05-sync-hardening-phases.md`'s H3
+"accepted costs" paragraph annotated: local-side lag removed by E9.
+
+### O35 — KDAV EtagCache not seeded from the persistent content cache: post-restart CTag-change re-downloads the whole collection (Resolved 2026-07-08 — sync-excellence E6)
 
 Promoted from the H8.5 verification note (see O27's NOTE) / roadmap D2.
 `m_etagCache` (`remotecalendarbackend.cpp:377`) is in-memory per session;
@@ -866,7 +1103,23 @@ bytes keyed url+etag. Fix: lazily seed the EtagCache from the content
 cache's `(url, etag)` rows before the first listing per collection.
 (Seeded 2026-07-07.)
 
-### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (OPEN → sync-excellence E7)
+**Resolution (E6, 2026-07-08):** `CalDavContentCache` gained
+`urlEtagPairs(pathFragment)` (`caldavcontentcache.{h,cpp}`) — like
+`rowsByPathFragment()` but without loading `ical_content`, since seeding
+only needs the etags. `RemoteCalendarBackend::continueFetchWithListing`
+now seeds `m_etagCache` from these pairs the first time it runs for a
+given `calendarId` in the backend instance's lifetime (tracked by new
+`m_etagCacheSeededCalendars`), before constructing the `DavItemsListJob` —
+both the url keys (`normalizeUrlKey`'d) and the seeding site (only reached
+on a real CTag mismatch, never on the CTag-match short-circuit) line up
+exactly with the existing `noteItemWritten`/`noteItemErased` write paths.
+New test `tests/calendar/tst_etagcache_seed.cpp`: RED confirmed a 3-item
+restart-with-1-changed-item scenario re-downloaded all 3
+(`multigetReportCount()` 6 across both syncs instead of 4); GREEN after
+the fix. Companion pins the CTag-unchanged short-circuit is unaffected.
+Full suite 165/165 green.
+
+### O36 — no RFC 6578 `sync-collection` support: every changed-CTag poll pays an O(collection) ETag listing (Resolved 2026-07-08 — sync-excellence E7)
 
 Promoted from roadmap D2. The delta enumeration is a Depth:1 PROPFIND of
 every item's getetag — O(collection size) response XML for a one-item
@@ -880,6 +1133,43 @@ the CTag, RFC §3.3 token-invalidation fallback, and the CTag+PROPFIND path
 kept permanently as the fallback. The backend-owned sync-token is a
 *cache-validity* token — it must not be conflated with the engine's H3
 per-mapping sync-progress tokens. (Seeded 2026-07-07.)
+
+**Resolution (2026-07-08):** implemented exactly as designed, confined to
+`src/calendar/remotecalendarbackend.{h,cpp}` and
+`tests/sync/fakecaldavserver.{h,cpp}`. Capability detection: a Depth:0
+`supported-report-set` PROPFIND fired once per calendar right after
+discovery (fanned in before `loadCalendarsFinished`), recorded as
+`CalendarFacts::supportsSyncCollection` (default false — primed calendars,
+which deliberately issue zero PROPFINDs, never probe and so stay on the
+permanent fallback). Token store: `CTagStore` gained an additive,
+self-migrating `sync_token` column (`PRAGMA table_info` probe + `ALTER
+TABLE`, same pattern as `BaselineStore::ensureSchemaV6`); its `set()` and
+new `setToken()` both moved from `INSERT OR REPLACE` to update-else-insert
+so a plain CTag commit can no longer null out a previously-stored token.
+Fetch path: `continueFetchWithSyncCollection` issues the Depth:0 REPORT via
+`davSyncRequestAsync`, applies 404-tombstone deletions directly
+(`noteItemErased`, no listing), multigets the changed hrefs through the
+existing chunked-batch machinery, and — the one real design subtlety
+beyond §10's text — reconstructs the FULL current-collection snapshot via
+`serveCachedItems()` before calling `op->complete()`, because
+`recordsFromLastFetch()`'s H5/O23 contract is a full snapshot every cycle
+(same as the CTag+listing path); returning only the delta would have
+looked to the engine's diff like everything else in the collection was
+deleted. Token invalidation (409/410/507) clears the stored token and
+falls back to `continueFetchWithListing` for that cycle;
+`bootstrapSyncTokenIfNeeded` (an empty-token REPORT run once after any
+full-listing cycle) re-acquires a token afterward. `FakeCalDavServer`
+gained a per-collection change journal (`logChange`, fed by
+`setSeedEvents`/`removeEvent`/PUT/DELETE) whose length IS the collection's
+sync-token, `setSupportsSyncCollection`/`setInvalidateSyncTokens` knobs,
+and `syncCollectionReportCount()`. Five new RED-turned-green tests in
+`tests/calendar/tst_sync_collection_report.cpp` cover §10(a)-(e); RED
+confirmed against the pre-E7 backend (steady-state/deletion/invalidation/
+restart scenarios all failed for "today's full listing runs" reasons; the
+unsupported-server regression pin passed trivially, as expected). Full
+suite 166/166 green. Live-verified against a scratch Radicale 3.7.5
+instance — see `docs/campaign/2026-07-07-sync-excellence-phases.md` §17's
+E7 entry for the server-log evidence.
 
 ### O37 — TSAN thread-registry `CHECK failed` under rapid QThread churn in `tst_engine_cancellation` (OPEN, tool artifact, seeded 2026-07-07 during E2)
 
@@ -948,6 +1238,40 @@ srcColId)` (mirroring T9's write side) and pass it through instead of
 other held constant across two cycles, asserting no conflict and exactly
 one PROPPATCH (today: a conflict every cycle, `toApplyToTarget` re-sent
 from the "conflict resolved SourceWins" default — never fully quiescing).
+
+### O39 — CalendarManager blocks the GUI thread in nested op-await loops and calls backend op methods cross-thread (SCHEDULED as phase E11, 2026-07-08; filed 2026-07-07 at CP-A)
+
+Found while verifying E5.2's QEventLoop site list at CP-A.
+`CalendarManager` (`src/calendar/calendarmanager.cpp`) spins a nested
+`QEventLoop` awaiting `SyncOperation::finished` in three places
+(`createIncidence` :583, update :630, delete :677). Two distinct
+problems: (a) these loops run on the CALLER's thread — in PlanStan
+(`CollectionSession`, `MainWindow`) that is the GUI thread, so every
+editor save/delete pumps a nested event loop on the GUI thread until
+the backend round-trip settles (re-entrancy for GUI events: a user can
+trigger a second command mid-await); (b) the preceding
+`backend->pushItems(...)` calls are DIRECT cross-thread calls into a
+backend that post-D1/H7 lives on the I/O thread — the method body runs
+on the caller's thread up to `onOwnerThread`'s op re-parenting, relying
+on that helper's affinity push rather than the sanctioned marshal-first
+discipline (`PlanStan::invokeOnBackend` app-side / queued invoke
+lib-side). NOT B7 (the loops are not on the backend thread), so NOT E5
+scope — E5.2 only annotates the three loops with `// O39:` comments.
+Fix shape for whoever picks it up: make CalendarManager's mutation API
+async (return the op / a completion callback; PlanStan consumers already
+tolerate signal-driven completion), and route the backend calls through
+a queued invoke onto the backend thread.
+
+**Update 2026-07-08 (E5.2 amendment A5):** promoted from "decide at CP-C"
+to a scheduled campaign phase — **E11** (§14b of the phase plan). E11's
+scope expands beyond these three GUI loops to also absorb the Group C
+calendar-collection CRUD backend loops (`createCalendar`/`updateCalendar`/
+`deleteCalendar`) discovered to share the app-facing-API-conversion
+character, and to delete the synchronous `davSyncRequest` helper (Group C
+is its last caller). Rationale: keeping O39 parked would leave the
+`davSyncRequest` helper's `QEventLoop` alive past campaign close, so the
+"grep QEventLoop empty" end-state B7 promises would never be reached —
+E11 makes that end-state achievable in-campaign. Resolved when E11 lands.
 
 ## Resolved
 
@@ -1153,3 +1477,150 @@ mapping completes, falling back to the pre-dispatch snapshot only if the live qu
 This — not the DTSTAMP bug — was the direct cause of the roadmap's "of 7 mappings, 0 are unchanged"
 real-world symptom for the LOCAL/target side (see the fast-path test's doc comment for the parallel,
 separate, NOT-a-bug one-cycle warm-up the REMOTE/source side's CTagStore still needs).
+
+### O40 — `stopWorkerThread()`'s cancel() never wakes an in-flight cancellable gate — only `future.cancel()`'s path did (found + Resolved 2026-07-08, sync-excellence E5.3)
+
+Found while writing E5.3's teardown RED test
+(`writeTeardown_engineDestroyed_completesWithoutDeadlock`). `SyncEngine::
+stopWorkerThread()` called `m_worker->cancel()` — a plain synchronous method
+that only sets the `m_cancelled` flag (mutex-guarded) — believing this was
+enough to unwind any in-flight gate the same way `future.cancel()` does.
+It is not: only `SyncEngineWorker::observeCancel()` (the queued slot
+`future.cancel()`'s `QFutureWatcher::canceled` → `SyncEngine::
+onCancelObserved` → queued-to-worker path invokes) actually `emit`s
+`cancellationObserved()`, the signal every cancellable gate (fetch gates,
+and now E5.3's write gate) connects to wake its nested `QEventLoop`. Calling
+`cancel()` alone during teardown left a genuinely in-flight write-await gate
+with nothing to wake it except the op's own `finished` signal — which, for
+a write stuck behind a slow/frozen network call, only fires when that
+backend-level watchdog (`m_transferTimeoutMs`, independent of engine/worker
+synchronization) eventually times out. Observed live in the RED test before
+the fix: `~SyncEngine()` blocked for the full 30s E3 bounded-wait window,
+logged the "worker thread did not stop" diagnostic, and only unblocked when
+the PUT watchdog separately fired at ~30s — at which point a dangling
+`WriteOperation` access (a separate bug, see the E5.3 landing note) crashed
+the process. This directly contradicted the sync-excellence plan's claim
+that "E5.3 structurally dissolves E3's `stopWorkerThread` interim" — without
+this fix, it did not, for teardown specifically (the `future.cancel()` path
+was never affected, since it already routed through `observeCancel()`).
+
+**Fix:** `stopWorkerThread()` now additionally queues `observeCancel()` onto
+the worker thread (`QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::
+observeCancel, Qt::QueuedConnection)`) alongside the existing synchronous
+`cancel()` call. Queued, not direct: `observeCancel()`'s
+`cancellationObserved` → `loop.quit()` wiring is a `Qt::DirectConnection`,
+safe only when both ends run on the same thread — a nested
+`QEventLoop::exec()` (e.g. the write-await gate) still pumps its own
+thread's full event queue, so the queued `observeCancel()` reaches and runs
+inside it, waking the loop promptly instead of after a network timeout.
+Verified: `writeTeardown_engineDestroyed_completesWithoutDeadlock` now
+completes in ~3s (a 60s server-side PUT delay, engine destroyed ~200ms into
+the write) instead of hitting the 30s+ bounded-wait/watchdog path.
+`waitForWorkerWithDiagnostic`'s bounded wait (E3) stays in place as a
+belt-and-braces backstop — it should no longer be the mechanism that
+actually ends an I/O-length wait for any consumer using the E5.3 write path
+or the pre-existing fetch gates.
+
+### O41 — calendar canon write path stamps `CREATED`/`LAST-MODIFIED` with wall-clock "now" on records whose source bytes never had them, defeating canonical-equality checks for that shape (OPEN, found 2026-07-08 during E8's O28 RED-test investigation; ELEVATED at CP-B 2026-07-09 — live-reproduced, scheduled as phase E12, must be Resolved before CP-C)
+
+Found while writing E8's crash-replay RED test
+(`tests/engine/tst_phantom_conflict_adoption.cpp`): an EARLY version of the
+fixture wrote synthetic local `.ics` files with `DTSTAMP` but no explicit
+`CREATED`/`LAST-MODIFIED` properties (plausible for content dropped in by
+some external tool — RFC 5545 makes both optional). That version DID
+reproduce phantom conflicts on the repair cycle, but for a different reason
+than O28 described (PRODID/property-order): `perrecorddiff.cpp`'s
+`differ.diff()` on the no-baseline pair showed `created`/`lastModified` as
+the ONLY changed properties, not any content field.
+
+Root cause: `eventcanonfields.cpp`'s ical→canon encoder (the read/diff
+side) deliberately only trusts a LITERAL `CREATED:`/`LAST-MODIFIED:` line
+in the source bytes (`extractICalPropertyLiteral`), never
+`KCalendarCore::Incidence::created()/lastModified()`'s construction-time
+"now" default — a fix already landed for the read side (see that file's
+"Phase B5 finding" comment, guarding against exactly this class of bug).
+But nothing guards the WRITE side symmetrically: when a record whose canon
+JSON has no `"created"`/`"lastModified"` key gets pushed as a brand-new
+create, the canon→ical materialization builds a `KCalendarCore::Incidence`
+with those fields unset, and `KCalendarCore::ICalFormat::toICalString`
+appears to serialize its own defaulted "now" into the outbound bytes
+regardless. The server then stores real `CREATED`/`LAST-MODIFIED` lines
+that were never in the canon record. On the NEXT fetch, the target's
+ical→canon read (correctly, per the read-side fix) finds these literal
+lines and includes them in canon — while the source side (whose original
+bytes still lack them) does not. The two canon records permanently
+disagree on `created`/`lastModified`, `differ.equal()` returns false
+forever, and any same-UID/no-baseline pair in this shape can never
+canonically-adopt (E8's fix) OR reach steady-state no-op convergence
+(secondSyncIsNoOp's class of test) for as long as the source keeps
+omitting those fields — which, since nothing ever backfills them into the
+source, is forever.
+
+**Not campaign-blocking:** E8's own RED test uses a fixture with explicit
+matching `CREATED`/`LAST-MODIFIED` (the realistic shape — most real
+calendar clients emit both), which reproduces O28's literal
+PRODID/property-order-only symptom faithfully and passes clean; this
+finding is a distinct, narrower gap (records that structurally never had
+these fields) than what O28 described or E8 owns. Out of E8's file scope
+(`src/engine/`, `tests/engine/`) — the bug lives in
+`src/calendar/eventcanonfields.cpp`'s write-side canon materialization
+(and possibly other `*canonfields.cpp` files sharing the pattern —
+`journalcanonfields.cpp`'s read side already guards with `.isValid()`
+checks but wasn't audited here for the same write-side asymmetry).
+
+**Fix direction (untriaged, no phase assigned yet):** either (a) make the
+canon→ical write stage leave `CREATED`/`LAST-MODIFIED` unset when canon
+has no such key (requires confirming `ICalFormat::toICalString` can be
+told not to stamp defaults — may need constructing the `Incidence` with
+`setCreated()`/`setLastModified()` explicitly skipped, or post-processing
+the serialized bytes to strip a KCalendarCore-injected default), or (b)
+backfill: on first successful create, re-read the server's own
+authoritative `CREATED`/`LAST-MODIFIED` back into the LOCAL side's stored
+baseline hash context too (asymmetric-but-consistent, cheaper, but leaves
+the local .ics file itself still lacking the fields — only the diff
+machinery would agree). Needs live verification against a real CalDAV
+server (Radicale may itself normalize `CREATED` differently than the fake)
+before committing to either direction.
+
+**CP-B live confirmation (2026-07-09):** the CP-B smoke's kill-mid-push run
+(PlanStan dev app against scratch Radicale :5233, 40 minimal VEVENTs with no
+`CREATED`/`DTSTAMP`/`LAST-MODIFIED` in the source `.ics`, SIGKILL with 12
+pushed) reproduced this LIVE: the repair cycle flagged all 12
+already-pushed records as conflicts (`!12`, mapping `success: false`), and
+every subsequent cycle re-presented them — the vault never converges and
+the conflict store accumulates duplicate unresolved rows (48 rows for the
+12 UIDs after 4 cycles; that store-side dedup gap is filed separately in
+PlanStan `docs/bugs/sync-conflict-store-duplicate-rows.md`). The isolation
+re-run with the identical protocol but `CREATED`/`DTSTAMP`/`LAST-MODIFIED`
+present in the source bytes recovered perfectly (10 silent adoptions with
+E8's qInfo line, +30 pushed, zero conflicts, converged) — E8's machinery is
+sound; this canon write-side stamp is the sole live phantom producer.
+Radicale does NOT normalize `CREATED` itself (the stored server copy's
+timestamps are exactly the push-time stamps KCalendarCore injected), which
+answers this entry's open live-verification question. Elevated: scheduled
+as phase E12 (see the campaign plan §14c), gating CP-C.
+
+### O42 — first sync of each app process never uses `sync-collection`: the fetch races the supported-report-set probe, and the capability is in-memory only (OPEN, found 2026-07-09 at CP-B; efficiency only — decide at CP-C's efficiency audit, candidates E10/E11)
+
+Found during the CP-B live smoke's restart-plus-one-remote-edit proof.
+`RemoteCalendarBackend` only takes the RFC 6578 `sync-collection` path
+when `m_calendars[calId].supportsSyncCollection` is true AND a stored
+sync-token exists (`remotecalendarbackend.cpp` fetch decision, E7 design
+step 3). The token persists (CTagStore `sync_tokens`), but the capability
+flag is populated ONLY by `probeSyncCollectionSupport()` during
+`loadCalendars()` discovery. PlanStan's auto-sync-on-load drives the first
+fetch through the primed/registered-URL path WITHOUT awaiting discovery:
+in the CP-B logs the first sync run's fetch (listing path, "Delta sync -
+11 total, 1 changed") completed BEFORE the "discovered calendar" lines
+appeared. Result: the first sync of every app process pays the Depth:1
+ETag listing (correctness unaffected — E6's seeded cache still limited the
+run to exactly 1 item download); every later cycle in the same process
+uses sync-collection correctly (confirmed live, both for a tick-driven
+pull and for the post-SIGSTOP recovery cycle).
+
+**Fix candidates (pick at CP-C / fold into E10 or E11):** (a) persist the
+capability next to the token in CTagStore (survives restart, zero races);
+(b) have the fetch path lazily probe supported-report-set on first fetch
+when the flag is unset (one extra small PROPFIND, self-healing); (c)
+PlanStan-side: await `loadCalendarsFinished` before the first auto-sync
+(fixes the race but leaves the capability amnesia to (a)/(b)).

@@ -3,6 +3,7 @@
 #include "syncoperation.h"
 
 #include <QDebug>
+#include <QTimer>
 
 namespace Kalburator::Sync {
 
@@ -60,6 +61,59 @@ SyncOperation* SyncBackendBase::deleteItems(const QString &calendarId,
     Q_UNUSED(uids);
     auto *op = new SyncOperation(calendarId, this);
     op->fail(QStringLiteral("deleteItems() not implemented by this backend"));
+    return op;
+}
+
+// ============================================================================
+// E5.3: write-path entry point (default synchronous adapter)
+// ============================================================================
+
+WriteOperation* SyncBackendBase::applyRecords(const QString &collectionId,
+                                              const WriterBatch &batch)
+{
+    auto *op = new WriteOperation(collectionId, this);
+    op->setState(SyncOperation::Running);
+
+    // Same order DefaultBlobWriter::apply() always used: creates, then
+    // updates, then deletes. Routes through the exact same virtuals so
+    // MockBackend's FailurePoint injection (OnStoreItems/OnPush/OnDelete)
+    // keeps working unchanged for backends that reach applyRecords() via
+    // this default (LocalBackend, MockBackend — no async internals).
+    for (const auto &r : batch.creates) {
+        if (createRecord(collectionId, r).isEmpty()) {
+            op->addFailedUid(r.id);
+        } else {
+            op->addSucceededUid(r.id);
+        }
+    }
+    for (const auto &r : batch.updates) {
+        if (!updateRecord(r)) {
+            op->addFailedUid(r.id);
+        } else {
+            op->addSucceededUid(r.id);
+        }
+    }
+    for (const auto &id : batch.deletes) {
+        if (!deleteRecord(id)) {
+            op->addFailedUid(id);
+        } else {
+            op->addSucceededUid(id);
+        }
+    }
+
+    // Precedent (PushOperation/DeleteOperation via RemoteCalendarBackend's
+    // settleIfDone): fail only when something was attempted and NOTHING
+    // succeeded; otherwise complete (partial failures are reported via
+    // failedUids(), not a Failed op state) — this call returns already
+    // finished (isFinished() true), so callers never need to await it.
+    const int totalAttempted = static_cast<int>(
+        batch.creates.size() + batch.updates.size() + batch.deletes.size());
+    if (totalAttempted > 0 && op->succeededUids().isEmpty() && !op->failedUids().isEmpty()) {
+        op->fail(QStringLiteral("applyRecords: all %1 record(s) failed to apply")
+                    .arg(totalAttempted));
+    } else {
+        op->complete();
+    }
     return op;
 }
 
@@ -139,6 +193,85 @@ void SyncBackendBase::unregisterOperation(SyncOperation *op)
 
     if (ops.isEmpty()) {
         m_pendingOperations.remove(calId);
+    }
+}
+
+// ============================================================================
+// E5.1: per-collection FIFO operation queue
+// ============================================================================
+
+void SyncBackendBase::enqueueOperation(const QString &collectionId, SyncOperation *op,
+                                       std::function<void()> startFunctor)
+{
+    if (!op) return;
+
+    registerOperation(op);
+
+    connect(op, &SyncOperation::finished, this, [this, collectionId, op]() {
+        onOperationSettled(collectionId, op);
+    });
+    connect(op, &QObject::destroyed, this, [this, collectionId, op]() {
+        onOperationSettled(collectionId, op);
+    });
+
+    m_opQueue[collectionId].append({QPointer<SyncOperation>(op), std::move(startFunctor)});
+    maybeStartNext(collectionId);
+}
+
+void SyncBackendBase::onOperationSettled(const QString &collectionId, SyncOperation *op)
+{
+    if (m_opInFlight.value(collectionId).data() == op) {
+        m_opInFlight.remove(collectionId);
+    } else {
+        QList<QueuedOp> &queue = m_opQueue[collectionId];
+        for (int i = 0; i < queue.size(); ++i) {
+            if (queue.at(i).op.data() == op) {
+                queue.removeAt(i);
+                break;
+            }
+        }
+    }
+    maybeStartNext(collectionId);
+}
+
+void SyncBackendBase::maybeStartNext(const QString &collectionId)
+{
+    if (m_opInFlight.contains(collectionId)) {
+        return; // something is already in flight for this collection
+    }
+
+    QList<QueuedOp> &queue = m_opQueue[collectionId];
+    while (!queue.isEmpty()) {
+        QueuedOp entry = queue.takeFirst();
+        SyncOperation *op = entry.op.data();
+        if (!op || op->isFinished()) {
+            // Destroyed before it ever started, or cancelled while queued
+            // (contract: a queued-not-started op never runs its body) — try
+            // the next one instead.
+            continue;
+        }
+
+        m_opInFlight[collectionId] = op;
+        // Deferred: every enqueueOperation() caller gets its op pointer
+        // back before its start body runs, so it can connect signals first
+        // — the same guarantee each backend's own QTimer::singleShot(0, ...)
+        // gave before this shared queue existed.
+        QTimer::singleShot(0, this, [startFunctor = std::move(entry.startFunctor),
+                                     opPtr = entry.op]() {
+            if (opPtr.isNull() || opPtr->isFinished()) {
+                return;
+            }
+            startFunctor();
+        });
+        // If startFunctor() above completes op synchronously once the timer
+        // fires, its `finished` signal (direct connection, same thread)
+        // re-enters onOperationSettled()/maybeStartNext() and drains further
+        // queued entries there; nothing more to do on this call stack.
+        return;
+    }
+
+    if (queue.isEmpty()) {
+        m_opQueue.remove(collectionId);
     }
 }
 

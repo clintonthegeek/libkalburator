@@ -13,6 +13,7 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QSaveFile>
+#include <QSet>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -597,6 +598,27 @@ std::optional<QString> LocalBackend::recordPathFor(const QString &recordId) cons
     return std::nullopt;
 }
 
+// E9.2 (sync-excellence campaign, O34): shared hashing core. QMap sorts by
+// key (filename) regardless of insertion order, so calendarFingerprint()'s
+// full-rescan path and applyRecords()'s incremental patch path always hash
+// entries in the same order — the incremental value is guaranteed
+// bit-identical to what a full rescan of the same on-disk state would
+// produce, as long as both funnel through this helper.
+QString LocalBackend::hashFingerprintEntries(
+    const QMap<QString, QPair<qint64, qint64>> &entries)
+{
+    QCryptographicHash hasher(QCryptographicHash::Sha256);
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        hasher.addData(it.key().toUtf8());
+        hasher.addData(QByteArrayView("|"));
+        hasher.addData(QByteArray::number(it.value().first));
+        hasher.addData(QByteArrayView("|"));
+        hasher.addData(QByteArray::number(it.value().second));
+        hasher.addData(QByteArrayView("\n"));
+    }
+    return QString::fromLatin1(hasher.result().toHex());
+}
+
 QString LocalBackend::calendarFingerprint(const QString &calendarId) const
 {
     const QString calendarPath = filePathForCalendar(calendarId);
@@ -604,18 +626,13 @@ QString LocalBackend::calendarFingerprint(const QString &calendarId) const
     if (!dir.exists()) return {};
 
     const QStringList entries = dir.entryList(QStringList() << QStringLiteral("*.ics"),
-                                               QDir::Files, QDir::Name);
-    QCryptographicHash hasher(QCryptographicHash::Sha256);
+                                               QDir::Files, QDir::NoSort);
+    QMap<QString, QPair<qint64, qint64>> snapshot;
     for (const QString &name : entries) {
         const QFileInfo fi(dir.filePath(name));
-        hasher.addData(name.toUtf8());
-        hasher.addData(QByteArrayView("|"));
-        hasher.addData(QByteArray::number(fi.lastModified().toMSecsSinceEpoch()));
-        hasher.addData(QByteArrayView("|"));
-        hasher.addData(QByteArray::number(fi.size()));
-        hasher.addData(QByteArrayView("\n"));
+        snapshot.insert(name, qMakePair(fi.lastModified().toMSecsSinceEpoch(), fi.size()));
     }
-    return QString::fromLatin1(hasher.result().toHex());
+    return hashFingerprintEntries(snapshot);
 }
 
 // ============================================================================
@@ -685,10 +702,11 @@ bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 {
     auto *op = new FetchOperation(calendarId, this);
-    registerOperation(op);
 
-    // Use deferred execution so signals can be connected before firing
-    QTimer::singleShot(0, this, [this, op, calendarId]() {
+    // E5.1: serialize per-collection via SyncBackendBase's FIFO queue
+    // (enqueueOperation already defers this functor to the next event-loop
+    // turn, same guarantee the old direct QTimer::singleShot(0, ...) gave).
+    enqueueOperation(calendarId, op, [this, op, calendarId]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -719,6 +737,9 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
         if (totalFiles == 0) {
             op->setFetchedItems({});
             m_lastFetchRecords[calendarId] = {};
+            // E9.2: an empty collection has an empty fingerprint snapshot —
+            // still a valid (non-absent) base for the next applyRecords().
+            m_lastFetchFingerprintSnapshot[calendarId] = {};
             op->complete();
             emit fetchFinished(calendarId, true);
             return;
@@ -726,6 +747,13 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 
         int currentFile = 0;
         QList<BackendRecord> records;
+        // E9.2 (sync-excellence campaign, O34): snapshot every *.ics file's
+        // (mtimeMs, size) as we see it in this pass — the base that
+        // applyRecords() will later patch in place with only the files it
+        // itself wrote/deleted. Captured for every file regardless of
+        // read/parse success, matching calendarFingerprint()'s full-rescan
+        // semantics (which also stats every *.ics file unconditionally).
+        QMap<QString, QPair<qint64, qint64>> fpSnapshot;
 
         for (const QString &fileName : files) {
             if (op->state() == SyncOperation::Cancelled) {
@@ -734,6 +762,11 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             }
 
             QString filePath = calDir.filePath(fileName);
+            {
+                const QFileInfo fi(filePath);
+                fpSnapshot.insert(fileName, qMakePair(fi.lastModified().toMSecsSinceEpoch(),
+                                                       fi.size()));
+            }
             QFile file(filePath);
             // H5/O23: no QIODevice::Text here — it strips '\r' on read, which
             // would make the recordsFromLastFetch memo's bytes (and hence
@@ -777,8 +810,16 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
         qDebug() << "LocalBackend::fetchItems: Fetched" << items.size()
                  << "incidences for calendar" << calendarId;
 
+        // E9.1 (sync-excellence campaign, O34): batch signal, once per
+        // fetch pass, with the full item list — see itemFetched's
+        // deprecation comment (syncbackend.h).
+        emit itemsFetched(calendarId, items);
+
         op->setFetchedItems(items);
         m_lastFetchRecords[calendarId] = records;
+        // E9.2: this pass's snapshot becomes the base for the next
+        // applyRecords() incremental patch.
+        m_lastFetchFingerprintSnapshot[calendarId] = fpSnapshot;
         op->complete();
         emit fetchFinished(calendarId, true);
     });
@@ -790,10 +831,8 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
                                         const QList<KCalendarCore::Incidence::Ptr> &items)
 {
     auto *op = new PushOperation(calendarId, items, this);
-    registerOperation(op);
 
-    // Use deferred execution
-    QTimer::singleShot(0, this, [this, op, calendarId, items]() {
+    enqueueOperation(calendarId, op, [this, op, calendarId, items]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -862,10 +901,8 @@ DeleteOperation* LocalBackend::deleteItems(const QString &calendarId,
                                             const QStringList &uids)
 {
     auto *op = new DeleteOperation(calendarId, uids, this);
-    registerOperation(op);
 
-    // Use deferred execution
-    QTimer::singleShot(0, this, [this, op, calendarId, uids]() {
+    enqueueOperation(calendarId, op, [this, op, calendarId, uids]() {
         if (op->state() == SyncOperation::Cancelled) {
             return;
         }
@@ -1216,6 +1253,59 @@ bool LocalBackend::deleteRecord(const QString &recordId)
 {
     const auto path = recordPathFor(recordId);
     return path && QFile::remove(*path);
+}
+
+// E9.2 (sync-excellence campaign, O34): layers an incremental expected-
+// fingerprint computation on top of SyncBackendBase's default synchronous
+// create/update/delete dispatch (reused unchanged — same order, same
+// per-record success/failure semantics, same MockBackend-style failure-
+// injection compatibility). Removes the accepted one-cycle re-diff lag
+// after self-writes, the SOUND way (audit A2): only the files THIS call
+// actually wrote/deleted are re-stat'd and patched into the fetch-time
+// snapshot — no full re-scan, and any OTHER (foreign) file's change is
+// simply absent from the patch, so it still differs from a full rescan
+// next cycle and correctly defeats a skip.
+WriteOperation* LocalBackend::applyRecords(const QString &collectionId,
+                                           const WriterBatch &batch)
+{
+    WriteOperation *op = SyncBackendBase::applyRecords(collectionId, batch);
+    if (!op) return op;
+
+    // No prior fetch-time snapshot for this collection (e.g. a write
+    // without a preceding fetchItems() in this backend instance's
+    // lifetime) — never guess; leave resultRevision() empty (the default).
+    auto snapIt = m_lastFetchFingerprintSnapshot.find(collectionId);
+    if (snapIt == m_lastFetchFingerprintSnapshot.end())
+        return op;
+
+    QMap<QString, QPair<qint64, qint64>> snapshot = snapIt.value();
+    const QSet<QString> succeeded(op->succeededUids().cbegin(), op->succeededUids().cend());
+
+    // Stat exactly the files this call wrote or deleted — never re-list
+    // the directory.
+    auto patchWritten = [this, &collectionId, &snapshot](const QString &uid) {
+        const QString fileName = uid + QStringLiteral(".ics");
+        const QFileInfo fi(icsPathFor(collectionId, uid));
+        if (fi.exists()) {
+            snapshot.insert(fileName, qMakePair(fi.lastModified().toMSecsSinceEpoch(), fi.size()));
+        } else {
+            // Deleted (or a create/update that somehow left no file behind).
+            snapshot.remove(fileName);
+        }
+    };
+
+    for (const auto &r : batch.creates) if (succeeded.contains(r.id)) patchWritten(r.id);
+    for (const auto &r : batch.updates) if (succeeded.contains(r.id)) patchWritten(r.id);
+    for (const auto &id : batch.deletes) if (succeeded.contains(id)) patchWritten(id);
+
+    m_lastFetchFingerprintSnapshot[collectionId] = snapshot;
+    const QString revision = hashFingerprintEntries(snapshot);
+    op->setResultRevision(revision);
+    // Keep the persisted change-detection cache (modifiedSince()'s
+    // short-circuit) consistent with the incremental value too.
+    if (m_fingerprints) m_fingerprints->set(collectionId, revision);
+
+    return op;
 }
 
 // --- Change detection -------------------------------------------------------

@@ -192,6 +192,46 @@ private slots:
         op->deleteLater();
     }
 
+    // E9.1 (sync-excellence campaign, O34): itemsFetched must batch the
+    // per-item itemFetched storm — one emission per fetch pass carrying
+    // the FULL item list, instead of one emission per incidence.
+    void testLocalBackend_fetchItems_emitsItemsFetchedBatched() {
+        // Setup
+        QString calDir = m_tempDir.filePath("items_fetched_batch_test");
+        writeTestIcsFiles(calDir, 50);
+
+        LocalBackend backend(m_tempDir.path());
+
+        QSignalSpy itemFetchedSpy(&backend, &SyncBackend::itemFetched);
+        QVERIFY(itemFetchedSpy.isValid());
+        QSignalSpy itemsFetchedSpy(&backend, &SyncBackend::itemsFetched);
+        QVERIFY(itemsFetchedSpy.isValid());
+
+        // Execute fetch
+        FetchOperation *op = backend.fetchItems("items_fetched_batch_test");
+        QSignalSpy finishedSpy(op, &SyncOperation::finished);
+        QVERIFY(finishedSpy.wait(5000));
+
+        // Today (pre-E9.1): itemFetched fires once per incidence, 50 times;
+        // itemsFetched does not exist / never fires. Post-E9.1: itemsFetched
+        // fires exactly once, with all 50 items, in fewer calls than the
+        // per-item signal.
+        QCOMPARE(itemFetchedSpy.count(), 50);
+        QCOMPARE(itemsFetchedSpy.count(), 1);
+        QVERIFY(itemsFetchedSpy.count() < itemFetchedSpy.count());
+
+        QList<QVariant> args = itemsFetchedSpy.at(0);
+        QCOMPARE(args.at(0).toString(), QStringLiteral("items_fetched_batch_test"));
+        auto items = args.at(1).value<QList<Incidence::Ptr>>();
+        QCOMPARE(items.size(), 50);
+        for (const auto &inc : items) {
+            QVERIFY(inc);
+            QVERIFY(!inc->uid().isEmpty());
+        }
+
+        op->deleteLater();
+    }
+
     void testLocalBackend_fetchItems_emitsProgressChangedIncrementally() {
         // Setup
         QString calDir = m_tempDir.filePath("progress_test");

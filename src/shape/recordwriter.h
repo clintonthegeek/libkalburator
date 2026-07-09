@@ -19,19 +19,28 @@ namespace Kalburator::Shape {
 /// hook is used to inject any per-call setup (replacing the previous
 /// `dynamic_cast<CalendarPluginWriter*>` + `setCollection()` /
 /// `prepareForApply()` hook) engine-side dance.
+///
+/// **E5.3 (sync-excellence campaign, CP-A amendment A3, 2026-07-08):** the
+/// `Threading` enum and `threading()` are GONE. They existed to tell the
+/// engine which thread to marshal `apply()` onto — a distinction that only
+/// mattered because `apply()` itself blocked the calling thread for the
+/// full duration of the (possibly network-bound) write. The engine no
+/// longer calls `apply()` at all in the live write path:
+/// `SyncEngineWorker::applyBatch` now calls `SyncBackendBase::
+/// applyRecords()` directly, which returns immediately with a
+/// `WriteOperation` the worker awaits the same (cancellable, watchdogged)
+/// way it awaits a fetch gate — no thread-affinity decision needed, because
+/// nothing blocks. `RecordWriter`/`DefaultBlobWriter` still exist
+/// (`DefaultBlobWriter::apply()` now itself routes through
+/// `applyRecords()`, for any caller still reaching `apply()` directly), but
+/// the `threading()` contract they used to negotiate has no reader left. A
+/// repo-wide grep across libkalburator, PlanStan, and WildPalms at removal
+/// time found zero `threading()` overrides (the enum's only implementation
+/// was the default) and zero WildPalms references to `RecordWriter` or the
+/// (also-deleted) `awaitOperation` at all.
 class RecordWriter {
 public:
     virtual ~RecordWriter() = default;
-
-    /// Threading contract that controls how the engine dispatches
-    /// `apply()`. The default is `BackendThread` — the engine wraps
-    /// `apply()` in a `BlockingQueuedConnection` to the backend's own
-    /// thread. A writer may override to `WorkerThread` when its
-    /// `apply()` uses BlockingQueuedConnection internally and therefore
-    /// must be called from a thread that is NOT the backend thread.
-    enum class Threading { BackendThread, WorkerThread };
-
-    virtual Threading threading() const { return Threading::BackendThread; }
 
     /// Per-apply context the engine hands the writer right before
     /// calling `apply()`. Domain-typed fields (e.g. the host

@@ -219,4 +219,30 @@ CalDavContentCache::rowsByPathFragment(const QString &pathFragment) const
     return rows;
 }
 
+QList<QPair<QString, QString>>
+CalDavContentCache::urlEtagPairs(const QString &pathFragment) const
+{
+    QList<QPair<QString, QString>> pairs;
+    if (!m_open) {
+        return pairs;
+    }
+
+    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    if (!db.isOpen()) {
+        return pairs;
+    }
+
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral(
+        "SELECT url, etag FROM cached_items WHERE url LIKE ?"));
+    query.addBindValue(QLatin1Char('%') + pathFragment + QLatin1Char('%'));
+
+    if (query.exec()) {
+        while (query.next()) {
+            pairs.append({query.value(0).toString(), query.value(1).toString()});
+        }
+    }
+    return pairs;
+}
+
 } // namespace Kalburator::Sync

@@ -28,10 +28,14 @@
 #include <QString>
 #include <QStringList>
 #include <QHash>
+#include <QPointer>
+#include <functional>
 
 #include "iblobbackend.h"   // pure interface (no QObject)
 #include "shape.h"          // Kalburator::Shape::Shape
 #include "syncoperation.h"  // neutral SyncOperation base (same dir)
+#include "writeoperation.h" // E5.3: applyRecords() return type (same dir)
+#include "writerbatch.h"    // E5.3: applyRecords() batch parameter type (same dir)
 
 namespace Kalburator::Sync {
 
@@ -101,6 +105,24 @@ public:
     virtual SyncOperation* fetchItems(const QString &calendarId);
     virtual SyncOperation* deleteItems(const QString &calendarId,
                                        const QStringList &uids);
+
+    /// E5.3 (audit B7 / CP-A): the engine's write-path entry point — replaces
+    /// the old thread-blocking dispatch through `RecordWriter::apply()`
+    /// (recordwriter.h). Applies a classified `WriterBatch` (creates/updates/
+    /// deletes) to `collectionId` and returns a `WriteOperation` tracking
+    /// per-record success/failure.
+    ///
+    /// Default implementation (correct for backends with no async internals
+    /// — LocalBackend, MockBackend): adapts the existing `createRecord`/
+    /// `updateRecord`/`deleteRecord` virtuals SYNCHRONOUSLY, one call per
+    /// record, in the same order `DefaultBlobWriter::apply()` always has
+    /// (creates, then updates, then deletes) — so backend failure-injection
+    /// test hooks (e.g. MockBackend::setFailurePoint) keep working unchanged.
+    /// The returned op is already finished (`isFinished()` true) before this
+    /// call returns; callers on backends with real async internals (e.g.
+    /// RemoteCalendarBackend, which overrides this) must not assume that.
+    virtual WriteOperation* applyRecords(const QString &collectionId,
+                                         const WriterBatch &batch);
 
     /// Records equivalent to loadRecords(collectionId), but served from the
     /// most recent successfully completed fetchItems() for that collection
@@ -179,7 +201,35 @@ protected:
     void registerOperation(SyncOperation *op);
     void unregisterOperation(SyncOperation *op);
 
+    // ========== E5.1: per-collection FIFO operation queue ==========
+    // Neutral primitive both layers' operation-producing entry points call
+    // (SyncBackendBase's own fetchItems/deleteItems and the calendar-typed
+    // SyncBackend subclass's pushItems/startSync): at most one operation per
+    // collection is ever in flight; `startFunctor` runs only once this op
+    // reaches the front of its collection's queue, always deferred to the
+    // next event-loop turn (Qt event loop must run once for
+    // `startFunctor` to fire — preserves the "caller connects signals to
+    // `op` before it starts" guarantee every entry point already relied on
+    // via its own QTimer::singleShot(0, ...)). `op` is registered for
+    // pending-operation tracking/cancellation exactly as before; cancelling
+    // a still-queued op (state flips to the terminal Cancelled) makes it
+    // skip its body entirely when its turn comes.
+    void enqueueOperation(const QString &collectionId, SyncOperation *op,
+                         std::function<void()> startFunctor);
+
     QHash<QString, QList<SyncOperation*>> m_pendingOperations;
+
+private:
+    struct QueuedOp {
+        QPointer<SyncOperation> op;
+        std::function<void()> startFunctor;
+    };
+
+    void onOperationSettled(const QString &collectionId, SyncOperation *op);
+    void maybeStartNext(const QString &collectionId);
+
+    QHash<QString, QList<QueuedOp>> m_opQueue;
+    QHash<QString, QPointer<SyncOperation>> m_opInFlight;
 };
 
 } // namespace Kalburator::Sync

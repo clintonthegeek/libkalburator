@@ -251,7 +251,8 @@ parallelism is a separate risk/benefit decision.
 - **RFC 6578 `sync-collection` REPORT:** replace the per-poll Depth:1 ETag
   PROPFIND (`DavItemsListJob`, `:1366`) with a sync-token delta for servers
   advertising `DAV: sync-collection` (Nextcloud does). Big win for very large
-  calendars; keep CTag+PROPFIND as fallback.
+  calendars; keep CTag+PROPFIND as fallback. **DONE — sync-excellence E7,
+  2026-07-08 (FINDINGS O36 Resolved).**
 - **Persist/seed the KDAV `EtagCache`:** it is in-memory per session, so the
   first fetch after every app open multigets *every* item even though
   `CalDavContentCache` (persistent, keyed url+etag) holds the bytes. Seed the
@@ -343,3 +344,12 @@ forward-only and self-migrating) in the tag message per INVARIANTS §10.
       E1–E10 with checkpoints CP-A/B/C; targets tag **v0.90** (optional
       mid-campaign v0.85). This roadmap is CLOSED — Track D ends here; all
       further sync work is tracked in the sync-excellence phase plan.
+- [x] — tag **v0.90** (sync-excellence E1–E9 + CP-B, 2026-07-09): honest
+      SyncResult stats (O30), O26 cancellation flake fixed under TSAN,
+      cancellation/teardown honesty (O33), CalDAV write-path pins (O32),
+      audit-B7 nested-loop deletion via async backend rework + applyRecords
+      write ops (O29), EtagCache seeding (O35), RFC 6578 sync-collection
+      delta sync (O36), phantom-conflict adoption verified + observability
+      (O28), itemsFetched batching (O34). D2's protocol backlog (RFC 6578,
+      EtagCache persistence) is DONE. Campaign still open: E12 (O41), E10
+      (PlanStan adoption), E11, CP-C.

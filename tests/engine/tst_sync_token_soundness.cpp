@@ -211,6 +211,8 @@ private slots:
     void foreignEditBetweenCycles_defeatsSkip();
     void settledMapping_keepsSkipping();
     void clobberRun_clearsTokens();
+    void writingCycleImmediatelyFollowedByQuietCycle_skips();
+    void foreignEditDuringWritingCycle_defeatsIncrementalSkip();
 
 private:
     Kalburator::Shape::ShapeRegistries m_shape;
@@ -581,6 +583,169 @@ void TstSyncTokenSoundness::clobberRun_clearsTokens()
     QVERIFY(runOnce(engine).success);
     QVERIFY2(!sawSkipLog(mappingId),
              "the cycle right after a clobber must not skip (tokens were cleared)");
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// E9.2 (sync-excellence campaign, O34) — LocalBackend's incremental
+// expected-fingerprint removes the accepted H3 one-cycle re-diff lag: the
+// cycle IMMEDIATELY after a writing cycle should already be skip-eligible,
+// not just the cycle after that (foreignEditBetweenCycles_defeatsSkip's own
+// comment documents the pre-E9.2 lag: "Sync 2: real work but idle content").
+// Pre-E9.2 this is RED (cycle 2 does not skip; only cycle 3 does).
+// ──────────────────────────────────────────────────────────────────────────
+void TstSyncTokenSoundness::writingCycleImmediatelyFollowedByQuietCycle_skips()
+{
+    QTemporaryDir sourceDir, targetDir, fpDir, baselineDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid() && fpDir.isValid() && baselineDir.isValid());
+
+    LocalBackend source(sourceDir.path());
+    LocalBackend target(targetDir.path());
+    source.setDbPath(fpDir.filePath(QStringLiteral("source-fp.db")));
+    target.setDbPath(fpDir.filePath(QStringLiteral("target-fp.db")));
+
+    const QString sourceCollection = QStringLiteral("src");
+    const QString targetCollection = QStringLiteral("tgt");
+    {
+        CollectionInfo info;
+        info.id = sourceCollection; info.name = sourceCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!source.createCollection(info).isEmpty());
+    }
+    {
+        CollectionInfo info;
+        info.id = targetCollection; info.name = targetCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!target.createCollection(info).isEmpty());
+    }
+
+    auto *blobSource = static_cast<IBlobBackend *>(&source);
+    BackendRecord rec;
+    rec.id = QStringLiteral("evt-1");
+    rec.data = makeIcsBytes(QStringLiteral("evt-1"));
+    QVERIFY(!blobSource->createRecord(sourceCollection, rec).isEmpty());
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(source.backendId(), &source);
+    registry.registerBackendInstance(target.backendId(), &target);
+
+    CapturingSyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setSkipUnchangedMappings(true);
+
+    BaselineStore baselines(baselineDir.filePath(QStringLiteral("baselines.db")));
+    engine.setBaselineStore(&baselines);
+
+    const QString mappingId = QStringLiteral("e9-immediate-skip-mapping");
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = source.backendId();
+    mapping.sourceCalendar = sourceCollection;
+    mapping.targetBackend  = target.backendId();
+    mapping.targetCalendar = targetCollection;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::LastWriteWins;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    // Cycle 1: writing cycle (creates evt-1 on target).
+    const SyncResult r1 = runOnce(engine);
+    QVERIFY2(r1.success, qUtf8Printable(r1.errorMessage));
+
+    // Cycle 2: immediately following quiet cycle — nothing changed on
+    // either side since cycle 1's write. With E9.2's incremental
+    // expected-fingerprint, this must already be skip-eligible.
+    const SyncResult r2 = runOnce(engine);
+    QVERIFY2(r2.success, qUtf8Printable(r2.errorMessage));
+    QVERIFY2(sawSkipLog(mappingId),
+             "E9.2: the cycle immediately after a writing cycle must skip "
+             "(incremental expected-fingerprint removes the one-cycle lag)");
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// E9.2 safety pin — a foreign edit landing on the target's own on-disk
+// state right after (i.e. present by the time of) the writing cycle's
+// post-write incremental fingerprint computation must still defeat the
+// very next cycle's skip. The incremental fingerprint only patches the
+// files LocalBackend itself wrote — it must never accidentally absorb a
+// change to a file it did NOT write, or a foreign edit landing in that
+// narrow window would be silently masked forever (the same class of bug
+// H3/O18 already closed for the pre-fetch-snapshot mechanism).
+// ──────────────────────────────────────────────────────────────────────────
+void TstSyncTokenSoundness::foreignEditDuringWritingCycle_defeatsIncrementalSkip()
+{
+    QTemporaryDir sourceDir, targetDir, fpDir, baselineDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid() && fpDir.isValid() && baselineDir.isValid());
+
+    LocalBackend source(sourceDir.path());
+    LocalBackend target(targetDir.path());
+    source.setDbPath(fpDir.filePath(QStringLiteral("source-fp.db")));
+    target.setDbPath(fpDir.filePath(QStringLiteral("target-fp.db")));
+
+    const QString sourceCollection = QStringLiteral("src");
+    const QString targetCollection = QStringLiteral("tgt");
+    {
+        CollectionInfo info;
+        info.id = sourceCollection; info.name = sourceCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!source.createCollection(info).isEmpty());
+    }
+    {
+        CollectionInfo info;
+        info.id = targetCollection; info.name = targetCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!target.createCollection(info).isEmpty());
+    }
+
+    auto *blobSource = static_cast<IBlobBackend *>(&source);
+    BackendRecord rec;
+    rec.id = QStringLiteral("evt-1");
+    rec.data = makeIcsBytes(QStringLiteral("evt-1"));
+    QVERIFY(!blobSource->createRecord(sourceCollection, rec).isEmpty());
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(source.backendId(), &source);
+    registry.registerBackendInstance(target.backendId(), &target);
+
+    CapturingSyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setSkipUnchangedMappings(true);
+
+    BaselineStore baselines(baselineDir.filePath(QStringLiteral("baselines.db")));
+    engine.setBaselineStore(&baselines);
+
+    const QString mappingId = QStringLiteral("e9-foreign-during-write-mapping");
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = source.backendId();
+    mapping.sourceCalendar = sourceCollection;
+    mapping.targetBackend  = target.backendId();
+    mapping.targetCalendar = targetCollection;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::LastWriteWins;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    // Cycle 1: writing cycle (creates evt-1 on target). LocalBackend's
+    // incremental fingerprint, computed at the end of applyRecords(),
+    // patches ONLY evt-1.ics into its fetch-time snapshot.
+    const SyncResult r1 = runOnce(engine);
+    QVERIFY2(r1.success, qUtf8Printable(r1.errorMessage));
+
+    // Foreign edit: a file lands directly in the TARGET's directory,
+    // bypassing the engine (and this backend's own write set) entirely —
+    // exactly the file the incremental patch must NOT have accounted for.
+    auto *blobTarget = static_cast<IBlobBackend *>(&target);
+    BackendRecord foreign;
+    foreign.id = QStringLiteral("evt-foreign");
+    foreign.data = makeIcsBytes(QStringLiteral("evt-foreign"));
+    QVERIFY(!blobTarget->createRecord(targetCollection, foreign).isEmpty());
+
+    // Cycle 2: must NOT skip — the incremental fingerprint LocalBackend
+    // reported after cycle 1 cannot possibly reflect a file it never wrote,
+    // so the next cycle's real (full-rescan) revision necessarily differs
+    // from the stored token, forcing a re-diff that picks up the foreign file.
+    const SyncResult r2 = runOnce(engine);
+    QVERIFY2(r2.success, qUtf8Printable(r2.errorMessage));
+    QVERIFY2(!sawSkipLog(mappingId),
+             "a foreign edit outside the incremental write set must defeat the skip");
+    QVERIFY(QFileInfo::exists(QDir(QDir(sourceDir.path()).filePath(sourceCollection))
+                                   .filePath(QStringLiteral("evt-foreign.ics"))));
 }
 
 QTEST_MAIN(TstSyncTokenSoundness)

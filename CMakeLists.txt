@@ -146,7 +146,6 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalcodec.h
     src/calendar/iconflictpresenter.h
     src/calendar/iconflictresolver.h
-    src/calendar/icsfeedfetcher.h
     src/calendar/isynchost.h
     src/calendar/localbackend.h
     src/calendar/logicalcalendarbuilder.h
@@ -191,7 +190,6 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/decsyncgarbagecollector.cpp
     src/calendar/decsynclib.cpp
     src/calendar/holidaysubscriptionbackend.cpp
-    src/calendar/icsfeedfetcher.cpp
     src/calendar/isynchost.cpp
     src/calendar/localbackend.cpp
     src/calendar/logicalcalendarbuilder.cpp
@@ -204,6 +202,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/syncoperation.cpp
     # Plan 3 Task 1 — neutral SyncOperation base extracted into sync/
     src/sync/syncoperation.cpp
+    # E5.3 — neutral WriteOperation (SyncBackendBase::applyRecords() return type)
+    src/sync/writeoperation.cpp
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.cpp
     src/calendar/calendarcanonproperties.cpp
@@ -535,6 +535,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/carddavconfigwidget.h
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.h
+    src/sync/writeoperation.h
+    src/sync/writerbatch.h
     # Neutral backend capability mixin (Plan 9: moved from src/backend/)
     src/sync/changedetection.h
     # Phase K.7.1: account-neutral IProvider adapter

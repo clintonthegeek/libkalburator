@@ -2,6 +2,7 @@
 #define KALBURATOR_CALDAVCONTENTCACHE_H
 
 #include <QList>
+#include <QPair>
 #include <QString>
 
 namespace Kalburator::Sync {
@@ -67,6 +68,13 @@ public:
     /// All rows whose URL contains @p pathFragment (the per-calendar scan
     /// RemoteCalendarBackend::serveCachedItems performs on a CTag match).
     QList<Row> rowsByPathFragment(const QString &pathFragment) const;
+
+    /// (url, etag) pairs for every row whose URL contains @p pathFragment —
+    /// like rowsByPathFragment() but without loading ical_content, for
+    /// callers (E6/O35: seeding KDAV's EtagCache from the persistent cache
+    /// on a fresh backend instance) that only need to know what's already
+    /// cached, not the bytes themselves.
+    QList<QPair<QString, QString>> urlEtagPairs(const QString &pathFragment) const;
 
 private:
     QString m_seed;

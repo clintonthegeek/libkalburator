@@ -311,4 +311,10 @@ if(KALBURATOR_BUILD_LIVE_PROBES)
     add_executable(live_radicale_primer_probe live_radicale_primer_probe.cpp)
     target_link_libraries(live_radicale_primer_probe
         PRIVATE Qt6::Core Qt6::Network Qt6::Test Kalburator::Sync)
+
+    # E7/O36 — confirms the RFC 6578 sync-collection REPORT path actually
+    # fires against a real (not faked) CalDAV server.
+    add_executable(live_sync_collection_probe live_sync_collection_probe.cpp)
+    target_link_libraries(live_sync_collection_probe
+        PRIVATE Qt6::Core Qt6::Network Qt6::Test Kalburator::Sync)
 endif()

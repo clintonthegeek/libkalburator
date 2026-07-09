@@ -401,6 +401,15 @@ remote behavior (O19 showed the old lag-removal never worked), it is
 the safe direction, and the optimization (incremental expected-
 fingerprint) is parked in H9.
 
+**Local-side lag removed by E9 (2026-07-09, sync-excellence campaign):**
+`LocalBackend::applyRecords()` now computes an incremental expected
+post-write fingerprint (fetch-time snapshot patched with only the files it
+itself wrote/deleted — no full re-scan, no foreign-edit absorption) and
+reports it via `WriteOperation::resultRevision()`; the engine uses it to
+remove the one-cycle lag for the LOCAL side only. `RemoteCalendarBackend`
+still incurs the lag as designed (no server-side CTag guessing — see
+FINDINGS O34's resolution note).
+
 ### RED tests first (new file `tests/calendar/tst_sync_token_soundness.cpp`, use the calendar stubs + LocalBackend/temp dirs; FakeCalDavServer where a remote is needed)
 
 - **O17 pin:** mapping with a target whose writes can be made to fail

@@ -578,8 +578,9 @@ bool CalendarManager::createIncidence(const QString &logicalCalendarId,
         // Push to backend
         auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
         if (pushOp) {
-            // For now, synchronous wait - in future could be async
-            // The operation should complete relatively quickly
+            // O39: GUI-thread op-await loop, out of E5's backend-thread
+            // re-entrancy scope (CP-A amendment A4). Converting this
+            // app-facing API to async is filed separately as FINDINGS O39.
             QEventLoop loop;
             connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
             loop.exec();
@@ -627,6 +628,9 @@ bool CalendarManager::updateIncidence(const QString &logicalCalendarId,
         // Push update to backend (same as create in push model)
         auto *pushOp = backend->pushItems(binding.calendarId, {incidence});
         if (pushOp) {
+            // O39: GUI-thread op-await loop, out of E5's backend-thread
+            // re-entrancy scope (CP-A amendment A4). Converting this
+            // app-facing API to async is filed separately as FINDINGS O39.
             QEventLoop loop;
             connect(pushOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
             loop.exec();
@@ -674,6 +678,9 @@ bool CalendarManager::deleteIncidence(const QString &logicalCalendarId,
         // Delete from backend
         auto *deleteOp = backend->deleteItems(binding.calendarId, {uid});
         if (deleteOp) {
+            // O39: GUI-thread op-await loop, out of E5's backend-thread
+            // re-entrancy scope (CP-A amendment A4). Converting this
+            // app-facing API to async is filed separately as FINDINGS O39.
             QEventLoop loop;
             connect(deleteOp, &SyncOperation::finished, &loop, &QEventLoop::quit);
             loop.exec();

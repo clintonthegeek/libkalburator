@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 namespace Kalburator::Sync {
 
 /**
@@ -68,6 +70,35 @@ public:
                 out.insert(id, rev);
         }
         return out;
+    }
+
+    /**
+     * @brief Fresh revision tokens for multiple collections, asynchronously
+     * (E5.2 / audit B7, amendment A6).
+     *
+     * The engine's fast-path pre-pass calls THIS form and blocks the worker
+     * thread (never a backend thread) on the returned answer, so a backend
+     * whose revision query is a network round-trip can run it without a
+     * nested `QEventLoop` on its own thread — the B7 re-entrancy mechanism.
+     *
+     * `done` is invoked exactly once with the same map `collectionRevisions`
+     * would return. It runs on whatever thread the backend completes the
+     * query on (its own thread for an async backend); callers that need the
+     * result elsewhere marshal inside `done`.
+     *
+     * The default adapts the synchronous `collectionRevisions` — correct for
+     * every backend whose revision query has no nested loop (Local,
+     * GenericSqlite, Akonadi, contacts). Only backends that spin a
+     * backend-thread nested loop in their synchronous query (the CalDAV
+     * backend) need override this; a `FilteredCollectionBackend` wrapping
+     * such a backend must forward the async call so the filtered-CalDAV
+     * topology is closed too (amendment A6).
+     */
+    virtual void collectionRevisionsAsync(
+        const QStringList &collectionIds,
+        std::function<void(QMap<QString, QString>)> done)
+    {
+        done(collectionRevisions(collectionIds));
     }
 
     /**
