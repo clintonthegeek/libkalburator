@@ -118,6 +118,24 @@ public:
     /// unrelated to multiget chunking). Reset on startListening().
     int multigetReportCount() const { return m_multigetReportCount; }
 
+    /// E7/O36: advertise RFC 6578 sync-collection in supported-report-set
+    /// PROPFIND responses (Radicale >=3 and Nextcloud both do) and answer
+    /// REPORT sync-collection requests with a real delta computed from this
+    /// fake's per-collection change journal (see logChange()). Off by
+    /// default so every pre-E7 test exercising the CTag+listing fallback is
+    /// unaffected.
+    void setSupportsSyncCollection(bool on) { m_supportsSyncCollection = on; }
+
+    /// When true, every REPORT sync-collection carrying a non-empty
+    /// sync-token gets HTTP 410 Gone instead of a delta — simulates RFC
+    /// 6578 §3.3 token invalidation (e.g. after server-side DB maintenance
+    /// expires old tokens).
+    void setInvalidateSyncTokens(bool on) { m_invalidateSyncTokens = on; }
+
+    /// Number of REPORT sync-collection requests received (a subset of
+    /// requestCount("REPORT")). Reset on startListening().
+    int syncCollectionReportCount() const { return m_syncCollectionReportCount; }
+
     /// Emulate a NextCloud-style deployment (RFC 6764 well-known discovery):
     ///   - the DAV endpoints live under @p contextPath (e.g. "/remote.php/dav")
     ///   - GET/PROPFIND "/.well-known/caldav" returns 301 -> "<contextPath>/"
@@ -179,6 +197,8 @@ private:
     void handleRequest(QTcpSocket *socket, const QByteArray &fullRequest);
     void handleReport(QTcpSocket *socket, const QString &path,
                       const QByteArray &body);
+    void handleSyncCollectionReport(QTcpSocket *socket, const QString &collectionHref,
+                                    const QByteArray &body);
     void handlePut(QTcpSocket *socket, const QString &path,
                    const QByteArray &body, const QByteArray &headers);
     void handleDelete(QTcpSocket *socket, const QString &path);
@@ -198,11 +218,22 @@ private:
     QByteArray xmlForCalendarMultiget(const QString &collectionHref,
                                       const QList<QString> &hrefs) const;
     QByteArray xmlForCtag(const QString &collectionHref) const;
+    QByteArray xmlForSupportedReportSet(const QString &collectionHref) const;
+    QByteArray xmlForSyncCollection(const QString &collectionHref, int clientToken) const;
+
+    /// Append one mutation to @p collectionHref's change journal (E7/O36).
+    /// Every PUT/DELETE and every setSeedEvents()/removeEvent() call (real
+    /// writes and out-of-band server-side simulation alike) logs here; the
+    /// journal's length IS the collection's current sync-token, and REPORT
+    /// sync-collection answers a stored token T with every entry after
+    /// index T, deduped to the last state per uid.
+    void logChange(const QString &collectionHref, const QString &uid, bool deleted);
 
     static QString uidFromIcs(const QByteArray &ics);
     static QString uidFromPath(const QString &path);
     static QString makeEtag(const QByteArray &data);
     static QList<QString> parseHrefsFromBody(const QByteArray &body);
+    static QString parseSyncTokenFromBody(const QByteArray &body);
     /// Case-insensitive header lookup over the raw header block (everything
     /// before "\r\n\r\n"). Empty if the header is absent.
     static QByteArray headerValue(const QByteArray &headers, const QByteArray &name);
@@ -225,6 +256,20 @@ private:
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
     /// then by UID.
     QHash<QString, QHash<QString, IcsRecord>> m_store;
+
+    // ---- E7/O36: RFC 6578 sync-collection ----
+    struct ChangeEntry {
+        QString uid;
+        bool deleted = false;
+    };
+    bool m_supportsSyncCollection = false;
+    bool m_invalidateSyncTokens = false;
+    int m_syncCollectionReportCount = 0;  // reset on startListening()
+    /// collectionHref -> chronological mutations. The journal's size() at
+    /// any moment IS that collection's current sync-token (as a decimal
+    /// string); a REPORT with client token T is answered with entries
+    /// [T, size()).
+    QHash<QString, QList<ChangeEntry>> m_changeLog;
 };
 
 #endif // KALBURATOR_TESTS_FAKECALDAVSERVER_H

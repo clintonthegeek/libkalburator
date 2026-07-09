@@ -157,6 +157,27 @@ set_tests_properties(tst_etagcache_seed PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# E7/O36 — RFC 6578 sync-collection REPORT delta sync.
+add_executable(tst_sync_collection_report
+    tst_sync_collection_report.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_sync_collection_report
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_sync_collection_report
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_sync_collection_report COMMAND tst_sync_collection_report)
+set_tests_properties(tst_sync_collection_report PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 kalburator_add_calendar_test(tst_remotecalendarbackend)
 
 if(KALBURATOR_HAVE_ORG_IO)

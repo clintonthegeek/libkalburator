@@ -68,6 +68,7 @@ bool FakeCalDavServer::startListening()
 {
     m_requestCounts.clear();
     m_multigetReportCount = 0;
+    m_syncCollectionReportCount = 0;
     return listen(QHostAddress::LocalHost, 0);
 }
 
@@ -97,7 +98,16 @@ void FakeCalDavServer::setSeedEvents(const QString &collectionHref,
         rec.data = ics;
         rec.etag = makeEtag(ics);
         col.insert(uid, rec);
+        // E7/O36: every seed (initial population AND a later re-seed used to
+        // simulate "another client edited this item") is a real mutation
+        // from REPORT sync-collection's point of view.
+        logChange(collectionHref, uid, /*deleted=*/false);
     }
+}
+
+void FakeCalDavServer::logChange(const QString &collectionHref, const QString &uid, bool deleted)
+{
+    m_changeLog[collectionHref].append({uid, deleted});
 }
 
 bool FakeCalDavServer::hasEvent(const QString &collectionHref,
@@ -124,7 +134,9 @@ void FakeCalDavServer::removeEvent(const QString &collectionHref, const QString 
 {
     auto it = m_store.find(collectionHref);
     if (it == m_store.end()) return;
-    it->remove(uid);
+    if (it->remove(uid) > 0) {
+        logChange(collectionHref, uid, /*deleted=*/true);
+    }
 }
 
 void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
@@ -285,6 +297,13 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
             xml = xmlForHome();
         } else if (path == calendarsPath) {
             xml = xmlForCalendars();
+        } else if (isKnownCollection(path) && body.contains("supported-report-set")) {
+            // E7/O36: capability-detection PROPFIND. Checked before the
+            // getctag branch below since both are Depth:0 PROPFINDs on the
+            // same collection href, distinguished only by requested prop.
+            writeResponse(socket, 207, "Multi-Status",
+                          xmlForSupportedReportSet(path));
+            return;
         } else if (isKnownCollection(path) && m_ctagByHref.contains(path)) {
             // Depth:0 CS:getctag PROPFIND on a known calendar collection —
             // supports N5's CTag-match/serve-path tests. A collection with
@@ -384,6 +403,13 @@ void FakeCalDavServer::handleReport(QTcpSocket *socket,
         return;
     }
 
+    // E7/O36: RFC 6578 sync-collection, checked first — its body never
+    // contains "calendar-multiget".
+    if (body.contains("sync-collection")) {
+        handleSyncCollectionReport(socket, collectionHref, body);
+        return;
+    }
+
     // Distinguish calendar-query (ETag list) from calendar-multiget (full data)
     // by looking for the report type string in the request body.
     if (body.contains("calendar-multiget")) {
@@ -400,6 +426,42 @@ void FakeCalDavServer::handleReport(QTcpSocket *socket,
         writeResponse(socket, 207, "Multi-Status",
                       xmlForCalendarQuery(collectionHref));
     }
+}
+
+void FakeCalDavServer::handleSyncCollectionReport(QTcpSocket *socket,
+                                                  const QString &collectionHref,
+                                                  const QByteArray &body)
+{
+    ++m_syncCollectionReportCount;
+
+    if (!m_supportsSyncCollection) {
+        // RFC 6578 §3.1: a REPORT the collection doesn't support is a 403
+        // Forbidden with a DAV:supported-report precondition — the backend
+        // should never send this (capability was detected false), but stay
+        // correct if it somehow does.
+        writeResponse(socket, 403, "Forbidden", QByteArray());
+        return;
+    }
+
+    const QString tokenStr = parseSyncTokenFromBody(body);
+    const int currentSize = m_changeLog.value(collectionHref).size();
+
+    if (!tokenStr.isEmpty() && m_invalidateSyncTokens) {
+        writeResponse(socket, 410, "Gone", QByteArray());
+        return;
+    }
+
+    bool ok = true;
+    const int clientToken = tokenStr.isEmpty() ? 0 : tokenStr.toInt(&ok);
+    if (!ok || clientToken < 0 || clientToken > currentSize) {
+        // Unparseable or out-of-range (stale beyond what our journal can
+        // still answer) — RFC 6578 §3.3 token invalidation.
+        writeResponse(socket, 410, "Gone", QByteArray());
+        return;
+    }
+
+    writeResponse(socket, 207, "Multi-Status",
+                  xmlForSyncCollection(collectionHref, clientToken));
 }
 
 void FakeCalDavServer::handlePut(QTcpSocket *socket,
@@ -455,6 +517,7 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
     static int s_counter = 0;
     rec.etag = makeEtag(body + QByteArray::number(++s_counter));
     col.insert(uid, rec);
+    logChange(collectionHref, uid, /*deleted=*/false);
 
     const QByteArray etagHeader =
         ("ETag: " + rec.etag.toUtf8() + "\r\n");
@@ -505,6 +568,7 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
     }
 
     colIt->remove(uid);
+    logChange(collectionHref, uid, /*deleted=*/true);
     writeResponse(socket, 204, "No Content", QByteArray());
 }
 
@@ -644,6 +708,78 @@ QByteArray FakeCalDavServer::xmlForCtag(const QString &collectionHref) const
     return xml.toUtf8();
 }
 
+QByteArray FakeCalDavServer::xmlForSupportedReportSet(const QString &collectionHref) const
+{
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\">\n");
+    xml += QStringLiteral("  <d:response>\n");
+    xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(collectionHref);
+    xml += QStringLiteral("    <d:propstat>\n");
+    xml += QStringLiteral("      <d:prop>\n");
+    xml += QStringLiteral("        <d:supported-report-set>\n");
+    if (m_supportsSyncCollection) {
+        xml += QStringLiteral(
+            "          <d:supported-report><d:report><d:sync-collection/>"
+            "</d:report></d:supported-report>\n");
+    }
+    xml += QStringLiteral("        </d:supported-report-set>\n");
+    xml += QStringLiteral("      </d:prop>\n");
+    xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+    xml += QStringLiteral("    </d:propstat>\n");
+    xml += QStringLiteral("  </d:response>\n");
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml.toUtf8();
+}
+
+QByteArray FakeCalDavServer::xmlForSyncCollection(const QString &collectionHref,
+                                                  int clientToken) const
+{
+    const QList<ChangeEntry> &log = m_changeLog.value(collectionHref);
+
+    // Dedup to the last state per uid within [clientToken, end) — a uid
+    // touched more than once since the client's token reports only its
+    // final state (e.g. changed-then-deleted reports as deleted only).
+    QMap<QString, bool> lastState; // uid -> deleted
+    for (int i = clientToken; i < log.size(); ++i) {
+        lastState[log.at(i).uid] = log.at(i).deleted;
+    }
+
+    const auto storeIt = m_store.constFind(collectionHref);
+
+    QString xml;
+    xml += QStringLiteral("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n");
+    xml += QStringLiteral("<d:multistatus xmlns:d=\"DAV:\""
+                          " xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\n");
+
+    for (auto it = lastState.constBegin(); it != lastState.constEnd(); ++it) {
+        const QString href = collectionHref + it.key() + QStringLiteral(".ics");
+        xml += QStringLiteral("  <d:response>\n");
+        xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
+        if (it.value()) {
+            // RFC 6578 §3.6: a deletion tombstone is a bare 404 response,
+            // no propstat/prop.
+            xml += QStringLiteral("    <d:status>HTTP/1.1 404 Not Found</d:status>\n");
+        } else {
+            QString etag;
+            if (storeIt != m_store.constEnd()) {
+                const auto recIt = storeIt->constFind(it.key());
+                if (recIt != storeIt->constEnd()) etag = recIt->etag;
+            }
+            xml += QStringLiteral("    <d:propstat>\n");
+            xml += QStringLiteral("      <d:prop><d:getetag>%1</d:getetag></d:prop>\n").arg(etag);
+            xml += QStringLiteral("      <d:status>HTTP/1.1 200 OK</d:status>\n");
+            xml += QStringLiteral("    </d:propstat>\n");
+        }
+        xml += QStringLiteral("  </d:response>\n");
+    }
+
+    // Sibling of the <d:response> elements, not nested inside one.
+    xml += QStringLiteral("  <d:sync-token>%1</d:sync-token>\n").arg(log.size());
+    xml += QStringLiteral("</d:multistatus>\n");
+    return xml.toUtf8();
+}
+
 QByteArray FakeCalDavServer::xmlForCalendarMultiget(
     const QString &collectionHref,
     const QList<QString> &hrefs) const
@@ -750,6 +886,18 @@ QByteArray FakeCalDavServer::headerValue(const QByteArray &headers, const QByteA
         }
     }
     return QByteArray();
+}
+
+// static
+QString FakeCalDavServer::parseSyncTokenFromBody(const QByteArray &body)
+{
+    QDomDocument doc;
+    doc.setContent(body, QDomDocument::ParseOption::UseNamespaceProcessing);
+    const QDomElement root = doc.documentElement();
+    const QDomNodeList tokenElements = root.elementsByTagNameNS(
+        QStringLiteral("DAV:"), QStringLiteral("sync-token"));
+    if (tokenElements.isEmpty()) return QString();
+    return tokenElements.at(0).toElement().text().trimmed();
 }
 
 // static
