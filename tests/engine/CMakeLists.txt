@@ -255,6 +255,18 @@ set_tests_properties(tst_decsync_active_controller_thread PROPERTIES
 # deadlocking a real SyncEngine.
 kalburator_add_engine_test(tst_worker_teardown)
 
+# Sync-excellence campaign — FINDINGS O43 (found 2026-07-09 at E10).
+# prepareFastPath's A6 revision-query marshal must survive engine teardown
+# while the query is still pending on a blocked backend I/O thread (the
+# PlanStan close-mid-sync / destroy-after-auto-sync-on-load window).
+# MockBackend + ChangeDetection mixin; needs KF6::CalendarCore for the
+# SyncBackend vtable.
+kalburator_add_engine_test(tst_fastpath_teardown_race)
+target_link_libraries(tst_fastpath_teardown_race
+    PRIVATE
+        KF6::CalendarCore
+)
+
 # Sync-excellence campaign E8 (FINDINGS O28) — post-crash phantom-conflict
 # adoption. LocalBackend (source, real .ics files) -> SyncEngine::runSync
 # -> RemoteCalendarBackend (target) -> FakeCalDavServer with
