@@ -193,6 +193,11 @@ public:
     /// "proceed to loadRecords", NOT as a failure. Default off.
     void setUseBaseFetchItems(bool useBase) { m_useBaseFetchItems = useBase; }
 
+    /// Test fixture: when true, fetchItems() emits fetchProgressChanged()
+    /// once per seeded item (1..N) before completing — used to exercise the
+    /// engine worker's per-item progress relay (dispatchSync).
+    void setEmitFetchProgress(bool enable) { m_emitFetchProgress = enable; }
+
     // =========================================================================
     // State Inspection (for test verification)
     // =========================================================================
@@ -380,6 +385,10 @@ private:
 
     // Test fixture: emit the base-class NotSupported "not implemented" op.
     bool    m_useBaseFetchItems = false;
+
+    // Test fixture: when true, fetchItems() emits fetchProgressChanged()
+    // once per seeded item before completing.
+    bool m_emitFetchProgress = false;
 };
 
 } // namespace Kalburator::Sync
