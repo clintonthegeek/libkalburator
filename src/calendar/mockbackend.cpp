@@ -276,6 +276,16 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
             if (!items.isEmpty())
                 emit itemsFetched(calendarId, items);
 
+            if (m_emitFetchProgress) {
+                const auto items = m_calendars.value(calendarId);
+                int total = items.size();
+                int i = 0;
+                for (auto it = items.constBegin(); it != items.constEnd(); ++it) {
+                    ++i;
+                    emit fetchProgressChanged(calendarId, i, total);
+                }
+            }
+
             emit fetchFinished(calendarId, true);
             op->setFetchedItems(items);
             op->complete();
