@@ -268,23 +268,15 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
             // Emit streaming signals for real-time UI updates
             emit fetchStarted(calendarId, total);
 
-            int current = 0;
-            for (const auto &item : items) {
-                current++;
-                emit fetchProgressChanged(calendarId, current, total);
+            if (m_emitFetchProgress) {
+                int current = 0;
+                for (const auto &item : items) {
+                    current++;
+                    emit fetchProgressChanged(calendarId, current, total);
+                }
             }
             if (!items.isEmpty())
                 emit itemsFetched(calendarId, items);
-
-            if (m_emitFetchProgress) {
-                const auto items = m_calendars.value(calendarId);
-                int total = items.size();
-                int i = 0;
-                for (auto it = items.constBegin(); it != items.constEnd(); ++it) {
-                    ++i;
-                    emit fetchProgressChanged(calendarId, i, total);
-                }
-            }
 
             emit fetchFinished(calendarId, true);
             op->setFetchedItems(items);
