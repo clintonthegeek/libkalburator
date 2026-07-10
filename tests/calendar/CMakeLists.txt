@@ -290,3 +290,23 @@ kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 # domain serialization, hasWritableRemoteSyncTarget() demotion fact
 kalburator_add_calendar_test(tst_logicalcalendar_domain)
 kalburator_add_calendar_test(tst_logicalcalendarbuilder_readonly_seed)
+
+add_executable(tst_bulk_write_dispatch
+    tst_bulk_write_dispatch.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_bulk_write_dispatch
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
+)
+target_link_libraries(tst_bulk_write_dispatch
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_bulk_write_dispatch COMMAND tst_bulk_write_dispatch)
+set_tests_properties(tst_bulk_write_dispatch PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

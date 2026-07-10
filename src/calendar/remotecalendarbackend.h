@@ -576,6 +576,12 @@ private:
         /// primed calendar: priming deliberately issues zero PROPFINDs, so
         /// it never runs this probe either).
         bool supportsSyncCollection = false;
+        /// O42: true once probeSyncCollectionSupport() has completed for
+        /// this calendar in THIS backend instance — at discovery or via
+        /// fetchItems' lazy first-fetch probe. Guards the lazy probe so a
+        /// non-advertising server is probed at most once per instance, not
+        /// once per fetch cycle.
+        bool syncCollectionProbed = false;
     };
     // QMap keeps key-sorted iteration: availableCollections() ordering and
     // the first-match-wins scans in loadRecord/updateRecord/deleteRecord

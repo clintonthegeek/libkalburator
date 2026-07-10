@@ -87,6 +87,7 @@ private slots:
     void tokenInvalidation_fallsBackAndReacquires();
     void unsupportedServer_behavesLikePreE7();
     void restart_storedToken_oneReportOneItem();
+    void firstFetchBeforeDiscovery_storedToken_usesReport();
 };
 
 // (a) RED: today, every changed-CTag cycle pays a full Depth:1 listing no
@@ -240,6 +241,42 @@ void TestSyncCollectionReport::restart_storedToken_oneReportOneItem()
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);
     QCOMPARE(fx.server.requestCount("REPORT") - reportBefore, 2);
+}
+
+// O42 RED: a consumer may drive the first fetch of a process BEFORE
+// loadCalendars' discovery walk (and its supported-report-set probe)
+// completes — PlanStan's auto-sync-on-load does exactly this. The sync-token
+// is persisted (CTagStore), but the capability flag is in-memory and
+// discovery-populated, so that first fetch silently drops to the Depth:1
+// listing every process. A fresh instance holding a stored token must probe
+// lazily and still take the sync-collection path on its very first fetch.
+void TestSyncCollectionReport::firstFetchBeforeDiscovery_storedToken_usesReport()
+{
+    Fixture fx;
+    QVERIFY(fx.setUp());
+    fx.backend.reset();  // "app restart" — in-memory capability flag is gone
+
+    fx.server.setSeedEvents(fx.calHref, {
+        makeEventIcs(QStringLiteral("event-2"), QStringLiteral("Event 2 EDITED")),
+    });
+    fx.server.setCollectionCtag(fx.calHref, QStringLiteral("ctag-v2"));
+
+    RemoteCalendarBackend backend2(fx.server.baseUrl(),
+                                   QStringLiteral("testuser"),
+                                   QStringLiteral("testpass"));
+    backend2.setDbPath(fx.dbPath);
+    backend2.setCacheDir(fx.cacheDir.path());
+    backend2.registerCalendarUrl(QStringLiteral("Personal"), fx.calDavUrl);
+    // Deliberately NO loadCalendars() — the fetch races discovery, as live.
+
+    const int multigetBefore = fx.server.multigetReportCount();
+    const int syncCollBefore = fx.server.syncCollectionReportCount();
+
+    auto *blob2 = static_cast<IBlobBackend *>(&backend2);
+    QCOMPARE(blob2->loadRecords(QStringLiteral("Personal")).size(), 3);
+
+    QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
+    QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);
 }
 
 QTEST_GUILESS_MAIN(TestSyncCollectionReport)
