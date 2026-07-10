@@ -56,35 +56,28 @@ The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a thi
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
 
-## Sync-excellence campaign — START HERE if working sync/CalDAV/threading (the active campaign)
+## Sync-excellence campaign — CLOSED 2026-07-09 (CP-C); current release v0.91
 
-**If you are picking up sync work, your one entry point is
-`docs/campaign/2026-07-07-sync-excellence-phases.md`.** Read its §0 session
-protocol and work exactly one phase (or one E5 stage); its §17 checklist is
-the single source of truth for progress and must be updated in the same
-commit as the work. All lib-side phases happen on branch
-**`feature/sync-excellence`** cut from `main` @ v0.84 (merge to `main` +
-tag at the optional post-E4 v0.85 point and at CP-B's **v0.90**).
-
-The campaign in one breath: the final clearing-up of every known sync-engine
-fault, flaw, and inefficiency — honest stats and dead-code removal (E1), the
-O26 cancellation flake root-caused under TSAN (E2), cancellation/teardown
-honesty (E3), CalDAV write-path correctness pins (E4), then the deepest cut:
-**deleting the nested-event-loop re-entrancy** (audit B7 → O29) by making
-backend I/O operation-based end to end (E5, gated by strong-model checkpoint
-CP-A), EtagCache seeding (E6), **RFC 6578 `sync-collection`** (E7),
-post-crash phantom-conflict adoption (O28 → E8), signal/fingerprint polish
-(E9), release (CP-B, v0.90), PlanStan adoption (E10), and live verification
-+ close (CP-C). The core stays **universal** — engine/`SyncBackendBase`
-contracts are domain- and backend-agnostic, tested neutrally first — with
-CalDAV as the first-class, RFC-conformant exemplar.
-
-Both repos (libkalburator + PlanStan) belong to this campaign until every
-§17 item is closed. New issues found along the way get a new O-number in
-`docs/campaign/FINDINGS.md` — never silently absorbed. Strong-model
-checkpoints (CP-A/B/C) include live verification against real Radicale —
-both prior campaigns' live checkpoints each caught a blocking bug the full
-green suite missed (O25, O27); do not skip or soften them.
+**The campaign is complete — do not redo its work.** The full phase plan
+and per-phase evidence are archived at
+**`docs/campaign/archive/2026-07-07-sync-excellence-phases.md`** (see its
+§17 CP-C entry for the closing soak/adversarial/efficiency evidence).
+Phases E1–E13 + checkpoints CP-A/B/C landed: honest stats + dead code
+(E1), the O26 flake (E2), cancellation/teardown honesty (E3), CalDAV
+write-path pins (E4), the async-backend rework deleting the
+nested-event-loop re-entrancy (E5/audit B7), EtagCache seeding (E6),
+RFC 6578 `sync-collection` (E7), phantom-conflict adoption (E8),
+signal/fingerprint polish (E9), PlanStan adoption (E10), the
+CalendarManager async API (E11/O39), canon timestamp-stamping (E12/O41),
+the PlanStan presentation-freeze fix (E13/O44), and the CP-C deferral
+fixes (O42 first-fetch sync-collection amnesia; O45 bounded write-dispatch
+window). Tags: v0.85, v0.90, v0.90.1, **v0.91** (close). FINDINGS O26,
+O28–O36, O39, O41–O45 all Resolved; the §16 residual inventory was PARKED
+at CP-C with rationale. New sync issues get a new O-number in
+`docs/campaign/FINDINGS.md`; any future campaign should reuse the §0
+session-protocol + strong-model-checkpoint discipline — both prior
+campaigns' live checkpoints each caught a blocking bug the green suite
+missed (O25, O27), and CP-C caught two more (O42, O45 rulings).
 
 Lineage (context only, all CLOSED): sync-convergence campaign (Tracks A–C,
 tags v0.80–v0.82; roadmap `docs/campaign/2026-07-03-sync-convergence-roadmap.md`,

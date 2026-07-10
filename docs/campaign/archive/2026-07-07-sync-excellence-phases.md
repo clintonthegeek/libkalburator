@@ -1,21 +1,11 @@
 # Sync-excellence campaign — phase plan (THE live plan for both repos)
 
 **Date opened:** 2026-07-07
-**Status:** OPEN — E1–E9 + CP-A + CP-B + **E13** + **E12** + **E10** +
-**E11** all complete; **v0.90 tagged 2026-07-09** (v0.90.1 same day, O43);
-E12 (O41 Resolved) merged to `main` same day (past v0.90.1, no new tag cut
-yet). E10's last gate item (interactive in-editor Save during an active
-sync) closed 2026-07-09 in a human-at-the-GUI session — E10 fully done,
-branch `feature/sync-excellence-adoption` not yet merged to PlanStan
-`master`. **E11 landed 2026-07-09** on `libkalburator` branch
-`feature/e11-calendarmanager-async-api` (not yet merged to `main`),
-FINDINGS O39 Resolved — see §14b's amended acceptance-gate entry for the
-correction to its original `davSyncRequest`-deletion claim (the helper
-survives; only Group C's calls into it converted). Full libkalburator
-suite 168/168; no PlanStan source changes required. Remaining: merge E11
-to `main`, CP-C. New FINDINGS **O45** (CalDAV create-timeout anomaly,
-reproduced twice now — H8 rig during E13's live check, and again on the
-E10 gate rig — client/rig artifact, not scoped to a phase yet).
+**Status:** **CLOSED 2026-07-09 at CP-C — all phases E1–E13, CP-A/B/C
+complete; libkalburator v0.91 tagged (E12+E11+O42+O45 past v0.90.1);
+PlanStan re-pinned v0.91 and `feature/sync-excellence-adoption` merged to
+`master`. FINDINGS O26, O28–O36, O39, O41–O45 all Resolved. See §17's
+CP-C entry for the closing evidence.**
 **Scope:** the final clearing-up of every known sync-engine fault, flaw, and
 inefficiency left open at the close of the sync-hardening campaign
 (2026-07-06, v0.84): FINDINGS **O26, O28** and the new **O29–O36** (seeded by
@@ -1775,4 +1765,78 @@ driven because the window freezes.
       `deleteRecord`'s E5.3 deviation); only Group C's calls into it
       converted. Full suite 168/168; no PlanStan changes needed. O39
       Resolved.
-- [ ] **CP-C** soak + adversarial + efficiency audit + campaign close
+- [x] **CP-C** soak + adversarial + efficiency audit + campaign close —
+      2026-07-09, Fable-class model. **Ruling: PASS — campaign CLOSED;
+      v0.91 tagged.**
+      **Deferral rulings (both fixed in-checkpoint, RED-first, branch
+      `feature/cpc-o42-o45` merged → `main`):** O42 → fix candidate (b),
+      lazy supported-report-set probe on the first pre-discovery fetch
+      when a persisted token exists (candidate (a) rejected — persisted
+      capability has no self-heal against a server that stops advertising;
+      only 409/410/507 fall back). O45 → NOT a rig artifact: a genuine
+      client-side design flaw — per-job watchdogs started at dispatch
+      measured queue position, not server health. Fixed with a bounded
+      in-flight dispatch window (kMaxInFlightWriteJobs=4) in
+      `applyRecords`; a progress-based batch watchdog was considered and
+      REJECTED by the RED evidence (KDAV creates issue a trailing ETag
+      fetch that queues behind the batch's PUTs on a serialized server, so
+      NO job completes until the batch nearly drains — 40/40 RED, matching
+      live 145/145). New `FakeCalDavServer::setSerializeResponses` models
+      single-threaded servers; new `tst_bulk_write_dispatch` (2 pins).
+      Lib suite 169/169 green.
+      **Soak (32 min, scratch Radicale :5233, 660-item soak + 120→160-item
+      bulk, 30s auto-tick — 4x the mandated cycle count):** RSS flat
+      (peak 173 MB during initial 660-pull/120-push, settled 168.7 MB,
+      zero growth over 25+ min), 114 idle-skip cycles (E6), zero
+      cross-thread warnings, zero busy re-diffs. First cycle: +660 pull,
+      +120 push with ZERO create timeouts (O45 live proof on the exact
+      rig/shape that failed 100% pre-fix).
+      **Adversarial:** (1) kill-mid-push of 40 timestamp-less events
+      (SIGKILL after 26 confirmed creates): kill cycle honestly reported
+      +29 E11 success:false; post-revive, 29 half-acknowledged creates
+      silently adopted via canonical equality (E8+E12 live, zero real
+      conflicts), remaining 11 pushed E0, server converged 160/160,
+      settled to skip. (2) SIGSTOP pulled-cable: CTag PROPFIND failed
+      bounded at the 30s timeout, no hang, no wedge; the engine degraded
+      to full-mapping mode and the SAME run recovered post-SIGCONT,
+      pulling the foreign edit via sync-collection (stronger than the
+      gate; cross-run fail-then-recover was proven at CP-B). (3) restart
+      + 2 foreign edits: the NEW process's FIRST fetch used
+      sync-collection (O42 live proof — Depth:0 probe → REPORT → multiget
+      of exactly 2 hrefs, NO Depth:1 listing; pre-fix every launch paid
+      the full 660-item listing), E6 composed (2 items from network).
+      (4) foreign edit mid-sync picked up same/next cycle. (5) in-editor
+      Save during active push: human-at-the-GUI proof recorded at E10's
+      gate closure (byte-identical round-trip) — not re-run headless.
+      **Efficiency audit (changed-cycle request log, Radicale debug):**
+      pull side = 1 Depth:1 getctag PROPFIND (cross-collection pre-check)
+      + 1 Depth:0 fresh-CTag PROPFIND + 1 sync-collection REPORT (307 B)
+      + 1 multiget of exactly 1 href (437 B); push side = 1 CTag PROPFIND
+      + 1 PUT with If-Match ("Precondition passed", 204) of exactly the
+      changed record + one post-own-write listing re-fetch (the
+      documented E9 remote one-cycle-lag cost) + token re-bootstrap.
+      KIO's 401-then-auth handshake doubles REPORT request lines
+      (protocol noise, not extra work server-side).
+      **Suites:** libkalburator 169/169 (main, post-merge); PlanStan
+      18/123 failed = EXACTLY the documented dev/offscreen baseline
+      composition (13 evicted Not-Runs, tst_collectionassembler
+      release-assert gap, 4 pre-existing integration/harness failures);
+      tst_collectioncontroller clean.
+      **Observation filed (not a blocker):**
+      `CollectionController::recordChanged: unknown mapping` logs once per
+      applied record (662 in the soak) — the engine invokes the apply-phase
+      callback but PlanStan's override can't resolve the engine's mapping
+      id, so the GUI tail is skipped and model freshness rides the fetch
+      path's known one-cycle lag; noted in PlanStan
+      `docs/todo/sync-apply-phase-model-refresh.md`.
+      **§16 residuals — all PARKED** (rationale in §16; none schedule):
+      parallel mapping execution (no profiling evidence; idle near-free
+      post-E7), Akonadi ChangeRecorder warm path (O14, own entry),
+      CardDAV sync-collection extraction (rule of three),
+      `src/contacts/` nested loops (rule of three, backend immature),
+      RFC 6638 (app-layer, PlanStan todo).
+      **Release:** `feature/cpc-o42-o45` merged → `main` (`--no-ff`),
+      tagged **v0.91**; PlanStan re-pinned v0.90.1 → v0.91 on
+      `feature/sync-excellence-adoption` and the adoption branch merged →
+      `master`. FINDINGS O26, O28–O36, O39, O41–O45 all Resolved. This
+      doc moved to `docs/campaign/archive/`.

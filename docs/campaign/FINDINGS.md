@@ -14,12 +14,14 @@ Append, don't rewrite. New issues from any task go here, even off-topic.
 > FINDINGS **O16–O27** (all Resolved below); tags **v0.83** (H1–H6) and
 > **v0.84** (H8.5/O27).
 >
-> **Sync-excellence campaign OPENED 2026-07-07.** The live phase plan is
-> **`docs/campaign/2026-07-07-sync-excellence-phases.md`** (phases E1–E10 +
-> CP-A/B/C; tags v0.85 optional mid-campaign, v0.90 at close). It owns the
-> open findings **O26, O28** and the newly seeded **O29–O36** below (the
-> hardening campaign's parked backlog plus the Discipline Log's accumulated
-> debts, promoted to numbered findings).
+> **Sync-excellence campaign CLOSED 2026-07-09 at CP-C.** The phase plan
+> is archived at
+> `docs/campaign/archive/2026-07-07-sync-excellence-phases.md`
+> (phases E1–E13 + CP-A/B/C; tags v0.85, v0.90, v0.90.1, **v0.91** at
+> close). It closed FINDINGS **O26, O28–O36, O39, O41–O45** (all Resolved
+> below). The §16 residual inventory (parallel mappings, Akonadi warm
+> path/O14, CardDAV REPORT extraction, contacts-backend loops, RFC 6638)
+> was PARKED at CP-C with rationale — see the archived plan's §16/§17.
 
 ---
 
