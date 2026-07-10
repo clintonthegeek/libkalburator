@@ -139,6 +139,12 @@ kalburator_add_engine_test(tst_perrecorddiff)
 kalburator_add_engine_integration_test(tst_engine_write_gate)
 target_link_libraries(tst_engine_write_gate PRIVATE Qt6::Sql)
 
+# Always-visible sync progress (status bar) Task 2 — per-item progress
+# relay: MockBackend fetchProgressChanged (Task 1 fixture) must reach
+# SyncEngine::fetchProgress through a dispatchSync-scoped relay.
+kalburator_add_engine_integration_test(tst_engine_fetch_progress_relay)
+target_link_libraries(tst_engine_fetch_progress_relay PRIVATE Qt6::Sql)
+
 # Architectural-redress Plan 1 Task 1 — SyncEngine/SyncEngineWorker
 # unification protective tests. Pins queue iteration order, conflict
 # pause/resume round trip, and cancellation propagation through the

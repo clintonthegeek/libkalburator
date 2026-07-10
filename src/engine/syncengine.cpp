@@ -2132,6 +2132,28 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         return true;
     }
 
+    // Per-item progress relay (scoped to this dispatch). Backends emit
+    // fetchProgressChanged/writeProgressChanged on the backend-I/O thread; relay
+    // them to this worker's fetchProgress/writeProgress signals (already forwarded
+    // to SyncEngine at ctor time). Auto-disconnected at every dispatchSync exit via
+    // the guard's destructor, so concurrent mappings never cross-talk and no
+    // connection leaks across runs.
+    struct ProgressRelayGuard {
+        QList<QMetaObject::Connection> conns;
+        ~ProgressRelayGuard() { for (const auto &c : conns) QObject::disconnect(c); }
+    } progressRelay;
+    auto installRelay = [&](SyncBackendBase *b) {
+        if (!b) return;
+        progressRelay.conns << QObject::connect(
+            b, &SyncBackendBase::fetchProgressChanged, this,
+            [this](const QString &cal, int cur, int tot) { emit fetchProgress(cal, cur, tot); });
+        progressRelay.conns << QObject::connect(
+            b, &SyncBackendBase::writeProgressChanged, this,
+            [this](const QString &cal, int cur, int tot) { emit writeProgress(cal, cur, tot); });
+    };
+    installRelay(srcBackend);
+    if (tgtBackend != srcBackend) installRelay(tgtBackend);
+
     IBlobBackend *srcBlob = asBlob(srcBackend);
     IBlobBackend *tgtBlob = asBlob(tgtBackend);
     const QString srcColId  = request.mapping.sourceCalendar;
