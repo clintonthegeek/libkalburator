@@ -4,13 +4,22 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "caldavcapabilitydiscovery.h"
-#include "remotecalendarbackend.h"
 #include "caldavcontenttypes.h"
+#include "davslug.h"
+#include "remotecalendarbackend.h"
 
 #include <QFutureInterface>
+#include <QUrl>
 #include <QUuid>
 
 namespace Kalburator::Sync {
+
+// PHASE2-TASK2.3 — slug derivation now lives in src/sync/davslug.h as
+// Kalburator::Sync::makeDavSlug(). The CalDAV-specific anonymous-
+// namespace copy from Tasks 2.1 / 2.2 was removed in Task 2.3 to
+// eliminate duplication; the v2 spec producer below calls the shared
+// helper directly. The CalDAV-specific rule (last segment of the href,
+// sanitised) is unchanged — just no longer typed twice.
 
 CalDavProvider::CalDavProvider(QObject *parent)
     : IProvider(parent)
@@ -157,6 +166,11 @@ void CalDavProvider::disconnect() {
     emit connectionStateChanged(false);
 }
 
+// PHASE2-TASK2.1 — v1 createBackend() is intentionally kept verbatim. The
+// createBackends() fanout entry-point below is additive; ProviderManager
+// still routes through this method until Phase 2.4+ flips the registration
+// pipeline to use spec.backendId directly. Do not delete or refactor this
+// function in Task 2.1.
 std::unique_ptr<IBlobBackend>
 CalDavProvider::createBackend(const QString &collectionId) {
     if (!m_connected) {
@@ -184,6 +198,72 @@ CalDavProvider::createBackend(const QString &collectionId) {
             contentTypesFromCaps(capIt.value()) } });
     }
     return backend;
+}
+
+// PHASE2-TASK2.1 — v2 contract entry point. Produces ONE Calendar-kind
+// ProviderBackendSpec for the given collection by reading the connect-time
+// discovery caches (m_calendarUrls / m_perCalendarCaps / m_collections).
+// Called by ProviderManager::createBackendsForCollection in Phase 2.4+
+// to plan a registration walk that uses spec.backendId directly.
+QList<ProviderBackendSpec>
+CalDavProvider::createBackends(const QString &collectionId) const
+{
+    QList<ProviderBackendSpec> out;
+
+    if (!m_connected) return out;
+    if (collectionId.isEmpty()) return out;
+
+    // The v1 contract returns nullptr for unknown collectionId — match
+    // that by returning {} for the same input.
+    const auto urlIt = m_calendarUrls.constFind(collectionId);
+    if (urlIt == m_calendarUrls.constEnd()) return out;
+    const QString href = urlIt.value();
+
+    const auto capIt = m_perCalendarCaps.constFind(collectionId);
+
+    // Display name priority: connect() precomputes ci.name from
+    // caps.serverDisplayName (with collectionId fallback), so m_collections
+    // is the highest-fidelity name source. caps.serverDisplayName is a
+    // secondary fallback (kept for safety in case m_collections was
+    // cleared without a disconnect path firing). Last resort: collectionId
+    // itself, then href, which must be non-empty here because urlIt found
+    // a mapping for it.
+    QString displayName;
+    for (const auto &c : m_collections) {
+        if (c.id == collectionId) {
+            displayName = c.name;
+            break;
+        }
+    }
+    if (displayName.isEmpty()
+        && capIt != m_perCalendarCaps.constEnd()
+        && !capIt.value().serverDisplayName.isEmpty()) {
+        displayName = capIt.value().serverDisplayName;
+    }
+    if (displayName.isEmpty()) displayName = collectionId;
+    if (displayName.isEmpty()) displayName = href;
+
+    ProviderBackendSpec spec;
+    spec.collectionId = collectionId;
+    spec.kind = BackendKind::Calendar;
+    spec.displayName = displayName;
+    spec.backendId = QStringLiteral("%1:%2:%3").arg(
+        m_id, collectionId,
+        makeDavSlug(displayName, href));
+
+    if (capIt != m_perCalendarCaps.constEnd()) {
+        const PerCalendarCapabilities &caps = capIt.value();
+        if (caps.serverColor.isValid()) {
+            spec.color = caps.serverColor.name();
+        }
+        // Mirror onDiscoveryFinished()'s populate rule so spec.contentTypes
+        // matches the CollectionInfo.contentTypes a manager can also pull.
+        if (caps.supportsVEvent) spec.contentTypes << QStringLiteral("VEVENT");
+        if (caps.supportsVTodo)  spec.contentTypes << QStringLiteral("VTODO");
+    }
+
+    out.append(spec);
+    return out;
 }
 
 } // namespace Kalburator::Sync

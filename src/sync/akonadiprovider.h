@@ -59,13 +59,39 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
-    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs. Phase 2 will
-    // return one spec per Akonadi collection, mirroring its
-    // "provider == resource" topology (domainId == collectionId here,
-    // unlike DAV providers where domainId is one of {cal, contacts}).
+    // PHASE2-TASK2.3 — v2 contract for Akonadi's "provider == resource"
+    // topology. Akonadi surfaces one collection per discovered mimetype
+    // collection (Event/Todo/Addressee), each with a stable Collection
+    // id that the resource owns — so unlike DAV providers where
+    // domainId is one of {cal, contacts}, here domainId IS the
+    // collectionId. For the given collectionId (which must be in
+    // collections()) returns ONE spec whose:
+    //
+    //   spec.collectionId = collectionId
+    //   spec.kind           = Calendar (mimes include Event or Todo) or
+    //                         Contacts (mime includes Addressee)
+    //   spec.backendId      = "<providerId>:<collectionId>:<collectionId>"
+    //                         (slug = collectionId since Akonadi ids
+    //                         are already stable and unique within a
+    //                         resource)
+    //   spec.displayName    = m_collections[i].name or collectionId
+    //   spec.contentTypes   = m_collections[i].contentTypes verbatim
+    //                         (Akonadi discovery already returned the
+    //                         mime-derived content types)
+    //
+    // The body lives next to AkonadiProvider::createBackend() in the
+    // .cpp because Akonadi::CollectionFetchScope / MIME detection live
+    // in the same #ifdef-gated block there. When HAVE_AKONADI is OFF,
+    // there is no class at all (this entire file is fenced), so the
+    // override's mere presence is only relevant when HAVE_AKONADI is
+    // ON — and the implementation there returns a real spec for every
+    // owned collection, not the Phase-1 empty stub.
+    //
+    // Returns {} when: not connected, collectionId is empty, or
+    // collectionId isn't in m_collections. Matches the v1
+    // createBackend() nullptr contract.
     QList<ProviderBackendSpec>
-        createBackends(const QString & /*collectionId*/) const override
-        { return {}; }
+        createBackends(const QString &collectionId) const override;
 
 private:
     void onCollectionsFetched(KJob *job);
