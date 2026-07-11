@@ -10,16 +10,17 @@
  * `IDMappingStore` — durable state below the domains. "Store" == persists
  * (invariant 5); these are plain RAII value types, not QObjects.
  *
- * Two table generations co-exist:
+ * ONE table generation is active (post-fanout-collapse, Task 3.1):
  *
- * v2 (post-F1, user_version=3): `blob_baselines`
- *   Keyed by (backend_id, collection_id, record_id) → content_hash.
- *   Legacy API; deprecated in G.4.
+ * v3 (G.4, schema v7): `blob_baselines_v3`
+ *   Keyed by (mapping_id, record_id) + nullable per-side hash columns
+ *   (Phase B4 N2 fix, schema v6) + sync-progress tokens (H3, schema v7).
  *
- * v3 (G.4, user_version=4): `blob_baselines_v3`
- *   Keyed by (mapping_id, record_id) → canonical Shape + bytes.
- *   New preferred API. On first open after upgrade, data is migrated
- *   from blob_baselines via a mapping resolver supplied by the engine.
+ * The pre-fanout (keyed-by (backend_id, collection_id, record_id)) API and
+ * the v2→v3 data-migration code were deleted in fanout-collapse Task 3.1;
+ * the campaign's locked "break + recreate" decision (no compat layer)
+ * removed the migration reach. Spec/design: §A (single per-mapping view),
+ * §B (cruft removal).
  *
  * Not thread-safe. Callers must serialize access to a given instance.
  * Not a QObject — pure value-lifetime class with RAII connection
@@ -55,25 +56,6 @@ public:
     bool    isOpen() const;
     QString lastError() const;
     QString databasePath() const;
-
-    // -----------------------------------------------------------------------
-    // Mapping resolver (G.4)
-    //
-    // The engine calls setMappingResolver() during init so the v2→v3
-    // migration can discover which mapping_ids reference a given
-    // (backend_id, collection_id) pair.  Signature:
-    //   fn(backendId, collectionId) → list of mapping IDs that include
-    //   that pair as source or target collection.
-    // -----------------------------------------------------------------------
-    using MappingResolver =
-        std::function<QStringList(const QString &backendId,
-                                  const QString &collectionId)>;
-    void setMappingResolver(MappingResolver fn);
-
-    /// Perform v2→v3 data migration using the current mapping resolver.
-    /// Safe to call multiple times (idempotent after user_version==4).
-    /// Returns true on success or if already migrated.
-    bool migrateV3();
 
     // -----------------------------------------------------------------------
     // v3 mapping-keyed API — keyed by (mappingId, recordId).
@@ -174,45 +156,13 @@ public:
                          const QString &token);
     void    clearSyncTokens(const QString &mappingId);
 
-    // -----------------------------------------------------------------------
-    // Triple-keyed API — keyed by (backendId, collectionId, recordId).
-    // Stored in blob_baselines.
-    // @deprecated Use the v3 mapping-keyed API instead.
-    // -----------------------------------------------------------------------
-
-    [[deprecated("Use setBaselineV3() / mapping-keyed API (G.4).")]]
-    bool setBaseline(const QString &backendId,
-                     const QString &collectionId,
-                     const QString &recordId,
-                     const QString &contentHash);
-
-    [[deprecated("Use baselineV3() / mapping-keyed API (G.4).")]]
-    QString baselineHash(const QString &backendId,
-                         const QString &collectionId,
-                         const QString &recordId) const;
-
-    [[deprecated("Use setBaselineV3() / mapping-keyed API (G.4).")]]
-    bool commitBaselines(const QString &backendId,
-                         const QString &collectionId,
-                         const QMap<QString, QString> &recordIdToHash);
-
-    [[deprecated("Use baselinesForMappingV3() / mapping-keyed API (G.4).")]]
-    QStringList baselineRecordIds(const QString &backendId,
-                                  const QString &collectionId) const;
-
-    [[deprecated("Use clearMappingV3() / mapping-keyed API (G.4).")]]
-    bool clearCollection(const QString &backendId,
-                         const QString &collectionId);
-
 private:
     static int s_connectionCounter;
 
     QString         m_dbPath;
     QString         m_connName;
     bool            m_isOpen = false;
-    bool            m_needsV3Migration = false;
     mutable QString m_lastError;
-    MappingResolver m_mappingResolver;
 
     bool ensureSchemaAndVersion();
     bool ensureSchemaV3();

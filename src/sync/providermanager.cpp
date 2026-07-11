@@ -274,19 +274,22 @@ void ProviderManager::registerProviderBackends(IProvider *provider)
     }
 }
 
-// PHASE1-TASK1.1 — additive v2 wiring hook. Phase 2 will turn this into
-// the registration entry point: build a backend per spec, register with
-// the BackendRegistry under spec.backendId, and stamp resourceId on the
-// per-stack backend. Phase 1 only collects the descriptors, logs the
-// outcome, and intentionally registers nothing — keeping the v1
-// registerProviderBackends() loop as the active path so behaviour does
-// not shift this phase.
+// PHASE1-TASK1.1 -> PHASE3-TASK3.1 — v2 wiring hook. Phase 1 only collected
+// descriptors and logged a "Phase 1 stub" message; Phase 2 made real
+// per-collection specs live; Phase 3 settled on the dual-pipeline
+// configuration: v1 registerProviderBackends() continues to be the
+// registration entry point (per-collection, 2-segment ids stable for
+// engine + downstream callers), and the v2 entry returns the
+// descriptors without taking over registration. The provider fanout
+// collapse to per-domain specs (one backend per (provider, domain)
+// with the new `<uuid>:cal` / `<uuid>:contacts` registry ids, no fanout)
+// lands together with the PlanStan adoption sweep in Phase 4
+// (per design §C + spec §B).
 QList<ProviderBackendSpec>
 ProviderManager::createBackendsForCollection(const QString &collectionId)
 {
     // Find the provider that owns this collection. There is no global
-    // cross-provider index yet — Phase 2 will add
-    // backendIdsForProvider(); for now we walk the providers and ask each
+    // cross-provider index yet — we walk the providers and ask each
     // whether collectionId appears in its collections() list.
     IProvider *owner = nullptr;
     for (const auto &p : m_providers) {
@@ -310,8 +313,7 @@ ProviderManager::createBackendsForCollection(const QString &collectionId)
     const auto specs = owner->createBackends(collectionId);
     qDebug() << "[ProviderManager] createBackendsForCollection: provider"
              << owner->id() << "produced" << specs.size()
-             << "spec(s) for collection" << collectionId
-             << "(Phase 1 stub: descriptors only, no registration yet).";
+             << "spec(s) for collection" << collectionId;
     return specs;
 }
 

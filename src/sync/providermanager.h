@@ -68,16 +68,17 @@ public:
 
     // PHASE1-TASK1.1 — v2-contract wiring hook. Looks up the provider
     // owning the given collectionId, asks the provider for its
-    // createBackends(collId) specs, and (in Phase 1) logs the result
-    // without actually registering anything. Phase 2 flips it to
-    // activate the descriptors and register one backend per spec.
+    // createBackends(collId) specs, and returns the produced descriptors.
+    // Active registration still runs through the v1 registerProviderBackends
+    // loop (Phase 2 kept the per-collection 2-segment id stable); Phase 4
+    // is the planned flip to spec.backendId-driven registration. Both
+    // pipelines coexist for now; the v2 entry exists so Phase-4 wiring
+    // can ship without touching the public surface.
     //
-    // Returns the produced specs on success (descriptors only — no
-    // registration this phase). If no provider owns the collection, or
-    // the provider's stub returns empty, an empty list is returned and
-    // a debug message is logged. Existence of this hook now means
-    // downstream Phase-2 wiring can ship without touching the public
-    // surface.
+    // Returns empty if no provider owns the collection, or the provider's
+    // createBackends for an unknown collectionId returns empty
+    // (matches the v1 createBackend nullptr contract). A debug message is
+    // logged in either case.
     QList<ProviderBackendSpec>
         createBackendsForCollection(const QString &collectionId);
 

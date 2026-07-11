@@ -16,7 +16,6 @@ function(kalburator_add_storage_test TEST_NAME)
     )
 endfunction()
 
-kalburator_add_storage_test(tst_baseline_store_per_record_keys)
 kalburator_add_storage_test(tst_baseline_store_v3)
 kalburator_add_storage_test(tst_idmappingstore)
 kalburator_add_storage_test(tst_baseline_store_collection_properties)

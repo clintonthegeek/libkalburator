@@ -9,7 +9,6 @@
 #include "synctypes.h"
 #include "syncdiff.h"
 #include "conflicthandlerregistry.h"
-#include "mappingscheduler.h"
 #include "syncenginefuture.h"
 #include "../sync/syncoperation.h"  // neutral SyncOperation base; required by await<Op> template
 #include "shaperegistries.h"
@@ -564,12 +563,6 @@ private:
     // — runSync() sanitizes direction to Default for multi dispatch.
     ExecutionOverride m_queueOverride;
     QMap<QString, FreshSyncState> m_freshState;
-
-    // G.6 Task 44: resource-aware FIFO scheduler. Tracks mapping→resource
-    // sets for cancelWithReason(ResourceLost). The engine still drives
-    // execution via advanceQueue; the scheduler is consulted for
-    // resource-based selective cancellation.
-    MappingScheduler m_scheduler;
 
     // F2 Task 17: watcher tracking the in-flight QFuture from runSync.
     // On QFuture::cancel(), QFutureWatcher::canceled fires on the engine

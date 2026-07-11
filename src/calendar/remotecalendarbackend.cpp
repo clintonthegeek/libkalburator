@@ -777,14 +777,10 @@ void RemoteCalendarBackend::clearSyncToken(const QString &calendarId)
         m_ctags->clearToken(calendarId);
 }
 
-// Static factory method for BackendRegistry
-SyncBackend* RemoteCalendarBackend::create(const QVariantMap &config, QObject *parent)
-{
-    QUrl url = QUrl::fromUserInput(config.value(QStringLiteral("url")).toString());
-    QString username = config.value(QStringLiteral("username")).toString();
-    QString password = config.value(QStringLiteral("password")).toString();
-    return new RemoteCalendarBackend(url, username, password, parent);
-}
+// RemoteCalendarBackend::create(const QVariantMap, QObject*) static factory
+// was deleted in fanout-collapse Task 3.1 (spec §B): the only consumer was
+// PlanStan's dying raw-caldav path (now providers-only, locked by §C
+// Decision 2) and one lib test (rewritten to the direct ctor).
 
 BackendCapabilities RemoteCalendarBackend::capabilities() const
 {
@@ -975,12 +971,11 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
              << "with URL:" << configuredUrl.url().toString(QUrl::RemovePassword);
 }
 
-QString RemoteCalendarBackend::discoveredUrl(const QString &calendarId) const
-{
-    // [[deprecated]] forwarder; the "is this calendar registered?" predicate
-    // semantics are preserved by the DTO builder's only-if-registered davUrl guard.
-    return discoveredCalendar(calendarId).davUrl();
-}
+// RemoteCalendarBackend::discoveredUrl / discoveredSupportsEvents / 
+// discoveredSupportsTodos — the [[deprecated]] forwarders were deleted in
+// fanout-collapse Task 3.1 (spec §B). The unified surface is
+// discoveredCalendar(id); callers that need the legacy field-by-field form
+// read it from there.
 
 void RemoteCalendarBackend::primeCalendars(const QList<PrimedCalendar> &calendars)
 {
@@ -1253,16 +1248,6 @@ QString RemoteCalendarBackend::calendarDescription(const QString &calendarId) co
     // A separate PROPFIND for the DAV calendar-description property would be
     // needed to retrieve this; not implemented.
     return QString();
-}
-
-bool RemoteCalendarBackend::discoveredSupportsEvents(const QString &calendarId) const
-{
-    return discoveredCalendar(calendarId).supportsVEvent;
-}
-
-bool RemoteCalendarBackend::discoveredSupportsTodos(const QString &calendarId) const
-{
-    return discoveredCalendar(calendarId).supportsVTodo;
 }
 
 bool RemoteCalendarBackend::discoveredWritable(const QString &calendarId) const

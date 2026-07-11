@@ -299,7 +299,6 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/enginediff.h
     src/engine/imassdeleteguard.h
     src/engine/mappingqueue.h
-    src/engine/mappingscheduler.h
     src/engine/perrecorddiff.h
     src/engine/propertydiff.h
     src/engine/syncengine.h
@@ -316,7 +315,6 @@ set(KALBURATOR_ENGINE_PRIVATE_HEADERS
 set(KALBURATOR_ENGINE_SOURCES
     src/engine/enginediff.cpp
     src/engine/mappingqueue.cpp
-    src/engine/mappingscheduler.cpp
     src/engine/perrecorddiff.cpp
     src/engine/propertydiff.cpp
     src/engine/syncengine.cpp

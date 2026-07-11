@@ -26,9 +26,9 @@ function(kalburator_add_engine_integration_test TEST_NAME)
     # via the stubs library's PUBLIC include path.
 endfunction()
 
-# Task 44 — MappingScheduler unit tests
+# Task 44 — MappingScheduler unit tests (deleted in fanout-collapse Task 3.1;
+# the scheduler was declared but never used by the live queue path).
 kalburator_add_engine_test(tst_lastwritewins)
-kalburator_add_engine_test(tst_mapping_scheduler)
 
 # Architectural-redress Plan 1 Task 3 — MappingQueue unit tests.
 # Fast inner-loop guard for the queue collaborator extracted from

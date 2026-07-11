@@ -162,10 +162,6 @@ public:
     /// instance with BackendRegistry, which currently stores
     /// SyncBackend* instances. The IProvider API uses IBlobBackend to
     /// keep the contract minimal.
-    ///
-    /// The returned backend's resourceId() must encode this provider's
-    /// id() so MappingScheduler can detect resource contention
-    /// correctly (e.g., "caldav:<provider-id>:<collection-id>").
     virtual std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) = 0;
 
