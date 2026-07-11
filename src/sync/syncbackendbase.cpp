@@ -18,6 +18,8 @@ SyncBackendBase::SyncBackendBase(QObject *parent)
 
 QString SyncBackendBase::resourceId() const
 {
+    if (!m_resourceId.isEmpty())
+        return m_resourceId;
     return QStringLiteral("backend:") +
         QString::number(reinterpret_cast<quintptr>(this), 16);
 }

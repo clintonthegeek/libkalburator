@@ -67,6 +67,7 @@ using Kalburator::Sync::CalDavProvider;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::IBlobBackend;
+using Kalburator::Sync::IProvider;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::LocalBackend;
@@ -304,6 +305,19 @@ private:
     QList<BackendRecord> m_records;
 };
 
+// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+// collection id), so a known-collection lookup against createBackends() is
+// equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 } // namespace
 
 class TstPhantomConflictAdoption : public QObject
@@ -387,7 +401,7 @@ void TstPhantomConflictAdoption::crashMidPush_nextCycleAdoptsSilently_noPhantomC
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawRemote = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawRemote = backendForCollection(provider, collId);
     QVERIFY(rawRemote != nullptr);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
     QVERIFY(remote != nullptr);
@@ -594,7 +608,7 @@ void TstPhantomConflictAdoption::crashMidPush_timestampLessSource_nextCycleAdopt
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawRemote = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawRemote = backendForCollection(provider, collId);
     QVERIFY(rawRemote != nullptr);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
     QVERIFY(remote != nullptr);
@@ -775,7 +789,7 @@ void TstPhantomConflictAdoption::noBaselineGenuinelyDifferentContent_stillConfli
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawRemote = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawRemote = backendForCollection(provider, collId);
     QVERIFY(rawRemote != nullptr);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
     QVERIFY(remote != nullptr);

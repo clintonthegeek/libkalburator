@@ -31,7 +31,10 @@ public:
 
     QString backendType() const override { return QStringLiteral("fake"); }
     QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
-    QString resourceId() const override { return QStringLiteral("fake"); }
+    // resourceId() intentionally NOT overridden: SyncBackendBase's default
+    // returns m_resourceId once ProviderManager::registerProviderBackends
+    // calls setResourceId() on registration — testRegistersOneBackendPerSpec
+    // asserts on that.
 
     void loadCalendars(const QString &) override {}
     void storeCalendars(const QString &,
@@ -110,9 +113,32 @@ public:
     bool isConnected() const override { return m_connected; }
     QList<CollectionInfo> collections() const override { return m_collections; }
 
-    std::unique_ptr<IBlobBackend>
-    createBackend(const QString & /*collectionId*/) override {
-        return std::make_unique<FakeBackend>();
+    // Default (Phase 1 real-provider shape): one spec per collection,
+    // domainId == collection id — mirrors CalDavProvider::createBackends()
+    // etc. Tests that want to exercise domain GROUPING (multiple
+    // collections hosted by a single spec, the shape Task 2 introduces for
+    // real DAV providers) call seedDomainGroups() instead, which takes
+    // priority when non-empty.
+    std::vector<ProviderBackendSpec> createBackends() override {
+        std::vector<ProviderBackendSpec> out;
+        if (!m_domainGroups.isEmpty()) {
+            for (const auto &group : m_domainGroups) {
+                ProviderBackendSpec spec;
+                spec.domainId = group.domainId;
+                spec.backend = std::make_unique<FakeBackend>();
+                spec.collections = group.collections;
+                out.push_back(std::move(spec));
+            }
+            return out;
+        }
+        for (const auto &col : std::as_const(m_collections)) {
+            ProviderBackendSpec spec;
+            spec.domainId = col.id;
+            spec.backend = std::make_unique<FakeBackend>();
+            spec.collections = { col };
+            out.push_back(std::move(spec));
+        }
+        return out;
     }
 
     void setFailConnect(bool fail) { m_failConnect = fail; }
@@ -126,6 +152,16 @@ public:
         emit collectionsChanged();
     }
 
+    // testRegistersOneBackendPerSpec / testUnregisterRemovesAllProviderSpecs:
+    // seed explicit domain->collections groupings so createBackends() emits
+    // multiple collections under a single spec, exercising the "provider
+    // chooses granularity" contract iprovider.h documents.
+    struct DomainGroup {
+        QString domainId;
+        QList<CollectionInfo> collections;
+    };
+    void seedDomainGroups(QList<DomainGroup> groups) { m_domainGroups = std::move(groups); }
+
 private:
     QString m_id;
     QString m_displayName;
@@ -135,6 +171,7 @@ private:
     QVariantMap m_loadedParams;
     QList<CollectionInfo> m_collections;
     QList<CollectionInfo> m_collectionsSeed;
+    QList<DomainGroup> m_domainGroups;
 };
 
 // Minimal BackendContribution that produces FakeProvider instances.
@@ -181,6 +218,8 @@ private slots:
     void default_factory_creates_carddav_provider();
     void providerState_transitionsThroughLifecycle();
     void addProvider_registersBackendsForPreConnectedProvider();
+    void testRegistersOneBackendPerSpec();
+    void testUnregisterRemovesAllProviderSpecs();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -577,6 +616,77 @@ void TstProviderManager::addProvider_registersBackendsForPreConnectedProvider()
     // And connectAll() afterwards must remain harmless.
     QVERIFY(waitForFuture(mgr.connectAll()));
     QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("p1:cal-pre")));
+}
+
+void TstProviderManager::testRegistersOneBackendPerSpec()
+{
+    // Mock provider returns TWO specs: {"cal", backendA, 3 collections},
+    // {"contacts", backendB, 2 collections}.
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p-spec"));
+    CollectionInfo c1; c1.id = QStringLiteral("cal-1");
+    CollectionInfo c2; c2.id = QStringLiteral("cal-2");
+    CollectionInfo c3; c3.id = QStringLiteral("cal-3");
+    CollectionInfo b1; b1.id = QStringLiteral("book-1");
+    CollectionInfo b2; b2.id = QStringLiteral("book-2");
+    p->seedDomainGroups(QList<FakeProvider::DomainGroup>{
+        { QStringLiteral("cal"), { c1, c2, c3 } },
+        { QStringLiteral("contacts"), { b1, b2 } },
+    });
+    mgr.addProvider(std::move(p));
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+
+    // Assert: registry has exactly "<id>:cal" and "<id>:contacts".
+    const QStringList ids = reg.registeredInstanceIds();
+    QCOMPARE(ids.size(), 2);
+    QVERIFY(ids.contains(QStringLiteral("p-spec:cal")));
+    QVERIFY(ids.contains(QStringLiteral("p-spec:contacts")));
+
+    // backendIdsForProvider(id) returns both.
+    const QStringList mine = mgr.backendIdsForProvider(QStringLiteral("p-spec"));
+    QCOMPARE(mine.size(), 2);
+    QVERIFY(mine.contains(QStringLiteral("p-spec:cal")));
+    QVERIFY(mine.contains(QStringLiteral("p-spec:contacts")));
+
+    // Each backend's resourceId() == its registry id.
+    auto *calBackend = reg.backendInstance(QStringLiteral("p-spec:cal"));
+    QVERIFY(calBackend);
+    QCOMPARE(calBackend->resourceId(), QStringLiteral("p-spec:cal"));
+
+    auto *contactsBackend = reg.backendInstance(QStringLiteral("p-spec:contacts"));
+    QVERIFY(contactsBackend);
+    QCOMPARE(contactsBackend->resourceId(), QStringLiteral("p-spec:contacts"));
+}
+
+void TstProviderManager::testUnregisterRemovesAllProviderSpecs()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("p-spec2"));
+    CollectionInfo c1; c1.id = QStringLiteral("cal-1");
+    CollectionInfo b1; b1.id = QStringLiteral("book-1");
+    p->seedDomainGroups(QList<FakeProvider::DomainGroup>{
+        { QStringLiteral("cal"), { c1 } },
+        { QStringLiteral("contacts"), { b1 } },
+    });
+    auto *pPtr = p.get();
+    mgr.addProvider(std::move(p));
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+    QCOMPARE(mgr.backendIdsForProvider(QStringLiteral("p-spec2")).size(), 2);
+
+    // After unregisterProviderBackends (triggered here via disconnect()):
+    // both ids gone from registry and from backendIdsForProvider().
+    pPtr->disconnect();
+
+    const QStringList idsAfter = reg.registeredInstanceIds();
+    QVERIFY(!idsAfter.contains(QStringLiteral("p-spec2:cal")));
+    QVERIFY(!idsAfter.contains(QStringLiteral("p-spec2:contacts")));
+    QVERIFY(mgr.backendIdsForProvider(QStringLiteral("p-spec2")).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)

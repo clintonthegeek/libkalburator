@@ -71,6 +71,7 @@ using Kalburator::Sync::CalDavProvider;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::IBlobBackend;
+using Kalburator::Sync::IProvider;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::LocalBackend;
@@ -183,6 +184,19 @@ QByteArray makeVEventWithSummary(const QString &uid, const QString &summary)
 }
 
 } // namespace
+
+// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+// collection id), so a known-collection lookup against createBackends() is
+// equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Phase B5 — acceptance-matrix + fast-path fixture.
@@ -304,7 +318,7 @@ std::unique_ptr<ConvergenceFixture> makeConvergenceFixture(
     if (cols.isEmpty()) return nullptr;
     fx->collId = cols.first().id;
 
-    fx->rawRemote = fx->provider->createBackend(fx->collId);
+    fx->rawRemote = backendForCollection(*fx->provider, fx->collId);
     if (!fx->rawRemote) return nullptr;
     fx->remote = dynamic_cast<RemoteCalendarBackend *>(fx->rawRemote.get());
     if (!fx->remote) return nullptr;
@@ -433,7 +447,7 @@ void TstSyncConvergence::secondSyncIsNoOp()
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawBackend = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawBackend = backendForCollection(provider, collId);
     QVERIFY(rawBackend != nullptr);
     auto *remoteBackend = dynamic_cast<RemoteCalendarBackend *>(rawBackend.get());
     QVERIFY(remoteBackend != nullptr);

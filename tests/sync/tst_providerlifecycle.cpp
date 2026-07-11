@@ -15,31 +15,10 @@
 #include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "collectioninfo.h"
-#include "syncbackend.h"
-#include "shape.h"
 
 using namespace Kalburator::Sync;
 
 namespace {
-
-// Minimal fake backend required by FakeProvider::createBackend.
-class FakeBackend : public SyncBackend {
-    Q_OBJECT
-public:
-    FakeBackend() = default;
-    QString backendType() const override { return QStringLiteral("fake"); }
-    QList<Kalburator::Shape::Shape> nativeShapes() const override { return {}; }
-    QString resourceId() const override { return QStringLiteral("fake"); }
-    void loadCalendars(const QString &) override {}
-    void storeCalendars(const QString &,
-                        const QList<KCalendarCore::MemoryCalendar *> &) override {}
-    void startSync(const QString &,
-                   KCalendarCore::MemoryCalendar *,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QList<KCalendarCore::Incidence::Ptr> &,
-                   const QMap<QString, QString> &) override {}
-    void removeItem(const QString &, const QString &) override {}
-};
 
 // Minimal fake provider that succeeds connect() synchronously.
 class FakeProvider : public IProvider {
@@ -85,9 +64,8 @@ public:
     bool isConnected() const override { return m_connected; }
     QList<CollectionInfo> collections() const override { return {}; }
 
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override {
-        return std::make_unique<FakeBackend>();
-    }
+    // No collections seeded — createBackends() has nothing to produce.
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 
     void setDisplayName(const QString &n) { m_displayName = n; }
 

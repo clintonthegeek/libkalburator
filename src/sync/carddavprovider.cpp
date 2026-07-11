@@ -158,7 +158,7 @@ void CardDavProvider::disconnect() {
 }
 
 std::unique_ptr<IBlobBackend>
-CardDavProvider::createBackend(const QString &collectionId) {
+CardDavProvider::createBackendForCollection(const QString &collectionId) {
     if (!m_connected) {
         return nullptr;
     }
@@ -172,6 +172,20 @@ CardDavProvider::createBackend(const QString &collectionId) {
     auto backend = std::make_unique<RemoteContactsBackend>(m_serverUrl, m_username, m_password);
     backend->registerAddressbookUrl(collectionId, QUrl(urlIt.value()));
     return backend;
+}
+
+std::vector<ProviderBackendSpec> CardDavProvider::createBackends()
+{
+    std::vector<ProviderBackendSpec> out;
+    if (!m_connected) return out;
+    for (const auto &col : std::as_const(m_collections)) {
+        ProviderBackendSpec spec;
+        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
+        spec.backend = createBackendForCollection(col.id);
+        spec.collections = { col };
+        if (spec.backend) out.push_back(std::move(spec));
+    }
+    return out;
 }
 
 } // namespace Kalburator::Sync

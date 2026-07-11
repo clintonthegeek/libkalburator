@@ -51,6 +51,19 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
+// Phase 1: CalDavProvider / MultiProtocolDavProvider still emit one spec per
+// collection (domainId == collection id), so a known-collection lookup
+// against createBackends() is equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 BackendConfiguration makeConfig(const QUrl &serverUrl)
 {
     BackendConfiguration cfg;
@@ -124,7 +137,7 @@ void TstRemoteCalendarBackendConvergence::primed_loadCalendars_issues_zero_addit
     // Open backends for two of the five and load their calendars.
     for (int i : { 0, 3 }) {
         const QString collId = cols.at(i).id;
-        auto backend = provider.createBackend(collId);
+        auto backend = backendForCollection(provider, collId);
         QVERIFY(backend != nullptr);
         auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
         QVERIFY(remote != nullptr);
@@ -154,7 +167,7 @@ void TstRemoteCalendarBackendConvergence::primed_backend_emits_exactly_its_bound
     QCOMPARE(cols.size(), 5);
     const QString boundId = cols.first().id;  // for plain CalDav, id == discovery key
 
-    auto backend = provider.createBackend(boundId);
+    auto backend = backendForCollection(provider, boundId);
     QVERIFY(backend != nullptr);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
     QVERIFY(remote != nullptr);
@@ -214,7 +227,7 @@ void TstRemoteCalendarBackendConvergence::multiproto_primed_loadCalendars_issues
         const QString prefixedId = calCols.at(i).id;
         QVERIFY(prefixedId.startsWith(calPrefix));
 
-        auto backend = provider.createBackend(prefixedId);
+        auto backend = backendForCollection(provider, prefixedId);
         QVERIFY(backend != nullptr);
         auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
         QVERIFY(remote != nullptr);

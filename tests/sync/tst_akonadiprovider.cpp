@@ -6,6 +6,24 @@
 
 using namespace Kalburator::Sync;
 
+namespace {
+
+// Phase 1: AkonadiProvider emits one spec per collection permanently
+// (domainId == collection id — no Task 2 collapse for Akonadi), so a
+// known-collection lookup against createBackends() is equivalent to the
+// old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
+} // anonymous namespace
+
 class TstAkonadiProvider : public QObject {
     Q_OBJECT
 private slots:
@@ -18,10 +36,9 @@ private slots:
         QVERIFY(p.collections().isEmpty());
     }
 
-    void createBackend_beforeConnect_returnsNull() {
+    void createBackends_beforeConnect_returnsEmpty() {
         AkonadiProvider p;
-        auto backend = p.createBackend(QStringLiteral("akonadi-1"));
-        QCOMPARE(backend.get(), nullptr);
+        QVERIFY(p.createBackends().empty());
     }
 
     void contribution_exposes_akonadiBackendType() {
@@ -73,7 +90,7 @@ private slots:
         }
         if (calCollId.isEmpty()) QSKIP("No calendar collection in Akonadi.");
 
-        auto backend = p.createBackend(calCollId);
+        auto backend = backendForCollection(p, calCollId);
         QVERIFY(backend != nullptr);
     }
 
@@ -95,7 +112,7 @@ private slots:
         }
         if (contactsCollId.isEmpty()) QSKIP("No contacts collection in Akonadi.");
 
-        auto backend = p.createBackend(contactsCollId);
+        auto backend = backendForCollection(p, contactsCollId);
         QVERIFY(backend != nullptr);
         auto *contactsBackend = dynamic_cast<AkonadiContactsBackend *>(backend.get());
         QVERIFY(contactsBackend != nullptr);

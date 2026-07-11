@@ -50,7 +50,7 @@ public:
     void disconnect() override;
     bool isConnected() const override { return m_connected; }
     QList<CollectionInfo> collections() const override { return { m_info }; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
 private:
     QString          m_id;

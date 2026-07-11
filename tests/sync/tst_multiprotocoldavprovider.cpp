@@ -16,6 +16,23 @@
 using namespace Kalburator;
 using namespace Kalburator::Sync;
 
+namespace {
+
+// Phase 1: MultiProtocolDavProvider still emits one spec per collection
+// (domainId == collection id), so a known-collection lookup against
+// createBackends() is equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
+} // anonymous namespace
+
 class TstMultiProtocolDavProvider : public QObject
 {
     Q_OBJECT
@@ -32,8 +49,7 @@ private slots:
     void connectInvalidCredentialsEmitsErrorAndResolvesFalse();
     void connectPartialSuccessSkipped();
     void calendarsOnly_mode_excludes_contacts();
-    void createBackendUnknownIdReturnsNullptr();
-    void createBackendNotConnectedReturnsNullptr();
+    void createBackendsNotConnectedReturnsEmpty();
     void connectPopulatesContentTypesOnCalDavCollections();
     void primedBackendEmitsAdvertisedCollectionIdAtDiscovery();
     void pluginRegistersMultiProtoDavContribution();
@@ -249,21 +265,14 @@ void TstMultiProtocolDavProvider::calendarsOnly_mode_excludes_contacts()
              "expected no warning: CardDAV failure is irrelevant in calendarsOnly mode");
 }
 
-void TstMultiProtocolDavProvider::createBackendUnknownIdReturnsNullptr()
+void TstMultiProtocolDavProvider::createBackendsNotConnectedReturnsEmpty()
 {
+    // Not connected, no m_urlByCollectionId / m_collections entries —
+    // createBackends() has nothing to produce regardless of what ids a
+    // later connect() would populate.
     MultiProtocolDavProvider p;
-    // Not connected, no m_urlByCollectionId entries
-    QVERIFY(p.createBackend(QStringLiteral("totally-unknown")) == nullptr);
-    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:x:cal:y")) == nullptr);
-    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:x:contacts:y")) == nullptr);
-}
-
-void TstMultiProtocolDavProvider::createBackendNotConnectedReturnsNullptr()
-{
-    MultiProtocolDavProvider p;
-    // Even with a valid-looking id, not connected → nullptr
     QVERIFY(!p.isConnected());
-    QVERIFY(p.createBackend(QStringLiteral("multiproto-dav:test:cal:some-calendar")) == nullptr);
+    QVERIFY(p.createBackends().empty());
 }
 
 void TstMultiProtocolDavProvider::connectPopulatesContentTypesOnCalDavCollections()
@@ -320,7 +329,7 @@ void TstMultiProtocolDavProvider::connectPopulatesContentTypesOnCalDavCollection
 void TstMultiProtocolDavProvider::primedBackendEmitsAdvertisedCollectionIdAtDiscovery()
 {
     // Regression (PlanStan "Missing Calendars" false positive): the per-calendar
-    // backend from createBackend() must emit calendarDiscovered() with the SAME
+    // backend from createBackends() must emit calendarDiscovered() with the SAME
     // (prefixed) id that collections() advertised. The host builds its
     // logical-calendar bindings from collections() ids, then matches discovery
     // by exact id. Priming with the inner (unprefixed) key made discovery emit
@@ -355,8 +364,8 @@ void TstMultiProtocolDavProvider::primedBackendEmitsAdvertisedCollectionIdAtDisc
     }
     QVERIFY2(!calId.isEmpty(), "expected a calendar collection after connect");
 
-    auto backend = provider.createBackend(calId);
-    QVERIFY2(backend != nullptr, "createBackend() returned nullptr for advertised id");
+    auto backend = backendForCollection(provider, calId);
+    QVERIFY2(backend != nullptr, "createBackends() produced no spec for advertised id");
     auto *cal = dynamic_cast<SyncBackend *>(backend.get());
     QVERIFY2(cal != nullptr, "calendar collection did not yield a SyncBackend");
 

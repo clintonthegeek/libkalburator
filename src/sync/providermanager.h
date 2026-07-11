@@ -66,6 +66,11 @@ public:
     /// if the id is unknown (safe default).
     ProviderConnectionState providerState(const QString &id) const;
 
+    /// Registered backend ids ("<providerId>:<domainId>") currently owned
+    /// by this provider. Empty if the provider is unknown or has no
+    /// registered backends.
+    QStringList backendIdsForProvider(const QString &providerId) const;
+
 signals:
     void providersChanged();
     /// O.1.2: Per-provider connection state change.

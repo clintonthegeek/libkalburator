@@ -56,7 +56,8 @@ public:
      *
      * Config keys:
      *   akonadiCollectionId — optional; scopes the backend to one collection
-     *                         (set by AkonadiProvider::createBackend() for contacts).
+     *                         (set by AkonadiProvider::createBackendForCollection()
+     *                         for contacts).
      */
     static SyncBackend* create(const QVariantMap &config, QObject *parent);
 

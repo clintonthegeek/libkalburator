@@ -108,6 +108,19 @@ bool waitFutureBool(QFuture<bool> f, int timeoutMs)
     return f.isFinished();
 }
 
+// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+// collection id), so a known-collection lookup against createBackends() is
+// equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -160,9 +173,9 @@ int main(int argc, char **argv)
     }
     std::printf("INFO  connected; collection id = %s\n", qUtf8Printable(collId));
 
-    auto rawRemote = provider.createBackend(collId);
+    auto rawRemote = backendForCollection(provider, collId);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
-    if (!remote) { std::printf("FATAL: createBackend returned no RemoteCalendarBackend\n"); return 2; }
+    if (!remote) { std::printf("FATAL: createBackends() produced no RemoteCalendarBackend\n"); return 2; }
     rawRemote.release();
     remote->setDbPath(QDir(remoteStateDirPath).filePath(QStringLiteral("ctags.db")));
     remote->setCacheDir(remoteStateDirPath);

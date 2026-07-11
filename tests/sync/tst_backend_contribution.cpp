@@ -23,7 +23,7 @@ public:
     void disconnect() override {}
     bool isConnected() const override { return false; }
     QList<Sync::CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<Sync::IBlobBackend> createBackend(const QString&) override { return nullptr; }
+    std::vector<Sync::ProviderBackendSpec> createBackends() override { return {}; }
 };
 
 class StubBC : public Sync::BackendContribution {

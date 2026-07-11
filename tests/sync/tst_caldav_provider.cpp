@@ -40,6 +40,21 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
+// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+// collection id), so a known-collection lookup against createBackends() is
+// equivalent to the old createBackend(collectionId). Returns nullptr if the
+// provider isn't connected or collectionId isn't among its specs — same
+// contract the old per-collection API had.
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 BackendConfiguration makeConfig(const QUrl &serverUrl,
                                 const QString &username = QStringLiteral("testuser"),
                                 const QString &password = QStringLiteral("testpass"))
@@ -270,7 +285,7 @@ void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collectio
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> backend = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> backend = backendForCollection(provider, collId);
     QVERIFY(backend != nullptr);
 
     // The unique_ptr<IBlobBackend> upcast must yield an instance whose
@@ -292,7 +307,7 @@ void TstCalDavProvider::createBackend_returns_nullptr_for_unknown_collection()
     QVERIFY(waitForFutureBool(fut));
     QCOMPARE(fut.result(), true);
 
-    auto backend = provider.createBackend(QStringLiteral("not-a-collection"));
+    auto backend = backendForCollection(provider, QStringLiteral("not-a-collection"));
     QVERIFY(backend == nullptr);
 }
 
@@ -468,7 +483,7 @@ void TstCalDavProvider::createBackend_when_not_connected_returns_nullptr()
     CalDavProvider provider;
     provider.load(makeConfig(server.baseUrl()));
 
-    auto backend = provider.createBackend(QStringLiteral("any-id"));
+    auto backend = backendForCollection(provider, QStringLiteral("any-id"));
     QVERIFY(backend == nullptr);
 }
 
@@ -489,7 +504,7 @@ void TstCalDavProvider::createBackend_after_disconnect_returns_nullptr()
     provider.disconnect();
     QVERIFY(!provider.isConnected());
 
-    auto backend = provider.createBackend(collId);
+    auto backend = backendForCollection(provider, collId);
     QVERIFY(backend == nullptr);
 }
 

@@ -24,8 +24,8 @@ class CardDavCapabilityDiscovery;
  * runs them in parallel during connect(), and federates their results
  * into a single collections() list. Collection ids are prefixed
  * "multiproto-dav:<provider-id>:cal:<inner-id>" /
- * "multiproto-dav:<provider-id>:contacts:<inner-id>" so createBackend()
- * can dispatch by prefix.
+ * "multiproto-dav:<provider-id>:contacts:<inner-id>" so
+ * createBackendForCollection() can dispatch by prefix.
  *
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"                       QString — server base URL
@@ -56,8 +56,7 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
     QString lastWarning() const override { return m_lastWarning; }
     QString lastError()   const override { return m_lastError; }
@@ -68,6 +67,13 @@ private slots:
 private:
     void onCardDavFinished(QFutureWatcher<QList<CollectionInfo>> *w);
     void maybeResolveConnect();
+
+    // Phase 1: behavior-preserving per-collection construction, unchanged
+    // body from the old public createBackend(collectionId). createBackends()
+    // wraps this in a loop over m_collections (one spec per collection).
+    // Task 2.2 collapses this to "cal"/"contacts" specs.
+    std::unique_ptr<IBlobBackend>
+        createBackendForCollection(const QString &collectionId);
 
     // Identity / config
     QString m_id;
@@ -99,8 +105,9 @@ private:
     QString m_cardDavError;
     QMap<QString, QString> m_calDavUrlMap;   // inner calendarId → URL href
     QMap<QString, QString> m_cardDavUrlMap;  // inner collectionId → URL href
-    // Per-calendar capabilities retained from CalDAV discovery so createBackend()
-    // can prime each RemoteCalendarBackend (keyed by inner calendarId).
+    // Per-calendar capabilities retained from CalDAV discovery so
+    // createBackendForCollection() can prime each RemoteCalendarBackend
+    // (keyed by inner calendarId).
     QMap<QString, PerCalendarCapabilities> m_calDavCaps;
 
     std::shared_ptr<QPromise<bool>> m_connectPromise;

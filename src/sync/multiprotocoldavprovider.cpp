@@ -177,7 +177,7 @@ void MultiProtocolDavProvider::disconnect()
 }
 
 std::unique_ptr<IBlobBackend>
-MultiProtocolDavProvider::createBackend(const QString &collectionId)
+MultiProtocolDavProvider::createBackendForCollection(const QString &collectionId)
 {
     if (!m_connected) return nullptr;
     if (!m_urlByCollectionId.contains(collectionId)) return nullptr;
@@ -221,11 +221,25 @@ MultiProtocolDavProvider::createBackend(const QString &collectionId)
     return nullptr;
 }
 
+std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()
+{
+    std::vector<ProviderBackendSpec> out;
+    if (!m_connected) return out;
+    for (const auto &col : std::as_const(m_collections)) {
+        ProviderBackendSpec spec;
+        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
+        spec.backend = createBackendForCollection(col.id);
+        spec.collections = { col };
+        if (spec.backend) out.push_back(std::move(spec));
+    }
+    return out;
+}
+
 void MultiProtocolDavProvider::onCalDavFinished(bool success)
 {
     if (success) {
         m_calDavUrlMap = m_caldavDiscovery->calendarUrls();
-        m_calDavCaps = m_caldavDiscovery->perCalendarCapabilities();  // retained for createBackend() priming
+        m_calDavCaps = m_caldavDiscovery->perCalendarCapabilities();  // retained for createBackendForCollection() priming
         for (auto it = m_calDavCaps.constBegin();
              it != m_calDavCaps.constEnd(); ++it) {
             CollectionInfo ci;

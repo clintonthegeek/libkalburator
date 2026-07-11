@@ -48,8 +48,7 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
     QString lastError() const override { return m_lastError; }
 
@@ -57,6 +56,13 @@ private slots:
     void onDiscoveryFinished(bool success);
 
 private:
+    // Phase 1: behavior-preserving per-collection construction, unchanged
+    // body from the old public createBackend(collectionId). createBackends()
+    // wraps this in a loop over m_collections (one spec per collection).
+    // Task 2.1 collapses this to a single "cal" spec.
+    std::unique_ptr<IBlobBackend>
+        createBackendForCollection(const QString &collectionId);
+
     QString                              m_id;             // UUID
     QString                              m_displayName;
     QUrl                                 m_serverUrl;
@@ -69,8 +75,8 @@ private:
     CalDavCapabilityDiscovery           *m_discovery = nullptr;
     QMap<QString, QString>               m_calendarUrls;   // collectionId -> href
     // Per-calendar capabilities copied out of the discovery before it is
-    // deleteLater()'d, so createBackend() can prime each backend (color +
-    // content types) without keeping the discovery object alive.
+    // deleteLater()'d, so createBackendForCollection() can prime each backend
+    // (color + content types) without keeping the discovery object alive.
     QMap<QString, PerCalendarCapabilities> m_perCalendarCaps;  // collectionId -> caps
     std::unique_ptr<QPromise<bool>>      m_connectPromise;
 };

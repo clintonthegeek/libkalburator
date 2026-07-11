@@ -101,7 +101,7 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
 
     if (success) {
         m_calendarUrls = m_discovery->calendarUrls();
-        m_perCalendarCaps = m_discovery->perCalendarCapabilities();  // retained for createBackend() priming
+        m_perCalendarCaps = m_discovery->perCalendarCapabilities();  // retained for createBackendForCollection() priming
         m_collections.clear();
         for (auto it = m_perCalendarCaps.constBegin();
              it != m_perCalendarCaps.constEnd(); ++it) {
@@ -158,7 +158,7 @@ void CalDavProvider::disconnect() {
 }
 
 std::unique_ptr<IBlobBackend>
-CalDavProvider::createBackend(const QString &collectionId) {
+CalDavProvider::createBackendForCollection(const QString &collectionId) {
     if (!m_connected) {
         return nullptr;
     }
@@ -184,6 +184,20 @@ CalDavProvider::createBackend(const QString &collectionId) {
             contentTypesFromCaps(capIt.value()) } });
     }
     return backend;
+}
+
+std::vector<ProviderBackendSpec> CalDavProvider::createBackends()
+{
+    std::vector<ProviderBackendSpec> out;
+    if (!m_connected) return out;
+    for (const auto &col : std::as_const(m_collections)) {
+        ProviderBackendSpec spec;
+        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
+        spec.backend = createBackendForCollection(col.id);
+        spec.collections = { col };
+        if (spec.backend) out.push_back(std::move(spec));
+    }
+    return out;
 }
 
 } // namespace Kalburator::Sync

@@ -74,6 +74,7 @@ using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::ExecutionOverride;
 using Kalburator::Sync::IBlobBackend;
+using Kalburator::Sync::IProvider;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::LocalBackend;
@@ -197,6 +198,19 @@ SyncResult runOnce(SyncEngine &engine, SyncEngine::SyncBehavior behavior = SyncE
     return f.resultAt(0).first();
 }
 
+// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+// collection id), so a known-collection lookup against createBackends() is
+// equivalent to the old createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &collectionId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == collectionId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 } // namespace
 
 class TstSyncTokenSoundness : public QObject
@@ -267,7 +281,7 @@ void TstSyncTokenSoundness::applyFailure_doesNotStrandChange()
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    auto rawRemote = provider.createBackend(collId);
+    auto rawRemote = backendForCollection(provider, collId);
     QVERIFY(rawRemote);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
     QVERIFY(remote);

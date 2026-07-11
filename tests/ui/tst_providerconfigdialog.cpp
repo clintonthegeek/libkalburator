@@ -63,7 +63,7 @@ public:
     void disconnect() override {}
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 private:
     QString m_url;
 };
@@ -98,7 +98,7 @@ public:
     void disconnect() override {}
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 private:
     QString m_msg;
 };
@@ -155,7 +155,7 @@ public:
     void disconnect() override {}
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 };
 
 class CapturingContribution : public BackendContribution {
@@ -185,7 +185,7 @@ public:
     void disconnect() override {}
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 };
 
 class ZeroCalendarsContribution : public BackendContribution {
@@ -221,7 +221,7 @@ public:
         b.type = QStringLiteral("calendar");
         return { a, b };
     }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 };
 
 class WithCalendarsContribution : public BackendContribution {

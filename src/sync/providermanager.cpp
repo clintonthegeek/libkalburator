@@ -252,26 +252,35 @@ void ProviderManager::onProviderCollectionsChanged()
 
 void ProviderManager::registerProviderBackends(IProvider *provider)
 {
-    const auto cols = provider->collections();
-    for (const auto &col : cols) {
+    auto specs = provider->createBackends();
+    for (auto &spec : specs) {
+        if (!spec.backend) continue;
         const QString backendId =
-            QStringLiteral("%1:%2").arg(provider->id(), col.id);
-        auto backend = provider->createBackend(col.id);
-        if (!backend) continue;
+            QStringLiteral("%1:%2").arg(provider->id(), spec.domainId);
 
         // BackendRegistry stores SyncBackendBase* (which inherits IBlobBackend).
         // All provider-produced backends must derive SyncBackendBase (calendar
         // backends via SyncBackend; non-calendar backends directly).
-        auto *asSync = dynamic_cast<SyncBackendBase*>(backend.get());
+        auto *asSync = dynamic_cast<SyncBackendBase*>(spec.backend.get());
         if (!asSync) {
             qWarning() << "[ProviderManager] provider" << provider->id()
-                       << "produced a non-SyncBackendBase for collection" << col.id
+                       << "produced a non-SyncBackendBase for domain" << spec.domainId
                        << "— cannot register with BackendRegistry. Skipping.";
             continue;
         }
+        asSync->setResourceId(backendId);
         m_registry->registerBackendInstance(backendId, asSync);
-        m_ownedBackends.insert_or_assign(backendId, std::move(backend));
+        m_ownedBackends.insert_or_assign(backendId, std::move(spec.backend));
     }
+}
+
+QStringList ProviderManager::backendIdsForProvider(const QString &providerId) const
+{
+    const QString prefix = providerId + QLatin1Char(':');
+    QStringList out;
+    for (const auto &kv : m_ownedBackends)
+        if (kv.first.startsWith(prefix)) out << kv.first;
+    return out;
 }
 
 void ProviderManager::unregisterProviderBackends(IProvider *provider)

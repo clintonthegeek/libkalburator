@@ -47,11 +47,18 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
 private:
     void onDiscoveryFinished(const QList<CollectionInfo> &books, bool hadError);
+
+    // Phase 1: behavior-preserving per-collection construction, unchanged
+    // body from the old public createBackend(collectionId). createBackends()
+    // wraps this in a loop over m_collections (one spec per collection).
+    // Task 2.3 collapses this to a single "contacts" spec.
+    std::unique_ptr<IBlobBackend>
+        createBackendForCollection(const QString &collectionId);
+
     QString                              m_id;             // UUID
     QString                              m_displayName;
     QUrl                                 m_serverUrl;
