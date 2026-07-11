@@ -198,15 +198,16 @@ SyncResult runOnce(SyncEngine &engine, SyncEngine::SyncBehavior behavior = SyncE
     return f.resultAt(0).first();
 }
 
-// Phase 1: CalDavProvider still emits one spec per collection (domainId ==
-// collection id), so a known-collection lookup against createBackends() is
-// equivalent to the old createBackend(collectionId).
+// Task 2.1: CalDavProvider now emits exactly one spec for the whole
+// connected account (domainId == "cal"), whose single RemoteCalendarBackend
+// hosts every calendar. A lookup by domainId ("cal") is the new equivalent
+// of the old per-collection createBackend(collectionId).
 std::unique_ptr<IBlobBackend>
-backendForCollection(IProvider &provider, const QString &collectionId)
+backendForCollection(IProvider &provider, const QString &domainId)
 {
     auto specs = provider.createBackends();
     for (auto &spec : specs) {
-        if (spec.domainId == collectionId) return std::move(spec.backend);
+        if (spec.domainId == domainId) return std::move(spec.backend);
     }
     return nullptr;
 }
@@ -281,7 +282,7 @@ void TstSyncTokenSoundness::applyFailure_doesNotStrandChange()
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    auto rawRemote = backendForCollection(provider, collId);
+    auto rawRemote = backendForCollection(provider, QStringLiteral("cal"));
     QVERIFY(rawRemote);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(rawRemote.get());
     QVERIFY(remote);

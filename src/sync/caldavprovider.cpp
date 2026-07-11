@@ -6,6 +6,7 @@
 #include "caldavcapabilitydiscovery.h"
 #include "remotecalendarbackend.h"
 #include "caldavcontenttypes.h"
+#include "davslug.h"
 
 #include <QFutureInterface>
 #include <QUuid>
@@ -100,13 +101,23 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
     }
 
     if (success) {
-        m_calendarUrls = m_discovery->calendarUrls();
-        m_perCalendarCaps = m_discovery->perCalendarCapabilities();  // retained for createBackendForCollection() priming
+        // Task 2.1: discovery's maps are keyed by display name (or a
+        // display-name-shaped fallback); re-key by URL slug — the stable,
+        // server-unique, rename-surviving id CollectionInfo/backends now use.
+        // Consumed as locals only; the raw display-name-keyed maps are never
+        // retained as members.
+        const auto urls = m_discovery->calendarUrls();          // name -> href
+        const auto caps = m_discovery->perCalendarCapabilities(); // name -> caps
+        m_urlBySlug.clear();
+        m_capsBySlug.clear();
         m_collections.clear();
-        for (auto it = m_perCalendarCaps.constBegin();
-             it != m_perCalendarCaps.constEnd(); ++it) {
+        for (auto it = caps.constBegin(); it != caps.constEnd(); ++it) {
+            const QString url = urls.value(it.key());
+            const QString slug = davSlugFromUrl(url);
+            if (slug.isEmpty()) continue;  // no lookup key; cannot be primed
+
             CollectionInfo ci;
-            ci.id   = it.key();
+            ci.id   = slug;
             ci.name = it.value().serverDisplayName.isEmpty() ? it.key()
                                                               : it.value().serverDisplayName;
             ci.type = QStringLiteral("calendar");
@@ -115,6 +126,9 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
             if (it.value().supportsVEvent) ci.contentTypes << QStringLiteral("VEVENT");
             if (it.value().supportsVTodo)  ci.contentTypes << QStringLiteral("VTODO");
             m_collections.append(ci);
+
+            m_urlBySlug.insert(slug, url);
+            m_capsBySlug.insert(slug, it.value());
         }
         m_connected = true;
         emit collectionsChanged();
@@ -152,51 +166,31 @@ void CalDavProvider::disconnect() {
     if (!m_connected) return;
     m_connected = false;
     m_collections.clear();
-    m_calendarUrls.clear();
-    m_perCalendarCaps.clear();
+    m_urlBySlug.clear();
+    m_capsBySlug.clear();
     emit connectionStateChanged(false);
-}
-
-std::unique_ptr<IBlobBackend>
-CalDavProvider::createBackendForCollection(const QString &collectionId) {
-    if (!m_connected) {
-        return nullptr;
-    }
-    const auto urlIt = m_calendarUrls.constFind(collectionId);
-    if (urlIt == m_calendarUrls.constEnd()) {
-        return nullptr;
-    }
-
-    // RemoteCalendarBackend inherits SyncBackend which inherits IBlobBackend, so
-    // the unique_ptr<IBlobBackend> upcast is implicit.
-    auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
-    backend->registerCalendarUrl(collectionId, urlIt.value());
-
-    // Seed the bound calendar from connect-time discovery so the backend's
-    // loadCalendars() short-circuits its server-wide PROPFIND (v0.63). For plain
-    // CalDav the collectionId IS the discovery key.
-    const auto capIt = m_perCalendarCaps.constFind(collectionId);
-    if (capIt != m_perCalendarCaps.constEnd()) {
-        backend->primeCalendars({ RemoteCalendarBackend::PrimedCalendar{
-            collectionId,
-            urlIt.value(),
-            capIt.value().serverColor,
-            contentTypesFromCaps(capIt.value()) } });
-    }
-    return backend;
 }
 
 std::vector<ProviderBackendSpec> CalDavProvider::createBackends()
 {
     std::vector<ProviderBackendSpec> out;
-    if (!m_connected) return out;
+    if (!m_connected || m_collections.isEmpty()) return out;
+    ProviderBackendSpec spec;
+    spec.domainId = QStringLiteral("cal");
+    auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
+    QList<RemoteCalendarBackend::PrimedCalendar> primed;
     for (const auto &col : std::as_const(m_collections)) {
-        ProviderBackendSpec spec;
-        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
-        spec.backend = createBackendForCollection(col.id);
-        spec.collections = { col };
-        if (spec.backend) out.push_back(std::move(spec));
+        const QString url = m_urlBySlug.value(col.id);
+        backend->registerCalendarUrl(col.id, url);
+        const auto capIt = m_capsBySlug.constFind(col.id);
+        if (capIt != m_capsBySlug.constEnd())
+            primed.append(RemoteCalendarBackend::PrimedCalendar{
+                col.id, url, capIt->serverColor, contentTypesFromCaps(*capIt)});
     }
+    backend->primeCalendars(primed);
+    spec.collections = m_collections;
+    spec.backend = std::move(backend);
+    out.push_back(std::move(spec));
     return out;
 }
 

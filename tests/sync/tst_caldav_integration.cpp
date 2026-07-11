@@ -169,15 +169,15 @@ void TstCalDavIntegration::connectAll_registers_provider_backends()
     QCOMPARE(cols.size(), 2);
     QVERIFY(!cols.first().id.isEmpty());
 
+    // Task 2.1: CalDavProvider now emits exactly one spec for the whole
+    // account (domainId "cal"), so the registry has one entry hosting both
+    // calendars, not one entry per collection.
     const QStringList ids = registry.registeredInstanceIds();
-    for (const auto &c : cols) {
-        const QString expected =
-            QStringLiteral("acct-conn:%1").arg(c.id);
-        QVERIFY2(ids.contains(expected),
-                 qPrintable(QStringLiteral("registry missing id ") + expected
-                            + QStringLiteral(" — actual: ")
-                            + ids.join(QLatin1Char(','))));
-    }
+    const QString expected = QStringLiteral("acct-conn:cal");
+    QVERIFY2(ids.contains(expected),
+             qPrintable(QStringLiteral("registry missing id ") + expected
+                        + QStringLiteral(" — actual: ")
+                        + ids.join(QLatin1Char(','))));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -213,8 +213,9 @@ void TstCalDavIntegration::registered_backend_is_a_remote_backend()
     const auto cols = p->collections();
     QVERIFY(!cols.isEmpty());
 
-    const QString backendId =
-        QStringLiteral("acct-type:%1").arg(cols.first().id);
+    // Task 2.1: registered under the account's single "cal" domain, not a
+    // per-collection id.
+    const QString backendId = QStringLiteral("acct-type:cal");
 
     SyncBackend *sb = static_cast<SyncBackend*>(registry.backendInstance(backendId));
     QVERIFY2(sb != nullptr,
