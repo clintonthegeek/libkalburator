@@ -59,6 +59,14 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs. Phase 2 will
+    // return one spec per Akonadi collection, mirroring its
+    // "provider == resource" topology (domainId == collectionId here,
+    // unlike DAV providers where domainId is one of {cal, contacts}).
+    QList<ProviderBackendSpec>
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
+
 private:
     void onCollectionsFetched(KJob *job);
 

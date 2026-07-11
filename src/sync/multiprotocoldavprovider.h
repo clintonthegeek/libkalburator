@@ -59,6 +59,18 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection, regardless of which half (CalDAV / CardDAV) it would
+    // belong to. Phase 2 will return at most one Calendar-spec and at
+    // most one Contacts-spec per provider, fanout-collapsing the
+    // currently-many backends into the producer's two domain specs.
+    // Behaviour contract here is "empty" so callers can wire their
+    // pipelines without changing this provider's per-collection
+    // dispatch semantics.
+    QList<ProviderBackendSpec>
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
+
     QString lastWarning() const override { return m_lastWarning; }
     QString lastError()   const override { return m_lastError; }
 

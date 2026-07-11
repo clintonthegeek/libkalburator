@@ -115,6 +115,13 @@ public:
         return std::make_unique<FakeBackend>();
     }
 
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs; Phase 2 will
+    // make this the active path.
+    QList<ProviderBackendSpec>
+    createBackends(const QString & /*collectionId*/) const override {
+        return {};
+    }
+
     void setFailConnect(bool fail) { m_failConnect = fail; }
     void seedCollections(QList<CollectionInfo> cols) { m_collectionsSeed = std::move(cols); }
     bool wasLoaded() const { return m_loaded; }
@@ -181,6 +188,14 @@ private slots:
     void default_factory_creates_carddav_provider();
     void providerState_transitionsThroughLifecycle();
     void addProvider_registersBackendsForPreConnectedProvider();
+
+    // PHASE1-TASK1.1 — v2 contract scaffolding. Three small canary
+    // tests wired now so Phase 2 can extend them instead of having to
+    // add fresh mocks at the same time it ships real behaviour. All
+    // three will assert-empty (no specs, no registration) this phase.
+    void createBackends_returnsEmptyForFakeProvider();
+    void createBackendsForCollection_returnsEmptyForUnownedCollection();
+    void createBackendsForCollection_returnsEmptyForOwnedCollection();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -577,6 +592,68 @@ void TstProviderManager::addProvider_registersBackendsForPreConnectedProvider()
     // And connectAll() afterwards must remain harmless.
     QVERIFY(waitForFuture(mgr.connectAll()));
     QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("p1:cal-pre")));
+}
+
+// ── PHASE1-TASK1.1 — v2 contract scaffolding ────────────────────────────
+// These three tests are deliberately minimal: they exercise the new pure
+// virtual on IProvider and the new ProviderManager entry point, but
+// assert empty results (Phase 1 stubs). Phase 2 replaces the bodies with
+// real-spec assertions once the providers ship filled-in descriptors.
+
+void TstProviderManager::createBackends_returnsEmptyForFakeProvider()
+{
+    // The pure virtual is callable on a const IProvider*, and the Phase 1
+    // stub returns an empty list for any collectionId (known or not).
+    FakeProvider p(QStringLiteral("v2-p"));
+    QCOMPARE(p.createBackends(QStringLiteral("anything")).size(), 0);
+    QCOMPARE(p.createBackends(QString()).size(), 0);
+
+    // Also exercisable through an IProvider* (manager's view), const.
+    const IProvider *view = &p;
+    QCOMPARE(view->createBackends(QStringLiteral("anything")).size(), 0);
+}
+
+void TstProviderManager::createBackendsForCollection_returnsEmptyForUnownedCollection()
+{
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    // No providers registered at all → manager has nothing to ask;
+    // createBackendsForCollection logs and returns {}.
+    QCOMPARE(mgr.createBackendsForCollection(QStringLiteral("nobody-home")).size(), 0);
+
+    // Add a provider but keep it disconnected; manager must skip it
+    // (it cannot own collections it has not enumerated yet).
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("v2-p"));
+    mgr.addProvider(std::move(p));
+    QCOMPARE(mgr.createBackendsForCollection(QStringLiteral("nobody-home")).size(), 0);
+}
+
+void TstProviderManager::createBackendsForCollection_returnsEmptyForOwnedCollection()
+{
+    // Provider is connected and owns a collection, but its Phase-1 stub
+    // createBackends() returns an empty list. The manager must therefore
+    // return an empty list and NOT register anything (the existing v1
+    // registerProviderBackends path is the active registration site
+    // this phase; the v2 entry point is additive).
+    BackendRegistry reg;
+    ProviderManager mgr(&reg);
+
+    auto p = std::make_unique<FakeProvider>(QStringLiteral("v2-p"));
+    CollectionInfo c; c.id = QStringLiteral("cal-x"); c.name = QStringLiteral("X");
+    p->seedCollections({c});
+    mgr.addProvider(std::move(p));
+
+    QVERIFY(waitForFuture(mgr.connectAll()));
+
+    const auto specs = mgr.createBackendsForCollection(QStringLiteral("cal-x"));
+    QCOMPARE(specs.size(), 0);
+
+    // The v2 hook must NOT have registered anything (Phase 1 contract:
+    // descriptors only, no registration). The v1 path IS expected to
+    // have registered "v2-p:cal-x" via registerProviderBackends(); we
+    // sanity-check that the v1 path is still doing its job.
+    QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("v2-p:cal-x")));
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)

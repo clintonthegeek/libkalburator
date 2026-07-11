@@ -51,6 +51,16 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection. Phase 2 will return one Calendar-spec per collection
+    // (`<providerId>:cal:<innerCalendarId>`), reusing the connect-time
+    // caps map to fill displayName + color + contentTypes. Behaviour
+    // contract here is "empty" so callers can wire their pipelines
+    // without flipping the provider's actual semantics.
+    QList<ProviderBackendSpec>
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
+
     QString lastError() const override { return m_lastError; }
 
 private slots:

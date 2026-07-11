@@ -52,6 +52,15 @@ public:
     QList<CollectionInfo> collections() const override { return { m_info }; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &collectionId) override;
 
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection. NeutralProvider already models a single collection
+    // (m_info), so Phase 2 is the trivial case of one spec whose
+    // domainId is m_info.id; we keep it stub for now so the additive
+    // contract migration happens first and behaviour-flip later.
+    QList<ProviderBackendSpec>
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
+
 private:
     QString          m_id;
     QString          m_kind;

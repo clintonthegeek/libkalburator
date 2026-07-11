@@ -274,6 +274,47 @@ void ProviderManager::registerProviderBackends(IProvider *provider)
     }
 }
 
+// PHASE1-TASK1.1 — additive v2 wiring hook. Phase 2 will turn this into
+// the registration entry point: build a backend per spec, register with
+// the BackendRegistry under spec.backendId, and stamp resourceId on the
+// per-stack backend. Phase 1 only collects the descriptors, logs the
+// outcome, and intentionally registers nothing — keeping the v1
+// registerProviderBackends() loop as the active path so behaviour does
+// not shift this phase.
+QList<ProviderBackendSpec>
+ProviderManager::createBackendsForCollection(const QString &collectionId)
+{
+    // Find the provider that owns this collection. There is no global
+    // cross-provider index yet — Phase 2 will add
+    // backendIdsForProvider(); for now we walk the providers and ask each
+    // whether collectionId appears in its collections() list.
+    IProvider *owner = nullptr;
+    for (const auto &p : m_providers) {
+        if (!p->isConnected()) continue;
+        const auto cols = p->collections();
+        for (const auto &c : cols) {
+            if (c.id == collectionId) {
+                owner = p.get();
+                break;
+            }
+        }
+        if (owner) break;
+    }
+    if (!owner) {
+        qDebug() << "[ProviderManager] createBackendsForCollection:"
+                 << "no connected provider owns collectionId" << collectionId
+                 << "— returning empty list.";
+        return {};
+    }
+
+    const auto specs = owner->createBackends(collectionId);
+    qDebug() << "[ProviderManager] createBackendsForCollection: provider"
+             << owner->id() << "produced" << specs.size()
+             << "spec(s) for collection" << collectionId
+             << "(Phase 1 stub: descriptors only, no registration yet).";
+    return specs;
+}
+
 void ProviderManager::unregisterProviderBackends(IProvider *provider)
 {
     const QString prefix = provider->id() + QLatin1Char(':');
