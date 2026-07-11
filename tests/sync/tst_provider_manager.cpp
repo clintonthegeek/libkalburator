@@ -5,8 +5,6 @@
 #include <QFutureWatcher>
 #include <QFutureInterface>
 
-#include <algorithm>
-
 #include <KConfig>
 #include <KConfigGroup>
 
@@ -146,76 +144,6 @@ private:
     QList<CollectionInfo> m_collectionsSeed;
 };
 
-// ── PHASE2-TASK2.3 — SpecEmittingProvider ─────────────────────────
-// Mirrors FakeProvider but emits one Calendar-kind
-// ProviderBackendSpec on every createBackends() call (instead of the
-// Phase 1 empty stub). Used to assert that
-// ProviderManager::createBackendsForCollection() actively forwards
-// specs from real providers — covers Task 2.3's "sweep into the
-// manager" claim without coupling this test to CalDavProvider /
-// CardDavProvider / MultiProtocolDavProvider (each of which has its
-// own targeted test).
-class SpecEmittingProvider : public IProvider {
-    Q_OBJECT
-public:
-    explicit SpecEmittingProvider(const QString &id, QObject *parent = nullptr)
-        : IProvider(parent), m_id(id) {}
-
-    QString id() const override { return m_id; }
-    QString kind() const override { return QStringLiteral("spec-fake"); }
-    QString displayName() const override { return m_displayName; }
-
-    void load(const BackendConfiguration &cfg) override {
-        m_displayName = cfg.displayName;
-    }
-    BackendConfiguration save() const override {
-        BackendConfiguration cfg;
-        cfg.id = m_id; cfg.displayName = m_displayName; return cfg;
-    }
-    QWidget *createConfigWidget(QWidget *) override { return nullptr; }
-    QFuture<bool> connect() override {
-        m_connected = true;
-        emit collectionsChanged();
-        emit connectionStateChanged(true);
-        QFutureInterface<bool> fi;
-        fi.reportStarted(); fi.reportResult(true); fi.reportFinished();
-        return fi.future();
-    }
-    void disconnect() override { m_connected = false; emit connectionStateChanged(false); }
-    bool isConnected() const override { return m_connected; }
-    QList<CollectionInfo> collections() const override { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &) override { return std::make_unique<FakeBackend>(); }
-
-    QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const override {
-        QList<ProviderBackendSpec> out;
-        if (!m_connected || collectionId.isEmpty()) return out;
-        const auto it = std::find_if(m_collections.cbegin(), m_collections.cend(),
-            [&](const CollectionInfo &c){ return c.id == collectionId; });
-        if (it == m_collections.cend()) return out;
-        ProviderBackendSpec spec;
-        spec.collectionId = it->id;
-        spec.kind         = BackendKind::Calendar;
-        spec.displayName  = it->name;
-        // Same "<a>:<b>:<c>" triple the real DAV / Neutral
-        // providers emit (Phase 2.4+ parses uniformly).
-        spec.backendId    = QStringLiteral("%1:%2:%2").arg(m_id, it->id);
-        spec.contentTypes << QStringLiteral("VEVENT");
-        out.append(spec);
-        return out;
-    }
-
-    void setDisplayName(const QString &n) { m_displayName = n; }
-    void seedCollections(QList<CollectionInfo> c) { m_collections = std::move(c); }
-
-private:
-    QString m_id;
-    QString m_displayName;
-    bool    m_connected = false;
-    QList<CollectionInfo> m_collections;
-};
-
 // Minimal BackendContribution that produces FakeProvider instances.
 // Used in tests that previously called setFactoryForTest().
 class FakeBC : public BackendContribution {
@@ -268,14 +196,6 @@ private slots:
     void createBackends_returnsEmptyForFakeProvider();
     void createBackendsForCollection_returnsEmptyForUnownedCollection();
     void createBackendsForCollection_returnsEmptyForOwnedCollection();
-
-    // ── PHASE2-TASK2.3 — v2 contract actively shapes routing ─────────
-    // Real-spec FakeProvider variant: emits a Calendar-tagged
-    // ProviderBackendSpec when asked. Verifies that the manager's
-    // createBackendsForCollection() entry point (Task 1.1) routes to
-    // the provider's v2 entry, surfaces the spec, and the three-segment
-    // backendId matches the Phase 2.4+ expected shape.
-    void createBackendsForCollection_surfacesRealSpec_fromFakeProvider();
 };
 
 void TstProviderManager::load_constructs_provider_via_factory()
@@ -734,41 +654,6 @@ void TstProviderManager::createBackendsForCollection_returnsEmptyForOwnedCollect
     // have registered "v2-p:cal-x" via registerProviderBackends(); we
     // sanity-check that the v1 path is still doing its job.
     QVERIFY(reg.registeredInstanceIds().contains(QStringLiteral("v2-p:cal-x")));
-}
-
-// ── PHASE2-TASK2.3 — managers actively forward real specs ─────────────
-//
-// Task 2.1 (CalDAV), 2.2 (multiprotocol), 2.3 (CardDAV + Neutral +
-// Akonadi) each landed real-spec createBackends() implementations.
-// ProviderManager::createBackendsForCollection() (Task 1.1 scaffold)
-// must therefore surface those specs to the manager-level caller.
-// This test uses SpecEmittingProvider (above) to keep the manager
-// test hermetic from the real DAV discovery fixtures owned by
-// tst_carddav_provider / tst_multiprotocoldavprovider / etc.
-
-void TstProviderManager::createBackendsForCollection_surfacesRealSpec_fromFakeProvider()
-{
-    BackendRegistry reg;
-    ProviderManager mgr(&reg);
-
-    auto p = std::make_unique<SpecEmittingProvider>(QStringLiteral("v2-real-p"));
-    CollectionInfo c;
-    c.id   = QStringLiteral("cal-real");
-    c.name = QStringLiteral("Real Cal");
-    p->seedCollections({c});
-    mgr.addProvider(std::move(p));
-
-    QVERIFY(waitForFuture(mgr.connectAll()));
-
-    // Manager routes the collectionId to the owning provider, and the
-    // provider's v2 entry emits ONE Calendar spec with the expected
-    // "<a>:<b>:<c>" backendId triple.
-    const auto specs = mgr.createBackendsForCollection(QStringLiteral("cal-real"));
-    QCOMPARE(specs.size(), 1);
-    QCOMPARE(specs.first().collectionId, QStringLiteral("cal-real"));
-    QVERIFY(specs.first().kind == BackendKind::Calendar);
-    QCOMPARE(specs.first().backendId,
-             QStringLiteral("v2-real-p:cal-real:cal-real"));
 }
 
 QTEST_GUILESS_MAIN(TstProviderManager)

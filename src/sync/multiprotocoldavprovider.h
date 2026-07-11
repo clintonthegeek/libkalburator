@@ -59,40 +59,17 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
-    // PHASE2-TASK2.3 — implements the v2 contract for multi-protocol
-    // DAV accounts (originally introduced in Task 2.2; doc updated in
-    // Task 2.3 to reflect the shared-slug consolidation). The
-    // provider still models ONE provider-instance but surfaces TWO
-    // logical collections (calendar + contacts) when both legs were
-    // discovered. For a given collectionId:
-    //
-    //   * if it belongs to the CalDAV leg (prefix
-    //     "multiproto-dav:<m_id>:cal:"), returns ONE BackendKind::Calendar
-    //     spec sourced from m_calDavUrlMap + m_calDavCaps + m_collections,
-    //     using the shared Kalburator::Sync::makeDavSlug() (src/sync/
-    //     davslug.h) for the stable backendId tail.
-    //   * if it belongs to the CardDAV leg (prefix
-    //     "multiproto-dav:<m_id>:contacts:"), returns ONE BackendKind::Contacts
-    //     spec sourced from m_cardDavUrlMap + m_collections, using the
-    //     same shared makeDavSlug() helper for the stable backendId tail.
-    //   * otherwise {} (matches the v1 createBackend() nullptr contract).
-    //
-    // Returns {} when: not connected, collectionId is empty, the leg-
-    // specific URL map has no entry for the inner key, or the prefix
-    // does not match either leg.
-    //
-    // The backendId format mirrors CalDavProvider / CardDavProvider
-    // (Tasks 2.1 / 2.3):
-    //
-    //   "<providerId>:<collectionId>:<stableSlug>"
-    //
-    // For multi-protocol accounts the collectionId includes the
-    // "multiproto-dav:<m_id>:<leg>:" prefix (the id this provider advertises
-    // in collections()), so backendIds here are longer than CalDav's,
-    // but keep the same three-segment "<a>:<b>:<c>" shape so ProviderManager
-    // Chapter 2.4+ can parse a uniform spec layout.
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection, regardless of which half (CalDAV / CardDAV) it would
+    // belong to. Phase 2 will return at most one Calendar-spec and at
+    // most one Contacts-spec per provider, fanout-collapsing the
+    // currently-many backends into the producer's two domain specs.
+    // Behaviour contract here is "empty" so callers can wire their
+    // pipelines without changing this provider's per-collection
+    // dispatch semantics.
     QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const override;
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
 
     QString lastWarning() const override { return m_lastWarning; }
     QString lastError()   const override { return m_lastError; }

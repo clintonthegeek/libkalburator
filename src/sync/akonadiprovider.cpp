@@ -195,54 +195,6 @@ AkonadiProvider::createBackend(const QString &collectionId)
     return nullptr;
 }
 
-// PHASE2-TASK2.3 — v2 contract entry point for Akonadi's
-// "provider == resource" topology. Produces ONE spec for the given
-// collection by reading m_collections (populated by
-// onCollectionsFetched() during connect()). Akonadi ids are already
-// stable and unique within a resource — unlike DAV providers where a
-// server-derived href drives the slug, here the slug IS the
-// collectionId. Phase 2.4+ BackendRegistry can register the result
-// uniformly because the backendId keeps the same
-// "<providerId>:<collectionId>:<stableSlug>" triple shape.
-//
-// NOTE: This implementation is only compiled when HAVE_AKONADI is ON
-// (the whole TU is fenced); the override header declaration above is
-// also gated. When HAVE_AKONADI is OFF, there is no AkonadiProvider
-// class at all, so the v2 contract is not in play for that build.
-QList<ProviderBackendSpec>
-AkonadiProvider::createBackends(const QString &collectionId) const
-{
-    QList<ProviderBackendSpec> out;
-
-    if (!m_connected) return out;
-    if (collectionId.isEmpty()) return out;
-
-    const auto it = std::find_if(m_collections.cbegin(), m_collections.cend(),
-        [&](const CollectionInfo &c){ return c.id == collectionId; });
-    if (it == m_collections.cend()) return out;
-
-    ProviderBackendSpec spec;
-    spec.collectionId = it->id;
-    spec.displayName  = it->name.isEmpty() ? it->id : it->name;
-    // domainId == collectionId for Akonadi (single-resource topology).
-    spec.backendId = QStringLiteral("%1:%2:%2").arg(m_id, it->id);
-    // Infer BackendKind from m_collections[i].type — the discovery
-    // walk already classified each Akonadi collection as "calendar" or
-    // "contacts" by its mime types (see onCollectionsFetched()).
-    if (it->type == QStringLiteral("contacts")) {
-        spec.kind = BackendKind::Contacts;
-    } else {
-        spec.kind = BackendKind::Calendar;
-    }
-    // Carry the mime-derived content types verbatim. onCollectionsFetched()
-    // sets ci.contentTypes only for calendars ("VEVENT"/"VTODO") and
-    // contacts; other types are filtered out upstream.
-    spec.contentTypes = it->contentTypes;
-
-    out.append(spec);
-    return out;
-}
-
 } // namespace Kalburator::Sync
 
 #endif // HAVE_AKONADI

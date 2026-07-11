@@ -52,33 +52,14 @@ public:
     QList<CollectionInfo> collections() const override { return { m_info }; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &collectionId) override;
 
-    // PHASE2-TASK2.3 — v2 contract for the account-neutral adapter.
-    // NeutralProvider always models exactly one collection (m_info),
-    // so the entry point returns at most one spec and only when the
-    // caller asks for the matching collectionId.
-    //
-    // BackendKind is inferred from m_info.type with sane defaults so
-    // the local-file use case collapses cleanly:
-    //   * "calendar" → BackendKind::Calendar
-    //   * "contacts" → BackendKind::Contacts
-    //   * "" / "journal" / unknown → BackendKind::Calendar (Phase 2
-    //     task spec: "always Calendar for its use case" when no kind
-    //     hint is available — NeutralProvider is overwhelmingly used
-    //     to bridge local-calendar fixtures into ProviderManager).
-    //
-    // backendId format mirrors the CalDav / CardDav / multi-protocol
-    // DAV providers' "<providerId>:<collectionId>:<stableSlug>" triple,
-    // but uses m_info.id itself as the slug (NeutralProvider has no
-    // server-derived href; the manager's spec-merge isn't expected to
-    // deep-compare slugs across providers, only across collections in
-    // the same provider, and a single-collection neutral provider
-    // cannot produce a collision in its own domain).
-    //
-    // Returns {} when: not connected, collectionId is empty, or
-    // collectionId doesn't match m_info.id. Matches the v1
-    // createBackend() nullptr contract for the same inputs.
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection. NeutralProvider already models a single collection
+    // (m_info), so Phase 2 is the trivial case of one spec whose
+    // domainId is m_info.id; we keep it stub for now so the additive
+    // contract migration happens first and behaviour-flip later.
     QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const override;
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
 
 private:
     QString          m_id;

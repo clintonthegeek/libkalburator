@@ -51,34 +51,15 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
-    // PHASE2-TASK2.1 (slug consolidated in Task 2.3) — implements the v2
-    // contract for CalDAV calendars. For the given collectionId (which
-    // must be in collections()) returns ONE Calendar-kind
-    // ProviderBackendSpec sourced from the connect-time
-    // m_calendarUrls / m_perCalendarCaps caches:
-    //
-    //   spec.collectionId = collectionId
-    //   spec.kind           = BackendKind::Calendar
-    //   spec.backendId      = "<providerId>:<collectionId>:<stableSlug>"
-    //   spec.displayName    = m_collections[i].name (i.e. caps serverDisplayName,
-    //                         falling back to collectionId) — never empty.
-    //   spec.color          = caps.serverColor.name() when valid, else ""
-    //   spec.contentTypes   = {"VEVENT", "VTODO"} filtered by caps flags
-    //
-    // stableSlug is computed by Kalburator::Sync::makeDavSlug() (see
-    // src/sync/davslug.h) — the shared helper that Tasks 2.1 / 2.2 /
-    // 2.3 all delegate to so the three DAV providers emit identical
-    // backendId shapes (last non-empty path segment of the href,
-    // sanitised; rawName fallback when the href yields no usable
-    // characters). Renames don't invalidate storage ids AND two
-    // collections on the same account with similar display names
-    // can't collide.
-    //
-    // Returns {} when: not connected, collectionId is empty, or
-    // collectionId isn't in m_calendarUrls. This matches the v1
-    // createBackend()'s nullptr contract for the same inputs.
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection. Phase 2 will return one Calendar-spec per collection
+    // (`<providerId>:cal:<innerCalendarId>`), reusing the connect-time
+    // caps map to fill displayName + color + contentTypes. Behaviour
+    // contract here is "empty" so callers can wire their pipelines
+    // without flipping the provider's actual semantics.
     QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const override;
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
 
     QString lastError() const override { return m_lastError; }
 

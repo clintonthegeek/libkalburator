@@ -4,15 +4,6 @@
 // server: a QTcpServer-based fixture (FakeCalDavServer) handles the
 // three PROPFIND requests CalDavCapabilityDiscovery walks and provides
 // configurable failure modes for negative paths.
-//
-// PHASE2-TASK2.1 — All slots below exercise the v1 createBackend() path.
-// When Phase 2.2 / 2.3 lands (CardDAV and multi-protocol fanout + the
-// manager-side spec-driven registration flip in Phase 2.4+), add tests
-// for CalDavProvider::createBackends() covering:
-//   * Returns one Calendar spec for a connected/known collection
-//   * backendId = "<providerId>:<collectionId>:<stableSlug>"
-//   * Slug derives from last path segment of the href (sanitised)
-//   * {} for an empty / unknown / disconnected state
 
 #include <QtTest/QtTest>
 #include <QFutureWatcher>

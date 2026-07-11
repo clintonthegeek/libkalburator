@@ -531,10 +531,6 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/carddavcapabilitydiscovery.h
     src/sync/carddavprovider.h
     src/sync/carddavconfigwidget.h
-    # PHASE2-TASK2.3 — shared slug helper (consolidated from caldav/
-    # multiprotocol anonymous namespaces; CardDavProvider reuses it
-    # in Task 2.3 too).
-    src/sync/davslug.h
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.h
     src/sync/writeoperation.h
@@ -577,8 +573,6 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/carddavcapabilitydiscovery.cpp
     src/sync/carddavprovider.cpp
     src/sync/carddavconfigwidget.cpp
-    # PHASE2-TASK2.3 — shared slug helper (see header note).
-    src/sync/davslug.cpp
     # Phase K.4: domain-neutral sync-backend base
     src/sync/syncbackendbase.cpp
     # Phase K.7.1: account-neutral IProvider adapter

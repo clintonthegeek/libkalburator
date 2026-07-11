@@ -4,7 +4,6 @@
 #include "backendconfiguration.h"
 #include "carddavcapabilitydiscovery.h"
 #include "carddavconfigwidget.h"
-#include "davslug.h"
 #include "remotecontactsbackend.h"
 
 #include <QFutureInterface>
@@ -173,72 +172,6 @@ CardDavProvider::createBackend(const QString &collectionId) {
     auto backend = std::make_unique<RemoteContactsBackend>(m_serverUrl, m_username, m_password);
     backend->registerAddressbookUrl(collectionId, QUrl(urlIt.value()));
     return backend;
-}
-
-// PHASE2-TASK2.3 — v2 contract entry point. Produces ONE Contacts-kind
-// ProviderBackendSpec for the given collection by reading the connect-time
-// discovery caches (m_addressbookUrls + m_collections). ProviderManager's
-// createBackendsForCollection() (Task 1.1 stub) routes through this once
-// Phase 2.4+ flips the manager's registration walk to spec.backendId-based.
-//
-// Per-collection granularity (same shape CalDavProvider /
-// MultiProtocolDavProvider use in Tasks 2.1 / 2.2): one spec per
-// advertised id. The per-domain fanout collapse is the manager's job;
-// this provider just hands back the descriptors the manager needs to do
-// the merging.
-QList<ProviderBackendSpec>
-CardDavProvider::createBackends(const QString &collectionId) const
-{
-    QList<ProviderBackendSpec> out;
-
-    if (!m_connected) return out;
-    if (collectionId.isEmpty()) return out;
-
-    // The v1 contract returns nullptr for unknown collectionId — match
-    // that by returning {} for the same input.
-    const auto urlIt = m_addressbookUrls.constFind(collectionId);
-    if (urlIt == m_addressbookUrls.constEnd()) return out;
-    const QString href = urlIt.value();
-
-    // Display-name priority: connect() precomputes ci.name from the
-    // server-supplied displayname (with collectionId fallback) in
-    // m_collections, so that's the highest-fidelity name source.
-    // Last resorts: collectionId then href (the latter must be
-    // non-empty here because urlIt found a mapping for it, but keep
-    // the chain explicit so a future code path that clears
-    // m_collections without a disconnect firing still has a string).
-    QString displayName;
-    for (const auto &c : m_collections) {
-        if (c.id == collectionId) {
-            displayName = c.name;
-            break;
-        }
-    }
-    if (displayName.isEmpty()) displayName = collectionId;
-    if (displayName.isEmpty()) displayName = href;
-
-    ProviderBackendSpec spec;
-    spec.collectionId = collectionId;
-    spec.kind = BackendKind::Contacts;
-    spec.displayName = displayName;
-    // backendId shape mirrors CalDavProvider / MultiProtocolDavProvider
-    // so ProviderManager Phase 2.4+ can parse a uniform
-    // "<providerId>:<collectionId>:<stableSlug>" triple across every
-    // DAV provider type.
-    spec.backendId = QStringLiteral("%1:%2:%3").arg(
-        m_id, collectionId, makeDavSlug(displayName, href));
-    // CardDAV leg carries no per-collection caps here — VCARD per RFC
-    // 6352. Keeps the same contentTypes key the CalDav and multiprotocol
-    // legs populate so a downstream spec-driven render code can read
-    // them uniformly.
-    spec.contentTypes << QStringLiteral("VCARD");
-    // No color: Phase 2 CardDAV discovery does not currently surface a
-    // server-supplied color in m_addressbookUrls / m_collections. Keep
-    // spec.color empty rather than synthesising one — a future phase
-    // can wire in a CardDav collection-color PROPFIND if it adds value.
-
-    out.append(spec);
-    return out;
 }
 
 } // namespace Kalburator::Sync

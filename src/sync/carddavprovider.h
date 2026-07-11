@@ -50,37 +50,14 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
-    // PHASE2-TASK2.3 — implements the v2 contract for CardDAV
-    // addressbooks. For the given collectionId (which must be in
-    // collections()) returns ONE BackendKind::Contacts
-    // ProviderBackendSpec sourced from m_addressbookUrls / m_collections:
-    //
-    //   spec.collectionId = collectionId
-    //   spec.kind           = BackendKind::Contacts
-    //   spec.backendId      = "<providerId>:<collectionId>:<stableSlug>"
-    //   spec.displayName    = m_collections[i].name (serverDisplayName,
-    //                         falling back to collectionId) — never empty.
-    //   spec.color          = "" (CardDAV discovery does not currently
-    //                         surface a server-supplied color via the
-    //                         libkcal-derived walks; keep contract open
-    //                         for a future phase to fill in).
-    //   spec.contentTypes   = {"VCARD"} per RFC 6352.
-    //
-    // stableSlug is the last non-empty path segment of the server-given
-    // href, sanitised via Kalburator::Sync::makeDavSlug() in src/sync/
-    // davslug.h (the same helper CalDavProvider and
-    // MultiProtocolDavProvider use, so Phase 2.4+ can count on a
-    // uniform "<a>:<b>:<c>" backendId shape across every DAV provider).
-    //
-    // Returns {} when: not connected, collectionId is empty, or
-    // collectionId isn't in m_addressbookUrls. This matches the v1
-    // createBackend()'s nullptr contract for the same inputs.
-    //
-    // The Phase 1 stub was a "return {}" inline body; Task 2.3 fills
-    // in the spec-producer body. The v1 createBackend() above is
-    // intentionally UNTOUCHED — additive migration only.
+    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
+    // collection. Phase 2 will return one Contacts-spec per addressbook
+    // (`<providerId>:contacts:<innerAddressbookId>`). Behaviour contract
+    // here is "empty" so callers can wire their pipelines without
+    // changing this provider's semantics.
     QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const override;
+        createBackends(const QString & /*collectionId*/) const override
+        { return {}; }
 
 private:
     void onDiscoveryFinished(const QList<CollectionInfo> &books, bool hadError);

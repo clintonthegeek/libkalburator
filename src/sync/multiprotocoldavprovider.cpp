@@ -6,24 +6,14 @@
 #include "../contacts/remotecontactsbackend.h"
 #include "carddavcapabilitydiscovery.h"
 #include "caldavcontenttypes.h"
-#include "davslug.h"
 
 #include <QFutureWatcher>
 #include <QLoggingCategory>
-#include <QUrl>
 #include <QUuid>
 
 Q_LOGGING_CATEGORY(lcMultiDav, "kalburator.sync.multidav")
 
 namespace Kalburator::Sync {
-
-// PHASE2-TASK2.3 — slug derivation now lives in src/sync/davslug.h as
-// Kalburator::Sync::makeDavSlug(). Tasks 2.1 / 2.2 each carried their
-// own anonymous-namespace copy of the sanitiser + last-segment
-// extractor; Task 2.3 consolidated them onto the shared helper so the
-// three DAV providers stay in lockstep on the
-// "<a>:<b>:<c>" backendId shape. Both legs (CalDAV + CardDAV) call
-// the same makeDavSlug() with the appropriate displayName + href.
 
 MultiProtocolDavProvider::MultiProtocolDavProvider(bool calendarsOnly, QObject *parent)
     : IProvider(parent)
@@ -229,114 +219,6 @@ MultiProtocolDavProvider::createBackend(const QString &collectionId)
         return backend;
     }
     return nullptr;
-}
-
-// PHASE2-TASK2.2 — v2 contract entry point. Produces ONE Calendar- or
-// Contacts-kind ProviderBackendSpec for the given collectionId, sourced
-// from the connect-time discovery caches (m_calDavUrlMap / m_cardDavUrlMap
-// / m_calDavCaps / m_collections). ProviderManager::createBackendsForCollection
-// (Task 1.1) will use this once Chapter 2.4+ flips the manager's
-// registration walk to spec.backendId-based.
-//
-// Per-collection granularity (matching Task 2.1's CalDavProvider v2
-// contract): one spec per advertised id, NOT the per-domain fanout
-// collapse. Chapter 2.3+ will consolidate when the manager learns to
-// merge same-domain specs from the same provider.
-QList<ProviderBackendSpec>
-MultiProtocolDavProvider::createBackends(const QString &collectionId) const
-{
-    QList<ProviderBackendSpec> out;
-    if (!m_connected) return out;
-    if (collectionId.isEmpty()) return out;
-
-    const QString calPrefix =
-        QStringLiteral("multiproto-dav:%1:cal:").arg(m_id);
-    const QString contactsPrefix =
-        QStringLiteral("multiproto-dav:%1:contacts:").arg(m_id);
-
-    if (collectionId.startsWith(calPrefix)) {
-        const QString innerKey = collectionId.mid(calPrefix.length());
-        const auto urlIt = m_calDavUrlMap.constFind(innerKey);
-        if (urlIt == m_calDavUrlMap.constEnd()) return out;
-        const QString href = urlIt.value();
-
-        // Display-name priority: m_collections[i].name was already built
-        // from caps.serverDisplayName (with innerKey fallback) by
-        // maybeResolveConnect on the connect() pass, so that's the
-        // highest-fidelity name source. Caps are a secondary fallback
-        // (kept for safety in case m_collections was cleared without
-        // disconnect firing). Last resorts: innerKey / href.
-        QString displayName;
-        for (const auto &c : m_collections) {
-            if (c.id == collectionId) {
-                displayName = c.name;
-                break;
-            }
-        }
-        if (displayName.isEmpty()) {
-            const auto capIt = m_calDavCaps.constFind(innerKey);
-            if (capIt != m_calDavCaps.constEnd()
-                && !capIt.value().serverDisplayName.isEmpty()) {
-                displayName = capIt.value().serverDisplayName;
-            }
-        }
-        if (displayName.isEmpty()) displayName = innerKey;
-        if (displayName.isEmpty()) displayName = href;
-
-        ProviderBackendSpec spec;
-        spec.collectionId = collectionId;
-        spec.kind         = BackendKind::Calendar;
-        spec.displayName  = displayName;
-        spec.backendId    = QStringLiteral("%1:%2:%3").arg(
-            m_id, collectionId, makeDavSlug(displayName, href));
-
-        const auto capIt = m_calDavCaps.constFind(innerKey);
-        if (capIt != m_calDavCaps.constEnd()) {
-            const PerCalendarCapabilities &caps = capIt.value();
-            if (caps.serverColor.isValid()) {
-                spec.color = caps.serverColor.name();
-            }
-            // Mirror onCalDavFinished()'s populate rule so spec.contentTypes
-            // matches the CollectionInfo.contentTypes a manager can also pull.
-            if (caps.supportsVEvent) spec.contentTypes << QStringLiteral("VEVENT");
-            if (caps.supportsVTodo)  spec.contentTypes << QStringLiteral("VTODO");
-        }
-        out.append(spec);
-        return out;
-    }
-
-    if (collectionId.startsWith(contactsPrefix)) {
-        const QString innerKey = collectionId.mid(contactsPrefix.length());
-        const auto urlIt = m_cardDavUrlMap.constFind(innerKey);
-        if (urlIt == m_cardDavUrlMap.constEnd()) return out;
-        const QString href = urlIt.value();
-
-        QString displayName;
-        for (const auto &c : m_collections) {
-            if (c.id == collectionId) {
-                displayName = c.name;
-                break;
-            }
-        }
-        if (displayName.isEmpty()) displayName = innerKey;
-        if (displayName.isEmpty()) displayName = href;
-
-        ProviderBackendSpec spec;
-        spec.collectionId = collectionId;
-        spec.kind         = BackendKind::Contacts;
-        spec.displayName  = displayName;
-        spec.backendId    = QStringLiteral("%1:%2:%3").arg(
-            m_id, collectionId, makeDavSlug(displayName, href));
-        // CardDAV leg does not carry per-collection caps here — the
-        // content type is uniformly VCARD by RFC 6352.
-        spec.contentTypes << QStringLiteral("VCARD");
-        out.append(spec);
-        return out;
-    }
-
-    // collectionId does not belong to either leg — matches v1 createBackend()'s
-    // nullptr return for the same input.
-    return out;
 }
 
 void MultiProtocolDavProvider::onCalDavFinished(bool success)
