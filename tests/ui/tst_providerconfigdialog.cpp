@@ -64,8 +64,6 @@ public:
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
-    // PHASE1-TASK1.1 — v2 contract stub.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
 private:
     QString m_url;
 };
@@ -101,8 +99,6 @@ public:
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
-    // PHASE1-TASK1.1 — v2 contract stub.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
 private:
     QString m_msg;
 };
@@ -160,8 +156,6 @@ public:
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
-    // PHASE1-TASK1.1 — v2 contract stub.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
 };
 
 class CapturingContribution : public BackendContribution {
@@ -192,8 +186,6 @@ public:
     bool isConnected() const override { return false; }
     QList<CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
-    // PHASE1-TASK1.1 — v2 contract stub.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
 };
 
 class ZeroCalendarsContribution : public BackendContribution {
@@ -230,8 +222,6 @@ public:
         return { a, b };
     }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
-    // PHASE1-TASK1.1 — v2 contract stub.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
 };
 
 class WithCalendarsContribution : public BackendContribution {

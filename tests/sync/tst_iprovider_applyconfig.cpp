@@ -42,9 +42,6 @@ public:
     QList<CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
 
-    // PHASE1-TASK1.1 — v2 contract stub. Empty by design.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override { return {}; }
-
     int loadCount() const { return m_loadCount; }
     int connectCount() const { return m_connectCount; }
     int disconnectCount() const { return m_disconnectCount; }

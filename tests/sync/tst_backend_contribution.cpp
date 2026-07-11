@@ -24,9 +24,6 @@ public:
     bool isConnected() const override { return false; }
     QList<Sync::CollectionInfo> collections() const override { return {}; }
     std::unique_ptr<Sync::IBlobBackend> createBackend(const QString&) override { return nullptr; }
-
-    // PHASE1-TASK1.1 — v2 contract stub. Empty by design.
-    QList<Sync::ProviderBackendSpec> createBackends(const QString&) const override { return {}; }
 };
 
 class StubBC : public Sync::BackendContribution {

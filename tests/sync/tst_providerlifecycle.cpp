@@ -89,12 +89,6 @@ public:
         return std::make_unique<FakeBackend>();
     }
 
-    // PHASE1-TASK1.1 — v2 contract stub. Empty by design — Phase 2
-    // will fill this in.
-    QList<ProviderBackendSpec> createBackends(const QString &) const override {
-        return {};
-    }
-
     void setDisplayName(const QString &n) { m_displayName = n; }
 
 private:

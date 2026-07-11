@@ -16,33 +16,6 @@ class QWidget;
 
 namespace Kalburator::Sync {
 
-// PHASE1-TASK1.1 — v2 contract precursor: a pure-descriptor spec returned
-// from the new createBackends(const QString &collectionId) entry point.
-// PHASE1 only introduces the type and the pure virtual; providers stub the
-// new method to return an empty list. Phase 2 fills the bodies. The struct
-// is intentionally additive — the v1 createBackend(const QString &)
-// contract stays intact, so no caller code changes shape this phase.
-enum class BackendKind {
-    Calendar,
-    Contacts
-};
-
-/// PHASE1-TASK1.1 — Descriptor for a backend that should be created for a
-/// given collection. At this stage providers fill in the basics
-/// (collectionId + kind + displayName + a placeholder backendId of the
-/// form "provider:collection"); richer fields (server-side color, content
-/// types, capability flags) flow through in Phase 2 once the providers
-/// populate them from their connect-time discovery caches.
-struct ProviderBackendSpec {
-    QString     collectionId;   ///< The collection the spec is for.
-    BackendKind kind;           ///< Calendar vs Contacts.
-    QString     backendId;      ///< Phase 1 stub: "providerId:collectionId".
-                                ///< Phase 2: "providerId:domainId" (cal/contacts).
-    QString     displayName;    ///< User-facing label (server display name).
-    QString     color;          ///< Optional server-supplied color hint.
-    QStringList contentTypes;   ///< Optional content-type capability hints.
-};
-
 /**
  * @brief Source-of-many-collections under a single auth/connection.
  *
@@ -165,29 +138,6 @@ public:
     virtual std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) = 0;
 
-    // PHASE1-TASK1.1 — v2 contract precursor. Returns the specs the
-    // manager would feed to a future "create backend per spec" pipeline,
-    // for the given single collection (the v1 granularity). Phase 1
-    // implementations return an empty list as a no-op stub; Phase 2 will
-    // make them return one real spec per collection.
-    //
-    // Marked `const` so callers can plan a registration walk on const
-    // IProvider* without needing to assert mutability. ProviderManager
-    // currently iterates registered providers it already owns non-const,
-    // but future hooks (sync-engine re-discovery passes a const IProvider*)
-    // will benefit from this.
-    //
-    // Pre-condition: the caller passes a collectionId that is in
-    // collections(); behaviour for unknown ids is "return empty" —
-    // matches the v1 createBackend() nullptr contract.
-    //
-    // Additive vs v1: the v1 createBackend(const QString&) above is
-    // untouched. Both pipelines can coexist; ProviderManager keeps using
-    // createBackend(this phase) and registers through the existing
-    // registerProviderBackends() path. Phase 2 flips the wiring.
-    virtual QList<ProviderBackendSpec>
-        createBackends(const QString &collectionId) const = 0;
-
     // ── Optional UI / status accessors ─────────────────────────────
     /// Optional icon for the account-list row. Default: null QIcon.
     virtual QIcon icon() const { return {}; }
@@ -219,7 +169,5 @@ signals:
 };
 
 } // namespace Kalburator::Sync
-
-Q_DECLARE_METATYPE(Kalburator::Sync::BackendKind)
 
 #endif

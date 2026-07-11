@@ -50,15 +50,6 @@ public:
     std::unique_ptr<IBlobBackend>
         createBackend(const QString &collectionId) override;
 
-    // PHASE1-TASK1.1 — v2 contract stub. Returns no specs for any
-    // collection. Phase 2 will return one Contacts-spec per addressbook
-    // (`<providerId>:contacts:<innerAddressbookId>`). Behaviour contract
-    // here is "empty" so callers can wire their pipelines without
-    // changing this provider's semantics.
-    QList<ProviderBackendSpec>
-        createBackends(const QString & /*collectionId*/) const override
-        { return {}; }
-
 private:
     void onDiscoveryFinished(const QList<CollectionInfo> &books, bool hadError);
     QString                              m_id;             // UUID

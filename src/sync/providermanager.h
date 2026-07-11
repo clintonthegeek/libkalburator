@@ -12,10 +12,6 @@
 
 class KConfigGroup;
 
-#include "iprovider.h"  // PHASE1-TASK1.1 — need the full ProviderBackendSpec
-                         // type in the public surface QList<> here; iprovider.h
-                         // doesn't include providermanager.h so no cycle.
-
 namespace Kalburator::Sync {
 
 class IProvider;
@@ -65,22 +61,6 @@ public:
     QList<IProvider*> providers() const;
     IProvider *providerById(const QString &id) const;
     BackendRegistry *backendRegistry() const { return m_registry; }
-
-    // PHASE1-TASK1.1 — v2-contract wiring hook. Looks up the provider
-    // owning the given collectionId, asks the provider for its
-    // createBackends(collId) specs, and returns the produced descriptors.
-    // Active registration still runs through the v1 registerProviderBackends
-    // loop (Phase 2 kept the per-collection 2-segment id stable); Phase 4
-    // is the planned flip to spec.backendId-driven registration. Both
-    // pipelines coexist for now; the v2 entry exists so Phase-4 wiring
-    // can ship without touching the public surface.
-    //
-    // Returns empty if no provider owns the collection, or the provider's
-    // createBackends for an unknown collectionId returns empty
-    // (matches the v1 createBackend nullptr contract). A debug message is
-    // logged in either case.
-    QList<ProviderBackendSpec>
-        createBackendsForCollection(const QString &collectionId);
 
     /// O.1.2: Current connection state for a provider, or Disconnected
     /// if the id is unknown (safe default).
