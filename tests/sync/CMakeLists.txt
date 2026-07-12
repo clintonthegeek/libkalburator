@@ -246,6 +246,8 @@ add_executable(tst_multiprotocoldavprovider
     tst_multiprotocoldavprovider.cpp
     fakecaldavserver.cpp
     fakecaldavserver.h
+    fakecarddavserver.cpp
+    fakecarddavserver.h
 )
 target_link_libraries(tst_multiprotocoldavprovider
     PRIVATE

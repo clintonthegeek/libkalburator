@@ -6,6 +6,7 @@
 #include "../contacts/remotecontactsbackend.h"
 #include "carddavcapabilitydiscovery.h"
 #include "caldavcontenttypes.h"
+#include "davslug.h"
 
 #include <QFutureWatcher>
 #include <QLoggingCategory>
@@ -171,66 +172,49 @@ void MultiProtocolDavProvider::disconnect()
     if (!m_connected) return;
     m_connected = false;
     m_collections.clear();
-    m_urlByCollectionId.clear();
+    m_calUrlBySlug.clear();
+    m_calCapsBySlug.clear();
+    m_contactsUrlBySlug.clear();
     m_calDavCaps.clear();
     emit connectionStateChanged(false);
-}
-
-std::unique_ptr<IBlobBackend>
-MultiProtocolDavProvider::createBackendForCollection(const QString &collectionId)
-{
-    if (!m_connected) return nullptr;
-    if (!m_urlByCollectionId.contains(collectionId)) return nullptr;
-    const QString href = m_urlByCollectionId.value(collectionId);
-
-    const QString calPrefix      = QStringLiteral("multiproto-dav:%1:cal:").arg(m_id);
-    const QString contactsPrefix = QStringLiteral("multiproto-dav:%1:contacts:").arg(m_id);
-
-    if (collectionId.startsWith(calPrefix)) {
-        auto backend = std::make_unique<RemoteCalendarBackend>(
-            m_serverUrl, m_username, m_password);
-        backend->registerCalendarUrl(collectionId, href);
-
-        // Seed the bound calendar from connect-time discovery so loadCalendars()
-        // skips its server-wide PROPFIND (v0.63). The discovery caps are keyed by
-        // the inner (unprefixed) key, but the calendar must be primed under the
-        // *prefixed* collectionId — that is the id this provider advertised in
-        // collections() (maybeResolveConnect sets CollectionInfo.id = prefixedId),
-        // hence the id the host built its bindings from. PrimedCalendar.calendarId
-        // is the id loadCalendars() emits via calendarDiscovered(); priming with the
-        // inner key made discovery emit a different id than the binding, so the host
-        // orphaned every calendar and raised a false "missing calendar" — even though
-        // fetch (which uses the prefixed id registered above) worked fine.
-        const QString innerKey = collectionId.mid(calPrefix.length());
-        const auto capIt = m_calDavCaps.constFind(innerKey);
-        if (capIt != m_calDavCaps.constEnd()) {
-            backend->primeCalendars({ RemoteCalendarBackend::PrimedCalendar{
-                collectionId,
-                href,
-                capIt.value().serverColor,
-                contentTypesFromCaps(capIt.value()) } });
-        }
-        return backend;
-    }
-    if (collectionId.startsWith(contactsPrefix)) {
-        auto backend = std::make_unique<RemoteContactsBackend>(
-            m_serverUrl, m_username, m_password);
-        backend->registerAddressbookUrl(collectionId, QUrl(href));
-        return backend;
-    }
-    return nullptr;
 }
 
 std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()
 {
     std::vector<ProviderBackendSpec> out;
     if (!m_connected) return out;
-    for (const auto &col : std::as_const(m_collections)) {
+
+    QList<CollectionInfo> calCols, contactCols;
+    for (const auto &col : std::as_const(m_collections))
+        (col.type == QLatin1String("contacts") ? contactCols : calCols) << col;
+
+    if (!calCols.isEmpty()) {
         ProviderBackendSpec spec;
-        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
-        spec.backend = createBackendForCollection(col.id);
-        spec.collections = { col };
-        if (spec.backend) out.push_back(std::move(spec));
+        spec.domainId = QStringLiteral("cal");
+        auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
+        QList<RemoteCalendarBackend::PrimedCalendar> primed;
+        for (const auto &col : std::as_const(calCols)) {
+            const QString url = m_calUrlBySlug.value(col.id);
+            backend->registerCalendarUrl(col.id, url);
+            const auto capIt = m_calCapsBySlug.constFind(col.id);
+            if (capIt != m_calCapsBySlug.constEnd())
+                primed.append(RemoteCalendarBackend::PrimedCalendar{
+                    col.id, url, capIt->serverColor, contentTypesFromCaps(*capIt)});
+        }
+        backend->primeCalendars(primed);
+        spec.collections = calCols;
+        spec.backend = std::move(backend);
+        out.push_back(std::move(spec));
+    }
+    if (!m_calendarsOnly && !contactCols.isEmpty()) {
+        ProviderBackendSpec spec;
+        spec.domainId = QStringLiteral("contacts");
+        auto backend = std::make_unique<RemoteContactsBackend>(m_serverUrl, m_username, m_password);
+        for (const auto &col : std::as_const(contactCols))
+            backend->registerAddressbookUrl(col.id, QUrl(m_contactsUrlBySlug.value(col.id)));
+        spec.collections = contactCols;
+        spec.backend = std::move(backend);
+        out.push_back(std::move(spec));
     }
     return out;
 }
@@ -287,25 +271,31 @@ void MultiProtocolDavProvider::maybeResolveConnect()
     if (!m_connectPromise) return;
 
     m_collections.clear();
-    m_urlByCollectionId.clear();
+    m_calUrlBySlug.clear();
+    m_calCapsBySlug.clear();
+    m_contactsUrlBySlug.clear();
 
+    // Task 2.2: re-key CalDAV's display-name-ish discovery key by URL slug —
+    // the stable, server-unique, rename-surviving id CollectionInfo/backends
+    // now use (same idiom as CalDavProvider, Task 2.1).
     for (auto info : m_calDavResult) {
         const QString innerKey = info.id;
-        const QString prefixedId =
-            QStringLiteral("multiproto-dav:%1:cal:%2").arg(m_id, innerKey);
-        if (m_calDavUrlMap.contains(innerKey))
-            m_urlByCollectionId[prefixedId] = m_calDavUrlMap[innerKey];
-        info.id = prefixedId;
+        const QString href = m_calDavUrlMap.value(innerKey);
+        const QString slug = davSlugFromUrl(href);
+        if (slug.isEmpty()) continue;  // no lookup key; cannot be primed
+        info.id = slug;
+        m_calUrlBySlug.insert(slug, href);
+        const auto capIt = m_calDavCaps.constFind(innerKey);
+        if (capIt != m_calDavCaps.constEnd())
+            m_calCapsBySlug.insert(slug, capIt.value());
         m_collections.append(info);
     }
     if (!m_calendarsOnly) {
+        // CardDavCapabilityDiscovery already keys by the last DAV URL path
+        // segment (its own id derivation is slug-shaped) — no re-keying needed.
         for (auto info : m_cardDavResult) {
-            const QString innerKey = info.id;
-            const QString prefixedId =
-                QStringLiteral("multiproto-dav:%1:contacts:%2").arg(m_id, innerKey);
-            if (m_cardDavUrlMap.contains(innerKey))
-                m_urlByCollectionId[prefixedId] = m_cardDavUrlMap[innerKey];
-            info.id = prefixedId;
+            if (m_cardDavUrlMap.contains(info.id))
+                m_contactsUrlBySlug.insert(info.id, m_cardDavUrlMap.value(info.id));
             m_collections.append(info);
         }
     }

@@ -5,9 +5,12 @@
 #include <QUuid>
 
 #include "fakecaldavserver.h"
+#include "fakecarddavserver.h"
 
 #include "../../src/sync/multiprotocoldavprovider.h"
 #include "../../src/calendar/syncbackend.h"
+#include "../../src/calendar/remotecalendarbackend.h"
+#include "../../src/contacts/remotecontactsbackend.h"
 #include "../../src/plugin/pluginmanager.h"
 #include "../../src/shape/shaperegistries.h"
 #include "../../src/plugin/stock_plugins.h"
@@ -18,15 +21,18 @@ using namespace Kalburator::Sync;
 
 namespace {
 
-// Phase 1: MultiProtocolDavProvider still emits one spec per collection
-// (domainId == collection id), so a known-collection lookup against
-// createBackends() is equivalent to the old createBackend(collectionId).
+// Task 2.2: MultiProtocolDavProvider emits at most two specs per connected
+// account — domainId "cal" (a single RemoteCalendarBackend hosting every
+// calendar) and, in full mode with addressbooks discovered, domainId
+// "contacts" (a single RemoteContactsBackend hosting every addressbook). A
+// lookup by domainId is the new equivalent of the old per-collection
+// createBackend(collectionId).
 std::unique_ptr<IBlobBackend>
-backendForCollection(IProvider &provider, const QString &collectionId)
+backendForDomain(IProvider &provider, const QString &domainId)
 {
     auto specs = provider.createBackends();
     for (auto &spec : specs) {
-        if (spec.domainId == collectionId) return std::move(spec.backend);
+        if (spec.domainId == domainId) return std::move(spec.backend);
     }
     return nullptr;
 }
@@ -55,6 +61,9 @@ private slots:
     void pluginRegistersMultiProtoDavContribution();
     void contributionCreateProviderHonorsParent();
     void connect_while_inflight_is_idempotent();
+    void testTwoDomainSpecs();
+    void testCalendarsOnlySingleSpec();
+    void testSlugIdsNoPrefixes();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -216,8 +225,8 @@ void TstMultiProtocolDavProvider::connectPartialSuccessSkipped()
     bool hasCalCol     = false;
     bool hasContactCol = false;
     for (const auto &c : provider.collections()) {
-        if (c.id.contains(QStringLiteral(":cal:")))      hasCalCol     = true;
-        if (c.id.contains(QStringLiteral(":contacts:"))) hasContactCol = true;
+        if (c.type == QLatin1String("calendar")) hasCalCol     = true;
+        if (c.type == QLatin1String("contacts")) hasContactCol = true;
     }
     QVERIFY2(hasCalCol,      "expected at least one calendar collection after partial connect");
     QVERIFY2(!hasContactCol, "expected no contact collections: CardDAV failed");
@@ -254,7 +263,7 @@ void TstMultiProtocolDavProvider::calendarsOnly_mode_excludes_contacts()
 
     // Only calendar collections — no contacts regardless of CardDAV outcome.
     for (const auto &c : provider.collections()) {
-        QVERIFY2(!c.id.contains(QStringLiteral(":contacts:")),
+        QVERIFY2(c.type != QLatin1String("contacts"),
                  qPrintable("Expected no contact collection in calendarsOnly mode, got: " + c.id));
     }
     QVERIFY2(!provider.collections().isEmpty(),
@@ -314,7 +323,7 @@ void TstMultiProtocolDavProvider::connectPopulatesContentTypesOnCalDavCollection
 
     QHash<QString, QStringList> typesByName;
     for (const auto &c : provider.collections()) {
-        if (c.id.contains(QStringLiteral(":cal:")))
+        if (c.type == QLatin1String("calendar"))
             typesByName.insert(c.name, c.contentTypes);
     }
     QCOMPARE(typesByName.size(), 3);
@@ -360,12 +369,13 @@ void TstMultiProtocolDavProvider::primedBackendEmitsAdvertisedCollectionIdAtDisc
 
     QString calId;
     for (const auto &c : provider.collections()) {
-        if (c.id.contains(QStringLiteral(":cal:"))) { calId = c.id; break; }
+        if (c.type == QLatin1String("calendar")) { calId = c.id; break; }
     }
     QVERIFY2(!calId.isEmpty(), "expected a calendar collection after connect");
 
-    auto backend = backendForCollection(provider, calId);
-    QVERIFY2(backend != nullptr, "createBackends() produced no spec for advertised id");
+    // Task 2.2: the single spec's domainId is "cal", not a per-collection id.
+    auto backend = backendForDomain(provider, QStringLiteral("cal"));
+    QVERIFY2(backend != nullptr, "createBackends() produced no \"cal\" spec");
     auto *cal = dynamic_cast<SyncBackend *>(backend.get());
     QVERIFY2(cal != nullptr, "calendar collection did not yield a SyncBackend");
 
@@ -408,8 +418,11 @@ void TstMultiProtocolDavProvider::contributionCreateProviderHonorsParent()
     QVERIFY(provider != nullptr);
     QCOMPARE(provider->parent(), &owner);
     // Reparented onto `owner` — hand ownership to the parent to avoid the
-    // unique_ptr/QObject-parent double delete.
-    (void)provider.release();
+    // unique_ptr/QObject-parent double delete. Capture the released pointer
+    // (rather than discarding it outright) so the intentional hand-off reads
+    // as deliberate, not a leak.
+    IProvider *released = provider.release();
+    Q_UNUSED(released);
 }
 
 void TstMultiProtocolDavProvider::connect_while_inflight_is_idempotent()
@@ -442,6 +455,141 @@ void TstMultiProtocolDavProvider::connect_while_inflight_is_idempotent()
     QCOMPARE(fut2.resultAt(0), false);
     // No connectionStateChanged: was never connected.
     QCOMPARE(stateSpy.count(), 0);
+}
+
+void TstMultiProtocolDavProvider::testSlugIdsNoPrefixes()
+{
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") }
+    });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("slug-test");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider(true);   // calendarsOnly
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    QVERIFY(!provider.collections().isEmpty());
+    for (const auto &c : provider.collections()) {
+        QVERIFY2(!c.id.contains(QStringLiteral("multiproto-dav:")),
+                 qPrintable("collection id still carries the deleted prefix: " + c.id));
+    }
+}
+
+void TstMultiProtocolDavProvider::testCalendarsOnlySingleSpec()
+{
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") },
+        { QStringLiteral("Work"),     QStringLiteral("/calendars/testuser/work/") }
+    });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("cal-only-test");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
+
+    MultiProtocolDavProvider provider(true);   // calendarsOnly = true
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(1));
+    QCOMPARE(specs.front().domainId, QStringLiteral("cal"));
+    QCOMPARE(specs.front().collections.size(), 2);
+
+    auto *remote = dynamic_cast<RemoteCalendarBackend *>(specs.front().backend.get());
+    QVERIFY(remote != nullptr);
+}
+
+void TstMultiProtocolDavProvider::testTwoDomainSpecs()
+{
+    // Two physically separate fake servers: CalDAV (untouched) and CardDAV.
+    // MultiProtocolDavProvider hands both discoveries the SAME configured
+    // "url" (the CalDAV server's origin), so the CardDAV leg is steered onto
+    // its own server entirely via an ABSOLUTE manualCarddavPrincipal — this
+    // skips the well-known bootstrap and the root PROPFIND (which would
+    // otherwise hit the CalDAV server) and walks straight from that absolute
+    // principal href to the addressbook-home-set. The card server's context
+    // path is set to its own base URL so every href it returns (home-set,
+    // addressbook list) is already absolute and self-consistent, never
+    // falling back to relative-resolution against the CalDAV server's host.
+    FakeCalDavServer calServer;
+    calServer.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") },
+        { QStringLiteral("Work"),     QStringLiteral("/calendars/testuser/work/") }
+    });
+    QVERIFY(calServer.startListening());
+
+    FakeCardDavServer cardServer;
+    cardServer.setAddressbooks({
+        { QStringLiteral("personal"), QStringLiteral("Personal") },
+        { QStringLiteral("family"),   QStringLiteral("Family") }
+    });
+    QVERIFY(cardServer.startListening());   // must listen before baseUrl() has a real port
+    QString cardBase = cardServer.baseUrl().toString();
+    if (cardBase.endsWith(QLatin1Char('/'))) cardBase.chop(1);
+    cardServer.setContextPath(cardBase);
+
+    BackendConfiguration cfg;
+    cfg.id = QStringLiteral("two-domain-test");
+    cfg.connectionParams.insert(QStringLiteral("url"), calServer.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                cardBase + QStringLiteral("/principals/users/testuser/"));
+
+    MultiProtocolDavProvider provider(false);   // full mode: contacts enabled
+    provider.load(cfg);
+
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+    QVERIFY(provider.isConnected());
+
+    int calCount = 0, contactCount = 0;
+    for (const auto &c : provider.collections()) {
+        if (c.type == QLatin1String("calendar")) ++calCount;
+        else if (c.type == QLatin1String("contacts")) ++contactCount;
+    }
+    QCOMPARE(calCount, 2);
+    QCOMPARE(contactCount, 2);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(2));
+
+    bool sawCal = false, sawContacts = false;
+    for (auto &spec : specs) {
+        if (spec.domainId == QStringLiteral("cal")) {
+            sawCal = true;
+            QCOMPARE(spec.collections.size(), 2);
+            QVERIFY(dynamic_cast<RemoteCalendarBackend *>(spec.backend.get()) != nullptr);
+        } else if (spec.domainId == QStringLiteral("contacts")) {
+            sawContacts = true;
+            QCOMPARE(spec.collections.size(), 2);
+            QVERIFY(dynamic_cast<RemoteContactsBackend *>(spec.backend.get()) != nullptr);
+        }
+    }
+    QVERIFY(sawCal);
+    QVERIFY(sawContacts);
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)
