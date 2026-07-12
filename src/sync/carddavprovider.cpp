@@ -1,6 +1,5 @@
 #include "carddavprovider.h"
 
-#include "iblobbackend.h"
 #include "backendconfiguration.h"
 #include "carddavcapabilitydiscovery.h"
 #include "carddavconfigwidget.h"
@@ -157,34 +156,26 @@ void CardDavProvider::disconnect() {
     emit connectionStateChanged(false);
 }
 
-std::unique_ptr<IBlobBackend>
-CardDavProvider::createBackendForCollection(const QString &collectionId) {
-    if (!m_connected) {
-        return nullptr;
-    }
-    const auto urlIt = m_addressbookUrls.constFind(collectionId);
-    if (urlIt == m_addressbookUrls.constEnd()) {
-        return nullptr;
-    }
-
-    // RemoteContactsBackend inherits SyncBackend which inherits IBlobBackend,
-    // so the unique_ptr<IBlobBackend> upcast is implicit.
-    auto backend = std::make_unique<RemoteContactsBackend>(m_serverUrl, m_username, m_password);
-    backend->registerAddressbookUrl(collectionId, QUrl(urlIt.value()));
-    return backend;
-}
-
 std::vector<ProviderBackendSpec> CardDavProvider::createBackends()
 {
     std::vector<ProviderBackendSpec> out;
-    if (!m_connected) return out;
+    if (!m_connected || m_collections.isEmpty()) return out;
+
+    // Task 2.3: single "contacts" spec — one RemoteContactsBackend
+    // registered with every discovered addressbook. RemoteContactsBackend
+    // inherits SyncBackend which inherits IBlobBackend, so the
+    // unique_ptr<IBlobBackend> upcast below is implicit.
+    ProviderBackendSpec spec;
+    spec.domainId = QStringLiteral("contacts");
+    auto backend = std::make_unique<RemoteContactsBackend>(m_serverUrl, m_username, m_password);
     for (const auto &col : std::as_const(m_collections)) {
-        ProviderBackendSpec spec;
-        spec.domainId = col.id;                     // Phase 1: per-collection, ids identical to v0.92
-        spec.backend = createBackendForCollection(col.id);
-        spec.collections = { col };
-        if (spec.backend) out.push_back(std::move(spec));
+        const auto urlIt = m_addressbookUrls.constFind(col.id);
+        if (urlIt == m_addressbookUrls.constEnd()) continue;
+        backend->registerAddressbookUrl(col.id, QUrl(urlIt.value()));
     }
+    spec.collections = m_collections;
+    spec.backend = std::move(backend);
+    out.push_back(std::move(spec));
     return out;
 }
 

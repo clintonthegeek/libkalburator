@@ -279,15 +279,17 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
-// Phase 1: CardDavProvider still emits one spec per collection (domainId ==
-// collection id), so a known-collection lookup against createBackends() is
-// equivalent to the old createBackend(collectionId).
+// Task 2.3: CardDavProvider now emits exactly one spec for the whole
+// connected account (domainId == "contacts"), whose single
+// RemoteContactsBackend hosts every addressbook. A lookup by domainId
+// ("contacts") is the new equivalent of the old per-collection
+// createBackend(collectionId).
 std::unique_ptr<IBlobBackend>
-backendForCollection(IProvider &provider, const QString &collectionId)
+backendForCollection(IProvider &provider, const QString &domainId)
 {
     auto specs = provider.createBackends();
     for (auto &spec : specs) {
-        if (spec.domainId == collectionId) return std::move(spec.backend);
+        if (spec.domainId == domainId) return std::move(spec.backend);
     }
     return nullptr;
 }
@@ -359,13 +361,14 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
     QVERIFY(waitForFutureBool(provider.connect(), 5000));
     QVERIFY(provider.isConnected());
 
-    // ── Get the RemoteContactsBackend for the addressbook.
+    // ── Get the single "contacts" RemoteContactsBackend hosting the addressbook.
 
     const auto cols = provider.collections();
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawBackend = backendForCollection(provider, collId);
+    std::unique_ptr<IBlobBackend> rawBackend =
+        backendForCollection(provider, QStringLiteral("contacts"));
     QVERIFY(rawBackend != nullptr);
 
     auto *remoteBackend = dynamic_cast<RemoteContactsBackend *>(rawBackend.get());
@@ -476,7 +479,8 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawBackend = backendForCollection(provider, collId);
+    std::unique_ptr<IBlobBackend> rawBackend =
+        backendForCollection(provider, QStringLiteral("contacts"));
     QVERIFY(rawBackend != nullptr);
 
     auto *remoteBackend = dynamic_cast<RemoteContactsBackend *>(rawBackend.get());

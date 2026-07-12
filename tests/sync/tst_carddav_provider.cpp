@@ -39,17 +39,18 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
-// Phase 1: CardDavProvider still emits one spec per collection (domainId ==
-// collection id), so a known-collection lookup against createBackends() is
-// equivalent to the old createBackend(collectionId). Returns nullptr if the
-// provider isn't connected or collectionId isn't among its specs — same
-// contract the old per-collection API had.
+// Task 2.3: CardDavProvider now emits exactly one spec for the whole
+// connected account (domainId == "contacts"), whose single
+// RemoteContactsBackend hosts every addressbook. A lookup by domainId
+// ("contacts") is the new equivalent of the old per-collection
+// createBackend(collectionId). Returns nullptr if the provider isn't
+// connected or no spec matches domainId.
 std::unique_ptr<IBlobBackend>
-backendForCollection(IProvider &provider, const QString &collectionId)
+backendForCollection(IProvider &provider, const QString &domainId)
 {
     auto specs = provider.createBackends();
     for (auto &spec : specs) {
-        if (spec.domainId == collectionId) return std::move(spec.backend);
+        if (spec.domainId == domainId) return std::move(spec.backend);
     }
     return nullptr;
 }
@@ -84,6 +85,9 @@ private slots:
     // Collection rows advertise the VCARD content type (WildPalms RFC
     // 2026-06-09 symmetry: CalDAV rows carry VEVENT/VTODO, CardDAV VCARD).
     void connect_populates_vcard_contenttype();
+    // Task 2.3: N discovered addressbooks -> one spec {domainId:"contacts"}
+    // with N registered addressbook URLs, slug ids.
+    void testSingleContactsSpec();
     // Test 4: createBackend returns non-null RemoteContactsBackend configured with correct URL
     void createBackend_returns_remote_backend_for_known_collection();
     // Additional: createBackend returns nullptr for unknown collection
@@ -207,6 +211,49 @@ void TstCardDavProvider::connect_populates_vcard_contenttype()
              (QStringList{ QStringLiteral("VCARD") }));
 }
 
+// --- Task 2.3 ----------------------------------------------------------------
+
+void TstCardDavProvider::testSingleContactsSpec()
+{
+    FakeCardDavServer server;
+    server.setAddressbooks({
+        { QStringLiteral("personal"), QStringLiteral("Personal") },
+        { QStringLiteral("work"),     QStringLiteral("Work") }
+    });
+    QVERIFY(server.startListening());
+
+    CardDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 2);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(1));
+    QCOMPARE(specs.front().domainId, QStringLiteral("contacts"));
+    QCOMPARE(specs.front().collections.size(), cols.size());
+
+    auto *remote = dynamic_cast<RemoteContactsBackend*>(specs.front().backend.get());
+    QVERIFY(remote != nullptr);
+
+    // Every discovered addressbook must be registered on the single backend:
+    // availableCollections() surfaces one CollectionInfo per registered id
+    // (slug ids — CardDavCapabilityDiscovery's own last-path-segment ids,
+    // verbatim, no case-folding).
+    const auto available = remote->availableCollections();
+    QCOMPARE(available.size(), cols.size());
+    QStringList expectedIds, actualIds;
+    for (const auto &c : cols) expectedIds << c.id;
+    for (const auto &c : available) actualIds << c.id;
+    std::sort(expectedIds.begin(), expectedIds.end());
+    std::sort(actualIds.begin(), actualIds.end());
+    QCOMPARE(actualIds, expectedIds);
+}
+
 // --- Test 4 ------------------------------------------------------------------
 
 void TstCardDavProvider::createBackend_returns_remote_backend_for_known_collection()
@@ -221,11 +268,12 @@ void TstCardDavProvider::createBackend_returns_remote_backend_for_known_collecti
     QVERIFY(waitForFutureBool(fut));
     QCOMPARE(fut.result(), true);
 
-    const auto cols = provider.collections();
-    QVERIFY(!cols.isEmpty());
-    const QString collId = cols.first().id;
+    QVERIFY(!provider.collections().isEmpty());
 
-    std::unique_ptr<IBlobBackend> backend = backendForCollection(provider, collId);
+    // Task 2.3: the single spec's domainId is "contacts", not a
+    // per-collection id.
+    std::unique_ptr<IBlobBackend> backend =
+        backendForCollection(provider, QStringLiteral("contacts"));
     QVERIFY(backend != nullptr);
 
     // The unique_ptr<IBlobBackend> upcast must yield an instance whose

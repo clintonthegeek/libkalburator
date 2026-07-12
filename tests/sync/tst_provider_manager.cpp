@@ -10,7 +10,6 @@
 
 #include "providermanager.h"
 #include "iprovider.h"
-#include "iblobbackend.h"
 #include "backendregistry.h"
 #include "backendcontribution.h"
 #include "syncbackend.h"
