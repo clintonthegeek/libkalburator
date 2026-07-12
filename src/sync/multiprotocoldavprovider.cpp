@@ -223,7 +223,7 @@ void MultiProtocolDavProvider::onCalDavFinished(bool success)
 {
     if (success) {
         m_calDavUrlMap = m_caldavDiscovery->calendarUrls();
-        m_calDavCaps = m_caldavDiscovery->perCalendarCapabilities();  // retained for createBackendForCollection() priming
+        m_calDavCaps = m_caldavDiscovery->perCalendarCapabilities();  // retained for createBackends() priming
         for (auto it = m_calDavCaps.constBegin();
              it != m_calDavCaps.constEnd(); ++it) {
             CollectionInfo ci;

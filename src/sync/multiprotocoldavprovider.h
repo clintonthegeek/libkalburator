@@ -112,7 +112,7 @@ private:
     QMap<QString, QString> m_calDavUrlMap;   // inner calendarId → URL href
     QMap<QString, QString> m_cardDavUrlMap;  // inner collectionId → URL href
     // Per-calendar capabilities retained from CalDAV discovery so
-    // createBackendForCollection() can prime each RemoteCalendarBackend
+    // createBackends() can prime each RemoteCalendarBackend
     // (keyed by inner calendarId).
     QMap<QString, PerCalendarCapabilities> m_calDavCaps;
 
