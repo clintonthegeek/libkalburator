@@ -16,9 +16,14 @@ class CardDavCapabilityDiscovery;
 /**
  * @brief CardDAV-speaking provider. Wraps CardDavCapabilityDiscovery
  *        (capability + addressbook enumeration) and RemoteContactsBackend
- *        (per-collection sync) behind the IProvider interface.
+ *        behind the IProvider interface.
  *
- * Phase Ib implements addressbook collections; CalDAV is Phase H.
+ * Task 2.3: createBackends() emits exactly one ProviderBackendSpec per
+ * connected account (domainId "contacts") whose single RemoteContactsBackend
+ * hosts and is registered with every addressbook the account exposes.
+ * Collection ids are CardDavCapabilityDiscovery's own last-path-segment ids
+ * (already slug-shaped — no re-keying needed, unlike CalDavProvider/
+ * MultiProtocolDavProvider's CalDAV leg).
  *
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"      QString — server base URL
@@ -47,11 +52,11 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
 private:
     void onDiscoveryFinished(const QList<CollectionInfo> &books, bool hadError);
+
     QString                              m_id;             // UUID
     QString                              m_displayName;
     QUrl                                 m_serverUrl;

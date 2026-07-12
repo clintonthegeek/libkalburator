@@ -40,7 +40,7 @@ public:
     }
     bool isConnected() const override { return m_connected; }
     QList<CollectionInfo> collections() const override { return {}; }
-    std::unique_ptr<IBlobBackend> createBackend(const QString &) override { return nullptr; }
+    std::vector<ProviderBackendSpec> createBackends() override { return {}; }
 
     int loadCount() const { return m_loadCount; }
     int connectCount() const { return m_connectCount; }

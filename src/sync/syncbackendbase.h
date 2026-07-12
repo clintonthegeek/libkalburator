@@ -77,8 +77,15 @@ public:
     virtual QList<Kalburator::Shape::Shape> nativeShapes() const = 0;
 
     /// Stable identifier for the resource (device/store) this backend
-    /// is attached to. Default: "backend:<hex-address>".
+    /// is attached to. Default: m_resourceId if set via setResourceId()
+    /// (ProviderManager stamps the registry id here at registration time),
+    /// else "backend:<hex-address>".
     virtual QString resourceId() const;
+
+    /// Stamp the registry id ("<providerId>:<domainId>") this backend was
+    /// registered under. Called by ProviderManager::registerProviderBackends
+    /// immediately after construction; not meant for general use.
+    void setResourceId(const QString &id) { m_resourceId = id; }
 
     /// Best shape for a specific collection. Default:
     /// `nativeShapes().first()` or `Shape::Any()` if empty.
@@ -220,6 +227,9 @@ protected:
     QHash<QString, QList<SyncOperation*>> m_pendingOperations;
 
 private:
+    // Set via setResourceId(); resourceId() returns this when non-empty.
+    QString m_resourceId;
+
     struct QueuedOp {
         QPointer<SyncOperation> op;
         std::function<void()> startFunctor;

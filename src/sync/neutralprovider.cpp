@@ -52,10 +52,16 @@ void NeutralProvider::disconnect() {
     }
 }
 
-std::unique_ptr<IBlobBackend> NeutralProvider::createBackend(const QString &collectionId) {
-    if (!m_connected) return nullptr;
-    if (collectionId != m_info.id) return nullptr;
-    return m_factory ? m_factory() : nullptr;
+std::vector<ProviderBackendSpec> NeutralProvider::createBackends()
+{
+    std::vector<ProviderBackendSpec> out;
+    if (!m_connected || !m_factory) return out;
+    ProviderBackendSpec spec;
+    spec.domainId = m_info.id;          // single-collection: domain == collection
+    spec.backend = m_factory();
+    spec.collections = { m_info };
+    if (spec.backend) out.push_back(std::move(spec));
+    return out;
 }
 
 } // namespace Kalburator::Sync

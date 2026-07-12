@@ -7,6 +7,7 @@
 #include <QFuture>
 #include <QIcon>
 #include <memory>
+#include <vector>
 
 #include "collectioninfo.h"
 #include "backendconfiguration.h"
@@ -15,6 +16,23 @@
 class QWidget;
 
 namespace Kalburator::Sync {
+
+/**
+ * @brief One backend the provider produces from createBackends(), plus
+ *        the domain it represents and the collections it hosts.
+ *
+ * A provider chooses its own domain granularity: one spec per collection
+ * (Phase 1 default for CalDav/CardDav/MultiProtocolDav/Akonadi) or one
+ * spec covering several collections (the Phase 2 DAV collapse — a single
+ * "cal" backend hosting every calendar the account exposes). Either way,
+ * `backend` is already primed with every collection listed in
+ * `collections` — callers never call back into the provider per-collection.
+ */
+struct ProviderBackendSpec {
+    QString domainId;                       // "cal", "contacts"; Akonadi: per-collection id
+    std::unique_ptr<IBlobBackend> backend;  // primed with ALL its collections
+    QList<CollectionInfo> collections;      // the hosted set
+};
 
 /**
  * @brief Source-of-many-collections under a single auth/connection.
@@ -35,9 +53,9 @@ namespace Kalburator::Sync {
  *   2. load(BackendConfiguration) — apply persisted account settings.
  *   3. connect() — async; auth + capability discovery + collection
  *      enumeration. Emits connectionStateChanged(true) on success.
- *   4. createBackend(collectionId) — produce an IBlobBackend for one
- *      collection. Caller takes ownership; backend self-marshals async
- *      operations if needed.
+ *   4. createBackends() — produce one backend per domain the account
+ *      exposes (provider chooses granularity); each hosts all its
+ *      collections.
  *   5. disconnect() — tears down backends, closes connection.
  *
  * Multiple instances of the same provider kind are allowed (e.g., two
@@ -114,7 +132,7 @@ public:
     virtual QFuture<bool> connect() = 0;
 
     /// Tear down the connection. Synchronous. Destroys any backends
-    /// that were handed out via createBackend (callers must not hold
+    /// that were handed out via createBackends() (callers must not hold
     /// raw pointers across this call — pass via unique_ptr only).
     /// No-op if not connected.
     virtual void disconnect() = 0;
@@ -125,22 +143,17 @@ public:
     /// Collections discovered during connect(). Empty until connected.
     virtual QList<CollectionInfo> collections() const = 0;
 
-    /// Build a backend for one of the discovered collections. Caller
-    /// takes ownership. Returns nullptr if collectionId isn't in
-    /// collections() or if the provider isn't connected.
+    /// Produce one ProviderBackendSpec per domain this account exposes.
+    /// Caller takes ownership of each spec's backend. Empty vector if the
+    /// provider isn't connected.
     ///
-    /// Implementations should return a SyncBackend-derived backend
-    /// (SyncBackend inherits IBlobBackend in this codebase), so
-    /// callers (notably ProviderManager in Task 2) can register the
+    /// Implementations should return SyncBackendBase-derived backends
+    /// (SyncBackend inherits SyncBackendBase inherits IBlobBackend in this
+    /// codebase), so callers (notably ProviderManager) can register each
     /// instance with BackendRegistry, which currently stores
-    /// SyncBackend* instances. The IProvider API uses IBlobBackend to
+    /// SyncBackendBase* instances. The IProvider API uses IBlobBackend to
     /// keep the contract minimal.
-    ///
-    /// The returned backend's resourceId() must encode this provider's
-    /// id() so MappingScheduler can detect resource contention
-    /// correctly (e.g., "caldav:<provider-id>:<collection-id>").
-    virtual std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) = 0;
+    virtual std::vector<ProviderBackendSpec> createBackends() = 0;
 
     // ── Optional UI / status accessors ─────────────────────────────
     /// Optional icon for the account-list row. Default: null QIcon.

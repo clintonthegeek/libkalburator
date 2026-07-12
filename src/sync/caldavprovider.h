@@ -4,6 +4,7 @@
 #include "iprovider.h"
 #include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
 
+#include <QHash>
 #include <QMap>
 #include <QPromise>
 #include <QUrl>
@@ -48,8 +49,7 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
     QString lastError() const override { return m_lastError; }
 
@@ -67,11 +67,14 @@ private:
     QList<CollectionInfo>                m_collections;
 
     CalDavCapabilityDiscovery           *m_discovery = nullptr;
-    QMap<QString, QString>               m_calendarUrls;   // collectionId -> href
-    // Per-calendar capabilities copied out of the discovery before it is
-    // deleteLater()'d, so createBackend() can prime each backend (color +
-    // content types) without keeping the discovery object alive.
-    QMap<QString, PerCalendarCapabilities> m_perCalendarCaps;  // collectionId -> caps
+    // Task 2.1: re-keyed by slug (davSlugFromUrl(href)), NOT the discovery's
+    // display-name-ish key — discovery's raw QMaps are consumed as locals in
+    // onDiscoveryFinished() and never retained. Slugs are stable per-account
+    // calendar ids (survive renames, unique within a calendar home), unlike
+    // display names. Populated at connect() time; consumed by createBackends()
+    // to register + prime the single "cal" backend's calendars.
+    QHash<QString, QString>              m_urlBySlug;   // slug -> href
+    QHash<QString, PerCalendarCapabilities> m_capsBySlug;  // slug -> caps
     std::unique_ptr<QPromise<bool>>      m_connectPromise;
 };
 

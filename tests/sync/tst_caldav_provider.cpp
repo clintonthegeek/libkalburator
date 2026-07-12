@@ -19,6 +19,7 @@
 #include "caldavcapabilitydiscovery.h"
 #include "caldavprovider.h"
 #include "collectioninfo.h"
+#include "davslug.h"
 #include "iblobbackend.h"
 #include "remotecalendarbackend.h"
 
@@ -38,6 +39,21 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     w.setFuture(f);
     if (f.isFinished()) return true;
     return doneSpy.wait(timeoutMs);
+}
+
+// Task 2.1: CalDavProvider now emits exactly one spec for the whole
+// connected account (domainId == "cal"), whose single RemoteCalendarBackend
+// hosts every calendar. A lookup by domainId ("cal") is the new equivalent
+// of the old per-collection createBackend(collectionId). Returns nullptr if
+// the provider isn't connected or no spec matches domainId.
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &domainId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == domainId) return std::move(spec.backend);
+    }
+    return nullptr;
 }
 
 BackendConfiguration makeConfig(const QUrl &serverUrl,
@@ -65,6 +81,8 @@ private slots:
     void connect_populates_collections();
     void connect_populates_readonly_from_discovered_writability();
     void connect_populates_contenttypes_from_component_sets();
+    void testCollectionsUseSlugIds();
+    void testSingleBackendHostsAllCalendars();
     void createBackend_returns_remote_backend_for_known_collection();
     void createBackend_returns_nullptr_for_unknown_collection();
     void connect_fails_on_401();
@@ -254,6 +272,89 @@ void TstCalDavProvider::connect_populates_contenttypes_from_component_sets()
              (QStringList{ QStringLiteral("VEVENT"), QStringLiteral("VTODO") }));
 }
 
+void TstCalDavProvider::testCollectionsUseSlugIds()
+{
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") },
+        { QStringLiteral("Work"),     QStringLiteral("/calendars/testuser/work/") }
+    });
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 2);
+
+    QHash<QString, QString> expectedNameBySlug;
+    expectedNameBySlug.insert(
+        Kalburator::Sync::davSlugFromUrl(QStringLiteral("/calendars/testuser/personal/")),
+        QStringLiteral("Personal"));
+    expectedNameBySlug.insert(
+        Kalburator::Sync::davSlugFromUrl(QStringLiteral("/calendars/testuser/work/")),
+        QStringLiteral("Work"));
+
+    for (const auto &c : cols) {
+        QVERIFY2(expectedNameBySlug.contains(c.id),
+                 qPrintable(QStringLiteral("collection id not a recognized slug: ") + c.id));
+        QCOMPARE(c.name, expectedNameBySlug.value(c.id));
+    }
+}
+
+void TstCalDavProvider::testSingleBackendHostsAllCalendars()
+{
+    FakeCalDavServer server;
+    server.setCalendars({
+        { QStringLiteral("Personal"), QStringLiteral("/calendars/testuser/personal/") },
+        { QStringLiteral("Work"),     QStringLiteral("/calendars/testuser/work/") }
+    });
+    QVERIFY(server.startListening());
+
+    CalDavProvider provider;
+    provider.load(makeConfig(server.baseUrl()));
+
+    QFuture<bool> fut = provider.connect();
+    QVERIFY(waitForFutureBool(fut));
+    QCOMPARE(fut.result(), true);
+
+    const auto cols = provider.collections();
+    QCOMPARE(cols.size(), 2);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(1));
+    QCOMPARE(specs.front().domainId, QStringLiteral("cal"));
+    QCOMPARE(specs.front().collections.size(), cols.size());
+
+    auto *remote = dynamic_cast<RemoteCalendarBackend*>(specs.front().backend.get());
+    QVERIFY(remote != nullptr);
+
+    const int propfindsBeforeLoad = server.requestCount("PROPFIND");
+
+    QSignalSpy discoveredSpy(remote, &RemoteCalendarBackend::calendarDiscovered);
+    remote->loadCalendars(specs.front().domainId);
+
+    // Primed: replayed synchronously from the priming, zero network I/O.
+    QCOMPARE(discoveredSpy.count(), static_cast<int>(cols.size()));
+    QCOMPARE(server.requestCount("PROPFIND"), propfindsBeforeLoad);
+
+    QStringList discoveredIds;
+    for (const auto &args : discoveredSpy) {
+        discoveredIds << args.at(1).toString();
+    }
+    discoveredIds.sort();
+
+    QStringList expectedIds;
+    for (const auto &c : cols) expectedIds << c.id;
+    expectedIds.sort();
+
+    QCOMPARE(discoveredIds, expectedIds);
+}
+
 void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collection()
 {
     FakeCalDavServer server;
@@ -266,11 +367,11 @@ void TstCalDavProvider::createBackend_returns_remote_backend_for_known_collectio
     QVERIFY(waitForFutureBool(fut));
     QCOMPARE(fut.result(), true);
 
-    const auto cols = provider.collections();
-    QVERIFY(!cols.isEmpty());
-    const QString collId = cols.first().id;
+    QVERIFY(!provider.collections().isEmpty());
 
-    std::unique_ptr<IBlobBackend> backend = provider.createBackend(collId);
+    // Task 2.1: the single spec's domainId is "cal", not a per-collection id.
+    std::unique_ptr<IBlobBackend> backend =
+        backendForCollection(provider, QStringLiteral("cal"));
     QVERIFY(backend != nullptr);
 
     // The unique_ptr<IBlobBackend> upcast must yield an instance whose
@@ -292,7 +393,7 @@ void TstCalDavProvider::createBackend_returns_nullptr_for_unknown_collection()
     QVERIFY(waitForFutureBool(fut));
     QCOMPARE(fut.result(), true);
 
-    auto backend = provider.createBackend(QStringLiteral("not-a-collection"));
+    auto backend = backendForCollection(provider, QStringLiteral("not-a-collection"));
     QVERIFY(backend == nullptr);
 }
 
@@ -468,7 +569,7 @@ void TstCalDavProvider::createBackend_when_not_connected_returns_nullptr()
     CalDavProvider provider;
     provider.load(makeConfig(server.baseUrl()));
 
-    auto backend = provider.createBackend(QStringLiteral("any-id"));
+    auto backend = backendForCollection(provider, QStringLiteral("any-id"));
     QVERIFY(backend == nullptr);
 }
 
@@ -489,7 +590,7 @@ void TstCalDavProvider::createBackend_after_disconnect_returns_nullptr()
     provider.disconnect();
     QVERIFY(!provider.isConnected());
 
-    auto backend = provider.createBackend(collId);
+    auto backend = backendForCollection(provider, collId);
     QVERIFY(backend == nullptr);
 }
 

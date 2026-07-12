@@ -5,6 +5,7 @@
 #include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
 
 #include <QFutureWatcher>
+#include <QHash>
 #include <QMap>
 #include <QPromise>
 #include <QUrl>
@@ -22,10 +23,13 @@ class CardDavCapabilityDiscovery;
  *
  * Owns one CalDavCapabilityDiscovery and one CardDavCapabilityDiscovery,
  * runs them in parallel during connect(), and federates their results
- * into a single collections() list. Collection ids are prefixed
- * "multiproto-dav:<provider-id>:cal:<inner-id>" /
- * "multiproto-dav:<provider-id>:contacts:<inner-id>" so createBackend()
- * can dispatch by prefix.
+ * into a single collections() list. Collection ids are bare DAV URL slugs
+ * (davSlugFromUrl(href)) — no per-domain prefix; CollectionInfo::type
+ * ("calendar"/"contacts") distinguishes the two domains. createBackends()
+ * emits up to two ProviderBackendSpecs: one "cal" spec (a single
+ * RemoteCalendarBackend hosting every discovered calendar) and — when
+ * !m_calendarsOnly and addressbooks were discovered — one "contacts" spec
+ * (a single RemoteContactsBackend hosting every discovered addressbook).
  *
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"                       QString — server base URL
@@ -56,8 +60,7 @@ public:
 
     QList<CollectionInfo> collections() const override
     { return m_collections; }
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
     QString lastWarning() const override { return m_lastWarning; }
     QString lastError()   const override { return m_lastError; }
@@ -84,7 +87,16 @@ private:
     QString               m_lastWarning;
     QString               m_lastError;
     QList<CollectionInfo> m_collections;
-    QMap<QString, QString> m_urlByCollectionId;
+
+    // Task 2.2: re-keyed by slug (davSlugFromUrl(href) for CalDAV; CardDAV
+    // discovery already keys by last-path-segment id), NOT the discoveries'
+    // raw QMaps — those are consumed as locals in maybeResolveConnect() and
+    // never retained. Consumed by createBackends() to register + prime the
+    // single "cal" backend's calendars and register the single "contacts"
+    // backend's addressbooks.
+    QHash<QString, QString> m_calUrlBySlug;    // cal slug -> href
+    QHash<QString, PerCalendarCapabilities> m_calCapsBySlug;  // cal slug -> caps
+    QHash<QString, QString> m_contactsUrlBySlug;  // contacts slug -> href
 
     // Owned discovery objects
     CalDavCapabilityDiscovery  *m_caldavDiscovery  = nullptr;
@@ -99,8 +111,9 @@ private:
     QString m_cardDavError;
     QMap<QString, QString> m_calDavUrlMap;   // inner calendarId → URL href
     QMap<QString, QString> m_cardDavUrlMap;  // inner collectionId → URL href
-    // Per-calendar capabilities retained from CalDAV discovery so createBackend()
-    // can prime each RemoteCalendarBackend (keyed by inner calendarId).
+    // Per-calendar capabilities retained from CalDAV discovery so
+    // createBackends() can prime each RemoteCalendarBackend
+    // (keyed by inner calendarId).
     QMap<QString, PerCalendarCapabilities> m_calDavCaps;
 
     std::shared_ptr<QPromise<bool>> m_connectPromise;

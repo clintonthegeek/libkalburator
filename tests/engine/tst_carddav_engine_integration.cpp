@@ -26,7 +26,7 @@
 //   - Its backendId() is derived from the server root URL hash; query
 //     the instance for the actual ID to use in the SyncMapping.
 //   - CardDavProvider::connect() must complete (event loop spin via
-//     QFutureWatcher) before calling createBackend().
+//     QFutureWatcher) before calling createBackends().
 //   - The peer backend is the ShapedTestBackend pattern from
 //     tst_engine_unified_routing.cpp, adapted to use (contacts, vcard4).
 
@@ -74,6 +74,7 @@ using Kalburator::Sync::CardDavProvider;
 using Kalburator::Sync::CollectionInfo;
 using Kalburator::Sync::ConflictResolution;
 using Kalburator::Sync::IBlobBackend;
+using Kalburator::Sync::IProvider;
 using Kalburator::Sync::ISyncConfigStore;
 using Kalburator::Sync::ISyncHost;
 using Kalburator::Sync::RemoteContactsBackend;
@@ -278,6 +279,21 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
+// Task 2.3: CardDavProvider now emits exactly one spec for the whole
+// connected account (domainId == "contacts"), whose single
+// RemoteContactsBackend hosts every addressbook. A lookup by domainId
+// ("contacts") is the new equivalent of the old per-collection
+// createBackend(collectionId).
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &domainId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == domainId) return std::move(spec.backend);
+    }
+    return nullptr;
+}
+
 } // namespace
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -345,13 +361,14 @@ void TestCardDavEngineIntegration::twoVCard4Records_arriveOnPeerAfterSync()
     QVERIFY(waitForFutureBool(provider.connect(), 5000));
     QVERIFY(provider.isConnected());
 
-    // ── Get the RemoteContactsBackend for the addressbook.
+    // ── Get the single "contacts" RemoteContactsBackend hosting the addressbook.
 
     const auto cols = provider.collections();
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawBackend = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawBackend =
+        backendForCollection(provider, QStringLiteral("contacts"));
     QVERIFY(rawBackend != nullptr);
 
     auto *remoteBackend = dynamic_cast<RemoteContactsBackend *>(rawBackend.get());
@@ -462,7 +479,8 @@ void TestCardDavEngineIntegration::vCard3Record_transcodedToVCard4OnPeer()
     QVERIFY(!cols.isEmpty());
     const QString collId = cols.first().id;
 
-    std::unique_ptr<IBlobBackend> rawBackend = provider.createBackend(collId);
+    std::unique_ptr<IBlobBackend> rawBackend =
+        backendForCollection(provider, QStringLiteral("contacts"));
     QVERIFY(rawBackend != nullptr);
 
     auto *remoteBackend = dynamic_cast<RemoteContactsBackend *>(rawBackend.get());

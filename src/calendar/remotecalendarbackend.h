@@ -44,20 +44,6 @@ public:
     ~RemoteCalendarBackend() override;
 
     /**
-     * @brief Factory method for BackendRegistry.
-     *
-     * Expected config keys:
-     *   - url: QString - CalDAV server URL
-     *   - username: QString - Authentication username
-     *   - password: QString - Authentication password
-     *
-     * @param config Backend configuration map
-     * @param parent Parent QObject
-     * @return New RemoteCalendarBackend instance
-     */
-    static SyncBackend* create(const QVariantMap &config, QObject *parent);
-
-    /**
      * @brief Set the DB file path so the private CTagStore can be initialised.
      * Must be called before using CTag-based sync optimizations.
      */
@@ -125,19 +111,6 @@ public:
     void registerCalendarUrl(const QString &calendarId, const QString &davUrl);
 
     /**
-     * @brief Get the discovered URL for a calendar.
-     *
-     * Returns the actual server URL discovered during loadCalendars(),
-     * which may differ from a URL constructed from the display name
-     * (e.g., server uses "acquire" but display name is "Acquire").
-     *
-     * @param calendarId The calendar ID (display name)
-     * @return The discovered DAV URL, or empty string if not found
-     */
-    [[deprecated("use discoveredCalendar(id).davUrl()")]]
-    QString discoveredUrl(const QString &calendarId) const;
-
-    /**
      * @brief Per-calendar metadata the provider already discovered at connect().
      *
      * Carries exactly what loadCalendars() would otherwise re-fetch per backend
@@ -181,18 +154,6 @@ public:
         const QStringList &collectionIds,
         std::function<void(QMap<QString, QString>)> done) override;
     QString cachedCollectionRevision(const QString &collectionId) const override;
-
-    /**
-     * @brief Check if discovered calendar supports VEVENT components.
-     */
-    [[deprecated("use discoveredCalendar(id).supportsVEvent")]]
-    bool discoveredSupportsEvents(const QString &calendarId) const;
-
-    /**
-     * @brief Check if discovered calendar supports VTODO components.
-     */
-    [[deprecated("use discoveredCalendar(id).supportsVTodo")]]
-    bool discoveredSupportsTodos(const QString &calendarId) const;
 
     /**
      * @brief Check if discovered calendar is writable.

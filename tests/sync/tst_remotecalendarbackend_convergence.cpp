@@ -7,9 +7,11 @@
 //   1. Discovery primer. CalDavProvider / MultiProtocolDavProvider seed each
 //      RemoteCalendarBackend from connect-time discovery via primeCalendars(),
 //      so the per-backend loadCalendars() short-circuits its server-wide
-//      PROPFIND. We assert ZERO additional PROPFINDs past the connect-time walk
-//      and that a primed backend emits calendarDiscovered for exactly its bound
-//      calendar.
+//      PROPFIND. We assert ZERO additional PROPFINDs past the connect-time walk.
+//      (Task 2.1: CalDavProvider now collapses to a single "cal" backend
+//      hosting every calendar — its primed loadCalendars() replays ALL of
+//      them, not just one. MultiProtocolDavProvider is unchanged for now
+//      (Task 2.2) and still emits one spec per calendar.)
 //
 //   2. Content-cache filename determinism. The cache file name must be stable
 //      across launches (was qHash(host+path), which mixes a per-process random
@@ -49,6 +51,20 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     w.setFuture(f);
     if (f.isFinished()) return true;
     return doneSpy.wait(timeoutMs);
+}
+
+// A known-domain lookup against createBackends(). Task 2.1: CalDavProvider
+// now emits exactly one spec for the whole account (domainId "cal");
+// MultiProtocolDavProvider (Task 2.2, not yet collapsed) still emits one
+// spec per collection with its prefixed id as domainId.
+std::unique_ptr<IBlobBackend>
+backendForCollection(IProvider &provider, const QString &domainId)
+{
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (spec.domainId == domainId) return std::move(spec.backend);
+    }
+    return nullptr;
 }
 
 BackendConfiguration makeConfig(const QUrl &serverUrl)
@@ -94,7 +110,7 @@ class TstRemoteCalendarBackendConvergence : public QObject
     Q_OBJECT
 private slots:
     void primed_loadCalendars_issues_zero_additional_propfinds();
-    void primed_backend_emits_exactly_its_bound_calendar();
+    void primed_backend_emits_every_bound_calendar();
     void multiproto_primed_loadCalendars_issues_zero_additional_propfinds();
     void unprimed_loadCalendars_falls_back_to_network_propfind();
     void content_cache_filename_is_deterministic_and_honors_setCacheDir();
@@ -121,26 +137,25 @@ void TstRemoteCalendarBackendConvergence::primed_loadCalendars_issues_zero_addit
     const auto cols = provider.collections();
     QCOMPARE(cols.size(), 5);
 
-    // Open backends for two of the five and load their calendars.
-    for (int i : { 0, 3 }) {
-        const QString collId = cols.at(i).id;
-        auto backend = provider.createBackend(collId);
-        QVERIFY(backend != nullptr);
-        auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
-        QVERIFY(remote != nullptr);
+    // Task 2.1: CalDavProvider emits ONE spec ("cal") whose single
+    // RemoteCalendarBackend is primed with every calendar. Opening it and
+    // loading calendars must add no PROPFINDs.
+    auto backend = backendForCollection(provider, QStringLiteral("cal"));
+    QVERIFY(backend != nullptr);
+    auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
+    QVERIFY(remote != nullptr);
 
-        QSignalSpy finishedSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        remote->loadCalendars(collId);
-        // Primed path is synchronous — finished should already have fired.
-        QCOMPARE(finishedSpy.count(), 1);
-        QCOMPARE(finishedSpy.first().at(1).toBool(), true);
-    }
+    QSignalSpy finishedSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    remote->loadCalendars(QStringLiteral("cal"));
+    // Primed path is synchronous — finished should already have fired.
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(finishedSpy.first().at(1).toBool(), true);
 
-    // The whole point: opening + loading backends added NO PROPFINDs.
+    // The whole point: opening + loading the backend added NO PROPFINDs.
     QCOMPARE(server.requestCount("PROPFIND"), propfindsAfterConnect);
 }
 
-void TstRemoteCalendarBackendConvergence::primed_backend_emits_exactly_its_bound_calendar()
+void TstRemoteCalendarBackendConvergence::primed_backend_emits_every_bound_calendar()
 {
     FakeCalDavServer server;
     server.setCalendars(fiveCalendars());
@@ -152,29 +167,41 @@ void TstRemoteCalendarBackendConvergence::primed_backend_emits_exactly_its_bound
 
     const auto cols = provider.collections();
     QCOMPARE(cols.size(), 5);
-    const QString boundId = cols.first().id;  // for plain CalDav, id == discovery key
 
-    auto backend = provider.createBackend(boundId);
+    // Task 2.1: the single "cal" backend hosts every calendar the account
+    // exposes — a primed loadCalendars() replays ALL of them (unlike the
+    // pre-collapse per-collection backend, which bound and emitted exactly
+    // one).
+    auto backend = backendForCollection(provider, QStringLiteral("cal"));
     QVERIFY(backend != nullptr);
     auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
     QVERIFY(remote != nullptr);
 
     QSignalSpy discoveredSpy(remote, SIGNAL(calendarDiscovered(QString, QString)));
-    remote->loadCalendars(boundId);
+    remote->loadCalendars(QStringLiteral("cal"));
 
-    // Exactly one calendar surfaces — the bound one — not all five on the server.
-    QCOMPARE(discoveredSpy.count(), 1);
-    QCOMPARE(discoveredSpy.first().at(0).toString(), boundId);
-    QCOMPARE(discoveredSpy.first().at(1).toString(), boundId);
+    QCOMPARE(discoveredSpy.count(), static_cast<int>(cols.size()));
+
+    QStringList discoveredIds;
+    for (const auto &args : discoveredSpy) discoveredIds << args.at(1).toString();
+    discoveredIds.sort();
+
+    QStringList expectedIds;
+    for (const auto &c : cols) expectedIds << c.id;
+    expectedIds.sort();
+
+    QCOMPARE(discoveredIds, expectedIds);
 }
 
 void TstRemoteCalendarBackendConvergence::multiproto_primed_loadCalendars_issues_zero_additional_propfinds()
 {
-    // Same guarantee for MultiProtocolDavProvider, whose collectionId is prefixed
-    // (multiproto-dav:<id>:cal:<innerKey>) and must be unprefixed to reach the
-    // discovery caps. One base URL speaks both protocols; we point a CalDav-only
-    // fake at it and force the CardDav half to fail fast (bogus principal), so the
-    // provider still connects via CalDav (anyOk = calOk || cardOk).
+    // Same guarantee for MultiProtocolDavProvider. Task 2.2 collapses it to
+    // the same shape as CalDavProvider (Task 2.1): one "cal" spec whose
+    // single RemoteCalendarBackend is primed with every calendar, bare slug
+    // collection ids (no per-domain prefix). One base URL speaks both
+    // protocols; we point a CalDav-only fake at it and force the CardDav half
+    // to fail fast (bogus principal), so the provider still connects via
+    // CalDav (anyOk = calOk || cardOk).
     FakeCalDavServer server;
     server.setCalendars(fiveCalendars());
     QVERIFY(server.startListening());
@@ -200,42 +227,41 @@ void TstRemoteCalendarBackendConvergence::multiproto_primed_loadCalendars_issues
     // Only the calendar collections matter here; CardDAV contributed none.
     QList<CollectionInfo> calCols;
     for (const auto &c : provider.collections()) {
-        if (c.id.contains(QStringLiteral(":cal:"))) calCols.append(c);
+        if (c.type == QLatin1String("calendar")) calCols.append(c);
     }
     QCOMPARE(calCols.size(), 5);
 
     // Baseline AFTER connect: includes both the CalDAV walk and whatever PROPFINDs
-    // the failing CardDAV probe issued. createBackend + loadCalendars must add none.
+    // the failing CardDAV probe issued. createBackends + loadCalendars must add none.
     const int propfindsAfterConnect = server.requestCount("PROPFIND");
     QVERIFY2(propfindsAfterConnect > 0, "discovery should have issued PROPFINDs");
 
-    const QString calPrefix = QStringLiteral("multiproto-dav:mpdav-test:cal:");
-    for (int i : { 0, 4 }) {
-        const QString prefixedId = calCols.at(i).id;
-        QVERIFY(prefixedId.startsWith(calPrefix));
+    // Task 2.2: the single spec's domainId is "cal", not a per-collection id.
+    auto backend = backendForCollection(provider, QStringLiteral("cal"));
+    QVERIFY(backend != nullptr);
+    auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
+    QVERIFY(remote != nullptr);
 
-        auto backend = provider.createBackend(prefixedId);
-        QVERIFY(backend != nullptr);
-        auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
-        QVERIFY(remote != nullptr);
+    QSignalSpy discoveredSpy(remote, SIGNAL(calendarDiscovered(QString, QString)));
+    QSignalSpy finishedSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    remote->loadCalendars(QStringLiteral("cal"));
 
-        QSignalSpy discoveredSpy(remote, SIGNAL(calendarDiscovered(QString, QString)));
-        QSignalSpy finishedSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        remote->loadCalendars(prefixedId);
+    // Primed path is synchronous and surfaces every bound calendar (the single
+    // "cal" backend hosts all of them, unlike the pre-collapse per-collection
+    // backend which bound and emitted exactly one).
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(finishedSpy.first().at(1).toBool(), true);
+    QCOMPARE(discoveredSpy.count(), calCols.size());
 
-        // Primed path is synchronous and surfaces exactly the bound calendar.
-        // BOTH the collectionId and the calendarId must be the *prefixed* id —
-        // that is the id this provider advertised in collections(), so it is the
-        // id the host built its bindings from and matches discovery against.
-        // (Emitting the inner/unprefixed key here made the host orphan every
-        // calendar and raise a false "missing calendar" — the primed backend is
-        // always taken for multiproto, so this is the contract that matters.)
-        QCOMPARE(finishedSpy.count(), 1);
-        QCOMPARE(finishedSpy.first().at(1).toBool(), true);
-        QCOMPARE(discoveredSpy.count(), 1);
-        QCOMPARE(discoveredSpy.first().at(0).toString(), prefixedId);
-        QCOMPARE(discoveredSpy.first().at(1).toString(), prefixedId);
-    }
+    QStringList discoveredIds;
+    for (const auto &args : discoveredSpy) discoveredIds << args.at(1).toString();
+    discoveredIds.sort();
+
+    QStringList expectedIds;
+    for (const auto &c : calCols) expectedIds << c.id;
+    expectedIds.sort();
+
+    QCOMPARE(discoveredIds, expectedIds);
 
     // The whole point: priming made loadCalendars add zero PROPFINDs.
     QCOMPARE(server.requestCount("PROPFIND"), propfindsAfterConnect);

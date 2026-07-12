@@ -165,7 +165,7 @@ void AkonadiProvider::disconnect()
 }
 
 std::unique_ptr<IBlobBackend>
-AkonadiProvider::createBackend(const QString &collectionId)
+AkonadiProvider::createBackendForCollection(const QString &collectionId)
 {
     if (!m_connected)
         return nullptr;
@@ -193,6 +193,20 @@ AkonadiProvider::createBackend(const QString &collectionId)
         return std::unique_ptr<IBlobBackend>(b);
     }
     return nullptr;
+}
+
+std::vector<ProviderBackendSpec> AkonadiProvider::createBackends()
+{
+    std::vector<ProviderBackendSpec> out;
+    if (!m_connected) return out;
+    for (const auto &col : std::as_const(m_collections)) {
+        ProviderBackendSpec spec;
+        spec.domainId = col.id;                     // Akonadi: per-collection id, permanent shape
+        spec.backend = createBackendForCollection(col.id);
+        spec.collections = { col };
+        if (spec.backend) out.push_back(std::move(spec));
+    }
+    return out;
 }
 
 } // namespace Kalburator::Sync

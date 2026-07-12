@@ -16,6 +16,11 @@ endfunction()
 
 kalburator_add_sync_test(tst_provider_manager)
 
+# Task 2.1 (fanout collapse Phase 2) — davSlugFromUrl() helper: the stable
+# per-account calendar id derived from a DAV URL's last path segment.
+# Pure QString helper; runs in the default profile.
+kalburator_add_sync_test(tst_davslug)
+
 # 2026-06-14 — shared Akonadi collection-id scheme helper (producer<->consumer
 # single source of truth). Pure QString helper; runs in the default profile.
 kalburator_add_sync_test(tst_akonadicollectionid)
@@ -241,6 +246,8 @@ add_executable(tst_multiprotocoldavprovider
     tst_multiprotocoldavprovider.cpp
     fakecaldavserver.cpp
     fakecaldavserver.h
+    fakecarddavserver.cpp
+    fakecarddavserver.h
 )
 target_link_libraries(tst_multiprotocoldavprovider
     PRIVATE

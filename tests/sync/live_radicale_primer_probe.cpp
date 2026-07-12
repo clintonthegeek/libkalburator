@@ -77,19 +77,22 @@ int main(int argc, char **argv)
     QThread::msleep(1200);
 
     // ---- The measured phase: open a backend for EVERY calendar and load it. ----
+    // Phase 1: CalDavProvider still emits one spec per collection (domainId ==
+    // collection id), so this is exactly the old per-collection createBackend()
+    // loop, just fetched as a batch up front.
     marker("PRIMED_LOOP_START");
     int loaded = 0;
     int discovered = 0;
     int finishedOk = 0;
-    for (const auto &c : cols) {
-        auto backend = provider.createBackend(c.id);
-        if (!backend) continue;
-        auto *remote = dynamic_cast<RemoteCalendarBackend *>(backend.get());
+    auto specs = provider.createBackends();
+    for (auto &spec : specs) {
+        if (!spec.backend) continue;
+        auto *remote = dynamic_cast<RemoteCalendarBackend *>(spec.backend.get());
         if (!remote) continue;
 
         QSignalSpy discSpy(remote, SIGNAL(calendarDiscovered(QString, QString)));
         QSignalSpy finSpy(remote, SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        remote->loadCalendars(c.id);
+        remote->loadCalendars(spec.domainId);
 
         // Primed path is synchronous. Give a tiny spin only as a safety net; if a
         // network walk were (wrongly) taken, this would NOT complete synchronously

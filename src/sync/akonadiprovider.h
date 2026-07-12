@@ -25,7 +25,7 @@ namespace Kalburator::Sync {
  *
  * Phase L.1: skeleton only. connect() always resolves false.
  * Phase L.4: real Akonadi session open.
- * Phase L.5/L.7: createBackend() routes calendar + contacts collections.
+ * Phase L.5/L.7: createBackends() routes calendar + contacts collections.
  * Phase L.8: createConfigWidget() provides account-setup UI.
  *
  * Configuration (BackendConfiguration::connectionParams):
@@ -55,12 +55,17 @@ public:
     QList<CollectionInfo> collections() const override
     { return m_collections; }
 
-    // Returns nullptr until Phase L.5/L.7 wire in real backends.
-    std::unique_ptr<IBlobBackend>
-        createBackend(const QString &collectionId) override;
+    std::vector<ProviderBackendSpec> createBackends() override;
 
 private:
     void onCollectionsFetched(KJob *job);
+
+    // Behavior-preserving per-collection construction, unchanged body from
+    // the old public createBackend(collectionId). createBackends() wraps
+    // this in a loop over m_collections (one spec per collection) —
+    // Akonadi stays this shape permanently (no Task 2 collapse).
+    std::unique_ptr<IBlobBackend>
+        createBackendForCollection(const QString &collectionId);
 
     QString               m_id;           // stable UUID
     QString               m_displayName;

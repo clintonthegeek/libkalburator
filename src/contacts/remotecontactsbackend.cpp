@@ -33,16 +33,11 @@ RemoteContactsBackend::RemoteContactsBackend(const QUrl    &serverRoot,
 
 RemoteContactsBackend::~RemoteContactsBackend() = default;
 
-// static
-std::unique_ptr<RemoteContactsBackend>
-RemoteContactsBackend::create(const QVariantMap &config, QObject *parent)
-{
-    const QUrl    serverRoot = QUrl::fromUserInput(
-        config.value(QStringLiteral("serverRoot")).toString());
-    const QString username = config.value(QStringLiteral("username")).toString();
-    const QString password = config.value(QStringLiteral("password")).toString();
-    return std::make_unique<RemoteContactsBackend>(serverRoot, username, password, parent);
-}
+// RemoteContactsBackend::create(QVariantMap) factory was deleted in
+// fanout-collapse Task 3.1 (spec §B): it had zero callers and the unlock
+// is symbolic-only (no test/library consumer uses the legacy
+// serverRoot/username/password config-map shape — providers always build
+// the backend directly from their connect-time discovery).
 
 // ---------------------------------------------------------------------------
 // Cancellation

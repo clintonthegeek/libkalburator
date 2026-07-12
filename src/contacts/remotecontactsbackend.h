@@ -47,17 +47,6 @@ public:
     ~RemoteContactsBackend() override;
 
     /**
-     * @brief Factory method for BackendRegistry.
-     *
-     * Expected config keys:
-     *   - serverRoot : QString   CardDAV server root URL
-     *   - username   : QString
-     *   - password   : QString
-     */
-    static std::unique_ptr<RemoteContactsBackend>
-        create(const QVariantMap &config, QObject *parent = nullptr);
-
-    /**
      * @brief Pre-populate an addressbook URL discovered by CardDavProvider.
      *
      * Must be called for each addressbook before loadRecords() is called.

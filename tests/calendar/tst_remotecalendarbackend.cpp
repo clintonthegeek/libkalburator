@@ -114,7 +114,8 @@ private slots:
     void init();
     void cleanup();
 
-    // Backend type and factory
+    // Backend type and direct-ctor smoke (legacy factory was deleted
+    // in fanout-collapse Task 3.1 — see testFactoryMethod body).
     void testBackendType();
     void testFactoryMethod();
 
@@ -284,12 +285,16 @@ void RemoteCalendarBackendTest::testBackendType()
 
 void RemoteCalendarBackendTest::testFactoryMethod()
 {
-    QVariantMap config;
-    config[QStringLiteral("url")] = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1).toString();
-    config[QStringLiteral("username")] = CalDavTestConfig::USERNAME_1;
-    config[QStringLiteral("password")] = CalDavTestConfig::PASSWORD_1;
-
-    SyncBackend *backend = RemoteCalendarBackend::create(config, this);
+    // POST fanout-collapse Task 3.1: RemoteCalendarBackend::create(QVariantMap)
+    // is gone — the only onboarding path is the direct ctor (fully covered
+    // by init() below and every other test slot). This slot is reduced to a
+    // smoke check on the direct ctor; if RemoteCalendarBackend compiles,
+    // it can be constructed with (url, username, password) here.
+    auto *backend = new RemoteCalendarBackend(
+        CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1),
+        CalDavTestConfig::USERNAME_1,
+        CalDavTestConfig::PASSWORD_1,
+        this);
     QVERIFY(backend != nullptr);
     QCOMPARE(backend->backendType(), QStringLiteral("caldav"));
 
