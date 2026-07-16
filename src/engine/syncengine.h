@@ -556,6 +556,12 @@ private:
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
 
+    // L1 (sync-graph campaign, spec §5.9): a completed mapping that applied
+    // changes invalidates the frozen fast-path skip verdict of every pending
+    // mapping sharing one of its endpoints — the pre-pass judged those
+    // endpoints before this run wrote them.
+    void invalidateSkipsTouching(const SyncMapping &completed);
+
     // Multi-mapping per-call override (v0.65 clobber). Assigned by
     // driveQueue() at the start of every queue run (so no stale state
     // survives between runs) and stamped onto each per-mapping worker

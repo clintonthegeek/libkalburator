@@ -113,6 +113,25 @@ void runOnBackendThread(QObject *backend, Func &&fn)
     }
 }
 
+// L1 (sync-graph campaign, spec §5.9): a (backendId, calendarId) endpoint
+// identity, used to recognize when a completed mapping wrote an endpoint
+// another pending mapping also touches.
+QString endpointKey(const QString &backend, const QString &calendar)
+{
+    return backend + QLatin1Char('|') + calendar;
+}
+
+// L1: whether a completed mapping's SyncResult actually applied any change
+// to either side — a settled no-op result (all zero stats) never
+// invalidates anything.
+bool appliedChanges(const Kalburator::Sync::SyncResult &r)
+{
+    const auto n = [](const Kalburator::Sync::SyncStats &s) {
+        return s.created + s.updated + s.deleted;
+    };
+    return n(r.sourceStats) + n(r.targetStats) > 0;
+}
+
 } // anonymous namespace
 
 namespace Kalburator::Engine {
@@ -1052,6 +1071,28 @@ void SyncEngine::onWorkerConflictPauseRequested(const ConflictInfo &conflict)
     }
 }
 
+// L1 (sync-graph campaign, spec §5.9): a completed mapping that applied
+// changes invalidates the frozen fast-path skip verdict of every pending
+// mapping sharing one of its endpoints — the pre-pass judged those
+// endpoints before this run wrote them.
+void SyncEngine::invalidateSkipsTouching(const SyncMapping &completed)
+{
+    if (m_skippedMappingIds.isEmpty())
+        return;
+    const QSet<QString> written{
+        endpointKey(completed.sourceBackend, completed.sourceCalendar),
+        endpointKey(completed.targetBackend, completed.targetCalendar),
+    };
+    for (const auto &m : std::as_const(m_syncMappings)) {
+        if (!m_skippedMappingIds.contains(m.id))
+            continue;
+        if (written.contains(endpointKey(m.sourceBackend, m.sourceCalendar)) ||
+            written.contains(endpointKey(m.targetBackend, m.targetCalendar))) {
+            m_skippedMappingIds.remove(m.id);
+        }
+    }
+}
+
 void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResult &result)
 {
     // Batch-present any unmonitored conflicts collected during this mapping.
@@ -1173,6 +1214,17 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // Queue mode: record the per-mapping result and advance.
     // recordResult is a no-op outside Queue mode (defensive).
     m_queue.recordResult(result);
+
+    // L1 (spec §5.9): a successful mapping that actually wrote something
+    // may un-freeze a still-pending mapping's fast-path skip verdict if it
+    // shares an endpoint — otherwise propagation across a mapping chain
+    // takes one hop per run instead of settling within this one.
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
+        result.success && appliedChanges(result)) {
+        for (const auto &m : std::as_const(m_syncMappings)) {
+            if (m.id == mappingId) { invalidateSkipsTouching(m); break; }
+        }
+    }
 
     // Continue to next mapping (queue mode only).
     advanceQueue();
