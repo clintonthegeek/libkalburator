@@ -127,7 +127,7 @@ void TstCalDavProvider::connect_succeeds_against_fake_server()
     CalDavProvider provider;
     provider.load(makeConfig(server.baseUrl()));
 
-    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&provider, qOverload<bool>(&IProvider::connectionStateChanged));
     QFuture<bool> fut = provider.connect();
     QVERIFY(waitForFutureBool(fut));
     QCOMPARE(fut.result(), true);
@@ -474,7 +474,7 @@ void TstCalDavProvider::disconnect_clears_collections()
     QCOMPARE(fut.result(), true);
     QVERIFY(!provider.collections().isEmpty());
 
-    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&provider, qOverload<bool>(&IProvider::connectionStateChanged));
     provider.disconnect();
     QVERIFY(provider.collections().isEmpty());
     QVERIFY(!provider.isConnected());
@@ -493,7 +493,7 @@ void TstCalDavProvider::connect_when_already_connected_is_noop()
     QVERIFY(waitForFutureBool(provider.connect()));
     QVERIFY(provider.isConnected());
 
-    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&provider, qOverload<bool>(&IProvider::connectionStateChanged));
     QSignalSpy collSpy(&provider, &IProvider::collectionsChanged);
 
     QFuture<bool> fut2 = provider.connect();
@@ -551,7 +551,7 @@ void TstCalDavProvider::disconnect_mid_flight_resolves_promise_false()
     QFuture<bool> fut = provider.connect();
     QVERIFY(!fut.isFinished());
 
-    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&provider, qOverload<bool>(&IProvider::connectionStateChanged));
 
     provider.disconnect();
 
@@ -615,7 +615,7 @@ void TstCalDavProvider::connect_while_inflight_is_idempotent()
     QVERIFY(!fut2.isFinished());
 
     // Both futures share the same state: finishing one finishes both.
-    QSignalSpy stateSpy(&provider, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&provider, qOverload<bool>(&IProvider::connectionStateChanged));
     provider.disconnect();
     QVERIFY(fut1.isFinished());
     QVERIFY(fut2.isFinished());

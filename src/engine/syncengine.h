@@ -359,6 +359,9 @@ public:
     void cancelWithReason(CancellationReason reason,
                           const QString &resourceId = {});
 
+    /// L2 (spec §5.9): hard cap on fixpoint passes per Queue run.
+    static constexpr int kMaxSyncPasses = 3;
+
 signals:
     /**
      * @brief Emitted when sync starts for a mapping.
@@ -403,6 +406,13 @@ signals:
     void transcodingWarning(const QString &calendarId,
                             const QString &uid,
                             const QStringList &warnings);
+
+    /**
+     * @brief L2 (spec §5.9): emitted when the engine starts a re-pass over
+     * dirtied mappings (pass >= 2; the first pass is the run itself and is
+     * not announced).
+     */
+    void syncPassStarted(int pass, int maxPasses);
 
 private:
     /**
@@ -555,6 +565,19 @@ private:
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
+
+    // L2 (sync-graph campaign, spec §5.9): fixpoint-pass state. Reset at
+    // the start of every driveQueue() run.
+    int m_currentPass = 1;
+    // endpointKey -> ids of mappings that wrote it this pass.
+    QHash<QString, QSet<QString>> m_passDirtyWriters;
+    QList<SyncResult> m_carriedResults; // drained results of earlier passes
+
+    // L1 (sync-graph campaign, spec §5.9): a completed mapping that applied
+    // changes invalidates the frozen fast-path skip verdict of every pending
+    // mapping sharing one of its endpoints — the pre-pass judged those
+    // endpoints before this run wrote them.
+    void invalidateSkipsTouching(const SyncMapping &completed);
 
     // Multi-mapping per-call override (v0.65 clobber). Assigned by
     // driveQueue() at the start of every queue run (so no stale state

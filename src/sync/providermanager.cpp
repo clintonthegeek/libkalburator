@@ -33,7 +33,10 @@ ProviderManager::~ProviderManager()
 
 void ProviderManager::wireProviderSignals(IProvider *provider)
 {
-    QObject::connect(provider, &IProvider::connectionStateChanged,
+    // Task 4: connectionStateChanged is now overloaded (bool legacy +
+    // ProviderConnectionState). ProviderManager's own state mirror still
+    // derives from the legacy bool overload only — disambiguate explicitly.
+    QObject::connect(provider, qOverload<bool>(&IProvider::connectionStateChanged),
                      this, &ProviderManager::onProviderConnectionStateChanged);
     QObject::connect(provider, &IProvider::collectionsChanged,
                      this, &ProviderManager::onProviderCollectionsChanged);

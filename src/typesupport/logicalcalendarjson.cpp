@@ -136,6 +136,10 @@ QJsonObject logicalCalendarToJson(const LogicalCalendar &cal) {
     // saveInstantly removed — all calendars use auto-save timer now
     obj[QStringLiteral("syncEnabled")] = cal.syncEnabled;
     obj[QStringLiteral("autoSyncOnLoad")] = cal.autoSyncOnLoad;
+    // Only write when non-default, to keep existing files byte-stable.
+    if (cal.wiringPolicy != WiringPolicy::CollectionDefault) {
+        obj[QStringLiteral("wiringPolicy")] = wiringPolicyToString(cal.wiringPolicy);
+    }
     if (cal.isProject) {
         obj[QStringLiteral("isProject")] = true;  // Only write if true (backward compat)
     }
@@ -170,6 +174,9 @@ LogicalCalendar logicalCalendarFromJson(const QJsonObject &obj) {
     // saveInstantly removed — silently ignore old configs
     cal.syncEnabled = obj.value(QStringLiteral("syncEnabled")).toBool(false);
     cal.autoSyncOnLoad = obj.value(QStringLiteral("autoSyncOnLoad")).toBool(false);
+    cal.wiringPolicy = obj.contains(QStringLiteral("wiringPolicy"))
+        ? wiringPolicyFromString(obj.value(QStringLiteral("wiringPolicy")).toString())
+        : WiringPolicy::CollectionDefault;  // absent ⇒ default (back-compat)
     cal.isProject = obj.value(QStringLiteral("isProject")).toBool(false);
 
     QJsonArray bindingsArr = obj.value(QStringLiteral("bindings")).toArray();

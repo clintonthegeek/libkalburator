@@ -10,24 +10,24 @@
 #include <map>
 #include <vector>
 
+#include "iprovider.h"  // ProviderConnectionState (Task 4: relocated here)
+
 class KConfigGroup;
 
 namespace Kalburator::Sync {
 
-class IProvider;
 class BackendRegistry;
 class IBlobBackend;
 
-/// O.1.2: Per-provider connection state. Returned by
-/// ProviderManager::providerState(id) and reported on
-/// providerStateChanged signal.
-enum class ProviderConnectionState {
-    Disconnected,
-    Connecting,   ///< Reserved. Not yet emitted — requires IProvider::connectionStateChanged
-                  ///< to become enum-typed (planned for Phase O.3).
-    Connected,
-    Error         ///< Reserved. Not yet emitted — requires richer IProvider error signal (O.3).
-};
+// O.1.2: Per-provider connection state, returned by
+// ProviderManager::providerState(id) and reported on providerStateChanged.
+// Task 4 (sync-graph redesign Phase 1) relocated the enum itself to
+// iprovider.h — see Kalburator::Sync::ProviderConnectionState there for the
+// definition and emission contract. Connecting/Error are now actually
+// emitted by the DAV-family providers' own connectionStateChanged
+// overload; ProviderManager's own m_providerStates mirror below still only
+// derives from the legacy bool overload (Connected/Disconnected) — wiring
+// Connecting/Error through the manager is left to a later task.
 
 /**
  * @brief Per-profile owner of IProvider instances.
@@ -101,6 +101,8 @@ private:
 
 } // namespace Kalburator::Sync
 
-Q_DECLARE_METATYPE(Kalburator::Sync::ProviderConnectionState)
+// Q_DECLARE_METATYPE(Kalburator::Sync::ProviderConnectionState) now lives in
+// iprovider.h (Task 4) — declaring it here too would be a duplicate
+// QMetaType specialization in any TU that includes both headers.
 
 #endif

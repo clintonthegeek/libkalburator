@@ -18,6 +18,31 @@ class QWidget;
 namespace Kalburator::Sync {
 
 /**
+ * @brief Fine-grained per-provider connection state (Task 4, sync-graph
+ *        redesign Phase 1). Moved here from providermanager.h so IProvider
+ *        itself can declare a typed connectionStateChanged(ProviderConnectionState)
+ *        signal — ProviderManager and other consumers reference the same
+ *        enum via this header.
+ *
+ * Emission contract (see IProvider::connectionStateChanged overload below):
+ *   - Connecting: emitted once at the start of every connect() attempt that
+ *     isn't a no-op (already connected) or a re-entrant call onto an
+ *     already-in-flight attempt.
+ *   - Connected: emitted when that attempt succeeds.
+ *   - Error: emitted when that attempt fails; lastError() is populated with
+ *     a human-readable message before this is emitted.
+ *   - Disconnected: not emitted by providers today (disconnect() still only
+ *     emits the legacy bool overload with false); reserved for a future
+ *     task that wires it up.
+ */
+enum class ProviderConnectionState {
+    Disconnected,
+    Connecting,
+    Connected,
+    Error
+};
+
+/**
  * @brief One backend the provider produces from createBackends(), plus
  *        the domain it represents and the collections it hosts.
  *
@@ -174,6 +199,17 @@ signals:
     /// failure feedback.
     void connectionStateChanged(bool connected);
 
+    /// Task 4: fine-grained connection-state overload of the signal above.
+    /// Emits Connecting/Connected/Error per the contract documented on
+    /// ProviderConnectionState. This is a genuine C++ overload of
+    /// connectionStateChanged — existing consumers that bind to the plain
+    /// signal name (QObject::connect / QSignalSpy on
+    /// &IProvider::connectionStateChanged) must disambiguate with
+    /// qOverload<bool>(&IProvider::connectionStateChanged); new consumers
+    /// wanting Connecting/Error should use
+    /// qOverload<ProviderConnectionState>(&IProvider::connectionStateChanged).
+    void connectionStateChanged(Kalburator::Sync::ProviderConnectionState state);
+
     /// Emitted when collections() result changes (typically just once
     /// after connect()'s capability discovery completes; possibly
     /// again if the server pushes a notification, but most providers
@@ -186,5 +222,7 @@ signals:
 };
 
 } // namespace Kalburator::Sync
+
+Q_DECLARE_METATYPE(Kalburator::Sync::ProviderConnectionState)
 
 #endif

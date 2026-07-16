@@ -59,6 +59,18 @@ QFuture<bool> CalDavProvider::connect() {
         return fi.future();
     }
 
+    // Idempotent: if a connect is in flight, return its future. Overwriting
+    // m_connectPromise would destroy the previous QPromise unfinished, whose
+    // destructor would cancel+reportFinished the underlying QFutureInterface
+    // without a result — crashing any watcher::result() observer. Checked
+    // before the URL-validity gate below since an in-flight attempt already
+    // passed that gate on its first call.
+    if (m_connectPromise) {
+        return m_connectPromise->future();
+    }
+
+    emit connectionStateChanged(ProviderConnectionState::Connecting);
+
     if (m_serverUrl.isEmpty() || !m_serverUrl.isValid() || m_serverUrl.scheme().isEmpty()) {
         QFutureInterface<bool> fi;
         fi.reportStarted();
@@ -66,15 +78,8 @@ QFuture<bool> CalDavProvider::connect() {
         fi.reportFinished();
         m_lastError = QStringLiteral("CalDavProvider: server URL is empty, invalid, or missing a scheme");
         emit error(m_lastError);
+        emit connectionStateChanged(ProviderConnectionState::Error);
         return fi.future();
-    }
-
-    // Idempotent: if a connect is in flight, return its future. Overwriting
-    // m_connectPromise would destroy the previous QPromise unfinished, whose
-    // destructor would cancel+reportFinished the underlying QFutureInterface
-    // without a result — crashing any watcher::result() observer.
-    if (m_connectPromise) {
-        return m_connectPromise->future();
     }
 
     // Drop any abandoned in-flight discovery before starting fresh.
@@ -133,12 +138,14 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
         m_connected = true;
         emit collectionsChanged();
         emit connectionStateChanged(true);
+        emit connectionStateChanged(ProviderConnectionState::Connected);
     } else {
         const QString errMsg = m_discovery->errorMessage();
         m_lastError = errMsg.isEmpty()
                       ? QStringLiteral("CalDavProvider: discovery failed")
                       : errMsg;
         emit error(m_lastError);
+        emit connectionStateChanged(ProviderConnectionState::Error);
     }
 
     if (m_connectPromise) {

@@ -53,21 +53,27 @@ QFuture<bool> CardDavProvider::connect() {
         return fi.future();
     }
 
+    // Idempotent: if a connect is in flight, return its future. Overwriting
+    // m_connectPromise would destroy the previous QPromise unfinished, whose
+    // destructor would cancel+reportFinished the underlying QFutureInterface
+    // without a result — crashing any watcher::result() observer. Checked
+    // before the URL-validity gate below since an in-flight attempt already
+    // passed that gate on its first call.
+    if (m_connectPromise) {
+        return m_connectPromise->future();
+    }
+
+    emit connectionStateChanged(ProviderConnectionState::Connecting);
+
     if (m_serverUrl.isEmpty() || !m_serverUrl.isValid() || m_serverUrl.scheme().isEmpty()) {
         QFutureInterface<bool> fi;
         fi.reportStarted();
         fi.reportResult(false);
         fi.reportFinished();
-        emit error(QStringLiteral("CardDavProvider: server URL is empty, invalid, or missing a scheme"));
+        m_lastError = QStringLiteral("CardDavProvider: server URL is empty, invalid, or missing a scheme");
+        emit error(m_lastError);
+        emit connectionStateChanged(ProviderConnectionState::Error);
         return fi.future();
-    }
-
-    // Idempotent: if a connect is in flight, return its future. Overwriting
-    // m_connectPromise would destroy the previous QPromise unfinished, whose
-    // destructor would cancel+reportFinished the underlying QFutureInterface
-    // without a result — crashing any watcher::result() observer.
-    if (m_connectPromise) {
-        return m_connectPromise->future();
     }
 
     // Drop any abandoned in-flight discovery before starting fresh.
@@ -76,6 +82,7 @@ QFuture<bool> CardDavProvider::connect() {
         m_discovery->deleteLater();
         m_discovery = nullptr;
     }
+    m_lastError.clear();
     m_connectPromise.reset(new QPromise<bool>);
     m_connectPromise->start();
 
@@ -89,6 +96,7 @@ QFuture<bool> CardDavProvider::connect() {
     QObject::connect(m_discovery, &CardDavCapabilityDiscovery::error,
                      this, [this, errorSeen](const QString &msg) {
         *errorSeen = true;
+        m_lastError = msg;
         emit error(msg);
     });
 
@@ -122,8 +130,16 @@ void CardDavProvider::onDiscoveryFinished(const QList<CollectionInfo> &books,
         m_connected = true;
         emit collectionsChanged();
         emit connectionStateChanged(true);
+        emit connectionStateChanged(ProviderConnectionState::Connected);
+    } else {
+        // Error signal already forwarded in the lambda above; m_lastError
+        // was set there too. Fall back to a generic message on the
+        // (unexpected) chance discovery reported failure without emitting
+        // its error signal.
+        if (m_lastError.isEmpty())
+            m_lastError = QStringLiteral("CardDavProvider: discovery failed");
+        emit connectionStateChanged(ProviderConnectionState::Error);
     }
-    // Error signal already forwarded in the lambda above.
 
     if (m_connectPromise) {
         m_connectPromise->addResult(success);

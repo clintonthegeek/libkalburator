@@ -54,6 +54,8 @@ public:
     { return m_collections; }
     std::vector<ProviderBackendSpec> createBackends() override;
 
+    QString lastError() const override { return m_lastError; }
+
 private:
     void onDiscoveryFinished(const QList<CollectionInfo> &books, bool hadError);
 
@@ -63,6 +65,7 @@ private:
     QString                              m_username;
     QString                              m_password;
     bool                                 m_connected = false;
+    QString                              m_lastError;
     QList<CollectionInfo>                m_collections;
 
     CardDavCapabilityDiscovery           *m_discovery = nullptr;

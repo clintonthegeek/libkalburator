@@ -447,7 +447,7 @@ void TstMultiProtocolDavProvider::connect_while_inflight_is_idempotent()
     QFuture<bool> fut2 = p.connect();
     QVERIFY(!fut2.isFinished());
 
-    QSignalSpy stateSpy(&p, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(&p, qOverload<bool>(&IProvider::connectionStateChanged));
     p.disconnect();
     QTRY_VERIFY_WITH_TIMEOUT(fut1.isFinished(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(fut2.isFinished(), 5000);

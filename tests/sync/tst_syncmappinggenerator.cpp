@@ -1,9 +1,27 @@
 #include <QtTest>
 #include "syncmappinggenerator.h"
 #include "logicalcalendar.h"
+#include "logicalcalendarjson.h"
 #include "synctypes.h"
 
 using namespace Kalburator::Sync;
+
+static bool mappingsEqual(const QList<SyncMapping> &a, const QList<SyncMapping> &b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (int i = 0; i < a.size(); ++i) {
+        if (a[i].id != b[i].id
+            || a[i].sourceBackend != b[i].sourceBackend
+            || a[i].sourceCalendar != b[i].sourceCalendar
+            || a[i].targetBackend != b[i].targetBackend
+            || a[i].targetCalendar != b[i].targetCalendar
+            || a[i].mode != b[i].mode) {
+            return false;
+        }
+    }
+    return true;
+}
 
 static CalendarBackendBinding bind(const QString &backend, BackendRole role)
 {
@@ -98,6 +116,75 @@ private slots:
         const auto m = generateMappings(QList<LogicalCalendar>{ threeNode(), other },
                                         SyncTopology::Star);
         QCOMPARE(m.size(), 4);   // 2 + 2
+    }
+
+    // === Task 3: Per-LC WiringPolicy ===
+
+    void testPerLcPolicyOverridesDefault()
+    {
+        LogicalCalendar lc1;
+        lc1.id = QStringLiteral("lc1");
+        lc1.displayName = QStringLiteral("LC1");
+        lc1.syncEnabled = true;
+        lc1.wiringPolicy = WiringPolicy::Manual;
+        lc1.bindings = { bind("local", BackendRole::Primary),
+                          bind("caldav", BackendRole::Sync1) };
+
+        LogicalCalendar lc2;
+        lc2.id = QStringLiteral("lc2");
+        lc2.displayName = QStringLiteral("LC2");
+        lc2.syncEnabled = true;
+        // lc2.wiringPolicy left at default (CollectionDefault)
+        lc2.bindings = { bind("local", BackendRole::Primary),
+                          bind("caldav", BackendRole::Sync1) };
+
+        const auto m = generateMappings(QList<LogicalCalendar>{ lc1, lc2 }, SyncTopology::Star);
+        QCOMPARE(m.size(), 1);
+        QVERIFY(m[0].id.startsWith(QStringLiteral("auto_lc2_")));
+    }
+
+    void testHubMeshChainMapToPresets()
+    {
+        LogicalCalendar lc = threeNode();
+
+        LogicalCalendar hub = lc;
+        hub.wiringPolicy = WiringPolicy::Hub;
+        const auto hubOut = generateMappings(QList<LogicalCalendar>{ hub }, SyncTopology::Star);
+        const auto starOut = generateMappings(lc, SyncTopology::Star);
+        QVERIFY(mappingsEqual(hubOut, starOut));
+
+        LogicalCalendar mesh = lc;
+        mesh.wiringPolicy = WiringPolicy::Mesh;
+        const auto meshOut = generateMappings(QList<LogicalCalendar>{ mesh }, SyncTopology::Star);
+        const auto mirrorOut = generateMappings(lc, SyncTopology::Mirror);
+        QVERIFY(mappingsEqual(meshOut, mirrorOut));
+
+        LogicalCalendar chain = lc;
+        chain.wiringPolicy = WiringPolicy::Chain;
+        const auto chainOut = generateMappings(QList<LogicalCalendar>{ chain }, SyncTopology::Star);
+        const auto chainPreset = generateMappings(lc, SyncTopology::Chain);
+        QVERIFY(mappingsEqual(chainOut, chainPreset));
+    }
+
+    void testJsonRoundTrip()
+    {
+        LogicalCalendar lc;
+        lc.id = QStringLiteral("c");
+        lc.displayName = QStringLiteral("C");
+        lc.wiringPolicy = WiringPolicy::Chain;
+
+        const QJsonObject obj = logicalCalendarToJson(lc);
+        QCOMPARE(obj.value(QStringLiteral("wiringPolicy")).toString(), QStringLiteral("chain"));
+
+        const LogicalCalendar back = logicalCalendarFromJson(obj);
+        QCOMPARE(back.wiringPolicy, WiringPolicy::Chain);
+
+        // Absent key => CollectionDefault
+        QJsonObject noPolicy;
+        noPolicy[QStringLiteral("id")] = QStringLiteral("c2");
+        noPolicy[QStringLiteral("displayName")] = QStringLiteral("C2");
+        const LogicalCalendar defaultBack = logicalCalendarFromJson(noPolicy);
+        QCOMPARE(defaultBack.wiringPolicy, WiringPolicy::CollectionDefault);
     }
 };
 

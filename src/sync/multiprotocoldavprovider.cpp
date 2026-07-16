@@ -82,21 +82,27 @@ QFuture<bool> MultiProtocolDavProvider::connect()
         p.start(); p.addResult(true); p.finish();
         return fut;
     }
-    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid()) {
-        emit error(QStringLiteral("No server URL configured."));
-        QPromise<bool> p;
-        auto fut = p.future();
-        p.start(); p.addResult(false); p.finish();
-        return fut;
-    }
-
     // Idempotent: if a connect is already in flight, return its future.
     // Overwriting m_connectPromise would destroy the previous QPromise
     // unfinished, whose destructor cancels+reportFinished the underlying
     // QFutureInterface without a result — crashing any watcher::result()
     // observer (e.g. ProviderManager's per-provider connectAll watcher).
+    // Checked before the URL-validity gate below since an in-flight attempt
+    // already passed that gate on its first call.
     if (m_connectPromise) {
         return m_connectPromise->future();
+    }
+
+    emit connectionStateChanged(ProviderConnectionState::Connecting);
+
+    if (m_serverUrl.isEmpty() || !m_serverUrl.isValid()) {
+        m_lastError = QStringLiteral("No server URL configured.");
+        emit error(m_lastError);
+        emit connectionStateChanged(ProviderConnectionState::Error);
+        QPromise<bool> p;
+        auto fut = p.future();
+        p.start(); p.addResult(false); p.finish();
+        return fut;
     }
 
     qCInfo(lcMultiDav).nospace()
@@ -358,6 +364,15 @@ void MultiProtocolDavProvider::maybeResolveConnect()
     if (anyOk) {
         emit collectionsChanged();
         emit connectionStateChanged(true);
+        emit connectionStateChanged(ProviderConnectionState::Connected);
+    } else {
+        // m_lastError may still be empty here (e.g. calendarsOnly mode with
+        // an empty-but-error-free CalDAV result) — fall back to a generic
+        // message so lastError() is always populated alongside Error.
+        if (m_lastError.isEmpty())
+            m_lastError = QStringLiteral(
+                "Connect failed: no calendars or addressbooks discovered");
+        emit connectionStateChanged(ProviderConnectionState::Error);
     }
     // connectionStateChanged(false) is NOT emitted on connect failure —
     // only emitted from disconnect() when leaving a connected state.

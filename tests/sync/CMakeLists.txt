@@ -262,6 +262,28 @@ set_tests_properties(tst_multiprotocoldavprovider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# Task 4 (sync-graph redesign Phase 1) — providers emit fine-grained
+# connection state (Connecting/Connected/Error) + lastError(). Drives
+# MultiProtocolDavProvider against FakeCalDavServer / a closed port, so it
+# needs the same fake-server fixture as tst_multiprotocoldavprovider.
+add_executable(tst_provider_connection_state
+    tst_provider_connection_state.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_provider_connection_state
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::ConfigCore
+        Kalburator::Sync
+)
+add_test(NAME tst_provider_connection_state COMMAND tst_provider_connection_state)
+set_tests_properties(tst_provider_connection_state PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # M.6 — MultiProtocolDavConfigWidget UI test
 add_executable(tst_multiprotocoldavconfigwidget tst_multiprotocoldavconfigwidget.cpp)
 target_link_libraries(tst_multiprotocoldavconfigwidget
