@@ -56,6 +56,39 @@ The deepest invariant (INVARIANTS §1): extend the shape graph, never fork a thi
 mechanism. New issues/smells go in `docs/campaign/FINDINGS.md`; update
 `docs/campaign/STATUS.md` in the same commit that changes plan state.
 
+## Sync-graph-redesign campaign (PlanStan-originated) — Phase 1 CLOSED 2026-07-16; current release v0.94
+
+**This repo's Phase 1 is complete — do not redo its work.** The full
+cross-repo plan (this repo, Graffodil, PlanStan) lives in PlanStan at
+`~/dev/PlanStan/docs/superpowers/plans/2026-07-15-sync-graph-redesign.md`
+(status tracked there — see PlanStan's own `CLAUDE.md` for the current
+cross-repo campaign summary). This repo's Phase 1 (Tasks 1-5, branch
+`sync-graph-engine`, merged to `main` and deleted) added engine-level
+sync convergence fixes and per-LC wiring: **L1** un-freezes the
+once-per-run fast-path skip set when an earlier mapping in the same
+Queue run writes a shared endpoint (`SyncEngine::invalidateSkipsTouching`);
+**L2** adds fixpoint passes — a Queue run re-primes over dirtied mappings
+(up to `kMaxSyncPasses = 3`, `syncPassStarted(int,int)` signal) so
+convergence no longer depends on mapping list order; per-LC
+`WiringPolicy` (`CollectionDefault`/`Hub`/`Mesh`/`Chain`/`Manual`) lets
+individual logical calendars override the collection's default sync
+topology, with `Manual` meaning the compiler skips that LC entirely;
+providers (`CalDavProvider`/`MultiProtocolDavProvider`/`CardDavProvider`)
+now reliably emit `Connecting`/`Connected`/`Error` connection states with
+populated `lastError()` — this required relocating `ProviderConnectionState`
+from `providermanager.h` to `iprovider.h` and making
+`connectionStateChanged` a genuine C++ signal overload
+(`(bool)` and `(ProviderConnectionState)` coexist; disambiguate with
+`qOverload<...>(&IProvider::connectionStateChanged)`). Tag: **v0.94**.
+Full suite 170/172 at close (the pre-existing `tst_remotecalendarbackend`
+Radicale-state flake, plus a pre-existing-but-newly-surfaced
+`tst_calendar_canon_roundtrip` failure independently confirmed unrelated
+to this campaign — canon/iCal classification encoding, no code-path
+overlap). Known gap carried forward for PlanStan's later tasks:
+`ProviderManager`'s aggregate `providerStateChanged` surface does not
+forward the new Connecting/Error granularity (only Connected/Disconnected)
+— PlanStan must bind directly to `IProvider::connectionStateChanged`.
+
 ## Sync-excellence campaign — CLOSED 2026-07-09 (CP-C); current release v0.91
 
 **The campaign is complete — do not redo its work.** The full phase plan
