@@ -128,6 +128,13 @@ kalburator_add_engine_integration_test(tst_engine_silent_success_guard)
 # skips with zero backend I/O.
 kalburator_add_engine_integration_test(tst_engine_skip_invalidation)
 
+# Sync-graph redesign campaign Task 2 (spec §5.9 L2) — fixpoint passes: a
+# Queue run re-primes over dirtied mappings until quiescent (cap 3 passes),
+# so a single Sync converges regardless of mapping order. Same chained
+# A<->B<->C fixture as Task 1, but mappings are listed in the hostile
+# [M2, M1] order to prove L2 (not just L1) is doing the work.
+kalburator_add_engine_integration_test(tst_engine_fixpoint_passes)
+
 # Fix B (2026-06-12 Akonadi scoped-backend handoff) — the engine must tell a
 # genuine fetchItems failure (an overriding backend whose fetch failed, whose
 # read path is silent — the scoped AkonadiBackend's shape) apart from a backend

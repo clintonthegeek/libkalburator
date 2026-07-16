@@ -121,15 +121,18 @@ QString endpointKey(const QString &backend, const QString &calendar)
     return backend + QLatin1Char('|') + calendar;
 }
 
+// L1/L2: total create+update+delete count for one side's stats.
+int statsChangeCount(const Kalburator::Sync::SyncStats &s)
+{
+    return s.created + s.updated + s.deleted;
+}
+
 // L1: whether a completed mapping's SyncResult actually applied any change
 // to either side — a settled no-op result (all zero stats) never
 // invalidates anything.
 bool appliedChanges(const Kalburator::Sync::SyncResult &r)
 {
-    const auto n = [](const Kalburator::Sync::SyncStats &s) {
-        return s.created + s.updated + s.deleted;
-    };
-    return n(r.sourceStats) + n(r.targetStats) > 0;
+    return statsChangeCount(r.sourceStats) + statsChangeCount(r.targetStats) > 0;
 }
 
 } // anonymous namespace
@@ -397,6 +400,12 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // run. Assigned unconditionally so a previous run's clobber can never
     // leak into a later plain sync.
     m_queueOverride = queueOverride;
+
+    // L2 (spec §5.9): reset fixpoint-pass state for this run. Assigned
+    // unconditionally so a previous run's leftovers can never leak in.
+    m_currentPass = 1;
+    m_passDirtyWriters.clear();
+    m_carriedResults.clear();
 
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
         qDebug() << "SyncEngine::driveQueue - no sync work configured";
@@ -864,7 +873,7 @@ void SyncEngine::advanceQueue()
 
         // F2 Task 21: finish the iface (if any) with what we have.
         if (m_currentIface) {
-            m_currentIface->reportResult(m_queue.drain());
+            m_currentIface->reportResult(m_carriedResults + m_queue.drain());
             m_currentIface->reportCanceled();
             m_currentIface->reportFinished();
             m_currentIface.reset();
@@ -878,6 +887,44 @@ void SyncEngine::advanceQueue()
     std::optional<SyncMapping> nextMapping = m_queue.next();
 
     if (!nextMapping.has_value()) {
+        // L2 (spec §5.9): fixpoint re-pass gate. If any mapping this pass
+        // wrote an endpoint that a DIFFERENT mapping also touches, re-prime
+        // the queue with just those dirtied mappings and run another pass
+        // — up to kMaxSyncPasses total — so one Sync converges regardless
+        // of mapping order. Single-mapping runs never reach here
+        // (DispatchMode::Single finishes in onWorkerSyncCompleted).
+        if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
+            !m_cancelled && m_currentPass < kMaxSyncPasses &&
+            !m_passDirtyWriters.isEmpty()) {
+            QSet<QString> nextIds;
+            for (const auto &m : std::as_const(m_syncMappings)) {
+                if (!m.enabled)
+                    continue;
+                for (const auto &key : { endpointKey(m.sourceBackend, m.sourceCalendar),
+                                         endpointKey(m.targetBackend, m.targetCalendar) }) {
+                    const auto writers = m_passDirtyWriters.value(key);
+                    // Re-run only if someone ELSE dirtied this endpoint — a
+                    // mapping is already converged with its own writes.
+                    if (!writers.isEmpty() &&
+                        !(writers.size() == 1 && writers.contains(m.id))) {
+                        nextIds.insert(m.id);
+                        break;
+                    }
+                }
+            }
+            if (!nextIds.isEmpty()) {
+                m_carriedResults += m_queue.drain();
+                m_passDirtyWriters.clear();
+                m_skippedMappingIds.clear(); // filter already narrows the pass
+                ++m_currentPass;
+                emit syncPassStarted(m_currentPass, kMaxSyncPasses);
+                m_queue.prime(m_syncMappings, nextIds);
+                advanceQueue();
+                return;
+            }
+            m_passDirtyWriters.clear();
+        }
+
         // All mappings processed (or filtered out).
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
@@ -894,8 +941,9 @@ void SyncEngine::advanceQueue()
         // F2 Task 21: finish the iface (if any) with the per-
         // mapping results. The future resolves to the per-mapping
         // list; the aggregate result is observable via lastSyncResult().
+        // L2: carriedResults holds drained results from earlier passes.
         if (m_currentIface) {
-            m_currentIface->reportResult(m_queue.drain());
+            m_currentIface->reportResult(m_carriedResults + m_queue.drain());
             m_currentIface->reportFinished();
             m_currentIface.reset();
         }
@@ -1222,7 +1270,24 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
         result.success && appliedChanges(result)) {
         for (const auto &m : std::as_const(m_syncMappings)) {
-            if (m.id == mappingId) { invalidateSkipsTouching(m); break; }
+            if (m.id == mappingId) {
+                invalidateSkipsTouching(m);
+                // L2 (spec §5.9): record which mapping wrote which endpoint
+                // this pass, so the exhaustion branch in advanceQueue() can
+                // decide whether a re-pass is warranted. Per-side (not the
+                // unconditional both-endpoints shape L1's invalidation
+                // uses): only the side that actually changed is marked —
+                // otherwise a mapping that changed only its target would
+                // also falsely mark its unchanged source dirty, tripping a
+                // needless extra pass for whatever OTHER mapping shares
+                // that source (verified against testChainConvergesInOneRun,
+                // which pins exactly one re-pass for a two-hop chain).
+                if (statsChangeCount(result.sourceStats) > 0)
+                    m_passDirtyWriters[endpointKey(m.sourceBackend, m.sourceCalendar)].insert(m.id);
+                if (statsChangeCount(result.targetStats) > 0)
+                    m_passDirtyWriters[endpointKey(m.targetBackend, m.targetCalendar)].insert(m.id);
+                break;
+            }
         }
     }
 
