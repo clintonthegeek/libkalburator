@@ -432,7 +432,7 @@ void TstProviderManager::connectAll_skips_already_connected_providers()
     QVERIFY(waitForFuture(mgr.connectAll()));
     QVERIFY(pPtr->isConnected());
 
-    QSignalSpy stateSpy(pPtr, &IProvider::connectionStateChanged);
+    QSignalSpy stateSpy(pPtr, qOverload<bool>(&IProvider::connectionStateChanged));
 
     QVERIFY(waitForFuture(mgr.connectAll()));
     QVERIFY(pPtr->isConnected());
