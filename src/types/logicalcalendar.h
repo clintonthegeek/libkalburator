@@ -53,6 +53,49 @@ inline bool isSyncRole(BackendRole role) {
 }
 
 /**
+ * @brief Per-logical-calendar override of the collection's default sync
+ *        topology (spec §5.4, Q1). `CollectionDefault` resolves to whatever
+ *        the collection-level `SyncTopology` (KalbConfigManager::syncTopology())
+ *        says; `Hub`/`Mesh`/`Chain` pin this LC to Star/Mirror/Chain
+ *        regardless of the collection default; `Manual` means the mapping
+ *        compiler skips this LC entirely — its channels are persisted
+ *        mappings only, never regenerated.
+ */
+enum class WiringPolicy {
+    CollectionDefault = 0, ///< Resolve to the collection-level SyncTopology.
+    Hub,                    ///< Pin to Star (hub-and-spoke).
+    Mesh,                   ///< Pin to Mirror (full mesh).
+    Chain,                  ///< Pin to Chain (sequential).
+    Manual                  ///< Compiler skips this LC; persisted mappings only.
+};
+
+/**
+ * @brief String form of WiringPolicy for JSON/config persistence.
+ */
+inline QString wiringPolicyToString(WiringPolicy policy) {
+    switch (policy) {
+        case WiringPolicy::Hub:               return QStringLiteral("hub");
+        case WiringPolicy::Mesh:              return QStringLiteral("mesh");
+        case WiringPolicy::Chain:             return QStringLiteral("chain");
+        case WiringPolicy::Manual:            return QStringLiteral("manual");
+        case WiringPolicy::CollectionDefault: return QStringLiteral("default");
+    }
+    return QStringLiteral("default");
+}
+
+/**
+ * @brief Parse WiringPolicy from its JSON/config string form.
+ *        Unrecognized or absent values resolve to CollectionDefault.
+ */
+inline WiringPolicy wiringPolicyFromString(const QString &str) {
+    if (str == QLatin1String("hub"))    return WiringPolicy::Hub;
+    if (str == QLatin1String("mesh"))   return WiringPolicy::Mesh;
+    if (str == QLatin1String("chain"))  return WiringPolicy::Chain;
+    if (str == QLatin1String("manual")) return WiringPolicy::Manual;
+    return WiringPolicy::CollectionDefault;
+}
+
+/**
  * @brief Binds a logical calendar to a specific backend/calendar pair.
  *
  * Each binding stores backend-specific metadata in a QVariantMap, allowing
@@ -156,6 +199,7 @@ struct LogicalCalendar {
     // Behavior settings
     bool syncEnabled = false;   ///< True if secondary binding should sync
     bool autoSyncOnLoad = false; ///< True = auto-sync after loading items (disabled by default)
+    WiringPolicy wiringPolicy = WiringPolicy::CollectionDefault; ///< Per-LC topology override (spec §5.4)
 
     // Project planning
     bool isProject = false;     ///< True = managed by ProjectStore, not a regular calendar

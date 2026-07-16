@@ -75,8 +75,17 @@ QList<SyncMapping> generateMappings(const LogicalCalendar &lc, SyncTopology topo
 QList<SyncMapping> generateMappings(const QList<LogicalCalendar> &lcs, SyncTopology topology)
 {
     QList<SyncMapping> out;
-    for (const auto &lc : lcs)
-        out.append(generateMappings(lc, topology));
+    for (const auto &lc : lcs) {
+        SyncTopology effective = topology;
+        switch (lc.wiringPolicy) {
+        case WiringPolicy::Manual:            continue; // persisted mappings only
+        case WiringPolicy::Hub:               effective = SyncTopology::Star;   break;
+        case WiringPolicy::Mesh:              effective = SyncTopology::Mirror; break;
+        case WiringPolicy::Chain:             effective = SyncTopology::Chain;  break;
+        case WiringPolicy::CollectionDefault: break;
+        }
+        out.append(generateMappings(lc, effective));
+    }
     return out;
 }
 
