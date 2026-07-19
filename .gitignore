@@ -19,3 +19,7 @@ Makefile
 _deps/
 .qt/
 Testing/
+
+# opencode agent tooling (machine-local; not project context)
+opencode.json
+.lcm/

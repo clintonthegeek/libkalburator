@@ -1,6 +1,23 @@
 #include "mockblobbackend.h"
 
+#include <QCryptographicHash>
+
 namespace Kalburator::Sync {
+
+namespace {
+// O47: match the production blob backends (LocalBlobBackend::sha256Hex,
+// GenericSqliteBackend) — a record whose contentHash the caller left empty is
+// hashed on write so mock-based sync tests exercise the real per-record diff
+// instead of perrecorddiff's fail-loud empty-hash branch.
+BackendRecord withContentHash(BackendRecord record)
+{
+    if (record.contentHash.isEmpty()) {
+        record.contentHash = QString::fromLatin1(
+            QCryptographicHash::hash(record.data, QCryptographicHash::Sha256).toHex());
+    }
+    return record;
+}
+} // namespace
 
 MockBlobBackend::MockBlobBackend(QObject *parent)
     : QObject(parent)
@@ -95,7 +112,7 @@ QString MockBlobBackend::createRecord(const QString &collectionId,
     if (record.id.isEmpty() || collectionId.isEmpty()) {
         return {};
     }
-    m_records[collectionId].insert(record.id, record);
+    m_records[collectionId].insert(record.id, withContentHash(record));
     m_recordCollection.insert(record.id, collectionId);
     Q_EMIT recordCreated(record.id);
     return record.id;
@@ -110,7 +127,7 @@ bool MockBlobBackend::updateRecord(const BackendRecord &record)
     if (cid.isEmpty()) {
         return false;
     }
-    m_records[cid].insert(record.id, record);
+    m_records[cid].insert(record.id, withContentHash(record));
     Q_EMIT recordUpdated(record.id);
     return true;
 }
