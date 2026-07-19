@@ -1,6 +1,17 @@
 # WP-A1 RFC — calendarsOnly mode design
 
-**Status:** Open — awaiting consumer sign-off (PlanStan + WildPalms) before landing.
+**Status:** RESOLVED 2026-07-19. Both consumers signed off (PlanStan uses
+`calendarsOnly=true` explicitly; WildPalms signed off 2026-07-18,
+`WildPalms/docs/2026-07-18-wpa1-calendarsonly-rfc-response-wildpalms.md`). The
+last residue — the ctor default disagreeing with the contribution's explicit
+`false` — is now closed: `MultiProtocolDavProvider`'s `calendarsOnly` ctor
+default (and `m_calendarsOnly` member) flipped `true`→`false`, so the ctor
+default agrees with the sole real construction
+(`multiprotocoldavbackendcontribution.h` passes `false`) and no direct
+construction silently gets the mode. `tst_multiprotocoldavprovider` green.
+_(Original status below, for provenance.)_
+
+**Status (original):** Open — awaiting consumer sign-off (PlanStan + WildPalms) before landing.
 **Supersedes:** The `b47d75e` behavior-preserving patch (ctor-argument swallow fix) which
 left the mode permanently engaged at the provider level and the dialog filter as the
 only active gate. That patch was correct but left the multi-layer policy conflict
