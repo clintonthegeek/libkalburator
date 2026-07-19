@@ -1937,3 +1937,48 @@ incidence CRUD paths) and the chunked multiget fetch keep the
 all-at-once shape — their batch sizes are structurally small (single
 incidences; few large chunks), so they cannot hit the drain-rate
 threshold; noted here rather than changed.
+
+---
+
+## Post-sync-excellence inbound (consumer RFCs/handoffs against v0.94)
+
+These arrived after CP-C (v0.91) during WildPalms' v0.77→v0.94 re-pin. Neither
+is a release blocker. Cross-repo status index: `docs/2026-07-19-consumer-coordination-status.md`.
+
+### O46 — read-only write-skip is invisible in `SyncResult` (OPEN, filed 2026-07-18 by WildPalms)
+
+The engine correctly refuses to write to a target whose backend reports
+`discoveredWritable() == false`, on both write paths, as a deliberate no-op
+success — but the refusal is only a worker-thread `qWarning`. The `SyncResult`
+comes back `success = true`, zero target stats, empty `warnings`, so a consumer
+cannot tell "writes withheld because the target is read-only" from "nothing to
+do". Gates: `syncengine.cpp:2016` (`dispatchFirstSync` first-sync mirror) and
+`syncengine.cpp:3140` (steady-state apply). Ask (no behavior change, skip stays
+a no-op success): record it on `SyncResult` — a stable `target-readonly:%1`
+(and symmetric `source-readonly:` for TwoWay back-prop) entry in the existing
+`warnings` list (`types/synctypes.h:158`), or a `skipReason` field. Both consumer
+UIs already consume `SyncResult::warnings` (WP Patchbay edge badges; PlanStan
+graph channel-edge badges, spec §5.7). Same honesty principle as E1 (stats read
+but never populated) and the 2026-06-12 Akonadi Fix-B ruling ("failures/no-ops
+must be discriminable"). Source: `WildPalms/docs/2026-07-18-libkalburator-readonly-skip-reporting-rfc.md`.
+
+### O47 — `MockBlobBackend` never computes `BackendRecord::contentHash` (OPEN, filed 2026-07-19 by WildPalms)
+
+`src/blob/mockblobbackend.cpp` stores the caller's `BackendRecord` verbatim in
+`createRecord`/`updateRecord` and never populates `contentHash` — unlike the
+production blob backends (`localblobbackend.cpp:144` `r.contentHash =
+sha256Hex(r.data)`, `GenericSqliteBackend` likewise). Before v0.93 a
+`useQuickPath→SourceWins` downgrade in `unifiedHandleConflicts`
+(`syncengine.cpp:2826-2831` comment, "always true for non-calendar domains")
+absorbed the empty-hash ambiguity; the v0.93 fanout-collapse deleted it
+(alongside `CalendarBaselineStore`), so `perrecorddiff.cpp:130-143`'s deliberate
+"fail loud on missing hash" rule is now reached for the first time. Result: any
+two-pass `TwoWay` + default-`AskUser` sync through `MockBlobBackend` on both
+sides manufactures a spurious `BothModified` conflict on pass 2 (and every
+subsequent pass — the mock never starts hashing). Production backends are
+unaffected (they always hash on write); this is confined to the **lib-owned**
+test double. Suggested fix (a, WP's lean): `MockBlobBackend` computes
+`QCryptographicHash::Sha256` when the incoming record's `contentHash` is empty,
+matching `LocalBlobBackend`. WP is not blocked — it added a local
+`BlobSyncBackendWrapper` test-helper workaround (v0.94 port Phase 1 Task 1.6).
+Source: `WildPalms/docs/2026-07-19-libkalburator-mockblobbackend-contenthash-gap-handoff.md`.
