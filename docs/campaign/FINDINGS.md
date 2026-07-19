@@ -1945,7 +1945,17 @@ threshold; noted here rather than changed.
 These arrived after CP-C (v0.91) during WildPalms' v0.77→v0.94 re-pin. Neither
 is a release blocker. Cross-repo status index: `docs/2026-07-19-consumer-coordination-status.md`.
 
-### O46 — read-only write-skip is invisible in `SyncResult` (OPEN, filed 2026-07-18 by WildPalms)
+### O46 — read-only write-skip is invisible in `SyncResult` (RESOLVED 2026-07-19)
+
+**Resolution:** both write gates now record a stable-prefix warning when a
+target reports `discoveredWritable()==false` — `target-readonly:<col>` on the
+first-sync mirror success path (`dispatchFirstSync`) and `%1-readonly:<col>`
+(source/target by side) on the steady-state `applyBatch` gate. No behavior
+change — the skip stays a no-op success. Pinned by
+`tests/calendar/tst_calendar_readonly_skip.cpp` (warning present + success +
+zero target stats for a read-only target; no false-positive on a writable one).
+_Original finding below._
+
 
 The engine correctly refuses to write to a target whose backend reports
 `discoveredWritable() == false`, on both write paths, as a deliberate no-op
@@ -1962,7 +1972,15 @@ graph channel-edge badges, spec §5.7). Same honesty principle as E1 (stats read
 but never populated) and the 2026-06-12 Akonadi Fix-B ruling ("failures/no-ops
 must be discriminable"). Source: `WildPalms/docs/2026-07-18-libkalburator-readonly-skip-reporting-rfc.md`.
 
-### O47 — `MockBlobBackend` never computes `BackendRecord::contentHash` (OPEN, filed 2026-07-19 by WildPalms)
+### O47 — `MockBlobBackend` never computes `BackendRecord::contentHash` (RESOLVED 2026-07-19)
+
+**Resolution:** `MockBlobBackend::createRecord`/`updateRecord` now hash the
+record's data (SHA-256 hex, matching `LocalBlobBackend::sha256Hex`) when the
+incoming `contentHash` is empty; a caller-supplied hash is preserved. Removes
+the spurious `BothModified` conflict on two-pass TwoWay/AskUser mock syncs.
+Pinned by `tst_mockblobbackend::computesContentHashWhenIncomingEmpty`.
+_Original finding below._
+
 
 `src/blob/mockblobbackend.cpp` stores the caller's `BackendRecord` verbatim in
 `createRecord`/`updateRecord` and never populates `contentHash` — unlike the
