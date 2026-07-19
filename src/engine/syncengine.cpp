@@ -2124,6 +2124,14 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
 
     harvestBaselinesAfterFirstSync(request);
 
+    if (!tgtWritable) {
+        // O46: the mirror writes were withheld because the target reports
+        // read-only. That is a no-op success, not a failure — but record it on
+        // the result so consumers can badge the edge instead of seeing a silent
+        // success with zero stats. Stable prefix "target-readonly:" for parsing.
+        result.warnings << QStringLiteral("target-readonly:%1").arg(colId);
+    }
+
     result.success = true;
     result.startTime = m_currentResult.startTime;
     result.endTime = QDateTime::currentDateTime();
@@ -3141,6 +3149,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             qWarning() << "SyncEngine: backend" << backendRegistryId
                        << "reports read-only for collection" << colId
                        << "- skipping" << toWrite.size() << "steady-state writes";
+            // O46: surface the withheld write as a visible no-op (not a failure)
+            // so consumers can badge the edge. Symmetric prefix by side — a
+            // read-only source can't occur by construction, but a TwoWay
+            // back-prop apply hitting the same gate reports as source-readonly.
+            const bool isSource =
+                (backendRegistryId == m_currentRequest.mapping.sourceBackend);
+            m_currentResult.warnings << QStringLiteral("%1-readonly:%2")
+                .arg(isSource ? QStringLiteral("source") : QStringLiteral("target"),
+                     colId);
             return;
         }
 

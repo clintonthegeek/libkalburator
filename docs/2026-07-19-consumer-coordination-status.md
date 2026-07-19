@@ -46,16 +46,17 @@ Condensed; full detail in each campaign's archive + this repo's `CLAUDE.md`.
 
 ---
 
-## 3. OPEN inbound items (the actual drift — needs libkalburator action)
+## 3. Inbound items — ALL RESOLVED 2026-07-19 (branch `feature/consumer-rfcs-o46-o47-wpa1`)
 
-None are release blockers; all are honest-reporting / test-double gaps. Logged
-in `docs/campaign/FINDINGS.md` under the noted O-numbers so they enter the
-tracked backlog.
+None were release blockers; all were honest-reporting / test-double gaps.
+Fixed with tests; suite green (171/173, the 2 failures pre-existing at v0.94 —
+see §7).
 
-| # | From | Item | Severity | Source doc |
-|---|---|---|---|---|
-| **O46** | WildPalms (2026-07-18) | Surface the read-only write-skip in `SyncResult` (both write gates; `target-readonly:`/`source-readonly:` warning or a skip-reason field). No behavior change — skip stays a no-op success; ask is *visibility* for UI edge badges. | Low (honesty gap) | `WildPalms/docs/2026-07-18-libkalburator-readonly-skip-reporting-rfc.md` |
-| **O47** | WildPalms (2026-07-19) | `MockBlobBackend` never computes `BackendRecord::contentHash` (unlike `LocalBlobBackend`/`GenericSqliteBackend`). v0.93 deleted the `useQuickPath→SourceWins` downgrade that masked it, so `perrecorddiff.cpp`'s fail-loud empty-hash rule now manufactures a spurious `BothModified` conflict on any 2-pass TwoWay/AskUser sync through the mock. Suggested fix (a): compute SHA-256 in the mock when incoming hash is empty. | Low (lib-owned test double; WP has a local workaround) | `WildPalms/docs/2026-07-19-libkalburator-mockblobbackend-contenthash-gap-handoff.md` |
+| # | From | Item | Resolution |
+|---|---|---|---|
+| **O46** | WildPalms (2026-07-18) | Surface the read-only write-skip in `SyncResult`. | Both write gates emit a stable-prefix `target-readonly:<col>` / `source-readonly:<col>` warning; no behavior change. `tst_calendar_readonly_skip`. |
+| **O47** | WildPalms (2026-07-19) | `MockBlobBackend` never computes `contentHash` → spurious `BothModified` conflict on 2-pass mock syncs post-v0.93. | Mock hashes on write (SHA-256, matching `LocalBlobBackend`) when incoming hash empty; caller hash preserved. `tst_mockblobbackend::computesContentHashWhenIncomingEmpty`. |
+| **WP-A1** | WildPalms (RFC 2026-06-10, sign-off 2026-07-18) | calendarsOnly ctor-default residue. | Flipped `MultiProtocolDavProvider` `calendarsOnly` ctor default (+ member) `true`→`false` to agree with the sole real construction. `tst_multiprotocoldavprovider`. RFC marked RESOLVED. |
 
 ---
 
@@ -64,7 +65,7 @@ tracked backlog.
 | Item | Resolution |
 |---|---|
 | **VTODO/VJOURNAL calendar dispatch** (PlanStan handoff 2026-06-28) | Shipped v0.80 (§2). Handoff doc carries the resolution note. |
-| **WP-A1 calendarsOnly mode** (`docs/2026-06-10-wpa1-calendarsonly-mode-rfc.md`) | Mode + persisted flag shipped (v0.79); **both consumers signed off 2026-07-18** (`WildPalms/docs/2026-07-18-wpa1-calendarsonly-rfc-response-wildpalms.md`; PlanStan already uses `calendarsOnly=true`). Remaining ctor-default flip `true`→`false` is safe for both — **ready to close/apply.** |
+| **WP-A1 calendarsOnly mode** (`docs/2026-06-10-wpa1-calendarsonly-mode-rfc.md`) | Mode + persisted flag shipped (v0.79); both consumers signed off 2026-07-18; ctor-default flip applied 2026-07-19 (§3). RFC marked RESOLVED. |
 | **fanout-collapse adoption** (PlanStan) | `PlanStan/docs/handoffs/2026-07-12-fanout-collapse-final-handoff.md`; PlanStan now pins v0.94. |
 | **PlanStan integration-test API drift** | Compile drift RESOLVED at v0.74 (`PlanStan/docs/todo/stale-integration-tests-libkalburator-api-drift.md`); only runtime staleness of `EXCLUDE_FROM_ALL` tests remains — PlanStan-side, not a lib obligation. |
 
@@ -79,17 +80,22 @@ tracked backlog.
 
 ---
 
-## 6. Suggested next libkalburator action
+## 6. Next libkalburator action
 
-1. Apply **O46** (read-only skip visibility) — the narrow `warnings` addition at
-   both write gates; matches the E1 "honest stats" and Akonadi Fix-B
-   "no-ops must be discriminable" principles. Cheap, both UIs already consume
-   `SyncResult::warnings`.
-2. Apply **O47** fix (a) — compute the content hash in `MockBlobBackend` to match
-   production `IBlobBackend`s. Removes a latent trap for every mock-based
-   consumer test.
-3. Close **WP-A1** — flip the `MultiProtocolDavProvider` `calendarsOnly` ctor
-   default to `false` now that both consumers have signed off, and mark the RFC
-   resolved.
+O46, O47, and WP-A1 are **done** (§3) on branch `feature/consumer-rfcs-o46-o47-wpa1`.
+Once merged, cut a release tag (v0.95) and notify both consumers — no pin bump
+is forced (all three are additive/non-breaking for consumers; WP-A1 only flips
+a default the sole real caller already overrode).
 
-All three are small and independent; none blocks a consumer.
+## 7. Known pre-existing failures (NOT introduced by §3; carried from v0.94)
+
+The full suite is 171/173. The two reds predate this branch (documented in
+`CLAUDE.md` at the v0.94 close) and are untouched by the O46/O47/WP-A1 work:
+
+- **`tst_calendar_canon_roundtrip::canonPersonalClassificationProducesPrivateAndStash`**
+  — `classification=personal` no longer stashes `X-CANON-CLASSIFICATION:personal`
+  on demote. A genuine calendar-canon classification-encoding regression, in
+  `icalcanonstages.cpp` (not touched here). Worth its own fix.
+- **`tst_remotecalendarbackend`** — the long-standing Radicale live-state flake.
+
+Neither shares a code path with §3.

@@ -214,6 +214,7 @@ endfunction()
 
 kalburator_add_calendar_integration_test(tst_calendar_sync_full)
 kalburator_add_calendar_integration_test(tst_calendar_sync_oneway)
+kalburator_add_calendar_integration_test(tst_calendar_readonly_skip)
 kalburator_add_calendar_integration_test(tst_calendar_conflict)
 kalburator_add_calendar_integration_test(tst_calendar_transcoding_warning)
 

@@ -42,7 +42,7 @@ class MultiProtocolDavProvider : public IProvider
 {
     Q_OBJECT
 public:
-    explicit MultiProtocolDavProvider(bool calendarsOnly = true, QObject *parent = nullptr);
+    explicit MultiProtocolDavProvider(bool calendarsOnly = false, QObject *parent = nullptr);
     ~MultiProtocolDavProvider() override;
 
     QString id() const override          { return m_id; }
@@ -82,7 +82,7 @@ private:
     QString m_manualCardDavPrincipal;
 
     // Runtime
-    bool                  m_calendarsOnly = true;
+    bool                  m_calendarsOnly = false;
     bool                  m_connected = false;
     QString               m_lastWarning;
     QString               m_lastError;

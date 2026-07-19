@@ -1,5 +1,6 @@
 #include <QtTest/QtTest>
 #include <QSignalSpy>
+#include <QCryptographicHash>
 
 #include "mockblobbackend.h"
 
@@ -47,6 +48,7 @@ private slots:
     void recordCreatedSignalFires();
     void loadRecordsOrError_reportsInjectedFailure();
     void wipeCollection_defaultImpl_emptiesCollection();
+    void computesContentHashWhenIncomingEmpty();  // O47
 };
 
 void TestMockBlobBackend::identityAndAvailability()
@@ -215,6 +217,51 @@ void TestMockBlobBackend::wipeCollection_defaultImpl_emptiesCollection()
     QCOMPARE(b.createRecord(QStringLiteral("memos"),
                             makeRecord(QStringLiteral("fresh"), QStringLiteral("x"))),
              QStringLiteral("fresh"));
+}
+
+// O47 — the mock must populate BackendRecord::contentHash like the production
+// blob backends (LocalBlobBackend/GenericSqliteBackend) do, so mock-based sync
+// tests exercise the real per-record diff instead of always hitting
+// perrecorddiff's fail-loud empty-hash branch (spurious BothModified conflicts
+// on the second pass of a TwoWay/AskUser sync). See
+// docs/2026-07-19-consumer-coordination-status.md O47.
+void TestMockBlobBackend::computesContentHashWhenIncomingEmpty()
+{
+    MockBlobBackend b;
+    b.createCollection(makeCollection(QStringLiteral("memos")));
+
+    const QByteArray data = QByteArrayLiteral("hello world");
+    const QString expected = QString::fromLatin1(
+        QCryptographicHash::hash(data, QCryptographicHash::Sha256).toHex());
+
+    // Incoming record has an EMPTY contentHash — the mock must compute it.
+    BackendRecord rec;
+    rec.id = QStringLiteral("r-1");
+    rec.data = data;
+    rec.contentHash.clear();
+    b.createRecord(QStringLiteral("memos"), rec);
+
+    const auto created = b.loadRecord(QStringLiteral("r-1"));
+    QVERIFY(created.has_value());
+    QCOMPARE(created->contentHash, expected);
+
+    // updateRecord with a fresh body + empty hash must recompute, too.
+    BackendRecord upd = rec;
+    upd.data = QByteArrayLiteral("goodbye world");
+    upd.contentHash.clear();
+    const QString expectedUpd = QString::fromLatin1(
+        QCryptographicHash::hash(upd.data, QCryptographicHash::Sha256).toHex());
+    QVERIFY(b.updateRecord(upd));
+    QCOMPARE(b.loadRecord(QStringLiteral("r-1"))->contentHash, expectedUpd);
+
+    // A caller-supplied non-empty hash is preserved (never clobbered).
+    BackendRecord pre;
+    pre.id = QStringLiteral("r-2");
+    pre.data = QByteArrayLiteral("anything");
+    pre.contentHash = QStringLiteral("caller-supplied");
+    b.createRecord(QStringLiteral("memos"), pre);
+    QCOMPARE(b.loadRecord(QStringLiteral("r-2"))->contentHash,
+             QStringLiteral("caller-supplied"));
 }
 
 QTEST_MAIN(TestMockBlobBackend)
