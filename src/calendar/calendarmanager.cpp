@@ -373,7 +373,12 @@ bool CalendarManager::addBinding(const QString &logicalCalendarId,
     }
 
     LogicalCalendar logCal = m_configManager->logicalCalendar(logicalCalendarId);
-    if (!logCal.isValid()) {
+    // Don't gate on LogicalCalendar::isValid() here — it requires an
+    // existing primary binding, which is circular for the "add the
+    // first/primary binding" case. A missing calendar is distinguished by
+    // an empty id (ISyncConfigStore::logicalCalendar() returns a
+    // default-constructed LogicalCalendar on lookup miss).
+    if (logCal.id.isEmpty()) {
         emit operationFailed(QStringLiteral("addBinding"),
                             tr("Calendar not found: %1").arg(logicalCalendarId));
         return false;

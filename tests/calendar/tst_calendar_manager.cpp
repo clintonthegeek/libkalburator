@@ -126,6 +126,9 @@ private slots:
     void captureSnapshot_clonesPrimaryCalendarIncidences();
     void restoreFromSnapshot_currentlyUnimplemented_returnsFalse();
 
+    // docs/bugs/addbinding-primary-precondition-misreported.md
+    void addBinding_toCalendarWithZeroBindings_addsThePrimary();
+
 private:
     std::unique_ptr<BackendRegistry> m_registry;
     std::unique_ptr<MockBackend>     m_backendA;
@@ -398,6 +401,42 @@ void TestCalendarManager::restoreFromSnapshot_currentlyUnimplemented_returnsFals
     snap.logicalCalendar.displayName = QStringLiteral("X");
     QVERIFY(snap.isValid());
     QCOMPARE(m_mgr->restoreFromSnapshot(snap), false);
+}
+
+// ============================================================
+// addBinding() on a calendar with zero bindings (the primary-binding
+// precondition bug: isValid() requires hasPrimaryBinding(), so adding
+// the very first binding used to be misreported as "Calendar not found").
+// ============================================================
+
+void TestCalendarManager::addBinding_toCalendarWithZeroBindings_addsThePrimary()
+{
+    LogicalCalendar lc;
+    lc.id          = QString::fromLatin1(kLogicalId);
+    lc.displayName = QStringLiteral("Bare Calendar");
+    lc.type        = CalendarType::Hybrid;
+    // Deliberately no bindings — a calendar row that exists in config but
+    // hasn't had its primary binding added yet.
+    m_host->configStore()->addLogicalCalendar(lc);
+    m_backendA->createCalendar(m_host->stubCollection()->id(),
+                               QString::fromLatin1(kCalId), QStringLiteral("A"));
+
+    CalendarBackendBinding primary;
+    primary.backendId     = QString::fromLatin1(kBackendA);
+    primary.calendarId    = QString::fromLatin1(kCalId);
+    primary.role          = BackendRole::Primary;
+    primary.enabled       = true;
+    primary.needsCreation = false;
+
+    QSignalSpy added(m_mgr.get(), &CalendarManager::bindingAdded);
+    QSignalSpy failed(m_mgr.get(), &CalendarManager::operationFailed);
+    const bool ok = m_mgr->addBinding(QString::fromLatin1(kLogicalId), primary);
+    QVERIFY(ok);
+    QCOMPARE(failed.count(), 0);
+    QCOMPARE(added.count(), 1);
+
+    const LogicalCalendar stored = m_host->configStore()->logicalCalendar(QString::fromLatin1(kLogicalId));
+    QVERIFY(stored.primaryBinding().isValid());
 }
 
 QTEST_MAIN(TestCalendarManager)
