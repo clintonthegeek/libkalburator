@@ -284,7 +284,7 @@ void TstBackendThreadRelocation::remote_constructThenMove_fetchPushDeleteWork()
     // fetchItems
     FetchOperation *fetchOp = nullptr;
     QMetaObject::invokeMethod(backend, [&]() {
-        fetchOp = backend->fetchItems(QStringLiteral("Personal"));
+        fetchOp = backend->fetchItems(QStringLiteral("personal"));
     }, Qt::BlockingQueuedConnection);
     QVERIFY(fetchOp != nullptr);
     QCOMPARE(fetchOp->thread(), backend->thread());
@@ -297,7 +297,7 @@ void TstBackendThreadRelocation::remote_constructThenMove_fetchPushDeleteWork()
         makeEvent(QStringLiteral("reloc-push-1"), QStringLiteral("Relocated Push"))};
     PushOperation *pushOp = nullptr;
     QMetaObject::invokeMethod(backend, [&]() {
-        pushOp = backend->pushItems(QStringLiteral("Personal"), pushed);
+        pushOp = backend->pushItems(QStringLiteral("personal"), pushed);
     }, Qt::BlockingQueuedConnection);
     QVERIFY(pushOp != nullptr);
     QCOMPARE(pushOp->thread(), backend->thread());
@@ -310,7 +310,7 @@ void TstBackendThreadRelocation::remote_constructThenMove_fetchPushDeleteWork()
     // deleteItems
     DeleteOperation *delOp = nullptr;
     QMetaObject::invokeMethod(backend, [&]() {
-        delOp = backend->deleteItems(QStringLiteral("Personal"),
+        delOp = backend->deleteItems(QStringLiteral("personal"),
                                      QStringList{QStringLiteral("reloc-push-1")});
     }, Qt::BlockingQueuedConnection);
     QVERIFY(delOp != nullptr);
@@ -840,7 +840,7 @@ qint64 TstBackendThreadRelocation::runStallProbe()
     QTemporaryDir cacheDir;
     QTemporaryDir localDir;
     if (!cacheDir.isValid() || !localDir.isValid()) return -1;
-    const QString calId = QStringLiteral("Personal");
+    const QString calId = QStringLiteral("personal");
     if (!QDir().mkpath(localDir.filePath(calId))) return -1;
 
     auto *remoteBackend = new RemoteCalendarBackend(baseUrl,
@@ -992,7 +992,7 @@ void TstBackendThreadRelocation::cancelDuringFastPath_reportsCancelled()
     QTemporaryDir cacheDir;
     QTemporaryDir localDir;
     QVERIFY(cacheDir.isValid() && localDir.isValid());
-    const QString calId = QStringLiteral("Personal");
+    const QString calId = QStringLiteral("personal");
     QVERIFY(QDir().mkpath(localDir.filePath(calId)));
 
     auto *remoteBackend = new RemoteCalendarBackend(baseUrl,
@@ -1207,7 +1207,7 @@ void TstBackendThreadRelocation::singleFetch_remoteBackend_noRedundantListing()
     QTemporaryDir cacheDir;
     QTemporaryDir localDir;
     QVERIFY(cacheDir.isValid() && localDir.isValid());
-    const QString calId = QStringLiteral("Personal");
+    const QString calId = QStringLiteral("personal");
     QVERIFY(QDir().mkpath(localDir.filePath(calId)));
 
     auto *remoteBackend = new RemoteCalendarBackend(server.baseUrl(),
@@ -1477,7 +1477,7 @@ void TstBackendThreadRelocation::writeCancel_reportsCancelledWithHonestStats()
     QTemporaryDir cacheDir;
     QTemporaryDir sourceDir;
     QVERIFY(cacheDir.isValid() && sourceDir.isValid());
-    const QString calId = QStringLiteral("Personal");
+    const QString calId = QStringLiteral("personal");
     QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
 
     auto icsWithSummary = [](const QByteArray &uid, const QByteArray &summary) -> QByteArray {
@@ -1692,7 +1692,7 @@ void TstBackendThreadRelocation::writeTeardown_engineDestroyed_completesWithoutD
     QTemporaryDir cacheDir;
     QTemporaryDir sourceDir;
     QVERIFY(cacheDir.isValid() && sourceDir.isValid());
-    const QString calId = QStringLiteral("Personal");
+    const QString calId = QStringLiteral("personal");
     QVERIFY(QDir().mkpath(sourceDir.filePath(calId)));
 
     auto icsWithSummary = [](const QByteArray &uid, const QByteArray &summary) -> QByteArray {

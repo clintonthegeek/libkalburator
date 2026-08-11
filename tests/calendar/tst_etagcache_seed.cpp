@@ -49,7 +49,7 @@ void TestEtagCacheSeed::restart_onlyChangedItemRefetched_ctagChanged()
 {
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {
         makeEventIcs(QStringLiteral("event-0"), QStringLiteral("Event 0")),
         makeEventIcs(QStringLiteral("event-1"), QStringLiteral("Event 1")),
@@ -74,17 +74,17 @@ void TestEtagCacheSeed::restart_onlyChangedItemRefetched_ctagChanged()
         backend.setDbPath(dbPath);
         backend.setCacheDir(cacheDir.path());
         backend.setMultigetChunkSize(1);
-        backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+        backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
         QSignalSpy loadSpy(&backend,
                            SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        backend.loadCalendars(QStringLiteral("Personal"));
+        backend.loadCalendars(QStringLiteral("personal"));
         QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
         QVERIFY(loadSpy.first().at(1).toBool());
 
         auto *blob = static_cast<IBlobBackend *>(&backend);
-        QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 3);
-        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("Personal")),
+        QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 3);
+        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("personal")),
                  QStringLiteral("ctag-v1"));
     }
     // Backend destroyed — its in-memory KDAV::EtagCache is gone with it.
@@ -105,16 +105,16 @@ void TestEtagCacheSeed::restart_onlyChangedItemRefetched_ctagChanged()
     backend2.setDbPath(dbPath);
     backend2.setCacheDir(cacheDir.path());
     backend2.setMultigetChunkSize(1);
-    backend2.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend2.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy2(&backend2,
                         SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend2.loadCalendars(QStringLiteral("Personal"));
+    backend2.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy2.count() > 0, 5000);
     QVERIFY(loadSpy2.first().at(1).toBool());
 
     auto *blob2 = static_cast<IBlobBackend *>(&backend2);
-    QCOMPARE(blob2->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob2->loadRecords(QStringLiteral("personal")).size(), 3);
 
     // With setMultigetChunkSize(1), multigetReportCount() is exactly the
     // number of item bodies fetched from the server: 3 for backend1's
@@ -130,7 +130,7 @@ void TestEtagCacheSeed::restart_fullyServedFromCache_ctagUnchanged()
 {
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {
         makeEventIcs(QStringLiteral("event-0"), QStringLiteral("Event 0")),
         makeEventIcs(QStringLiteral("event-1"), QStringLiteral("Event 1")),
@@ -151,17 +151,17 @@ void TestEtagCacheSeed::restart_fullyServedFromCache_ctagUnchanged()
                                       QStringLiteral("testpass"));
         backend.setDbPath(dbPath);
         backend.setCacheDir(cacheDir.path());
-        backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+        backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
         QSignalSpy loadSpy(&backend,
                            SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        backend.loadCalendars(QStringLiteral("Personal"));
+        backend.loadCalendars(QStringLiteral("personal"));
         QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
         QVERIFY(loadSpy.first().at(1).toBool());
 
         auto *blob = static_cast<IBlobBackend *>(&backend);
-        QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 2);
-        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("Personal")),
+        QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 2);
+        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("personal")),
                  QStringLiteral("ctag-v1"));
     }
 
@@ -171,16 +171,16 @@ void TestEtagCacheSeed::restart_fullyServedFromCache_ctagUnchanged()
                                    QStringLiteral("testpass"));
     backend2.setDbPath(dbPath);
     backend2.setCacheDir(cacheDir.path());
-    backend2.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend2.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy2(&backend2,
                         SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend2.loadCalendars(QStringLiteral("Personal"));
+    backend2.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy2.count() > 0, 5000);
     QVERIFY(loadSpy2.first().at(1).toBool());
 
     auto *blob2 = static_cast<IBlobBackend *>(&backend2);
-    QCOMPARE(blob2->loadRecords(QStringLiteral("Personal")).size(), 2);
+    QCOMPARE(blob2->loadRecords(QStringLiteral("personal")).size(), 2);
     // Only backend1's initial sync issues a multiget REPORT; backend2's
     // CTag-unchanged resync must short-circuit before ever creating a
     // DavItemsListJob (no regression of the existing cache-hit path).

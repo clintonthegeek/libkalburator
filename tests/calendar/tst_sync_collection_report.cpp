@@ -45,7 +45,7 @@ struct Fixture {
 
     bool setUp(bool supportsSyncCollection = true)
     {
-        server.setCalendars({{QStringLiteral("Personal"), calHref}});
+        server.setCalendars({{QStringLiteral("personal"), calHref}});
         server.setSupportsSyncCollection(supportsSyncCollection);
         server.setSeedEvents(calHref, {
             makeEventIcs(QStringLiteral("event-0"), QStringLiteral("Event 0")),
@@ -63,16 +63,16 @@ struct Fixture {
             server.baseUrl(), QStringLiteral("testuser"), QStringLiteral("testpass"));
         backend->setDbPath(dbPath);
         backend->setCacheDir(cacheDir.path());
-        backend->registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+        backend->registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
         QSignalSpy loadSpy(backend.get(),
                            SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        backend->loadCalendars(QStringLiteral("Personal"));
+        backend->loadCalendars(QStringLiteral("personal"));
         if (!QTest::qWaitFor([&]() { return loadSpy.count() > 0; }, 5000)) return false;
         if (!loadSpy.first().at(1).toBool()) return false;
 
         auto *blob = static_cast<IBlobBackend *>(backend.get());
-        return blob->loadRecords(QStringLiteral("Personal")).size() == 3;
+        return blob->loadRecords(QStringLiteral("personal")).size() == 3;
     }
 };
 }  // namespace
@@ -111,7 +111,7 @@ void TestSyncCollectionReport::steadyState_singleChangedItem_usesReportNotListin
 
     // Full snapshot must still be 3 — sync-collection returns a delta, but
     // recordsFromLastFetch()'s contract is the full current collection.
-    QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 3);
 
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);
@@ -135,7 +135,7 @@ void TestSyncCollectionReport::deletion_arrivesAsTombstone_noFullListing()
     const int multigetBefore = fx.server.multigetReportCount();
     const int syncCollBefore = fx.server.syncCollectionReportCount();
 
-    QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 2);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 2);
 
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 0);
@@ -159,7 +159,7 @@ void TestSyncCollectionReport::tokenInvalidation_fallsBackAndReacquires()
     fx.server.setCollectionCtag(fx.calHref, QStringLiteral("ctag-v2"));
 
     // Falls back to the listing path and still converges correctly.
-    QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 3);
     QVERIFY(fx.server.multigetReportCount() > 0);
 
     // Re-enable the server and make one more change: the fallback cycle
@@ -175,7 +175,7 @@ void TestSyncCollectionReport::tokenInvalidation_fallsBackAndReacquires()
     const int multigetBefore = fx.server.multigetReportCount();
     const int syncCollBefore = fx.server.syncCollectionReportCount();
 
-    QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 3);
 
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);
@@ -196,7 +196,7 @@ void TestSyncCollectionReport::unsupportedServer_behavesLikePreE7()
     });
     fx.server.setCollectionCtag(fx.calHref, QStringLiteral("ctag-v2"));
 
-    QCOMPARE(blob->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 3);
 
     // Never a sync-collection REPORT — the capability was never advertised.
     QCOMPARE(fx.server.syncCollectionReportCount(), 0);
@@ -223,11 +223,11 @@ void TestSyncCollectionReport::restart_storedToken_oneReportOneItem()
                                    QStringLiteral("testpass"));
     backend2.setDbPath(fx.dbPath);
     backend2.setCacheDir(fx.cacheDir.path());
-    backend2.registerCalendarUrl(QStringLiteral("Personal"), fx.calDavUrl);
+    backend2.registerCalendarUrl(QStringLiteral("personal"), fx.calDavUrl);
 
     QSignalSpy loadSpy2(&backend2,
                         SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend2.loadCalendars(QStringLiteral("Personal"));
+    backend2.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy2.count() > 0, 5000);
     QVERIFY(loadSpy2.first().at(1).toBool());
 
@@ -236,7 +236,7 @@ void TestSyncCollectionReport::restart_storedToken_oneReportOneItem()
     const int syncCollBefore = fx.server.syncCollectionReportCount();
 
     auto *blob2 = static_cast<IBlobBackend *>(&backend2);
-    QCOMPARE(blob2->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob2->loadRecords(QStringLiteral("personal")).size(), 3);
 
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);
@@ -266,14 +266,14 @@ void TestSyncCollectionReport::firstFetchBeforeDiscovery_storedToken_usesReport(
                                    QStringLiteral("testpass"));
     backend2.setDbPath(fx.dbPath);
     backend2.setCacheDir(fx.cacheDir.path());
-    backend2.registerCalendarUrl(QStringLiteral("Personal"), fx.calDavUrl);
+    backend2.registerCalendarUrl(QStringLiteral("personal"), fx.calDavUrl);
     // Deliberately NO loadCalendars() — the fetch races discovery, as live.
 
     const int multigetBefore = fx.server.multigetReportCount();
     const int syncCollBefore = fx.server.syncCollectionReportCount();
 
     auto *blob2 = static_cast<IBlobBackend *>(&backend2);
-    QCOMPARE(blob2->loadRecords(QStringLiteral("Personal")).size(), 3);
+    QCOMPARE(blob2->loadRecords(QStringLiteral("personal")).size(), 3);
 
     QCOMPARE(fx.server.syncCollectionReportCount() - syncCollBefore, 1);
     QCOMPARE(fx.server.multigetReportCount() - multigetBefore, 1);

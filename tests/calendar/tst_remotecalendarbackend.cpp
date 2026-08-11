@@ -122,6 +122,7 @@ private slots:
     // Calendar discovery
     void testLoadCalendars();
     void testCalendarDiscoverySignals();
+    void testLoadCalendarsDiscoversByUrlSlugNotDisplayName();
 
     // Incidence CRUD
     void testStoreEvent();
@@ -328,6 +329,69 @@ void RemoteCalendarBackendTest::testCalendarDiscoverySignals()
         QList<QVariant> args = spy.first();
         QCOMPARE(args.at(0).toString(), QStringLiteral("test-collection"));
         QVERIFY(!args.at(1).toString().isEmpty());
+    }
+}
+
+void RemoteCalendarBackendTest::testLoadCalendarsDiscoversByUrlSlugNotDisplayName()
+{
+    // docs/bugs/remotecalendarbackend-display-name-identification.md.
+    //
+    // Seeds its own calendar via createCalendarAsync (NOT the sync
+    // createCalendar() wrapper init()/cleanup() use elsewhere in this
+    // file — that virtual has no real RemoteCalendarBackend override
+    // since the E11 Stage 1 async migration and silently resolves to the
+    // SyncBackend base-class stub, always returning false; a separate,
+    // pre-existing bug tracked on its own, not fixed here) with a slug
+    // distinct from its display name, so a discovery keyed by displayName
+    // instead of slug is observable. A *second*, freshly-constructed
+    // backend (nothing pre-seeded in its own m_calendars) exercises the
+    // real bug: SyncBackend::createCalendar's calendarId contract says
+    // calendars are identified by the slug, so calendarDiscovered's
+    // second argument must equal it, not the display name.
+    const QString slug = QStringLiteral("slug-test-")
+        + QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    const QString displayName = QStringLiteral("Slug Test Display Name");
+
+    QSignalSpy createdSpy(m_backend, &RemoteCalendarBackend::calendarCreated);
+    m_backend->createCalendarAsync(QStringLiteral("test-collection"), slug,
+                                   displayName, CalendarType::Hybrid,
+                                   [](bool) {});
+    QVERIFY2(createdSpy.wait(10000), "createCalendarAsync did not complete");
+
+    auto *freshBackend = new RemoteCalendarBackend(
+        CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1),
+        CalDavTestConfig::USERNAME_1,
+        CalDavTestConfig::PASSWORD_1,
+        this);
+
+    QSignalSpy spy(freshBackend, &RemoteCalendarBackend::calendarDiscovered);
+    freshBackend->loadCalendars(QStringLiteral("test-collection"));
+    const bool discovered = waitForCalendarDiscovery(freshBackend, 10000);
+    QVERIFY2(discovered, "no calendars discovered on server");
+
+    bool sawTestCalendarBySlug = false;
+    bool sawTestCalendarByDisplayName = false;
+    for (const QList<QVariant> &args : spy) {
+        const QString calId = args.at(1).toString();
+        if (calId == slug)
+            sawTestCalendarBySlug = true;
+        if (calId == displayName)
+            sawTestCalendarByDisplayName = true;
+    }
+    QVERIFY2(sawTestCalendarBySlug,
+             "calendarDiscovered never fired with the URL slug as its id");
+    QVERIFY2(!sawTestCalendarByDisplayName,
+             "calendarDiscovered fired with the display name instead of the URL slug");
+
+    delete freshBackend;
+
+    bool deleteDone = false;
+    m_backend->deleteCalendarAsync(QStringLiteral("test-collection"), slug,
+                                   [&deleteDone](bool) { deleteDone = true; });
+    int waited = 0;
+    while (!deleteDone && waited < 10000) {
+        QTest::qWait(50);
+        waited += 50;
     }
 }
 

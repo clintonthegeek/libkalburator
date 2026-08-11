@@ -102,7 +102,7 @@ void TestRemoteCalendarBackendBlobView::updateRecord_modifies_existing_record()
         "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {origIcs});
     QVERIFY(server.startListening());
 
@@ -115,18 +115,18 @@ void TestRemoteCalendarBackendBlobView::updateRecord_modifies_existing_record()
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     // loadCalendars discovers the calendar before we fetchItems.
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(),
              "loadCalendars must succeed before we can fetchItems");
 
     // fetchItems populates m_localEtags (needed for conditional PUT).
-    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("personal"));
     QVERIFY(fetchOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
     QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
@@ -180,8 +180,8 @@ void TestRemoteCalendarBackendBlobView::updateRecord_multiCalendar_ownershipMiss
     const QString workHref = QStringLiteral("/calendars/testuser/work/");
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), personalHref},
-                         {QStringLiteral("Work"), workHref}});
+    server.setCalendars({{QStringLiteral("personal"), personalHref},
+                         {QStringLiteral("work"), workHref}});
     QVERIFY(server.startListening());
 
     QTemporaryDir cacheDir;
@@ -191,14 +191,14 @@ void TestRemoteCalendarBackendBlobView::updateRecord_multiCalendar_ownershipMiss
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"),
+    backend.registerCalendarUrl(QStringLiteral("personal"),
                                server.baseUrl().toString() + personalHref.mid(1));
-    backend.registerCalendarUrl(QStringLiteral("Work"),
+    backend.registerCalendarUrl(QStringLiteral("work"),
                                server.baseUrl().toString() + workHref.mid(1));
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
 
@@ -235,7 +235,7 @@ void TestRemoteCalendarBackendBlobView::updateRecord_concurrentServerEdit_surfac
         "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {origIcs});
     QVERIFY(server.startListening());
 
@@ -247,16 +247,16 @@ void TestRemoteCalendarBackendBlobView::updateRecord_concurrentServerEdit_surfac
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
 
     // fetchItems populates the backend's cached ETag for the seeded item.
-    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("personal"));
     QVERIFY(fetchOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
     QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
@@ -305,7 +305,7 @@ void TestRemoteCalendarBackendBlobView::updateRecord_after412_nextFetch_detectsC
         "DTEND:20260601T130000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {origIcs});
     QVERIFY(server.startListening());
 
@@ -317,15 +317,15 @@ void TestRemoteCalendarBackendBlobView::updateRecord_after412_nextFetch_detectsC
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(), "loadCalendars must succeed");
 
-    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("personal"));
     QVERIFY(fetchOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
     QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
@@ -348,13 +348,13 @@ void TestRemoteCalendarBackendBlobView::updateRecord_after412_nextFetch_detectsC
     QVERIFY2(!backend.updateRecord(rec), "the stale-ETag update must fail on 412");
 
     // Next fetch cycle: must pick up the concurrent server-side content.
-    FetchOperation *refetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    FetchOperation *refetchOp = backend.fetchItems(QStringLiteral("personal"));
     QVERIFY(refetchOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(refetchOp->isFinished(), 8000);
     QCOMPARE(refetchOp->state(), SyncOperation::Succeeded);
 
     auto *blob = static_cast<IBlobBackend *>(&backend);
-    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
     QCOMPARE(records.size(), 1);
     QVERIFY2(records.first().data.contains("Edited By Someone Else"),
              "the next fetch must surface the concurrent edit, not our stale local view");
@@ -377,7 +377,7 @@ void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastMod
         "END:VEVENT\r\nEND:VCALENDAR\r\n";
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {seededIcs});
     QVERIFY(server.startListening());
 
@@ -390,17 +390,17 @@ void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastMod
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(),
              "loadCalendars must succeed before we can loadRecords");
 
     auto *blob = static_cast<IBlobBackend *>(&backend);
-    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
     QCOMPARE(records.size(), 1);
     QVERIFY2(records.first().lastModified.isValid(),
              "lastModified must be a valid, parsed timestamp");
@@ -431,7 +431,7 @@ void TestRemoteCalendarBackendBlobView::loadRecords_chunksMultigetAcrossBatches(
         seeds << makeEventIcs(QStringLiteral("event-%1").arg(i));
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, seeds);
     QVERIFY(server.startListening());
 
@@ -444,17 +444,17 @@ void TestRemoteCalendarBackendBlobView::loadRecords_chunksMultigetAcrossBatches(
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
     backend.setMultigetChunkSize(3);  // 7 items / 3 per batch = 3 batches (3,3,1)
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(),
              "loadCalendars must succeed before we can loadRecords");
 
     auto *blob = static_cast<IBlobBackend *>(&backend);
-    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
     QCOMPARE(records.size(), 7);
     QCOMPARE(server.multigetReportCount(), 3);  // ceil(7 / 3) == 3 batches
 }
@@ -467,7 +467,7 @@ void TestRemoteCalendarBackendBlobView::loadRecords_failsWholeOpWhenABatchFails_
         seeds << makeEventIcs(QStringLiteral("event-%1").arg(i));
 
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, seeds);
     server.setFailNthMultigetReport(2);  // the second batch's REPORT fails (500)
     QVERIFY(server.startListening());
@@ -481,17 +481,17 @@ void TestRemoteCalendarBackendBlobView::loadRecords_failsWholeOpWhenABatchFails_
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
     backend.setMultigetChunkSize(3);
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY2(loadSpy.first().at(1).toBool(),
              "loadCalendars must succeed before we can loadRecords");
 
     auto *blob = static_cast<IBlobBackend *>(&backend);
-    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
     QVERIFY2(records.isEmpty(),
              "a failed batch must fail the whole op — never a partial result set");
 }
@@ -503,7 +503,7 @@ void TestRemoteCalendarBackendBlobView::ctagMatchServingZeroCachedItems_distrust
 {
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {makeEventIcs(QStringLiteral("event-0")),
                                    makeEventIcs(QStringLiteral("event-1"))});
     server.setCollectionCtag(calHref, QStringLiteral("ctag-v1"));
@@ -524,18 +524,18 @@ void TestRemoteCalendarBackendBlobView::ctagMatchServingZeroCachedItems_distrust
                                       QStringLiteral("testpass"));
         backend.setDbPath(dbPath);
         backend.setCacheDir(cacheDir1.path());
-        backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+        backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
         QSignalSpy loadSpy(&backend,
                            SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-        backend.loadCalendars(QStringLiteral("Personal"));
+        backend.loadCalendars(QStringLiteral("personal"));
         QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
         QVERIFY(loadSpy.first().at(1).toBool());
 
         auto *blob = static_cast<IBlobBackend *>(&backend);
-        const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+        const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
         QCOMPARE(records.size(), 2);
-        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("Personal")),
+        QCOMPARE(backend.cachedCollectionRevision(QStringLiteral("personal")),
                  QStringLiteral("ctag-v1"));
     }
 
@@ -550,16 +550,16 @@ void TestRemoteCalendarBackendBlobView::ctagMatchServingZeroCachedItems_distrust
                                    QStringLiteral("testpass"));
     backend2.setDbPath(dbPath);
     backend2.setCacheDir(cacheDir2.path());
-    backend2.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend2.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy2(&backend2,
                         SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend2.loadCalendars(QStringLiteral("Personal"));
+    backend2.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy2.count() > 0, 5000);
     QVERIFY(loadSpy2.first().at(1).toBool());
 
     auto *blob2 = static_cast<IBlobBackend *>(&backend2);
-    const QList<BackendRecord> records2 = blob2->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records2 = blob2->loadRecords(QStringLiteral("personal"));
     QVERIFY2(records2.size() == 2,
              "must re-list and re-fetch for real instead of trusting a CTag "
              "match that would serve zero items");
@@ -573,7 +573,7 @@ void TestRemoteCalendarBackendBlobView::partialMaterialization_doesNotCommitCtag
 {
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setSeedEvents(calHref, {
         makeEventIcs(QStringLiteral("event-0")),
         makeEventIcs(QStringLiteral("event-1")),
@@ -593,19 +593,19 @@ void TestRemoteCalendarBackendBlobView::partialMaterialization_doesNotCommitCtag
                                   QStringLiteral("testpass"));
     backend.setDbPath(dbDir.filePath(QStringLiteral("sync.db")));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
 
     QSignalSpy loadSpy(&backend,
                        SIGNAL(loadCalendarsFinished(QString, bool, QString)));
-    backend.loadCalendars(QStringLiteral("Personal"));
+    backend.loadCalendars(QStringLiteral("personal"));
     QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
     QVERIFY(loadSpy.first().at(1).toBool());
 
     auto *blob = static_cast<IBlobBackend *>(&backend);
-    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("Personal"));
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
     QCOMPARE(records.size(), 2);  // the two valid events; the malformed one is skipped
 
-    QVERIFY2(backend.cachedCollectionRevision(QStringLiteral("Personal")).isEmpty(),
+    QVERIFY2(backend.cachedCollectionRevision(QStringLiteral("personal")).isEmpty(),
              "the CTag must not be committed when any item failed to materialize");
 }
 
@@ -623,7 +623,7 @@ void TestRemoteCalendarBackendBlobView::collectionRevision_droppedRequests_fails
     // so the test stays fast.
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setDropRequests(true);
     QVERIFY(server.startListening());
 
@@ -638,13 +638,13 @@ void TestRemoteCalendarBackendBlobView::collectionRevision_droppedRequests_fails
     // Pre-register rather than discover via loadCalendars() — discovery's
     // own PROPFIND would hang against a dropping server too, which isn't
     // what this test is pinning.
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
     backend.setTransferTimeoutMs(2000);
 
     QString revision;
     QElapsedTimer timer;
     timer.start();
-    revision = backend.collectionRevision(QStringLiteral("Personal"));
+    revision = backend.collectionRevision(QStringLiteral("personal"));
     QVERIFY2(timer.elapsed() < 60000,
              "collectionRevision must fail within the transfer timeout, not hang");
     QVERIFY2(revision.isEmpty(),
@@ -663,7 +663,7 @@ void TestRemoteCalendarBackendBlobView::fetchItems_droppedRequests_failsWithinTi
     // bound → isFinished() stays false → RED).
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setDropRequests(true);
     QVERIFY(server.startListening());
 
@@ -678,10 +678,10 @@ void TestRemoteCalendarBackendBlobView::fetchItems_droppedRequests_failsWithinTi
     // Pre-register (no discovery) — a fresh backend has no stored CTag, so
     // fetchItems() skips the nam()-level CTag PROPFIND and goes straight to
     // the KDAV list job, which is exactly the surface O25 is about.
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
     backend.setTransferTimeoutMs(2000);
 
-    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("Personal"));
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("personal"));
     QVERIFY(fetchOp != nullptr);
     // ~3x the 2000ms watchdog window: comfortably covers a single killed
     // list job while still failing fast if the op wedges.
@@ -698,7 +698,7 @@ void TestRemoteCalendarBackendBlobView::pushItems_droppedRequests_failsWithinTim
     // must settle Failed within the watchdog window rather than hang.
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
     FakeCalDavServer server;
-    server.setCalendars({{QStringLiteral("Personal"), calHref}});
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
     server.setDropRequests(true);
     QVERIFY(server.startListening());
 
@@ -710,7 +710,7 @@ void TestRemoteCalendarBackendBlobView::pushItems_droppedRequests_failsWithinTim
                                   QStringLiteral("testuser"),
                                   QStringLiteral("testpass"));
     backend.setCacheDir(cacheDir.path());
-    backend.registerCalendarUrl(QStringLiteral("Personal"), calDavUrl);
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
     backend.setTransferTimeoutMs(2000);
 
     auto event = KCalendarCore::Event::Ptr(new KCalendarCore::Event);
@@ -719,7 +719,7 @@ void TestRemoteCalendarBackendBlobView::pushItems_droppedRequests_failsWithinTim
     event->setDtStart(QDateTime(QDate(2026, 7, 5), QTime(12, 0), QTimeZone::utc()));
 
     PushOperation *pushOp =
-        backend.pushItems(QStringLiteral("Personal"),
+        backend.pushItems(QStringLiteral("personal"),
                           {event.staticCast<KCalendarCore::Incidence>()});
     QVERIFY(pushOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 7000);

@@ -8,6 +8,7 @@
 #include "discoveredcalendar.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
+#include "davslug.h"
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -880,11 +881,21 @@ void RemoteCalendarBackend::loadCalendars(const QString &collectionId)
         for (const KDAV::DavCollection &col : collections) {
             // Identify calendar collections by content type flags
             if (col.contentTypes() & (KDAV::DavCollection::Events | KDAV::DavCollection::Todos | KDAV::DavCollection::Calendar)) {
-                QString calId = col.displayName();
                 QUrl rawUrl = col.url().url();
 
                 // Normalize and configure URL with user info
                 KDAV::DavUrl configuredUrl = configuredDavUrl(rawUrl.toString());
+
+                // Identify by URL slug, not DAV:displayname — every other
+                // caller (createCalendarAsync, updateCalendarAsync,
+                // deleteCalendarAsync, and every SyncBackend::calendarId
+                // contract) already keys m_calendars by slug. Discovery
+                // was the one place still keying by the display name, so
+                // a calendar created via createCalendar() (slug key) went
+                // undiscoverable by that same id once loadCalendars() ran
+                // (docs/bugs/remotecalendarbackend-display-name-identification.md).
+                const QString slug = davSlugFromUrl(rawUrl.toString());
+                QString calId = slug.isEmpty() ? col.displayName() : slug;
 
                 CalendarFacts &facts = m_calendars[calId];
                 facts.davUrl = configuredUrl;

@@ -139,7 +139,7 @@ void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
     // success, commits pendingCtag ("ctag-1") to the persistent CTag store.
     FetchOperation *fetch1 = nullptr;
     QMetaObject::invokeMethod(backend, [&]() {
-        fetch1 = backend->fetchItems(QStringLiteral("Personal"));
+        fetch1 = backend->fetchItems(QStringLiteral("personal"));
     }, Qt::BlockingQueuedConnection);
     QVERIFY(fetch1 != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(fetch1->isFinished(), kOpTimeoutMs);
@@ -160,7 +160,7 @@ void TstBackendReentrancyPin::queuedCallDuringFetch_neverRunsNested()
     std::atomic<FetchOperation *> fetch2{nullptr};
 
     QMetaObject::invokeMethod(backend, [&]() {
-        fetch2.store(backend->fetchItems(QStringLiteral("Personal")));
+        fetch2.store(backend->fetchItems(QStringLiteral("personal")));
     }, Qt::QueuedConnection);
 
     QTRY_VERIFY_WITH_TIMEOUT(fetch2.load() != nullptr
@@ -242,9 +242,9 @@ void TstBackendReentrancyPin::fastPathRevisionQuery_throughFilteredView_neverRun
     // live on the same backend I/O thread.
     auto *view = new FilteredCollectionBackend(
         backend, QStringLiteral("remote-parent"),
-        QStringLiteral("Personal"), QStringLiteral("v-work"),
+        QStringLiteral("personal"), QStringLiteral("v-work"),
         RecordFilter{ PropertyId{"categories"}, RecordFilter::Op::Contains,
-                      QStringLiteral("Work") });
+                      QStringLiteral("work") });
 
     QThread ioThread;
     ioThread.setObjectName(QStringLiteral("rev-backend-io"));
@@ -366,7 +366,7 @@ void TstBackendReentrancyPin::concurrentFetchesOnSameCollection_serialize()
     // async CTag-PROPFIND path, giving a wide serialization window.
     FetchOperation *warmup = nullptr;
     QMetaObject::invokeMethod(backend, [&]() {
-        warmup = backend->fetchItems(QStringLiteral("Personal"));
+        warmup = backend->fetchItems(QStringLiteral("personal"));
     }, Qt::BlockingQueuedConnection);
     QVERIFY(warmup != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(warmup->isFinished(), kOpTimeoutMs);
@@ -377,8 +377,8 @@ void TstBackendReentrancyPin::concurrentFetchesOnSameCollection_serialize()
     std::atomic<FetchOperation *> fa{nullptr};
     std::atomic<FetchOperation *> fb{nullptr};
     QMetaObject::invokeMethod(backend, [&]() {
-        fa.store(backend->fetchItems(QStringLiteral("Personal")));
-        fb.store(backend->fetchItems(QStringLiteral("Personal")));
+        fa.store(backend->fetchItems(QStringLiteral("personal")));
+        fb.store(backend->fetchItems(QStringLiteral("personal")));
     }, Qt::BlockingQueuedConnection);
     QVERIFY(fa.load() != nullptr);
     QVERIFY(fb.load() != nullptr);
@@ -463,7 +463,7 @@ void TstBackendReentrancyPin::applyRecordsInFlight_neverRunsNested()
 
     std::atomic<WriteOperation *> writeOp{nullptr};
     QMetaObject::invokeMethod(backend, [&]() {
-        writeOp.store(backend->applyRecords(QStringLiteral("Personal"), batch));
+        writeOp.store(backend->applyRecords(QStringLiteral("personal"), batch));
     }, Qt::QueuedConnection);
 
     QTRY_VERIFY_WITH_TIMEOUT(writeOp.load() != nullptr
