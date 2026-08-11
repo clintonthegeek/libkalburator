@@ -108,6 +108,7 @@ private slots:
     void multiMappingSequentialCompletesInOrder();
     void conflictPauseResumeRoundTrip();
     void cancellationPropagates();
+    void unmonitoredConflictRecordsIcalData();
 
 private:
     // Per-test fixture rebuilt in init() so each scenario starts clean.
@@ -371,6 +372,93 @@ void TstSyncEngineUnification::conflictPauseResumeRoundTrip()
     // Detach so backends don't outlive the local unique_ptrs.
     m_engine->setSyncMappings({});
     m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test — Unmonitored AskUser conflicts persist both iCal serializations.
+//
+// docs/bugs/sync-conflict-store-duplicate-rows.md: the unmonitored-defer
+// branch of unifiedHandleConflicts() used to construct its ConflictInfo
+// without setting sourceIcalData/targetIcalData (unlike the sibling
+// monitored-yield branch a few lines above it), so SyncConflictStore
+// persisted every unmonitored conflict with empty local_ical/remote_ical.
+// SyncEngine::onWorkerConflictDetected records directly via the wired
+// SyncConflictStore even with no ConflictManager attached.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::unmonitoredConflictRecordsIcalData()
+{
+    constexpr auto kSourceBackendId = "source-mock";
+    constexpr auto kTargetBackendId = "target-mock";
+    constexpr auto kCalendarId      = "calendar-1";
+    constexpr auto kMappingId       = "mapping-1";
+    constexpr auto kConflictUid     = "evt-conflict";
+
+    auto source = std::make_unique<MockBackend>();
+    auto target = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        target.get());
+
+    source->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+    target->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                hostCal);
+
+    SyncMapping mapping;
+    mapping.id              = QString::fromLatin1(kMappingId);
+    mapping.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    mapping.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    mapping.targetCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::AskUser;
+    mapping.enabled         = true;
+    m_engine->setSyncMappings({ mapping });
+
+    auto baselineEvent = makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Baseline"));
+    const QString baselineIcal = eventToIcal(baselineEvent);
+    m_baselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                               calendarTestRec(QString::fromLatin1(kConflictUid),
+                                               baselineIcal));
+
+    source->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Source-Modified")));
+    target->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Target-Modified")));
+
+    // No ConflictManager attached — SyncBehavior::Unmonitored routes the
+    // AskUser conflict through the "defer to next sync" branch, which
+    // SyncEngine::onWorkerConflictDetected records directly via the
+    // SyncConflictStore wired in init().
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_engine->runSync(req);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+
+    const QList<ConflictInfo> unresolved =
+        m_conflictStore->unresolvedConflicts(QString::fromLatin1(kMappingId));
+    QCOMPARE(unresolved.size(), 1);
+    QVERIFY2(!unresolved.first().sourceIcalData.isEmpty(),
+             "sourceIcalData was persisted empty");
+    QVERIFY2(!unresolved.first().targetIcalData.isEmpty(),
+             "targetIcalData was persisted empty");
+
+    // Detach so backends don't outlive the local unique_ptrs.
+    m_engine->setSyncMappings({});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

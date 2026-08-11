@@ -105,6 +105,8 @@ private slots:
     void testConflictRecordedInStore();
     void testConflictResolvedInStore();
     void testUnresolvedConflictCount();
+    void testRepresentingSameConflictDoesNotDuplicateRow();
+    void testRepresentingSameConflictPopulatesIcalColumns();
 
     // Display name fields
     void testDisplayNameFieldsPassedToResolver();
@@ -570,6 +572,40 @@ void TestConflictManager::testUnresolvedConflictCount()
 
     m_conflictManager->handleConflict(createTestConflict());
     QCOMPARE(m_conflictManager->unresolvedConflictCount(), 2);
+}
+
+void TestConflictManager::testRepresentingSameConflictDoesNotDuplicateRow()
+{
+    // docs/bugs/sync-conflict-store-duplicate-rows.md: the engine re-presents
+    // an unresolved conflict every sync cycle with a fresh ConflictInfo
+    // (conflictId always empty) for the same (mappingId, sourceId) identity.
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Deferred);
+
+    ConflictInfo conflict = createTestConflict();
+    m_conflictManager->handleConflict(conflict);
+    QCOMPARE(m_syncStore->unresolvedConflictCount(), 1);
+
+    m_conflictManager->handleConflict(conflict);
+    m_conflictManager->handleConflict(conflict);
+    QCOMPARE(m_syncStore->unresolvedConflictCount(), 1);
+}
+
+void TestConflictManager::testRepresentingSameConflictPopulatesIcalColumns()
+{
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Deferred);
+
+    ConflictInfo conflict = createTestConflict();
+    m_conflictManager->handleConflict(conflict);
+
+    ConflictInfo updated = conflict;
+    updated.sourceIcalData = QStringLiteral("BEGIN:VEVENT\nSUMMARY:Source v2\nEND:VEVENT");
+    updated.targetIcalData = QStringLiteral("BEGIN:VEVENT\nSUMMARY:Target v2\nEND:VEVENT");
+    m_conflictManager->handleConflict(updated);
+
+    const auto unresolved = m_syncStore->unresolvedConflicts(conflict.mappingId);
+    QCOMPARE(unresolved.size(), 1);
+    QCOMPARE(unresolved.first().sourceIcalData, updated.sourceIcalData);
+    QCOMPARE(unresolved.first().targetIcalData, updated.targetIcalData);
 }
 
 // ============================================================================

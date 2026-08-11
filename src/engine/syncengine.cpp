@@ -2911,6 +2911,12 @@ void SyncEngineWorker::unifiedHandleConflicts()
                                            ? ConflictType::ModifyDelete
                                            : ConflictType::BothModified;
                 info.detectedAt      = QDateTime::currentDateTimeUtc();
+                // Both serializations are available here just like the
+                // monitored-yield branch above — populate them so the
+                // conflict store doesn't persist empty local_ical/remote_ical
+                // (docs/bugs/sync-conflict-store-duplicate-rows.md).
+                info.sourceIcalData  = QString::fromUtf8(op.record.data);
+                info.targetIcalData  = QString::fromUtf8(op.targetRecord.data);
                 emit conflictDetected(info);
                 m_currentResult.unresolvedConflicts.append(info);
                 ++m_unifiedMerge.conflictsDeferred;

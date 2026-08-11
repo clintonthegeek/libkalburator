@@ -124,37 +124,88 @@ QString SyncConflictStore::recordConflict(const ConflictInfo &conflict)
 {
     if (!m_isOpen) return QString();
 
-    QString conflictId = conflict.conflictId.isEmpty()
-        ? QUuid::createUuid().toString(QUuid::WithoutBraces)
-        : conflict.conflictId;
-
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "INSERT INTO sync_conflicts "
-        "(id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
-        " conflict_type, local_description, remote_description, "
-        " local_modified, remote_modified, "
-        " local_ical, remote_ical, baseline_ical, detected_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"));
-    query.addBindValue(conflictId);
-    query.addBindValue(conflict.mappingId.isEmpty() ? QVariant() : conflict.mappingId);
-    query.addBindValue(conflict.sourceBackendId);
-    query.addBindValue(conflict.calendarId);
-    query.addBindValue(conflict.sourceId);
-    query.addBindValue(conflict.targetId);
-    query.addBindValue(static_cast<int>(conflict.type));
-    query.addBindValue(conflict.sourceDescription);
-    query.addBindValue(conflict.targetDescription);
-    query.addBindValue(conflict.sourceModified.toString(Qt::ISODate));
-    query.addBindValue(conflict.targetModified.toString(Qt::ISODate));
-    query.addBindValue(conflict.sourceIcalData.isEmpty() ? QVariant() : conflict.sourceIcalData);
-    query.addBindValue(conflict.targetIcalData.isEmpty() ? QVariant() : conflict.targetIcalData);
-    query.addBindValue(conflict.baselineIcalData.isEmpty() ? QVariant() : conflict.baselineIcalData);
 
-    if (!query.exec()) {
-        setError(QStringLiteral("Failed to record conflict: %1").arg(query.lastError().text()));
-        return QString();
+    // The engine re-presents an unresolved conflict every sync cycle with a
+    // fresh ConflictInfo (conflictId always empty), so without this lookup
+    // every presentation would INSERT a new row for the same logical
+    // conflict (docs/bugs/sync-conflict-store-duplicate-rows.md). Identity
+    // is (mapping_id, local_uid) among still-unresolved rows; "IS" (not "=")
+    // so a NULL mapping_id (empty mappingId) matches itself.
+    QString conflictId;
+    if (conflict.conflictId.isEmpty()) {
+        QSqlQuery findQuery(db);
+        findQuery.prepare(QStringLiteral(
+            "SELECT id FROM sync_conflicts "
+            "WHERE mapping_id IS ? AND local_uid = ? AND resolved_at IS NULL "
+            "LIMIT 1"));
+        findQuery.addBindValue(conflict.mappingId.isEmpty() ? QVariant() : conflict.mappingId);
+        findQuery.addBindValue(conflict.sourceId);
+        if (findQuery.exec() && findQuery.next()) {
+            conflictId = findQuery.value(0).toString();
+        }
+    } else {
+        conflictId = conflict.conflictId;
+    }
+
+    QSqlQuery query(db);
+    if (!conflictId.isEmpty() && conflict.conflictId.isEmpty()) {
+        // Refresh the existing unresolved row found above.
+        query.prepare(QStringLiteral(
+            "UPDATE sync_conflicts SET "
+            " backend_id = ?, calendar_id = ?, remote_id = ?, "
+            " conflict_type = ?, local_description = ?, remote_description = ?, "
+            " local_modified = ?, remote_modified = ?, "
+            " local_ical = ?, remote_ical = ?, baseline_ical = ?, "
+            " detected_at = datetime('now') "
+            "WHERE id = ?"));
+        query.addBindValue(conflict.sourceBackendId);
+        query.addBindValue(conflict.calendarId);
+        query.addBindValue(conflict.targetId);
+        query.addBindValue(static_cast<int>(conflict.type));
+        query.addBindValue(conflict.sourceDescription);
+        query.addBindValue(conflict.targetDescription);
+        query.addBindValue(conflict.sourceModified.toString(Qt::ISODate));
+        query.addBindValue(conflict.targetModified.toString(Qt::ISODate));
+        query.addBindValue(conflict.sourceIcalData.isEmpty() ? QVariant() : conflict.sourceIcalData);
+        query.addBindValue(conflict.targetIcalData.isEmpty() ? QVariant() : conflict.targetIcalData);
+        query.addBindValue(conflict.baselineIcalData.isEmpty() ? QVariant() : conflict.baselineIcalData);
+        query.addBindValue(conflictId);
+
+        if (!query.exec()) {
+            setError(QStringLiteral("Failed to refresh conflict: %1").arg(query.lastError().text()));
+            return QString();
+        }
+    } else {
+        if (conflictId.isEmpty())
+            conflictId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+        query.prepare(QStringLiteral(
+            "INSERT INTO sync_conflicts "
+            "(id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
+            " conflict_type, local_description, remote_description, "
+            " local_modified, remote_modified, "
+            " local_ical, remote_ical, baseline_ical, detected_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))"));
+        query.addBindValue(conflictId);
+        query.addBindValue(conflict.mappingId.isEmpty() ? QVariant() : conflict.mappingId);
+        query.addBindValue(conflict.sourceBackendId);
+        query.addBindValue(conflict.calendarId);
+        query.addBindValue(conflict.sourceId);
+        query.addBindValue(conflict.targetId);
+        query.addBindValue(static_cast<int>(conflict.type));
+        query.addBindValue(conflict.sourceDescription);
+        query.addBindValue(conflict.targetDescription);
+        query.addBindValue(conflict.sourceModified.toString(Qt::ISODate));
+        query.addBindValue(conflict.targetModified.toString(Qt::ISODate));
+        query.addBindValue(conflict.sourceIcalData.isEmpty() ? QVariant() : conflict.sourceIcalData);
+        query.addBindValue(conflict.targetIcalData.isEmpty() ? QVariant() : conflict.targetIcalData);
+        query.addBindValue(conflict.baselineIcalData.isEmpty() ? QVariant() : conflict.baselineIcalData);
+
+        if (!query.exec()) {
+            setError(QStringLiteral("Failed to record conflict: %1").arg(query.lastError().text()));
+            return QString();
+        }
     }
 
     ConflictInfo conflictWithId = conflict;
