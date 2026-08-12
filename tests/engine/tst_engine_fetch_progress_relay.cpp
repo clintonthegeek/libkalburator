@@ -17,6 +17,8 @@
 #include <QTemporaryDir>
 #include <QTimeZone>
 
+#include <optional>
+
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
 
@@ -46,6 +48,15 @@ constexpr auto kTargetBackendId = "target-mock";
 constexpr auto kCollectionId    = "stub-collection";
 constexpr auto kCalendarId      = "calendar-1";
 constexpr auto kMappingId       = "mapping-fetch-progress-relay";
+
+// Parallel-sync Task 3: fixture ids for the overlap tests below. Both the
+// "source" and "target" calendars live on the SAME MockBackend instance
+// (registered under both backend ids) so a single high-water counter
+// observes ops from both sides of one mapping.
+constexpr auto kOverlapCollectionId    = "overlap-collection";
+constexpr auto kOverlapSourceCalendar  = "overlap-source-cal";
+constexpr auto kOverlapTargetCalendar  = "overlap-target-cal";
+constexpr auto kOverlapMappingId       = "mapping-overlap-test";
 
 constexpr int kSyncTimeoutMs = 30000;
 
@@ -86,9 +97,24 @@ private slots:
 
     void fetchProgressChanged_isRelayedToEngineFetchProgress();
 
+    // Parallel-sync Task 3.
+    void testSourceAndTargetFetchesOverlap();
+    void testClobberKeepsFetchesSequential();
+
 private:
-    bool runOneSync();
+    bool runOneSync(const QString &mappingId = QString::fromLatin1(kMappingId),
+                     std::optional<ExecutionOverride> override = std::nullopt);
     void setupCoordinator(const QList<SyncMapping> &mappings);
+
+    // Parallel-sync Task 3: builds a mapping whose source AND target
+    // collections live on ONE MockBackend instance (m_source, registered
+    // under both backend ids), so m_source's single high-water counter
+    // observes ops from both sides. Sequential fetches never exceed 1;
+    // overlapped fetches reach 2. Deterministic — no timing. (The
+    // per-collection FIFO does not interfere: these are two DISTINCT
+    // collections, which the FIFO explicitly allows to run concurrently —
+    // see MockBackend::maxConcurrentOpsOn's doc comment.)
+    void buildMappingWithBothSidesOnOneBackend();
 
     std::unique_ptr<QTemporaryDir>         m_tmpDir;
     std::unique_ptr<BackendRegistry>       m_registry;
@@ -164,10 +190,12 @@ void TestEngineFetchProgressRelay::setupCoordinator(const QList<SyncMapping> &ma
     m_coordinator->setSyncMappings(mappings);
 }
 
-bool TestEngineFetchProgressRelay::runOneSync()
+bool TestEngineFetchProgressRelay::runOneSync(const QString &mappingId,
+                                              std::optional<ExecutionOverride> override)
 {
     SyncRequest req;
-    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.mappingIds = { mappingId };
+    req.executionOverride = override;
     auto future = m_coordinator->runSync(req);
     int waited = 0;
     while (!future.isFinished() && waited < kSyncTimeoutMs) {
@@ -214,6 +242,67 @@ void TestEngineFetchProgressRelay::fetchProgressChanged_isRelayedToEngineFetchPr
     const auto last = progressSpy.constLast();          // (calendarId, current, total)
     QCOMPARE(last.at(1).toInt(), 3);                     // current
     QCOMPARE(last.at(2).toInt(), 3);                     // total
+}
+
+void TestEngineFetchProgressRelay::buildMappingWithBothSidesOnOneBackend()
+{
+    // Register m_source under BOTH backend ids, so a mapping whose source
+    // and target backend ids differ still routes both sides to the SAME
+    // MockBackend instance. Two distinct calendar ids on it stand in for
+    // the source/target collections — the per-collection FIFO
+    // (SyncBackendBase::enqueueOperation) only serializes ops WITHIN one
+    // collection, so these two are free to run concurrently.
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId), m_source.get());
+
+    m_source->createCalendar(QString::fromLatin1(kOverlapCollectionId),
+                             QString::fromLatin1(kOverlapSourceCalendar),
+                             QStringLiteral("Overlap Source"));
+    m_source->createCalendar(QString::fromLatin1(kOverlapCollectionId),
+                             QString::fromLatin1(kOverlapTargetCalendar),
+                             QStringLiteral("Overlap Target"));
+
+    SyncMapping m;
+    m.id             = QString::fromLatin1(kOverlapMappingId);
+    m.sourceBackend  = QString::fromLatin1(kSourceBackendId);
+    m.sourceCalendar = QString::fromLatin1(kOverlapSourceCalendar);
+    m.targetBackend  = QString::fromLatin1(kTargetBackendId);
+    m.targetCalendar = QString::fromLatin1(kOverlapTargetCalendar);
+    m.mode           = SyncMode::TwoWay;
+    m.conflictPolicy = ConflictResolution::SourceWins;
+    m.enabled        = true;
+
+    setupCoordinator({ m });
+}
+
+void TestEngineFetchProgressRelay::testSourceAndTargetFetchesOverlap()
+{
+    // Source and target collections live on ONE MockBackend so a single
+    // high-water counter observes both fetches. Sequential fetches never
+    // exceed 1; overlapped fetches reach 2. Deterministic — no timing.
+    buildMappingWithBothSidesOnOneBackend();
+    m_source->setOperationDelay(100);
+    m_source->resetConcurrencyStats();
+
+    QVERIFY(runOneSync(QString::fromLatin1(kOverlapMappingId)));
+
+    QCOMPARE(m_source->maxConcurrentOps(), 2);
+}
+
+void TestEngineFetchProgressRelay::testClobberKeepsFetchesSequential()
+{
+    // The clobber wipe sits BETWEEN the two fetches deliberately, so a
+    // target is never destroyed when the source cannot be read. Under
+    // clobber the overlap must NOT be taken.
+    buildMappingWithBothSidesOnOneBackend();
+    m_source->setOperationDelay(100);
+    m_source->resetConcurrencyStats();
+
+    ExecutionOverride ov;
+    ov.clobber = true;
+
+    QVERIFY(runOneSync(QString::fromLatin1(kOverlapMappingId), ov));
+
+    QCOMPARE(m_source->maxConcurrentOps(), 1);
 }
 
 QTEST_MAIN(TestEngineFetchProgressRelay)

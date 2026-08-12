@@ -359,6 +359,13 @@ private:
     void unifiedHandleConflicts();
     void unifiedContinueAfterConflicts();
 
+    /// Parallel-sync Task 3: block until every non-null op in @p ops is
+    /// finished, or until cancellation is observed. Replaces the two
+    /// hand-rolled per-side await loops in dispatchSync's fetch gates with
+    /// one helper that can wait on one op (clobber's sequential path) or
+    /// several at once (the overlapped source+target fetch).
+    void awaitFetchOps(const QList<QPointer<SyncOperation>> &ops);
+
     QMutex m_mutex;
 
     // F2 Task 14: cancellation observation flag. Set by observeCancel()

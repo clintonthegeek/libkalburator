@@ -2362,6 +2362,52 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
 // back to native shape for push.
 // ----------------------------------------------------------------------------
 
+// Parallel-sync Task 3: kick a fetch on @p backend's own thread and return
+// the operation WITHOUT awaiting it, so two sides can be in flight at once.
+// The await is factored into SyncEngineWorker::awaitFetchOps() below.
+static SyncOperation *kickFetch(SyncBackendBase *backend, const QString &colId)
+{
+    SyncOperation *raw = nullptr;
+    QMetaObject::invokeMethod(backend, [backend, colId, &raw]() {
+        raw = backend->fetchItems(colId);
+    }, Qt::BlockingQueuedConnection);
+    return raw;
+}
+
+void SyncEngineWorker::awaitFetchOps(const QList<QPointer<SyncOperation>> &ops)
+{
+    const auto allFinished = [&ops]() {
+        for (const auto &op : ops) {
+            if (op && !op->isFinished())
+                return false;
+        }
+        return true;
+    };
+
+    if (allFinished())
+        return;
+
+    QEventLoop loop;
+    // Connect BEFORE the re-check: an op may finish between the check and
+    // exec(), and the queued finished() event then stays in this thread's
+    // queue until exec() drains it. isFinished() (not state()==Running)
+    // catches ops that start life Pending and only flip inside their own
+    // deferred callback — e.g. LocalBackend::fetchItems (H1.1/O24).
+    for (const auto &op : ops) {
+        if (!op)
+            continue;
+        connect(op.data(), &SyncOperation::finished, &loop, [&allFinished, &loop]() {
+            if (allFinished())
+                loop.quit();
+        }, Qt::QueuedConnection);
+    }
+    connect(this, &SyncEngineWorker::cancellationObserved,
+            &loop, &QEventLoop::quit, Qt::DirectConnection);
+
+    if (!allFinished())
+        loop.exec();
+}
+
 bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 {
     if (!m_controller) {
@@ -2536,82 +2582,87 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 
     emit phaseChanged(mappingId, 1);
 
-    // --- Fetch source records (cross-thread) ---
-    // Phase Ib.5 Task 7: use fetchItems() as a cancellable gating step before
-    // loadRecordsOrError(). For backends that support setFetchBlocking (e.g.
-    // MockBackend in cancellation tests), fetchItems() returns immediately but
-    // starts a background thread that blocks until the test releases the
-    // blocker. The worker awaits the FetchOperation in a QEventLoop so that
-    // cancellation signals (observeCancel → cancellationObserved) can arrive
-    // and abort the sync. Backends that don't override fetchItems() return a
-    // immediately-failed op; we skip the QEventLoop for those and proceed
-    // directly to loadRecordsOrError().
+    // --- Fetch source + target records (cross-thread, overlapped) ---
+    // Parallel-sync Task 3: kick both fetches before awaiting either, so the
+    // two sides can be in flight at once instead of strictly additive. Under
+    // ExecutionOverride::clobber the two MUST stay sequential — the wipe
+    // (below, after the source fetch is read and promoted) sits deliberately
+    // between them so a target is never destroyed when the source cannot be
+    // read; overlapFetches is false in exactly that case, and the target
+    // fetch is kicked later, after the wipe.
+    //
+    // Phase Ib.5 Task 7: fetchItems() remains a cancellable gating step
+    // before loadRecordsOrError(). For backends that support
+    // setFetchBlocking (e.g. MockBackend in cancellation tests), fetchItems()
+    // returns immediately but starts a background thread that blocks until
+    // the test releases the blocker. awaitFetchOps() awaits the op(s) in a
+    // QEventLoop so cancellation signals (observeCancel → cancellationObserved)
+    // can arrive and abort the sync. Backends that don't override
+    // fetchItems() return an immediately-finished NotSupported op, so the
+    // loop returns right away and we proceed directly to loadRecordsOrError().
+    const bool overlapFetches = !request.override.clobber;
+
     bool srcFetchSucceeded = false;
-    {
-        SyncOperation *fetchOpRaw = nullptr;
-        QMetaObject::invokeMethod(srcBackend, [srcBackend, srcColId, &fetchOpRaw]() {
-            fetchOpRaw = srcBackend->fetchItems(srcColId);
-        }, Qt::BlockingQueuedConnection);
-        QPointer<SyncOperation> fetchOp = fetchOpRaw;
-        if (fetchOp && !fetchOp->isFinished()) {
-            QEventLoop loop;
-            // Connect BEFORE re-checking state: op may complete between the
-            // BlockingQueuedConnection above and the loop.exec() call below.
-            // Making the connection first guarantees we see the finished()
-            // signal even if it fires in that window (the queued event stays
-            // in the worker thread's queue until loop.exec() drains it).
-            connect(fetchOp.data(), &SyncOperation::finished,
-                    &loop, &QEventLoop::quit, Qt::QueuedConnection);
-            connect(this, &SyncEngineWorker::cancellationObserved,
-                    &loop, &QEventLoop::quit, Qt::DirectConnection);
-            // Re-check: if already completed between the BlockingQueuedConnection
-            // call and the connect() above, skip loop.exec() to avoid hanging.
-            // isFinished() (not state()==Running) catches ops that start life
-            // Pending and only flip to Running inside their own deferred
-            // callback (e.g. LocalBackend::fetchItems via QTimer::singleShot) —
-            // state()==Running alone missed those entirely (H1.1/O24).
-            if (!fetchOp->isFinished())
-                loop.exec();
-        }
-        if (m_cancelled.load(std::memory_order_acquire) && fetchOp && !fetchOp->isFinished()) {
-            // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it):
-            // request the op's own cancel(), then re-enter briefly waiting
-            // for it to actually settle (ops aren't pre-emptible mid-record).
-            fetchOp->cancel();
-            if (!fetchOp->isFinished()) {
-                QEventLoop teardownLoop;
-                connect(fetchOp.data(), &SyncOperation::finished,
-                        &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
-                teardownLoop.exec();
+    QPointer<SyncOperation> srcFetchOp = kickFetch(srcBackend, srcColId);
+    QPointer<SyncOperation> tgtFetchOp;
+    if (overlapFetches)
+        tgtFetchOp = kickFetch(tgtBackend, tgtColId);
+
+    awaitFetchOps(overlapFetches
+                      ? QList<QPointer<SyncOperation>>{ srcFetchOp, tgtFetchOp }
+                      : QList<QPointer<SyncOperation>>{ srcFetchOp });
+
+    if (m_cancelled.load(std::memory_order_acquire)) {
+        // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it) for
+        // whichever op(s) are still in flight: request cancel(), then wait
+        // for it to actually settle (ops aren't pre-emptible mid-record).
+        for (const auto &op : { srcFetchOp, tgtFetchOp }) {
+            if (op && !op->isFinished()) {
+                op->cancel();
+                if (!op->isFinished()) {
+                    QEventLoop teardownLoop;
+                    connect(op.data(), &SyncOperation::finished,
+                            &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
+                    teardownLoop.exec();
+                }
             }
         }
+    }
+    {
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
-            if (fetchOp) fetchOp->deleteLater();
+            if (srcFetchOp) srcFetchOp->deleteLater();
+            if (tgtFetchOp) tgtFetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
-        // Fix B: a backend that IMPLEMENTS fetchItems and genuinely failed
-        // (state Failed — not the NotSupported "not implemented" default that
-        // loadRecords-only backends return) must fail the mapping. Otherwise we
-        // read its empty/stale cache via loadRecordsOrError (whose default
-        // reports no error) and declare a false success. This gate fires BEFORE
-        // the clobber wipe below, so the target is never destroyed when the
-        // source can't be read.
-        if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
-            fetchOp->deleteLater();
-            m_currentResult.success = false;
-            m_currentResult.errorMessage = fetchOp->errorString();
-            m_currentResult.endTime = QDateTime::currentDateTime();
-            emit syncCompleted(mappingId, m_currentResult);
-            return true;
-        }
-        srcFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
-        if (fetchOp) fetchOp->deleteLater();
     }
+    // Fix B: a backend that IMPLEMENTS fetchItems and genuinely failed
+    // (state Failed — not the NotSupported "not implemented" default that
+    // loadRecords-only backends return) must fail the mapping. Otherwise we
+    // read its empty/stale cache via loadRecordsOrError (whose default
+    // reports no error) and declare a false success. This gate fires BEFORE
+    // the clobber wipe below, so the target is never destroyed when the
+    // source can't be read.
+    if (srcFetchOp && srcFetchOp->state() == SyncOperation::Failed) {
+        const QString err = srcFetchOp->errorString();
+        srcFetchOp->deleteLater();
+        // Under overlap the target fetch is already in flight (or already
+        // finished) by the time the source gate fails. It is a READ and
+        // mutates nothing, so discarding its result is safe — but the op
+        // must not outlive this frame.
+        if (tgtFetchOp) tgtFetchOp->deleteLater();
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = err;
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
+    srcFetchSucceeded = srcFetchOp && srcFetchOp->state() == SyncOperation::Succeeded;
+    if (srcFetchOp) srcFetchOp->deleteLater();
     QList<BackendRecord> sourceRecords;
     {
         QString fetchErr;
@@ -2678,6 +2729,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // fetch (which then observes the emptied collection). On wipe failure
     // the mapping fails in isolation — other mappings in the request run
     // normally, same per-mapping isolation as every other failure here.
+    // This ordering is exactly why overlapFetches is false under clobber:
+    // the target fetch is kicked here, for the first time, only once the
+    // wipe has completed — never before.
     if (request.override.clobber) {
         bool wipeOk = false;
         QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &wipeOk]() {
@@ -2694,44 +2748,34 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }
         qDebug() << "SyncEngineWorker: clobber wiped target collection"
                  << tgtColId << "for mapping" << mappingId;
-    }
 
-    // --- Fetch target records (cross-thread) ---
-    // Same cancellable gating pattern as source fetch above.
-    bool tgtFetchSucceeded = false;
-    {
-        SyncOperation *fetchOpRaw = nullptr;
-        QMetaObject::invokeMethod(tgtBackend, [tgtBackend, tgtColId, &fetchOpRaw]() {
-            fetchOpRaw = tgtBackend->fetchItems(tgtColId);
-        }, Qt::BlockingQueuedConnection);
-        QPointer<SyncOperation> fetchOp = fetchOpRaw;
-        if (fetchOp && !fetchOp->isFinished()) {
-            QEventLoop loop;
-            // Same race-fix as source fetch: connect before re-check so a
-            // completed op in this window still wakes the loop via the
-            // already-queued finished() event. isFinished() (not
-            // state()==Running) catches ops that start life Pending — see
-            // the source fetch gate above (H1.1/O24).
-            connect(fetchOp.data(), &SyncOperation::finished,
-                    &loop, &QEventLoop::quit, Qt::QueuedConnection);
-            connect(this, &SyncEngineWorker::cancellationObserved,
-                    &loop, &QEventLoop::quit, Qt::DirectConnection);
-            if (!fetchOp->isFinished())
-                loop.exec();
-        }
-        if (m_cancelled.load(std::memory_order_acquire) && fetchOp && !fetchOp->isFinished()) {
+        // Only now is it safe to read the target.
+        tgtFetchOp = kickFetch(tgtBackend, tgtColId);
+        awaitFetchOps({ tgtFetchOp });
+        if (m_cancelled.load(std::memory_order_acquire) && tgtFetchOp && !tgtFetchOp->isFinished()) {
             // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it).
-            fetchOp->cancel();
-            if (!fetchOp->isFinished()) {
+            tgtFetchOp->cancel();
+            if (!tgtFetchOp->isFinished()) {
                 QEventLoop teardownLoop;
-                connect(fetchOp.data(), &SyncOperation::finished,
+                connect(tgtFetchOp.data(), &SyncOperation::finished,
                         &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
                 teardownLoop.exec();
             }
         }
+    }
+
+    // --- Read target records (cross-thread) ---
+    // Under overlap (non-clobber), tgtFetchOp was already kicked and
+    // awaited together with the source op above. Under clobber, it was
+    // just kicked and awaited immediately above, post-wipe. Either way it
+    // is fully settled by this point; this is the first place a
+    // cancellation flagged in between (e.g. during source-record promotion)
+    // is caught for the target side.
+    bool tgtFetchSucceeded = false;
+    {
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
-            if (fetchOp) fetchOp->deleteLater();
+            if (tgtFetchOp) tgtFetchOp->deleteLater();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
@@ -2743,16 +2787,17 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         // than reading an empty/stale cache and reporting success. Under clobber
         // the target was already wiped above; converting this to a reported
         // failure is the minimum guarantee for a fetch that fails post-wipe.
-        if (fetchOp && fetchOp->state() == SyncOperation::Failed) {
-            fetchOp->deleteLater();
+        if (tgtFetchOp && tgtFetchOp->state() == SyncOperation::Failed) {
+            const QString err = tgtFetchOp->errorString();
+            tgtFetchOp->deleteLater();
             m_currentResult.success = false;
-            m_currentResult.errorMessage = fetchOp->errorString();
+            m_currentResult.errorMessage = err;
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
-        tgtFetchSucceeded = fetchOp && fetchOp->state() == SyncOperation::Succeeded;
-        if (fetchOp) fetchOp->deleteLater();
+        tgtFetchSucceeded = tgtFetchOp && tgtFetchOp->state() == SyncOperation::Succeeded;
+        if (tgtFetchOp) tgtFetchOp->deleteLater();
     }
     QList<BackendRecord> targetRecords;
     {
