@@ -101,6 +101,9 @@ private slots:
     void testSourceAndTargetFetchesOverlap();
     void testClobberKeepsFetchesSequential();
 
+    // Parallel-sync Task 3 review fix regression test.
+    void testSourceReadFailureDisposesInFlightTargetOp();
+
 private:
     bool runOneSync(const QString &mappingId = QString::fromLatin1(kMappingId),
                      std::optional<ExecutionOverride> override = std::nullopt);
@@ -303,6 +306,47 @@ void TestEngineFetchProgressRelay::testClobberKeepsFetchesSequential()
     QVERIFY(runOneSync(QString::fromLatin1(kOverlapMappingId), ov));
 
     QCOMPARE(m_source->maxConcurrentOps(), 1);
+}
+
+void TestEngineFetchProgressRelay::testSourceReadFailureDisposesInFlightTargetOp()
+{
+    // Task 3 review finding 1 regression test. Under overlap, the target
+    // fetch op is kicked and awaited alongside the source op long before
+    // dispatchSync actually consumes it (the target gate, well below).
+    // The "read source records" block's fetchErr early return sits in
+    // between — before this fix it never disposed the already-kicked
+    // target op, which then leaked as a permanent child of its backend
+    // (SyncOperations are QObject-parented to the backend at construction,
+    // so an un-disposed op survives as long as the backend does).
+    //
+    // Reproduced here by making the source's fetchItems() report
+    // NotSupported (setUseBaseFetchItems) so dispatchSync falls through to
+    // loadRecordsOrError() for the source read, then failing THAT via
+    // setFailurePoint(OnFetch) — this is exactly the fetchErr path, not
+    // the earlier state()==Failed Fix-B gate (which already disposed the
+    // target op correctly even before this fix; see the Task 3 report).
+    // The target backend gets an operation delay so its op is still
+    // genuinely outstanding when the source-side failure fires.
+    //
+    // Proven via MockBackend's ordinary QObject parent/child bookkeeping,
+    // not the Task 6 concurrency counters — those only track start/finish
+    // pairing, not disposal, so a fully-finished-but-never-deleteLater()'d
+    // op is invisible to them. A leaked op remains a child of m_target
+    // forever; a disposed one is gone from children() once the event loop
+    // (pumped by runOneSync()'s QTest::qWait polling) has processed the
+    // deferred delete.
+    m_source->setUseBaseFetchItems(true);
+    m_source->setFailurePoint(MockBackend::FailurePoint::OnFetch, /*afterNOperations=*/0,
+                              QStringLiteral("mock: source read failed"));
+    m_target->setOperationDelay(100);
+
+    setupCoordinator({ makeMapping(SyncMode::TwoWay) });
+
+    QVERIFY(!runOneSync());   // the injected source-read failure must fail the mapping
+
+    const auto liveTargetOps = m_target->findChildren<SyncOperation *>();
+    QVERIFY2(liveTargetOps.isEmpty(),
+             "target fetch op was not disposed after the source-read failure — leak");
 }
 
 QTEST_MAIN(TestEngineFetchProgressRelay)

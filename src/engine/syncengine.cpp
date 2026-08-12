@@ -2602,21 +2602,58 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // loop returns right away and we proceed directly to loadRecordsOrError().
     const bool overlapFetches = !request.override.clobber;
 
+    // Parallel-sync Task 3 review fix: under overlap, the target op is
+    // kicked and awaited alongside the source op long before it is
+    // actually consumed (the target gate, well below). Several unrelated
+    // early returns sit in between — the source-record read's fetchErr
+    // check, the transcode-failure check, and the post-promotion
+    // cancellation recheck — and NONE of them have any reason to know
+    // about the target op, but every one of them MUST dispose it or it
+    // leaks: SyncOperations are parented to their backend at construction,
+    // so an un-disposed op survives as long as the backend does (i.e. the
+    // whole app session), once per triggering sync. Tracking that by hand
+    // does not scale — a future early return added anywhere in this region
+    // would silently reintroduce the same leak. This guard makes disposal
+    // structural instead of remembered: its destructor runs on every exit
+    // from this scope (every `return` below, or falling off the end) and
+    // disposes whatever op is still tracked and not yet explicitly
+    // disposed. disposeSrc()/disposeTgt()/disposeBoth() are what call
+    // sites use once an op's outcome (success, failure, or cancellation)
+    // has actually been read and it is genuinely done being needed —
+    // idempotent (the bool flags), so re-disposing at the destructor (or a
+    // second explicit call) is a harmless no-op rather than a double-free:
+    // deleteLater() is documented-safe to call more than once on the same
+    // object; QObject flushes any still-queued deferred-delete events for
+    // itself when it is actually destroyed.
+    struct FetchOpGuard {
+        QPointer<SyncOperation> src;
+        QPointer<SyncOperation> tgt;
+        bool srcDisposed = false;
+        bool tgtDisposed = false;
+        void disposeSrc() {
+            if (!srcDisposed) { if (src) src->deleteLater(); srcDisposed = true; }
+        }
+        void disposeTgt() {
+            if (!tgtDisposed) { if (tgt) tgt->deleteLater(); tgtDisposed = true; }
+        }
+        void disposeBoth() { disposeSrc(); disposeTgt(); }
+        ~FetchOpGuard() { disposeBoth(); }
+    } fetchOps;
+
     bool srcFetchSucceeded = false;
-    QPointer<SyncOperation> srcFetchOp = kickFetch(srcBackend, srcColId);
-    QPointer<SyncOperation> tgtFetchOp;
+    fetchOps.src = kickFetch(srcBackend, srcColId);
     if (overlapFetches)
-        tgtFetchOp = kickFetch(tgtBackend, tgtColId);
+        fetchOps.tgt = kickFetch(tgtBackend, tgtColId);
 
     awaitFetchOps(overlapFetches
-                      ? QList<QPointer<SyncOperation>>{ srcFetchOp, tgtFetchOp }
-                      : QList<QPointer<SyncOperation>>{ srcFetchOp });
+                      ? QList<QPointer<SyncOperation>>{ fetchOps.src, fetchOps.tgt }
+                      : QList<QPointer<SyncOperation>>{ fetchOps.src });
 
     if (m_cancelled.load(std::memory_order_acquire)) {
         // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it) for
         // whichever op(s) are still in flight: request cancel(), then wait
         // for it to actually settle (ops aren't pre-emptible mid-record).
-        for (const auto &op : { srcFetchOp, tgtFetchOp }) {
+        for (const auto &op : { fetchOps.src, fetchOps.tgt }) {
             if (op && !op->isFinished()) {
                 op->cancel();
                 if (!op->isFinished()) {
@@ -2629,40 +2666,43 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }
     }
     {
+        // Cancellation recheck and Fix B share one locked scope, mirroring
+        // both the target gate below and the pre-Task-3 shape of this gate
+        // (each combined the two checks under a single QMutexLocker) —
+        // deliberately not split, to keep source/target symmetric.
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
-            if (srcFetchOp) srcFetchOp->deleteLater();
-            if (tgtFetchOp) tgtFetchOp->deleteLater();
+            fetchOps.disposeBoth();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
+        // Fix B: a backend that IMPLEMENTS fetchItems and genuinely failed
+        // (state Failed — not the NotSupported "not implemented" default that
+        // loadRecords-only backends return) must fail the mapping. Otherwise we
+        // read its empty/stale cache via loadRecordsOrError (whose default
+        // reports no error) and declare a false success. This gate fires BEFORE
+        // the clobber wipe below, so the target is never destroyed when the
+        // source can't be read.
+        if (fetchOps.src && fetchOps.src->state() == SyncOperation::Failed) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = fetchOps.src->errorString();
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            // Under overlap the target fetch is already in flight (or
+            // already finished) by the time the source gate fails. It is a
+            // READ and mutates nothing, so discarding its result is safe.
+            // The guard's destructor would catch it regardless, but
+            // disposing explicitly here keeps intent visible at the exact
+            // point of failure.
+            fetchOps.disposeBoth();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
+        srcFetchSucceeded = fetchOps.src && fetchOps.src->state() == SyncOperation::Succeeded;
+        fetchOps.disposeSrc();
     }
-    // Fix B: a backend that IMPLEMENTS fetchItems and genuinely failed
-    // (state Failed — not the NotSupported "not implemented" default that
-    // loadRecords-only backends return) must fail the mapping. Otherwise we
-    // read its empty/stale cache via loadRecordsOrError (whose default
-    // reports no error) and declare a false success. This gate fires BEFORE
-    // the clobber wipe below, so the target is never destroyed when the
-    // source can't be read.
-    if (srcFetchOp && srcFetchOp->state() == SyncOperation::Failed) {
-        const QString err = srcFetchOp->errorString();
-        srcFetchOp->deleteLater();
-        // Under overlap the target fetch is already in flight (or already
-        // finished) by the time the source gate fails. It is a READ and
-        // mutates nothing, so discarding its result is safe — but the op
-        // must not outlive this frame.
-        if (tgtFetchOp) tgtFetchOp->deleteLater();
-        m_currentResult.success = false;
-        m_currentResult.errorMessage = err;
-        m_currentResult.endTime = QDateTime::currentDateTime();
-        emit syncCompleted(mappingId, m_currentResult);
-        return true;
-    }
-    srcFetchSucceeded = srcFetchOp && srcFetchOp->state() == SyncOperation::Succeeded;
-    if (srcFetchOp) srcFetchOp->deleteLater();
     QList<BackendRecord> sourceRecords;
     {
         QString fetchErr;
@@ -2749,15 +2789,19 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         qDebug() << "SyncEngineWorker: clobber wiped target collection"
                  << tgtColId << "for mapping" << mappingId;
 
-        // Only now is it safe to read the target.
-        tgtFetchOp = kickFetch(tgtBackend, tgtColId);
-        awaitFetchOps({ tgtFetchOp });
-        if (m_cancelled.load(std::memory_order_acquire) && tgtFetchOp && !tgtFetchOp->isFinished()) {
+        // Only now is it safe to read the target. fetchOps.tgtDisposed is
+        // still false here — under clobber the target was never kicked
+        // (and therefore never disposed) before this point — so the guard
+        // covers this freshly-kicked op exactly as it covered the overlap
+        // case above.
+        fetchOps.tgt = kickFetch(tgtBackend, tgtColId);
+        awaitFetchOps({ fetchOps.tgt });
+        if (m_cancelled.load(std::memory_order_acquire) && fetchOps.tgt && !fetchOps.tgt->isFinished()) {
             // Mirror the dead await<Op>'s teardown shape (H1.4 deletes it).
-            tgtFetchOp->cancel();
-            if (!tgtFetchOp->isFinished()) {
+            fetchOps.tgt->cancel();
+            if (!fetchOps.tgt->isFinished()) {
                 QEventLoop teardownLoop;
-                connect(tgtFetchOp.data(), &SyncOperation::finished,
+                connect(fetchOps.tgt.data(), &SyncOperation::finished,
                         &teardownLoop, &QEventLoop::quit, Qt::QueuedConnection);
                 teardownLoop.exec();
             }
@@ -2765,17 +2809,19 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     }
 
     // --- Read target records (cross-thread) ---
-    // Under overlap (non-clobber), tgtFetchOp was already kicked and
+    // Under overlap (non-clobber), fetchOps.tgt was already kicked and
     // awaited together with the source op above. Under clobber, it was
     // just kicked and awaited immediately above, post-wipe. Either way it
     // is fully settled by this point; this is the first place a
     // cancellation flagged in between (e.g. during source-record promotion)
-    // is caught for the target side.
+    // is caught for the target side. From here on, fetchOps's destructor
+    // has nothing left to do on either side once this scope disposes tgt
+    // (src was already disposed in the combined source gate above).
     bool tgtFetchSucceeded = false;
     {
         QMutexLocker locker(&m_mutex);
         if (m_cancelled) {
-            if (tgtFetchOp) tgtFetchOp->deleteLater();
+            fetchOps.disposeTgt();
             m_currentResult.success = false;
             m_currentResult.errorMessage = QStringLiteral("Cancelled");
             m_currentResult.endTime = QDateTime::currentDateTime();
@@ -2787,17 +2833,16 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         // than reading an empty/stale cache and reporting success. Under clobber
         // the target was already wiped above; converting this to a reported
         // failure is the minimum guarantee for a fetch that fails post-wipe.
-        if (tgtFetchOp && tgtFetchOp->state() == SyncOperation::Failed) {
-            const QString err = tgtFetchOp->errorString();
-            tgtFetchOp->deleteLater();
+        if (fetchOps.tgt && fetchOps.tgt->state() == SyncOperation::Failed) {
             m_currentResult.success = false;
-            m_currentResult.errorMessage = err;
+            m_currentResult.errorMessage = fetchOps.tgt->errorString();
             m_currentResult.endTime = QDateTime::currentDateTime();
+            fetchOps.disposeTgt();
             emit syncCompleted(mappingId, m_currentResult);
             return true;
         }
-        tgtFetchSucceeded = tgtFetchOp && tgtFetchOp->state() == SyncOperation::Succeeded;
-        if (tgtFetchOp) tgtFetchOp->deleteLater();
+        tgtFetchSucceeded = fetchOps.tgt && fetchOps.tgt->state() == SyncOperation::Succeeded;
+        fetchOps.disposeTgt();
     }
     QList<BackendRecord> targetRecords;
     {
