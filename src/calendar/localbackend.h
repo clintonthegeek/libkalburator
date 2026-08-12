@@ -248,10 +248,14 @@ private:
     void ensureAsyncWriterReady();
 
     /// Parallel-sync Task 4: batch driver — see the .cpp for semantics.
+    /// @p onCancelled is optional (defaults to a no-op): call sites whose
+    /// operation type has no backend-level completion signal to preserve
+    /// (pushItems/deleteItems — see the .cpp) can omit it.
     void runChunked(Kalburator::Sync::SyncOperation *op,
                     int total,
                     const std::function<void(int)> &processOne,
-                    const std::function<void()> &onDone);
+                    const std::function<void()> &onDone,
+                    const std::function<void()> &onCancelled = {});
 };
 
 } // namespace Kalburator::Sync

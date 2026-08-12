@@ -712,19 +712,37 @@ constexpr int kChunkSize = 64;
 
 // Parallel-sync Task 4: drive @p total items in kChunkSize batches, calling
 // @p processOne for each index and @p onDone after the last one, yielding to
-// the event loop between batches. Aborts silently if @p op is destroyed or
-// reaches a terminal state (e.g. cancelled) between batches — the caller's
-// onDone is then never invoked, which is the correct cancellation shape.
+// the event loop between batches. @p onDone is never invoked once the op has
+// left this driver's hands — two distinct ways that can happen, handled
+// separately rather than as one branch (coordinator review finding 1):
+//
+//  - The op was CANCELLED between batches (state() == Cancelled — currently
+//    only reachable via SyncOperation::cancel(), called externally, e.g. by
+//    the sync engine mid-fetch): @p onCancelled runs instead, if supplied.
+//    cancel() already flips state and emits the generic finished() signal
+//    itself, so this is only for a caller that also needs to fire its own
+//    backend-level telemetry echo of that (fetchItems does; pushItems/
+//    deleteItems have no such signal to preserve, so they pass none).
+//  - The op object was DESTROYED between batches: there is nothing valid
+//    left to invoke a callback against, so this returns without calling
+//    either callback.
 void LocalBackend::runChunked(SyncOperation *op,
                               int total,
                               const std::function<void(int)> &processOne,
-                              const std::function<void()> &onDone)
+                              const std::function<void()> &onDone,
+                              const std::function<void()> &onCancelled)
 {
     auto step = std::make_shared<std::function<void(int)>>();
     QPointer<SyncOperation> guard(op);
-    *step = [this, guard, total, processOne, onDone, step](int from) {
-        if (guard.isNull() || guard->isFinished())
+    *step = [this, guard, total, processOne, onDone, onCancelled, step](int from) {
+        if (guard.isNull()) {
+            return; // destroyed mid-flight — nothing valid to emit against
+        }
+        if (guard->isFinished()) {
+            if (guard->state() == SyncOperation::Cancelled && onCancelled)
+                onCancelled();
             return;
+        }
         const int to = qMin(from + kChunkSize, total);
         for (int i = from; i < to; ++i)
             processOne(i);
@@ -865,6 +883,19 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
                 m_lastFetchFingerprintSnapshot[calendarId] = *fpSnapshot;
                 op->complete();
                 emit fetchFinished(calendarId, true);
+            },
+            [this, calendarId]() {
+                // Coordinator review finding 1: the pre-chunking code's
+                // per-item cancellation check emitted this same signal
+                // before returning. runChunked's between-batch guard now
+                // owns detecting the cancellation, but the backend-level
+                // signal itself must survive — PlanStan's
+                // ItemLoadingCoordinator::loadItemsForCalendar() discards
+                // the FetchOperation* it gets back and relies solely on
+                // this signal to clear its "loading" state, so silently
+                // dropping it on a mid-flight cancel leaves that calendar
+                // stuck loading forever.
+                emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
             });
     });
 
@@ -903,6 +934,15 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
         auto failedUids = std::make_shared<QStringList>();
         const int totalItems = static_cast<int>(items.size());
 
+        // No onCancelled callback: unlike fetchFinished, there is no
+        // backend-level "push finished" telemetry signal anywhere in
+        // SyncBackendBase (confirmed by grep — only fetchStarted/
+        // fetchProgressChanged/fetchFinished and writeStarted/
+        // writeProgressChanged exist, no writeFinished/pushFinished), and
+        // the one PlanStan consumer of pushItems() (CollectionController::
+        // convertCalendarToBackend) uses the returned PushOperation*
+        // directly via SyncOperation::finished(), which cancel() already
+        // emits on its own. So there is nothing to re-emit here.
         runChunked(op, totalItems,
             [calDir, items, succeededUids, failedUids](int i) {
                 // Body of the former per-item loop, verbatim.
@@ -979,6 +1019,8 @@ DeleteOperation* LocalBackend::deleteItems(const QString &calendarId,
         auto failedUids = std::make_shared<QStringList>();
         const int totalUids = static_cast<int>(uids.size());
 
+        // No onCancelled callback: same reasoning as pushItems() above —
+        // no backend-level "delete finished" signal exists to preserve.
         runChunked(op, totalUids,
             [calDir, uids, succeededUids, failedUids](int i) {
                 // Body of the former per-uid loop, verbatim.

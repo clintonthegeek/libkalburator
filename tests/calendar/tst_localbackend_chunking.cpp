@@ -8,6 +8,7 @@
 #include <QtTest/QtTest>
 #include <QObject>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <functional>
 
 #include <KCalendarCore/Event>
@@ -82,12 +83,39 @@ private slots:
 
     void testFetchIsCancellableMidFlight()
     {
+        // Coordinator review finding 1/2: cancelling immediately after
+        // fetchItems() returns (before the FIFO-deferred functor has even
+        // started) only exercises the pre-existing top-of-functor Cancelled
+        // check, which predates this task and is untouched by it — it does
+        // NOT exercise runChunked's between-batch guard, the actual new
+        // mechanism. This version waits for at least one batch (of the 500
+        // seeded records, in 64-per-batch chunks) to have genuinely run
+        // — proven by a fetchProgressChanged emission — before cancelling,
+        // so the cancel lands between batches. It then asserts both the op
+        // state AND that the backend-level fetchFinished(calendarId, false,
+        // ...) signal still fires — the regression coverage for finding 1,
+        // where runChunked's abort path was silently dropping that signal.
+        QSignalSpy progressSpy(m_backend.get(), &LocalBackend::fetchProgressChanged);
+        QSignalSpy finishedSpy(m_backend.get(), &LocalBackend::fetchFinished);
+
         auto *op = m_backend->fetchItems(QStringLiteral("cal"));
         QVERIFY(op);
-        QVERIFY(!op->isFinished());       // deferred one turn by the FIFO
+
+        QTRY_VERIFY_WITH_TIMEOUT(progressSpy.count() >= 1, 10000);
+        QVERIFY2(!op->isFinished(),
+                 "fetch completed before the test could cancel it mid-flight "
+                 "— seed() more records or shrink kChunkSize if this flakes");
+
         op->cancel();
         QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 10000);
         QCOMPARE(op->state(), SyncOperation::Cancelled);
+
+        QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() >= 1, 10000);
+        QCOMPARE(finishedSpy.count(), 1);
+        const QList<QVariant> finishedArgs = finishedSpy.takeFirst();
+        QCOMPARE(finishedArgs.at(0).toString(), QStringLiteral("cal"));
+        QCOMPARE(finishedArgs.at(1).toBool(), false);
+
         op->deleteLater();
     }
 
