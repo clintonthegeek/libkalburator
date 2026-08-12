@@ -27,3 +27,17 @@ kalburator_add_shape_test(tst_default_blob_writer)
 kalburator_add_shape_test(tst_domain_operations_registry)
 kalburator_add_shape_test(tst_canonical_spine)
 kalburator_add_shape_test(tst_canonjson_diff_merge)
+
+# Parallel-sync Task 16 — TransformationRegistry::compile() concurrency safety.
+add_executable(tst_transformationregistry_threadsafety tst_transformationregistry_threadsafety.cpp)
+target_link_libraries(tst_transformationregistry_threadsafety
+    PRIVATE
+        Qt6::Core
+        Qt6::Test
+        Qt6::Concurrent
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_transformationregistry_threadsafety COMMAND tst_transformationregistry_threadsafety)
+set_tests_properties(tst_transformationregistry_threadsafety PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

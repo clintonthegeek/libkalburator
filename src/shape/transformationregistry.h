@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QList>
 #include <QMultiHash>
+#include <QMutex>
 #include <QPair>
 #include <QSet>
 #include <optional>
@@ -107,6 +108,19 @@ public:
     /// Always obtained by injecting a ShapeRegistries&, never globally.
     TransformationRegistry() = default;
 
+    /// Parallel-sync Task 16: QMutex is neither copyable nor movable, which
+    /// would otherwise implicitly delete these and break existing
+    /// move-construct-on-return (e.g. tests' `buildRegistry()`) and
+    /// move-assign-to-reset (e.g. `m_shape = {}` in test init()) call sites.
+    /// Each instance keeps its own default-constructed mutex — a mutex
+    /// guards its own object's data, it is not part of the moved-from
+    /// object's value and must never be moved/copied. Not intended for use
+    /// concurrently with live access on either side of the move; ordinary
+    /// single-threaded construction/reset use only. Copy remains implicitly
+    /// deleted (no code path needs it).
+    TransformationRegistry(TransformationRegistry&& other) noexcept;
+    TransformationRegistry& operator=(TransformationRegistry&& other) noexcept;
+
 private:
     /// Find the single edge from `a` to `b`, or nullptr if absent.
     const TransformationEdge* findEdge(const Shape& a, const Shape& b) const;
@@ -131,6 +145,17 @@ private:
     /// Once a domain is frozen, registerEdge / registerShape on shapes
     /// in that domain are rejected.
     mutable QSet<DomainId> m_frozenDomains;
+
+    /// Parallel-sync Task 16: guards m_frozenDomains. compile() is called
+    /// concurrently from every SyncEngine worker thread (four times per
+    /// mapping), and it freezes its source domain — so this set is written
+    /// under concurrency even though every caller is on a `const` path.
+    /// Concurrent QSet::insert can rehash and reallocate while another
+    /// thread walks buckets, which is corruption rather than a lost
+    /// update. The critical section is a single set lookup; a
+    /// QReadWriteLock would add complexity for no measurable gain against
+    /// network-bound sync work.
+    mutable QMutex m_frozenDomainsMutex;
 };
 
 }  // namespace Kalburator::Shape

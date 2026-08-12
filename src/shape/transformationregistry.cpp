@@ -4,18 +4,45 @@
 
 namespace Kalburator::Shape {
 
+TransformationRegistry::TransformationRegistry(TransformationRegistry&& other) noexcept
+    : m_catalogues(std::move(other.m_catalogues))
+    , m_edgesFrom(std::move(other.m_edgesFrom))
+    , m_spineByDomain(std::move(other.m_spineByDomain))
+    , m_frozenDomains(std::move(other.m_frozenDomains))
+    // m_frozenDomainsMutex deliberately default-constructed, not moved.
+{
+}
+
+TransformationRegistry& TransformationRegistry::operator=(TransformationRegistry&& other) noexcept {
+    if (this != &other) {
+        m_catalogues = std::move(other.m_catalogues);
+        m_edgesFrom = std::move(other.m_edgesFrom);
+        m_spineByDomain = std::move(other.m_spineByDomain);
+        m_frozenDomains = std::move(other.m_frozenDomains);
+        // m_frozenDomainsMutex deliberately left as-is on both sides, not
+        // moved/copied — each instance's mutex guards only its own data.
+    }
+    return *this;
+}
+
 void TransformationRegistry::registerShape(Shape shape, PropertyCatalogue catalogue) {
-    if (m_frozenDomains.contains(shape.domain)) {
-        qWarning("TransformationRegistry::registerShape: shape's domain is frozen — register before first compile()");
-        return;
+    {
+        QMutexLocker locker(&m_frozenDomainsMutex);
+        if (m_frozenDomains.contains(shape.domain)) {
+            qWarning("TransformationRegistry::registerShape: shape's domain is frozen — register before first compile()");
+            return;
+        }
     }
     m_catalogues.insert(shape, std::move(catalogue));
 }
 
 void TransformationRegistry::declareCanonical(DomainId domain, Shape canonical) {
-    if (m_frozenDomains.contains(domain)) {
-        qWarning("TransformationRegistry::declareCanonical: domain is frozen — redeclaration ignored");
-        return;
+    {
+        QMutexLocker locker(&m_frozenDomainsMutex);
+        if (m_frozenDomains.contains(domain)) {
+            qWarning("TransformationRegistry::declareCanonical: domain is frozen — redeclaration ignored");
+            return;
+        }
     }
     auto it = m_spineByDomain.find(domain);
     if (it != m_spineByDomain.end() && !it->isEmpty()) {
@@ -30,9 +57,12 @@ void TransformationRegistry::declareCanonical(DomainId domain, Shape canonical) 
 }
 
 void TransformationRegistry::appendCanonicalVersion(DomainId domain, Shape newCanonical) {
-    if (m_frozenDomains.contains(domain)) {
-        qWarning("TransformationRegistry::appendCanonicalVersion: domain is frozen — ignored");
-        return;
+    {
+        QMutexLocker locker(&m_frozenDomainsMutex);
+        if (m_frozenDomains.contains(domain)) {
+            qWarning("TransformationRegistry::appendCanonicalVersion: domain is frozen — ignored");
+            return;
+        }
     }
     auto it = m_spineByDomain.find(domain);
     if (it == m_spineByDomain.end() || it->isEmpty()) {
@@ -55,11 +85,16 @@ QList<Shape> TransformationRegistry::canonicalSpine(const DomainId& d) const {
 
 bool TransformationRegistry::isFrozen(const DomainId& d) const
 {
+    QMutexLocker locker(&m_frozenDomainsMutex);
     return m_frozenDomains.contains(d);
 }
 
 void TransformationRegistry::freeze(const DomainId& d) const
 {
+    // Called only from compile(), which does not hold m_frozenDomainsMutex —
+    // safe to lock here. Do not add locking to any caller of freeze(); QMutex
+    // is not recursive and that would self-deadlock.
+    QMutexLocker locker(&m_frozenDomainsMutex);
     m_frozenDomains.insert(d);
 }
 
@@ -67,10 +102,13 @@ void TransformationRegistry::registerEdge(TransformationEdge edge) {
     // We freeze only the source domain in compile(), but defensively
     // reject edges whose target domain is also frozen — preserves a
     // clean contract should v2 add cross-domain edges.
-    if (m_frozenDomains.contains(edge.from.domain)
-        || m_frozenDomains.contains(edge.to.domain)) {
-        qWarning("TransformationRegistry::registerEdge: edge endpoint domain is frozen — register before first compile()");
-        return;
+    {
+        QMutexLocker locker(&m_frozenDomainsMutex);
+        if (m_frozenDomains.contains(edge.from.domain)
+            || m_frozenDomains.contains(edge.to.domain)) {
+            qWarning("TransformationRegistry::registerEdge: edge endpoint domain is frozen — register before first compile()");
+            return;
+        }
     }
     Q_ASSERT_X(m_catalogues.contains(edge.from),
                "TransformationRegistry::registerEdge",
@@ -181,6 +219,7 @@ void TransformationRegistry::clear() {
     m_catalogues.clear();
     m_edgesFrom.clear();
     m_spineByDomain.clear();
+    QMutexLocker locker(&m_frozenDomainsMutex);
     m_frozenDomains.clear();
 }
 
