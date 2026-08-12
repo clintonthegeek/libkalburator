@@ -19,7 +19,7 @@ void waitForWorkerWithDiagnostic(QThread *thread, int deadlineMs)
         << QStringLiteral(
                "SyncEngine: worker thread did not stop within %1 ms. "
                "A sync backend lives on the thread calling "
-               "stopWorkerThread() — relocate backends onto a dedicated "
+               "stopWorkerPool() — relocate backends onto a dedicated "
                "I/O thread (see planstan-backend-io), or destroy the "
                "engine from a different thread. Waiting with no deadline "
                "rather than terminating: a worker thread killed "

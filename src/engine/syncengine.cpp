@@ -320,6 +320,21 @@ int SyncEngine::leaseWorker()
 
 void SyncEngine::releaseWorker(const QString &mappingId)
 {
+    // Fix round 1: QHash::take() on a MISSING key returns a
+    // default-constructed value — 0 for int — which is a live slot
+    // index, not a sentinel. Without this guard, releasing a mapping
+    // that was never leased would silently clear slot 0's
+    // busyMappingId, freeing a worker that may be genuinely busy. Every
+    // dispatch path today (advanceQueue, processSingleMapping) does
+    // register via leaseWorker()/m_inFlight before its worker can ever
+    // complete, so this should never fire in practice — the qWarning
+    // exists so a future dispatch path that forgets to register fails
+    // loudly instead of silently corrupting the pool.
+    if (!m_inFlight.contains(mappingId)) {
+        qWarning() << "SyncEngine::releaseWorker: no in-flight record for mapping"
+                   << mappingId << "- ignoring (QHash::take would free slot 0)";
+        return;
+    }
     const int slot = m_inFlight.take(mappingId);
     if (slot >= 0 && slot < m_pool.size())
         m_pool[slot].busyMappingId.clear();

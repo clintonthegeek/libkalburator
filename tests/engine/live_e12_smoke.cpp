@@ -251,11 +251,11 @@ int main(int argc, char **argv)
         } else {
             std::printf("PASS  repair cycle succeeded\n");
         }
-        engine.stopWorkerThread();
+        engine.stopWorkerPool();
         std::printf(fail == 0 ? "\nE12 LIVE SMOKE: ALL PASS\n" : "\nE12 LIVE SMOKE: %d FAILURE(S)\n", fail);
         return fail == 0 ? 0 : 1;
     }
 
-    engine.stopWorkerThread();
+    engine.stopWorkerPool();
     return 0;
 }

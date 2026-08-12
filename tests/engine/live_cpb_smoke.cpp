@@ -357,8 +357,8 @@ int main(int argc, char **argv)
         std::printf("SKIP  phase4 (RADICALE_PID not set)\n");
     }
 
-    // ---- teardown: engine worker first, then backends/I/O thread (H7 order) ----
-    engine.stopWorkerThread();
+    // ---- teardown: engine worker pool first, then backends/I/O thread (H7 order) ----
+    engine.stopWorkerPool();
 
     std::printf(g_failures == 0 ? "\nCP-B LIVE SMOKE: ALL PASS\n"
                                 : "\nCP-B LIVE SMOKE: %d FAILURE(S)\n", g_failures);
