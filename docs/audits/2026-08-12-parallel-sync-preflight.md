@@ -23,6 +23,16 @@ concurrently is a data race, and the pool design (Task 2) must change to
 account for it before any code is written. This is a go/no-go gate for
 everything downstream.
 
+**Scope extension (2026-08-12, same day):** the original pass covered
+`BackendRegistry` and `ShapeRegistries` only. After the NO-GO finding was
+confirmed, the controller extended this audit to cover the remaining four
+pointers `SyncEngineWorker::setDependencies()` also hands identically to
+all N workers — `ISyncHost *host`, `ICalendarCollection *collection`,
+`BaselineStore *baselineStore`, `IMassDeleteGuard *massDeleteGuard` — see
+"Remaining shared worker state" below, added after the original
+`BackendRegistry`/`ShapeRegistries` sections and folded into the amended
+`Verdict`.
+
 `SyncEngineWorker::dispatchSync()` is defined at
 `src/engine/syncengine.cpp:2238`. All `m_shape`/`m_registry` accesses cited
 below were confirmed to be inside `SyncEngineWorker` methods (`dispatchSync`
@@ -247,21 +257,258 @@ variables) — no shared mutable pipeline object across workers. This part
 is safe; the only problem is the `freeze()` side effect inside `compile()`
 itself, which happens before the value is returned.
 
+## Remaining shared worker state (scope extension, appended 2026-08-12)
+
+The controller extended Task 0's scope after the first pass to close a gap
+I flagged myself: `BackendRegistry` and `ShapeRegistries` were not the only
+state N `SyncEngineWorker` instances will share. `SyncEngineWorker::
+setDependencies()` (`src/engine/syncengine_p.h:154-159`) takes six pointers;
+every one will be handed the *identical* value across all N workers. Two
+are already covered above (`BackendRegistry *registry`,
+`ShapeRegistries` via the ctor). This section covers the remaining four:
+`ISyncHost *host`, `ICalendarCollection *collection`,
+`Kalburator::Storage::BaselineStore *baselineStore`, and
+`Kalburator::Conflict::IMassDeleteGuard *massDeleteGuard`. Same evidence
+standard: file:line, read the code, don't rely on grep alone.
+
+### ICalendarCollection — SAFE (dead on the worker side)
+
+`grep -rn "m_collection\b" src/engine/*.cpp src/engine/*.h` finds `m_collection`
+assigned in `SyncEngineWorker::setDependencies()`
+(`syncengine.cpp:1483`) and declared at `syncengine_p.h:410`, but **never
+dereferenced anywhere in `SyncEngineWorker`'s own code** — the only other
+hits are `SyncEngine`-side (lines 297, 636, 1009, all inside `SyncEngine`
+methods defined before line 1449, i.e. the engine/GUI-thread owner, not the
+worker). The worker's own code confirms this is deliberate, at
+`syncengine.cpp:3172-3174`:
+
+```cpp
+// The converged writers (DefaultBlobWriter) ignore the host
+// MemoryCalendar; do not source it. prepareForApply remains a no-op hook
+// on the RecordWriter interface. (m_collection / setCollection stay for
+// CalendarManager's separate use.)
+```
+
+The pointer is passed to every worker but genuinely unused by any worker
+logic — vestigial. Zero risk from N workers holding it, because none of
+them ever touch it.
+
+### BaselineStore — SAFE (marshaled, verified exhaustively — no bypass found)
+
+`BaselineStore` is documented as thread-affine at its own declaration,
+`src/storage/baselinestore.h:24-26`: *"Not thread-safe. Callers must
+serialize access to a given instance."* `SyncEngineWorker` addresses this
+via `m_baselineStoreAnchor` (`syncengine_p.h:412-418`, comment: *"thread
+anchor used to marshal BaselineStore access back to the thread that owns
+it"*).
+
+I greped every `m_baselineStore` occurrence in `syncengine.cpp` (28 hits)
+and classified each by enclosing class using the function-boundary map
+(`SyncEngine` methods end at line 1448; `SyncEngineWorker` methods start at
+1449). The `SyncEngine`-side hits (lines 233, 302, 496-521, 637, 1010,
+1196-1211, 1482) are the engine's own separate `m_baselineStore` member
+(`syncengine.h`), accessed directly on the engine-owning thread — a
+different variable, out of scope here (not shared across N workers; each
+`SyncEngine` has exactly one).
+
+The `SyncEngineWorker`-side hits are at lines 1992-1994, 2144, 2215-2216,
+2676-2677, 2713, 2757, 3207-3208, 3478-3479, 3503, 3520 — ten call sites
+across `dispatchFirstSync`, `harvestBaselinesAfterFirstSync`,
+`dispatchSync`, and `unifiedContinueAfterConflicts`. I read every one.
+**All ten** follow the identical pattern — copy the raw pointer into a
+local (`bbs`), then dereference `bbs->` only inside a lambda passed to
+`QMetaObject::invokeMethod(m_baselineStoreAnchor, lambda,
+Qt::BlockingQueuedConnection)`. Representative example
+(`syncengine.cpp:1992-1997`):
+
+```cpp
+if (m_baselineStore && m_baselineStoreAnchor) {
+    bool hasExistingBaselines = false;
+    Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
+    const QString mappingId = request.mapping.id;
+    QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &hasExistingBaselines]() {
+        hasExistingBaselines = !bbs->baselinesForMappingV3(mappingId).isEmpty();
+    }, Qt::BlockingQueuedConnection);
+}
+```
+
+The bare `m_baselineStore` reads outside a lambda (e.g. `syncengine.cpp:2144`,
+`if (!m_baselineStore) { ... return; }`) only test the pointer's nullness —
+never dereference what it points to. I found **no bypass**: no site where
+`m_baselineStore->something()` is called directly on the worker thread
+outside the marshal. This directly answers the controller's specific
+concern.
+
+Because all N workers marshal onto the *same* `m_baselineStoreAnchor`
+object (one `BaselineStore`, one owning thread, shared by construction —
+`SyncEngine::setupWorkerConnections()` hands every worker the same
+anchor), N concurrent `BlockingQueuedConnection` calls correctly serialize
+on that one thread's event loop, each blocking its calling worker thread
+until its own lambda finishes. Safe by construction under the N-worker
+pool as currently written elsewhere in this file — no change needed here.
+
+### IMassDeleteGuard — SAFE (marshaled, by documented interface contract)
+
+`m_massDeleteGuard->confirmMassDelete(...)` is called directly from the
+worker thread at `syncengine.cpp:3220-3222`, inside `dispatchSync`'s
+`resolveMassDeleteGuard` lambda. Unlike `BackendRegistry`, this interface
+**does** document its threading contract, at
+`src/engine/imassdeleteguard.h:24-27`:
+
+```cpp
+/// Threading: the engine calls `confirmMassDelete` from a worker thread.
+/// Concrete implementations that need to interact with a GUI must
+/// marshal to the UI thread themselves (Qt::BlockingQueuedConnection
+/// or equivalent).
+```
+
+i.e. libkalburator deliberately pushes the marshaling obligation onto the
+consumer, by contract, rather than doing it itself (unlike `BaselineStore`,
+where the *engine* owns the marshal via the anchor). I verified PlanStan's
+concrete implementation, `PlanStan::SyncMassDeleteGuard`
+(`~/dev/PlanStan/src/controllers/syncmassdeleteguard.cpp:53-72`), honors
+this:
+
+```cpp
+bool SyncMassDeleteGuard::confirmMassDelete(...) {
+    if (QThread::currentThread() == qApp->thread())
+        return confirmOnGuiThread(...);
+    bool allowed = false;
+    QMetaObject::invokeMethod(qApp, [&]() {
+        allowed = confirmOnGuiThread(...);
+    }, Qt::BlockingQueuedConnection);
+    return allowed;
+}
+```
+
+The object carries no mutable member state beyond its `QObject` base
+(`syncmassdeleteguard.h:18-36`— no data members at all besides the QObject
+machinery), so it is trivially reentrant even before considering the
+marshal: N workers calling `confirmMassDelete` concurrently each
+independently marshal to `qApp`'s thread, which serializes them via its
+own event loop (same shape as the `BaselineStore` anchor pattern) — safe.
+
+One non-safety note worth carrying to Task 2/3: if N workers propose a
+mass delete simultaneously, N modal `KMessageBox` dialogs will appear
+sequentially (each nested `exec()` blocks the GUI thread until dismissed
+before the next one shows) — a UX pile-up, not a data race. Consider
+flagging this for a future task, not a blocker here.
+
+**Caveat (contract, not a code defect):** this safety depends entirely on
+every consumer implementation upholding the documented contract.
+libkalburator cannot enforce it from the interface side. I verified
+PlanStan's implementation only — WildPalms' `IMassDeleteGuard`
+implementation was not inspected (out of this repo) and should be
+spot-checked by whoever owns that integration before N-worker rollout
+there.
+
+### ISyncHost — SAFE WITH CONDITIONS (consumer-implementation-dependent; contract is undocumented in the interface itself)
+
+`grep -n "m_controller->" src/engine/syncengine.cpp` restricted to
+`SyncEngineWorker` methods (line ≥ 1449) finds exactly two methods called
+on the worker thread: `syncStarted()` once
+(`syncengine.cpp:1772`) and `recordChanged()` three times
+(`syncengine.cpp:3340, 3344, 3348`, one per `ChangeKind`).
+
+Unlike `IMassDeleteGuard`, `ISyncHost`'s header
+(`src/calendar/isynchost.h`) has **no threading-contract comment at all** —
+neither on the class nor on `syncStarted`/`recordChanged` individually.
+This is a real gap: a consumer implementing `ISyncHost` today has no
+documented signal that these virtuals can be called from a worker thread,
+let alone from N of them concurrently. `IMassDeleteGuard`'s doc comment
+(added deliberately per its own text) is the model libkalburator should
+apply here too — see remediation below.
+
+Given the contract is undocumented, safety currently rests entirely on
+what consumer implementations happen to do. I traced PlanStan's
+`CollectionController` (the only consumer available in this workspace):
+
+- `syncStarted(const QString&, const LossProfile&)` — `CollectionController`
+  does **not** override this two-argument virtual (confirmed via
+  `~/dev/PlanStan/src/controllers/collectioncontroller.h`: the only
+  `syncStarted` declared there is an unrelated single-argument Qt signal,
+  not an `ISyncHost` override). Calls therefore hit the interface's
+  default no-op body (`isynchost.h:65-66`, empty `{}`). An empty virtual
+  call touches no shared state — trivially safe for any N.
+
+- `recordChanged(const QString&, const QString&, ChangeKind)` — genuinely
+  overridden (`~/dev/PlanStan/src/controllers/collectioncontroller.cpp:2388-2497`)
+  and does real work. I read the full body. It:
+  1. Reads `m_syncCoordinator->syncMappings()` — `SyncEngine::syncMappings()`
+     returns `const QList<SyncMapping>&` (a live reference into
+     `SyncEngine::m_syncMappings`, `syncengine.h:248`), iterated directly
+     on the calling worker thread with no lock
+     (`collectioncontroller.cpp:2421-2422`).
+  2. Falls back to `m_kalbConfigManager->syncMappings()` similarly
+     (`:2425`).
+  3. Reads `m_backends.value(mapping.sourceBackend)` — `CollectionController`'s
+     own `QHash<QString, SyncBackend*>`, again a direct unguarded read on
+     the worker thread (`:2443`).
+  4. Re-reads the record via `PlanStan::queryBackendBlocking(backend, ...)`
+     (`:2471-2472`) — this **is** properly marshaled, per PlanStan's own
+     documented pattern (`CLAUDE.md`: "Never call a sync-backend method
+     directly from the GUI thread — route through
+     PlanStan::invokeOnBackend / queryBackendBlocking"), onto the shared
+     `planstan-backend-io` thread, which serializes concurrent callers the
+     same way the `BaselineStore` anchor does.
+  5. The two model-mutating tail calls (`onItemDeleted`/`onItemFetched`,
+     which touch `GlobalIncidenceModel`/`MemoryCalendar`) are explicitly
+     marshaled to the GUI thread via `QMetaObject::invokeMethod(...,
+     Qt::QueuedConnection)`, with inline comments citing the exact prior
+     incident this guards against
+     (`collectioncontroller.cpp:2452-2457`: *"recordChanged is invoked by
+     SyncEngine as a direct virtual call on the engine WORKER thread
+     ... hop to the GUI thread rather than mutating them from the
+     caller's thread (the O44 cross-thread mutation bug)"*).
+
+So the correctness-critical part — the actual model mutation — is already
+properly marshaled, and `recordChanged`'s own local logic holds no
+instance-mutable state of its own (only local variables), so the method is
+safe to enter reentrantly from N different worker threads simultaneously.
+The three unmarshaled reads (1-3 above) are safe **only** under the same
+unenforced assumption already flagged for `BackendRegistry`: that
+`SyncEngine::m_syncMappings`, `KalbConfigManager`'s mappings, and
+`CollectionController::m_backends` are not mutated by the GUI thread while
+a sync is in flight. This is not new — it is the identical shape of
+pre-existing gap as the `BackendRegistry::registerBackendInstance`
+finding above (same absence of an `isSyncing()` guard on the relevant
+Apply-time/add-provider paths: `~/dev/PlanStan/src/sync/topology/
+synctopologywidget.cpp:2458, 3161` call `setSyncMappings()` with no sync
+guard). Going from 1 to N *reader* threads does not create a new race here
+— it's the same race, just with more potential readers, which was already
+unguarded.
+
+**Verdict for ISyncHost: SAFE WITH CONDITIONS.** Condition: (1) consumers
+must not override `syncStarted`/`recordChanged` in a way that mutates
+instance state directly on the calling thread without marshaling — PlanStan
+already follows this discipline (verified above), but the interface does
+not document or enforce it; (2) the pre-existing "mappings/backends must
+not mutate mid-sync" assumption (shared with the `BackendRegistry`
+finding) must continue to hold, and grows marginally more exposed
+(more concurrent readers hitting the same unguarded window) as N grows,
+though it does not change in kind.
+
 ## Verdict
 
-**NO-GO for Task 2 as currently scoped** — not because the overall design
-is wrong, but because one specific, narrow, pre-existing method has a real
-data race that N-way concurrent `dispatchSync()` calls will hit on
-essentially every sync run: `TransformationRegistry::compile()`'s
-unsynchronized write to `mutable QSet<DomainId> m_frozenDomains` via
-`freeze()`.
+**Overall: NO-GO for Task 2 as currently scoped** — one concrete,
+in-hot-path data race blocks it. All six subjects `SyncEngineWorker`
+shares across N workers, one line each:
 
-`BackendRegistry::backendInstance()` and all other `ShapeRegistries` lookup
-paths dispatchSync uses are confirmed read-only and safe for N concurrent
-readers. `BackendRegistry`'s write side (`registerBackendInstance`/
-`unregisterBackendInstance`) has an unguarded pre-existing race with any
-sync-thread reader, but it is not new or worsened by adding more reader
-threads — track separately, does not block Task 2.
+| Subject | Verdict |
+|---|---|
+| `BackendRegistry` (read path: `backendInstance()`) | SAFE |
+| `BackendRegistry` (write path: register/unregister) | SAFE WITH CONDITIONS — pre-existing unguarded race with sync-thread readers, not worsened by N; track separately, not a Task 2 blocker |
+| `ShapeRegistries` (`TransformationRegistry::compile()`/`freeze()`) | **UNSAFE** — real unsynchronized concurrent write to `mutable QSet<DomainId> m_frozenDomains`, hit on every mapping; this is the NO-GO |
+| `ShapeRegistries` (all other lookup paths, differ/merger factories, `Pipeline` returns) | SAFE |
+| `ICalendarCollection` | SAFE — dead/unused on the worker side |
+| `BaselineStore` | SAFE — marshaled via `m_baselineStoreAnchor` at all 10 worker-side call sites, no bypass found; verified exhaustively |
+| `IMassDeleteGuard` | SAFE — marshaled by documented interface contract, verified in PlanStan's concrete implementation; WildPalms' implementation not checked |
+| `ISyncHost` | SAFE WITH CONDITIONS — PlanStan's `recordChanged` override correctly marshals its mutating tail, but the interface itself documents no threading contract (unlike `IMassDeleteGuard`), and three of its reads share the same pre-existing unguarded-mutation-window assumption as `BackendRegistry` |
+
+The only blocking finding remains `TransformationRegistry::compile()`'s
+`freeze()` race. Everything else is either genuinely safe or safe under a
+pre-existing, unenforced, not-campaign-introduced assumption that should
+be tracked but does not block Task 2.
 
 ## If NO-GO — remediation needed (sized)
 
@@ -296,6 +543,22 @@ of every sync mapping, not an edge case.
 No remediation needed for `BackendRegistry` for Task 2 to proceed; its
 separate write-side race (see above) should get its own tracking item
 (`docs/todo/` or `docs/bugs/`) but is out of scope for this gate.
+
+**Not a blocker, but recommended before or alongside Task 2 — document
+`ISyncHost`'s threading contract.** Trivial, doc-only change:
+`src/calendar/isynchost.h` should get a comment on `syncStarted` and
+`recordChanged` (and any other lifecycle virtual reachable from
+`dispatchSync`) modeled on `IMassDeleteGuard`'s existing one
+(`imassdeleteguard.h:24-27`) — e.g. *"Called from a worker thread; under
+the N-worker pool, may be called concurrently from multiple worker
+threads. Implementations that mutate GUI-affine state must marshal to
+their own thread themselves."* This costs nothing functionally (PlanStan's
+implementation already complies, per the trace above) but closes the gap
+that let this go unverified for WildPalms, and gives future consumers a
+contract to implement against instead of needing to reverse-engineer it
+from this audit. Pair with a note in the same header pointing at this
+audit doc for the underlying analysis. Estimated size: comment-only, under
+10 minutes.
 
 ## Suite baseline at branch point
 
