@@ -20,6 +20,29 @@ class ISyncConfigStore;
  * G.9.a narrowed this interface to ~7 generic methods; the calendar-typed
  * methods were deleted in Phase G Task 67. New code should implement only
  * the generic lifecycle events below.
+ *
+ * Threading (parallel-sync pre-flight audit,
+ * docs/audits/2026-08-12-parallel-sync-preflight.md): `syncStarted()` and
+ * `recordChanged()` are called directly (a plain virtual call, not a
+ * queued Qt signal) from `SyncEngineWorker`'s own thread — see
+ * `syncStarted` and `recordChanged` below for the exact call sites. Under
+ * the N-worker pool, this means they may be called concurrently from any
+ * of N different worker threads at once, on the SAME `ISyncHost` instance
+ * (one host, shared by every worker). Implementations that mutate
+ * GUI-affine state (widgets, models bound to a view) from these two
+ * methods MUST marshal to their own thread themselves — the engine does
+ * not do it for you, the same contract `IMassDeleteGuard::confirmMassDelete`
+ * already documents. PlanStan's `CollectionController::recordChanged()` is
+ * the reference implementation: it marshals its model-mutating tail via
+ * `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` and its backend
+ * re-read via a blocking-queued helper, while its own local logic holds no
+ * instance-mutable state (reentrant-safe by construction). The other
+ * lifecycle virtuals below (`syncFinished`, `resolveConflict`,
+ * `progressChanged`, `phaseChanged`, `errorOccurred`) are not invoked as
+ * direct calls anywhere in the engine as of this audit — their observable
+ * engine-side equivalents, where they exist, are delivered as ordinary
+ * queued Qt signals instead. If that ever changes, the same contract
+ * applies to whichever thread newly calls them.
  */
 class ISyncHost
 {
@@ -62,12 +85,20 @@ public:
 
     enum class ChangeKind { Created, Updated, Deleted };
 
+    /// Called from SyncEngineWorker's own thread (worker thread, not the
+    /// SyncEngine/GUI thread) — see the class-level threading note above.
     virtual void syncStarted(const QString &mappingId,
                              const Kalburator::Shape::LossProfile &pipelineLoss) {}
 
     virtual void syncFinished(const QString &mappingId,
                               const Kalburator::Sync::SyncResult &result) {}
 
+    /// Called from SyncEngineWorker's own thread (worker thread, not the
+    /// SyncEngine/GUI thread), once per successfully-applied record — see
+    /// the class-level threading note above. Under the N-worker pool this
+    /// may arrive concurrently from multiple worker threads on the same
+    /// host instance; implementations must marshal any GUI-affine mutation
+    /// themselves.
     virtual void recordChanged(const QString &mappingId,
                                const QString &recordId,
                                ChangeKind kind) {}

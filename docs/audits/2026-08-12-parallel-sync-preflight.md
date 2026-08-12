@@ -114,10 +114,15 @@ sync run* — nothing in `BackendRegistry`, `ProviderManager`, or the
 provider add/remove. **This hazard is pre-existing**, not introduced by
 parallel-sync: even today, with one worker thread, `backendInstance()` runs
 on the worker thread while `registerBackendInstance`/`unregisterBackendInstance`
-can run on the GUI thread with zero synchronization between them. Going
-from 1 to N reader threads does not create a *new* race here — the
-existing race between the (GUI-thread) writer and any (worker-thread)
-reader is the same shape regardless of how many readers there are.
+can run on the GUI thread with zero synchronization between them, so it is
+already undefined behavior at N=1. Going from 1 to N reader threads does
+not change the *kind* of race — same missing synchronization, same shape
+of writer-vs-reader collision — but it does not leave the risk flat either:
+the probability of actually landing in the corrupting interleaving scales
+with how many concurrent reads are in flight against the writer's window,
+and raising that concurrency is this campaign's entire purpose. Read as
+"pre-existing" alone, this could be misread as "safe to leave indefinitely
+deferred" — it isn't; see the Condition below.
 
 **Q3 — Is there any `QMutex` already guarding it?**
 
@@ -127,10 +132,16 @@ returns nothing.
 **Condition:** `backendInstance()` itself performs no mutation and is safe
 for N concurrent worker threads reading it during a sync run. The
 unguarded, pre-existing race between GUI-thread provider add/remove and any
-sync-thread read is real but not created or worsened by this campaign —
-carry it forward as a documented, separately-tracked hazard (candidate:
+sync-thread read is real, already undefined behavior today, and not a new
+*class* of bug introduced by this campaign — but it is frequency-amplified
+by N (more concurrent readers means a higher chance of hitting the window),
+so it should not be read as indefinitely deferrable. It does not block
+Task 2 itself (the pool can be built without touching this), but it should
+be a **prerequisite for whatever task actually raises worker concurrency in
+production** — carry it forward as a documented, scheduled fix (candidate:
 `ProviderManager` should reject add/remove while `isSyncing()`, or
-`BackendRegistry` should take a `QMutex`), not a blocker for Task 2.
+`BackendRegistry` should take a `QMutex`), not merely a someday-tracked
+hazard.
 
 ## ShapeRegistries
 
@@ -306,15 +317,23 @@ I greped every `m_baselineStore` occurrence in `syncengine.cpp` (28 hits)
 and classified each by enclosing class using the function-boundary map
 (`SyncEngine` methods end at line 1448; `SyncEngineWorker` methods start at
 1449). The `SyncEngine`-side hits (lines 233, 302, 496-521, 637, 1010,
-1196-1211, 1482) are the engine's own separate `m_baselineStore` member
+1196-1211) are the engine's own separate `m_baselineStore` member
 (`syncengine.h`), accessed directly on the engine-owning thread — a
 different variable, out of scope here (not shared across N workers; each
-`SyncEngine` has exactly one).
+`SyncEngine` has exactly one). **Correction:** line 1482
+(`m_baselineStore = baselineStore;`) is *not* one of the `SyncEngine`-side
+hits — it is inside `SyncEngineWorker::setDependencies()` (the function
+starts at line 1473, well past the 1449 boundary), the exact same
+assignment-only pattern as the parallel `m_collection = collection;` at
+line 1483 discussed above. It is a plain assignment, not a dereference, so
+it carries no safety consequence either way — but it belongs in the
+`SyncEngineWorker`-side list below, not the `SyncEngine`-side one.
 
-The `SyncEngineWorker`-side hits are at lines 1992-1994, 2144, 2215-2216,
-2676-2677, 2713, 2757, 3207-3208, 3478-3479, 3503, 3520 — ten call sites
-across `dispatchFirstSync`, `harvestBaselinesAfterFirstSync`,
-`dispatchSync`, and `unifiedContinueAfterConflicts`. I read every one.
+The `SyncEngineWorker`-side hits are at lines 1482, 1992-1994, 2144,
+2215-2216, 2676-2677, 2713, 2757, 3207-3208, 3478-3479, 3503, 3520 — the
+`setDependencies` assignment plus ten call sites across
+`dispatchFirstSync`, `harvestBaselinesAfterFirstSync`, `dispatchSync`, and
+`unifiedContinueAfterConflicts`. I read every one of the ten call sites.
 **All ten** follow the identical pattern — copy the raw pointer into a
 local (`bbs`), then dereference `bbs->` only inside a lambda passed to
 `QMetaObject::invokeMethod(m_baselineStoreAnchor, lambda,
@@ -469,24 +488,29 @@ The three unmarshaled reads (1-3 above) are safe **only** under the same
 unenforced assumption already flagged for `BackendRegistry`: that
 `SyncEngine::m_syncMappings`, `KalbConfigManager`'s mappings, and
 `CollectionController::m_backends` are not mutated by the GUI thread while
-a sync is in flight. This is not new — it is the identical shape of
-pre-existing gap as the `BackendRegistry::registerBackendInstance`
+a sync is in flight. This is not a new bug class — it is the identical
+shape of pre-existing gap as the `BackendRegistry::registerBackendInstance`
 finding above (same absence of an `isSyncing()` guard on the relevant
 Apply-time/add-provider paths: `~/dev/PlanStan/src/sync/topology/
 synctopologywidget.cpp:2458, 3161` call `setSyncMappings()` with no sync
-guard). Going from 1 to N *reader* threads does not create a new race here
-— it's the same race, just with more potential readers, which was already
-unguarded.
+guard), already undefined behavior at N=1. But it is not flat risk either:
+going from 1 to N *reader* threads doesn't change the race's kind, but it
+does raise how often the corrupting interleaving is actually hit, because
+there are now up to N concurrent readers contending the same unguarded
+window instead of one — and raising that concurrency is exactly what this
+campaign does. Treat as scheduled, not indefinitely deferred.
 
 **Verdict for ISyncHost: SAFE WITH CONDITIONS.** Condition: (1) consumers
 must not override `syncStarted`/`recordChanged` in a way that mutates
 instance state directly on the calling thread without marshaling — PlanStan
 already follows this discipline (verified above), but the interface does
-not document or enforce it; (2) the pre-existing "mappings/backends must
-not mutate mid-sync" assumption (shared with the `BackendRegistry`
-finding) must continue to hold, and grows marginally more exposed
-(more concurrent readers hitting the same unguarded window) as N grows,
-though it does not change in kind.
+not document or enforce it (see the added contract comment below, closing
+that gap going forward); (2) the pre-existing "mappings/backends must not
+mutate mid-sync" assumption (shared with the `BackendRegistry` finding)
+must continue to hold — it is not a new bug and not a Task 2 blocker, but
+it is frequency-amplified by N and should be fixed as a prerequisite for
+whatever task actually raises worker concurrency in production, same as
+the `BackendRegistry` write-path condition above.
 
 ## Verdict
 
@@ -497,18 +521,20 @@ shares across N workers, one line each:
 | Subject | Verdict |
 |---|---|
 | `BackendRegistry` (read path: `backendInstance()`) | SAFE |
-| `BackendRegistry` (write path: register/unregister) | SAFE WITH CONDITIONS — pre-existing unguarded race with sync-thread readers, not worsened by N; track separately, not a Task 2 blocker |
+| `BackendRegistry` (write path: register/unregister) | SAFE WITH CONDITIONS — pre-existing unguarded race with sync-thread readers, already UB at N=1, not a new bug class but frequency-amplified by N; scheduled as a prerequisite for whatever task raises worker concurrency in production, not a Task 2 blocker itself |
 | `ShapeRegistries` (`TransformationRegistry::compile()`/`freeze()`) | **UNSAFE** — real unsynchronized concurrent write to `mutable QSet<DomainId> m_frozenDomains`, hit on every mapping; this is the NO-GO |
 | `ShapeRegistries` (all other lookup paths, differ/merger factories, `Pipeline` returns) | SAFE |
 | `ICalendarCollection` | SAFE — dead/unused on the worker side |
 | `BaselineStore` | SAFE — marshaled via `m_baselineStoreAnchor` at all 10 worker-side call sites, no bypass found; verified exhaustively |
 | `IMassDeleteGuard` | SAFE — marshaled by documented interface contract, verified in PlanStan's concrete implementation; WildPalms' implementation not checked |
-| `ISyncHost` | SAFE WITH CONDITIONS — PlanStan's `recordChanged` override correctly marshals its mutating tail, but the interface itself documents no threading contract (unlike `IMassDeleteGuard`), and three of its reads share the same pre-existing unguarded-mutation-window assumption as `BackendRegistry` |
+| `ISyncHost` | SAFE WITH CONDITIONS — PlanStan's `recordChanged` override correctly marshals its mutating tail, but the interface itself documents no threading contract (unlike `IMassDeleteGuard`), and three of its reads share the same pre-existing, frequency-amplified-by-N unguarded-mutation-window assumption as `BackendRegistry` |
 
 The only blocking finding remains `TransformationRegistry::compile()`'s
-`freeze()` race. Everything else is either genuinely safe or safe under a
-pre-existing, unenforced, not-campaign-introduced assumption that should
-be tracked but does not block Task 2.
+`freeze()` race. Everything else is either genuinely safe, or safe under a
+pre-existing assumption that is not a new bug class from this campaign but
+whose failure probability scales with N — those are scheduled fixes (see
+Conditions above), not indefinitely-deferred, does-not-block-Task-2 items
+to be forgotten.
 
 ## If NO-GO — remediation needed (sized)
 
@@ -517,48 +543,86 @@ Single-file, single-class fix, low risk: guard
 Concretely, in `src/shape/transformationregistry.h`/`.cpp`:
 
 - Add a `mutable QMutex m_frozenDomainsMutex;` alongside `m_frozenDomains`.
-- Take a `QMutexLocker` in `freeze()` around the `insert()`.
-- Take the same lock in the four call sites that currently do
-  `m_frozenDomains.contains(...)` unguarded (`registerShape`,
-  `declareCanonical`, `appendCanonicalVersion`, `registerEdge`) — these
-  only run once at startup (`PluginManager::loadInProcess()`, called once
-  from `AppController::init()` in the consuming app, verified via
+- Take a `QMutexLocker` at **every** site that touches `m_frozenDomains` —
+  there are seven, not four; the previous version of this section named
+  only four and would have left two unguarded. Full list, all in
+  `transformationregistry.cpp` unless noted:
+  - `registerShape()` — line 8, `.contains()` read.
+  - `declareCanonical()` — line 16, `.contains()` read.
+  - `appendCanonicalVersion()` — line 33, `.contains()` read.
+  - `isFrozen()` — line 58, `.contains()` read. **Public accessor**,
+    called from `PluginManager::loadInProcess()` at
+    `src/plugin/pluginmanager.cpp:152,188` — easy to miss because it reads
+    like a pure query, but it touches the same unguarded set as the write
+    path and must take the same lock.
+  - `freeze()` — line 63, `.insert()` write. This is the one `compile()`
+    triggers from the sync hot path; the actual race.
+  - `registerEdge()` — lines 70-71, two `.contains()` reads.
+  - `clear()` — line 184, `.clear()`. Test-only per its doc comment, but
+    still a mutation of the same set and still needs the lock for the same
+    reason as the others — a future test harness that calls `clear()`
+    concurrently with any in-flight `compile()` (e.g. a stress test built
+    to exercise this exact fix) would otherwise recreate the bug this fix
+    exists to close.
+
+  `registerShape`/`declareCanonical`/`appendCanonicalVersion`/`registerEdge`/
+  `isFrozen`'s calls from `loadInProcess` only run once at startup
+  (`PluginManager::loadInProcess()`, called once from `AppController::init()`
+  in the consuming app, verified via
   `~/dev/PlanStan/src/app/appcontroller.cpp:47,81` — never during a sync),
-  so the added lock has no measurable cost there, and protects them
-  against the theoretical (currently unreachable, but not asserted-against)
-  case of a plugin being loaded while a sync is mid-flight.
+  so the added lock costs nothing measurable there; it protects them
+  against the theoretical (currently unreachable, but not
+  asserted-against) case of a plugin being loaded while a sync is
+  mid-flight.
 
 This does not change `compile()`'s return value, its identity/non-identity
 branching, or any caller's semantics — `freeze()` is purely a
 "has-been-queried" enforcement flag for the post-init dynamic-registration
 guard (see the class comment at `transformationregistry.h:56-60`), not
-data that affects sync correctness. Estimated size: ~10-15 lines, one
-file, one new unit test asserting concurrent `compile()` calls from
-multiple threads don't corrupt/crash (candidate: spin N `QThread`s calling
-`compile()` on the same domain simultaneously under TSan or a stress-loop
-assertion). This fix should land as its own task before or as part of
-Task 2's pool wiring, not deferred — the race is on the primary code path
-of every sync mapping, not an edge case.
+data that affects sync correctness. Estimated size: ~15-20 lines across
+seven call sites, one file, one new unit test asserting concurrent
+`compile()` calls from multiple threads don't corrupt/crash (candidate:
+spin N `QThread`s calling `compile()` on the same domain simultaneously
+under TSan or a stress-loop assertion). This fix should land as its own
+task before or as part of Task 2's pool wiring, not deferred — the race is
+on the primary code path of every sync mapping, not an edge case.
 
-No remediation needed for `BackendRegistry` for Task 2 to proceed; its
-separate write-side race (see above) should get its own tracking item
-(`docs/todo/` or `docs/bugs/`) but is out of scope for this gate.
+(This section previously named only the four registration-side call sites
+and omitted `isFrozen()` and `clear()`; corrected 2026-08-12 after
+independent review re-derived the full seven-site list from grep. The
+scheduled fix task in the plan was derived independently and already
+covered all seven, so this was a documentation-accuracy fix, not a
+live-risk fix.)
 
-**Not a blocker, but recommended before or alongside Task 2 — document
-`ISyncHost`'s threading contract.** Trivial, doc-only change:
-`src/calendar/isynchost.h` should get a comment on `syncStarted` and
-`recordChanged` (and any other lifecycle virtual reachable from
-`dispatchSync`) modeled on `IMassDeleteGuard`'s existing one
-(`imassdeleteguard.h:24-27`) — e.g. *"Called from a worker thread; under
-the N-worker pool, may be called concurrently from multiple worker
-threads. Implementations that mutate GUI-affine state must marshal to
-their own thread themselves."* This costs nothing functionally (PlanStan's
-implementation already complies, per the trace above) but closes the gap
-that let this go unverified for WildPalms, and gives future consumers a
-contract to implement against instead of needing to reverse-engineer it
-from this audit. Pair with a note in the same header pointing at this
-audit doc for the underlying analysis. Estimated size: comment-only, under
-10 minutes.
+No remediation needed for `BackendRegistry` for Task 2 to proceed on its
+own — Task 2 can stand up the pool without touching this. But its
+write-side race (see the Condition in the `BackendRegistry` section above)
+is pre-existing UB, already true at N=1, whose failure probability scales
+with N — it should be a **tracked prerequisite for whatever task actually
+raises worker concurrency in production**, not an indefinitely-deferred
+`docs/todo/` item that quietly never gets picked up. Same disposition for
+the analogous `ISyncHost` reads flagged in its own section.
+
+**Done (fix round 1, 2026-08-12) — documented `ISyncHost`'s threading
+contract.** `src/calendar/isynchost.h` now carries a class-level threading
+note plus per-method notes on `syncStarted()` and `recordChanged()`,
+modeled on `IMassDeleteGuard`'s existing contract comment
+(`imassdeleteguard.h:24-27`): both are called directly from
+`SyncEngineWorker`'s own thread (confirmed by the call-site trace above,
+`syncengine.cpp:1772` and `:3340,3344,3348`), may arrive concurrently from
+any of N worker threads under the pool, and implementations must marshal
+any GUI-affine mutation themselves — PlanStan's `CollectionController::
+recordChanged()` is cited as the reference implementation. The comment
+also states, precisely, that the other five lifecycle virtuals
+(`syncFinished`, `resolveConflict`, `progressChanged`, `phaseChanged`,
+`errorOccurred`) are not invoked as direct calls anywhere in the engine as
+of this audit (verified: `grep` for each across `src/engine/*.cpp` finds
+no `m_controller->` call for any of them — their engine-side equivalents,
+where they exist, go through ordinary queued Qt signals instead), so the
+comment does not overclaim a contract for methods that were not actually
+traced. This closes the gap that let the contract go unverified for
+WildPalms — future consumers now have a contract to implement against
+instead of needing to reverse-engineer it from this audit.
 
 ## Suite baseline at branch point
 
