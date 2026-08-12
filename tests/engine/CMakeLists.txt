@@ -315,6 +315,11 @@ set_tests_properties(tst_phantom_conflict_adoption PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# Parallel-sync Task 2 — worker pool lifecycle. Pins the pool's own
+# invariants (idempotent start, growth, one thread per worker, clean
+# teardown); the rest of the suite pins that size 1 == pre-pool behaviour.
+kalburator_add_engine_integration_test(tst_worker_pool)
+
 # CP-B live smoke — manual live-server probe (NOT a CI test). Drives a full
 # create/sync/modify/converge pass plus the pulled-cable (SIGSTOP) O22 check
 # against a real Radicale. See docs/campaign/2026-07-05-sync-hardening-phases.md

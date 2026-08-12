@@ -25,6 +25,7 @@
 #include <QFutureInterface>
 #include <QFutureWatcher>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <type_traits>
@@ -337,13 +338,38 @@ public:
     SyncResult lastSyncResult() const { return m_lastResult; }
 
     /**
-     * @brief Stop the worker thread immediately.
+     * @brief Grow the pool to @p size workers, each on its own QThread,
+     * and start any thread not yet running.
      *
-     * Called by CollectionController destructor to ensure the worker thread
-     * is stopped before any resources it depends on are destroyed.
+     * Idempotent. Never shrinks — a smaller @p size than the current pool
+     * is a no-op, so a run that lowers concurrency does not tear down
+     * live workers. Public (rather than private, as an internal detail
+     * would otherwise be) so tst_worker_pool.cpp can pin the pool's own
+     * lifecycle invariants directly, without driving a real sync run —
+     * same "public and harmless" rationale as the *ForTest() accessors
+     * below. Internal callers (driveQueue, processSingleMapping, etc.)
+     * use it exactly as they used the old startWorkerThread().
+     */
+    void startWorkerPool(int size);
+
+    /**
+     * @brief Stop the worker pool immediately.
+     *
+     * Called by CollectionController destructor to ensure every pool
+     * worker is stopped before any resources it depends on are destroyed.
      * Safe to call multiple times (idempotent).
      */
-    void stopWorkerThread();
+    void stopWorkerPool();
+
+    // Test-only pool introspection (parallel-sync Task 2). Cheap, const,
+    // and harmless in production; exposed rather than friending a test
+    // class so the pool's invariants can be pinned without reaching into
+    // private state. Ruled 2026-08-12: deliberate plan-mandated public
+    // API — a reviewer flagging "production API exists only for tests"
+    // should be adjudicated against this ruling, not looped on.
+    int  poolSizeForTest() const { return m_pool.size(); }
+    bool poolThreadsRunningForTest() const;
+    int  distinctPoolThreadCountForTest() const;
 
     /**
      * @brief G.6 Task 46: cancel the current queue run with an explicit reason.
@@ -592,9 +618,25 @@ private:
     // thread, and we forward to the worker via queued connection.
     QFutureWatcher<QList<SyncResult>>* m_currentWatcher = nullptr;
 
-    // Worker thread infrastructure
-    QThread m_workerThread;
-    SyncEngineWorker *m_worker = nullptr;
+    // Worker pool infrastructure (parallel-sync Task 2). Replaces the
+    // single m_workerThread/m_worker pair. At size 1 this is exactly the
+    // pre-pool code path; Task 7 adds the concurrency knob that grows it.
+    //
+    // Slot 0 is the CONTROL SLOT: the fast-path pre-pass
+    // (prepareFastPath) and the DecSync active-controller loop always run
+    // there, and only slot 0's fastPathReady/activeControllersReady are
+    // connected to the engine, so those continuations never fire twice.
+    // Both run before any mapping is dispatched, so slot 0 is free.
+    struct WorkerSlot {
+        QThread          *thread = nullptr;
+        SyncEngineWorker *worker = nullptr;
+        QString           busyMappingId;   ///< empty = free
+    };
+    QList<WorkerSlot> m_pool;
+
+    /// mappingId -> pool slot index, for every mapping currently dispatched.
+    QHash<QString, int> m_inFlight;
+
     SyncBehavior m_currentSyncBehavior = SyncBehavior::Unmonitored;
     ConflictInfo m_pendingConflict;  // For monitored mode dialog
     QList<ConflictInfo> m_pendingUnmonitoredConflicts;  // Batch for post-sync presentation
@@ -613,9 +655,23 @@ private:
     // with the same filter driveQueue() would have used synchronously.
     std::optional<QSet<QString>> m_pendingQueueFilter;
 
-    // Helper to set up worker connections
-    void setupWorkerConnections();
-    void startWorkerThread();
+    /// Wire one pool worker's signals. @p isControlSlot gates the two
+    /// run-level continuations (fastPathReady, activeControllersReady)
+    /// so they are connected for slot 0 only and can never fire twice.
+    void setupWorkerConnections(SyncEngineWorker *worker, bool isControlSlot);
+
+    /// Index of a free pool slot, or -1 if every worker is busy.
+    int leaseWorker();
+
+    /// Mark @p mappingId's slot free and drop it from m_inFlight.
+    void releaseWorker(const QString &mappingId);
+
+    /// Slot 0's worker — the fixed home of the fast-path pre-pass and the
+    /// active-controller loop. Null before startWorkerPool().
+    SyncEngineWorker *controlWorker() const;
+
+    /// Invoke @p fn for every worker currently in the pool.
+    void forEachWorker(const std::function<void(SyncEngineWorker*)> &fn);
 };
 
 } // namespace Kalburator::Engine

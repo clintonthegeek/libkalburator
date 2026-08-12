@@ -148,15 +148,13 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
     , m_controller(host)
     , m_shape(shape)
 {
-    // Create worker but don't start thread yet
-    m_worker = new SyncEngineWorker(m_shape);
-    setupWorkerConnections();
-
+    // Parallel-sync Task 2: workers are now created by startWorkerPool(),
+    // not here — there is no single m_worker to construct up front.
 }
 
 SyncEngine::~SyncEngine()
 {
-    stopWorkerThread();
+    stopWorkerPool();
     // Architectural-redress Plan 4: the in-flight QFutureInterfaces are owned by
     // unique_ptr members and are freed automatically after this body, fixing the
     // mid-sync memory leak (AUDIT MAJOR "raw QFutureInterface* without lifecycle
@@ -167,129 +165,194 @@ SyncEngine::~SyncEngine()
     // engine is destroyed mid-sync is a misuse out of Plan 4's scope (see FINDINGS).
 }
 
-void SyncEngine::setupWorkerConnections()
+void SyncEngine::setupWorkerConnections(SyncEngineWorker *worker, bool isControlSlot)
 {
-    if (!m_worker) return;
+    if (!worker) return;
 
     // Connect worker signals to coordinator slots (Qt::QueuedConnection for cross-thread)
-    connect(m_worker, &SyncEngineWorker::syncStarted,
+    connect(worker, &SyncEngineWorker::syncStarted,
             this, &SyncEngine::onWorkerSyncStarted, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::phaseChanged,
+    connect(worker, &SyncEngineWorker::phaseChanged,
             this, &SyncEngine::onWorkerPhaseChanged, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::fetchProgress,
+    connect(worker, &SyncEngineWorker::fetchProgress,
             this, &SyncEngine::onWorkerFetchProgress, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::writeProgress,
+    connect(worker, &SyncEngineWorker::writeProgress,
             this, &SyncEngine::onWorkerWriteProgress, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::conflictDetected,
+    connect(worker, &SyncEngineWorker::conflictDetected,
             this, &SyncEngine::onWorkerConflictDetected, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::conflictPauseRequested,
+    connect(worker, &SyncEngineWorker::conflictPauseRequested,
             this, &SyncEngine::onWorkerConflictPauseRequested, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::syncCompleted,
+    connect(worker, &SyncEngineWorker::syncCompleted,
             this, &SyncEngine::onWorkerSyncCompleted, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::syncError,
+    connect(worker, &SyncEngineWorker::syncError,
             this, &SyncEngine::onWorkerSyncError, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::transcodingWarning,
+    connect(worker, &SyncEngineWorker::transcodingWarning,
             this, &SyncEngine::onWorkerTranscodingWarning, Qt::QueuedConnection);
-    // H4 (O16): fast-path pre-pass result, reported back from the worker
-    // thread to the engine thread.
-    connect(m_worker, &SyncEngineWorker::fastPathReady,
-            this, &SyncEngine::onFastPathReady, Qt::QueuedConnection);
 
     // Engine→worker command channel (replaces string-form invokeMethod).
-    // SyncEngine emits these *Requested signals on m_worker; Qt's
+    // SyncEngine emits these *Requested signals on a pool worker; Qt's
     // QueuedConnection routes them across the thread boundary to the
-    // matching slots. Signals are public in Qt, so external emit is fine.
-    connect(m_worker, &SyncEngineWorker::processSyncRequested,
-            m_worker, &SyncEngineWorker::processSync, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::observeCancelRequested,
-            m_worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::resumeAfterConflictRequested,
-            m_worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
+    // matching slots on that SAME worker. Signals are public in Qt, so
+    // external emit is fine. Self-connections, so wiring them for every
+    // pool worker (not just the control slot) is harmless — a worker
+    // whose *Requested signal is never emitted just never fires.
+    connect(worker, &SyncEngineWorker::processSyncRequested,
+            worker, &SyncEngineWorker::processSync, Qt::QueuedConnection);
+    connect(worker, &SyncEngineWorker::observeCancelRequested,
+            worker, &SyncEngineWorker::observeCancel, Qt::QueuedConnection);
+    connect(worker, &SyncEngineWorker::resumeAfterConflictRequested,
+            worker, &SyncEngineWorker::resumeAfterConflict, Qt::QueuedConnection);
     // H4 (O16): dispatches the fast-path pre-pass onto the worker thread.
-    connect(m_worker, &SyncEngineWorker::fastPathRequested,
-            m_worker, &SyncEngineWorker::prepareFastPath, Qt::QueuedConnection);
+    connect(worker, &SyncEngineWorker::fastPathRequested,
+            worker, &SyncEngineWorker::prepareFastPath, Qt::QueuedConnection);
     // E3 (O33b): dispatches the DecSync active-controller loop onto the
     // worker thread; its completion resumes drive-queue setup.
-    connect(m_worker, &SyncEngineWorker::activeControllersRequested,
-            m_worker, &SyncEngineWorker::runActiveControllers, Qt::QueuedConnection);
-    connect(m_worker, &SyncEngineWorker::activeControllersReady,
-            this, &SyncEngine::onActiveControllersReady, Qt::QueuedConnection);
+    connect(worker, &SyncEngineWorker::activeControllersRequested,
+            worker, &SyncEngineWorker::runActiveControllers, Qt::QueuedConnection);
 
-    // Note: Worker is deleted explicitly in stopWorkerThread() rather than
-    // via finished->deleteLater, since the thread's event loop has exited
-    // by the time finished is emitted.
-}
-
-void SyncEngine::startWorkerThread()
-{
-    if (m_workerThread.isRunning()) {
-        return;
+    // Parallel-sync Task 2: the fast-path pre-pass and the DecSync
+    // active-controller loop are run-level continuations — they must
+    // fire exactly once per run, not once per worker. Only slot 0 (the
+    // control slot) ever has fastPathRequested/activeControllersRequested
+    // emitted on it (via controlWorker()), so gating these two
+    // engine-facing completion connections to isControlSlot is what
+    // makes that structurally true rather than just conventionally true.
+    if (isControlSlot) {
+        // H4 (O16): fast-path pre-pass result, reported back from the
+        // worker thread to the engine thread.
+        connect(worker, &SyncEngineWorker::fastPathReady,
+                this, &SyncEngine::onFastPathReady, Qt::QueuedConnection);
+        connect(worker, &SyncEngineWorker::activeControllersReady,
+                this, &SyncEngine::onActiveControllersReady, Qt::QueuedConnection);
     }
 
-    // Set dependencies before moving to thread. `this` is the thread
-    // anchor for BaselineStore access; m_massDeleteGuard is pushed in
-    // directly (no back-pointer).
-    m_worker->setDependencies(m_controller, m_collection,
-                              m_baselineStore,
-                              this,
-                              m_massDeleteGuard,
-                              m_registry);
-
-    // Move worker to thread
-    m_worker->moveToThread(&m_workerThread);
-
-    // Start thread
-    m_workerThread.start();
-
-    qDebug() << "SyncEngine: Worker thread started";
+    // Note: each pool worker is deleted explicitly in stopWorkerPool()
+    // rather than via finished->deleteLater, since the thread's event
+    // loop has exited by the time finished is emitted.
 }
 
-void SyncEngine::stopWorkerThread()
+void SyncEngine::startWorkerPool(int size)
 {
-    if (m_workerThread.isRunning()) {
-        if (m_worker) {
-            // Synchronous flag set (immediate visibility, unchanged from
-            // before E5.3) — but cancel() alone never wakes a nested
+    if (size < 1)
+        size = 1;
+
+    while (m_pool.size() < size) {
+        WorkerSlot slot;
+        slot.thread = new QThread;
+        slot.thread->setObjectName(
+            QStringLiteral("kalburator-sync-worker-%1").arg(m_pool.size()));
+        slot.worker = new SyncEngineWorker(m_shape);
+
+        const bool isControlSlot = m_pool.isEmpty();
+        setupWorkerConnections(slot.worker, isControlSlot);
+
+        // Dependencies must be set BEFORE moveToThread. `this` is the
+        // thread anchor for BaselineStore access; the mass-delete guard
+        // is pushed in directly (no back-pointer).
+        slot.worker->setDependencies(m_controller, m_collection,
+                                     m_baselineStore,
+                                     this,
+                                     m_massDeleteGuard,
+                                     m_registry);
+        slot.worker->moveToThread(slot.thread);
+        m_pool.append(slot);
+    }
+
+    for (auto &slot : m_pool) {
+        if (slot.thread && !slot.thread->isRunning())
+            slot.thread->start();
+    }
+
+    qDebug() << "SyncEngine: worker pool at size" << m_pool.size();
+}
+
+void SyncEngine::stopWorkerPool()
+{
+    for (auto &slot : m_pool) {
+        if (!slot.thread || !slot.thread->isRunning())
+            continue;
+        if (slot.worker) {
+            // Synchronous flag set for immediate visibility, PLUS a queued
+            // observeCancel(): cancel() alone never wakes a nested
             // QEventLoop already running on the worker thread (a fetch or
-            // E5.3 write-await gate): only cancellationObserved() does that,
-            // and only observeCancel() emits it. E5.3 (O22 residue): also
-            // queue observeCancel() onto the worker thread so a genuinely
-            // in-flight gate wakes promptly on engine teardown, not just on
-            // future.cancel() (which already routed through observeCancel()
-            // via onCancelObserved). Queued, not direct: observeCancel()
-            // must run ON the worker thread for its cancellationObserved
+            // write gate) — only cancellationObserved() does, and only
+            // observeCancel() emits it. Queued, not direct, because
+            // observeCancel() must run ON the worker thread for its
             // DirectConnection-to-loop.quit() wiring to be same-thread-safe;
-            // a nested QEventLoop::exec() still pumps its thread's queued
-            // events, so this reaches the gate even while it's parked in
-            // loop.exec(). This is what "structurally dissolves E3's
-            // stopWorkerThread interim" (E5.3 design note) actually means in
-            // practice — waitForWorkerWithDiagnostic's bounded wait below
-            // should no longer be the thing that ends an I/O-length wait.
-            m_worker->cancel();
-            QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::observeCancel,
+            // a nested exec() still pumps queued events, so this reaches a
+            // parked gate. (E5.3 / O22 residue — preserved verbatim from
+            // the pre-pool stopWorkerThread().)
+            slot.worker->cancel();
+            QMetaObject::invokeMethod(slot.worker, &SyncEngineWorker::observeCancel,
                                       Qt::QueuedConnection);
         }
-
-        m_workerThread.quit();
+        slot.thread->quit();
         // E3 (O22 residue): bounded wait with a loud diagnostic on
         // expiry, then an unbounded wait — see waitForWorkerWithDiagnostic's
         // doc comment. Post-E5.3 this is a belt-and-braces backstop; the
         // queued observeCancel() above should make an in-flight write/fetch
         // gate settle well before this bound.
-        waitForWorkerWithDiagnostic(&m_workerThread);
-
-        qDebug() << "SyncEngine: Worker thread stopped";
+        waitForWorkerWithDiagnostic(slot.thread);
     }
 
-    // After wait() returns, the thread's event loop has stopped and it's safe
-    // to delete the worker directly. Note: moveToThread() cannot be used here
-    // because you can only "push" objects to another thread from the thread
-    // they're currently on (we're on main thread, worker is on worker thread).
-    // Qt allows deletion of QObjects from any thread after their thread has stopped.
-    if (m_worker) {
-        delete m_worker;
-        m_worker = nullptr;
+    // After wait() returns each thread's event loop has stopped, so direct
+    // deletion is safe from this thread. moveToThread() cannot be used —
+    // you may only push an object to another thread from the thread it is
+    // currently on.
+    for (auto &slot : m_pool) {
+        delete slot.worker;
+        delete slot.thread;
     }
+    m_pool.clear();
+    m_inFlight.clear();
+
+    qDebug() << "SyncEngine: worker pool stopped";
+}
+
+int SyncEngine::leaseWorker()
+{
+    for (int i = 0; i < m_pool.size(); ++i) {
+        if (m_pool.at(i).busyMappingId.isEmpty())
+            return i;
+    }
+    return -1;
+}
+
+void SyncEngine::releaseWorker(const QString &mappingId)
+{
+    const int slot = m_inFlight.take(mappingId);
+    if (slot >= 0 && slot < m_pool.size())
+        m_pool[slot].busyMappingId.clear();
+}
+
+SyncEngineWorker *SyncEngine::controlWorker() const
+{
+    return m_pool.isEmpty() ? nullptr : m_pool.at(0).worker;
+}
+
+void SyncEngine::forEachWorker(const std::function<void(SyncEngineWorker*)> &fn)
+{
+    for (auto &slot : m_pool) {
+        if (slot.worker)
+            fn(slot.worker);
+    }
+}
+
+bool SyncEngine::poolThreadsRunningForTest() const
+{
+    for (const auto &slot : m_pool) {
+        if (slot.thread && slot.thread->isRunning())
+            return true;
+    }
+    return false;
+}
+
+int SyncEngine::distinctPoolThreadCountForTest() const
+{
+    QSet<const QThread*> seen;
+    for (const auto &slot : m_pool)
+        seen.insert(slot.thread);
+    return seen.size();
 }
 
 void SyncEngine::setCollection(ICalendarCollection *collection)
@@ -310,15 +373,16 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
 void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
 {
     m_massDeleteGuard = guard;
-    // Propagate to the worker thread via queued invocation so updates
-    // take effect on the next sync cycle without unsynchronized state.
-    if (m_worker) {
-        QMetaObject::invokeMethod(m_worker,
-            [w = m_worker, guard]() {
+    // Propagate to every pool worker's thread via queued invocation so
+    // updates take effect on the next sync cycle without unsynchronized
+    // state, regardless of which worker picks up the next mapping.
+    forEachWorker([guard](SyncEngineWorker *w) {
+        QMetaObject::invokeMethod(w,
+            [w, guard]() {
                 w->setMassDeleteGuardFromEngine(guard);
             },
             Qt::QueuedConnection);
-    }
+    });
 }
 
 Kalburator::Conflict::IMassDeleteGuard *SyncEngine::massDeleteGuard() const
@@ -433,15 +497,17 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // scope which mappings get a stored-token lookup / dispatch).
     m_queue.prime(m_syncMappings, filter);
 
-    // E3 (O33a): the worker's own cancellation flag is reset exactly
-    // once per run, here at the legitimate new-run entry point — never
-    // inside processSync() (see SyncEngineWorker::processSync's comment
-    // for the erasure race this replaces). startWorkerThread() is
+    // E3 (O33a): every pool worker's own cancellation flag is reset
+    // exactly once per run, here at the legitimate new-run entry point —
+    // never inside processSync() (see SyncEngineWorker::processSync's
+    // comment for the erasure race this replaces). startWorkerPool() is
     // idempotent, so this is safe whether or not the loop below or the
-    // fast-path branch needs the thread too.
-    startWorkerThread();
-    QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::resetCancellationFlag,
-                              Qt::QueuedConnection);
+    // fast-path branch needs the pool too.
+    startWorkerPool(1);
+    forEachWorker([](SyncEngineWorker *w) {
+        QMetaObject::invokeMethod(w, &SyncEngineWorker::resetCancellationFlag,
+                                  Qt::QueuedConnection);
+    });
 
     if (!m_activeControllers.isEmpty()) {
         // E3 (O33b): DecSyncActiveController::runActiveSync() touches
@@ -452,11 +518,12 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         // onActiveControllersReady() resumes setup once every controller
         // has run. m_pendingQueueFilter carries `filter` across the
         // async gap the same way the fast-path branch below carries it
-        // synchronously.
+        // synchronously. Always the control slot (slot 0) — see the
+        // WorkerSlot comment in syncengine.h.
         emit progressUpdated(0, m_syncMappings.size() + m_activeControllers.size(),
                              tr("Syncing DecSync collections"));
         m_pendingQueueFilter = filter;
-        emit m_worker->activeControllersRequested(m_activeControllers.values());
+        emit controlWorker()->activeControllersRequested(m_activeControllers.values());
         return; // continuation: onActiveControllersReady() -> continueDriveQueueSetup()
     }
 
@@ -485,7 +552,9 @@ void SyncEngine::continueDriveQueueSetup(const std::optional<QSet<QString>> &fil
         // pattern as processSyncRequested/processSync; the continuation
         // lives in onFastPathReady(). Reading stored tokens stays here:
         // BaselineStore is fast local SQLite and engine-thread-affine.
-        startWorkerThread();
+        // Always the control slot (slot 0) — see the WorkerSlot comment
+        // in syncengine.h.
+        startWorkerPool(1);
 
         QList<SyncMapping> candidates;
         QHash<QString, QPair<QString, QString>> storedTokens;
@@ -499,7 +568,7 @@ void SyncEngine::continueDriveQueueSetup(const std::optional<QSet<QString>> &fil
                     m_baselineStore->syncToken(mapping.id, QStringLiteral("target")));
             }
         }
-        emit m_worker->fastPathRequested(candidates, storedTokens, m_skipUnchangedMappings);
+        emit controlWorker()->fastPathRequested(candidates, storedTokens, m_skipUnchangedMappings);
         return; // continuation: onFastPathReady() -> finishDriveQueueSetup()
     }
 
@@ -553,9 +622,9 @@ void SyncEngine::finishDriveQueueSetup()
         return;
     }
 
-    // Start worker thread for mapping-based sync (idempotent — already
+    // Start the worker pool for mapping-based sync (idempotent — already
     // running when this is reached via the fast-path branch above).
-    startWorkerThread();
+    startWorkerPool(1);
     processQueue();
 }
 
@@ -622,12 +691,14 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // because single-mapping dispatch does not iterate).
             m_queue.primeSingle();
 
-            // Start worker thread if not running
-            startWorkerThread();
-            // E3 (O33a): legitimate new-run reset of the worker's own
-            // cancellation flag — see driveQueue()'s matching comment.
-            QMetaObject::invokeMethod(m_worker, &SyncEngineWorker::resetCancellationFlag,
-                                      Qt::QueuedConnection);
+            // Start the worker pool if not running
+            startWorkerPool(1);
+            // E3 (O33a): legitimate new-run reset of every pool worker's
+            // own cancellation flag — see driveQueue()'s matching comment.
+            forEachWorker([](SyncEngineWorker *w) {
+                QMetaObject::invokeMethod(w, &SyncEngineWorker::resetCancellationFlag,
+                                          Qt::QueuedConnection);
+            });
 
             // Create request and invoke worker
             SyncEngineWorker::Request request;
@@ -643,8 +714,17 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // an implicit-state-machine residue (INVARIANTS §4) now gone.
             request.override = executionOverride;
 
-            // Command-channel: QueuedConnection routes to worker thread.
-            emit m_worker->processSyncRequested(request);
+            // Parallel-sync Task 2: dispatch through a leased slot, same as
+            // advanceQueue()'s multi-mapping dispatch, so m_inFlight stays
+            // accurate for releaseWorker() regardless of dispatch mode. At
+            // pool size 1 this always leases slot 0 — behaviourally
+            // identical to the pre-pool single-worker dispatch.
+            const int slot = leaseWorker();
+            Q_ASSERT(slot >= 0);
+            m_pool[slot].busyMappingId = mapping.id;
+            m_inFlight.insert(mapping.id, slot);
+            // Command-channel: QueuedConnection routes to the worker thread.
+            emit m_pool[slot].worker->processSyncRequested(request);
             return;
         }
     }
@@ -797,10 +877,11 @@ void SyncEngine::onCancelObserved()
     // cancelled=false, and the iface never sees reportCanceled().
     m_cancelled = true;
 
-    if (!m_worker) {
-        return;
-    }
-    emit m_worker->observeCancelRequested();
+    // Parallel-sync Task 2: fan out to every pool worker — cancellation
+    // must reach whichever slot(s) are currently in flight, not just one.
+    forEachWorker([](SyncEngineWorker *w) {
+        emit w->observeCancelRequested();
+    });
 }
 
 // G.6 Task 46: resourceId-aware cancellation.
@@ -821,17 +902,28 @@ void SyncEngine::cancelWithReason(CancellationReason reason,
         // next mapping. No m_cancelled=true here — we want the queue to
         // continue with mappings that don't use the lost resource.
     } else {
-        // All other reasons: stop the entire queue.
+        // All other reasons: stop the entire queue. Fan out to every pool
+        // worker — see onCancelObserved()'s matching comment.
         m_cancelled = true;
-        if (m_worker)
-            emit m_worker->observeCancelRequested();
+        forEachWorker([](SyncEngineWorker *w) {
+            emit w->observeCancelRequested();
+        });
     }
 }
 
 void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
                                                      const QString &mergedIcal)
 {
-    if (!m_worker) {
+    // Parallel-sync Task 2: resumeAfterConflict must go only to the slot
+    // holding the conflicted mapping — fanning it out to every worker
+    // would incorrectly resume unrelated in-flight syncs. Monitored runs
+    // are capped to concurrency 1 (a later task), so the conflicted
+    // mapping is always on slot 0 (the control slot) by construction.
+    // CORRECTNESS DEPENDS ON THAT CAP: if Monitored is ever allowed to run
+    // with concurrency > 1, this must become a real m_inFlight lookup
+    // keyed by m_pendingConflict.mappingId instead of a hardcoded slot 0.
+    SyncEngineWorker *worker = controlWorker();
+    if (!worker) {
         qWarning() << "SyncEngine::resumeAfterConflictResolution - no worker";
         return;
     }
@@ -839,7 +931,7 @@ void SyncEngine::resumeAfterConflictResolution(ConflictResolution resolution,
     qDebug() << "SyncEngine::resumeAfterConflictResolution - resolution:"
              << static_cast<int>(resolution);
 
-    emit m_worker->resumeAfterConflictRequested(resolution, mergedIcal);
+    emit worker->resumeAfterConflictRequested(resolution, mergedIcal);
 }
 
 void SyncEngine::setSkipUnchangedMappings(bool enabled)
@@ -1012,7 +1104,15 @@ void SyncEngine::advanceQueue()
     // sanitized to Default by runSync before reaching the queue).
     request.override = m_queueOverride;
 
-    emit m_worker->processSyncRequested(request);
+    // Parallel-sync Task 2 keeps the pool at size 1 and dispatches exactly
+    // one mapping at a time, so a lease can never fail here. Task 7's
+    // scheduler makes the lease genuinely contended and checks it before
+    // this point.
+    const int slot = leaseWorker();
+    Q_ASSERT(slot >= 0);
+    m_pool[slot].busyMappingId = mapping.id;
+    m_inFlight.insert(mapping.id, slot);
+    emit m_pool[slot].worker->processSyncRequested(request);
 
     // NOTE: Do NOT recurse here!
     // The async operation will call onWorkerSyncCompleted() when done,
@@ -1143,6 +1243,11 @@ void SyncEngine::invalidateSkipsTouching(const SyncMapping &completed)
 
 void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResult &result)
 {
+    // Parallel-sync Task 2: free this mapping's leased slot immediately —
+    // before any of the result-processing below, so the slot is available
+    // for the next lease as soon as possible.
+    releaseWorker(mappingId);
+
     // Batch-present any unmonitored conflicts collected during this mapping.
     // handleConflicts() (plural) applies hybrid threshold: shows dialogs for
     // small batches, defers large batches to the dock widget.
@@ -1299,6 +1404,10 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
 
 void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)
 {
+    // Parallel-sync Task 2: free this mapping's leased slot immediately —
+    // see the matching comment in onWorkerSyncCompleted().
+    releaseWorker(mappingId);
+
     qWarning() << "SyncEngine::onWorkerSyncError - mapping:" << mappingId
                << "error:" << errorMessage;
 
@@ -1367,7 +1476,8 @@ QHash<QString, BackendRecord> indexBlobById(const QList<BackendRecord> &records)
 } // namespace
 
 // ============================================================================
-// SyncEngineWorker — runs sync operations on m_workerThread.
+// SyncEngineWorker — runs sync operations on a pool worker's QThread
+// (parallel-sync Task 2: formerly the single m_workerThread).
 //
 // Phase F1 Task 8 (2026-04-29): formerly a standalone worker class in
 // src/calendar/ (deleted in this task). The implementation is moved here
@@ -1721,8 +1831,8 @@ void SyncEngineWorker::processSync(const SyncEngineWorker::Request &request)
     // E3 (O33a / audit C4): this used to unconditionally clear
     // m_cancelled here, which could erase a cancel that legitimately
     // landed after this mapping was queued but before this call started
-    // (e.g. SyncEngine::stopWorkerThread()'s direct, non-queued
-    // m_worker->cancel() racing an already-posted processSyncRequested)
+    // (e.g. SyncEngine::stopWorkerPool()'s direct, non-queued
+    // slot.worker->cancel() racing an already-posted processSyncRequested)
     // — the queue would then run one full extra mapping despite the
     // cancel. The reset now happens exactly once per run, from
     // SyncEngine's run entry points (see resetCancellationFlag()); here
@@ -3296,7 +3406,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // would fall through to the baseline-save block below, which talks
         // back to the engine thread via BlockingQueuedConnection and can
         // deadlock against a concurrent ~SyncEngine() teardown (the same
-        // thread pair stopWorkerThread() is trying to unwind).
+        // thread pair stopWorkerPool() is trying to unwind).
         ok = classifyErr.isEmpty() && writeOp != nullptr
             && writeOp->state() == SyncOperation::Succeeded
             && writeOp->failedUids().isEmpty();
