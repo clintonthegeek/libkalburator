@@ -1183,7 +1183,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // E9.2 (sync-excellence campaign, O34): a backend that computed an
     // incremental post-write expected fingerprint (WriteOperation::
     // resultRevision(), captured by the worker's applyBatch calls into
-    // m_lastAppliedTargetRevision/m_lastAppliedSourceRevision) removes the
+    // result.appliedTargetRevision/result.appliedSourceRevision) removes the
     // one-cycle re-diff lag for that side — it is a fresher, still-honest
     // value (computed from the pre-fetch snapshot plus exactly the files
     // THIS run wrote, never a full re-scan) than the pre-fetch snapshot
@@ -1193,16 +1193,18 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // untouched, unchanged from pre-E9.2 behavior. This does not change
     // WHERE tokens are persisted or WHO owns them — still exactly this
     // block, still engine-owned — only the VALUE fed into it.
+    //
+    // Parallel-sync Task 1: read from the result, not from "the" worker.
+    // With a pool there is no single current worker, and the result is
+    // already delivered per-mapping.
     if (result.success && m_baselineStore) {
         auto stateIt = m_freshState.constFind(mappingId);
         if (stateIt != m_freshState.constEnd()) {
             FreshSyncState fresh = stateIt.value();
-            if (m_worker) {
-                const QString incrementalTarget = m_worker->lastAppliedTargetRevision();
-                const QString incrementalSource = m_worker->lastAppliedSourceRevision();
-                if (!incrementalTarget.isEmpty()) fresh.targetRevision = incrementalTarget;
-                if (!incrementalSource.isEmpty()) fresh.sourceRevision = incrementalSource;
-            }
+            if (!result.appliedTargetRevision.isEmpty())
+                fresh.targetRevision = result.appliedTargetRevision;
+            if (!result.appliedSourceRevision.isEmpty())
+                fresh.sourceRevision = result.appliedSourceRevision;
             if (!fresh.sourceRevision.isEmpty()) {
                 m_baselineStore->setSyncToken(mappingId, QStringLiteral("source"),
                                               fresh.sourceRevision);
@@ -3036,12 +3038,14 @@ void SyncEngineWorker::unifiedHandleConflicts()
 
 void SyncEngineWorker::unifiedContinueAfterConflicts()
 {
-    // E9.2 (sync-excellence campaign, O34): reset at the top of every run
-    // so a stale value from a PRIOR cycle can never leak into this one's
-    // syncCompleted (e.g. a cancelled/errored run that never reaches the
-    // applyBatch calls below).
-    m_lastAppliedTargetRevision.clear();
-    m_lastAppliedSourceRevision.clear();
+    // Parallel-sync Task 1: no reset needed here — m_currentResult (and
+    // therefore its appliedTargetRevision/appliedSourceRevision fields) is
+    // already freshly default-constructed once per mapping run, before
+    // dispatchSync is ever called (see the `m_currentResult = SyncResult{}`
+    // assignment near the top of processSync), and
+    // unifiedContinueAfterConflicts runs exactly once per mapping (its
+    // three call sites are mutually exclusive, each returning immediately
+    // after).
 
     {
         QMutexLocker locker(&m_mutex);
@@ -3136,13 +3140,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         const QString &backendRegistryId,
         bool notifyHost,
         SyncStats &stats,
-        // E9.2 (sync-excellence campaign, O34): out-param — when non-null,
-        // filled with the settled WriteOperation's resultRevision() (may
-        // stay empty; the backend didn't compute one, or nothing was
-        // written). Callers store it into m_lastAppliedTargetRevision /
-        // m_lastAppliedSourceRevision so onWorkerSyncCompleted (engine
-        // thread) can override the pre-fetch FreshSyncState value with a
-        // fresher one for the side that actually wrote.
+        // E9.2 (sync-excellence campaign, O34); parallel-sync Task 1:
+        // out-param — when non-null, filled with the settled
+        // WriteOperation's resultRevision() (may stay empty; the backend
+        // didn't compute one, or nothing was written). Callers store it
+        // into m_currentResult.appliedTargetRevision /
+        // m_currentResult.appliedSourceRevision so onWorkerSyncCompleted
+        // (engine thread) can override the pre-fetch FreshSyncState value
+        // with a fresher one for the side that actually wrote — carried on
+        // the per-mapping SyncResult rather than engine-side worker state.
         QString *outRevision = nullptr)
     {
         // Authority: never write to a backend that reports read-only for this
@@ -3404,7 +3410,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
                    m_currentRequest.mapping.targetBackend, /*notifyHost=*/false,
-                   m_currentResult.targetStats, &m_lastAppliedTargetRevision);
+                   m_currentResult.targetStats, &m_currentResult.appliedTargetRevision);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -3443,7 +3449,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
                    m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true,
-                   m_currentResult.sourceStats, &m_lastAppliedSourceRevision);
+                   m_currentResult.sourceStats, &m_currentResult.appliedSourceRevision);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;

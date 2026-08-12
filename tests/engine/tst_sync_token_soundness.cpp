@@ -228,6 +228,7 @@ private slots:
     void clobberRun_clearsTokens();
     void writingCycleImmediatelyFollowedByQuietCycle_skips();
     void foreignEditDuringWritingCycle_defeatsIncrementalSkip();
+    void testAppliedRevisionsRideOnTheResult();
 
 private:
     Kalburator::Shape::ShapeRegistries m_shape;
@@ -761,6 +762,85 @@ void TstSyncTokenSoundness::foreignEditDuringWritingCycle_defeatsIncrementalSkip
              "a foreign edit outside the incremental write set must defeat the skip");
     QVERIFY(QFileInfo::exists(QDir(QDir(sourceDir.path()).filePath(sourceCollection))
                                    .filePath(QStringLiteral("evt-foreign.ics"))));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Parallel-sync Task 1 — the settled WriteOperation's post-apply revision
+// must ride on the mapping's own SyncResult, not on the engine-side
+// per-worker state that carried it before this task (now retired). This
+// is what makes the value safe to read once N mappings are in flight
+// under a worker pool: it is attached to the result, not to a single
+// worker.
+// ──────────────────────────────────────────────────────────────────────────
+void TstSyncTokenSoundness::testAppliedRevisionsRideOnTheResult()
+{
+    QTemporaryDir sourceDir, targetDir, fpDir, baselineDir;
+    QVERIFY(sourceDir.isValid() && targetDir.isValid() && fpDir.isValid() && baselineDir.isValid());
+
+    LocalBackend source(sourceDir.path());
+    LocalBackend target(targetDir.path());
+    source.setDbPath(fpDir.filePath(QStringLiteral("source-fp.db")));
+    target.setDbPath(fpDir.filePath(QStringLiteral("target-fp.db")));
+
+    const QString sourceCollection = QStringLiteral("src");
+    const QString targetCollection = QStringLiteral("tgt");
+    {
+        CollectionInfo info;
+        info.id = sourceCollection; info.name = sourceCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!source.createCollection(info).isEmpty());
+    }
+    {
+        CollectionInfo info;
+        info.id = targetCollection; info.name = targetCollection; info.type = QStringLiteral("calendar");
+        QVERIFY(!target.createCollection(info).isEmpty());
+    }
+
+    // A mapping that actually writes must report the target's post-apply
+    // revision on its own SyncResult, not via engine-side worker state.
+    auto *blobSource = static_cast<IBlobBackend *>(&source);
+    BackendRecord rec;
+    rec.id = QStringLiteral("evt-1");
+    rec.data = makeIcsBytes(QStringLiteral("evt-1"));
+    QVERIFY(!blobSource->createRecord(sourceCollection, rec).isEmpty());
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(source.backendId(), &source);
+    registry.registerBackendInstance(target.backendId(), &target);
+
+    CapturingSyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setSkipUnchangedMappings(true);
+
+    BaselineStore baselines(baselineDir.filePath(QStringLiteral("baselines.db")));
+    engine.setBaselineStore(&baselines);
+
+    const QString mappingId = QStringLiteral("applied-revision-on-result-mapping");
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = source.backendId();
+    mapping.sourceCalendar = sourceCollection;
+    mapping.targetBackend  = target.backendId();
+    mapping.targetCalendar = targetCollection;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::LastWriteWins;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = engine.runSync(req);
+    QDeadlineTimer deadline(kSyncTimeoutMs);
+    while (!future.isFinished() && !deadline.hasExpired())
+        QTest::qWait(10);
+    QVERIFY(future.isFinished());
+
+    QCOMPARE(future.resultCount(), 1);
+    const QList<SyncResult> results = future.resultAt(0);
+    QCOMPARE(results.size(), 1);
+    QVERIFY(results.first().success);
+    QVERIFY2(!results.first().appliedTargetRevision.isEmpty(),
+             "a mapping that wrote to target must carry its post-apply "
+             "target revision on the SyncResult");
 }
 
 QTEST_MAIN(TstSyncTokenSoundness)

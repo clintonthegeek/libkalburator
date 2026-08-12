@@ -172,6 +172,19 @@ struct SyncResult {
     /// exclusive with success=true.
     bool skipped = false;
 
+    /// E9.2 successor (parallel-sync Task 1): the settled WriteOperation's
+    /// resultRevision() from this mapping's most recent apply on each side.
+    /// Empty when the backend computed none, or when no apply happened on
+    /// that side.
+    ///
+    /// These previously lived on SyncEngineWorker as
+    /// lastAppliedSourceRevision()/lastAppliedTargetRevision(), read by
+    /// SyncEngine::onWorkerSyncCompleted off *the* worker — the engine's
+    /// only single-in-flight-mapping assumption. Carrying them on the
+    /// result makes them correct when N mappings are in flight.
+    QString appliedSourceRevision;
+    QString appliedTargetRevision;
+
     qint64 durationMs() const {
         return startTime.msecsTo(endTime);
     }

@@ -269,20 +269,6 @@ public:
         return m_cancelled.load(std::memory_order_acquire);
     }
 
-    /// E9.2 (sync-excellence campaign, O34): the settled WriteOperation's
-    /// resultRevision() from applyBatch's most recent target/source apply
-    /// this cycle (empty if the backend didn't compute one, or no apply
-    /// happened on that side). Set on the worker thread inside
-    /// unifiedContinueAfterConflicts' applyBatch calls, read on the engine
-    /// thread from onWorkerSyncCompleted() — safe because that slot only
-    /// ever runs after syncCompleted() has been delivered (queued
-    /// cross-thread signal delivery happens-after the worker-thread writes
-    /// that preceded the emit; no further writes race the read since the
-    /// worker doesn't touch these again until the NEXT cycle's
-    /// unifiedContinueAfterConflicts resets them).
-    QString lastAppliedTargetRevision() const { return m_lastAppliedTargetRevision; }
-    QString lastAppliedSourceRevision() const { return m_lastAppliedSourceRevision; }
-
 signals:
     void syncStarted(const QString &mappingId);
     void phaseChanged(const QString &mappingId, int phase);
@@ -424,13 +410,6 @@ private:
 
     Request m_currentRequest;
     SyncResult m_currentResult;
-
-    // E9.2 (sync-excellence campaign, O34): populated by applyBatch's two
-    // call sites in unifiedContinueAfterConflicts (target then source),
-    // reset at the top of each unifiedContinueAfterConflicts run. See the
-    // lastAppliedTargetRevision()/lastAppliedSourceRevision() accessors.
-    QString m_lastAppliedTargetRevision;
-    QString m_lastAppliedSourceRevision;
 };
 
 } // namespace Kalburator::Engine
