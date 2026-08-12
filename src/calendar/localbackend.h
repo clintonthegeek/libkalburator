@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <memory>
+#include <functional>
 
 #include <QDateTime>
 #include <QHash>
@@ -245,6 +246,12 @@ private:
 
     // Helper for async write setup
     void ensureAsyncWriterReady();
+
+    /// Parallel-sync Task 4: batch driver — see the .cpp for semantics.
+    void runChunked(Kalburator::Sync::SyncOperation *op,
+                    int total,
+                    const std::function<void(int)> &processOne,
+                    const std::function<void()> &onDone);
 };
 
 } // namespace Kalburator::Sync

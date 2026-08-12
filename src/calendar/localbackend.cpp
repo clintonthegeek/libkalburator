@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QRegularExpression>
 #include <QTimer>
+#include <QPointer>
 
 namespace Kalburator::Sync {
 
@@ -699,6 +700,43 @@ bool LocalBackend::setCalendarOrder(const QString &calendarId, int order)
 // Operation-based push/delete API (PushOperation / DeleteOperation)
 // ============================================================================
 
+namespace {
+
+/// Parallel-sync Task 4: how many records one batch processes before the
+/// operation yields to the event loop. Small enough that a yield happens
+/// promptly on any realistic collection; large enough that the per-turn
+/// overhead stays negligible.
+constexpr int kChunkSize = 64;
+
+} // namespace
+
+// Parallel-sync Task 4: drive @p total items in kChunkSize batches, calling
+// @p processOne for each index and @p onDone after the last one, yielding to
+// the event loop between batches. Aborts silently if @p op is destroyed or
+// reaches a terminal state (e.g. cancelled) between batches — the caller's
+// onDone is then never invoked, which is the correct cancellation shape.
+void LocalBackend::runChunked(SyncOperation *op,
+                              int total,
+                              const std::function<void(int)> &processOne,
+                              const std::function<void()> &onDone)
+{
+    auto step = std::make_shared<std::function<void(int)>>();
+    QPointer<SyncOperation> guard(op);
+    *step = [this, guard, total, processOne, onDone, step](int from) {
+        if (guard.isNull() || guard->isFinished())
+            return;
+        const int to = qMin(from + kChunkSize, total);
+        for (int i = from; i < to; ++i)
+            processOne(i);
+        if (to >= total) {
+            onDone();
+            return;
+        }
+        QTimer::singleShot(0, this, [step, to]() { (*step)(to); });
+    };
+    (*step)(0);
+}
+
 FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
 {
     auto *op = new FetchOperation(calendarId, this);
@@ -727,7 +765,6 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             return;
         }
 
-        QList<KCalendarCore::Incidence::Ptr> items;
         const QStringList files = calDir.entryList(QStringList() << "*.ics", QDir::Files | QDir::NoSymLinks);
         const int totalFiles = files.size();
 
@@ -745,80 +782,90 @@ FetchOperation* LocalBackend::fetchItems(const QString &calendarId)
             return;
         }
 
-        int currentFile = 0;
-        QList<BackendRecord> records;
+        // Parallel-sync Task 4: the whole pass used to run synchronously in
+        // this one functor call; it now runs through runChunked() in
+        // kChunkSize batches with an event-loop turn between them, so these
+        // accumulators must be heap-owned — this stack frame is gone by the
+        // time batch 2 runs. calDir/files are captured by value into the
+        // per-batch closure for the same reason (QDir copies cheaply).
+        auto items = std::make_shared<QList<KCalendarCore::Incidence::Ptr>>();
+        auto records = std::make_shared<QList<BackendRecord>>();
         // E9.2 (sync-excellence campaign, O34): snapshot every *.ics file's
         // (mtimeMs, size) as we see it in this pass — the base that
         // applyRecords() will later patch in place with only the files it
         // itself wrote/deleted. Captured for every file regardless of
         // read/parse success, matching calendarFingerprint()'s full-rescan
         // semantics (which also stats every *.ics file unconditionally).
-        QMap<QString, QPair<qint64, qint64>> fpSnapshot;
+        auto fpSnapshot = std::make_shared<QMap<QString, QPair<qint64, qint64>>>();
+        auto currentFile = std::make_shared<int>(0);
 
-        for (const QString &fileName : files) {
-            if (op->state() == SyncOperation::Cancelled) {
-                emit fetchFinished(calendarId, false, QStringLiteral("Cancelled"));
-                return;
-            }
+        runChunked(op, totalFiles,
+            [this, calDir, files, calendarId, totalFiles, items, records, fpSnapshot, currentFile](int i) {
+                // Body of the former per-file loop, verbatim, minus the
+                // per-item cancellation check: runChunked's between-batch
+                // guard now owns cancellation (a batch itself always runs
+                // to completion, matching kChunkSize being deliberately
+                // small enough that this is cheap).
+                const QString &fileName = files.at(i);
+                QString filePath = calDir.filePath(fileName);
+                {
+                    const QFileInfo fi(filePath);
+                    fpSnapshot->insert(fileName, qMakePair(fi.lastModified().toMSecsSinceEpoch(),
+                                                            fi.size()));
+                }
+                QFile file(filePath);
+                // H5/O23: no QIODevice::Text here — it strips '\r' on read, which
+                // would make the recordsFromLastFetch memo's bytes (and hence
+                // contentHash) diverge from recordFromFile()'s raw read of the
+                // same file (loadRecords()'s path), silently manufacturing a
+                // spurious per-cycle "target changed" baseline mismatch.
+                if (!file.open(QIODevice::ReadOnly)) {
+                    qWarning() << "LocalBackend::fetchItems: Failed to open" << filePath;
+                    (*currentFile)++;
+                    emit fetchProgressChanged(calendarId, *currentFile, totalFiles);
+                    return;
+                }
+                QByteArray data = file.readAll();
+                file.close();
 
-            QString filePath = calDir.filePath(fileName);
-            {
-                const QFileInfo fi(filePath);
-                fpSnapshot.insert(fileName, qMakePair(fi.lastModified().toMSecsSinceEpoch(),
-                                                       fi.size()));
-            }
-            QFile file(filePath);
-            // H5/O23: no QIODevice::Text here — it strips '\r' on read, which
-            // would make the recordsFromLastFetch memo's bytes (and hence
-            // contentHash) diverge from recordFromFile()'s raw read of the
-            // same file (loadRecords()'s path), silently manufacturing a
-            // spurious per-cycle "target changed" baseline mismatch.
-            if (!file.open(QIODevice::ReadOnly)) {
-                qWarning() << "LocalBackend::fetchItems: Failed to open" << filePath;
-                currentFile++;
-                emit fetchProgressChanged(calendarId, currentFile, totalFiles);
-                continue;
-            }
-            QByteArray data = file.readAll();
-            file.close();
+                const auto incidences = incidencesFromIcal(data);
+                if (incidences.isEmpty()) {
+                    qWarning() << "LocalBackend::fetchItems: Failed to parse" << filePath;
+                    (*currentFile)++;
+                    emit fetchProgressChanged(calendarId, *currentFile, totalFiles);
+                    return;
+                }
 
-            const auto incidences = incidencesFromIcal(data);
-            if (incidences.isEmpty()) {
-                qWarning() << "LocalBackend::fetchItems: Failed to parse" << filePath;
-                currentFile++;
-                emit fetchProgressChanged(calendarId, currentFile, totalFiles);
-                continue;
-            }
+                for (const auto &inc : incidences) {
+                    items->append(inc);
+                }
 
-            for (const auto &inc : incidences) {
-                items.append(inc);
-            }
+                // recordsFromLastFetch memo (H5/O23): one BackendRecord per file,
+                // built from the bytes already in hand (no second disk read).
+                records->append(recordFromBytes(data, fileName.chopped(4),
+                                                QFileInfo(filePath).lastModified()));
 
-            // recordsFromLastFetch memo (H5/O23): one BackendRecord per file,
-            // built from the bytes already in hand (no second disk read).
-            records.append(recordFromBytes(data, fileName.chopped(4),
-                                            QFileInfo(filePath).lastModified()));
+                (*currentFile)++;
+                emit fetchProgressChanged(calendarId, *currentFile, totalFiles);
+                // Note: processEvents() removed - this lambda runs on the
+                // backend's own thread, not the sync worker thread.
+            },
+            [this, op, calendarId, items, records, fpSnapshot]() {
+                qDebug() << "LocalBackend::fetchItems: Fetched" << items->size()
+                         << "incidences for calendar" << calendarId;
 
-            currentFile++;
-            emit fetchProgressChanged(calendarId, currentFile, totalFiles);
-            // Note: processEvents() removed - this lambda runs on the
-            // backend's own thread, not the sync worker thread.
-        }
+                // E9.1 (sync-excellence campaign, O34): batch signal, once per
+                // fetch pass, with the full item list (syncbackend.h).
+                emit itemsFetched(calendarId, *items);
 
-        qDebug() << "LocalBackend::fetchItems: Fetched" << items.size()
-                 << "incidences for calendar" << calendarId;
-
-        // E9.1 (sync-excellence campaign, O34): batch signal, once per
-        // fetch pass, with the full item list (syncbackend.h).
-        emit itemsFetched(calendarId, items);
-
-        op->setFetchedItems(items);
-        m_lastFetchRecords[calendarId] = records;
-        // E9.2: this pass's snapshot becomes the base for the next
-        // applyRecords() incremental patch.
-        m_lastFetchFingerprintSnapshot[calendarId] = fpSnapshot;
-        op->complete();
-        emit fetchFinished(calendarId, true);
+                op->setFetchedItems(*items);
+                m_lastFetchRecords[calendarId] = *records;
+                // E9.2: this pass's snapshot becomes the base for the next
+                // applyRecords() incremental patch.
+                m_lastFetchFingerprintSnapshot[calendarId] = *fpSnapshot;
+                op->complete();
+                emit fetchFinished(calendarId, true);
+            });
     });
 
     return op;
@@ -849,45 +896,53 @@ PushOperation* LocalBackend::pushItems(const QString &calendarId,
             }
         }
 
-        QStringList succeededUids;
-        QStringList failedUids;
+        // Parallel-sync Task 4: heap-owned so they survive past this
+        // functor's stack frame — see fetchItems() above for the same
+        // pattern and rationale.
+        auto succeededUids = std::make_shared<QStringList>();
+        auto failedUids = std::make_shared<QStringList>();
+        const int totalItems = static_cast<int>(items.size());
 
-        for (const auto &item : items) {
-            if (item.isNull()) {
-                continue;
-            }
+        runChunked(op, totalItems,
+            [calDir, items, succeededUids, failedUids](int i) {
+                // Body of the former per-item loop, verbatim.
+                const auto &item = items.at(i);
+                if (item.isNull()) {
+                    return;
+                }
 
-            QString fileName = calDir.filePath(item->uid() + ".ics");
-            QSaveFile file(fileName);
+                QString fileName = calDir.filePath(item->uid() + ".ics");
+                QSaveFile file(fileName);
 
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                qWarning() << "LocalBackend::pushItems: Failed to open" << fileName;
-                failedUids.append(item->uid());
-                continue;
-            }
+                if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                    qWarning() << "LocalBackend::pushItems: Failed to open" << fileName;
+                    failedUids->append(item->uid());
+                    return;
+                }
 
-            if (file.write(icalFromIncidence(item)) == -1) {
-                file.cancelWriting();
-                failedUids.append(item->uid());
-                continue;
-            }
+                if (file.write(icalFromIncidence(item)) == -1) {
+                    file.cancelWriting();
+                    failedUids->append(item->uid());
+                    return;
+                }
 
-            if (!file.commit()) {
-                failedUids.append(item->uid());
-                continue;
-            }
+                if (!file.commit()) {
+                    failedUids->append(item->uid());
+                    return;
+                }
 
-            succeededUids.append(item->uid());
-        }
+                succeededUids->append(item->uid());
+            },
+            [op, succeededUids, failedUids]() {
+                op->setSucceededUids(*succeededUids);
+                op->setFailedUids(*failedUids);
 
-        op->setSucceededUids(succeededUids);
-        op->setFailedUids(failedUids);
-
-        if (!failedUids.isEmpty() && succeededUids.isEmpty()) {
-            op->fail(QStringLiteral("All items failed to push"));
-        } else {
-            op->complete();
-        }
+                if (!failedUids->isEmpty() && succeededUids->isEmpty()) {
+                    op->fail(QStringLiteral("All items failed to push"));
+                } else {
+                    op->complete();
+                }
+            });
     });
 
     return op;
@@ -917,35 +972,43 @@ DeleteOperation* LocalBackend::deleteItems(const QString &calendarId,
             return;
         }
 
-        QStringList succeededUids;
-        QStringList failedUids;
+        // Parallel-sync Task 4: heap-owned so they survive past this
+        // functor's stack frame — see fetchItems() above for the same
+        // pattern and rationale.
+        auto succeededUids = std::make_shared<QStringList>();
+        auto failedUids = std::make_shared<QStringList>();
+        const int totalUids = static_cast<int>(uids.size());
 
-        for (const QString &uid : uids) {
-            QString fileName = calDir.filePath(uid + ".ics");
-            QFile file(fileName);
+        runChunked(op, totalUids,
+            [calDir, uids, succeededUids, failedUids](int i) {
+                // Body of the former per-uid loop, verbatim.
+                const QString &uid = uids.at(i);
+                QString fileName = calDir.filePath(uid + ".ics");
+                QFile file(fileName);
 
-            if (!file.exists()) {
-                // Consider non-existent as success (already deleted)
-                succeededUids.append(uid);
-                continue;
-            }
+                if (!file.exists()) {
+                    // Consider non-existent as success (already deleted)
+                    succeededUids->append(uid);
+                    return;
+                }
 
-            if (file.remove()) {
-                succeededUids.append(uid);
-            } else {
-                qWarning() << "LocalBackend::deleteItems: Failed to delete" << fileName;
-                failedUids.append(uid);
-            }
-        }
+                if (file.remove()) {
+                    succeededUids->append(uid);
+                } else {
+                    qWarning() << "LocalBackend::deleteItems: Failed to delete" << fileName;
+                    failedUids->append(uid);
+                }
+            },
+            [op, succeededUids, failedUids]() {
+                op->setSucceededUids(*succeededUids);
+                op->setFailedUids(*failedUids);
 
-        op->setSucceededUids(succeededUids);
-        op->setFailedUids(failedUids);
-
-        if (!failedUids.isEmpty() && succeededUids.isEmpty()) {
-            op->fail(QStringLiteral("All items failed to delete"));
-        } else {
-            op->complete();
-        }
+                if (!failedUids->isEmpty() && succeededUids->isEmpty()) {
+                    op->fail(QStringLiteral("All items failed to delete"));
+                } else {
+                    op->complete();
+                }
+            });
     });
 
     return op;

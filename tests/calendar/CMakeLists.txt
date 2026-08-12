@@ -37,6 +37,11 @@ kalburator_add_calendar_test(tst_mockbackend_concurrency)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
 
+# Parallel-sync Task 4 — LocalBackend's fetch/push/delete now process in
+# batches with an event-loop turn between them, so a large collection no
+# longer blocks its thread for the whole pass and stays cancellable.
+kalburator_add_calendar_test(tst_localbackend_chunking)
+
 # E5.1 — per-collection FIFO operation queue (SyncBackendBase::enqueueOperation).
 add_executable(tst_backend_op_queue tst_backend_op_queue.cpp)
 target_compile_definitions(tst_backend_op_queue
