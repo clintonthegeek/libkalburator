@@ -211,6 +211,12 @@ public:
     // Backend capabilities
     BackendCapabilities capabilities() const override;
 
+    /// Parallel-sync Task 5: cap concurrent DAV operations at 4 — safely
+    /// under QNetworkAccessManager's 6-connections-per-host default,
+    /// leaving headroom for the app's other traffic and for server-side
+    /// rate limiting (Radicale/Nextcloud/Fastmail all throttle).
+    int maxConcurrentOperations() const override { return 4; }
+
     // Binding metadata support
     QStringList bindingMetadataKeys() const override;
     void populateBindingMetadata(const DiscoveredCalendar &discovered,

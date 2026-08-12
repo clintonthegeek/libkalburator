@@ -186,6 +186,13 @@ set_tests_properties(tst_sync_collection_report PROPERTIES
 
 kalburator_add_calendar_test(tst_remotecalendarbackend)
 
+# Parallel-sync Task 5 — backend-declared concurrency veto
+# (SyncBackendBase::maxConcurrentOperations()). Lives here rather than
+# tests/sync/ because it constructs a real RemoteCalendarBackend, which
+# needs Qt6::Network + KF6::CalendarCore (only this directory's helper
+# links both).
+kalburator_add_calendar_test(tst_backend_concurrency_capability)
+
 if(KALBURATOR_HAVE_ORG_IO)
     kalburator_add_calendar_test(tst_orgbackend_blob_view)
     # G.9.b Tasks 68-69 — migrated from PlanStan

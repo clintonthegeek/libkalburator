@@ -98,6 +98,23 @@ public:
         return true;
     }
 
+    /**
+     * @brief Max operations this backend can usefully have in flight
+     * across ALL its collections. 0 = unlimited (only the engine's global
+     * concurrency cap applies).
+     *
+     * Parallel-sync Task 5. The engine caps concurrent mappings per
+     * resourceId() using this, so a backend can veto a host's concurrency
+     * setting downward without host cooperation. Override with a small
+     * number for a rate-limited network service, or 1 for a backend
+     * speaking to a single physical device over one link.
+     *
+     * Note this is about USEFUL concurrency, not safety: the
+     * per-collection FIFO in enqueueOperation() already guarantees
+     * operations on one collection never interleave.
+     */
+    virtual int maxConcurrentOperations() const { return 0; }
+
     // ========== Operation-Based API ==========
     // BackendRecord-id-typed CRUD. The base API returns the neutral
     // `SyncOperation` handle (sync/syncoperation.h, no KCalendarCore):
