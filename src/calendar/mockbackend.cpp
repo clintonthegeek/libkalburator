@@ -210,6 +210,10 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
     }
 
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
+    // Parallel-sync Task 6: count this op as running only from here — the
+    // two fixture branches above (m_fetchOpFailsSilently, m_useBaseFetchItems)
+    // return before this line, so they never started and must never decrement.
+    noteOpStarted(calendarId);
 
     if (shouldFail(FailurePoint::OnFetch)) {
         QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, this]() {
@@ -217,6 +221,7 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
             emit fetchFinished(calendarId, false, m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on fetch")
                 : m_failureMessage);
+            noteOpFinished(calendarId);
             op->fail(m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on fetch")
                 : m_failureMessage);
@@ -248,11 +253,18 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
             QMetaObject::invokeMethod(this, [this, calendarId]() {
                 FetchOperation *op = m_pendingBlockingFetchOps.take(calendarId);
                 if (!op || op->state() == SyncOperation::Cancelled) {
+                    // Parallel-sync Task 6: cancelled/already-deleted early
+                    // return is still a terminal transition for this op —
+                    // it started (noteOpStarted above) and will never reach
+                    // complete()/fail() from here, so it must be counted
+                    // finished here or the running count would leak upward.
+                    noteOpFinished(calendarId);
                     return;
                 }
                 QList<KCalendarCore::Incidence::Ptr> items =
                     m_calendars.value(calendarId).values();
                 op->setFetchedItems(items);
+                noteOpFinished(calendarId);
                 op->complete();
             }, Qt::QueuedConnection);
         });
@@ -280,6 +292,7 @@ FetchOperation* MockBackend::fetchItems(const QString &calendarId)
 
             emit fetchFinished(calendarId, true);
             op->setFetchedItems(items);
+            noteOpFinished(calendarId);
             op->complete();
         });
     }
@@ -300,13 +313,19 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
     // E5.1: serialize per-collection via SyncBackendBase's FIFO queue.
     enqueueOperation(calendarId, op, [this, op, calendarId, items]() {
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
+    // Parallel-sync Task 6: unlike fetchItems(), pushItems() has no
+    // pre-Running fixture branch — setState(Running) always runs first,
+    // so noteOpStarted() always pairs with exactly one noteOpFinished()
+    // below regardless of which of the three branches is taken.
+    noteOpStarted(calendarId);
 
     // Unified failure injection: OnPush || OnStoreItems both drive
     // the operation to Failed symmetrically. Per FINDINGS
     // ("MockBackend missing failure injection on pushItems"), the sync
     //  and async paths once disagreed; F2 Task 6 collapses them here.
     if (shouldFail(FailurePoint::OnPush) || shouldFail(FailurePoint::OnStoreItems)) {
-        QTimer::singleShot(m_operationDelayMs, this, [op, this]() {
+        QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, this]() {
+            noteOpFinished(calendarId);
             op->fail(m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on push")
                 : m_failureMessage);
@@ -326,6 +345,9 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
             QMetaObject::invokeMethod(this, [this, calendarId, items]() {
                 PushOperation *op = m_pendingBlockingPushOps.take(calendarId);
                 if (!op || op->state() == SyncOperation::Cancelled) {
+                    // Parallel-sync Task 6: cancelled/already-deleted early
+                    // return — see the matching comment in fetchItems().
+                    noteOpFinished(calendarId);
                     return;
                 }
                 auto &calendar = m_calendars[calendarId];
@@ -340,6 +362,7 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
                     }
                 }
                 op->setSucceededUids(succeededUids);
+                noteOpFinished(calendarId);
                 op->complete();
             }, Qt::QueuedConnection);
         });
@@ -363,6 +386,7 @@ PushOperation* MockBackend::pushItems(const QString &calendarId,
                 }
             }
             op->setSucceededUids(succeededUids);
+            noteOpFinished(calendarId);
             op->complete();
         });
     }
@@ -384,9 +408,13 @@ DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
     // E5.1: serialize per-collection via SyncBackendBase's FIFO queue.
     enqueueOperation(calendarId, op, [this, op, calendarId, uids]() {
     op->setState(SyncOperation::Running);  // Transition from Pending -> Running
+    // Parallel-sync Task 6: same as pushItems() — setState(Running) always
+    // runs first here, so this always pairs with exactly one noteOpFinished().
+    noteOpStarted(calendarId);
 
     if (shouldFail(FailurePoint::OnDelete)) {
-        QTimer::singleShot(m_operationDelayMs, this, [op, this]() {
+        QTimer::singleShot(m_operationDelayMs, this, [op, calendarId, this]() {
+            noteOpFinished(calendarId);
             op->fail(m_failureMessage.isEmpty()
                 ? QStringLiteral("Mock failure on delete")
                 : m_failureMessage);
@@ -402,6 +430,7 @@ DeleteOperation* MockBackend::deleteItems(const QString &calendarId,
                 }
             }
             op->setSucceededUids(succeededUids);
+            noteOpFinished(calendarId);
             op->complete();
         });
     }
@@ -573,6 +602,23 @@ void MockBackend::applyDelay()
     if (m_operationDelayMs > 0) {
         QThread::msleep(m_operationDelayMs);
     }
+}
+
+void MockBackend::noteOpStarted(const QString &calendarId)
+{
+    ++m_runningOps;
+    m_maxConcurrentOps = qMax(m_maxConcurrentOps, m_runningOps);
+    const int n = m_runningOpsPerCollection.value(calendarId, 0) + 1;
+    m_runningOpsPerCollection[calendarId] = n;
+    m_maxConcurrentOpsPerCollection[calendarId] =
+        qMax(m_maxConcurrentOpsPerCollection.value(calendarId, 0), n);
+}
+
+void MockBackend::noteOpFinished(const QString &calendarId)
+{
+    m_runningOps = qMax(0, m_runningOps - 1);
+    const int n = qMax(0, m_runningOpsPerCollection.value(calendarId, 0) - 1);
+    m_runningOpsPerCollection[calendarId] = n;
 }
 
 QString MockBackend::computeHash(const KCalendarCore::Incidence::Ptr &incidence) const

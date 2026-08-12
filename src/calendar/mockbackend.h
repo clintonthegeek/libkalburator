@@ -202,6 +202,28 @@ public:
     // State Inspection (for test verification)
     // =========================================================================
 
+    /// Parallel-sync Task 6: high-water mark of simultaneously-running
+    /// operations across all collections since the last
+    /// resetConcurrencyStats(). Lets a scheduler test PROVE concurrency
+    /// rather than infer it from wall-clock timing.
+    int maxConcurrentOps() const { return m_maxConcurrentOps; }
+
+    /// Same high-water mark, scoped to one collection. Should never
+    /// exceed 1 — the per-collection FIFO in
+    /// SyncBackendBase::enqueueOperation guarantees it.
+    int maxConcurrentOpsOn(const QString &calendarId) const
+    {
+        return m_maxConcurrentOpsPerCollection.value(calendarId, 0);
+    }
+
+    void resetConcurrencyStats()
+    {
+        m_runningOps = 0;
+        m_maxConcurrentOps = 0;
+        m_runningOpsPerCollection.clear();
+        m_maxConcurrentOpsPerCollection.clear();
+    }
+
     /**
      * @brief Get all calendar IDs.
      */
@@ -389,6 +411,19 @@ private:
     // Test fixture: when true, fetchItems() emits fetchProgressChanged()
     // once per seeded item before completing.
     bool m_emitFetchProgress = false;
+
+    // Parallel-sync Task 6 concurrency instrumentation. Mutated only on
+    // this backend's own thread (every op body runs there — including the
+    // blocking-fetch/push completion lambdas, which are Qt::QueuedConnection-
+    // marshaled from a raw QThread back onto `this`'s thread before they
+    // touch these members), so no locking is needed.
+    int m_runningOps = 0;
+    int m_maxConcurrentOps = 0;
+    QHash<QString, int> m_runningOpsPerCollection;
+    QHash<QString, int> m_maxConcurrentOpsPerCollection;
+
+    void noteOpStarted(const QString &calendarId);
+    void noteOpFinished(const QString &calendarId);
 };
 
 } // namespace Kalburator::Sync

@@ -33,6 +33,7 @@ endif()
 
 kalburator_add_calendar_test(tst_mockbackend_blob_view)
 kalburator_add_calendar_test(tst_mockbackend_failure_injection)
+kalburator_add_calendar_test(tst_mockbackend_concurrency)
 kalburator_add_calendar_test(tst_localbackend_blob_view)
 kalburator_add_calendar_test(tst_localbackend)
 
