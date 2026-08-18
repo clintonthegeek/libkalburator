@@ -626,7 +626,7 @@ if(KALBURATOR_HAVE_OUTLINE_ORG)
     else()
         include(FetchContent)
         FetchContent_Declare(OrgGrove
-            GIT_REPOSITORY https://codeberg.org/clintonthegeek/OrgGrove.git
+            GIT_REPOSITORY https://github.com/clintonthegeek/OrgGrove.git
             GIT_TAG        ${KALBURATOR_ORGGROVE_GIT_TAG})
         FetchContent_MakeAvailable(OrgGrove)
     endif()
