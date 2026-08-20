@@ -2056,7 +2056,7 @@ an RAII `FetchOpGuard`); `fetchFinished` dropped on Task 4's chunked abort
 path (would have left PlanStan's `ItemLoadingCoordinator` stuck "loading"
 forever).
 
-Suite at v0.95: 179 total, 177 passing at both N=1 and N=4 (three
+Suite at v0.96: 179 total, 177 passing at both N=1 and N=4 (three
 consecutive sweeps) — the same two pre-existing failures throughout
 (`tst_remotecalendarbackend`: broken local Radicale test-server auth;
 `tst_calendar_canon_roundtrip`: pre-existing on `main`, not campaign-caused).

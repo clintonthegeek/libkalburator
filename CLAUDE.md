@@ -39,7 +39,7 @@ for concurrency (`Complete` describes the RUN, not one mapping — WildPalms'
 consecutive `KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS=4` sweeps) — the same
 two pre-existing failures throughout (`tst_remotecalendarbackend`: broken
 local Radicale test-server auth; `tst_calendar_canon_roundtrip`:
-pre-existing on `main`). Tag **v0.95** lands with Task 10's docs commit.
+pre-existing on `main`). Tag **v0.96** lands with Task 10's docs commit.
 
 `KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS` is a **test-only** env knob
 (read once into a `static` in `resolveEffectiveCap()`, memoized for the
