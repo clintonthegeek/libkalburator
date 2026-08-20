@@ -56,9 +56,19 @@ guard the sweep-invalidated assertion behind
 see `tst_syncengine_unification.cpp` and `tst_engine_cancellation.cpp` for
 the pattern.
 
-**Remaining:** Task 11 (thread-per-backend) and Task 12 (pin bump +
-concurrency setting) are PlanStan-side. Tasks 13+14 are USER-RUN (live
-Radicale gate). Task 15 is docs closeout in both repos. Full task detail:
+**Task 11 (thread-per-backend, PlanStan-side) is also DONE.** Widening
+relocation to every backend family (not just Local/Remote) surfaced a real
+bug in `CollectionController::removeProvider()` — see PlanStan's commit for
+the fix. Task 12's own prerequisite (Task 0's audit: `BackendRegistry::
+m_instances` mutated with no lock from the GUI thread while read from every
+worker thread) is now closed too — `m_instancesMutex` guards it, same shape
+as `TransformationRegistry::m_frozenDomainsMutex` (Task 16). **Tag
+`v0.97`** carries this fix; PlanStan's Task 12 pin bump should target
+`v0.97`, not `v0.96` (which predates it).
+
+**Remaining:** Task 12 (pin bump + concurrency setting) is PlanStan-side.
+Tasks 13+14 are USER-RUN (live Radicale gate). Task 15 is docs closeout in
+both repos. Full task detail:
 `~/dev/PlanStan/docs/superpowers/plans/2026-08-12-parallel-sync.md` (the
 only task source; its Execution Order section is authoritative and NOT
 sequential).
