@@ -10,24 +10,36 @@ BackendRegistry::BackendRegistry(QObject *parent)
 
 void BackendRegistry::registerBackendInstance(const QString &backendId, SyncBackendBase *backend)
 {
-    m_instances[backendId] = backend;
+    {
+        QMutexLocker locker(&m_instancesMutex);
+        m_instances[backendId] = backend;
+    }
+    // Emit outside the lock — a connected slot re-entering the registry
+    // (e.g. backendInstance()) must never deadlock on its own mutex.
     emit backendInstanceRegistered(backendId);
 }
 
 void BackendRegistry::unregisterBackendInstance(const QString &backendId)
 {
-    if (m_instances.remove(backendId)) {
+    bool removed = false;
+    {
+        QMutexLocker locker(&m_instancesMutex);
+        removed = m_instances.remove(backendId) > 0;
+    }
+    if (removed) {
         emit backendInstanceUnregistered(backendId);
     }
 }
 
 SyncBackendBase* BackendRegistry::backendInstance(const QString &backendId) const
 {
+    QMutexLocker locker(&m_instancesMutex);
     return m_instances.value(backendId, nullptr);
 }
 
 QStringList BackendRegistry::registeredInstanceIds() const
 {
+    QMutexLocker locker(&m_instancesMutex);
     return m_instances.keys();
 }
 
@@ -59,7 +71,10 @@ void BackendRegistry::unregisterContribution(const QString &typeName) {
 }
 
 void BackendRegistry::clear() {
-    m_instances.clear();
+    {
+        QMutexLocker locker(&m_instancesMutex);
+        m_instances.clear();
+    }
     m_contributions.clear();
 }
 

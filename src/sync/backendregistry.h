@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QMap>
+#include <QMutex>
 #include <QString>
 #include <memory>
 #include "backendcontribution.h"
@@ -105,6 +106,18 @@ signals:
 private:
     QMap<QString, SyncBackendBase*> m_instances;
     QMap<QString, std::shared_ptr<BackendContribution>> m_contributions;
+
+    /// Parallel-sync Task 12 prerequisite: registerBackendInstance()/
+    /// unregisterBackendInstance() mutate m_instances from the GUI thread
+    /// (ProviderManager, on provider connect/removal) with no lock, while
+    /// backendInstance() is read from every SyncEngineWorker thread during
+    /// a run. Pre-existing at concurrency 1 (a narrow sampling window);
+    /// N>1 raises the number of concurrent reads in flight and with it the
+    /// chance of overlapping a mutation. Same shape as
+    /// TransformationRegistry::m_frozenDomainsMutex (Task 16) — guards
+    /// only m_instances, not m_contributions (plugin-registration-time
+    /// only, never touched mid-sync).
+    mutable QMutex m_instancesMutex;
 };
 
 } // namespace Kalburator::Sync
