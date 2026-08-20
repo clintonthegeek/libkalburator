@@ -321,17 +321,18 @@ void TestEngineSkipInvalidation::testUntouchedMappingStaysSkipped()
     for (const auto &r : results)
         QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
 
-    // m3 (index 2) — D and E are untouched by anything in this run — must
-    // stay skipped: a zero-stats no-op result, and no backend I/O at all.
-    const SyncResult &m3Result = results.at(2);
-    QCOMPARE(m3Result.sourceStats.created, 0);
-    QCOMPARE(m3Result.sourceStats.updated, 0);
-    QCOMPARE(m3Result.sourceStats.deleted, 0);
-    QCOMPARE(m3Result.targetStats.created, 0);
-    QCOMPARE(m3Result.targetStats.updated, 0);
-    QCOMPARE(m3Result.targetStats.deleted, 0);
-    QVERIFY(m3Result.success);
-
+    // Parallel-sync Task 10 (N=4 sweep): this used to assert on
+    // results.at(2) directly, on the assumption that per-mapping results
+    // land in submission order. That was only ever true by accident of
+    // strict sequential dispatch — SyncResult carries no mapping id, and
+    // MappingQueue::recordResult() appends in COMPLETION order, which
+    // m1/m2's endpoint collision on B reorders relative to m3 (disjoint,
+    // free to run alongside m1) once concurrency is > 1. There is also no
+    // way to reliably pick "the m3 result" out of the four by shape alone
+    // — the harmless re-pass no-op of m2 has the same all-zero-stats
+    // signature m3's skip does. The per-backend operation logs below are
+    // the order-independent proof that actually matters: m3's endpoints
+    // (D, E) saw zero I/O regardless of when in the run it was evaluated.
     QCOMPARE(m_d->operationLog().size(), 0);
     QCOMPARE(m_e->operationLog().size(), 0);
 }

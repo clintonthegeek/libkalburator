@@ -22,6 +22,47 @@ canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).
 
+## Parallel-sync campaign — START HERE if on branch `parallel-sync`
+
+Tasks 0-10 of 16 are DONE on branch `parallel-sync` (cut from `main@3fcb842`),
+closing sync-excellence's §16-parked "parallel mapping execution" residual
+(see `docs/campaign/FINDINGS.md`'s resolved entry for the full reversal
+rationale and defect list). `SyncEngine` can now run multiple sync mappings
+concurrently: `setMaxConcurrentMappings(int)` (default 1, bit-identical to
+every existing consumer), an endpoint-collision scheduler (`pumpQueue()`)
+that never lets two mappings diff/apply against the same (backend,
+calendar) at once, and `phaseChanged`/`progressUpdated` semantics redefined
+for concurrency (`Complete` describes the RUN, not one mapping — WildPalms'
+`shouldPauseTickle()` depends on this).
+
+**Suite: 179 total, 177 passing, identical at N=1 and N=4** (three
+consecutive `KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS=4` sweeps) — the same
+two pre-existing failures throughout (`tst_remotecalendarbackend`: broken
+local Radicale test-server auth; `tst_calendar_canon_roundtrip`:
+pre-existing on `main`). Tag **v0.95** lands with Task 10's docs commit.
+
+`KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS` is a **test-only** env knob
+(read once into a `static` in `resolveEffectiveCap()`, memoized for the
+whole process): forces every Queue-mode run's concurrency to the given
+value regardless of what the host requested, except Monitored runs, which
+stay pinned to 1 unconditionally. Never consulted unless set — production
+and every real consumer are unaffected. Because the `static` is memoized
+per-process (= per test binary, since QTest runs all slots in one
+process), a test cannot override the sweep back down via
+`setMaxConcurrentMappings()` once any earlier test in that binary has read
+it; a test whose contract is genuinely concurrency-1-only must instead
+guard the sweep-invalidated assertion behind
+`!qEnvironmentVariableIsSet("KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS")` —
+see `tst_syncengine_unification.cpp` and `tst_engine_cancellation.cpp` for
+the pattern.
+
+**Remaining:** Task 11 (thread-per-backend) and Task 12 (pin bump +
+concurrency setting) are PlanStan-side. Tasks 13+14 are USER-RUN (live
+Radicale gate). Task 15 is docs closeout in both repos. Full task detail:
+`~/dev/PlanStan/docs/superpowers/plans/2026-08-12-parallel-sync.md` (the
+only task source; its Execution Order section is authoritative and NOT
+sequential).
+
 ## Architectural-redress campaign — START HERE if on a branch `feature/redress-N-*`
 
 If your CWD is on any branch matching `feature/redress-N-*` (N = 1..11), you are

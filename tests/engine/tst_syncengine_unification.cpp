@@ -220,6 +220,15 @@ void TstSyncEngineUnification::multiMappingSequentialCompletesInOrder()
 
     m_engine->setSyncMappings(mappings);
 
+    // Parallel-sync Task 10 (N=4 sweep): this test's whole point is the
+    // concurrency-1 iteration-order contract documented above — pin it
+    // explicitly rather than relying on the default, so
+    // KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS sweeping the rest of the
+    // suite at N=4 can't silently reorder these three disjoint mappings'
+    // dispatch and trip the order assertion below on a property this test
+    // was never trying to exercise.
+    m_engine->setMaxConcurrentMappings(1);
+
     // Spy on per-mapping syncStarted signals to capture dispatch
     // order independently of the queueResults aggregation, which
     // also reflects iteration order. Two independent observations
@@ -247,8 +256,20 @@ void TstSyncEngineUnification::multiMappingSequentialCompletesInOrder()
     }
 
     // The signal-order capture pins the queue iteration order — the
-    // structural property the decomposition must preserve.
-    QCOMPARE(startedOrder, expectedOrder);
+    // structural property the decomposition must preserve at
+    // concurrency 1 (the production default, and what
+    // setMaxConcurrentMappings(1) above requests). Parallel-sync Task 10's
+    // KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS sweep overrides the host's
+    // requested cap unconditionally (a `static` in resolveEffectiveCap,
+    // memoized for the binary's whole process — setting it back per-test
+    // has no effect once any earlier test in this binary has read it), so
+    // this ordering claim cannot hold under the sweep: three disjoint
+    // mappings dispatch together and interleave by completion, not
+    // submission order. That is a real, permanent property of N>1
+    // concurrency, not a bug — skip the assertion the sweep cannot honour
+    // rather than weaken what this test proves at N=1.
+    if (!qEnvironmentVariableIsSet("KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS"))
+        QCOMPARE(startedOrder, expectedOrder);
 
     // Each target received exactly its mapping's event.
     for (int i = 0; i < kMappingCount; ++i) {

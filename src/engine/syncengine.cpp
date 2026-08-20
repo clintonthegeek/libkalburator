@@ -979,6 +979,20 @@ int SyncEngine::resolveEffectiveCap(SyncBehavior behavior) const
     // UI semantics, Monitored runs stay strictly sequential.
     if (behavior == SyncBehavior::Monitored)
         return 1;
+
+    // Test-only sweep override (parallel-sync Task 10). Lets the whole
+    // suite run at a forced concurrency to flush out latent
+    // single-in-flight assumptions in code no targeted test reaches. Read
+    // once. Never consulted unless explicitly set, so production and
+    // every consumer are unaffected. Monitored above still wins — that
+    // guarantee is not overridable.
+    static const int envOverride = []() {
+        const QByteArray v = qgetenv("KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS");
+        return v.isEmpty() ? 0 : v.toInt();
+    }();
+    if (envOverride > 0)
+        return envOverride;
+
     return m_maxConcurrentMappings;
 }
 

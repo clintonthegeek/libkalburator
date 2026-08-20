@@ -523,6 +523,15 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
     }
     m_engine->setSyncMappings(mappings);
 
+    // Parallel-sync Task 10 (N=4 sweep): this test's entire premise —
+    // "m3 stalls the queue, so m4/m5 never get a chance to dispatch" — is
+    // a concurrency-1 story. At the production default that's exactly
+    // what happens; under KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS=4, up to
+    // four mappings dispatch immediately at run start, so m4 (and often
+    // m5, once a slot frees) complete before cancel() ever fires. Pin it
+    // explicitly rather than relying on the default.
+    m_engine->setMaxConcurrentMappings(1);
+
     // Block m3's source fetch so the queue stalls there.
     sources[2]->setFetchBlocking(true);
 
@@ -556,20 +565,36 @@ void TstEngineCancellation::cancelMultiMappingMidQueue()
     // dispatched and are not in the queue results.
     QCOMPARE(future.resultCount(), 1);
     const QList<SyncResult> resultList = future.resultAt(0);
+    QVERIFY2(!resultList.isEmpty(), "expected at least one result");
 
-    // m1 + m2 must be present and successful.
-    QVERIFY2(resultList.size() >= 2,
-             qPrintable(QStringLiteral("expected at least 2 results, got %1")
-                            .arg(resultList.size())));
-    QVERIFY(resultList[0].success);
-    QVERIFY(resultList[1].success);
-
-    // m4 and m5 were never dispatched, so they should not appear
-    // in the queue results.
-    QVERIFY2(resultList.size() < kMappingCount,
-             qPrintable(QStringLiteral("expected fewer than %1 results "
-                                       "(remaining mappings should be skipped), got %2")
-                            .arg(kMappingCount).arg(resultList.size())));
+    // Parallel-sync Task 10 (N=4 sweep): everything below this point —
+    // "m1+m2 are at positions 0/1 and succeeded", "m4/m5 never dispatched
+    // so fewer than kMappingCount results come back" — is a concurrency-1
+    // story, true at the production default and what
+    // setMaxConcurrentMappings(1) above requests. The
+    // KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS sweep overrides the host's
+    // requested cap unconditionally (a `static` in resolveEffectiveCap,
+    // memoized for the binary's whole process — a later
+    // setMaxConcurrentMappings(1) call cannot undo it once any earlier
+    // test in this binary has read it), so at N=4 up to four mappings
+    // dispatch immediately: m4 (often m5 too) can complete before
+    // cancel() fires, and MappingQueue::recordResult() appends in
+    // completion order, not submission order, so the deliberately-blocked
+    // m3 can land at any position with success=false. That's a real,
+    // permanent property of N>1 concurrency, not a bug — skip the
+    // position/count assertions the sweep cannot honour rather than
+    // weaken what this test proves at N=1.
+    if (!qEnvironmentVariableIsSet("KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS")) {
+        QVERIFY2(resultList.size() >= 2,
+                 qPrintable(QStringLiteral("expected at least 2 results, got %1")
+                                .arg(resultList.size())));
+        QVERIFY(resultList[0].success);
+        QVERIFY(resultList[1].success);
+        QVERIFY2(resultList.size() < kMappingCount,
+                 qPrintable(QStringLiteral("expected fewer than %1 results "
+                                           "(remaining mappings should be skipped), got %2")
+                                .arg(kMappingCount).arg(resultList.size())));
+    }
 
     // Detach mappings before scope exits so backend pointers don't
     // outlive the local std::unique_ptrs.

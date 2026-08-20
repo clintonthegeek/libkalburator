@@ -2000,3 +2000,63 @@ test double. Suggested fix (a, WP's lean): `MockBlobBackend` computes
 matching `LocalBlobBackend`. WP is not blocked — it added a local
 `BlobSyncBackendWrapper` test-helper workaround (v0.94 port Phase 1 Task 1.6).
 Source: `WildPalms/docs/2026-07-19-libkalburator-mockblobbackend-contenthash-gap-handoff.md`.
+
+### §16 residual — "parallel mapping execution" was PARKED at sync-excellence CP-C (RESOLVED 2026-08-20, parallel-sync campaign)
+
+**Resolution:** implemented. `SyncEngine::setMaxConcurrentMappings(int)`
+(Task 7, default 1 — bit-identical to every existing consumer) plus an
+endpoint-collision scheduler (Task 8): `pumpQueue()` dispatches every
+mapping whose source and target `endpointKey()`s are both unclaimed, up to
+the effective cap, reusing the same `endpointKey()` L1/L2's convergence
+fixpoint already uses so two mappings never diff/apply against the same
+(backend, calendar) concurrently — the per-collection FIFO does NOT
+provide that guarantee, it serialises operations, not diff/apply cycles.
+`resolveEffectiveCap()` pins Monitored runs to 1 (the conflict-pause
+interaction stays one-at-a-time) and `capForMapping()` adds a per-resource
+ceiling from `SyncBackendBase::maxConcurrentOperations()`, forcing 1 for
+any backend still living on the engine's own thread (the GUI-thread
+BlockingQueuedConnection backstop — PlanStan's Task 11 relocates every
+sync backend onto its own I/O thread to actually benefit from N>1).
+`phaseChanged(SyncPhase::Complete)` and `progressUpdated`'s semantics were
+redefined for concurrency (Task 9): Complete now describes the RUN, not
+one mapping — WildPalms' `shouldPauseTickle()` depends on this.
+
+**Reversal rationale** (why this campaign reopened a parked decision): CP-C
+judged the busy cycle throughput-bound on one server. A 2026-04-10
+measurement instead found it latency-bound — 11 mappings took ~76s
+sequentially against one CalDAV account, round-trip latency dominating —
+and latency parallelises fine against a single host.
+
+**Task 10's N=4 full-suite sweep** (`KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS`,
+test-only env override, never consulted unless set, three consecutive
+identical runs) found zero engine bugs and three test-side single-in-flight
+assumptions, all fixed: `tst_engine_skip_invalidation`'s
+`testUntouchedMappingStaysSkipped` indexed `results.at(2)` assuming
+submission-order completion (SyncResult carries no mapping id;
+`MappingQueue::recordResult()` appends in completion order) — fixed to
+rely on the already-present order-independent backend-operation-log
+assertions instead. `tst_syncengine_unification`'s
+`multiMappingSequentialCompletesInOrder` and `tst_engine_cancellation`'s
+`cancelMultiMappingMidQueue` both assert genuine concurrency-1 contracts
+(dispatch order; "mappings past the cancel point never ran") that
+`setMaxConcurrentMappings(1)` cannot pin against the sweep — the env
+override's `static` in `resolveEffectiveCap()` is memoized for the whole
+process once any test reads it — so both guard the sweep-invalidated
+assertions behind `!qEnvironmentVariableIsSet("KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS")`
+rather than weaken what they prove at the production default.
+
+Five real defects surfaced along the way, none previously covered by any
+test, three pre-existing in shipped code: `TransformationRegistry::compile()`
+data race on a `mutable QSet` (Task 16); cross-mapping sync-token
+corruption from a worker-persistent `m_lastAppliedTargetRevision` (fixed
+structurally by Task 1's move onto `SyncResult`); live-probe files broken
+by the `stopWorkerThread`→`stopWorkerPool` rename; `tgtFetchOp` leaked on
+three early-return paths introduced by Task 3's fetch overlap (fixed with
+an RAII `FetchOpGuard`); `fetchFinished` dropped on Task 4's chunked abort
+path (would have left PlanStan's `ItemLoadingCoordinator` stuck "loading"
+forever).
+
+Suite at v0.95: 179 total, 177 passing at both N=1 and N=4 (three
+consecutive sweeps) — the same two pre-existing failures throughout
+(`tst_remotecalendarbackend`: broken local Radicale test-server auth;
+`tst_calendar_canon_roundtrip`: pre-existing on `main`, not campaign-caused).
