@@ -306,6 +306,7 @@ void SyncEngine::stopWorkerPool()
     }
     m_pool.clear();
     m_inFlight.clear();
+    m_inFlightEndpoints.clear();
 
     qDebug() << "SyncEngine: worker pool stopped";
 }
@@ -1018,14 +1019,63 @@ int SyncEngine::capForMapping(const SyncMapping &m) const
 // fixing the FINDINGS leak structurally.
 void SyncEngine::processQueue()
 {
-    advanceQueue();
+    pumpQueue();
 }
 
-void SyncEngine::advanceQueue()
+bool SyncEngine::isEligible(const SyncMapping &m) const
+{
+    if (m_inFlightEndpoints.contains(endpointKey(m.sourceBackend, m.sourceCalendar)))
+        return false;
+    if (m_inFlightEndpoints.contains(endpointKey(m.targetBackend, m.targetCalendar)))
+        return false;
+    return inFlightCountForMappingResources(m) < capForMapping(m);
+}
+
+int SyncEngine::inFlightCountForMappingResources(const SyncMapping &m) const
+{
+    if (!m_registry)
+        return 0;
+
+    QSet<QString> mine;
+    for (const QString &backendId : { m.sourceBackend, m.targetBackend }) {
+        if (auto *b = m_registry->backendInstance(backendId))
+            mine.insert(b->resourceId());
+    }
+    if (mine.isEmpty())
+        return 0;
+
+    int count = 0;
+    for (auto it = m_inFlight.constBegin(); it != m_inFlight.constEnd(); ++it) {
+        for (const auto &other : std::as_const(m_syncMappings)) {
+            if (other.id != it.key())
+                continue;
+            for (const QString &backendId : { other.sourceBackend, other.targetBackend }) {
+                if (auto *b = m_registry->backendInstance(backendId)) {
+                    if (mine.contains(b->resourceId())) {
+                        ++count;
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+    }
+    return count;
+}
+
+void SyncEngine::pumpQueue()
 {
     // Debug log removed - SyncEngineWorker provides detailed timing
 
     if (m_cancelled) {
+        // Parallel-sync Task 8: DRAIN BEFORE FINISHING. The pre-pool code
+        // finished m_currentIface here immediately, which under a pool
+        // would resolve the future while in-flight workers are still
+        // writing results into m_queue. Wait for the last completion to
+        // re-enter this function with an empty pool.
+        if (!m_inFlight.isEmpty())
+            return;
+
         m_isSyncing = false;
         m_currentPhase = SyncPhase::Idle;
         emit phaseChanged(m_currentPhase);
@@ -1041,152 +1091,168 @@ void SyncEngine::advanceQueue()
             m_currentIface.reset();
         }
         m_queue.reset();
+        m_inFlightEndpoints.clear();
         return;
     }
 
-    // P1.T3: ask the queue for the next enabled+in-filter mapping.
-    // Returns nullopt past the end (queue exhausted).
-    std::optional<SyncMapping> nextMapping = m_queue.next();
+    // Parallel-sync Task 8: dispatch every eligible mapping up to the
+    // effective cap, not just one. A mapping whose endpoint collides with
+    // one already in flight is skipped WITHOUT being consumed — it stays
+    // pending for a later pump once that endpoint frees up.
+    while (m_inFlight.size() < m_effectiveCap) {
+        std::optional<SyncMapping> nextMapping = m_queue.nextEligible(
+            [this](const SyncMapping &m) { return isEligible(m); });
 
-    if (!nextMapping.has_value()) {
-        // L2 (spec §5.9): fixpoint re-pass gate. If any mapping this pass
-        // wrote an endpoint that a DIFFERENT mapping also touches, re-prime
-        // the queue with just those dirtied mappings and run another pass
-        // — up to kMaxSyncPasses total — so one Sync converges regardless
-        // of mapping order. Single-mapping runs never reach here
-        // (DispatchMode::Single finishes in onWorkerSyncCompleted).
-        if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
-            !m_cancelled && m_currentPass < kMaxSyncPasses &&
-            !m_passDirtyWriters.isEmpty()) {
-            QSet<QString> nextIds;
-            for (const auto &m : std::as_const(m_syncMappings)) {
-                if (!m.enabled)
-                    continue;
-                for (const auto &key : { endpointKey(m.sourceBackend, m.sourceCalendar),
-                                         endpointKey(m.targetBackend, m.targetCalendar) }) {
-                    const auto writers = m_passDirtyWriters.value(key);
-                    // Re-run only if someone ELSE dirtied this endpoint — a
-                    // mapping is already converged with its own writes.
-                    if (!writers.isEmpty() &&
-                        !(writers.size() == 1 && writers.contains(m.id))) {
-                        nextIds.insert(m.id);
-                        break;
-                    }
+        if (!nextMapping.has_value())
+            break;
+
+        const SyncMapping &mapping = *nextMapping;
+
+        // G.6 Task 46: ResourceLost skip — if any of this mapping's
+        // backends uses a resource that became unavailable, add a
+        // cancelled SyncResult and continue without dispatching.
+        if (m_queue.hasLostResources() && m_registry) {
+            // v0.66: fetch via the registry (neutral SyncBackendBase*) —
+            // the host's calendar-typed backendById() cannot represent
+            // base-only backends post-Plan-3 (WildPalms dispatchSync RFC).
+            auto *src = m_registry->backendInstance(mapping.sourceBackend);
+            auto *tgt = m_registry->backendInstance(mapping.targetBackend);
+            const bool srcLost = src && m_queue.isResourceLost(src->resourceId());
+            const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
+            if (srcLost || tgtLost) {
+                SyncResult cancelled;
+                cancelled.success   = false;
+                cancelled.cancelled = true;
+                cancelled.errorMessage = QStringLiteral("Resource lost");
+                cancelled.startTime    = QDateTime::currentDateTime();
+                cancelled.endTime      = cancelled.startTime;
+                m_queue.recordResult(cancelled);
+                continue;
+            }
+        }
+
+        // Phase-2 skip: if this mapping's both endpoints are demonstrably
+        // unchanged AND the skip flag is on, short-circuit without
+        // dispatching to the worker. Append a successful no-op result so
+        // the future caller sees per-mapping completion in resultAt(0).
+        if (m_skippedMappingIds.contains(mapping.id)) {
+            emit progressUpdated(m_queue.startedCount(), m_queue.totalSize(),
+                                 tr("Skipping unchanged %1").arg(mapping.id));
+
+            SyncResult skippedResult;
+            skippedResult.success = true;
+            skippedResult.startTime = QDateTime::currentDateTime();
+            skippedResult.endTime = skippedResult.startTime;
+            m_queue.recordResult(skippedResult);
+            continue;
+        }
+
+        emit progressUpdated(m_queue.startedCount(), m_queue.totalSize(),
+                             tr("Syncing %1").arg(mapping.id));
+
+        SyncEngineWorker::Request request;
+        request.mapping = mapping;
+        request.behavior = m_currentSyncBehavior;
+        request.collectionId = m_collection ? m_collection->id() : QString();
+        request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
+        // v0.65: per-run multi-mapping override (clobber only; direction
+        // was sanitized to Default by runSync before reaching the queue).
+        request.override = m_queueOverride;
+
+        const int slot = leaseWorker();
+        if (slot < 0) {
+            // Pool exhausted despite the cap check — put the mapping back
+            // and wait for a completion to re-enter.
+            m_queue.pushBack(mapping);
+            break;
+        }
+        m_pool[slot].busyMappingId = mapping.id;
+        m_inFlight.insert(mapping.id, slot);
+        m_inFlightEndpoints.insert(endpointKey(mapping.sourceBackend, mapping.sourceCalendar));
+        m_inFlightEndpoints.insert(endpointKey(mapping.targetBackend, mapping.targetCalendar));
+        emit m_pool[slot].worker->processSyncRequested(request);
+
+        // NOTE: no recursion — onWorkerSyncCompleted/onWorkerSyncError
+        // re-enter pumpQueue() when a slot frees up.
+    }
+
+    // Terminal only when the queue can offer nothing AND nothing is
+    // running. Blocked purely on endpoint collisions (candidates remain,
+    // but none are currently eligible) is NOT terminal — a completion
+    // will free an endpoint and re-pump.
+    if (!m_inFlight.isEmpty())
+        return;
+    if (!m_queue.isExhausted())
+        return;
+
+    // L2 (spec §5.9): fixpoint re-pass gate. If any mapping this pass
+    // wrote an endpoint that a DIFFERENT mapping also touches, re-prime
+    // the queue with just those dirtied mappings and run another pass —
+    // up to kMaxSyncPasses total — so one Sync converges regardless of
+    // mapping order. Single-mapping runs never reach here (DispatchMode::
+    // Single finishes in onWorkerSyncCompleted).
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
+        !m_cancelled && m_currentPass < kMaxSyncPasses &&
+        !m_passDirtyWriters.isEmpty()) {
+        QSet<QString> nextIds;
+        for (const auto &m : std::as_const(m_syncMappings)) {
+            if (!m.enabled)
+                continue;
+            for (const auto &key : { endpointKey(m.sourceBackend, m.sourceCalendar),
+                                     endpointKey(m.targetBackend, m.targetCalendar) }) {
+                const auto writers = m_passDirtyWriters.value(key);
+                // Re-run only if someone ELSE dirtied this endpoint — a
+                // mapping is already converged with its own writes.
+                if (!writers.isEmpty() &&
+                    !(writers.size() == 1 && writers.contains(m.id))) {
+                    nextIds.insert(m.id);
+                    break;
                 }
             }
-            if (!nextIds.isEmpty()) {
-                m_carriedResults += m_queue.drain();
-                m_passDirtyWriters.clear();
-                m_skippedMappingIds.clear(); // filter already narrows the pass
-                ++m_currentPass;
-                emit syncPassStarted(m_currentPass, kMaxSyncPasses);
-                m_queue.prime(m_syncMappings, nextIds);
-                advanceQueue();
-                return;
-            }
+        }
+        if (!nextIds.isEmpty()) {
+            m_carriedResults += m_queue.drain();
             m_passDirtyWriters.clear();
-        }
-
-        // All mappings processed (or filtered out).
-        m_isSyncing = false;
-        m_currentPhase = SyncPhase::Idle;
-        emit phaseChanged(m_currentPhase);
-        // Aggregate success: false if stats report errors/conflicts, or if any
-        // per-mapping result already set it to false (e.g. fetch failures that
-        // abort before any operations and thus leave stats clean).
-        bool statsOk = !m_lastResult.sourceStats.hasErrors() &&
-                       !m_lastResult.targetStats.hasErrors() &&
-                       !m_lastResult.hasUnresolvedConflicts();
-        m_lastResult.success = m_lastResult.success && statsOk;
-        m_lastResult.endTime = QDateTime::currentDateTime();
-
-        // F2 Task 21: finish the iface (if any) with the per-
-        // mapping results. The future resolves to the per-mapping
-        // list; the aggregate result is observable via lastSyncResult().
-        // L2: carriedResults holds drained results from earlier passes.
-        if (m_currentIface) {
-            m_currentIface->reportResult(m_carriedResults + m_queue.drain());
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
-        return;
-    }
-
-    const SyncMapping &mapping = *nextMapping;
-
-    // G.6 Task 46: ResourceLost skip — if any of this mapping's backends
-    // uses a resource that became unavailable, add a cancelled SyncResult
-    // and advance without dispatching to the worker.
-    if (m_queue.hasLostResources() && m_registry) {
-        // v0.66: fetch via the registry (neutral SyncBackendBase*) — the
-        // host's calendar-typed backendById() cannot represent base-only
-        // backends post-Plan-3 (WildPalms dispatchSync RFC).
-        auto *src = m_registry->backendInstance(mapping.sourceBackend);
-        auto *tgt = m_registry->backendInstance(mapping.targetBackend);
-        const bool srcLost = src && m_queue.isResourceLost(src->resourceId());
-        const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
-        if (srcLost || tgtLost) {
-            SyncResult cancelled;
-            cancelled.success   = false;
-            cancelled.cancelled = true;
-            cancelled.errorMessage = QStringLiteral("Resource lost");
-            cancelled.startTime    = QDateTime::currentDateTime();
-            cancelled.endTime      = cancelled.startTime;
-            m_queue.recordResult(cancelled);
-            advanceQueue();
+            m_skippedMappingIds.clear(); // filter already narrows the pass
+            ++m_currentPass;
+            emit syncPassStarted(m_currentPass, kMaxSyncPasses);
+            m_queue.prime(m_syncMappings, nextIds);
+            pumpQueue();
             return;
         }
+        m_passDirtyWriters.clear();
     }
 
-    // Phase-2 skip: if this mapping's both endpoints are demonstrably
-    // unchanged AND the skip flag is on, short-circuit without dispatching
-    // to the worker. Append a successful no-op result to the queue so
-    // the future caller sees per-mapping completion in resultAt(0).
-    if (m_skippedMappingIds.contains(mapping.id)) {
-        emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
-                             tr("Skipping unchanged %1").arg(mapping.id));
+    // All mappings processed (or filtered out). Parallel-sync Task 9: this
+    // is the one place that actually knows a Queue-mode RUN has nothing
+    // left — no in-flight mappings, the queue exhausted, and no fixpoint
+    // re-pass warranted. Complete precedes Idle, same order a
+    // single-mapping run already announces both in.
+    m_isSyncing = false;
+    m_currentPhase = SyncPhase::Complete;
+    emit phaseChanged(m_currentPhase);
+    m_currentPhase = SyncPhase::Idle;
+    emit phaseChanged(m_currentPhase);
+    // Aggregate success: false if stats report errors/conflicts, or if any
+    // per-mapping result already set it to false (e.g. fetch failures that
+    // abort before any operations and thus leave stats clean).
+    bool statsOk = !m_lastResult.sourceStats.hasErrors() &&
+                   !m_lastResult.targetStats.hasErrors() &&
+                   !m_lastResult.hasUnresolvedConflicts();
+    m_lastResult.success = m_lastResult.success && statsOk;
+    m_lastResult.endTime = QDateTime::currentDateTime();
 
-        SyncResult skippedResult;
-        skippedResult.success = true;
-        skippedResult.startTime = QDateTime::currentDateTime();
-        skippedResult.endTime = skippedResult.startTime;
-
-        // Aggregate into last result (no stats to add; success stays true unless
-        // already false from a prior mapping failure).
-        m_queue.recordResult(skippedResult);
-
-        // Advance to the next mapping without touching the worker.
-        advanceQueue();
-        return;
+    // F2 Task 21: finish the iface (if any) with the per-mapping results.
+    // The future resolves to the per-mapping list; the aggregate result
+    // is observable via lastSyncResult(). L2: carriedResults holds
+    // drained results from earlier passes.
+    if (m_currentIface) {
+        m_currentIface->reportResult(m_carriedResults + m_queue.drain());
+        m_currentIface->reportFinished();
+        m_currentIface.reset();
     }
-
-    emit progressUpdated(m_queue.currentIndex() + 1, m_queue.totalSize(),
-                         tr("Syncing %1").arg(mapping.id));
-
-    // Create request and invoke worker directly
-    SyncEngineWorker::Request request;
-    request.mapping = mapping;
-    request.behavior = m_currentSyncBehavior;
-    request.collectionId = m_collection ? m_collection->id() : QString();
-    request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
-    // v0.65: per-run multi-mapping override (clobber only; direction was
-    // sanitized to Default by runSync before reaching the queue).
-    request.override = m_queueOverride;
-
-    // Parallel-sync Task 2 keeps the pool at size 1 and dispatches exactly
-    // one mapping at a time, so a lease can never fail here. Task 7's
-    // scheduler makes the lease genuinely contended and checks it before
-    // this point.
-    const int slot = leaseWorker();
-    Q_ASSERT(slot >= 0);
-    m_pool[slot].busyMappingId = mapping.id;
-    m_inFlight.insert(mapping.id, slot);
-    emit m_pool[slot].worker->processSyncRequested(request);
-
-    // NOTE: Do NOT recurse here!
-    // The async operation will call onWorkerSyncCompleted() when done,
-    // which will then call advanceQueue() again (Queue mode only).
+    m_queue.reset();
+    m_inFlightEndpoints.clear();
 }
 
 // ============================================================================
@@ -1318,6 +1384,16 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // for the next lease as soon as possible.
     releaseWorker(mappingId);
 
+    // Parallel-sync Task 8: release this mapping's endpoint claims so a
+    // colliding mapping becomes eligible for the next pump.
+    for (const auto &m : std::as_const(m_syncMappings)) {
+        if (m.id == mappingId) {
+            m_inFlightEndpoints.remove(endpointKey(m.sourceBackend, m.sourceCalendar));
+            m_inFlightEndpoints.remove(endpointKey(m.targetBackend, m.targetCalendar));
+            break;
+        }
+    }
+
     // Batch-present any unmonitored conflicts collected during this mapping.
     // handleConflicts() (plural) applies hybrid threshold: shows dialogs for
     // small batches, defers large batches to the dock widget.
@@ -1391,9 +1467,18 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         }
     }
 
-    // Reset phase
-    m_currentPhase = SyncPhase::Complete;
-    emit phaseChanged(m_currentPhase);
+    // Parallel-sync Task 9: the engine-level phase describes the RUN, not
+    // one mapping. In Queue mode, m_inFlight going empty here does NOT
+    // mean the run is done — pumpQueue() below may immediately dispatch
+    // more pending mappings, or a later fixpoint re-pass may follow.
+    // Complete is emitted from pumpQueue()'s own terminal branch instead,
+    // the single place that actually knows the run has nothing left.
+    // Single-mapping runs have no such ambiguity (finish unconditionally
+    // below), so Complete is still emitted right here for that mode.
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
+        m_currentPhase = SyncPhase::Complete;
+        emit phaseChanged(m_currentPhase);
+    }
 
     // F2 Task 21: dispatch on mode rather than unconditionally calling
     // processNextMapping (which iterated from index 0 for the single-
@@ -1468,8 +1553,8 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         }
     }
 
-    // Continue to next mapping (queue mode only).
-    advanceQueue();
+    // Continue pumping the queue (queue mode only).
+    pumpQueue();
 }
 
 void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)
@@ -1477,6 +1562,16 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
     // Parallel-sync Task 2: free this mapping's leased slot immediately —
     // see the matching comment in onWorkerSyncCompleted().
     releaseWorker(mappingId);
+
+    // Parallel-sync Task 8: release this mapping's endpoint claims — see
+    // the matching comment in onWorkerSyncCompleted().
+    for (const auto &m : std::as_const(m_syncMappings)) {
+        if (m.id == mappingId) {
+            m_inFlightEndpoints.remove(endpointKey(m.sourceBackend, m.sourceCalendar));
+            m_inFlightEndpoints.remove(endpointKey(m.targetBackend, m.targetCalendar));
+            break;
+        }
+    }
 
     qWarning() << "SyncEngine::onWorkerSyncError - mapping:" << mappingId
                << "error:" << errorMessage;
@@ -1509,8 +1604,8 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
     // recordResult is a no-op outside Queue mode (defensive).
     m_queue.recordResult(failedResult);
 
-    // Continue to next mapping (don't fail the whole batch).
-    advanceQueue();
+    // Continue pumping the queue (don't fail the whole batch).
+    pumpQueue();
 }
 
 void SyncEngine::onWorkerTranscodingWarning(const QString &calendarId,

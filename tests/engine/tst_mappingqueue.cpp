@@ -176,23 +176,34 @@ void TstMappingQueue::next_emptyFilterMeansRunNothing()
 
 void TstMappingQueue::next_exhaustsAtEnd()
 {
+    // Parallel-sync Task 8: the integer cursor was replaced by a pending
+    // list so a mapping rejected by nextEligible()'s predicate (endpoint
+    // collision) stays available for a later pump instead of being
+    // consumed. isExhausted() now means "the pending list is empty",
+    // which becomes true the instant the single candidate is popped —
+    // not one next() call later, since there is no longer a separate
+    // "past the end" cursor position to walk into.
     MappingQueue q;
     q.prime({mk("m1")}, std::nullopt);
     QVERIFY(!q.isExhausted());
     (void)q.next();
-    QVERIFY(!q.isExhausted());   // m1 returned; not exhausted yet
-    (void)q.next();
-    QVERIFY(q.isExhausted());    // now past the end
+    QVERIFY(q.isExhausted());    // m1 popped; nothing left pending
+    QVERIFY(!q.next().has_value());
 }
 
 void TstMappingQueue::next_currentIndexTracksProgress()
 {
+    // Parallel-sync Task 8: currentIndex() is now startedCount()-1, not a
+    // position in the original candidate list — prime() filters disabled/
+    // out-of-filter entries out of the pending list up front, so a
+    // disabled mapping is never counted at all (it was never a candidate
+    // to begin with, unlike the old cursor which walked past it).
     MappingQueue q;
     q.prime({mk("m1"), mk("m2", false), mk("m3")}, std::nullopt);
 
     QCOMPARE(q.currentIndex(), -1);
     (void)q.next(); QCOMPARE(q.currentIndex(), 0);  // m1
-    (void)q.next(); QCOMPARE(q.currentIndex(), 2);  // skipped m2, returned m3
+    (void)q.next(); QCOMPARE(q.currentIndex(), 1);  // m2 never pending; m3 is the 2nd start
 }
 
 // ---------------------------------------------------------------------------

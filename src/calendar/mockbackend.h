@@ -224,6 +224,13 @@ public:
         m_maxConcurrentOpsPerCollection.clear();
     }
 
+    /// Parallel-sync Task 8 test fixture: drive
+    /// SyncBackendBase::maxConcurrentOperations() from a test so the
+    /// engine's per-resource cap can be exercised without a real DAV
+    /// backend. Default 0 (unlimited), matching the base class.
+    void setDeclaredMaxConcurrentOps(int n) { m_declaredMaxConcurrentOps = n; }
+    int  maxConcurrentOperations() const override { return m_declaredMaxConcurrentOps; }
+
     /**
      * @brief Get all calendar IDs.
      */
@@ -421,6 +428,10 @@ private:
     int m_maxConcurrentOps = 0;
     QHash<QString, int> m_runningOpsPerCollection;
     QHash<QString, int> m_maxConcurrentOpsPerCollection;
+
+    /// Parallel-sync Task 8: test-only declared cap. See
+    /// setDeclaredMaxConcurrentOps().
+    int m_declaredMaxConcurrentOps = 0;
 
     void noteOpStarted(const QString &calendarId);
     void noteOpFinished(const QString &calendarId);

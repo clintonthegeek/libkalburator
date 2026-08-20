@@ -135,6 +135,13 @@ kalburator_add_engine_integration_test(tst_engine_skip_invalidation)
 # [M2, M1] order to prove L2 (not just L1) is doing the work.
 kalburator_add_engine_integration_test(tst_engine_fixpoint_passes)
 
+# Parallel-sync Task 8 — the endpoint-collision scheduler's correctness
+# suite. The load-bearing case is testMappingsSharingAnEndpointNeverOverlap:
+# the per-collection FIFO serialises operations, NOT diff/apply cycles, so
+# only the scheduler prevents two mappings racing one endpoint's baselines.
+# Also covers Task 9's run-level signal semantics under concurrency.
+kalburator_add_engine_integration_test(tst_engine_parallel_mappings)
+
 # Fix B (2026-06-12 Akonadi scoped-backend handoff) — the engine must tell a
 # genuine fetchItems failure (an overriding backend whose fetch failed, whose
 # read path is silent — the scoped AkonadiBackend's shape) apart from a backend

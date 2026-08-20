@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QString>
 
+#include <functional>
 #include <optional>
 
 namespace Kalburator::Engine {
@@ -126,6 +127,32 @@ public:
     std::optional<SyncMapping> next();
 
     /**
+     * @brief Parallel-sync Task 8: pop the next enabled+in-filter mapping
+     * that also satisfies @p predicate.
+     *
+     * Mappings rejected by the predicate are NOT consumed — they stay
+     * available for a later pump once their endpoints free up. Returns
+     * `std::nullopt` when no remaining candidate satisfies it (which does
+     * NOT by itself mean the queue is exhausted; check isExhausted()
+     * separately — a predicate rejection leaves candidates pending).
+     */
+    std::optional<SyncMapping> nextEligible(
+        const std::function<bool(const SyncMapping &)> &predicate);
+
+    /**
+     * @brief Parallel-sync Task 8: return a leased mapping to the pending
+     * list, e.g. when the worker pool was exhausted despite the cap check.
+     */
+    void pushBack(const SyncMapping &m);
+
+    /**
+     * @brief Parallel-sync Task 8: number of mappings handed out by
+     * next()/nextEligible() this pass. Feeds progressUpdated's monotonic
+     * `current`; equals the pre-parallel currentIndex()+1 at concurrency 1.
+     */
+    int startedCount() const { return m_startedCount; }
+
+    /**
      * @brief Record a per-mapping result during a Queue run.
      *
      * Called from `onWorkerSyncCompleted` (queue mode), and from the
@@ -205,14 +232,13 @@ public:
     /**
      * @brief Index of the most recently returned mapping, for progress.
      *
-     * `-1` before the first `next()` call; otherwise the 0-based index
-     * into the candidate list passed to `prime()`. Skipped entries
-     * (not enabled, not in filter) are counted in the index so it
-     * remains the "position within the candidate list" — this matches
-     * the pre-extraction `m_currentMappingIndex` semantics that
-     * `progressUpdated` consumed.
+     * Parallel-sync Task 8: with the cursor replaced by a pending list
+     * (a mapping can be requeued via pushBack() when a lease fails), this
+     * is now `startedCount() - 1` rather than a position in the original
+     * candidate list. `-1` before the first successful next()/
+     * nextEligible() call.
      */
-    int currentIndex() const { return m_currentIndex; }
+    int currentIndex() const { return m_startedCount - 1; }
 
     /**
      * @brief Size of the candidate list passed to `prime()`.
@@ -234,11 +260,19 @@ private:
     /// Resources marked lost mid-queue (G.6 Task 46).
     QSet<QString> m_lostResources;
 
-    /// Iteration cursor; -1 before the first `next()`.
-    int m_currentIndex = -1;
+    /// Parallel-sync Task 8: remaining enabled+in-filter candidates,
+    /// built by `prime()` and drained by `next()`/`nextEligible()`.
+    /// Replaces the former integer cursor so a mapping rejected by a
+    /// predicate (endpoint collision) or pushed back (lease exhausted)
+    /// stays available for a later pump instead of being consumed.
+    QList<SyncMapping> m_pending;
 
-    /// True once `next()` returns `nullopt` because the candidate
-    /// list was walked. Reset by `prime*()` / `reset()`.
+    /// Number of mappings handed out by next()/nextEligible() this pass,
+    /// net of any pushBack(). See startedCount().
+    int m_startedCount = 0;
+
+    /// True once `m_pending` is empty — no remaining candidate exists,
+    /// regardless of predicate. Reset by `prime*()` / `reset()`.
     bool m_exhausted = false;
 
     /// Single vs Queue vs None (no run in flight).

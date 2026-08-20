@@ -422,11 +422,23 @@ signals:
 
     /**
      * @brief Emitted to report sync progress.
+     *
+     * Parallel-sync Task 9: `current` is the number of mappings started
+     * this pass — monotonic by construction, which is what a progress bar
+     * needs. At concurrency 1 it equals the pre-parallel currentIndex()+1
+     * exactly. `message` names the mapping that just started.
      */
     void progressUpdated(int current, int total, const QString &message);
 
     /**
      * @brief Emitted when sync phase changes.
+     *
+     * Parallel-sync Task 9: at concurrency 1 this is per-mapping and
+     * unchanged from the pre-parallel engine. At N>1 it describes the
+     * RUN: Complete and Idle are only emitted once the pool has drained,
+     * so a consumer gating on "is a sync happening" (e.g. WildPalms'
+     * shouldPauseTickle) stays correct. Per-mapping phase is reported
+     * separately via the worker's phaseChanged(mappingId, int).
      */
     void phaseChanged(SyncPhase phase);
 
@@ -515,10 +527,21 @@ private:
      */
     void processQueue();
 
-    /// F2 Task 21 helper: pop the next enabled+in-filter mapping from
-    /// MappingQueue and dispatch it; called from processQueue() and
-    /// from onWorkerSyncCompleted() during a Queue run.
-    void advanceQueue();
+    /// Parallel-sync Task 8: dispatch as many eligible mappings as the
+    /// effective cap allows, then return. Re-entered from
+    /// onWorkerSyncCompleted/onWorkerSyncError after each completion
+    /// releases its endpoints and its worker. Replaces advanceQueue()'s
+    /// dispatch-one-and-return shape; called from processQueue() too.
+    void pumpQueue();
+
+    /// True when @p m may be dispatched right now: neither endpoint is
+    /// claimed by an in-flight mapping, and the per-resource cap
+    /// (capForMapping) is not already reached by the mappings in flight.
+    bool isEligible(const SyncMapping &m) const;
+
+    /// How many in-flight mappings already use either of @p m's backends'
+    /// resourceId(), for comparison against capForMapping(m).
+    int inFlightCountForMappingResources(const SyncMapping &m) const;
 
     /**
      * @brief H4: finishes the setup driveQueue() started — either directly
@@ -675,6 +698,14 @@ private:
 
     /// mappingId -> pool slot index, for every mapping currently dispatched.
     QHash<QString, int> m_inFlight;
+
+    /// Parallel-sync Task 8: endpointKey()s currently claimed by an
+    /// in-flight mapping. A mapping is only eligible for dispatch when
+    /// NEITHER of its endpoints is in here — that is what stops two
+    /// mappings diffing and applying against the same (backend, calendar)
+    /// at once. The per-collection FIFO does NOT provide this guarantee:
+    /// it serialises operations, not diff/apply cycles.
+    QSet<QString> m_inFlightEndpoints;
 
     SyncBehavior m_currentSyncBehavior = SyncBehavior::Unmonitored;
     ConflictInfo m_pendingConflict;  // For monitored mode dialog
