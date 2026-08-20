@@ -297,6 +297,27 @@ public:
     bool skipUnchangedMappings() const { return m_skipUnchangedMappings; }
 
     /**
+     * @brief Max mappings dispatched concurrently in a Queue-mode run.
+     *
+     * Default 1 — bit-identical to pre-parallel behaviour, which is what
+     * makes this safe to land for every existing consumer without them
+     * changing a line. Clamped to a minimum of 1.
+     *
+     * Read ONCE at run entry and frozen for the duration of that run;
+     * changing it mid-run affects the next run only. This eliminates a
+     * whole class of races at no cost.
+     *
+     * Two things override it downward, both automatically:
+     *  - A Monitored run is always 1 (the conflict pause is a
+     *    one-at-a-time interaction).
+     *  - A backend's maxConcurrentOperations() caps mappings using that
+     *    backend's resourceId(), and a backend living on the engine's own
+     *    thread is treated as 1 (see capForMapping).
+     */
+    void setMaxConcurrentMappings(int n);
+    int  maxConcurrentMappings() const { return m_maxConcurrentMappings; }
+
+    /**
      * @brief Enable or disable a sync mapping by ID.
      */
     void setMappingEnabled(const QString &mappingId, bool enabled);
@@ -591,6 +612,24 @@ private:
     // Phase-2 skip optimization
     bool m_skipUnchangedMappings = false;
     QSet<QString> m_skippedMappingIds;
+
+    // Parallel sync (Task 7): concurrency configuration.
+    /// Host-requested concurrency. See setMaxConcurrentMappings().
+    int m_maxConcurrentMappings = 1;
+
+    /// Concurrency actually in force for the current run, resolved once
+    /// at run entry by resolveEffectiveCap().
+    int m_effectiveCap = 1;
+
+    /// Resolve the run's concurrency: 1 for Monitored, otherwise the
+    /// host-requested value.
+    int resolveEffectiveCap(SyncBehavior behavior) const;
+
+    /// Per-resource ceiling for @p m: the min of both backends'
+    /// maxConcurrentOperations(), with 0 meaning unlimited, and with a
+    /// backend living on the engine's own thread forced to 1.
+    /// Returns INT_MAX when nothing constrains it.
+    int capForMapping(const SyncMapping &m) const;
 
     // L2 (sync-graph campaign, spec §5.9): fixpoint-pass state. Reset at
     // the start of every driveQueue() run.

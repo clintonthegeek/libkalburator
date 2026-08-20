@@ -80,6 +80,11 @@ private slots:
     void registerActiveController_makesHasSyncWorkTrue();
     void unregisterActiveController_removesController();
 
+    // setMaxConcurrentMappings / maxConcurrentMappings (parallel-sync Task 7)
+    void testMaxConcurrentMappingsDefaultsToOne();
+    void testMaxConcurrentMappingsClampsToAtLeastOne();
+    void testMaxConcurrentMappingsRoundTrips();
+
 private:
     std::unique_ptr<BackendRegistry>           m_registry;
     std::unique_ptr<Kalburator::Shape::ShapeRegistries> m_shape;
@@ -248,6 +253,32 @@ void TstSyncEngineConfigApi::unregisterActiveController_removesController()
 
     m_engine->unregisterActiveController(QStringLiteral("cal-1"));
     QVERIFY(!m_engine->hasSyncWork());
+}
+
+// ---------------------------------------------------------------------------
+// setMaxConcurrentMappings / maxConcurrentMappings (parallel-sync Task 7)
+// ---------------------------------------------------------------------------
+
+void TstSyncEngineConfigApi::testMaxConcurrentMappingsDefaultsToOne()
+{
+    // The whole consumer-safety story rests on this. WildPalms and every
+    // existing call site are unchanged precisely because they never touch
+    // the setter.
+    QCOMPARE(m_engine->maxConcurrentMappings(), 1);
+}
+
+void TstSyncEngineConfigApi::testMaxConcurrentMappingsClampsToAtLeastOne()
+{
+    m_engine->setMaxConcurrentMappings(0);
+    QCOMPARE(m_engine->maxConcurrentMappings(), 1);
+    m_engine->setMaxConcurrentMappings(-5);
+    QCOMPARE(m_engine->maxConcurrentMappings(), 1);
+}
+
+void TstSyncEngineConfigApi::testMaxConcurrentMappingsRoundTrips()
+{
+    m_engine->setMaxConcurrentMappings(4);
+    QCOMPARE(m_engine->maxConcurrentMappings(), 4);
 }
 
 QTEST_GUILESS_MAIN(TstSyncEngineConfigApi)

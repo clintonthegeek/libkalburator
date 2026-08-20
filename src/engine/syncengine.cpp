@@ -53,6 +53,7 @@
 #include <QTimer>
 #include <QMutexLocker>
 #include <QUuid>
+#include <climits>
 #include <memory>
 
 namespace {
@@ -512,13 +513,16 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // scope which mappings get a stored-token lookup / dispatch).
     m_queue.prime(m_syncMappings, filter);
 
+    // Resolved ONCE per run and frozen — see setMaxConcurrentMappings().
+    m_effectiveCap = resolveEffectiveCap(behavior);
+
     // E3 (O33a): every pool worker's own cancellation flag is reset
     // exactly once per run, here at the legitimate new-run entry point —
     // never inside processSync() (see SyncEngineWorker::processSync's
     // comment for the erasure race this replaces). startWorkerPool() is
     // idempotent, so this is safe whether or not the loop below or the
     // fast-path branch needs the pool too.
-    startWorkerPool(1);
+    startWorkerPool(m_effectiveCap);
     forEachWorker([](SyncEngineWorker *w) {
         QMetaObject::invokeMethod(w, &SyncEngineWorker::resetCancellationFlag,
                                   Qt::QueuedConnection);
@@ -569,7 +573,7 @@ void SyncEngine::continueDriveQueueSetup(const std::optional<QSet<QString>> &fil
         // BaselineStore is fast local SQLite and engine-thread-affine.
         // Always the control slot (slot 0) — see the WorkerSlot comment
         // in syncengine.h.
-        startWorkerPool(1);
+        startWorkerPool(m_effectiveCap);
 
         QList<SyncMapping> candidates;
         QHash<QString, QPair<QString, QString>> storedTokens;
@@ -638,8 +642,9 @@ void SyncEngine::finishDriveQueueSetup()
     }
 
     // Start the worker pool for mapping-based sync (idempotent — already
-    // running when this is reached via the fast-path branch above).
-    startWorkerPool(1);
+    // running when this is reached via the fast-path branch above, and
+    // already sized to this run's m_effectiveCap by driveQueue()).
+    startWorkerPool(m_effectiveCap);
     processQueue();
 }
 
@@ -706,8 +711,14 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // because single-mapping dispatch does not iterate).
             m_queue.primeSingle();
 
+            // Single-mapping dispatch never queues, so this run's
+            // concurrency is 1 by construction — recorded explicitly so
+            // m_effectiveCap can never carry a previous queue run's value
+            // into anything that reads it during this one.
+            m_effectiveCap = 1;
+
             // Start the worker pool if not running
-            startWorkerPool(1);
+            startWorkerPool(m_effectiveCap);
             // E3 (O33a): legitimate new-run reset of every pool worker's
             // own cancellation flag — see driveQueue()'s matching comment.
             forEachWorker([](SyncEngineWorker *w) {
@@ -953,6 +964,50 @@ void SyncEngine::setSkipUnchangedMappings(bool enabled)
 {
     m_skipUnchangedMappings = enabled;
     qDebug() << "SyncEngine::setSkipUnchangedMappings:" << enabled;
+}
+
+void SyncEngine::setMaxConcurrentMappings(int n)
+{
+    m_maxConcurrentMappings = qMax(1, n);
+}
+
+int SyncEngine::resolveEffectiveCap(SyncBehavior behavior) const
+{
+    // Monitored pauses on each AskUser conflict, which is a
+    // one-conflict-at-a-time interaction. Rather than invent new conflict
+    // UI semantics, Monitored runs stay strictly sequential.
+    if (behavior == SyncBehavior::Monitored)
+        return 1;
+    return m_maxConcurrentMappings;
+}
+
+int SyncEngine::capForMapping(const SyncMapping &m) const
+{
+    int cap = INT_MAX;
+    if (!m_registry)
+        return cap;
+
+    for (const QString &backendId : { m.sourceBackend, m.targetBackend }) {
+        auto *backend = m_registry->backendInstance(backendId);
+        if (!backend)
+            continue;
+
+        // A backend living on the engine's own thread would have every
+        // worker's BlockingQueuedConnection park on that thread — in a GUI
+        // host that is the GUI thread. Already true at concurrency 1; this
+        // stops it becoming N times worse, with no host cooperation
+        // required. This is what protects a consumer that has not
+        // relocated its backends off the GUI thread.
+        if (backend->thread() == this->thread()) {
+            cap = 1;
+            continue;
+        }
+
+        const int declared = backend->maxConcurrentOperations();
+        if (declared > 0)
+            cap = qMin(cap, declared);
+    }
+    return cap;
 }
 
 // F2 Task 21: multi-mapping driver — entry point for a queue run.
