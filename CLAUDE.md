@@ -26,6 +26,65 @@ canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).
 
+## Conflict-resolution repair — code COMPLETE 2026-08-21, branch NOT yet merged
+
+Branch **`feature/conflict-resolution-repair`** (`3902f40` → `79d5d77`), off
+`main` @ `b0bf3d5`. **Not merged, not tagged, not pushed.** Answers PlanStan's
+`docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-handoff.md`.
+
+**Read `docs/2026-08-21-conflict-resolution-repair-response.md` first** — it is
+the authoritative summary for any consumer question about conflicts. Plan and
+locked decisions: `docs/2026-08-21-conflict-resolution-repair-plan.md`.
+
+Four defects, one root cause (the canon-upgrade campaign promoted
+`BackendRecord::data` to canonical Shape JSON inside `dispatchSync()`, and the
+conflict code was never taught):
+
+- **A** — `ConflictInfo::source/targetIcalData`, documented "Full iCal", always
+  carried canonical JSON. Both construction sites collapsed into one
+  `SyncEngineWorker::buildConflictInfo(op)` that demotes through the reverse
+  pipelines (`m_unifiedCanonToSrc`/`m_unifiedCanonToTgt`, stashed beside
+  `m_unifiedCanonical`).
+- **B** (critical) — a resolution chosen in `SyncBehavior::Unmonitored` wrote
+  one `SyncConflictStore` column and never touched data, so the same conflict
+  re-presented forever. Fixed by **resolution injection**: the resolution is
+  persisted, rehydrated at run start, carried on `SyncEngineWorker::Request`,
+  and replayed in `unifiedHandleConflicts()` through
+  `applyConflictResolution(op, resolution, mergedNative)` — the helper
+  extracted from `resumeAfterConflict()`'s `switch`. **The existing write path
+  is reused verbatim; `SyncEngine` never got its own backend write access**
+  (INVARIANTS §1). A bounded follow-up pass (`kMaxResolutionPasses = 2`) rides
+  `pumpQueue()`'s L2 re-prime so the resolution lands in the same `runSync`.
+  Stale resolutions are discarded, not applied; applied ones are consumed once,
+  only on the successful-write branch.
+- **C** — `resumeAfterConflict(resolution, mergedIcal)` never read `mergedIcal`;
+  `CustomMerge` silently ran the automatic merger instead. Now promoted through
+  `m_unifiedSrcToCanon`, with guarded fallbacks.
+- **D** — `Duplicate` rewrote the clone's uid via `data.replace("UID:"…)`,
+  which never matches canonical JSON (`"uid"`), so "Keep Both" emitted a
+  colliding clone. Now rewritten through `CanonEnvelope`. Closes PlanStan's
+  `docs/bugs/sync-dialog-keepboth-duplicate-not-created.md`.
+
+**Suite: 179 total, 177 passing** — exactly the pre-existing baseline; the same
+two failures (`tst_remotecalendarbackend` Radicale auth,
+`tst_calendar_canon_roundtrip`). `tst_syncengine_unification` grew from 4 test slots to 14 (runner totals 6 → 16, counting fixtures).
+
+`tests/calendar/tst_calendar_conflict.cpp`'s contract was deliberately
+**flipped**: it asserted an Unmonitored run left the target unwritten, which was
+pinning defect B in place. It now asserts the resolution lands.
+
+New FINDINGS: **O48** (baseline *bytes* are stored nowhere → `baselineIcalData`
+always empty → PlanStan's 3-way diff unreachable; needs a storage decision),
+**O49**/**O50** (fixed), **O51** (staleness guard is second-granular and
+unprotective for backends reporting no `lastModified`), **O52** (a rehydrated
+`CustomMerge` loses the user's payload), **O53** (pre-existing: the batch
+conflict dialog is modal inside `onWorkerSyncCompleted` while other mappings are
+in flight — live because PlanStan defaults to 4 concurrent mappings).
+
+**Still explicitly USER-RUN:** live verification against a real CalDAV account
+that a resolved conflict lands on the server, stops re-presenting, and that
+"Keep Both" now yields two items. All coverage above is stub-backend.
+
 ## Parallel-sync campaign — CLOSED 2026-08-21, merged to `main` at v0.97
 
 `parallel-sync` fast-forwarded onto `main` (was a strict superset — zero

@@ -46,6 +46,42 @@ Condensed; full detail in each campaign's archive + this repo's `CLAUDE.md`.
 
 ---
 
+## 2b. UNRELEASED — conflict-resolution repair (branch `feature/conflict-resolution-repair`, 2026-08-21)
+
+Answers PlanStan's `docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-handoff.md`.
+Full response: **`docs/2026-08-21-conflict-resolution-repair-response.md`** — read that
+before answering any consumer question about conflicts.
+
+Four defects, all rooted in the canon-upgrade campaign promoting record data to
+canonical Shape JSON without telling the conflict code:
+
+| # | Defect | Status |
+|---|---|---|
+| A | `ConflictInfo::source/targetIcalData` carried canonical JSON, not native iCal | Fixed |
+| B | An `Unmonitored` resolution wrote one DB column and never touched data — **conflict resolution was wholly non-functional in the only mode PlanStan uses** | Fixed |
+| C | `resumeAfterConflict` never read the caller's `mergedIcal`; every Custom Merge was silently replaced by the auto-merge | Fixed |
+| D | `Duplicate` byte-patched `UID:` against canonical JSON, so "Keep Both" produced a colliding clone | Fixed — closes PlanStan's `sync-dialog-keepboth-duplicate-not-created.md` |
+
+**All API changes additive; neither consumer needs a code change.** Five
+behavior changes are consumer-visible — see §"Consumer-visible changes" in the
+response doc, especially: an `Unmonitored` run can now write data where it
+previously never would, and `conflictDetected` now carries a populated
+`conflictId`.
+
+**Two things PlanStan must NOT wait on:** `baselineIcalData` stays empty, so the
+3-way diff path remains unreachable (**O48** — baseline *bytes* are stored
+nowhere; needs a storage decision); and a rehydrated `CustomMerge` loses the
+user's payload across an app restart (**O52** — same schema decision).
+
+**One thing PlanStan should act on: O53.** The batch conflict dialog is modal
+and runs inside `onWorkerSyncCompleted` while other mappings are in flight.
+Pre-existing and not introduced here, but PlanStan's own
+`syncMaxConcurrentMappings()` default of 4 makes it live.
+
+New FINDINGS: **O48, O49, O50 (fixed), O51, O52, O53**.
+
+---
+
 ## 3. Inbound items — ALL RESOLVED 2026-07-19 (branch `feature/consumer-rfcs-o46-o47-wpa1`)
 
 None were release blockers; all were honest-reporting / test-double gaps.
