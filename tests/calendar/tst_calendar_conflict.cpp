@@ -220,17 +220,33 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
              qPrintable(QStringLiteral("expected conflictDetected, got %1 signals")
                             .arg(conflictSpy.count())));
 
-    // In unmonitored mode SyncEngine records conflicts as unresolved
-    // and does NOT apply a resolution inline. Backend-side resolution
-    // happens later via ConflictManager::handleConflicts() (plural)
-    // through its workflow logic — that's a separate test surface
-    // from what SyncEngine contracts. The contract pinned here is
-    // "conflict was detected and surfaced as a signal, sync did not
-    // apply silently."
+    // CONTRACT CHANGED by the conflict-resolution repair campaign, Task 3
+    // (Bug B — docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md §B). This used to assert the target was STILL
+    // "Target-Modified" after the run, with the rationale "unmonitored mode
+    // records conflicts and does not apply a resolution inline; backend-side
+    // resolution happens later via ConflictManager". That "later" never
+    // existed: the resolution this fixture's ConflictManager produces
+    // (AutoResolve/SourceWins, applied in the post-mapping batch presentation)
+    // wrote one SyncConflictStore column and touched no data, ever — so the
+    // assertion was pinning the defect.
+    //
+    // It now pins the repair. The auto-policy's SourceWins reaches
+    // SyncEngine::onConflictResolved, becomes a PendingConflictResolution, and
+    // the automatic follow-up pass (locked decision 2) replays it through the
+    // engine's normal write path within the same runSync — hence
+    // "Source-Modified" here, without the caller doing anything extra. This is
+    // also the explicit WorkflowMode::AutoResolve coverage locked decision 4
+    // asks for.
     auto targetInc = m_target->incidence(QString::fromLatin1(kCalendarId),
                                           QString::fromLatin1(kConflictUid));
     QVERIFY(targetInc);
-    QCOMPARE(targetInc->summary(), QStringLiteral("Target-Modified"));
+    QCOMPARE(targetInc->summary(), QStringLiteral("Source-Modified"));
+
+    // Consume-once: the applied resolution's row is gone, so it cannot re-arm
+    // against a future genuine conflict for the same record.
+    QCOMPARE(m_conflictStore->unresolvedConflictCount(QString::fromLatin1(kMappingId)), 0);
+    QVERIFY(m_conflictStore->resolvedConflicts(QString::fromLatin1(kMappingId)).isEmpty());
 }
 
 void TestCalendarConflict::monitored_sameUidDivergent_pausesUntilResume()

@@ -54,6 +54,33 @@ public:
     ConflictInfo conflict(const QString &conflictId) const;
 
     /**
+     * @brief One resolved-but-still-present conflict row.
+     *
+     * Bug B (conflict-resolution-repair Task 3): a row whose `resolution`
+     * column is set but which nobody ever applied to any data. Until Task 3
+     * every such row was permanent — the whole defect. SyncEngine rehydrates
+     * these at run start so a resolution chosen before a restart still lands.
+     */
+    struct ResolvedConflict {
+        ConflictInfo info;
+        ConflictResolution resolution = ConflictResolution::AskUser;
+        QDateTime resolvedAt;
+    };
+
+    /**
+     * @brief Get resolved conflicts that are still in the table.
+     *
+     * Additive (Task 3): the pre-existing readers only ever asked for
+     * UNRESOLVED rows, so a resolved row was invisible to every consumer and
+     * simply accumulated. Ordered by resolved_at ASCENDING so a caller
+     * folding these into a map keyed by (mapping, record) ends up with the
+     * MOST RECENT resolution winning.
+     *
+     * @param mappingId Sync mapping ID (empty for all mappings).
+     */
+    QList<ResolvedConflict> resolvedConflicts(const QString &mappingId = QString()) const;
+
+    /**
      * @brief Mark a conflict as resolved.
      */
     void resolveConflict(const QString &conflictId, ConflictResolution resolution);

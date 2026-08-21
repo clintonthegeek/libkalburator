@@ -79,6 +79,13 @@ namespace {
 constexpr auto kCollectionId = "stub-collection";
 constexpr int  kSyncTimeoutMs = 30000;
 
+// Bug B fixture ids (see TstSyncEngineUnification::seedConflict).
+constexpr auto kSourceBackendId = "source-mock";
+constexpr auto kTargetBackendId = "target-mock";
+constexpr auto kCalendarId      = "calendar-1";
+constexpr auto kMappingId       = "mapping-1";
+constexpr auto kConflictUid     = "evt-conflict";
+
 KCalendarCore::Event::Ptr makeEvent(const QString &uid, const QString &summary)
 {
     auto event = KCalendarCore::Event::Ptr(new KCalendarCore::Event());
@@ -88,10 +95,51 @@ KCalendarCore::Event::Ptr makeEvent(const QString &uid, const QString &summary)
     return event;
 }
 
+/// Bug B: same, with an EXPLICIT lastModified. Bug B's staleness guard
+/// (locked decision 3) compares each side's lastModified against what was
+/// recorded when the conflict was detected, at second granularity — so a test
+/// that wants "unchanged" or "changed" to mean something definite has to say
+/// what the timestamps are rather than inherit whatever the iCal round-trip
+/// stamps.
+KCalendarCore::Event::Ptr makeEventAt(const QString &uid, const QString &summary,
+                                      const QDateTime &lastModified)
+{
+    auto event = makeEvent(uid, summary);
+    event->setLastModified(lastModified.toUTC());
+    return event;
+}
+
 QString eventToIcal(const KCalendarCore::Incidence::Ptr &inc)
 {
     KCalendarCore::ICalFormat fmt;
     return fmt.toICalString(inc);
+}
+
+/// Bug B fixture: the one AskUser TwoWay mapping every Bug B test installs.
+/// Shared so seedConflict() and restartEngine() cannot describe it differently
+/// — a restart that quietly changed the mapping would make "the resolution
+/// survived" mean nothing.
+SyncMapping fixtureMapping()
+{
+    SyncMapping m;
+    m.id             = QString::fromLatin1(kMappingId);
+    m.sourceBackend  = QString::fromLatin1(kSourceBackendId);
+    m.sourceCalendar = QString::fromLatin1(kCalendarId);
+    m.targetBackend  = QString::fromLatin1(kTargetBackendId);
+    m.targetCalendar = QString::fromLatin1(kCalendarId);
+    m.mode           = SyncMode::TwoWay;
+    m.conflictPolicy = ConflictResolution::AskUser;
+    m.enabled        = true;
+    return m;
+}
+
+/// The Unmonitored AskUser request every Bug B test issues.
+SyncRequest unmonitoredRequestForFixtureMapping()
+{
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior   = SyncEngine::SyncBehavior::Unmonitored;
+    return req;
 }
 
 /// Conflict-resolution-repair Task 2: the injected resolver the production
@@ -138,8 +186,47 @@ private slots:
     void modifyDeleteConflictLeavesDeletedSideEmpty();
     void customMergeUsesCallerSuppliedMerge();
     void duplicateResolutionWritesASecondRecord();
+    // Bug B (conflict-resolution-repair Task 3) — see the block comment above
+    // unmonitoredResolutionReachesTheBackend().
+    void unmonitoredResolutionReachesTheBackend();
+    void resolutionSurvivesRestart();
+    void appliedResolutionIsNotReapplied();
+    void staleResolutionIsDiscarded();
+    void deferredWorkflowResolutionIsApplied();
+    void autoResolveWorkflowResolutionIsApplied();
+    void storeLessHostStillAppliesResolution();
 
 private:
+    /// Bug B tests: the two-MockBackend three-way-conflict fixture, which six
+    /// of the tests below need verbatim. The four tests written before this
+    /// helper existed keep their inline copies — rewriting green tests to
+    /// prove a new one is not a trade worth making.
+    ///
+    /// Registers both backends under kSourceBackendId/kTargetBackendId,
+    /// creates kCalendarId on both plus the host mirror, installs one AskUser
+    /// TwoWay mapping (kMappingId), seeds a "Baseline" baseline for
+    /// kConflictUid, and puts a divergent copy on each side — i.e. exactly the
+    /// state that makes the engine emit a genuine BothModified conflict.
+    ///
+    /// lastModified is stamped EXPLICITLY and distinctly on each side because
+    /// Bug B's staleness guard compares those values across runs; leaving them
+    /// to whatever the iCal round-trip invents would make the guard's tests
+    /// depend on wall-clock timing within a second.
+    struct ConflictFixture {
+        std::unique_ptr<MockBackend> source;
+        std::unique_ptr<MockBackend> target;
+    };
+    ConflictFixture seedConflict(const QString &sourceSummary,
+                                 const QString &targetSummary,
+                                 const QDateTime &sourceModified,
+                                 const QDateTime &targetModified);
+
+    /// Rebuild SyncEngine over the SAME stores, dropping every piece of
+    /// in-process state — the honest way to test "the resolution survived a
+    /// restart", since a resolution that only lives in m_pendingResolutions
+    /// would sail through a test that kept the old engine.
+    void restartEngine();
+
     // Per-test fixture rebuilt in init() so each scenario starts clean.
     std::unique_ptr<QTemporaryDir>                       m_tmpDir;
     std::unique_ptr<BackendRegistry>                     m_registry;
@@ -1014,6 +1101,470 @@ void TstSyncEngineUnification::duplicateResolutionWritesASecondRecord()
     QVERIFY(srcUids.contains(cloneUid));
 
     // Detach so backends don't outlive the local unique_ptrs.
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Bug B — a resolution chosen in SyncBehavior::Unmonitored must actually
+// reach the data.
+//
+// docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-
+// handoff.md §B. Unmonitored is the ONLY mode a real PlanStan sync run ever
+// uses. Its AskUser branch did no data write of any kind: it deferred the
+// conflict, the run finished, SyncEngine batch-presented the conflict to
+// ConflictManager, and a real (non-Skip) answer wrote ONE COLUMN in
+// SyncConflictStore and stopped there. Nothing applied it, nothing advanced a
+// baseline, and the identical conflict re-detected on every subsequent sync,
+// forever. The only code that turns a ConflictResolution into a write
+// (resumeAfterConflict, now applyConflictResolution) was wired exclusively to
+// the Monitored mid-run yield, which this mode never takes.
+//
+// Task 3 makes ConflictManager::conflictResolved the one channel a user's
+// choice travels on, stores it as a PendingConflictResolution keyed by
+// (mapping, record), hands it to the NEXT dispatchSync on the worker Request,
+// and replays it in the diff walk's AskUser branch through the same helper the
+// Monitored resume uses — no second write mechanism (INVARIANTS §1).
+// ═════════════════════════════════════════════════════════════════════════════
+
+TstSyncEngineUnification::ConflictFixture
+TstSyncEngineUnification::seedConflict(const QString &sourceSummary,
+                                       const QString &targetSummary,
+                                       const QDateTime &sourceModified,
+                                       const QDateTime &targetModified)
+{
+    ConflictFixture fx;
+    fx.source = std::make_unique<MockBackend>();
+    fx.target = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        fx.source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        fx.target.get());
+
+    fx.source->createCalendar(QString::fromLatin1(kCollectionId),
+                              QString::fromLatin1(kCalendarId),
+                              QStringLiteral("Calendar 1"));
+    fx.target->createCalendar(QString::fromLatin1(kCollectionId),
+                              QString::fromLatin1(kCalendarId),
+                              QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                hostCal);
+
+    m_engine->setSyncMappings({ fixtureMapping() });
+
+    // AskUser + a seeded baseline is what makes this a three-way conflict
+    // rather than a quick-path SourceWins downgrade.
+    m_baselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                               calendarTestRec(QString::fromLatin1(kConflictUid),
+                                               eventToIcal(makeEvent(
+                                                   QString::fromLatin1(kConflictUid),
+                                                   QStringLiteral("Baseline")))));
+
+    fx.source->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEventAt(QString::fromLatin1(kConflictUid),
+                                        sourceSummary, sourceModified));
+    fx.target->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEventAt(QString::fromLatin1(kConflictUid),
+                                        targetSummary, targetModified));
+    return fx;
+}
+
+void TstSyncEngineUnification::restartEngine()
+{
+    m_engine.reset();
+    m_engine = std::make_unique<SyncEngine>(m_registry.get(), m_host.get(), m_shape);
+    m_engine->setBaselineStore(m_baselines.get());
+    m_engine->setSyncConflictStore(m_conflictStore.get());
+    m_engine->setCollection(m_host->stubCollection());
+    // Same mapping, re-installed: the backends and their contents are
+    // untouched by the restart (they are the "server" and "disk"), only the
+    // engine's in-process state is gone. Re-running seedConflict() here would
+    // register a SECOND pair of MockBackends over the first and leave the
+    // registry holding dangling pointers.
+    m_engine->setSyncMappings({ fixtureMapping() });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 8 — THE headline case. Unmonitored conflict, the user picks "keep the
+// source version", and the target backend must actually end up holding it.
+//
+// Falsifiability (INVARIANTS §5): shown RED against the pre-Task-3 code —
+// exactly the handoff's prediction, "it will still show the original
+// conflicting pair, unchanged, and a fresh AskUser conflict for the very same
+// id": target keeps "Target-Modified" and the conflict is still unresolved in
+// the store. Also red if the injection point in unifiedHandleConflicts is
+// removed, or if consumeAppliedResolutions runs before the apply.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::unmonitoredResolutionReachesTheBackend()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::SourceWins;
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);   // takes ownership
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    auto future = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+
+    // The dialog was shown exactly once: the follow-up pass APPLIES the answer,
+    // it does not ask again. (Asking twice for one conflict is the user-visible
+    // shape of the bug this test exists to prevent regressing into.)
+    QCOMPARE(resolver->calls, 1);
+
+    // The point of the whole campaign.
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
+
+    // ...and no fresh AskUser conflict is left standing for the same id.
+    const SyncResult last = future.resultAt(0).last();
+    QVERIFY2(last.unresolvedConflicts.isEmpty(),
+             qPrintable(QStringLiteral("%1 conflict(s) still unresolved after the "
+                                       "resolution was applied")
+                            .arg(last.unresolvedConflicts.size())));
+    QCOMPARE(last.appliedConflictIds.size(), 1);
+    QCOMPARE(m_conflictStore->unresolvedConflictCount(QString::fromLatin1(kMappingId)), 0);
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 9 — restart durability. PlanStan's live database is, right now, full of
+// rows that are resolved but were never applied: that IS the defect, persisted.
+// A resolution chosen in one process must land in the next one.
+//
+// Deliberately does NOT go through ConflictManager for the resolution: it
+// writes the store the way ConflictManager's store-only paths always did
+// (resolveConflict and nothing else), then throws the whole engine away, so
+// the only thing that can make this pass is rehydration from SQLite.
+//
+// Falsifiability: shown RED with rehydratePendingResolutions() stubbed to
+// return immediately — the second run re-detects the conflict and writes
+// nothing.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::resolutionSurvivesRestart()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    // Run 1: no ConflictManager at all, so the conflict is merely recorded.
+    auto first = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), kSyncTimeoutMs);
+
+    const QList<ConflictInfo> unresolved =
+        m_conflictStore->unresolvedConflicts(QString::fromLatin1(kMappingId));
+    QCOMPARE(unresolved.size(), 1);
+    const QString conflictId = unresolved.first().conflictId;
+    QVERIFY2(!conflictId.isEmpty(),
+             "SyncEngine::onWorkerConflictDetected discarded the recorded conflict id");
+
+    // Sanity: the store must round-trip the two lastModified values, or the
+    // staleness guard in run 2 would reject every rehydrated resolution and
+    // this test would be green for the wrong reason in reverse.
+    QCOMPARE(unresolved.first().sourceModified.toSecsSinceEpoch(),
+             srcMod.toSecsSinceEpoch());
+    QCOMPARE(unresolved.first().targetModified.toSecsSinceEpoch(),
+             tgtMod.toSecsSinceEpoch());
+
+    // The user answers the dialog. This one line is EVERYTHING that used to
+    // happen when they did.
+    m_conflictStore->resolveConflict(conflictId, ConflictResolution::SourceWins);
+
+    // Restart: engine gone and rebuilt, backends and stores untouched.
+    restartEngine();
+
+    auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!second.isCanceled(), "future was canceled");
+
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
+    QVERIFY(m_conflictStore->resolvedConflicts(QString::fromLatin1(kMappingId)).isEmpty());
+
+    m_engine->setSyncMappings({});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 10 — consume-once. A resolution must apply EXACTLY once. A row left
+// behind would silently auto-apply to a future GENUINE conflict for the same
+// record, which is a worse data-loss bug than the one being fixed.
+//
+// The third conflict is re-seeded with the SAME contents and the SAME
+// lastModified values as the first, so the staleness guard cannot fire — this
+// isolates consumption from staleness. The resolver answers Skip the second
+// time, so the ONLY thing that could write "Source-Modified" to the target is
+// the first resolution re-applying.
+//
+// Falsifiability: shown RED with the consumeAppliedResolutions() call removed
+// from onWorkerSyncCompleted — the retained SourceWins fires again and the
+// target loses "Target-Modified-Again" without anyone choosing that.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::appliedResolutionIsNotReapplied()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::SourceWins;
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);   // takes ownership
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    auto first = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), kSyncTimeoutMs);
+    QCOMPARE(fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                  QString::fromLatin1(kConflictUid))->summary(),
+             QStringLiteral("Source-Modified"));
+    QVERIFY(m_conflictStore->resolvedConflicts(QString::fromLatin1(kMappingId)).isEmpty());
+
+    // A NEW, genuine conflict for the same record — same timestamps as before,
+    // so nothing about it looks stale.
+    m_baselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                               calendarTestRec(QString::fromLatin1(kConflictUid),
+                                               eventToIcal(makeEvent(
+                                                   QString::fromLatin1(kConflictUid),
+                                                   QStringLiteral("Baseline")))));
+    fx.source->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEventAt(QString::fromLatin1(kConflictUid),
+                                        QStringLiteral("Source-Modified"), srcMod));
+    fx.target->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEventAt(QString::fromLatin1(kConflictUid),
+                                        QStringLiteral("Target-Modified-Again"), tgtMod));
+
+    // This time the user declines to answer.
+    resolver->resolution = ConflictResolution::Skip;
+    resolver->calls = 0;
+
+    auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+
+    // Presented afresh (so the conflict really was re-detected)...
+    QCOMPARE(resolver->calls, 1);
+    // ...and NOT silently resolved by the previous run's answer.
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Target-Modified-Again"));
+    QVERIFY(second.resultAt(0).last().appliedConflictIds.isEmpty());
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 11 — staleness (locked decision 3). A "Keep Local" answered against one
+// version of a record must never clobber an edit made after the dialog was
+// answered. On a lastModified mismatch the stored resolution is discarded and
+// the conflict presented again.
+//
+// Falsifiability: shown RED with the sameModifiedInstant() checks removed from
+// the injection point — the stale SourceWins applies and the target's later
+// edit ("Target-Edited-Later") is destroyed.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::staleResolutionIsDiscarded()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    // Run 1, no manager: the conflict is recorded, then "answered" the way
+    // ConflictManager's store-only paths always answered.
+    auto first = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), kSyncTimeoutMs);
+    const QList<ConflictInfo> unresolved =
+        m_conflictStore->unresolvedConflicts(QString::fromLatin1(kMappingId));
+    QCOMPARE(unresolved.size(), 1);
+    const QString conflictId = unresolved.first().conflictId;
+    m_conflictStore->resolveConflict(conflictId, ConflictResolution::SourceWins);
+
+    // Someone edits the target AFTER the dialog was answered.
+    fx.target->addIncidence(QString::fromLatin1(kCalendarId),
+                            makeEventAt(QString::fromLatin1(kConflictUid),
+                                        QStringLiteral("Target-Edited-Later"),
+                                        tgtMod.addSecs(600)));
+
+    restartEngine();
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::Skip;   // decline again
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+
+    const SyncResult r = second.resultAt(0).last();
+    QCOMPARE(r.staleConflictIds, QStringList{ conflictId });
+    QVERIFY(r.appliedConflictIds.isEmpty());
+    // The conflict was presented FRESH rather than silently resolved...
+    QCOMPARE(resolver->calls, 1);
+    QCOMPARE(r.unresolvedConflicts.size(), 1);
+    // ...and the later edit survived.
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Target-Edited-Later"));
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 12 — WorkflowMode::Deferred (locked decision 4: explicit coverage, not
+// coverage inherited from the Immediate path). Deferred queues the conflict for
+// the dock; the host later calls ConflictManager::applyResolution(), whose own
+// doc comment has always claimed "SyncEngine reads the resolution and applies
+// data modifications" — a sentence that described an intent nobody wired up.
+// It is true as of Task 3, and this pins it.
+//
+// Falsifiability: shown RED pre-Task-3 (applyResolution wrote a column, the
+// target kept "Target-Modified"), and red again if SyncEngine stops connecting
+// to ConflictManager::conflictResolved.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::deferredWorkflowResolutionIsApplied()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Deferred);
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    QString queuedId;
+    QObject::connect(m_conflictManager.get(), &ConflictManager::conflictQueued,
+                     this, [&queuedId](const ConflictInfo &c) { queuedId = c.conflictId; });
+
+    auto first = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), kSyncTimeoutMs);
+
+    QVERIFY2(!queuedId.isEmpty(), "Deferred workflow never queued the conflict");
+    // Deferred means deferred: nothing was applied by the run itself.
+    QCOMPARE(fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                  QString::fromLatin1(kConflictUid))->summary(),
+             QStringLiteral("Target-Modified"));
+
+    // The user answers it in the dock, later.
+    QVERIFY(m_conflictManager->applyResolution(queuedId, ConflictResolution::SourceWins));
+
+    auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 13 — WorkflowMode::AutoResolve (locked decision 4). The handoff
+// suspected applyAutoPolicy() had the identical "record and immediately
+// resolve, write nothing" shape as showImmediateDialog(); it did. It already
+// emitted conflictResolved unconditionally, so making SyncEngine listen fixed
+// it with no change to that method's own logic.
+//
+// Falsifiability: shown RED pre-Task-3 — target keeps "Target-Modified".
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::autoResolveWorkflowResolutionIsApplied()
+{
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::AutoResolve);
+    // LastWriteWins, not a fixed side, so the policy has to actually consult
+    // the two lastModified values the fixture stamps: the TARGET is newer.
+    m_conflictManager->setAutoResolutionPolicy(ConflictResolution::LastWriteWins);
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    auto future = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+
+    auto srcInc = fx.source->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(srcInc);
+    QCOMPARE(srcInc->summary(), QStringLiteral("Target-Modified"));
+    QCOMPARE(future.resultAt(0).last().appliedConflictIds.size(), 1);
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 14 — a host with no SyncConflictStore. The in-process channel
+// (ConflictManager -> conflictResolved -> SyncEngine -> next dispatchSync) must
+// work on its own; persistence only buys surviving a restart.
+//
+// This is why showImmediateDialog() now emits conflictResolved unconditionally
+// instead of only `if (m_syncStore && !conflictId.isEmpty())`: with that guard,
+// a store-less host got no signal, so no application, ever.
+//
+// Falsifiability: shown RED with the emit put back behind the m_syncStore
+// guard (no signal, target unchanged), and red without the synthesized
+// conflict id in onWorkerConflictDetected (empty id, resolution unmappable).
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::storeLessHostStillAppliesResolution()
+{
+    m_engine->setSyncConflictStore(nullptr);
+
+    const QDateTime srcMod = QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC);
+    const QDateTime tgtMod = QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC);
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"), srcMod, tgtMod);
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::SourceWins;
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    // Deliberately NO setSyncConflictStore on the manager either.
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    auto future = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+
+    QCOMPARE(resolver->calls, 1);
+    auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
+                                       QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
+
     m_engine->setSyncMappings({});
     m_engine->setConflictManager(nullptr);
 }

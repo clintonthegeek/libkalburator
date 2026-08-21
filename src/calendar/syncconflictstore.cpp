@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QFile>
+#include <QTimeZone>
 
 namespace Kalburator::Sync {
 
@@ -214,6 +215,60 @@ QString SyncConflictStore::recordConflict(const ConflictInfo &conflict)
     return conflictId;
 }
 
+namespace {
+
+// The three readers below (unresolvedConflicts, conflict, resolvedConflicts)
+// all project the same 15 columns in the same order. That projection used to
+// be copy-pasted twice; a third copy is how ConflictInfo fields go missing on
+// one path and not another (see FINDINGS O49/O50 for exactly that failure in
+// the engine's ConflictInfo builders). One reader, no drift — the SELECT list
+// below and this function must be edited together.
+constexpr auto kConflictColumns =
+    "SELECT id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
+    "       conflict_type, local_description, remote_description, "
+    "       local_modified, remote_modified, "
+    "       local_ical, remote_ical, baseline_ical, detected_at ";
+
+// SQLite's datetime('now') writes "YYYY-MM-DD HH:MM:SS" (UTC, space
+// separator); values written by us go through QDateTime::toString(ISODate)
+// ("YYYY-MM-DDTHH:MM:SS"). Accept both, and stamp the space form as UTC since
+// that is what SQLite produced.
+QDateTime parseStoredTimestamp(const QString &raw)
+{
+    if (raw.isEmpty())
+        return QDateTime();
+    QDateTime dt = QDateTime::fromString(raw, Qt::ISODate);
+    if (dt.isValid())
+        return dt;
+    dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    if (dt.isValid())
+        dt.setTimeZone(QTimeZone::UTC);
+    return dt;
+}
+
+ConflictInfo readConflictRow(const QSqlQuery &query)
+{
+    ConflictInfo info;
+    info.conflictId        = query.value(0).toString();
+    info.mappingId         = query.value(1).toString();
+    info.sourceBackendId   = query.value(2).toString();
+    info.calendarId        = query.value(3).toString();
+    info.sourceId          = query.value(4).toString();
+    info.targetId          = query.value(5).toString();
+    info.type              = static_cast<ConflictType>(query.value(6).toInt());
+    info.sourceDescription = query.value(7).toString();
+    info.targetDescription = query.value(8).toString();
+    info.sourceModified    = parseStoredTimestamp(query.value(9).toString());
+    info.targetModified    = parseStoredTimestamp(query.value(10).toString());
+    info.sourceIcalData    = query.value(11).toString();
+    info.targetIcalData    = query.value(12).toString();
+    info.baselineIcalData  = query.value(13).toString();
+    info.detectedAt        = parseStoredTimestamp(query.value(14).toString());
+    return info;
+}
+
+} // namespace
+
 QList<ConflictInfo> SyncConflictStore::unresolvedConflicts(const QString &mappingId) const
 {
     QList<ConflictInfo> result;
@@ -223,43 +278,65 @@ QList<ConflictInfo> SyncConflictStore::unresolvedConflicts(const QString &mappin
     QSqlQuery query(db);
 
     if (mappingId.isEmpty()) {
-        query.prepare(QStringLiteral(
-            "SELECT id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
-            "       conflict_type, local_description, remote_description, "
-            "       local_modified, remote_modified, "
-            "       local_ical, remote_ical, baseline_ical, detected_at "
-            "FROM sync_conflicts WHERE resolved_at IS NULL "
-            "ORDER BY detected_at DESC"));
+        query.prepare(QLatin1String(kConflictColumns) +
+            QStringLiteral("FROM sync_conflicts WHERE resolved_at IS NULL "
+                           "ORDER BY detected_at DESC"));
     } else {
-        query.prepare(QStringLiteral(
-            "SELECT id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
-            "       conflict_type, local_description, remote_description, "
-            "       local_modified, remote_modified, "
-            "       local_ical, remote_ical, baseline_ical, detected_at "
-            "FROM sync_conflicts WHERE mapping_id = ? AND resolved_at IS NULL "
-            "ORDER BY detected_at DESC"));
+        query.prepare(QLatin1String(kConflictColumns) +
+            QStringLiteral("FROM sync_conflicts WHERE mapping_id = ? AND resolved_at IS NULL "
+                           "ORDER BY detected_at DESC"));
+        query.addBindValue(mappingId);
+    }
+
+    if (query.exec()) {
+        while (query.next())
+            result.append(readConflictRow(query));
+    }
+    return result;
+}
+
+// Bug B (conflict-resolution-repair Task 3): the rehydration read. A row that
+// carries a resolution but was never applied is exactly the state PlanStan's
+// live database is full of — SyncConflictStore::resolveConflict() has always
+// been the ONLY thing that happened when a user answered the dialog in
+// Unmonitored mode. SyncEngine reads these at run start and injects them into
+// the next dispatchSync so a choice survives an app restart.
+//
+// ASCENDING resolved_at: the caller folds these into a map keyed by
+// (mapping_id, local_uid), so the last row written for a record must be the
+// last one folded in.
+QList<SyncConflictStore::ResolvedConflict>
+SyncConflictStore::resolvedConflicts(const QString &mappingId) const
+{
+    QList<ResolvedConflict> result;
+    if (!m_isOpen) return result;
+
+    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlQuery query(db);
+
+    if (mappingId.isEmpty()) {
+        query.prepare(QLatin1String(kConflictColumns) +
+            QStringLiteral(", resolution, resolved_at "
+                           "FROM sync_conflicts "
+                           "WHERE resolved_at IS NOT NULL AND resolution IS NOT NULL "
+                           "ORDER BY resolved_at ASC"));
+    } else {
+        query.prepare(QLatin1String(kConflictColumns) +
+            QStringLiteral(", resolution, resolved_at "
+                           "FROM sync_conflicts "
+                           "WHERE mapping_id = ? AND resolved_at IS NOT NULL "
+                           "  AND resolution IS NOT NULL "
+                           "ORDER BY resolved_at ASC"));
         query.addBindValue(mappingId);
     }
 
     if (query.exec()) {
         while (query.next()) {
-            ConflictInfo info;
-            info.conflictId        = query.value(0).toString();
-            info.mappingId         = query.value(1).toString();
-            info.sourceBackendId   = query.value(2).toString();
-            info.calendarId        = query.value(3).toString();
-            info.sourceId          = query.value(4).toString();
-            info.targetId          = query.value(5).toString();
-            info.type              = static_cast<ConflictType>(query.value(6).toInt());
-            info.sourceDescription = query.value(7).toString();
-            info.targetDescription = query.value(8).toString();
-            info.sourceModified    = QDateTime::fromString(query.value(9).toString(), Qt::ISODate);
-            info.targetModified    = QDateTime::fromString(query.value(10).toString(), Qt::ISODate);
-            info.sourceIcalData    = query.value(11).toString();
-            info.targetIcalData    = query.value(12).toString();
-            info.baselineIcalData  = query.value(13).toString();
-            info.detectedAt        = QDateTime::fromString(query.value(14).toString(), Qt::ISODate);
-            result.append(info);
+            ResolvedConflict rc;
+            rc.info       = readConflictRow(query);
+            rc.resolution = static_cast<ConflictResolution>(query.value(15).toInt());
+            rc.resolvedAt = parseStoredTimestamp(query.value(16).toString());
+            result.append(rc);
         }
     }
     return result;
@@ -272,31 +349,12 @@ ConflictInfo SyncConflictStore::conflict(const QString &conflictId) const
 
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
     QSqlQuery query(db);
-    query.prepare(QStringLiteral(
-        "SELECT id, mapping_id, backend_id, calendar_id, local_uid, remote_id, "
-        "       conflict_type, local_description, remote_description, "
-        "       local_modified, remote_modified, "
-        "       local_ical, remote_ical, baseline_ical, detected_at "
-        "FROM sync_conflicts WHERE id = ?"));
+    query.prepare(QLatin1String(kConflictColumns) +
+                  QStringLiteral("FROM sync_conflicts WHERE id = ?"));
     query.addBindValue(conflictId);
 
-    if (query.exec() && query.next()) {
-        info.conflictId        = query.value(0).toString();
-        info.mappingId         = query.value(1).toString();
-        info.sourceBackendId   = query.value(2).toString();
-        info.calendarId        = query.value(3).toString();
-        info.sourceId          = query.value(4).toString();
-        info.targetId          = query.value(5).toString();
-        info.type              = static_cast<ConflictType>(query.value(6).toInt());
-        info.sourceDescription = query.value(7).toString();
-        info.targetDescription = query.value(8).toString();
-        info.sourceModified    = QDateTime::fromString(query.value(9).toString(), Qt::ISODate);
-        info.targetModified    = QDateTime::fromString(query.value(10).toString(), Qt::ISODate);
-        info.sourceIcalData    = query.value(11).toString();
-        info.targetIcalData    = query.value(12).toString();
-        info.baselineIcalData  = query.value(13).toString();
-        info.detectedAt        = QDateTime::fromString(query.value(14).toString(), Qt::ISODate);
-    }
+    if (query.exec() && query.next())
+        info = readConflictRow(query);
     return info;
 }
 

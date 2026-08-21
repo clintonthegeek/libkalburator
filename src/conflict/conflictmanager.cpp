@@ -145,9 +145,32 @@ ConflictResolution ConflictManager::showImmediateDialog(const ConflictInfo &conf
     ConflictResolution resolution = m_conflictResolver->resolveConflict(
         conflict, m_parentWidget);
 
-    // If resolved (not skipped), mark as resolved
-    if (resolution != ConflictResolution::Skip && m_syncStore && !conflictId.isEmpty()) {
-        m_syncStore->resolveConflict(conflictId, resolution);
+    // Bug B (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md §B): capture the merged payload PER CONFLICT, here,
+    // while it is still this conflict's. lastMergedIcalData() is last-call
+    // scoped, so in the batch loop (handleConflicts) it has already been
+    // overwritten by the time anyone reacts to this conflict's
+    // conflictResolved(). A non-CustomMerge resolution clears any stale entry.
+    if (!conflictId.isEmpty()) {
+        if (resolution == ConflictResolution::CustomMerge)
+            m_mergedByConflictId.insert(conflictId,
+                                        m_conflictResolver->lastMergedIcalData());
+        else
+            m_mergedByConflictId.remove(conflictId);
+    }
+
+    // If resolved (not skipped), mark as resolved.
+    //
+    // Bug B: conflictResolved is now emitted for EVERY real resolution, not
+    // only when a SyncConflictStore happens to be attached. It is the single
+    // channel by which a user's choice reaches SyncEngine (which is what
+    // finally applies it — see the applyResolution() comment below), so a
+    // host with no conflict store used to get no application at all. The
+    // STORE WRITE stays conditional; only the signal became unconditional.
+    if (resolution != ConflictResolution::Skip) {
+        if (m_syncStore && !conflictId.isEmpty()) {
+            m_syncStore->resolveConflict(conflictId, resolution);
+        }
         emit conflictResolved(conflictId, resolution);
         emit unresolvedCountChanged(unresolvedConflictCount());
     }
@@ -192,7 +215,15 @@ ConflictResolution ConflictManager::applyAutoPolicy(const ConflictInfo &conflict
         }
     }
 
-    // Record and immediately resolve
+    // Record and immediately resolve.
+    //
+    // Bug B: this path had the identical "store-only, no data write" shape as
+    // showImmediateDialog — the handoff suspected as much and it is confirmed.
+    // It already emitted conflictResolved unconditionally, so it needed no
+    // change here: SyncEngine's new listener is what turns the emission into
+    // an actual write. Left emitting even for a Skip/AskUser auto-policy (a
+    // pre-existing quirk, and a consumer may be counting on the signal); the
+    // engine ignores those, since neither names a version to keep.
     QString conflictId = conflict.conflictId;
     if (m_syncStore) {
         if (conflictId.isEmpty()) {
@@ -200,6 +231,7 @@ ConflictResolution ConflictManager::applyAutoPolicy(const ConflictInfo &conflict
         }
         m_syncStore->resolveConflict(conflictId, resolution);
     }
+    m_mergedByConflictId.remove(conflictId);
 
     emit conflictResolved(conflictId, resolution);
     return resolution;
@@ -218,8 +250,17 @@ bool ConflictManager::applyResolution(const QString &conflictId, ConflictResolut
         return false;
     }
 
-    // Note: ConflictManager only marks resolutions in the store.
-    // SyncEngine reads the resolution and applies data modifications.
+    // ConflictManager only marks resolutions in the store; SyncEngine reads
+    // the resolution and applies the data modifications.
+    //
+    // Bug B (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md §B): that sentence described an intent nobody had
+    // wired up — nothing in SyncEngine ever read a resolution back, so a
+    // choice made here (the deferred/dock path) changed one DB column and
+    // nothing else, forever. As of conflict-resolution-repair Task 3 it is
+    // true: SyncEngine listens to conflictResolved below, stores the choice as
+    // a PendingConflictResolution, and the next dispatchSync for that mapping
+    // replays it through the engine's normal write path.
 
     m_syncStore->resolveConflict(conflictId, resolution);
     emit conflictResolved(conflictId, resolution);
@@ -234,6 +275,11 @@ int ConflictManager::unresolvedConflictCount() const
         return 0;
     }
     return m_syncStore->unresolvedConflictCount();
+}
+
+QString ConflictManager::mergedDataFor(const QString &conflictId) const
+{
+    return m_mergedByConflictId.value(conflictId);
 }
 
 QString ConflictManager::lastMergedIcalData() const

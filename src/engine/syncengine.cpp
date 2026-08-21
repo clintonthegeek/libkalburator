@@ -387,6 +387,27 @@ void SyncEngine::setSyncConflictStore(SyncConflictStore *store)
     m_conflictStore = store;
 }
 
+// Bug B (conflict-resolution-repair Task 3, docs/2026-08-21-conflict-info-
+// canonical-data-and-unmonitored-resolution-handoff.md §B). Moved out of line
+// from the header so the engine can subscribe to the manager's ONE resolution
+// channel. ConflictManager has three paths that used to end at
+// "write a column in SyncConflictStore and return" — showImmediateDialog(),
+// queueForDeferred() -> dock -> applyResolution(), and applyAutoPolicy() — and
+// all three emit conflictResolved(). Listening here fixes all three at once.
+void SyncEngine::setConflictManager(ConflictManager *manager)
+{
+    if (m_conflictManager == manager)
+        return;
+    if (m_conflictManager)
+        disconnect(m_conflictManager, &ConflictManager::conflictResolved,
+                   this, &SyncEngine::onConflictResolved);
+    m_conflictManager = manager;
+    if (m_conflictManager) {
+        connect(m_conflictManager, &ConflictManager::conflictResolved,
+                this, &SyncEngine::onConflictResolved, Qt::UniqueConnection);
+    }
+}
+
 void SyncEngine::setMassDeleteGuard(Kalburator::Conflict::IMassDeleteGuard *guard)
 {
     m_massDeleteGuard = guard;
@@ -487,6 +508,14 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     m_currentPass = 1;
     m_passDirtyWriters.clear();
     m_carriedResults.clear();
+
+    // Bug B (conflict-resolution-repair Task 3): reset the resolution
+    // follow-up budget for this run, and pick up any resolution a user chose
+    // before the app was last closed. Same "assigned unconditionally" rule as
+    // the fixpoint state above.
+    m_resolutionPasses = 0;
+    m_mappingsWithNewResolutions.clear();
+    rehydratePendingResolutions();
 
     if (m_syncMappings.isEmpty() && m_activeControllers.isEmpty()) {
         qDebug() << "SyncEngine::driveQueue - no sync work configured";
@@ -665,6 +694,12 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     // state captured during an earlier multi-mapping sync.
     m_freshState.clear();
     m_skippedMappingIds.clear();
+    // Bug B (conflict-resolution-repair Task 3): same per-run reset +
+    // rehydration driveQueue() does — a single-mapping run must apply a
+    // pending resolution too, and PlanStan's "Sync Now" is one.
+    m_resolutionPasses = 0;
+    m_mappingsWithNewResolutions.clear();
+    rehydratePendingResolutions();
     // Note: this also means that single-mapping runSync does NOT update
     // this mapping's sync-progress tokens (H3) on success. That's correct —
     // token updates happen as part of the multi-mapping pre-pass
@@ -740,6 +775,9 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // class member that the caller had to set before invoking us —
             // an implicit-state-machine residue (INVARIANTS §4) now gone.
             request.override = executionOverride;
+            // Bug B: hand this mapping's already-chosen resolutions to the run
+            // that will apply them (usually empty).
+            request.pendingResolutions = pendingResolutionsFor(mapping.id);
 
             // Parallel-sync Task 2: dispatch through a leased slot, same as
             // advanceQueue()'s multi-mapping dispatch, so m_inFlight stays
@@ -776,6 +814,43 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     // nothing else will clear it and subsequent runSync* calls are
     // rejected by the m_isSyncing guard.
     m_isSyncing = false;
+}
+
+// Bug B (conflict-resolution-repair Task 3, locked decision 2): the
+// single-mapping half of the auto follow-up run. A Queue run re-primes through
+// pumpQueue()'s existing fixpoint machinery; DispatchMode::Single has no queue
+// to re-prime and finishes inside onWorkerSyncCompleted, so it needs its own
+// re-dispatch. Deliberately NOT a new runSync(): starting a fresh run from
+// inside a completion handler would race m_isSyncing, resolve a second future
+// nobody is holding, and re-enter the fast-path setup. This just puts one more
+// Request on the wire for the run that is already open.
+bool SyncEngine::redispatchForResolutions(const QString &mappingId)
+{
+    for (const auto &mapping : std::as_const(m_syncMappings)) {
+        if (mapping.id != mappingId || !mapping.enabled)
+            continue;
+
+        const int slot = leaseWorker();
+        if (slot < 0)
+            return false;
+
+        SyncEngineWorker::Request request;
+        request.mapping      = mapping;
+        request.behavior     = m_currentSyncBehavior;
+        request.collectionId = m_collection ? m_collection->id() : QString();
+        request.useQuickPath = !m_baselineStore ||
+                               m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
+        request.override     = m_queueOverride;
+        request.pendingResolutions = pendingResolutionsFor(mapping.id);
+
+        m_pool[slot].busyMappingId = mapping.id;
+        m_inFlight.insert(mapping.id, slot);
+        m_inFlightEndpoints.insert(endpointKey(mapping.sourceBackend, mapping.sourceCalendar));
+        m_inFlightEndpoints.insert(endpointKey(mapping.targetBackend, mapping.targetCalendar));
+        emit m_pool[slot].worker->processSyncRequested(request);
+        return true;
+    }
+    return false;
 }
 
 // Architectural-redress Plan 1 Task 4 (2026-05-29): canonical entry
@@ -1172,6 +1247,9 @@ void SyncEngine::pumpQueue()
         // v0.65: per-run multi-mapping override (clobber only; direction
         // was sanitized to Default by runSync before reaching the queue).
         request.override = m_queueOverride;
+        // Bug B: hand this mapping's already-chosen resolutions to the run
+        // that will apply them (usually empty).
+        request.pendingResolutions = pendingResolutionsFor(mapping.id);
 
         const int slot = leaseWorker();
         if (slot < 0) {
@@ -1198,6 +1276,41 @@ void SyncEngine::pumpQueue()
         return;
     if (!m_queue.isExhausted())
         return;
+
+    // Bug B (conflict-resolution-repair Task 3, locked decision 2): the
+    // resolution re-pass gate, riding the same re-prime machinery as L2 below.
+    // A user answers the batch dialog inside onWorkerSyncCompleted, i.e. after
+    // the run that detected the conflict has already done its work; without
+    // this, nothing visible happens until the host's next tick (~30s in
+    // PlanStan). Its own budget (m_resolutionPasses / kMaxResolutionPasses)
+    // rather than m_currentPass, so the L2 gate cannot starve it and a
+    // resolution that keeps failing to apply cannot loop forever — the set is
+    // cleared as the pass is scheduled, so only a NEWLY chosen resolution can
+    // schedule another.
+    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Queue &&
+        !m_cancelled && m_resolutionPasses < kMaxResolutionPasses &&
+        !m_mappingsWithNewResolutions.isEmpty()) {
+        QSet<QString> nextIds;
+        for (const auto &m : std::as_const(m_syncMappings)) {
+            if (m.enabled && m_mappingsWithNewResolutions.contains(m.id))
+                nextIds.insert(m.id);
+        }
+        m_mappingsWithNewResolutions.clear();
+        if (!nextIds.isEmpty()) {
+            m_carriedResults += m_queue.drain();
+            m_passDirtyWriters.clear();
+            // The fast-path pre-pass judged these mappings before the user
+            // answered; a skip verdict must not suppress the apply.
+            m_skippedMappingIds.clear();
+            ++m_resolutionPasses;
+            qDebug() << "SyncEngine: resolution re-pass" << m_resolutionPasses
+                     << "over" << nextIds.size() << "mapping(s)";
+            emit syncPassStarted(m_currentPass, kMaxSyncPasses);
+            m_queue.prime(m_syncMappings, nextIds);
+            pumpQueue();
+            return;
+        }
+    }
 
     // L2 (spec §5.9): fixpoint re-pass gate. If any mapping this pass
     // wrote an endpoint that a DIFFERENT mapping also touches, re-prime
@@ -1323,19 +1436,198 @@ void SyncEngine::onWorkerConflictDetected(const ConflictInfo &conflict)
     ConflictInfo enriched = conflict;
     resolveConflictDisplayNames(enriched, m_registry);
 
-    // Emit for UI notifications (status bar, conflict count badge)
-    emit conflictDetected(enriched);
-
-    // Record in conflict store if available
+    // Bug B (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md §B): this used to record the conflict and THROW
+    // THE RETURNED ID AWAY, so every ConflictInfo in
+    // m_pendingUnmonitoredConflicts carried an empty conflictId,
+    // ConflictManager::showImmediateDialog re-recorded it to get one, and the
+    // engine had no way to map a later conflictResolved(id, ...) back to the
+    // record it is about. Capture it.
+    //
+    // A host with no SyncConflictStore gets a synthesized id: the in-process
+    // channel (ConflictManager -> onConflictResolved -> injection into the
+    // next run) works perfectly well without persistence, it just does not
+    // survive a restart.
     if (m_conflictStore) {
-        m_conflictStore->recordConflict(enriched);
+        const QString recordedId = m_conflictStore->recordConflict(enriched);
+        if (!recordedId.isEmpty())
+            enriched.conflictId = recordedId;
     }
+    if (enriched.conflictId.isEmpty())
+        enriched.conflictId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+
+    // Index the id back to what applying a resolution actually needs. The
+    // two lastModified values are the staleness guard's reference point
+    // (locked decision 3): they are what the records looked like when the
+    // user was shown this conflict.
+    ConflictIdentity identity;
+    identity.mappingId      = enriched.mappingId;
+    identity.recordId       = enriched.sourceId;
+    identity.sourceModified = enriched.sourceModified;
+    identity.targetModified = enriched.targetModified;
+    m_conflictIdentity.insert(enriched.conflictId, identity);
+
+    // Emit for UI notifications (status bar, conflict count badge). Emitted
+    // AFTER the id is settled so consumers see a populated conflictId — they
+    // used to get an empty one here.
+    emit conflictDetected(enriched);
 
     // Collect for batch presentation after sync mapping completes.
     // Previously this called handleConflict() immediately, which created
     // a modal dialog per conflict via nested exec() event loops —
     // causing N stacked dialogs for N conflicts.
     m_pendingUnmonitoredConflicts.append(enriched);
+}
+
+// Bug B: the user answered a dialog (or the auto-policy answered for them).
+// This is the whole point of the repair — before Task 3 the answer stopped at
+// a SyncConflictStore column and the identical conflict re-detected forever.
+void SyncEngine::onConflictResolved(const QString &conflictId,
+                                    ConflictResolution resolution)
+{
+    // Neither of these names a version to keep, so there is nothing to apply.
+    // (applyAutoPolicy emits for them too — a pre-existing quirk we tolerate
+    // rather than change a signal three consumers already bind to.)
+    if (resolution == ConflictResolution::Skip ||
+        resolution == ConflictResolution::AskUser) {
+        return;
+    }
+    if (m_resolvingMonitoredConflict) {
+        // Monitored: the live run is about to apply this itself. Drop the
+        // store row instead of queueing — it is resolved AND consumed, and a
+        // resolved row left in the table is exactly what rehydration would
+        // pick up and re-arm on a later run.
+        if (m_conflictStore && !conflictId.isEmpty())
+            m_conflictStore->removeConflict(conflictId);
+        m_conflictIdentity.remove(conflictId);
+        return;
+    }
+    if (conflictId.isEmpty()) {
+        qWarning() << "SyncEngine::onConflictResolved - resolution" << static_cast<int>(resolution)
+                   << "arrived with no conflict id; cannot map it to a record."
+                      " It will not be applied.";
+        return;
+    }
+
+    ConflictIdentity identity = m_conflictIdentity.value(conflictId);
+    if (identity.recordId.isEmpty() && m_conflictStore) {
+        // An id from a PREVIOUS process, answered out of the dock. The store
+        // is the only place that remembers what it was about.
+        const ConflictInfo stored = m_conflictStore->conflict(conflictId);
+        identity.mappingId      = stored.mappingId;
+        identity.recordId       = stored.sourceId;
+        identity.sourceModified = stored.sourceModified;
+        identity.targetModified = stored.targetModified;
+    }
+    if (identity.recordId.isEmpty()) {
+        qWarning() << "SyncEngine::onConflictResolved - unknown conflict id"
+                   << conflictId << "- cannot apply the resolution";
+        return;
+    }
+
+    PendingConflictResolution pending;
+    pending.conflictId     = conflictId;
+    pending.recordId       = identity.recordId;
+    pending.resolution     = resolution;
+    pending.sourceModified = identity.sourceModified;
+    pending.targetModified = identity.targetModified;
+    if (resolution == ConflictResolution::CustomMerge && m_conflictManager) {
+        // Per-conflict, not lastMergedIcalData() — the batch loop has already
+        // moved on to the next conflict by now (Bug B, ConflictManager side).
+        pending.mergedNative = m_conflictManager->mergedDataFor(conflictId);
+    }
+
+    m_pendingResolutions[identity.mappingId].insert(identity.recordId, pending);
+    m_mappingsWithNewResolutions.insert(identity.mappingId);
+
+    qDebug() << "SyncEngine::onConflictResolved - queued resolution"
+             << static_cast<int>(resolution) << "for record" << identity.recordId
+             << "of mapping" << identity.mappingId
+             << "(conflict" << conflictId << ")";
+}
+
+// Bug B, restart durability: PlanStan's live database is full of rows that are
+// resolved but were never applied — that is the defect, persisted. Read them
+// back at every run entry so the next dispatchSync finally lands them.
+void SyncEngine::rehydratePendingResolutions()
+{
+    if (!m_conflictStore)
+        return;
+
+    // resolvedConflicts() is ordered by resolved_at ASCENDING, so when several
+    // resolved rows exist for the same (mapping, record) the LAST one folded
+    // in — the most recent resolution — wins.
+    const auto rows = m_conflictStore->resolvedConflicts();
+    for (const auto &row : rows) {
+        if (row.info.sourceId.isEmpty())
+            continue;
+        if (row.resolution == ConflictResolution::Skip ||
+            row.resolution == ConflictResolution::AskUser) {
+            continue;
+        }
+        auto &perMapping = m_pendingResolutions[row.info.mappingId];
+        const auto existing = perMapping.constFind(row.info.sourceId);
+        if (existing != perMapping.constEnd() &&
+            !existing->mergedNative.isEmpty()) {
+            // An in-process entry wins over a rehydrated one: it carries the
+            // CustomMerge payload, which SyncConflictStore does not persist
+            // (FINDINGS O52).
+            continue;
+        }
+        PendingConflictResolution pending;
+        pending.conflictId     = row.info.conflictId;
+        pending.recordId       = row.info.sourceId;
+        pending.resolution     = row.resolution;
+        pending.sourceModified = row.info.sourceModified;
+        pending.targetModified = row.info.targetModified;
+        perMapping.insert(row.info.sourceId, pending);
+    }
+}
+
+QHash<QString, PendingConflictResolution>
+SyncEngine::pendingResolutionsFor(const QString &mappingId) const
+{
+    return m_pendingResolutions.value(mappingId);
+}
+
+// Bug B, consume-once. A resolution must apply exactly once: a row left behind
+// would silently auto-apply to a future GENUINE conflict for the same record,
+// which is a data-loss bug worse than the one this campaign is fixing.
+//
+// The worker only reports appliedConflictIds on its successful-write branch,
+// so a failed apply leaves the resolution pending for the next run to retry —
+// the same rule as "only save baselines on successful writes".
+void SyncEngine::consumeAppliedResolutions(const SyncResult &result)
+{
+    const QStringList doneIds = result.appliedConflictIds + result.staleConflictIds;
+    if (doneIds.isEmpty())
+        return;
+
+    const QSet<QString> done(doneIds.constBegin(), doneIds.constEnd());
+
+    // Scan rather than index by mapping: a resolution rehydrated from a
+    // previous process has no m_conflictIdentity entry, and the map is at most
+    // "conflicts a user answered but no run has applied yet" deep.
+    QStringList emptiedMappings;
+    for (auto m = m_pendingResolutions.begin(); m != m_pendingResolutions.end(); ++m) {
+        QStringList doomedRecords;
+        for (auto rec = m->constBegin(); rec != m->constEnd(); ++rec) {
+            if (done.contains(rec->conflictId))
+                doomedRecords.append(rec.key());
+        }
+        for (const QString &recordId : std::as_const(doomedRecords))
+            m->remove(recordId);
+        if (m->isEmpty())
+            emptiedMappings.append(m.key());
+    }
+    for (const QString &mappingId : std::as_const(emptiedMappings))
+        m_pendingResolutions.remove(mappingId);
+
+    for (const QString &id : done) {
+        m_conflictIdentity.remove(id);
+        if (m_conflictStore)
+            m_conflictStore->removeConflict(id);
+    }
 }
 
 void SyncEngine::onWorkerConflictPauseRequested(const ConflictInfo &conflict)
@@ -1352,9 +1644,18 @@ void SyncEngine::onWorkerConflictPauseRequested(const ConflictInfo &conflict)
     // Emit signal for backward compatibility
     emit conflictDetected(enriched);
 
-    // In monitored mode, show dialog via ConflictManager
+    // In monitored mode, show dialog via ConflictManager.
+    //
+    // Bug B (conflict-resolution-repair Task 3): the manager emits
+    // conflictResolved from in here too, and SyncEngine now listens to it.
+    // Flag the call so onConflictResolved knows this particular answer is
+    // about to be applied INLINE by the still-running worker
+    // (resumeAfterConflictResolution below) and must not also be queued for a
+    // later run.
     if (m_conflictManager) {
+        m_resolvingMonitoredConflict = true;
         ConflictResolution resolution = m_conflictManager->handleConflict(enriched);
+        m_resolvingMonitoredConflict = false;
         QString mergedIcal;
 
         if (resolution == ConflictResolution::CustomMerge) {
@@ -1408,9 +1709,24 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         }
     }
 
+    // Bug B (conflict-resolution-repair Task 3), consume-once: drop the
+    // resolutions this mapping actually applied (and any it discarded as
+    // stale) before anything can re-inject them. Done BEFORE the batch
+    // presentation below, because that presentation can legitimately queue a
+    // NEW resolution for the same record.
+    consumeAppliedResolutions(result);
+
     // Batch-present any unmonitored conflicts collected during this mapping.
     // handleConflicts() (plural) applies hybrid threshold: shows dialogs for
     // small batches, defers large batches to the dock widget.
+    //
+    // Bug B: this is where a user's choice enters the engine — synchronously,
+    // via ConflictManager::conflictResolved -> onConflictResolved, which fills
+    // m_pendingResolutions and marks the mapping in
+    // m_mappingsWithNewResolutions. Both the Single branch below and
+    // pumpQueue()'s terminal branch read that set to decide whether to run one
+    // follow-up pass (locked decision 2), so by the time either looks, the
+    // answers are in.
     if (m_conflictManager && !m_pendingUnmonitoredConflicts.isEmpty()) {
         qDebug() << "SyncEngine: Batch-presenting"
                  << m_pendingUnmonitoredConflicts.size()
@@ -1489,7 +1805,36 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // the single place that actually knows the run has nothing left.
     // Single-mapping runs have no such ambiguity (finish unconditionally
     // below), so Complete is still emitted right here for that mode.
-    if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
+    // Bug B (locked decision 2): the user answers the dialog AFTER the run
+    // that detected the conflict has finished, so without a follow-up nothing
+    // visibly happens until the host's next tick (~30s in PlanStan). A Queue
+    // run rides pumpQueue()'s existing re-prime machinery; a Single run has no
+    // queue to re-prime, so re-dispatch the one mapping here instead — before
+    // Complete is announced and before the future is finished, because both
+    // are terminal and this run is not over yet.
+    const bool singleMode =
+        m_queue.dispatchMode() == MappingQueue::DispatchMode::Single;
+    if (singleMode && !m_cancelled &&
+        m_resolutionPasses < kMaxResolutionPasses &&
+        m_mappingsWithNewResolutions.contains(mappingId)) {
+        m_mappingsWithNewResolutions.remove(mappingId);
+        ++m_resolutionPasses;
+        qDebug() << "SyncEngine: re-running mapping" << mappingId
+                 << "to apply" << pendingResolutionsFor(mappingId).size()
+                 << "newly-chosen conflict resolution(s) (pass"
+                 << m_resolutionPasses << "of" << kMaxResolutionPasses << ")";
+        // The re-dispatch has to be a fresh Request so it picks up
+        // pendingResolutions; everything else about the run (behavior,
+        // override, iface, queue mode) is deliberately left in place, so the
+        // future still resolves exactly once, with the LAST pass's result.
+        if (redispatchForResolutions(mappingId))
+            return;
+        // Could not re-dispatch (mapping gone, or no free slot): fall through
+        // and finish. The resolution stays pending for the host's next run.
+        --m_resolutionPasses;
+    }
+
+    if (singleMode) {
         m_currentPhase = SyncPhase::Complete;
         emit phaseChanged(m_currentPhase);
     }
@@ -2252,17 +2597,14 @@ void SyncEngineWorker::applyConflictResolution(const EngineDiffOp &op,
             // No usable caller-supplied merge — the pre-Bug-C behaviour:
             // merge automatically, or defer when the domain has no merger.
             if (!m_unifiedMerger) {
-                ConflictInfo info;
-                info.mappingId       = m_currentRequest.mapping.id;
-                info.sourceId        = op.record.id;
-                info.targetId        = op.targetRecord.id.isEmpty()
-                                           ? op.record.id
-                                           : op.targetRecord.id;
-                info.calendarId      = m_currentRequest.mapping.sourceCalendar;
-                info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
-                info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                info.type            = ConflictType::BothModified;
-                m_currentResult.unresolvedConflicts.append(info);
+                // FINDINGS O50, folded in by Task 3 (Bug B's staleness guard
+                // needs the timestamps this used to omit): this branch built
+                // the ConflictInfo by hand with only ids and a hardcoded
+                // BothModified — no detectedAt, no source/targetModified, no
+                // payload — so a conflict deferred OUT OF a resolution reached
+                // the host at a lower fidelity than one deferred out of the
+                // detection walk. Same builder as the detection walk now.
+                m_currentResult.unresolvedConflicts.append(buildConflictInfo(op));
                 ++m_unifiedMerge.conflictsDeferred;
                 break;
             }
@@ -2284,18 +2626,9 @@ void SyncEngineWorker::applyConflictResolution(const EngineDiffOp &op,
             break;
         }
         default: {
-            // Skip / AskUser / unsupported → defer.
-            ConflictInfo info;
-            info.mappingId       = m_currentRequest.mapping.id;
-            info.sourceId        = op.record.id;
-            info.targetId        = op.targetRecord.id.isEmpty()
-                                       ? op.record.id
-                                       : op.targetRecord.id;
-            info.calendarId      = m_currentRequest.mapping.sourceCalendar;
-            info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
-            info.targetBackendId = m_currentRequest.mapping.targetBackend;
-            info.type            = ConflictType::BothModified;
-            m_currentResult.unresolvedConflicts.append(info);
+            // Skip / AskUser / unsupported → defer. FINDINGS O50, folded in by
+            // Task 3 — see the sibling comment in the CustomMerge branch above.
+            m_currentResult.unresolvedConflicts.append(buildConflictInfo(op));
             ++m_unifiedMerge.conflictsDeferred;
             break;
         }
@@ -3250,6 +3583,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // from m_currentRequest to avoid storing them as members).
     m_unifiedDiff     = std::move(engineDiff);
     m_unifiedMerge    = EngineMerge{};
+    // Bug B (Task 3): per-run accumulator for injected resolutions that were
+    // actually applied. Reset alongside m_unifiedMerge — it is the same kind
+    // of per-run merge state.
+    m_unifiedAppliedConflictIds.clear();
     m_unifiedConflictIdx = 0;
     m_unifiedPolicy   = request.mapping.conflictPolicy;
     m_unifiedOverride = request.override;
@@ -3359,6 +3696,30 @@ QString demoteToNative(const std::optional<Kalburator::Shape::Pipeline> &pipe,
     return QString::fromUtf8(native);
 }
 
+/// Bug B staleness guard (locked decision 3): are these two lastModified
+/// values the same instant?
+///
+/// SECOND granularity on purpose. A resolution rehydrated from
+/// SyncConflictStore has round-tripped through
+/// QDateTime::toString(Qt::ISODate), which drops sub-second precision — so a
+/// millisecond-exact comparison would call every restored resolution stale and
+/// silently defeat the whole restart-durability path. Comparing absolute
+/// seconds also makes the check time-zone-agnostic.
+///
+/// Invalid == invalid counts as a match: a ModifyDelete conflict's deleted
+/// side legitimately has no lastModified, and treating that as "changed"
+/// would make such a conflict unresolvable forever. The cost is that a backend
+/// which reports no lastModified at all gets no staleness protection — see
+/// FINDINGS O51.
+bool sameModifiedInstant(const QDateTime &recorded, const QDateTime &live)
+{
+    if (recorded.isValid() != live.isValid())
+        return false;
+    if (!recorded.isValid())
+        return true;
+    return recorded.toSecsSinceEpoch() == live.toSecsSinceEpoch();
+}
+
 } // namespace
 
 // Bug A: ONE builder for BOTH AskUser branches below (monitored yield and
@@ -3451,6 +3812,46 @@ void SyncEngineWorker::unifiedHandleConflicts()
 
         // Conflict op.
         if (effectivePolicy == ConflictResolution::AskUser) {
+            // Bug B (docs/2026-08-21-conflict-info-canonical-data-and-
+            // unmonitored-resolution-handoff.md §B): BEFORE either the
+            // Monitored yield or the Unmonitored defer, replay a resolution
+            // the user already chose for this record. This is the injection
+            // point of locked decision 1 — the whole reason a resolution
+            // answered after its run finished ever reaches the data. It runs
+            // through applyConflictResolution(), the same helper the Monitored
+            // resume uses, so there is exactly one write mechanism
+            // (campaign INVARIANTS §1).
+            const QString recId = op.record.id.isEmpty() ? op.targetRecord.id
+                                                         : op.record.id;
+            const auto pendingIt = m_currentRequest.pendingResolutions.constFind(recId);
+            if (pendingIt != m_currentRequest.pendingResolutions.constEnd()) {
+                const PendingConflictResolution &pending = *pendingIt;
+                // Staleness guard (locked decision 3). A resolution names a
+                // version to keep; if either side has been edited since the
+                // dialog was answered, "keep local" would silently clobber
+                // that edit. Discard and re-present instead.
+                if (!sameModifiedInstant(pending.sourceModified, op.record.lastModified) ||
+                    !sameModifiedInstant(pending.targetModified, op.targetRecord.lastModified)) {
+                    qWarning() << "SyncEngineWorker::unifiedHandleConflicts - discarding a"
+                                  " stale conflict resolution for" << recId
+                               << "in mapping" << m_currentRequest.mapping.id
+                               << "- records changed since it was chosen (source"
+                               << pending.sourceModified << "->" << op.record.lastModified
+                               << ", target" << pending.targetModified << "->"
+                               << op.targetRecord.lastModified
+                               << "); presenting the conflict again";
+                    m_currentResult.staleConflictIds.append(pending.conflictId);
+                    // fall through to the normal AskUser handling below
+                } else {
+                    applyConflictResolution(op, pending.resolution, pending.mergedNative);
+                    m_unifiedAppliedConflictIds.append(pending.conflictId);
+                    qDebug() << "SyncEngineWorker::unifiedHandleConflicts - applied stored"
+                                " resolution" << static_cast<int>(pending.resolution)
+                             << "for" << recId;
+                    continue;
+                }
+            }
+
             if (m_currentRequest.behavior == SyncEngine::SyncBehavior::Monitored) {
                 // Yield: store position, set flag, emit signal, return.
                 // resumeAfterConflict will re-enter this method from index i.
@@ -4078,6 +4479,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
             }
         }
+        // Bug B (conflict-resolution-repair Task 3), consume-once: report the
+        // injected resolutions this run applied ONLY here, on the
+        // write-succeeded branch. SyncEngine deletes their SyncConflictStore
+        // rows when it sees them, so reporting one whose write failed would
+        // throw the user's choice away and leave the conflict standing. Same
+        // reasoning as the baseline rule immediately above.
+        m_currentResult.appliedConflictIds = m_unifiedAppliedConflictIds;
+
         m_currentResult.success = !m_currentResult.hasUnresolvedConflicts();
     }
     // E1.1 (O30): surface the mapping's unresolved-conflict count in the

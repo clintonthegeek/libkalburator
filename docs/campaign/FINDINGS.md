@@ -2107,7 +2107,7 @@ that constructs the whole struct, so a field added for one branch cannot be
 missing from the other. (INVARIANTS §9 — noted while fixing Bug A in the
 same two constructions.)
 
-### O50 — two MORE hand-built `ConflictInfo`s in the resolution path, both missing every payload field (OPEN, found 2026-08-21, conflict-resolution-repair Task 2)
+### O50 — two MORE hand-built `ConflictInfo`s in the resolution path, both missing every payload field (RESOLVED 2026-08-21, conflict-resolution-repair Task 3)
 
 Task 1 collapsed `unifiedHandleConflicts()`'s two `ConflictInfo`
 constructions onto one `buildConflictInfo(op)` (O49). There are **two more**,
@@ -2130,3 +2130,98 @@ once someone owns it — call `buildConflictInfo(op)` in both branches, exactly
 as O49 did — but it should land with a consumer-visible note, because
 `ConflictInfo::hasFullData()` starts returning true for skipped conflicts
 that previously returned false. (INVARIANTS §9 / §1.)
+
+**Fixed in Task 3, as a prerequisite rather than a follow-up.** Bug B's
+staleness guard compares a stored resolution's `sourceModified`/`targetModified`
+against the live records, and one of the two branches this finding names — the
+`default:` Skip/AskUser deferral — is on the path a Skipped conflict takes back
+to the store. A conflict deferred with null timestamps could never be matched
+against later. Both branches now call `buildConflictInfo(op)`, the same builder
+the detection walk uses.
+
+**Consumer-visible (Task 4 must document):** a conflict deferred out of a
+RESOLUTION (user hit Skip, or the domain has no merger) now reaches
+`SyncResult::unresolvedConflicts` and `SyncConflictStore` with `detectedAt`,
+`source/targetModified`, both native-encoding payloads, and a correct
+`ConflictType` — so `ConflictInfo::hasFullData()` returns **true** for those
+where it previously returned false, and PlanStan's dock/dialog will render a
+real diff for them instead of an empty one. Correct, but visibly different.
+
+
+### O51 — the conflict-resolution staleness guard is blind on a backend that reports no `lastModified` (OPEN, found 2026-08-21, conflict-resolution-repair Task 3)
+
+Bug B's staleness guard (locked decision 3) is the only thing standing between
+a stored "Keep Local" and an edit made *after* the user answered the dialog. It
+compares `PendingConflictResolution::source/targetModified` (captured at
+detection) against the live `EngineDiffOp` records, via
+`sameModifiedInstant()` in `src/engine/syncengine.cpp`. Two deliberate
+weakenings, both load-bearing for something else:
+
+- **Second granularity.** `SyncConflictStore` round-trips the timestamps
+  through `QDateTime::toString(Qt::ISODate)`, which drops milliseconds. A
+  millisecond-exact comparison would call every *rehydrated* resolution stale
+  and silently kill the restart-durability path — the case PlanStan is actually
+  sitting in. So an edit landing inside the same wall-clock second as the
+  detection reads as unchanged.
+- **`invalid == invalid` counts as a match.** A ModifyDelete conflict's deleted
+  side legitimately has no `lastModified`, and treating that as "changed" would
+  make such a conflict permanently unresolvable. The consequence is that a
+  backend which reports **no** `lastModified` at all gets **no** staleness
+  protection whatsoever: every stored resolution for it applies unconditionally.
+
+Every calendar backend in the tree today does report one (`MockBackend` takes
+it off the incidence; the iCal round-trip supplies `LAST-MODIFIED`), so this is
+latent, not live. The durable fix is to compare content rather than clocks —
+the `ConflictInfo` payloads are already persisted, and `BackendRecord` carries
+a `contentHash` that the store has no column for. That is a schema change and a
+decision about what "the same version" means, so it is not Task 3's to make.
+Pinned as-is by `tst_syncengine_unification::staleResolutionIsDiscarded`, which
+moves the target's `lastModified` by 600s precisely so it does not depend on
+either weakening.
+
+### O52 — a rehydrated `CustomMerge` resolution loses the user's merged payload (OPEN, found 2026-08-21, conflict-resolution-repair Task 3)
+
+`SyncConflictStore` has columns for the two sides and the baseline, but none
+for a *merge result*. So when Task 3's rehydration reads a resolved-but-
+unapplied row back after a restart, a `CustomMerge` row comes back with
+`PendingConflictResolution::mergedNative` empty, and
+`applyConflictResolution`'s Bug C branch correctly falls back to the automatic
+`m_unifiedMerger`. The user's hand merge is silently replaced by the
+auto-merge.
+
+In-process this does not happen: `ConflictManager::mergedDataFor(conflictId)`
+carries the payload from the resolver to `SyncEngine::onConflictResolved`, and
+`rehydratePendingResolutions()` deliberately refuses to overwrite an in-memory
+entry that has one. The gap is exactly "app closed between choosing the merge
+and the next sync". Fixing it means a `merged_ical` column and a schema
+migration — same storage decision as O48's baseline bytes, and worth doing at
+the same time. Until then a Custom Merge should be treated as needing the app
+to stay open for one more sync cycle.
+
+### O53 — the batch conflict dialog is modal and runs inside `onWorkerSyncCompleted` while other mappings may still be in flight (OPEN, pre-existing, confirmed 2026-08-21, conflict-resolution-repair Task 3)
+
+Confirmed while wiring Bug B, not introduced by it.
+`SyncEngine::onWorkerSyncCompleted` calls
+`m_conflictManager->handleConflicts(...)` inline, on the engine/GUI thread. In
+production that shows a **modal** dialog (`IConflictResolver` →
+`DialogConflictResolver` → `exec()`), which spins a nested event loop while
+other mappings of the same run are still executing on pool workers. Their
+completion slots therefore fire *inside* the dialog's event loop, and their
+results land in `m_queue` while the user is deciding. Pre-parallel-sync this
+was harmless (one mapping at a time); with `setMaxConcurrentMappings(4)` — what
+PlanStan's `AppSettings` defaults to — it is a genuine re-entrancy surface.
+
+Two smaller things fall out of the same shape and are also unfixed:
+`m_pendingUnmonitoredConflicts` is a single flat list, not keyed by mapping, so
+conflicts from mapping A can be batch-presented under mapping B's completion
+(the debug line even says "for mapping X" while showing someone else's); and
+`m_resolvingMonitoredConflict`, the flag Task 3 uses to tell an inline
+Monitored resolution apart from a deferred one, is a plain bool on the engine —
+correct today only because Monitored runs are pinned to concurrency 1 by
+`resolveEffectiveCap()`.
+
+Out of scope for Task 3 (explicitly: "that's pre-existing; do not try to fix
+it, but log it"). The right fix is to hand the batch to the host
+asynchronously rather than calling into a modal dialog from a completion slot —
+which the Bug B machinery now makes *possible*, since a resolution no longer
+has to be answered while any particular run is alive. (INVARIANTS §9.)

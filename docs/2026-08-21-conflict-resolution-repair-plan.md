@@ -96,11 +96,79 @@ and 3 depends on the helper 2 extracts.
   that remain inside `applyConflictResolution`'s deferral branches carry none
   of the payload fields the detection-walk builder sets; logged, not fixed
   (out of Task 2's "behaviour identical apart from C and D" contract).
-- **Task 3 — Bug B.** `ConflictManager::conflictResolved` as the single
-  channel; `m_pendingResolutions` in `SyncEngine`, rehydrated from
-  `SyncConflictStore`; carried on `SyncEngineWorker::Request`; consumed in the
-  `AskUser` branch; applied ids returned in `SyncResult` and their rows
-  deleted; staleness guard; auto follow-up run.
+- **Task 3 — Bug B. DONE 2026-08-21.** Resolution injection into the next
+  run, end to end:
+
+  1. **One channel.** `ConflictManager::conflictResolved(conflictId,
+     resolution)` is now emitted for every real (non-Skip) resolution, not
+     only when a `SyncConflictStore` happens to be attached — the store write
+     stays conditional, the signal does not. That one change covers all three
+     store-only paths (`showImmediateDialog`, `queueForDeferred`→dock→
+     `applyResolution`, `applyAutoPolicy`); the handoff's suspicion about
+     `applyAutoPolicy` is **confirmed** — it had the identical shape and
+     already emitted, so it needed no change of its own. `CustomMerge`'s
+     payload is captured per conflict (`mergedDataFor(conflictId)`, additive)
+     because `lastMergedIcalData()` is last-call-scoped and useless across the
+     batch loop. `conflictResolved`'s signature is unchanged.
+  2. **Identity.** `SyncEngine::onWorkerConflictDetected` keeps the id
+     `recordConflict()` returns (it was discarded) and synthesizes a `QUuid`
+     for store-less hosts, indexing `conflictId → (mappingId, recordId,
+     source/targetModified)` in `m_conflictIdentity`; ids from a previous
+     process fall back to `SyncConflictStore::conflict()`. `conflictDetected`
+     now carries a populated `conflictId`.
+  3. **Store + transport.** `m_pendingResolutions` (mapping → record →
+     `PendingConflictResolution`), rehydrated at every run entry from the new
+     additive `SyncConflictStore::resolvedConflicts()` (ordered by
+     `resolved_at` ASC so the most recent wins), carried on
+     `SyncEngineWorker::Request::pendingResolutions` from all three dispatch
+     sites. **Confirmed: the store's read side already populated
+     `sourceModified`/`targetModified`** from `local_modified`/
+     `remote_modified` — the three row readers were collapsed onto one
+     `readConflictRow()` while verifying it, rather than adding a third copy.
+  4. **Consumption + staleness.** `unifiedHandleConflicts()`'s `AskUser`
+     branch replays a pending resolution through Task 2's
+     `applyConflictResolution()` before either the Monitored yield or the
+     Unmonitored defer. `sameModifiedInstant()` compares each side's live
+     `lastModified` against detection; on mismatch the resolution is
+     discarded with a `qWarning()` and the conflict re-presented.
+  5. **Consume-once.** `SyncResult::appliedConflictIds` / `staleConflictIds`
+     (additive). Applied ids are populated **only on the successful-write
+     branch** of `unifiedContinueAfterConflicts` — same rule as baseline
+     saves, so a failed apply retries next run. `consumeAppliedResolutions()`
+     drops them from the pending map and deletes their store rows.
+  6. **Auto follow-up.** Queue runs ride `pumpQueue()`'s re-prime machinery
+     with their own budget (`m_resolutionPasses`/`kMaxResolutionPasses = 2`,
+     deliberately separate from `m_currentPass`/`kMaxSyncPasses`); Single runs
+     re-dispatch via `redispatchForResolutions()` before Complete/finish,
+     reusing the open run's iface so the caller's future still resolves once.
+     `m_resolvingMonitoredConflict` suppresses queueing when the Monitored
+     yield is about to apply the answer inline (and deletes the now-consumed
+     row).
+  7. **FINDINGS O50 folded in** (prerequisite, not follow-up — the staleness
+     guard needs those timestamps): both hand-built `ConflictInfo`s in
+     `applyConflictResolution` now call `buildConflictInfo(op)`.
+
+  **New findings: O51** (staleness guard is second-granular and blind on a
+  backend with no `lastModified`), **O52** (a rehydrated `CustomMerge` loses
+  the user's payload — no store column), **O53** (pre-existing, confirmed: the
+  batch dialog is modal and runs inside `onWorkerSyncCompleted` while other
+  mappings may still be in flight).
+
+  Tests: seven new slots in `tests/engine/tst_syncengine_unification.cpp`
+  (headline round trip, restart durability, consume-once, staleness, Deferred,
+  AutoResolve, store-less host) on a shared `seedConflict()` fixture, each
+  shown RED against the specific fix it protects (see the commit message for
+  the per-probe matrix). `tests/calendar/tst_calendar_conflict.cpp`'s
+  `unmonitored_sameUidDivergent_emitsConflictDetected` **flipped contract** —
+  it asserted the target was NOT written, which was pinning the defect; it now
+  asserts the AutoResolve answer lands, and covers the Queue-mode follow-up
+  gate.
+
+  **Consumer-visible for Task 4:** an Unmonitored run can now write data it
+  previously never would; `conflictDetected` carries a populated
+  `conflictId`; a Skipped conflict now has full data (`hasFullData()` true);
+  and an applied conflict's `SyncConflictStore` row is deleted rather than
+  left resolved-but-present.
 - **Task 4 — Verification and docs.** Full suite, FINDINGS O-numbers,
   `docs/2026-07-19-consumer-coordination-status.md`, `CLAUDE.md`, tag.
 

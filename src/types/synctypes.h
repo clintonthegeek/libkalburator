@@ -127,6 +127,45 @@ struct ConflictInfo {
 };
 
 /**
+ * @brief A conflict resolution the user has already chosen, waiting to be
+ *        applied by a later sync run.
+ *
+ * Bug B (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+ * resolution-handoff.md §B): in SyncBehavior::Unmonitored — the only mode a
+ * real PlanStan run ever uses — the conflict dialog is presented AFTER the
+ * run that detected the conflict has finished. The engine's only code that
+ * turns a ConflictResolution into an actual write
+ * (SyncEngineWorker::applyConflictResolution) runs inside a live diff walk,
+ * against per-run state that no longer exists by then. So the choice used to
+ * write one column in SyncConflictStore and nothing else, and the identical
+ * conflict re-detected forever.
+ *
+ * The repair (locked decision 1) is injection: SyncEngine remembers the
+ * choice here, hands it to the NEXT dispatchSync() for that mapping on
+ * SyncEngineWorker::Request, and the AskUser branch of the diff walk replays
+ * it through the existing write/transcode/baseline path. No second write
+ * mechanism (campaign INVARIANTS §1).
+ *
+ * sourceModified/targetModified are the two records' lastModified AT
+ * DETECTION TIME. The injection point compares them against the live records
+ * and DISCARDS the resolution if either side moved (locked decision 3) — a
+ * stale "Keep Local" must never clobber an edit made after the dialog was
+ * answered.
+ */
+struct PendingConflictResolution {
+    QString conflictId;         ///< SyncConflictStore row id (or a synthesized uuid for store-less hosts)
+    QString recordId;           ///< The conflicting record's id (ConflictInfo::sourceId)
+    ConflictResolution resolution = ConflictResolution::AskUser;
+    /// CustomMerge only: the user's hand-merged payload in the SOURCE
+    /// backend's native encoding. NOT persisted by SyncConflictStore, so a
+    /// resolution rehydrated after a restart always has this empty and falls
+    /// back to the automatic merger (see FINDINGS O52).
+    QString mergedNative;
+    QDateTime sourceModified;   ///< op.record.lastModified when the conflict was detected
+    QDateTime targetModified;   ///< op.targetRecord.lastModified when the conflict was detected
+};
+
+/**
  * @brief Statistics for a sync operation.
  *
  * Tracks counts of created, updated, deleted items etc.
@@ -208,6 +247,25 @@ struct SyncResult {
     /// result makes them correct when N mappings are in flight.
     QString appliedSourceRevision;
     QString appliedTargetRevision;
+
+    /// Bug B (conflict-resolution-repair Task 3): conflict ids whose stored
+    /// PendingConflictResolution this run actually APPLIED — i.e. the
+    /// resolution was folded into the merge AND the write that carried it
+    /// succeeded. SyncEngine consumes exactly these: it drops them from its
+    /// pending map and deletes their SyncConflictStore rows, so a resolution
+    /// applies once and can never silently auto-apply to a future GENUINE
+    /// conflict for the same record. The worker only populates this on the
+    /// successful-write branch (same reasoning as "only save baselines on
+    /// successful writes"): a failed apply leaves the resolution pending for
+    /// the next run to retry.
+    QStringList appliedConflictIds;
+
+    /// Bug B, staleness guard (locked decision 3): conflict ids whose stored
+    /// resolution was DISCARDED because a record moved between the dialog
+    /// being answered and this run reading it. Reported regardless of write
+    /// outcome — a stale resolution is wrong no matter what else happened —
+    /// and the conflict is re-presented fresh in unresolvedConflicts.
+    QStringList staleConflictIds;
 
     qint64 durationMs() const {
         return startTime.msecsTo(endTime);

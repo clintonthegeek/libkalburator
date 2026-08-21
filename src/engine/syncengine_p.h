@@ -118,6 +118,16 @@ public:
         bool useQuickPath = false;  ///< Use fast 2-way diff (no baselines)
         QString collectionId;       ///< Collection ID for backend operations
         ExecutionOverride override; ///< Task 9: per-call direction override (Default = bidirectional)
+
+        /// Bug B (conflict-resolution-repair Task 3, docs/2026-08-21-conflict-
+        /// info-canonical-data-and-unmonitored-resolution-handoff.md §B):
+        /// resolutions the user already chose for THIS mapping, keyed by
+        /// record id. unifiedHandleConflicts()' AskUser branch replays each of
+        /// these through applyConflictResolution() instead of deferring the
+        /// conflict again — which is how an Unmonitored resolution finally
+        /// reaches the data. Empty for every run that has none pending, i.e.
+        /// almost all of them, so the common path is unchanged.
+        QHash<QString, Kalburator::Sync::PendingConflictResolution> pendingResolutions;
     };
 
     explicit SyncEngineWorker(const Kalburator::Shape::ShapeRegistries &shape,
@@ -434,6 +444,14 @@ private:
     // dispatchSync and retained across AskUser pause/resume.
     std::unique_ptr<Kalburator::Shape::RecordDiffer> m_unifiedDiffer;
     std::unique_ptr<Kalburator::Shape::RecordMerger> m_unifiedMerger;
+
+    // Bug B (Task 3): conflict ids whose injected resolution this run folded
+    // into m_unifiedMerge. Held here rather than written straight onto
+    // m_currentResult because they must only be REPORTED (and therefore
+    // consumed by the engine) if the write that carries them succeeds —
+    // unifiedContinueAfterConflicts copies them across on its successful-write
+    // branch only, the same rule that gates baseline saves.
+    QStringList m_unifiedAppliedConflictIds;
 
     QElapsedTimer m_totalTimer;
     QElapsedTimer m_phaseTimer;

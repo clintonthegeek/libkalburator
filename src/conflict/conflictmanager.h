@@ -5,6 +5,7 @@
 #include "iconflictresolver.h"
 
 #include <QObject>
+#include <QHash>
 #include <memory>
 
 class QWidget;
@@ -157,6 +158,27 @@ public:
      */
     QString lastMergedIcalData() const;
 
+    /**
+     * @brief The merged payload captured for one specific conflict.
+     *
+     * Bug B (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+     * resolution-handoff.md): lastMergedIcalData() is last-call-scoped, which
+     * is useless to the batch path — handleConflicts() loops over N conflicts
+     * and by the time the caller reacts to conflict number 1's
+     * conflictResolved(), the resolver has already been asked about number N.
+     * So the manager now captures the payload per conflict as each
+     * resolveConflict() returns, and SyncEngine reads it here inside its
+     * conflictResolved() slot.
+     *
+     * Additive on purpose: conflictResolved's signature is NOT changed —
+     * PlanStan and WildPalms connect to it and neither can absorb a signature
+     * change in this fix.
+     *
+     * @return The merged payload for @p conflictId, or empty if that
+     *         conflict's resolution was not CustomMerge (or produced nothing).
+     */
+    QString mergedDataFor(const QString &conflictId) const;
+
 signals:
     /**
      * @brief Emitted when a conflict is resolved.
@@ -183,6 +205,12 @@ private:
     WorkflowMode m_workflowMode = WorkflowMode::Immediate;
     ConflictResolution m_autoPolicy = ConflictResolution::AskUser;
     int m_hybridThreshold = 3;
+
+    /// Bug B: conflictId -> the merged payload the resolver produced for it.
+    /// Written only by showImmediateDialog (the only path that calls a
+    /// resolver); a non-CustomMerge resolution REMOVES the entry so a stale
+    /// merge can never be picked up by a later resolution of the same id.
+    QHash<QString, QString> m_mergedByConflictId;
 
     SyncConflictStore *m_syncStore = nullptr;
     IConflictPresenter *m_conflictPresenter = nullptr;
