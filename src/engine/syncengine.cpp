@@ -2102,104 +2102,156 @@ void SyncEngineWorker::onCancelDuringConflictPause()
     emit syncCompleted(m_currentRequest.mapping.id, m_currentResult);
 }
 
-void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal)
+// Conflict-resolution-repair Task 2 (docs/2026-08-21-conflict-resolution-
+// repair-plan.md): the resolution-application switch, lifted out of
+// resumeAfterConflict() so it no longer depends on the yielded-run state
+// machine. @p op is a parameter, not m_unifiedDiff.toTarget[m_unifiedConflictIdx],
+// because Task 3 (Bug B — Unmonitored resolutions are never applied) replays a
+// stored resolution mid-walk against an op that is NOT the yielded one.
+//
+// Everything this touches (m_unifiedMerge, m_currentResult, m_unifiedCanonical,
+// m_unifiedMerger, m_unifiedSrcToCanon, m_currentRequest) is per-run state that
+// exists in both callers, so the extraction needs no new plumbing.
+void SyncEngineWorker::applyConflictResolution(const EngineDiffOp &op,
+                                               ConflictResolution resolution,
+                                               const QString &mergedNative)
 {
-    qDebug() << "SyncEngineWorker::resumeAfterConflict - resolution:" << static_cast<int>(resolution);
-
-    if (!m_yieldedForConflict) {
-        qWarning() << "SyncEngineWorker::resumeAfterConflict called but not yielded — ignoring";
-        return;
-    }
-
-    if (m_unifiedConflictIdx < m_unifiedDiff.toTarget.size()) {
-        const EngineDiffOp &op = m_unifiedDiff.toTarget[m_unifiedConflictIdx];
-        switch (resolution) {
-            case ConflictResolution::SourceWins:
+    switch (resolution) {
+        case ConflictResolution::SourceWins:
+            m_unifiedMerge.finalTarget.append(op.record);
+            m_unifiedMerge.updatedBaselines.append(op.record);
+            ++m_unifiedMerge.conflictsResolved;
+            break;
+        case ConflictResolution::TargetWins:
+            m_unifiedMerge.finalSource.append(op.targetRecord);
+            m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+            ++m_unifiedMerge.conflictsResolved;
+            break;
+        case ConflictResolution::LastWriteWins: {
+            const bool srcWins =
+                op.record.lastModified >= op.targetRecord.lastModified;
+            if (srcWins) {
                 m_unifiedMerge.finalTarget.append(op.record);
                 m_unifiedMerge.updatedBaselines.append(op.record);
-                ++m_unifiedMerge.conflictsResolved;
-                break;
-            case ConflictResolution::TargetWins:
+            } else {
                 m_unifiedMerge.finalSource.append(op.targetRecord);
                 m_unifiedMerge.updatedBaselines.append(op.targetRecord);
-                ++m_unifiedMerge.conflictsResolved;
-                break;
-            case ConflictResolution::LastWriteWins: {
-                const bool srcWins =
-                    op.record.lastModified >= op.targetRecord.lastModified;
-                if (srcWins) {
-                    m_unifiedMerge.finalTarget.append(op.record);
-                    m_unifiedMerge.updatedBaselines.append(op.record);
-                } else {
-                    m_unifiedMerge.finalSource.append(op.targetRecord);
-                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
-                }
-                ++m_unifiedMerge.conflictsResolved;
-                break;
             }
-            case ConflictResolution::Duplicate: {
-                const bool srcDeleted = op.record.id.isEmpty();
-                const bool tgtDeleted = op.targetRecord.id.isEmpty();
-                if (srcDeleted) {
-                    m_unifiedMerge.finalSource.append(op.targetRecord);
-                    m_unifiedMerge.updatedBaselines.append(op.targetRecord);
-                } else if (tgtDeleted) {
-                    m_unifiedMerge.finalTarget.append(op.record);
-                    m_unifiedMerge.updatedBaselines.append(op.record);
-                } else {
-                    BackendRecord clone = op.targetRecord;
-                    clone.id = op.targetRecord.id
-                               + QStringLiteral("-dup-")
-                               + QUuid::createUuid().toString(QUuid::WithoutBraces);
-                    if (!op.targetRecord.id.isEmpty() && !clone.data.isEmpty()) {
-                        clone.data.replace(
-                            QByteArrayLiteral("UID:") + op.targetRecord.id.toUtf8(),
-                            QByteArrayLiteral("UID:") + clone.id.toUtf8());
+            ++m_unifiedMerge.conflictsResolved;
+            break;
+        }
+        case ConflictResolution::Duplicate: {
+            const bool srcDeleted = op.record.id.isEmpty();
+            const bool tgtDeleted = op.targetRecord.id.isEmpty();
+            if (srcDeleted) {
+                m_unifiedMerge.finalSource.append(op.targetRecord);
+                m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+            } else if (tgtDeleted) {
+                m_unifiedMerge.finalTarget.append(op.record);
+                m_unifiedMerge.updatedBaselines.append(op.record);
+            } else {
+                BackendRecord clone = op.targetRecord;
+                clone.id = op.targetRecord.id
+                           + QStringLiteral("-dup-")
+                           + QUuid::createUuid().toString(QUuid::WithoutBraces);
+                // Bug D (docs/2026-08-21-conflict-info-canonical-data-and-
+                // unmonitored-resolution-handoff.md §D; PlanStan's
+                // docs/bugs/sync-dialog-keepboth-duplicate-not-created.md):
+                // this used to byte-patch `data.replace("UID:"+oldId, "UID:"+newId)`,
+                // which is an iCal spelling. clone.data is CANONICAL Shape JSON
+                // here — dispatchSync promotes both fetched lists before the
+                // diff — and the canonical envelope spells the uid `"uid": "…"`
+                // (CanonEnvelope::uidKey). So the replace never matched: the
+                // clone kept the original uid, both records demoted to the same
+                // UID, and the backend's uid-keyed store collapsed them back
+                // into one. "Keep Both" produced one item. Rewrite through the
+                // envelope helpers instead — they are the single place that
+                // knows the key names (INVARIANTS §1).
+                if (!clone.data.isEmpty()) {
+                    QJsonObject cloneObj =
+                        Kalburator::Shape::CanonEnvelope::parse(clone.data);
+                    if (cloneObj.isEmpty()) {
+                        // Not canonical JSON: an unexpected shape reached the
+                        // conflict walk. Refuse to guess at a uid rewrite —
+                        // emitting the clone with a colliding uid is what Bug D
+                        // was. Fall back to a plain TargetWins-shaped resolution
+                        // (source keeps its version, target's version survives
+                        // on the source side) so no data is lost or corrupted.
+                        qWarning() << "SyncEngineWorker::applyConflictResolution:"
+                                   << "Duplicate resolution for" << op.targetRecord.id
+                                   << "- record data is not canonical JSON, cannot"
+                                      " re-uid the clone; keeping both sides in"
+                                      " place instead of writing a colliding copy";
+                        m_unifiedMerge.finalSource.append(op.targetRecord);
+                        m_unifiedMerge.updatedBaselines.append(op.targetRecord);
+                        ++m_unifiedMerge.conflictsResolved;
+                        break;
                     }
-                    m_unifiedMerge.finalTarget.append(op.record);
-                    m_unifiedMerge.finalTarget.append(clone);
-                    m_unifiedMerge.finalSource.append(clone);
-                    m_unifiedMerge.updatedBaselines.append(op.record);
-                    m_unifiedMerge.updatedBaselines.append(clone);
+                    cloneObj.insert(Kalburator::Shape::CanonEnvelope::uidKey(),
+                                    clone.id);
+                    clone.data =
+                        Kalburator::Shape::CanonEnvelope::serialize(cloneObj);
                 }
-                ++m_unifiedMerge.conflictsResolved;
-                break;
+                m_unifiedMerge.finalTarget.append(op.record);
+                m_unifiedMerge.finalTarget.append(clone);
+                m_unifiedMerge.finalSource.append(clone);
+                m_unifiedMerge.updatedBaselines.append(op.record);
+                m_unifiedMerge.updatedBaselines.append(clone);
             }
-            case ConflictResolution::CustomMerge: {
-                if (!m_unifiedMerger) {
-                    ConflictInfo info;
-                    info.mappingId       = m_currentRequest.mapping.id;
-                    info.sourceId        = op.record.id;
-                    info.targetId        = op.targetRecord.id.isEmpty()
-                                               ? op.record.id
-                                               : op.targetRecord.id;
-                    info.calendarId      = m_currentRequest.mapping.sourceCalendar;
-                    info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
-                    info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                    info.type            = ConflictType::BothModified;
-                    m_currentResult.unresolvedConflicts.append(info);
-                    ++m_unifiedMerge.conflictsDeferred;
-                    break;
+            ++m_unifiedMerge.conflictsResolved;
+            break;
+        }
+        case ConflictResolution::CustomMerge: {
+            // Bug C (same handoff, §C): resumeAfterConflict has always been
+            // handed the caller's hand-merged payload — SyncEngine::
+            // onWorkerConflictPauseRequested genuinely fetches it via
+            // ConflictManager::lastMergedIcalData() — and always ignored it,
+            // running the automatic merger instead. Every "Custom Merge" the
+            // user performed was silently discarded.
+            //
+            // The payload is in the SOURCE backend's NATIVE encoding (it is
+            // built from ConflictInfo::sourceIcalData, which buildConflictInfo
+            // demotes through m_unifiedCanonToSrc), while everything below the
+            // merge expects canonical bytes — unifiedContinueAfterConflicts
+            // demotes finalTarget/finalSource through canonToTgt/canonToSrc on
+            // the way out. So promote it back up the same way dispatchSync
+            // promotes a freshly fetched record.
+            QByteArray mergedCanonical;
+            if (!mergedNative.isEmpty()) {
+                const QByteArray nativeBytes = mergedNative.toUtf8();
+                if (!m_unifiedSrcToCanon) {
+                    // dispatchSync proves all four pipelines non-null before
+                    // the conflict walk begins, so this is unreachable from a
+                    // real run; degrade to the automatic merger rather than
+                    // deref.
+                    qWarning() << "SyncEngineWorker::applyConflictResolution:"
+                               << "no promotion pipeline for the supplied merge of"
+                               << op.record.id << "- falling back to auto-merge";
+                } else {
+                    mergedCanonical = m_unifiedSrcToCanon->apply(nativeBytes);
+                    if (Kalburator::Sync::transcodeEmptiedRecord(nativeBytes,
+                                                                 mergedCanonical)) {
+                        // Writing this would blank the record on BOTH sides.
+                        qWarning() << "SyncEngineWorker::applyConflictResolution:"
+                                   << "promoting the supplied merge of" << op.record.id
+                                   << "to canonical produced empty bytes - falling"
+                                      " back to auto-merge";
+                        mergedCanonical.clear();
+                    }
                 }
-                Kalburator::Shape::CanonicalRecord srcRec{
-                    m_unifiedCanonical, op.record.data,         op.record.id};
-                Kalburator::Shape::CanonicalRecord tgtRec{
-                    m_unifiedCanonical, op.targetRecord.data,   op.record.id};
-                Kalburator::Shape::CanonicalRecord baseRec{
-                    m_unifiedCanonical, op.baselineRecord.data, op.record.id};
-                const auto merged = m_unifiedMerger->merge(
-                    srcRec, tgtRec, baseRec,
-                    Kalburator::Shape::AutoResolveStrategy::None);
+            }
+            if (!mergedCanonical.isEmpty()) {
                 BackendRecord mergedRecord = op.record;
-                mergedRecord.data = merged.data;
+                mergedRecord.data = mergedCanonical;
                 m_unifiedMerge.finalTarget.append(mergedRecord);
                 m_unifiedMerge.finalSource.append(mergedRecord);
                 m_unifiedMerge.updatedBaselines.append(mergedRecord);
                 ++m_unifiedMerge.conflictsResolved;
                 break;
             }
-            default: {
-                // Skip / AskUser / unsupported → defer.
+            // No usable caller-supplied merge — the pre-Bug-C behaviour:
+            // merge automatically, or defer when the domain has no merger.
+            if (!m_unifiedMerger) {
                 ConflictInfo info;
                 info.mappingId       = m_currentRequest.mapping.id;
                 info.sourceId        = op.record.id;
@@ -2214,7 +2266,56 @@ void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const 
                 ++m_unifiedMerge.conflictsDeferred;
                 break;
             }
+            Kalburator::Shape::CanonicalRecord srcRec{
+                m_unifiedCanonical, op.record.data,         op.record.id};
+            Kalburator::Shape::CanonicalRecord tgtRec{
+                m_unifiedCanonical, op.targetRecord.data,   op.record.id};
+            Kalburator::Shape::CanonicalRecord baseRec{
+                m_unifiedCanonical, op.baselineRecord.data, op.record.id};
+            const auto merged = m_unifiedMerger->merge(
+                srcRec, tgtRec, baseRec,
+                Kalburator::Shape::AutoResolveStrategy::None);
+            BackendRecord mergedRecord = op.record;
+            mergedRecord.data = merged.data;
+            m_unifiedMerge.finalTarget.append(mergedRecord);
+            m_unifiedMerge.finalSource.append(mergedRecord);
+            m_unifiedMerge.updatedBaselines.append(mergedRecord);
+            ++m_unifiedMerge.conflictsResolved;
+            break;
         }
+        default: {
+            // Skip / AskUser / unsupported → defer.
+            ConflictInfo info;
+            info.mappingId       = m_currentRequest.mapping.id;
+            info.sourceId        = op.record.id;
+            info.targetId        = op.targetRecord.id.isEmpty()
+                                       ? op.record.id
+                                       : op.targetRecord.id;
+            info.calendarId      = m_currentRequest.mapping.sourceCalendar;
+            info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
+            info.targetBackendId = m_currentRequest.mapping.targetBackend;
+            info.type            = ConflictType::BothModified;
+            m_currentResult.unresolvedConflicts.append(info);
+            ++m_unifiedMerge.conflictsDeferred;
+            break;
+        }
+    }
+}
+
+void SyncEngineWorker::resumeAfterConflict(ConflictResolution resolution, const QString &mergedIcal)
+{
+    qDebug() << "SyncEngineWorker::resumeAfterConflict - resolution:" << static_cast<int>(resolution);
+
+    if (!m_yieldedForConflict) {
+        qWarning() << "SyncEngineWorker::resumeAfterConflict called but not yielded — ignoring";
+        return;
+    }
+
+    if (m_unifiedConflictIdx < m_unifiedDiff.toTarget.size()) {
+        // Bug C: mergedIcal is the caller's hand-merged payload. It used to
+        // stop here, unread; applyConflictResolution honours it.
+        applyConflictResolution(m_unifiedDiff.toTarget[m_unifiedConflictIdx],
+                                resolution, mergedIcal);
     }
     m_unifiedConflictIdx++;
     m_yieldedForConflict = false;

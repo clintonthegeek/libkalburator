@@ -2106,3 +2106,27 @@ missing lines: both branches now call one `SyncEngineWorker::buildConflictInfo(o
 that constructs the whole struct, so a field added for one branch cannot be
 missing from the other. (INVARIANTS §9 — noted while fixing Bug A in the
 same two constructions.)
+
+### O50 — two MORE hand-built `ConflictInfo`s in the resolution path, both missing every payload field (OPEN, found 2026-08-21, conflict-resolution-repair Task 2)
+
+Task 1 collapsed `unifiedHandleConflicts()`'s two `ConflictInfo`
+constructions onto one `buildConflictInfo(op)` (O49). There are **two more**,
+now in `SyncEngineWorker::applyConflictResolution`
+(`src/engine/syncengine.cpp`, the `CustomMerge`-without-a-merger branch and
+the `default:` Skip/AskUser deferral): each builds the struct by hand and sets
+only `mappingId`/`sourceId`/`targetId`/`calendarId`/`sourceBackendId`/
+`targetBackendId`/`type`. So a conflict deferred **out of a resolution** —
+the user hit Skip, or the domain has no merger — reaches
+`SyncResult::unresolvedConflicts` and `SyncConflictStore` with no
+`detectedAt`, no `source/targetModified`, no payload data at all, and a
+hardcoded `ConflictType::BothModified` even for a ModifyDelete. A conflict
+deferred out of the **detection** walk carries all of it. Same struct, same
+consumer, two different fidelities depending on which branch produced it.
+
+Not fixed in Task 2: the task's contract was "behaviour identical for the
+Monitored path apart from Bugs C and D", and populating these would change
+what PlanStan's dock/store sees for skipped conflicts. The fix is mechanical
+once someone owns it — call `buildConflictInfo(op)` in both branches, exactly
+as O49 did — but it should land with a consumer-visible note, because
+`ConflictInfo::hasFullData()` starts returning true for skipped conflicts
+that previously returned false. (INVARIANTS §9 / §1.)

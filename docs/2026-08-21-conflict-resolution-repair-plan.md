@@ -56,12 +56,46 @@ and 3 depends on the helper 2 extracts.
   FINDINGS **O48**; PlanStan's 3-way diff stays unreachable until baseline
   storage changes. Also fixed in passing: the unmonitored branch never set
   `source/targetModified` (FINDINGS **O49**).
-- **Task 2 — Bugs C + D + helper extraction.** Extract
-  `resumeAfterConflict()`'s `switch` into
-  `applyConflictResolution(op, resolution, mergedNative)` on the worker;
-  honor `mergedIcal` (promote through `m_unifiedSrcToCanon`, fall back to the
-  auto-merger when empty); rewrite the Duplicate clone's uid in the canonical
-  envelope.
+- **Task 2 — Bugs C + D + helper extraction. DONE 2026-08-21.**
+  `resumeAfterConflict()`'s `switch` extracted verbatim (bar the two fixes)
+  into
+
+  ```cpp
+  void SyncEngineWorker::applyConflictResolution(const EngineDiffOp &op,
+                                                 ConflictResolution resolution,
+                                                 const QString &mergedNative);
+  ```
+
+  — `op` is a **parameter**, not `m_unifiedDiff.toTarget[m_unifiedConflictIdx]`,
+  so Task 3 can call it mid-walk with an op that is not the yielded one; it
+  still reads the per-run state both callers share (`m_unifiedCanonical`,
+  `m_unifiedMerger`, `m_unifiedSrcToCanon`, `m_currentRequest`) and writes
+  `m_unifiedMerge` / `m_currentResult`. `resumeAfterConflict()` keeps the
+  not-yielded guard, the index bump, the flag reset and the
+  `unifiedHandleConflicts()` re-entry.
+  **Bug C:** `CustomMerge` now promotes a non-empty `mergedNative` through
+  `m_unifiedSrcToCanon` (the payload is the SOURCE backend's native encoding —
+  it is built from `ConflictInfo::sourceIcalData`) and writes that; empty
+  payload, a null pipeline, or a promotion that empties the record
+  (`transcodeEmptiedRecord`) all fall back to the pre-existing auto-merger
+  path, so the `!m_unifiedMerger` deferral branch stays reachable.
+  **Bug D:** the `Duplicate` clone's uid is rewritten through
+  `CanonEnvelope::parse`/`uidKey`/`serialize` instead of
+  `data.replace("UID:"+id, …)` — the record is canonical Shape JSON there and
+  the iCal spelling never matched, so the clone kept the original uid and the
+  backends' uid-keyed stores collapsed the pair back into one record. Data
+  that does not parse as canonical JSON degrades to a TargetWins-shaped
+  resolution with a `qWarning()` rather than emitting a colliding copy.
+  Closes PlanStan's `docs/bugs/sync-dialog-keepboth-duplicate-not-created.md`.
+  Tests: `customMergeUsesCallerSuppliedMerge` and
+  `duplicateResolutionWritesASecondRecord` in
+  `tests/engine/tst_syncengine_unification.cpp`, both driven through the
+  production `IConflictResolver` callsite (new `StubConflictResolver`,
+  `WorkflowMode::Immediate`) and both **shown RED** against the pre-fix code
+  (INVARIANTS §5). New finding **O50** — the two hand-built `ConflictInfo`s
+  that remain inside `applyConflictResolution`'s deferral branches carry none
+  of the payload fields the detection-walk builder sets; logged, not fixed
+  (out of Task 2's "behaviour identical apart from C and D" contract).
 - **Task 3 — Bug B.** `ConflictManager::conflictResolved` as the single
   channel; `m_pendingResolutions` in `SyncEngine`, rehydrated from
   `SyncConflictStore`; carried on `SyncEngineWorker::Request`; consumed in the

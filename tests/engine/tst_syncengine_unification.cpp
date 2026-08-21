@@ -94,6 +94,32 @@ QString eventToIcal(const KCalendarCore::Incidence::Ptr &inc)
     return fmt.toICalString(inc);
 }
 
+/// Conflict-resolution-repair Task 2: the injected resolver the production
+/// Monitored path actually calls. SyncEngine::onWorkerConflictPauseRequested
+/// asks ConflictManager for a resolution and, for CustomMerge only, for
+/// lastMergedIcalData() — so a stub that answers both is the only way to drive
+/// resumeAfterConflict(resolution, mergedIcal) with a non-empty mergedIcal
+/// through the production callsite (INVARIANTS §6). ConflictManager takes
+/// ownership.
+class StubConflictResolver : public Kalburator::Sync::IConflictResolver
+{
+public:
+    ConflictResolution resolveConflict(const ConflictInfo &conflict,
+                                       QWidget *) override
+    {
+        ++calls;
+        lastConflict = conflict;
+        return resolution;
+    }
+
+    QString lastMergedIcalData() const override { return mergedIcal; }
+
+    ConflictResolution resolution = ConflictResolution::SourceWins;
+    QString            mergedIcal;
+    int                calls = 0;
+    ConflictInfo       lastConflict;
+};
+
 } // namespace
 
 class TstSyncEngineUnification : public QObject
@@ -110,6 +136,8 @@ private slots:
     void cancellationPropagates();
     void unmonitoredConflictRecordsIcalData();
     void modifyDeleteConflictLeavesDeletedSideEmpty();
+    void customMergeUsesCallerSuppliedMerge();
+    void duplicateResolutionWritesASecondRecord();
 
 private:
     // Per-test fixture rebuilt in init() so each scenario starts clean.
@@ -742,6 +770,252 @@ void TstSyncEngineUnification::cancellationPropagates()
 
     // Detach so backends don't outlive the local unique_ptrs.
     m_engine->setSyncMappings({});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 6 — Bug C: CustomMerge must write the CALLER'S merge, not the
+// auto-merger's.
+//
+// docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-
+// handoff.md §C. resumeAfterConflict(resolution, mergedIcal) has always been
+// handed the dialog's hand-merged payload — SyncEngine::
+// onWorkerConflictPauseRequested fetches it via
+// ConflictManager::lastMergedIcalData() specifically for CustomMerge — and the
+// CustomMerge case ignored the parameter entirely, running
+// m_unifiedMerger->merge() instead. Every Custom Merge a user performed was
+// silently discarded.
+//
+// The stub resolver returns a merge whose summary matches NEITHER side, so the
+// assertion cannot pass by accident: the auto-merger can only ever produce
+// "Source-Modified" or "Target-Modified" from these two inputs.
+//
+// Falsifiability (INVARIANTS §5): with the Bug C block removed from
+// applyConflictResolution (auto-merge unconditionally), both backends come back
+// "Source-Modified" and both QCOMPAREs go red.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::customMergeUsesCallerSuppliedMerge()
+{
+    constexpr auto kSourceBackendId = "source-mock";
+    constexpr auto kTargetBackendId = "target-mock";
+    constexpr auto kCalendarId      = "calendar-1";
+    constexpr auto kMappingId       = "mapping-1";
+    constexpr auto kConflictUid     = "evt-conflict";
+
+    auto source = std::make_unique<MockBackend>();
+    auto target = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        target.get());
+
+    source->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+    target->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                hostCal);
+
+    SyncMapping mapping;
+    mapping.id              = QString::fromLatin1(kMappingId);
+    mapping.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    mapping.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    mapping.targetCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::AskUser;
+    mapping.enabled         = true;
+    m_engine->setSyncMappings({ mapping });
+
+    auto baselineEvent = makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Baseline"));
+    m_baselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                               calendarTestRec(QString::fromLatin1(kConflictUid),
+                                               eventToIcal(baselineEvent)));
+
+    source->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Source-Modified")));
+    target->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Target-Modified")));
+
+    // The user's hand merge: native iCal, same uid, a summary neither side has.
+    // Native is what the dialog produces (it parses ConflictInfo::sourceIcalData,
+    // which Task 1 made genuine native iCal), so this is the real payload shape
+    // the engine has to promote to canonical before writing.
+    auto mergedEvent = makeEvent(QString::fromLatin1(kConflictUid),
+                                 QStringLiteral("User-Merged"));
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::CustomMerge;
+    resolver->mergedIcal = eventToIcal(mergedEvent);
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);   // takes ownership
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0).first();
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(resolver->calls, 1);
+
+    // CustomMerge writes the merged record to BOTH sides.
+    auto tgtInc = target->incidence(QString::fromLatin1(kCalendarId),
+                                    QString::fromLatin1(kConflictUid));
+    QVERIFY(tgtInc);
+    QCOMPARE(tgtInc->summary(), QStringLiteral("User-Merged"));
+
+    auto srcInc = source->incidence(QString::fromLatin1(kCalendarId),
+                                    QString::fromLatin1(kConflictUid));
+    QVERIFY(srcInc);
+    QCOMPARE(srcInc->summary(), QStringLiteral("User-Merged"));
+
+    // Detach so backends don't outlive the local unique_ptrs.
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 7 — Bug D: "Keep Both" must actually produce a second record.
+//
+// docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-
+// handoff.md §D / PlanStan's docs/bugs/sync-dialog-keepboth-duplicate-not-
+// created.md. The Duplicate case gave the clone a fresh BackendRecord::id and
+// then tried to match the new id into the payload with
+// data.replace("UID:"+oldId, "UID:"+newId) — an iCal spelling applied to
+// CANONICAL Shape JSON, whose envelope spells the uid `"uid": "…"`. The replace
+// never matched, so the clone demoted back to iCal carrying the ORIGINAL UID
+// and the backend's uid-keyed store collapsed the pair into one record.
+//
+// Falsifiability (INVARIANTS §5): restoring the byte-replace leaves the target
+// with a single uid and the size QCOMPARE goes red.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::duplicateResolutionWritesASecondRecord()
+{
+    constexpr auto kSourceBackendId = "source-mock";
+    constexpr auto kTargetBackendId = "target-mock";
+    constexpr auto kCalendarId      = "calendar-1";
+    constexpr auto kMappingId       = "mapping-1";
+    constexpr auto kConflictUid     = "evt-conflict";
+
+    auto source = std::make_unique<MockBackend>();
+    auto target = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        target.get());
+
+    source->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+    target->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                hostCal);
+
+    SyncMapping mapping;
+    mapping.id              = QString::fromLatin1(kMappingId);
+    mapping.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    mapping.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    mapping.targetCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::AskUser;
+    mapping.enabled         = true;
+    m_engine->setSyncMappings({ mapping });
+
+    auto baselineEvent = makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Baseline"));
+    m_baselines->setBaselineV3(QString::fromLatin1(kMappingId),
+                               calendarTestRec(QString::fromLatin1(kConflictUid),
+                                               eventToIcal(baselineEvent)));
+
+    source->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Source-Modified")));
+    target->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Target-Modified")));
+
+    auto *resolver = new StubConflictResolver;
+    resolver->resolution = ConflictResolution::Duplicate;
+
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);   // takes ownership
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Monitored;
+    auto future = m_engine->runSync(req);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+    QCOMPARE(future.resultCount(), 1);
+    const SyncResult r = future.resultAt(0).first();
+    QVERIFY2(r.success, qUtf8Printable(r.errorMessage));
+    QCOMPARE(resolver->calls, 1);
+
+    // Keep Both: the target ends up with the source's version under the
+    // original uid PLUS a clone of its own version under a fresh uid. Two
+    // records, two distinct uids — the whole point of the resolution.
+    QStringList tgtUids = target->allUids(QString::fromLatin1(kCalendarId));
+    tgtUids.sort();
+    QVERIFY2(tgtUids.size() == 2,
+             qPrintable(QStringLiteral("target should hold 2 records after "
+                                       "Duplicate, holds %1: %2")
+                            .arg(tgtUids.size()).arg(tgtUids.join(QLatin1Char(',')))));
+    QVERIFY(tgtUids.contains(QString::fromLatin1(kConflictUid)));
+
+    const QString cloneUid = tgtUids.at(0) == QString::fromLatin1(kConflictUid)
+                                 ? tgtUids.at(1) : tgtUids.at(0);
+    QVERIFY2(cloneUid != QString::fromLatin1(kConflictUid),
+             "the clone reused the original uid");
+
+    // The original uid still resolves to the original (source-side) content...
+    auto original = target->incidence(QString::fromLatin1(kCalendarId),
+                                      QString::fromLatin1(kConflictUid));
+    QVERIFY(original);
+    QCOMPARE(original->summary(), QStringLiteral("Source-Modified"));
+
+    // ...and the clone carries the target-side version that would otherwise
+    // have been overwritten. Its UID property must match its new id, not the
+    // original — that is exactly what the byte-replace failed to do.
+    auto clone = target->incidence(QString::fromLatin1(kCalendarId), cloneUid);
+    QVERIFY(clone);
+    QCOMPARE(clone->summary(), QStringLiteral("Target-Modified"));
+    QCOMPARE(clone->uid(), cloneUid);
+
+    // The clone is pushed back to the source too, so both sides converge on
+    // the same pair.
+    QStringList srcUids = source->allUids(QString::fromLatin1(kCalendarId));
+    srcUids.sort();
+    QCOMPARE(srcUids.size(), 2);
+    QVERIFY(srcUids.contains(cloneUid));
+
+    // Detach so backends don't outlive the local unique_ptrs.
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
 }
 
 QTEST_MAIN(TstSyncEngineUnification)

@@ -371,6 +371,27 @@ private:
     /// docs/bugs/sync-conflict-store-duplicate-rows.md was.
     ConflictInfo buildConflictInfo(const EngineDiffOp &op) const;
 
+    /// Conflict-resolution-repair Task 2: fold ONE resolved conflict into
+    /// m_unifiedMerge — the only code in the engine that turns a
+    /// ConflictResolution into records to write.
+    ///
+    /// Extracted verbatim (bar Bugs C and D) from resumeAfterConflict()'s
+    /// switch so it is independent of the yielded-run state machine:
+    /// @p op is passed in rather than read from
+    /// m_unifiedDiff.toTarget[m_unifiedConflictIdx], because Task 3's
+    /// Unmonitored injection path calls this mid-walk with an op that is
+    /// not the yielded one. It still reads the per-run state both callers
+    /// share (m_unifiedCanonical / m_unifiedMerger / m_unifiedSrcToCanon /
+    /// m_currentRequest) and writes m_unifiedMerge / m_currentResult.
+    ///
+    /// @param mergedNative the caller's hand-merged payload in the SOURCE
+    ///        backend's native encoding, honoured only for CustomMerge and
+    ///        only when non-empty (Bug C); empty falls back to the
+    ///        automatic m_unifiedMerger.
+    void applyConflictResolution(const EngineDiffOp &op,
+                                 ConflictResolution resolution,
+                                 const QString &mergedNative);
+
     /// Parallel-sync Task 3: block until every non-null op in @p ops is
     /// finished, or until cancellation is observed. Replaces the two
     /// hand-rolled per-side await loops in dispatchSync's fetch gates with
