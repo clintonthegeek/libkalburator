@@ -14,6 +14,7 @@
 #include "enginediff.h"
 #include "recorddiffer.h"
 #include "recordmerger.h"
+#include "pipeline.h"
 #include "shape.h"
 #include "synctypes.h"
 #include "../sync/syncoperation.h"
@@ -35,6 +36,7 @@
 #include <QString>
 #include <QVariantMap>
 #include <atomic>
+#include <optional>
 #include <memory>
 #include <type_traits>
 
@@ -359,6 +361,16 @@ private:
     void unifiedHandleConflicts();
     void unifiedContinueAfterConflicts();
 
+    /// Bug A: build the ConflictInfo the AskUser branches present, from a
+    /// Conflict @p op plus m_currentRequest. Demotes each side's canonical
+    /// bytes (and the baseline) back to that backend's native encoding via
+    /// m_unifiedCanonToSrc / m_unifiedCanonToTgt, and names the encoding
+    /// each payload is in. Shared by BOTH AskUser branches of
+    /// unifiedHandleConflicts (monitored yield and unmonitored defer) so
+    /// they cannot drift apart again — that drift is exactly what
+    /// docs/bugs/sync-conflict-store-duplicate-rows.md was.
+    ConflictInfo buildConflictInfo(const EngineDiffOp &op) const;
+
     /// Parallel-sync Task 3: block until every non-null op in @p ops is
     /// finished, or until cancellation is observed. Replaces the two
     /// hand-rolled per-side await loops in dispatchSync's fetch gates with
@@ -383,6 +395,20 @@ private:
     ConflictResolution m_unifiedPolicy = ConflictResolution::SourceWins;
     ExecutionOverride m_unifiedOverride;
     Kalburator::Shape::Shape m_unifiedCanonical;
+    // Bug A (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md): dispatchSync promotes BOTH fetched record
+    // lists to canonical shape before diffing, so every EngineDiffOp the
+    // conflict walk sees carries canonical bytes. The conflict UI needs
+    // each side's NATIVE encoding back, and resumeAfterConflict needs the
+    // forward direction for a caller-supplied merge. dispatchSync already
+    // compiles all four pipelines (and proves them non-null) before the
+    // walk begins; stash the three the conflict code needs alongside the
+    // canonical shape rather than recompiling them per conflict.
+    // (m_unifiedSrcToCanon is the promote direction, used by
+    // resumeAfterConflict's CustomMerge path — Task 2.)
+    std::optional<Kalburator::Shape::Pipeline> m_unifiedSrcToCanon;
+    std::optional<Kalburator::Shape::Pipeline> m_unifiedCanonToSrc;
+    std::optional<Kalburator::Shape::Pipeline> m_unifiedCanonToTgt;
     // Phase N.1: domain plugin's canonical differ + merger, acquired once per
     // dispatchSync and retained across AskUser pause/resume.
     std::unique_ptr<Kalburator::Shape::RecordDiffer> m_unifiedDiffer;

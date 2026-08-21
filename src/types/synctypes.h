@@ -64,7 +64,8 @@ enum class ConflictType {
  * Uses backend-neutral "source/target" terminology - these map to the
  * sourceBackend/targetBackend of the SyncMapping that detected the conflict.
  *
- * The iCal data fields are optional for signaling but required for UI display.
+ * The payload data fields (sourceIcalData/targetIcalData/baselineIcalData)
+ * are optional for signaling but required for UI display.
  */
 struct ConflictInfo {
     // Identity
@@ -92,10 +93,33 @@ struct ConflictInfo {
     QDateTime targetModified;   ///< Last modified time of target version
     QDateTime detectedAt;
 
-    // Full incidence data for diff display (optional, loaded on demand)
-    QString sourceIcalData;     ///< Full iCal of source version
-    QString targetIcalData;     ///< Full iCal of target version
-    QString baselineIcalData;   ///< Full iCal of baseline (for 3-way diff)
+    // Full record data for diff display (optional, may be empty).
+    //
+    // These carry the NATIVE ENCODING OF THE RESPECTIVE BACKEND'S SHAPE —
+    // iCal for every real calendar backend today, but in general whatever
+    // that backend's Shape::encoding says (see sourceEncoding/targetEncoding
+    // below). They are NOT the engine's canonical Shape JSON: the engine
+    // promotes both sides to canonical to diff them and demotes them back
+    // here. The `*IcalData` names are kept for source compatibility with
+    // PlanStan and WildPalms; see Bug A in
+    // docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-handoff.md.
+    //
+    // Either side can legitimately be empty: a ModifyDelete conflict has no
+    // data on the deleted side, and baselineIcalData is empty whenever the
+    // engine has no baseline bytes for the record (which, since baselines
+    // became per-side hashes in Phase B4, is currently always — see
+    // docs/campaign/FINDINGS.md O48).
+    QString sourceIcalData;     ///< Source version, in sourceEncoding
+    QString targetIcalData;     ///< Target version, in targetEncoding
+    QString baselineIcalData;   ///< Baseline (for 3-way diff), in sourceEncoding
+
+    // Shape encoding each payload above is written in, e.g. "ical". Empty
+    // when the engine could not name it. TRANSPORT-ONLY: SyncConflictStore
+    // does NOT persist these (adding columns would need a schema migration
+    // and no consumer asked for persistence), so a ConflictInfo read back
+    // out of the store has them empty even when the payloads are present.
+    QString sourceEncoding;     ///< Encoding of sourceIcalData (transport-only)
+    QString targetEncoding;     ///< Encoding of targetIcalData (transport-only)
 
     bool hasFullData() const {
         return !sourceIcalData.isEmpty() || !targetIcalData.isEmpty();

@@ -3153,6 +3153,17 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     m_unifiedPolicy   = request.mapping.conflictPolicy;
     m_unifiedOverride = request.override;
     m_unifiedCanonical = canonical;
+    // Bug A (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md): the conflict walk sees canonical bytes only
+    // (both record lists were promoted above), but ConflictInfo's payload
+    // fields are contractually the backends' NATIVE encoding. Stash the
+    // demotion pipelines — already compiled and proven non-null at the top
+    // of this function — so unifiedHandleConflicts can convert back without
+    // recompiling. m_unifiedSrcToCanon is the forward direction, kept here
+    // for resumeAfterConflict's caller-supplied-merge path.
+    m_unifiedSrcToCanon = srcToCanon;
+    m_unifiedCanonToSrc = canonToSrc;
+    m_unifiedCanonToTgt = canonToTgt;
 
     // Mirror override: compute the full merge immediately via the
     // mirror-aware helper and skip the conflict-walk entirely.
@@ -3210,6 +3221,96 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
 // operating on EngineDiffOp / EngineMerge instead of SyncChange / SyncDiff.
 // ----------------------------------------------------------------------------
 
+namespace {
+
+/// Bug A (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+/// resolution-handoff.md): demote one side's canonical record bytes back to
+/// that backend's native encoding for display.
+///
+/// Never runs a pipeline over empty bytes: in a ModifyDelete conflict the
+/// deleted side's record carries no data at all, and the engine's baselines
+/// have been hash-only since Phase B4, so an empty payload is normal here,
+/// not an error. Empty in, empty out — a demotion of nothing would at best
+/// produce an empty-shell record that the UI would render as a real (blank)
+/// version of the item.
+QString demoteToNative(const std::optional<Kalburator::Shape::Pipeline> &pipe,
+                       const QByteArray &canonicalBytes,
+                       const QString &recordId)
+{
+    if (canonicalBytes.isEmpty())
+        return QString();
+    if (!pipe) {
+        // dispatchSync proved all four pipelines non-null before the walk
+        // began, so this is unreachable from a real run; guard rather than
+        // deref so a future caller outside that lifetime degrades to "no
+        // display data" instead of crashing.
+        qWarning() << "SyncEngineWorker: no demotion pipeline for conflict record"
+                   << recordId << "- ConflictInfo payload left empty";
+        return QString();
+    }
+    const QByteArray native = pipe->apply(canonicalBytes);
+    if (Kalburator::Sync::transcodeEmptiedRecord(canonicalBytes, native)) {
+        qWarning() << "SyncEngineWorker: demoting conflict record" << recordId
+                   << "from canonical to" << pipe->outputShape().encoding.toString()
+                   << "produced empty bytes - ConflictInfo payload left empty";
+        return QString();
+    }
+    return QString::fromUtf8(native);
+}
+
+} // namespace
+
+// Bug A: ONE builder for BOTH AskUser branches below (monitored yield and
+// unmonitored defer). Those two branches used to construct the same
+// ConflictInfo field-by-field, twice; that duplication is precisely how
+// docs/bugs/sync-conflict-store-duplicate-rows.md happened (the unmonitored
+// copy silently lacked the two iCal fields). One builder, no drift.
+ConflictInfo SyncEngineWorker::buildConflictInfo(const EngineDiffOp &op) const
+{
+    ConflictInfo info;
+    info.mappingId       = m_currentRequest.mapping.id;
+    info.sourceId        = op.record.id;
+    info.targetId        = op.targetRecord.id.isEmpty() ? op.record.id
+                                                        : op.targetRecord.id;
+    info.calendarId      = m_currentRequest.mapping.sourceCalendar;
+    info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
+    info.targetBackendId = m_currentRequest.mapping.targetBackend;
+    info.type            = (op.record.id.isEmpty() || op.targetRecord.id.isEmpty())
+                               ? ConflictType::ModifyDelete
+                               : ConflictType::BothModified;
+    info.detectedAt      = QDateTime::currentDateTimeUtc();
+    info.sourceModified  = op.record.lastModified;
+    info.targetModified  = op.targetRecord.lastModified;
+
+    // Bug A: op.record/op.targetRecord carry CANONICAL bytes at this point —
+    // dispatchSync promotes BOTH fetched lists to canonical shape before the
+    // diff so the per-record differ/merger can work generically, and
+    // perRecordDiff copies those promoted records into the op verbatim. The
+    // payload fields below are contractually each backend's NATIVE encoding,
+    // so demote them back on the way out.
+    info.sourceIcalData = demoteToNative(m_unifiedCanonToSrc, op.record.data,
+                                         op.record.id);
+    info.targetIcalData = demoteToNative(m_unifiedCanonToTgt, op.targetRecord.data,
+                                         op.targetRecord.id);
+    // The baseline is the source side's history, so it demotes through the
+    // SOURCE pipeline. NOTE: this is empty in practice today — perRecordDiff
+    // builds baselineRecord as a hash-only shell (perrecorddiff.cpp's
+    // baselineShell) because baselines have carried per-side hashes, not
+    // bytes, since Phase B4. Wired anyway so the 3-way diff lights up the
+    // moment baseline bytes come back; see FINDINGS O48.
+    info.baselineIcalData = demoteToNative(m_unifiedCanonToSrc,
+                                           op.baselineRecord.data, op.record.id);
+    // Name the encoding each payload is actually in, so a consumer does not
+    // have to assume iCal (it is, for every calendar backend today — but the
+    // fields carry whatever the backend's shape says).
+    if (m_unifiedCanonToSrc)
+        info.sourceEncoding = m_unifiedCanonToSrc->outputShape().encoding.toString();
+    if (m_unifiedCanonToTgt)
+        info.targetEncoding = m_unifiedCanonToTgt->outputShape().encoding.toString();
+
+    return info;
+}
+
 void SyncEngineWorker::unifiedHandleConflicts()
 {
     // NOTE: do NOT apply the legacy useQuickPath→SourceWins downgrade here.
@@ -3255,23 +3356,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
                 m_unifiedConflictIdx = i;
                 m_yieldedForConflict = true;
 
-                ConflictInfo info;
-                info.mappingId       = m_currentRequest.mapping.id;
-                info.sourceId        = op.record.id;
-                info.targetId        = op.targetRecord.id.isEmpty()
-                                           ? op.record.id
-                                           : op.targetRecord.id;
-                info.calendarId      = m_currentRequest.mapping.sourceCalendar;
-                info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
-                info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                info.type            = (op.record.id.isEmpty() || op.targetRecord.id.isEmpty())
-                                           ? ConflictType::ModifyDelete
-                                           : ConflictType::BothModified;
-                info.detectedAt      = QDateTime::currentDateTimeUtc();
-                info.sourceModified  = op.record.lastModified;
-                info.targetModified  = op.targetRecord.lastModified;
-                info.sourceIcalData  = QString::fromUtf8(op.record.data);
-                info.targetIcalData  = QString::fromUtf8(op.targetRecord.data);
+                const ConflictInfo info = buildConflictInfo(op);
 
                 qDebug() << "SyncEngineWorker::unifiedHandleConflicts - yielding for:"
                          << op.record.id;
@@ -3279,25 +3364,7 @@ void SyncEngineWorker::unifiedHandleConflicts()
                 return;
             } else {
                 // Unmonitored AskUser: defer to next sync.
-                ConflictInfo info;
-                info.mappingId       = m_currentRequest.mapping.id;
-                info.sourceId        = op.record.id;
-                info.targetId        = op.targetRecord.id.isEmpty()
-                                           ? op.record.id
-                                           : op.targetRecord.id;
-                info.calendarId      = m_currentRequest.mapping.sourceCalendar;
-                info.sourceBackendId = m_currentRequest.mapping.sourceBackend;
-                info.targetBackendId = m_currentRequest.mapping.targetBackend;
-                info.type            = (op.record.id.isEmpty() || op.targetRecord.id.isEmpty())
-                                           ? ConflictType::ModifyDelete
-                                           : ConflictType::BothModified;
-                info.detectedAt      = QDateTime::currentDateTimeUtc();
-                // Both serializations are available here just like the
-                // monitored-yield branch above — populate them so the
-                // conflict store doesn't persist empty local_ical/remote_ical
-                // (docs/bugs/sync-conflict-store-duplicate-rows.md).
-                info.sourceIcalData  = QString::fromUtf8(op.record.data);
-                info.targetIcalData  = QString::fromUtf8(op.targetRecord.data);
+                const ConflictInfo info = buildConflictInfo(op);
                 emit conflictDetected(info);
                 m_currentResult.unresolvedConflicts.append(info);
                 ++m_unifiedMerge.conflictsDeferred;

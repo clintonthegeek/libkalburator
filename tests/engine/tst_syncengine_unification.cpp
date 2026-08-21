@@ -109,6 +109,7 @@ private slots:
     void conflictPauseResumeRoundTrip();
     void cancellationPropagates();
     void unmonitoredConflictRecordsIcalData();
+    void modifyDeleteConflictLeavesDeletedSideEmpty();
 
 private:
     // Per-test fixture rebuilt in init() so each scenario starts clean.
@@ -473,10 +474,170 @@ void TstSyncEngineUnification::unmonitoredConflictRecordsIcalData()
     const QList<ConflictInfo> unresolved =
         m_conflictStore->unresolvedConflicts(QString::fromLatin1(kMappingId));
     QCOMPARE(unresolved.size(), 1);
-    QVERIFY2(!unresolved.first().sourceIcalData.isEmpty(),
-             "sourceIcalData was persisted empty");
-    QVERIFY2(!unresolved.first().targetIcalData.isEmpty(),
-             "targetIcalData was persisted empty");
+    const ConflictInfo stored = unresolved.first();
+
+    // Bug A (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+    // resolution-handoff.md): !isEmpty() is NOT enough. dispatchSync promotes
+    // both fetched record lists to canonical Shape JSON before diffing, so
+    // for months these fields carried non-empty canonical JSON — passing the
+    // old assertions while PlanStan's dialog parsed nothing out of them.
+    // Parse the payload as what the field contract claims it is, and check
+    // the content survived, so a fix that parses-but-mangles still fails.
+    KCalendarCore::ICalFormat fmt;
+
+    auto srcCal = QSharedPointer<KCalendarCore::MemoryCalendar>::create(
+        QTimeZone::systemTimeZone());
+    QVERIFY2(fmt.fromString(srcCal, stored.sourceIcalData),
+             qPrintable(QStringLiteral("sourceIcalData did not parse as iCal: %1")
+                            .arg(stored.sourceIcalData)));
+    QCOMPARE(srcCal->incidences().size(), 1);
+    QCOMPARE(srcCal->incidences().first()->summary(),
+             QStringLiteral("Source-Modified"));
+
+    auto tgtCal = QSharedPointer<KCalendarCore::MemoryCalendar>::create(
+        QTimeZone::systemTimeZone());
+    QVERIFY2(fmt.fromString(tgtCal, stored.targetIcalData),
+             qPrintable(QStringLiteral("targetIcalData did not parse as iCal: %1")
+                            .arg(stored.targetIcalData)));
+    QCOMPARE(tgtCal->incidences().size(), 1);
+    QCOMPARE(tgtCal->incidences().first()->summary(),
+             QStringLiteral("Target-Modified"));
+
+    // baselineIcalData: wired through the same demotion as the two sides, but
+    // it can only ever be non-empty once the engine actually carries baseline
+    // BYTES. It does not: perRecordDiff builds EngineDiffOp::baselineRecord as
+    // a hash-only shell (perrecorddiff.cpp's baselineShell) because baselines
+    // have been per-side hashes since Phase B4. So the honest pin today is
+    // "empty, and specifically not canonical JSON leaking through". See
+    // FINDINGS O48 — when baseline bytes come back, this assertion is the one
+    // that must flip to a parse+summary check for "Baseline".
+    QVERIFY2(stored.baselineIcalData.isEmpty(),
+             qPrintable(QStringLiteral("baselineIcalData unexpectedly populated: %1")
+                            .arg(stored.baselineIcalData)));
+
+    // Bug A, additive fields: the live ConflictInfo names the encoding each
+    // payload is in. Read them off the SyncResult, not the store — they are
+    // transport-only (SyncConflictStore has no columns for them, and adding
+    // any would be a schema migration nobody asked for).
+    const QList<SyncResult> results = future.resultAt(0);
+    QCOMPARE(results.size(), 1);
+    QCOMPARE(results.first().unresolvedConflicts.size(), 1);
+    const ConflictInfo live = results.first().unresolvedConflicts.first();
+    QCOMPARE(live.sourceEncoding, QStringLiteral("ical"));
+    QCOMPARE(live.targetEncoding, QStringLiteral("ical"));
+    QVERIFY2(stored.sourceEncoding.isEmpty(),
+             "sourceEncoding is documented transport-only but came back from the store");
+
+    // Detach so backends don't outlive the local unique_ptrs.
+    m_engine->setSyncMappings({});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 5 — Bug A's empty-side guard: a ModifyDelete conflict has no record
+// on the deleted side, so there are no bytes to demote there.
+//
+// Source keeps (and modifies) the record; the target no longer has it, with a
+// baseline present for both — perRecordDiff's (hasS && !hasT && hasB) arm,
+// which emits makeConflict(sRec, {}, bRec). The engine must leave
+// targetIcalData empty rather than running the canon→native pipeline over
+// zero bytes (which would either throw or manufacture an empty-shell record
+// the UI would render as a real, blank version of the item).
+//
+// Honest note on falsifiability (INVARIANTS §5): this test was run with
+// demoteToNative's isEmpty() short-circuit removed and stayed GREEN — today's
+// canon→ical edge happens to return empty for empty input. So the guard is
+// defensive, not load-bearing against the current edge set, and what this
+// test actually pins is the *contract* PlanStan depends on ("the deleted side
+// comes back empty, never an empty-shell record"), independent of what any
+// future edge chooses to do with zero bytes. The source-side parse assertion
+// below IS falsifiable: bypassing the demotion turns it red with canonical
+// JSON, same as unmonitoredConflictRecordsIcalData.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::modifyDeleteConflictLeavesDeletedSideEmpty()
+{
+    constexpr auto kSourceBackendId = "source-mock";
+    constexpr auto kTargetBackendId = "target-mock";
+    constexpr auto kCalendarId      = "calendar-1";
+    constexpr auto kMappingId       = "mapping-1";
+    constexpr auto kConflictUid     = "evt-modify-delete";
+
+    auto source = std::make_unique<MockBackend>();
+    auto target = std::make_unique<MockBackend>();
+    m_registry->registerBackendInstance(QString::fromLatin1(kSourceBackendId),
+                                        source.get());
+    m_registry->registerBackendInstance(QString::fromLatin1(kTargetBackendId),
+                                        target.get());
+
+    source->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+    target->createCalendar(QString::fromLatin1(kCollectionId),
+                           QString::fromLatin1(kCalendarId),
+                           QStringLiteral("Calendar 1"));
+
+    auto *hostCal = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCal->setId(QString::fromLatin1(kCalendarId));
+    m_host->stubCollection()->addCalendarWithId(QString::fromLatin1(kCalendarId),
+                                                hostCal);
+
+    SyncMapping mapping;
+    mapping.id              = QString::fromLatin1(kMappingId);
+    mapping.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    mapping.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    mapping.targetCalendar  = QString::fromLatin1(kCalendarId);
+    mapping.mode            = SyncMode::TwoWay;
+    mapping.conflictPolicy  = ConflictResolution::AskUser;
+    mapping.enabled         = true;
+    m_engine->setSyncMappings({ mapping });
+
+    // Baseline says both sides once had this record. It must be a per-side
+    // HASH baseline (setBaselineHashesV4), not a v3 canonical-bytes row:
+    // baselineHashesForMappingV4() skips legacy non-"blob" rows, so a
+    // calendarTestRec baseline would leave the diff with no baseline at all
+    // and the (hasS && !hasT && !hasB) arm would emit a plain Create.
+    // Deliberately stale hashes so the source reads as modified since.
+    m_baselines->setBaselineHashesV4(QString::fromLatin1(kMappingId),
+                                     QString::fromLatin1(kConflictUid),
+                                     QStringLiteral("stale-source-hash"),
+                                     QStringLiteral("stale-target-hash"));
+
+    // ...the source modified it, the target deleted it. Nothing is added to
+    // the target backend: its absence IS the delete.
+    source->addIncidence(QString::fromLatin1(kCalendarId),
+                         makeEvent(QString::fromLatin1(kConflictUid),
+                                   QStringLiteral("Source-Modified")));
+
+    SyncRequest req;
+    req.mappingIds = { QString::fromLatin1(kMappingId) };
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto future = m_engine->runSync(req);
+
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+
+    const QList<SyncResult> results = future.resultAt(0);
+    QCOMPARE(results.size(), 1);
+    QCOMPARE(results.first().unresolvedConflicts.size(), 1);
+    const ConflictInfo info = results.first().unresolvedConflicts.first();
+    QCOMPARE(info.type, ConflictType::ModifyDelete);
+
+    // Present side: real, parseable native iCal.
+    KCalendarCore::ICalFormat fmt;
+    auto srcCal = QSharedPointer<KCalendarCore::MemoryCalendar>::create(
+        QTimeZone::systemTimeZone());
+    QVERIFY2(fmt.fromString(srcCal, info.sourceIcalData),
+             qPrintable(QStringLiteral("sourceIcalData did not parse as iCal: %1")
+                            .arg(info.sourceIcalData)));
+    QCOMPARE(srcCal->incidences().size(), 1);
+    QCOMPARE(srcCal->incidences().first()->summary(),
+             QStringLiteral("Source-Modified"));
+
+    // Deleted side: empty, not an empty-shell VCALENDAR.
+    QVERIFY2(info.targetIcalData.isEmpty(),
+             qPrintable(QStringLiteral("targetIcalData should be empty for the "
+                                       "deleted side, got: %1")
+                            .arg(info.targetIcalData)));
 
     // Detach so backends don't outlive the local unique_ptrs.
     m_engine->setSyncMappings({});

@@ -43,11 +43,19 @@ D is PlanStan's separately-filed
 Tasks are **sequential** — 1 and 2 edit adjacent regions of `syncengine.cpp`
 and 3 depends on the helper 2 extracts.
 
-- **Task 1 — Bug A.** Stash `m_unifiedSrcToCanon` / `m_unifiedCanonToSrc` /
-  `m_unifiedCanonToTgt` next to `m_unifiedCanonical`; demote at both
-  `ConflictInfo` sites; wire `baselineIcalData`; guard empty data
-  (modify-delete); add `sourceEncoding`/`targetEncoding` to `ConflictInfo`
-  (additive) and correct the doc comments that claim "Full iCal".
+- **Task 1 — Bug A. DONE 2026-08-21.** Stashed `m_unifiedSrcToCanon` /
+  `m_unifiedCanonToSrc` / `m_unifiedCanonToTgt` next to `m_unifiedCanonical`;
+  both `ConflictInfo` sites collapsed onto one
+  `SyncEngineWorker::buildConflictInfo(op)` that demotes each side back to
+  its backend's native encoding; empty data guarded (modify-delete);
+  `sourceEncoding`/`targetEncoding` added additively (transport-only — the
+  conflict-store schema was left alone); doc comments corrected.
+  **Correction to this plan:** `baselineIcalData` cannot be populated —
+  `EngineDiffOp::baselineRecord` is a hash-only shell and the engine loads
+  per-side hashes, never bytes, so the field is wired but always empty. See
+  FINDINGS **O48**; PlanStan's 3-way diff stays unreachable until baseline
+  storage changes. Also fixed in passing: the unmonitored branch never set
+  `source/targetModified` (FINDINGS **O49**).
 - **Task 2 — Bugs C + D + helper extraction.** Extract
   `resumeAfterConflict()`'s `switch` into
   `applyConflictResolution(op, resolution, mergedNative)` on the worker;

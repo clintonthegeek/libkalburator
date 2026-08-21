@@ -2060,3 +2060,49 @@ Suite at v0.96: 179 total, 177 passing at both N=1 and N=4 (three
 consecutive sweeps) — the same two pre-existing failures throughout
 (`tst_remotecalendarbackend`: broken local Radicale test-server auth;
 `tst_calendar_canon_roundtrip`: pre-existing on `main`, not campaign-caused).
+
+### O48 — `ConflictInfo::baselineIcalData` can never be populated: the engine carries baseline HASHES, not bytes (OPEN, found 2026-08-21, conflict-resolution-repair Task 1)
+
+Task 1 of the conflict-resolution repair campaign was specified to wire
+`ConflictInfo::baselineIcalData` from `EngineDiffOp::baselineRecord.data`
+(the handoff assumed those bytes existed and were "presumably also
+canonical"). They do not exist. Two independent reasons, both deliberate
+prior decisions:
+
+- `perRecordDiff` builds `baselineRecord` via `baselineShell()`
+  (`src/engine/perrecorddiff.cpp:41-48`), which sets only `.id` and
+  `.contentHash` — its own comment says "`.data` … baseline entries never
+  carried even before B4". `Engine::BaselineEntry` (`baselineentry.h`) is
+  `{id, sourceHash, targetHash}`; there is nowhere for bytes to come from.
+- `dispatchSync` loads baselines through
+  `BaselineStore::baselineHashesForMappingV4()` (`syncengine.cpp:3057-3068`),
+  never the v3 canonical-bytes API. And `setBaselineHashesV4()`
+  (`baselinestore.cpp:316-354`) INSERT-OR-REPLACEs `canonical_bytes` with an
+  empty blob, so even the stored bytes are erased on the first steady-state
+  save after an upgrade.
+
+The demotion is wired anyway (it costs one line and lights up for free if
+baseline bytes ever return), but it yields empty today, always. **Consumer
+impact:** PlanStan's `ConflictResolutionDialog` picks 3-way vs 2-way diff on
+`!baselineIcalData.isEmpty()` (`src/sync/conflictresolutiondialog.cpp:166-172`)
+and will therefore always take the 2-way path. Restoring 3-way diff is a
+baseline-storage change (retain canonical bytes alongside the per-side
+hashes), well outside Task 1's scope, and needs a decision about the storage
+cost before anyone attempts it. Pinned as the current truth by
+`tst_syncengine_unification::unmonitoredConflictRecordsIcalData`'s
+`baselineIcalData.isEmpty()` assertion — flip that assertion to a
+parse+summary check when this is fixed.
+
+### O49 — the unmonitored-defer `ConflictInfo` never set `sourceModified`/`targetModified` (RESOLVED 2026-08-21, conflict-resolution-repair Task 1)
+
+The second instance of the same drift as
+`docs/bugs/sync-conflict-store-duplicate-rows.md`, in the same two branches:
+`unifiedHandleConflicts`' monitored-yield branch set `info.sourceModified`/
+`targetModified` from the two records and the unmonitored-defer branch did
+not, so every deferred conflict persisted null `local_modified`/
+`remote_modified` in `SyncConflictStore` and reached the UI with no
+"last modified" to show. Fixed structurally rather than by adding the two
+missing lines: both branches now call one `SyncEngineWorker::buildConflictInfo(op)`
+that constructs the whole struct, so a field added for one branch cannot be
+missing from the other. (INVARIANTS §9 — noted while fixing Bug A in the
+same two constructions.)
