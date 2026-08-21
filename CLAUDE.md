@@ -5,10 +5,14 @@ standalone project shared with Wild Palms. The source of truth for the
 overall plan lives in PlanStan at
 `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
 
-## Consumer coordination — cross-repo status index (updated 2026-07-19)
+## Consumer coordination — cross-repo status index (updated 2026-08-21)
 
-Current release **v0.94**. Both consumers (PlanStan, WildPalms) pin **v0.94**;
-WildPalms is mid-port on its v0.77→v0.94 leap. The single "where do the three
+Current release **v0.97**, on `main` (the parallel-sync campaign merged
+2026-08-21 — see below). PlanStan pins **v0.97**. WildPalms is still on an
+older pin (mid-port from v0.77 as of the last check) and needs zero changes
+for this campaign — it never calls `setMaxConcurrentMappings()`, so it stays
+at the library's default concurrency of 1, bit-identical to before. The
+single "where do the three
 repos stand" page is **`docs/2026-07-19-consumer-coordination-status.md`** —
 consult it (and update it) whenever a consumer files an RFC/handoff, an inbound
 item resolves, or a pin moves. **Open inbound items** (both low-severity,
@@ -22,24 +26,27 @@ canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).
 
-## Parallel-sync campaign — START HERE if on branch `parallel-sync`
+## Parallel-sync campaign — CLOSED 2026-08-21, merged to `main` at v0.97
 
-Tasks 0-10 of 16 are DONE on branch `parallel-sync` (cut from `main@3fcb842`),
-closing sync-excellence's §16-parked "parallel mapping execution" residual
-(see `docs/campaign/FINDINGS.md`'s resolved entry for the full reversal
-rationale and defect list). `SyncEngine` can now run multiple sync mappings
-concurrently: `setMaxConcurrentMappings(int)` (default 1, bit-identical to
-every existing consumer), an endpoint-collision scheduler (`pumpQueue()`)
-that never lets two mappings diff/apply against the same (backend,
-calendar) at once, and `phaseChanged`/`progressUpdated` semantics redefined
-for concurrency (`Complete` describes the RUN, not one mapping — WildPalms'
-`shouldPauseTickle()` depends on this).
+`parallel-sync` fast-forwarded onto `main` (was a strict superset — zero
+divergence) and has been deleted. `SyncEngine` now runs multiple sync
+mappings concurrently: `setMaxConcurrentMappings(int)` (library default
+**1**, bit-identical to every pre-campaign consumer — concurrency is
+opt-in per host), an endpoint-collision scheduler (`pumpQueue()`) that
+never lets two mappings diff/apply against the same (backend, calendar) at
+once, source/target fetch overlap within a mapping, chunked `LocalBackend`
+I/O, and a per-backend `maxConcurrentOperations()` veto
+(`RemoteCalendarBackend` declares 4). `phaseChanged`/`progressUpdated`
+semantics were redefined for concurrency — `Complete` describes the RUN,
+not one mapping (WildPalms' `shouldPauseTickle()` depends on this, though
+WildPalms itself is unaffected since it never raises concurrency above 1).
 
-**Suite: 179 total, 177 passing, identical at N=1 and N=4** (three
-consecutive `KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS=4` sweeps) — the same
-two pre-existing failures throughout (`tst_remotecalendarbackend`: broken
+**Suite: 179 total, 177 passing** — the same two pre-existing failures
+throughout campaign and after merge (`tst_remotecalendarbackend`: broken
 local Radicale test-server auth; `tst_calendar_canon_roundtrip`:
-pre-existing on `main`). Tag **v0.96** lands with Task 10's docs commit.
+pre-existing on `main`, uncatalogued, still needs triage). Verified
+identical at N=1 and N=4 (`KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS=4`)
+during the campaign; re-verified on `main` post-merge at default N=1.
 
 `KALBURATOR_TEST_MAX_CONCURRENT_MAPPINGS` is a **test-only** env knob
 (read once into a `static` in `resolveEffectiveCap()`, memoized for the
@@ -56,22 +63,19 @@ guard the sweep-invalidated assertion behind
 see `tst_syncengine_unification.cpp` and `tst_engine_cancellation.cpp` for
 the pattern.
 
-**Task 11 (thread-per-backend, PlanStan-side) is also DONE.** Widening
-relocation to every backend family (not just Local/Remote) surfaced a real
-bug in `CollectionController::removeProvider()` — see PlanStan's commit for
-the fix. Task 12's own prerequisite (Task 0's audit: `BackendRegistry::
-m_instances` mutated with no lock from the GUI thread while read from every
-worker thread) is now closed too — `m_instancesMutex` guards it, same shape
-as `TransformationRegistry::m_frozenDomainsMutex` (Task 16). **Tag
-`v0.97`** carries this fix; PlanStan's Task 12 pin bump should target
-`v0.97`, not `v0.96` (which predates it).
+**PlanStan-side (thread-per-backend + pin bump + concurrency setting) is
+also DONE and merged**, pinning **v0.97** (carries the `BackendRegistry::
+m_instances` QMutex fix — a genuine pre-existing write-path race, guarded
+the same way as `TransformationRegistry::m_frozenDomainsMutex`). PlanStan's
+own `AppSettings::syncMaxConcurrentMappings()` defaults to **4** — that's a
+host-side choice, not a library default change.
 
-**Remaining:** Task 12 (pin bump + concurrency setting) is PlanStan-side.
-Tasks 13+14 are USER-RUN (live Radicale gate). Task 15 is docs closeout in
-both repos. Full task detail:
-`~/dev/PlanStan/docs/superpowers/plans/2026-08-12-parallel-sync.md` (the
-only task source; its Execution Order section is authoritative and NOT
-sequential).
+**Still open, explicitly USER-RUN, not attempted by any agent session:**
+re-measuring the original ~76s/11-mapping table against a real
+multi-calendar CalDAV account with concurrency on, and a live Radicale gate
+exercising real concurrent sync end-to-end with a display. Full history:
+`~/dev/PlanStan/docs/superpowers/plans/2026-08-12-parallel-sync.md` (task
+source, STATUS header marked complete).
 
 ## Architectural-redress campaign — START HERE if on a branch `feature/redress-N-*`
 
