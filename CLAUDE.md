@@ -1,6 +1,6 @@
 # libkalburator — Claude instructions
 
-## O55 — RESOLVED 2026-08-22, branch `fix/o55-hub-record-id-aliasing` (not yet tagged)
+## O55 — RESOLVED 2026-08-22, merged to `main`, tagged v1.00
 
 The WildPalms hub record-id join churn (FINDINGS **O55**) is fixed: engine-side
 id aliasing — `WriteOperation::idAliases()` captured by the default

@@ -14,9 +14,9 @@ at the authoritative doc.
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, released tags **v0.98** (conflict-resolution repair) / **v0.99** (O54); O55 fix on branch `fix/o55-hub-record-id-aliasing` (2026-08-22, additive — see §2c). |
+| **libkalburator** | — (self) | `main`, released tags **v0.98** / **v0.99**, and **v1.00** (O55 hub record-id aliasing + identity-conflict guard, 2026-08-22 — §2c). |
 | **PlanStan** | **v0.97** | Not yet bumped to v0.98/v0.99 (both additive, no code change forced). Unaffected by O55 (no sqlite-hub endpoints; engine-stable ids everywhere). |
-| **WildPalms** | **v0.97 (stated in its own handoff)** | Filed O55 (2026-08-21, catching up past a dormant pin); **RESOLVED 2026-08-22** (§2c) — needs only a pin bump. |
+| **WildPalms** | **v0.97 (stated in its own handoff)** | Filed O55 (2026-08-21, catching up past a dormant pin); **RESOLVED 2026-08-22, shipped in v1.00** (§2c) — needs only a pin bump. |
 
 **Both consumers pin a recent head tag; no forced bump from v0.98** — all
 conflict-resolution-repair changes are additive (§2b).
