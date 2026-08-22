@@ -581,6 +581,34 @@ private slots:
     void onWorkerSyncCompleted(const QString &mappingId, const SyncResult &result);
     void onWorkerSyncError(const QString &mappingId, const QString &errorMessage);
     /**
+     * @brief O53 fix (conflict-resolution-repair follow-up): the actual
+     * presentation of a batch-deferred Unmonitored conflict, decoupled from
+     * whichever mapping's completion happened to trigger it.
+     *
+     * m_pendingUnmonitoredConflicts is shared across every in-flight
+     * mapping. Calling ConflictManager::handleConflicts() (which can pop a
+     * MODAL dialog) directly from inside onWorkerSyncCompleted() means the
+     * dialog's nested event loop is still running "underneath" that
+     * worker-completion slot — and Qt happily delivers the SAME queued
+     * onWorkerSyncCompleted() call for a completely different mapping into
+     * that nested loop. That second call sees the list not yet cleared
+     * (clearing only happens after the FIRST handleConflicts() call
+     * returns) and presents the identical batch a second time — observed
+     * live: two identical conflict dialogs, one per concurrently-completing
+     * mapping, for a single real conflict.
+     *
+     * The fix: onWorkerSyncCompleted() never calls into ConflictManager
+     * directly. It only appends to m_pendingUnmonitoredConflicts and, if no
+     * presentation is already scheduled, defers this method via
+     * QMetaObject::invokeMethod(..., Qt::QueuedConnection) — landing on a
+     * FRESH, non-nested turn of the event loop. m_conflictPresentationScheduled
+     * guards against scheduling twice; any conflict that arrives while a
+     * presentation is already running (including one delivered during ITS
+     * OWN modal call) simply accumulates and rides the next round, which
+     * this method reschedules itself if needed.
+     */
+    void presentPendingConflicts();
+    /**
      * @brief Bug B (conflict-resolution-repair Task 3): a user answered a
      * conflict dialog. Connected to ConflictManager::conflictResolved.
      *
@@ -731,6 +759,10 @@ private:
     SyncBehavior m_currentSyncBehavior = SyncBehavior::Unmonitored;
     ConflictInfo m_pendingConflict;  // For monitored mode dialog
     QList<ConflictInfo> m_pendingUnmonitoredConflicts;  // Batch for post-sync presentation
+    /// O53 fix: guards presentPendingConflicts() against being scheduled
+    /// twice while one presentation (possibly a blocking modal call) is
+    /// already in flight. See presentPendingConflicts()'s doc comment.
+    bool m_conflictPresentationScheduled = false;
 
     // ── Bug B: conflict-resolution injection (conflict-resolution-repair
     //    Task 3, docs/2026-08-21-conflict-info-canonical-data-and-

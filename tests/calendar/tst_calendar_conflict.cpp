@@ -209,6 +209,12 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
 
     QSignalSpy conflictSpy(m_coordinator.get(),
                            &SyncEngine::conflictDetected);
+    // Constructed BEFORE runSync(), not after future.isFinished(): O53's fix
+    // defers presentation (and therefore applyAutoPolicy()'s emit) to a
+    // queued event-loop turn, and the first QTRY_VERIFY_WITH_TIMEOUT below
+    // already pumps enough events that it can fire before this line would
+    // otherwise run — a spy constructed later could miss it.
+    QSignalSpy resolvedSpy(m_conflictManager.get(), &ConflictManager::conflictResolved);
 
     SyncRequest req;
     req.behavior = SyncEngine::SyncBehavior::Unmonitored;
@@ -232,12 +238,21 @@ void TestCalendarConflict::unmonitored_sameUidDivergent_emitsConflictDetected()
     // assertion was pinning the defect.
     //
     // It now pins the repair. The auto-policy's SourceWins reaches
-    // SyncEngine::onConflictResolved, becomes a PendingConflictResolution, and
-    // the automatic follow-up pass (locked decision 2) replays it through the
-    // engine's normal write path within the same runSync — hence
-    // "Source-Modified" here, without the caller doing anything extra. This is
-    // also the explicit WorkflowMode::AutoResolve coverage locked decision 4
-    // asks for.
+    // SyncEngine::onConflictResolved and becomes a PendingConflictResolution.
+    //
+    // O53 follow-up (not part of the original repair): presenting a batch
+    // (ConflictManager::handleConflicts(), which runs applyAutoPolicy() for
+    // AutoResolve mode too) is now deferred to a fresh, non-nested
+    // event-loop turn instead of running synchronously inside the worker-
+    // completion slot — see SyncEngine::presentPendingConflicts()'s doc
+    // comment. The run that DETECTED the conflict no longer applies its own
+    // resolution; it applies on the next sync, same as a resolution
+    // answered after a restart already does. Wait for the deferral, then
+    // play that next sync here, as the host would.
+    QTRY_VERIFY_WITH_TIMEOUT(resolvedSpy.count() >= 1, kSyncTimeoutMs);
+    auto applyRun = m_coordinator->runSync(req);
+    QTRY_VERIFY_WITH_TIMEOUT(applyRun.isFinished(), kSyncTimeoutMs);
+
     auto targetInc = m_target->incidence(QString::fromLatin1(kCalendarId),
                                           QString::fromLatin1(kConflictUid));
     QVERIFY(targetInc);

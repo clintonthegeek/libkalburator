@@ -2198,30 +2198,83 @@ migration — same storage decision as O48's baseline bytes, and worth doing at
 the same time. Until then a Custom Merge should be treated as needing the app
 to stay open for one more sync cycle.
 
-### O53 — the batch conflict dialog is modal and runs inside `onWorkerSyncCompleted` while other mappings may still be in flight (OPEN, pre-existing, confirmed 2026-08-21, conflict-resolution-repair Task 3)
+### O53 — the batch conflict dialog is modal and runs inside `onWorkerSyncCompleted` while other mappings may still be in flight (RESOLVED 2026-08-21, O53 follow-up — live-confirmed by PlanStan the same day it was filed)
 
-Confirmed while wiring Bug B, not introduced by it.
-`SyncEngine::onWorkerSyncCompleted` calls
-`m_conflictManager->handleConflicts(...)` inline, on the engine/GUI thread. In
-production that shows a **modal** dialog (`IConflictResolver` →
-`DialogConflictResolver` → `exec()`), which spins a nested event loop while
-other mappings of the same run are still executing on pool workers. Their
-completion slots therefore fire *inside* the dialog's event loop, and their
-results land in `m_queue` while the user is deciding. Pre-parallel-sync this
-was harmless (one mapping at a time); with `setMaxConcurrentMappings(4)` — what
-PlanStan's `AppSettings` defaults to — it is a genuine re-entrancy surface.
+**Confirmed live, not just theoretically.** The day this was logged (as
+"out of scope for Task 3... do not try to fix it, but log it"), a PlanStan
+session hit it for real on the very first live conflict after Bug B's fix
+landed: two identical "Resolve Sync Conflict" dialogs for one conflict,
+answered independently ("Keep Local" on one, "Keep CalDAV" on the other) —
+exactly the re-entrancy this entry predicted. Fixed the same day, on
+`feature/conflict-resolution-repair` (same branch, on top of Task 3).
 
-Two smaller things fall out of the same shape and are also unfixed:
-`m_pendingUnmonitoredConflicts` is a single flat list, not keyed by mapping, so
-conflicts from mapping A can be batch-presented under mapping B's completion
-(the debug line even says "for mapping X" while showing someone else's); and
-`m_resolvingMonitoredConflict`, the flag Task 3 uses to tell an inline
-Monitored resolution apart from a deferred one, is a plain bool on the engine —
-correct today only because Monitored runs are pinned to concurrency 1 by
-`resolveEffectiveCap()`.
+**Fix:** `onWorkerSyncCompleted()` no longer calls
+`ConflictManager::handleConflicts()` (and its modal dialog) directly. It only
+appends to `m_pendingUnmonitoredConflicts` and, if no presentation is already
+scheduled (`m_conflictPresentationScheduled`), defers the actual call via
+`QMetaObject::invokeMethod(this, &SyncEngine::presentPendingConflicts,
+Qt::QueuedConnection)` — landing on a fresh, non-nested event-loop turn. A
+conflict from another mapping arriving while a presentation is already
+running (including one delivered during that presentation's OWN modal call)
+just accumulates and rides the next round, which `presentPendingConflicts()`
+reschedules itself if needed. This is the "hand the batch to the host
+asynchronously" fix this entry originally called for, not the smaller
+re-entrancy-guard alternative.
 
-Out of scope for Task 3 (explicitly: "that's pre-existing; do not try to fix
-it, but log it"). The right fix is to hand the batch to the host
-asynchronously rather than calling into a modal dialog from a completion slot —
-which the Bug B machinery now makes *possible*, since a resolution no longer
-has to be answered while any particular run is alive. (INVARIANTS §9.)
+**The flat, mapping-unaware `m_pendingUnmonitoredConflicts` list this entry
+flagged is now fine as-is** — it doesn't need to be keyed by mapping, because
+nothing can present a batch concurrently with another presentation anymore
+(the whole point of the fix), so which mapping's completion happened to
+trigger the scheduling no longer matters. `presentPendingConflicts()` logs
+every mapping id actually IN the batch instead of the single (sometimes
+wrong) `mappingId` the old inline call had in scope.
+
+**Real cost paid for the fix, found via a genuine SIGSEGV during
+development, not theorized:** locked decision 2's "same-run" instant
+reapply (a resolution answered mid-run gets applied before that run's
+future resolves) no longer works in general. A first attempt reused the
+existing rehydration path with a fresh `runSync()` call from inside
+`presentPendingConflicts()` — looked safe, crashed instead: the deferred
+call can run at any point after being scheduled, with no guarantee the
+engine or its backends still exist by then (a test's teardown between the
+run finishing and the deferred presentation firing destroyed the backends
+first; `dispatchSync()` reached a worker thread mid-teardown and crashed in
+`kickFetch()` on a dangling `SyncBackendBase*`). A host closing a
+collection right after answering a conflict dialog would hit the identical
+hazard in production. Backed out. The resolution is still durably recorded
+(unaffected — same `m_pendingResolutions`/`SyncConflictStore` rehydration
+Task 3 built) and applies on whichever sync the host runs next, exactly
+like a resolution answered after a restart already does — just not
+necessarily within the same run anymore. Restoring "instant" safely needs
+its own design pass: a follow-up mechanism tied to the engine's actual
+lifetime (cancellable/awaitable), not a bare `runSync()` call from a
+queued slot. New finding, not filed separately — this paragraph is that
+finding's home; revisit if the added latency (worst case: PlanStan's next
+auto-sync tick, ~30s) turns out to matter in practice.
+
+`m_resolvingMonitoredConflict` (the flag distinguishing an inline Monitored
+resolution from a deferred one) is untouched by this fix — it belongs to the
+Monitored yield/resume path, which this entry was never about and which this
+fix does not change.
+
+Regression coverage:
+`tests/engine/tst_syncengine_unification.cpp::concurrentMappingCompletionDoesNotDoublePresentConflict`
+— two mappings dispatched together (one genuine conflict, one artificially
+slowed via `MockBackend::setOperationDelay` so it is still in flight when the
+first mapping's resolver "shows its dialog"), a `PumpingConflictResolver` that
+spins a real nested `QEventLoop` to faithfully simulate `QDialog::exec()`'s
+defining property. Shown RED against the pre-fix code during development
+(`resolver->calls == 2`, confirmed by hand), GREEN after. Five existing tests
+needed updating for the (expected, documented above) loss of same-run instant
+reapply: `unmonitoredResolutionReachesTheBackend`,
+`appliedResolutionIsNotReapplied`, `autoResolveWorkflowResolutionIsApplied`,
+`storeLessHostStillAppliesResolution` (all in the same file), and
+`tst_calendar_conflict.cpp::unmonitored_sameUidDivergent_emitsConflictDetected`
+— each now explicitly waits for the deferred presentation (via a resolver
+call count or a `ConflictManager::conflictResolved` signal spy constructed
+*before* `runSync()`, not after — a spy constructed after the first
+`QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), …)` can already have missed
+the signal) and then plays a second `runSync()` itself, exactly as a real
+host's next sync tick would, before asserting on applied state. Full suite:
+177/179 (unchanged pre-existing baseline — `tst_remotecalendarbackend`
+Radicale auth, `tst_calendar_canon_roundtrip`).

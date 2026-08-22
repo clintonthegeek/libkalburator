@@ -1727,12 +1727,11 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // pumpQueue()'s terminal branch read that set to decide whether to run one
     // follow-up pass (locked decision 2), so by the time either looks, the
     // answers are in.
-    if (m_conflictManager && !m_pendingUnmonitoredConflicts.isEmpty()) {
-        qDebug() << "SyncEngine: Batch-presenting"
-                 << m_pendingUnmonitoredConflicts.size()
-                 << "conflicts for mapping" << mappingId;
-        m_conflictManager->handleConflicts(m_pendingUnmonitoredConflicts);
-        m_pendingUnmonitoredConflicts.clear();
+    if (m_conflictManager && !m_pendingUnmonitoredConflicts.isEmpty()
+            && !m_conflictPresentationScheduled) {
+        m_conflictPresentationScheduled = true;
+        QMetaObject::invokeMethod(this, &SyncEngine::presentPendingConflicts,
+                                   Qt::QueuedConnection);
     }
 
     // P1.T3: the former m_currentMappingResult write was dead (never
@@ -1914,6 +1913,71 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
 
     // Continue pumping the queue (queue mode only).
     pumpQueue();
+}
+
+void SyncEngine::presentPendingConflicts()
+{
+    m_conflictPresentationScheduled = false;
+    if (!m_conflictManager || m_pendingUnmonitoredConflicts.isEmpty())
+        return;
+
+    const QList<ConflictInfo> batch = m_pendingUnmonitoredConflicts;
+    m_pendingUnmonitoredConflicts.clear();
+
+    QStringList mappingIds;
+    for (const auto &c : std::as_const(batch)) {
+        if (!mappingIds.contains(c.mappingId))
+            mappingIds.append(c.mappingId);
+    }
+    qDebug() << "SyncEngine: Batch-presenting" << batch.size()
+             << "conflict(s) for mapping(s)" << mappingIds;
+
+    // This call can pop a MODAL dialog per conflict and block for as long
+    // as the user takes to answer. That is fine now: this method is never
+    // reached from inside a worker-completion slot (see its header doc
+    // comment / O53), so its own nested event loop cannot cause another
+    // onWorkerSyncCompleted() call to re-enter this presentation — any
+    // conflict detected by another mapping while this is blocking just
+    // accumulates in m_pendingUnmonitoredConflicts (the scheduling guard
+    // above stays true throughout, so it is not re-presented here) and is
+    // picked up by the reschedule check below.
+    m_conflictManager->handleConflicts(batch);
+
+    // NOT reinstating locked decision 2's "same-run" instant reapply here.
+    // By the time this method runs, the ORIGINAL run that detected the
+    // conflict is guaranteed fully finished — m_isSyncing false,
+    // m_currentIface null, m_queue reset() (mode None). A first attempt at
+    // "dispatch a fresh runSync() covering the newly-resolved mappings"
+    // looked reusable (every dispatchSync() already rehydrates pending
+    // resolutions for its own mapping — the same path "resolution survives
+    // restart" depends on) but is NOT safe here: this method can run at any
+    // point after being scheduled, with no guarantee the engine (or its
+    // backends/registry) still exists by then. A real SIGSEGV was caught in
+    // tst_syncengine_unification proving exactly this — the deferred call
+    // fired after test teardown had already destroyed the backends,
+    // dispatchSync() reached a worker thread mid-teardown, and it crashed
+    // inside kickFetch() on a dangling SyncBackendBase*. A host closing a
+    // collection right after answering a conflict dialog would hit the
+    // identical hazard in production.
+    //
+    // The resolution is not lost — it is already durably recorded (Bug B's
+    // rehydration path, m_pendingResolutions / SyncConflictStore) and will
+    // apply on whichever sync the host runs next, exactly like a resolution
+    // answered after a restart already does. That is a real latency
+    // regression versus the old (unsafe) synchronous-presentation behavior
+    // for Single-mode / trailing-mapping cases specifically — see FINDINGS
+    // O53 follow-up for the accepted tradeoff and why restoring "instant"
+    // safely would need its own design pass (a cancellable/awaitable
+    // follow-up tied to the engine's lifetime, not a bare runSync() call).
+
+    // Conflicts delivered while handleConflicts() above was blocking (from
+    // another mapping's completion, or a nested presentation this method's
+    // own scheduling guard suppressed) need their own round.
+    if (!m_pendingUnmonitoredConflicts.isEmpty() && !m_conflictPresentationScheduled) {
+        m_conflictPresentationScheduled = true;
+        QMetaObject::invokeMethod(this, &SyncEngine::presentPendingConflicts,
+                                   Qt::QueuedConnection);
+    }
 }
 
 void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &errorMessage)

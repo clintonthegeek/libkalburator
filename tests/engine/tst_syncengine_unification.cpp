@@ -45,9 +45,11 @@
 //      isFinished() trips.
 
 #include <QtTest/QtTest>
+#include <QEventLoop>
 #include <QFuture>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTimeZone>
 
 #include <KCalendarCore/Event>
@@ -168,6 +170,35 @@ public:
     ConflictInfo       lastConflict;
 };
 
+/// O53 regression fixture: simulates a MODAL dialog's defining property — a
+/// nested event loop that keeps the calling thread's event queue draining
+/// while "the user thinks" — instead of just returning immediately like
+/// StubConflictResolver. That nested pump is what let a second, concurrently-
+/// completing mapping's queued onWorkerSyncCompleted() call get delivered
+/// and double-present the same conflict pre-fix; a resolver that never pumps
+/// cannot exercise that window at all.
+class PumpingConflictResolver : public Kalburator::Sync::IConflictResolver
+{
+public:
+    ConflictResolution resolveConflict(const ConflictInfo &conflict,
+                                       QWidget *) override
+    {
+        ++calls;
+        lastConflict = conflict;
+        QEventLoop loop;
+        QTimer::singleShot(pumpMs, &loop, &QEventLoop::quit);
+        loop.exec();
+        return resolution;
+    }
+
+    QString lastMergedIcalData() const override { return QString(); }
+
+    ConflictResolution resolution = ConflictResolution::SourceWins;
+    int                pumpMs = 80;
+    int                calls = 0;
+    ConflictInfo       lastConflict;
+};
+
 } // namespace
 
 class TstSyncEngineUnification : public QObject
@@ -195,6 +226,7 @@ private slots:
     void deferredWorkflowResolutionIsApplied();
     void autoResolveWorkflowResolutionIsApplied();
     void storeLessHostStillAppliesResolution();
+    void concurrentMappingCompletionDoesNotDoublePresentConflict();
 
 private:
     /// Bug B tests: the two-MockBackend three-way-conflict fixture, which six
@@ -1218,10 +1250,28 @@ void TstSyncEngineUnification::unmonitoredResolutionReachesTheBackend()
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
     QVERIFY2(!future.isCanceled(), "future was canceled");
 
-    // The dialog was shown exactly once: the follow-up pass APPLIES the answer,
-    // it does not ask again. (Asking twice for one conflict is the user-visible
-    // shape of the bug this test exists to prevent regressing into.)
+    // O53 fix: presentation is deferred (QMetaObject::invokeMethod, queued)
+    // to a fresh, non-nested event-loop turn — see
+    // SyncEngine::presentPendingConflicts()'s doc comment — so the dialog
+    // has not necessarily been shown yet just because the run's future
+    // finished. Wait for it explicitly.
+    QTRY_VERIFY_WITH_TIMEOUT(resolver->calls >= 1, kSyncTimeoutMs);
+
+    // The dialog was shown exactly once: presentPendingConflicts() is never
+    // re-entered while already presenting a batch. (Asking twice for one
+    // conflict was the exact user-visible shape of the O53 bug this
+    // deferral exists to prevent.)
     QCOMPARE(resolver->calls, 1);
+
+    // The resolution is recorded but NOT applied by the run that detected
+    // the conflict — that run is already finished by the time the deferred
+    // dialog is even shown (see presentPendingConflicts()'s doc comment on
+    // why it cannot safely re-dispatch on its own). It applies on the next
+    // sync, exactly like a resolution answered after a restart already does
+    // (resolutionSurvivesRestart) — so the test plays that next sync itself.
+    auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!second.isCanceled(), "second future was canceled");
 
     // The point of the whole campaign.
     auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
@@ -1230,7 +1280,7 @@ void TstSyncEngineUnification::unmonitoredResolutionReachesTheBackend()
     QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
 
     // ...and no fresh AskUser conflict is left standing for the same id.
-    const SyncResult last = future.resultAt(0).last();
+    const SyncResult last = second.resultAt(0).last();
     QVERIFY2(last.unresolvedConflicts.isEmpty(),
              qPrintable(QStringLiteral("%1 conflict(s) still unresolved after the "
                                        "resolution was applied")
@@ -1335,6 +1385,14 @@ void TstSyncEngineUnification::appliedResolutionIsNotReapplied()
 
     auto first = m_engine->runSync(unmonitoredRequestForFixtureMapping());
     QTRY_VERIFY_WITH_TIMEOUT(first.isFinished(), kSyncTimeoutMs);
+
+    // O53 fix: presentation is deferred, and the run that detects a
+    // conflict never applies its own resolution — wait for the dialog,
+    // then play the next sync (as the host would) to actually apply it.
+    QTRY_VERIFY_WITH_TIMEOUT(resolver->calls >= 1, kSyncTimeoutMs);
+    auto firstApply = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(firstApply.isFinished(), kSyncTimeoutMs);
+
     QCOMPARE(fx.target->incidence(QString::fromLatin1(kCalendarId),
                                   QString::fromLatin1(kConflictUid))->summary(),
              QStringLiteral("Source-Modified"));
@@ -1360,6 +1418,9 @@ void TstSyncEngineUnification::appliedResolutionIsNotReapplied()
 
     auto second = m_engine->runSync(unmonitoredRequestForFixtureMapping());
     QTRY_VERIFY_WITH_TIMEOUT(second.isFinished(), kSyncTimeoutMs);
+    // O53 fix: presentation is deferred — wait for it before checking
+    // whether the dialog was actually shown.
+    QTRY_VERIFY_WITH_TIMEOUT(resolver->calls >= 1, kSyncTimeoutMs);
 
     // Presented afresh (so the conflict really was re-detected)...
     QCOMPARE(resolver->calls, 1);
@@ -1512,14 +1573,24 @@ void TstSyncEngineUnification::autoResolveWorkflowResolutionIsApplied()
     m_conflictManager->setAutoResolutionPolicy(ConflictResolution::LastWriteWins);
     m_engine->setConflictManager(m_conflictManager.get());
 
+    QSignalSpy resolvedSpy(m_conflictManager.get(), &ConflictManager::conflictResolved);
     auto future = m_engine->runSync(unmonitoredRequestForFixtureMapping());
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+
+    // O53 fix: applyAutoPolicy() still runs inside the now-deferred
+    // presentPendingConflicts() (handleConflicts()'s AutoResolve branch),
+    // so the auto-resolution is not necessarily recorded yet just because
+    // the run's own future finished. Wait for it, then play the next sync
+    // (as the host would) to actually apply it.
+    QTRY_VERIFY_WITH_TIMEOUT(resolvedSpy.count() >= 1, kSyncTimeoutMs);
+    auto applyRun = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(applyRun.isFinished(), kSyncTimeoutMs);
 
     auto srcInc = fx.source->incidence(QString::fromLatin1(kCalendarId),
                                        QString::fromLatin1(kConflictUid));
     QVERIFY(srcInc);
     QCOMPARE(srcInc->summary(), QStringLiteral("Target-Modified"));
-    QCOMPARE(future.resultAt(0).last().appliedConflictIds.size(), 1);
+    QCOMPARE(applyRun.resultAt(0).last().appliedConflictIds.size(), 1);
 
     m_engine->setSyncMappings({});
     m_engine->setConflictManager(nullptr);
@@ -1559,11 +1630,104 @@ void TstSyncEngineUnification::storeLessHostStillAppliesResolution()
     auto future = m_engine->runSync(unmonitoredRequestForFixtureMapping());
     QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
 
+    // O53 fix: wait for the deferred presentation, then play the next sync
+    // (as the host would) to actually apply the resolution.
+    QTRY_VERIFY_WITH_TIMEOUT(resolver->calls >= 1, kSyncTimeoutMs);
     QCOMPARE(resolver->calls, 1);
+    auto applyRun = m_engine->runSync(unmonitoredRequestForFixtureMapping());
+    QTRY_VERIFY_WITH_TIMEOUT(applyRun.isFinished(), kSyncTimeoutMs);
+
     auto tgtInc = fx.target->incidence(QString::fromLatin1(kCalendarId),
                                        QString::fromLatin1(kConflictUid));
     QVERIFY(tgtInc);
     QCOMPARE(tgtInc->summary(), QStringLiteral("Source-Modified"));
+
+    m_engine->setSyncMappings({});
+    m_engine->setConflictManager(nullptr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test — O53. Two mappings completing concurrently must not double-present
+// the same conflict.
+//
+// Root cause (docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-
+// resolution-handoff.md's follow-up finding): onWorkerSyncCompleted() used to
+// call ConflictManager::handleConflicts() — a MODAL call in production —
+// directly and synchronously. Its nested event loop still delivered the SAME
+// queued onWorkerSyncCompleted() slot for a completely different,
+// concurrently-completing mapping, which saw m_pendingUnmonitoredConflicts
+// not yet cleared (clearing only happened after the FIRST handleConflicts()
+// call returned) and presented the identical batch a second time.
+// Live-observed in a real PlanStan session: two identical "Resolve Sync
+// Conflict" dialogs for one conflict, answered independently by the user
+// with two different resolutions — only the first took effect, but nothing
+// stopped the second from silently doing the wrong thing if it had differed
+// in some other way.
+//
+// Mapping A has the one genuine conflict; mapping B is conflict-free but
+// artificially slowed (MockBackend::setOperationDelay) so it is still
+// in-flight when A's PumpingConflictResolver starts "showing its dialog".
+//
+// Falsifiability: reverting presentPendingConflicts()'s deferral (having
+// onWorkerSyncCompleted() call ConflictManager::handleConflicts() directly
+// again, as it did before this fix) reproduces resolver->calls == 2 for this
+// single conflict — confirmed by hand against the pre-fix code during
+// development of this fix.
+// ─────────────────────────────────────────────────────────────────────────────
+void TstSyncEngineUnification::concurrentMappingCompletionDoesNotDoublePresentConflict()
+{
+    auto fx = seedConflict(QStringLiteral("Source-Modified"),
+                           QStringLiteral("Target-Modified"),
+                           QDateTime::fromSecsSinceEpoch(1700000100, QTimeZone::UTC),
+                           QDateTime::fromSecsSinceEpoch(1700000200, QTimeZone::UTC));
+
+    auto sourceB = std::make_unique<MockBackend>();
+    auto targetB = std::make_unique<MockBackend>();
+    sourceB->setOperationDelay(40);
+    targetB->setOperationDelay(40);
+    m_registry->registerBackendInstance(QStringLiteral("source-b"), sourceB.get());
+    m_registry->registerBackendInstance(QStringLiteral("target-b"), targetB.get());
+    sourceB->createCalendar(QString::fromLatin1(kCollectionId),
+                            QStringLiteral("cal-b"), QStringLiteral("B"));
+    targetB->createCalendar(QString::fromLatin1(kCollectionId),
+                            QStringLiteral("cal-b"), QStringLiteral("B"));
+    auto *hostCalB = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
+    hostCalB->setId(QStringLiteral("cal-b"));
+    m_host->stubCollection()->addCalendarWithId(QStringLiteral("cal-b"), hostCalB);
+
+    SyncMapping mappingB;
+    mappingB.id             = QStringLiteral("mapping-b");
+    mappingB.sourceBackend  = QStringLiteral("source-b");
+    mappingB.sourceCalendar = QStringLiteral("cal-b");
+    mappingB.targetBackend  = QStringLiteral("target-b");
+    mappingB.targetCalendar = QStringLiteral("cal-b");
+    mappingB.mode           = SyncMode::TwoWay;
+    mappingB.conflictPolicy = ConflictResolution::AskUser;
+    mappingB.enabled        = true;
+
+    m_engine->setSyncMappings({ fixtureMapping(), mappingB });
+    m_engine->setMaxConcurrentMappings(2);
+
+    auto *resolver = new PumpingConflictResolver;
+    m_conflictManager = std::make_unique<ConflictManager>();
+    m_conflictManager->setSyncConflictStore(m_conflictStore.get());
+    m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Immediate);
+    m_conflictManager->setConflictResolver(resolver);   // takes ownership
+    m_engine->setConflictManager(m_conflictManager.get());
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;   // all enabled: both mappings
+    auto future = m_engine->runSync(req);
+    QTRY_VERIFY_WITH_TIMEOUT(future.isFinished(), kSyncTimeoutMs);
+    QVERIFY2(!future.isCanceled(), "future was canceled");
+
+    QTRY_VERIFY_WITH_TIMEOUT(resolver->calls >= 1, kSyncTimeoutMs);
+    // Give a wrongly-scheduled second presentation a chance to fire before
+    // asserting — this is exactly the window the O53 bug exploited.
+    QTest::qWait(150);
+
+    QCOMPARE(resolver->calls, 1);
+    QCOMPARE(resolver->lastConflict.sourceId, QString::fromLatin1(kConflictUid));
 
     m_engine->setSyncMappings({});
     m_engine->setConflictManager(nullptr);
