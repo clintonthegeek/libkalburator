@@ -1,24 +1,29 @@
 # libkalburator — Claude instructions
 
-## O54 — RESOLVED AND LIVE-VERIFIED 2026-08-22 (was the critical open bug filed 2026-08-21)
+## O54 — CLOSED 2026-08-22, merged to `main`, tagged v0.99
 
 The `RemoteCalendarBackend` `<calendar>/<uid>.ics` URL-assumption bug
-(FINDINGS **O54**) is fixed on branch `fix/o54-uid-url-assumption`: a
-`m_uidToUrl` cache populated wherever an item's real server URL meets its
-parsed UID, resolved via `resolveItemUrl()` on every update/delete/read
-path (create-only paths deliberately keep the guess). Regression test
-RED→GREEN in `tst_remotecalendarbackend_convergence`; CardDAV
-(`RemoteContactsBackend`) audited clean — it already stores real hrefs.
-Suite 177/179, identical pre-existing baseline.
+(FINDINGS **O54**) is fixed: a `m_uidToUrl` cache populated wherever an
+item's real server URL meets its parsed UID, resolved via
+`resolveItemUrl()` on every update/delete/read path (create-only paths
+deliberately keep the guess). Regression test RED→GREEN in
+`tst_remotecalendarbackend_convergence`; CardDAV (`RemoteContactsBackend`)
+audited clean — it already stores real hrefs. Suite 177/179, identical
+pre-existing baseline, re-verified on `main` post-merge.
 
 **Live-verified 2026-08-22 against a real Nextcloud account**, exactly the
 scenario that found the bug: editing the same previously-failing item and
 choosing Keep Local applied cleanly on the next sync (a real write,
-`success: true`, no HTTP 400, no repeat). Branch is **not yet merged to
-`main` or tagged** — that decision, and whether to fold it into the same
-release as the conflict-resolution-repair work (already on `main` at
-v0.98), is still open. Closure summary in `docs/campaign/FINDINGS.md`
-**O54**; original analysis (status header updated) at
+`success: true`, no HTTP 400, no repeat).
+
+Branch `fix/o54-uid-url-assumption` was a clean fast-forward onto `main`
+@ `f7d3800` (zero divergence, strict superset of the already-released
+v0.98 conflict-resolution-repair work) — merged, tagged **v0.99**, branch
+deleted. PlanStan pins **v0.97**; bumping to v0.99 (which also carries
+v0.98's conflict-resolution fixes) needs no code change on either
+consumer — everything in both releases is additive. Closure summary in
+`docs/campaign/FINDINGS.md` **O54**; original analysis (status header
+updated) at
 `docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`.
 
 ---
@@ -30,8 +35,9 @@ overall plan lives in PlanStan at
 
 ## Consumer coordination — cross-repo status index (updated 2026-08-22)
 
-Current release **v0.97**, on `main` (the parallel-sync campaign merged
-2026-08-21 — see below). PlanStan pins **v0.97**. WildPalms is still on an
+Current release **v0.99**, on `main` (conflict-resolution-repair merged as
+v0.98, O54 merged as v0.99, both 2026-08-22 — see below). PlanStan is
+bumping its pin to v0.99 this session. WildPalms is still on an
 older pin (mid-port from v0.77 as of the last check) and needs zero changes
 for this campaign — it never calls `setMaxConcurrentMappings()`, so it stays
 at the library's default concurrency of 1, bit-identical to before. The
