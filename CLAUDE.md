@@ -1,5 +1,14 @@
 # libkalburator — Claude instructions
 
+## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
+
+Canonical remote is **`origin` = `git@github.com:clintonthegeek/libkalburator.git`**.
+All pushes (`main`, tags, branches) go to `origin`. The `codeberg` remote
+(`git@codeberg.org:clintonthegeek/libkalburator.git`) is a legacy mirror being
+**phased out** — do not push to it, do not add it to new scripts/docs/handoffs.
+(Note: `codeberg.org/clintonthegeek/OrgGrove` URLs inside `docs/` refer to a
+*different* repository and are unaffected by this.)
+
 ## O56 — RESOLVED 2026-08-22, merged to `main`, tagged v1.01
 
 The WildPalms recategorization followup (FINDINGS **O56**) is fixed — two
