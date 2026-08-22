@@ -2278,3 +2278,42 @@ the signal) and then plays a second `runSync()` itself, exactly as a real
 host's next sync tick would, before asserting on applied state. Full suite:
 177/179 (unchanged pre-existing baseline — `tst_remotecalendarbackend`
 Radicale auth, `tst_calendar_canon_roundtrip`).
+
+### O54 — CRITICAL, OPEN — `RemoteCalendarBackend` assumes every item's URL is `<calendar>/<uid>.ics`; false for any item another CalDAV client created (found 2026-08-21, unrelated to the conflict-resolution campaign)
+
+**Not fixed. Read the full writeup first —
+`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`
+— this entry is a pointer, not the full analysis.** Found live the same
+day as the conflict-resolution-repair work but is a wholly separate,
+pre-existing defect in `RemoteCalendarBackend`'s write path, not a
+consequence of anything that campaign touched.
+
+`generateItemUrl(davUrl, uid)` (`remotecalendarbackend.cpp:824`) guesses
+every item's URL as `<calendar>/<uid>.ics`. True only for items PlanStan
+itself created. An item created by any other CalDAV client keeps its
+original server-assigned filename permanently — confirmed live via a
+read-only PROPFIND inspection: a real item's UID was
+`8fecdc8c-cf00-4b74-b2dc-f6d84790b74d` but its actual server filename was
+`1755247320.R237.ics`. Editing it and syncing sent a PUT to the guessed
+(nonexistent) URL; SabreDAV rejected it with "Calendar object with uid
+already exists in this calendar collection" (HTTP 400) — the write fails
+identically and permanently on every subsequent sync.
+
+**No per-item UID→URL cache exists anywhere in the class** — confirmed by
+grep. Every cache that exists (`m_localEtags`, `m_contentCache`) is keyed
+by URL, not UID. The real URL is known and in scope at
+`processFetchedItems()` (`:2350-2351`, `urlKey`) at the exact moment each
+item's UID becomes known from its parsed content, and is discarded there.
+
+**Severity higher than any conflict-resolution bug this session fixed —
+it needs no conflict, just an edit.** Since adopting a pre-existing
+calendar is PlanStan's normal onboarding path, this is close to "the
+first real edit a new user makes will silently and permanently fail to
+sync."
+
+**File this as the first item the next session reads and fixes.** Full
+root cause, exact call sites needing an audit (9 `generateItemUrl()`
+call sites, not all necessarily broken — each needs individual
+create-vs-update judgment), the recommended `m_uidToUrl` fix shape, and
+why the conflict-resolution test suite couldn't have caught it
+(`MockBackend` has no URL concept at all) are all in the linked doc.

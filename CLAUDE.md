@@ -1,5 +1,20 @@
 # libkalburator — Claude instructions
 
+## 🚨 READ THIS FIRST — critical open bug, not yet fixed (filed 2026-08-21)
+
+`RemoteCalendarBackend` assumes every item's server URL is
+`<calendar>/<uid>.ics`. False for any item created by another CalDAV
+client (which keeps its original server-assigned filename forever) — the
+first edit-and-sync of such an item fails permanently with a SabreDAV
+"uid already exists" 400. No conflict needed to trigger it; this is more
+severe than anything the conflict-resolution-repair work below fixed, and
+unrelated to it. **Fix this before anything else.** Full analysis, exact
+root-cause location, live confirmation, and the recommended fix shape:
+`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`
+(also logged as `docs/campaign/FINDINGS.md` **O54**).
+
+---
+
 This repo is the in-flight extraction of PlanStan's sync library into a
 standalone project shared with Wild Palms. The source of truth for the
 overall plan lives in PlanStan at
