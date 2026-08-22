@@ -1,6 +1,6 @@
 # libkalburator — Claude instructions
 
-## O54 — RESOLVED 2026-08-22 (was the critical open bug filed 2026-08-21)
+## O54 — RESOLVED AND LIVE-VERIFIED 2026-08-22 (was the critical open bug filed 2026-08-21)
 
 The `RemoteCalendarBackend` `<calendar>/<uid>.ics` URL-assumption bug
 (FINDINGS **O54**) is fixed on branch `fix/o54-uid-url-assumption`: a
@@ -9,10 +9,16 @@ parsed UID, resolved via `resolveItemUrl()` on every update/delete/read
 path (create-only paths deliberately keep the guess). Regression test
 RED→GREEN in `tst_remotecalendarbackend_convergence`; CardDAV
 (`RemoteContactsBackend`) audited clean — it already stores real hrefs.
-Suite 177/179, identical pre-existing baseline. Still explicitly USER-RUN:
-live verification against a real CalDAV account. Closure summary in
-`docs/campaign/FINDINGS.md` **O54**; original analysis (status header
-updated) at
+Suite 177/179, identical pre-existing baseline.
+
+**Live-verified 2026-08-22 against a real Nextcloud account**, exactly the
+scenario that found the bug: editing the same previously-failing item and
+choosing Keep Local applied cleanly on the next sync (a real write,
+`success: true`, no HTTP 400, no repeat). Branch is **not yet merged to
+`main` or tagged** — that decision, and whether to fold it into the same
+release as the conflict-resolution-repair work (already on `main` at
+v0.98), is still open. Closure summary in `docs/campaign/FINDINGS.md`
+**O54**; original analysis (status header updated) at
 `docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`.
 
 ---

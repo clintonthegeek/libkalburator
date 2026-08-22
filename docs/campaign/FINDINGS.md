@@ -2333,9 +2333,20 @@ note below.
 **Suite: 179 total, 177 passing** — the identical pre-existing baseline
 (`tst_remotecalendarbackend` Radicale auth — its three failing slots
 verified identical on unmodified code this session;
-`tst_calendar_canon_roundtrip`). Still explicitly USER-RUN: live
-verification against a real CalDAV account that an adopted item's edit
-lands at its original URL and syncs cleanly.
+`tst_calendar_canon_roundtrip`).
+
+**LIVE-VERIFIED 2026-08-22, real Nextcloud account, exactly the originally-failing
+scenario.** Same collection, same item (`8fecdc8c-cf00-4b74-b2dc-f6d84790b74d`,
+real server filename `1755247320.R237.ics`, discovered via `inbox-1`). A
+Keep-Local resolution that previously failed permanently with the SabreDAV
+400 now applies cleanly on the next sync — log shows
+`SyncEngineWorker::unifiedHandleConflicts - applied stored resolution 0`
+followed by `SyncRunCoordinator: mapping completed: success: true ...
+target: "+0 ~1 -0 =0 !0 E0"` (a real write, not the all-zero "success"
+this same scenario silently produced before Bug B was fixed) — no HTTP
+error, no repeat on the following tick. Both O54 and the conflict-resolution
+resolution-injection path (O53's era of fixes) are now confirmed working
+together, end to end, against a real server.
 
 **Original finding (2026-08-21), kept for context:**
 

@@ -1,10 +1,12 @@
 # CRITICAL — RemoteCalendarBackend assumes every item's URL is `<calendar>/<uid>.ics`; false for any item another CalDAV client created
 
-**Status:** RESOLVED 2026-08-22 (branch `fix/o54-uid-url-assumption`) —
-the fix landed exactly per the "Recommended fix" section below; see
-FINDINGS **O54** for the closure summary, audit results for the other
-call sites and CardDAV/LocalBackend, and the regression test. The writeup
-below is kept as-found.
+**Status:** RESOLVED AND LIVE-VERIFIED 2026-08-22 (branch
+`fix/o54-uid-url-assumption`) — the fix landed exactly per the
+"Recommended fix" section below and was confirmed against a real Nextcloud
+account editing the exact item that found the bug; see FINDINGS **O54**
+for the closure summary, live-verification evidence, audit results for the
+other call sites and CardDAV/LocalBackend, and the regression test. The
+writeup below is kept as-found.
 
 **Date found:** 2026-08-21, live PlanStan session (same day as the
 conflict-resolution-repair work — unrelated to it; this is a distinct,
