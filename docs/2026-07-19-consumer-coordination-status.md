@@ -14,13 +14,12 @@ at the authoritative doc.
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main` @ `98f605b`, released tag **v0.94** (sync-graph-redesign Phase 1, closed 2026-07-16) |
-| **PlanStan** | **v0.94** | `CMakeLists.txt:69` `PLANSTAN_LIBKALBURATOR_GIT_TAG "v0.94"`. Current. |
-| **WildPalms** | **v0.94** | `CMakeLists.txt:69`. **Mid-port**: leaping v0.77→v0.94 (`WildPalms/docs/2026-07-18-libkalburator-v077-to-v094-gap-analysis-and-leap-plan.md`), Phase 1 in progress. |
+| **libkalburator** | — (self) | `main`, released tag **v0.98** (conflict-resolution repair, closed 2026-08-22 — §2b). This table's history rows below are stale as of 2026-07-19; see `CLAUDE.md` for the current campaign-by-campaign summary through v0.97/v0.98. |
+| **PlanStan** | **v0.97** | Pins the parallel-sync release; not yet bumped to v0.98 (additive, no code change forced — bump whenever convenient). |
+| **WildPalms** | **v0.97 (stated in its own handoff)** | Dormant for months; filed `~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md` (FINDINGS **O55**, §2c) while catching up. |
 
-**Both consumers pin the current head tag.** The drift is *not* version lag —
-it is unlogged inbound coordination (§3) surfaced by WildPalms' big v0.77→v0.94
-catch-up.
+**Both consumers pin a recent head tag; no forced bump from v0.98** — all
+conflict-resolution-repair changes are additive (§2b).
 
 ---
 
@@ -46,7 +45,7 @@ Condensed; full detail in each campaign's archive + this repo's `CLAUDE.md`.
 
 ---
 
-## 2b. UNRELEASED — conflict-resolution repair (branch `feature/conflict-resolution-repair`, 2026-08-21)
+## 2b. RELEASED v0.98 (2026-08-22) — conflict-resolution repair
 
 Answers PlanStan's `docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-handoff.md`.
 Full response: **`docs/2026-08-21-conflict-resolution-repair-response.md`** — read that

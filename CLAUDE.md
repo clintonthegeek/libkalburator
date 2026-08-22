@@ -45,11 +45,16 @@ canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).
 
-## Conflict-resolution repair — code COMPLETE 2026-08-21, branch NOT yet merged
+## Conflict-resolution repair — CLOSED 2026-08-22, merged to `main`, tagged v0.98
 
-Branch **`feature/conflict-resolution-repair`** (`3902f40` → `79d5d77`), off
-`main` @ `b0bf3d5`. **Not merged, not tagged, not pushed.** Answers PlanStan's
+Branch **`feature/conflict-resolution-repair`** (`3902f40` → `57a889b`) was a
+clean fast-forward onto `main` @ `b0bf3d5` (zero divergence) — merged and
+tagged **v0.98**, branch deleted. Answers PlanStan's
 `docs/2026-08-21-conflict-info-canonical-data-and-unmonitored-resolution-handoff.md`.
+Suite re-verified on `main` post-merge: 177/179, same pre-existing baseline
+(`tst_remotecalendarbackend` Radicale auth, `tst_calendar_canon_roundtrip`).
+Neither consumer needs a code change — all four fixes are additive; bump the
+pin whenever convenient.
 
 **Read `docs/2026-08-21-conflict-resolution-repair-response.md` first** — it is
 the authoritative summary for any consumer question about conflicts. Plan and
