@@ -2126,6 +2126,81 @@ WriterBatch classifyForWriter(
     return batch;
 }
 
+// ============================================================================
+// O55/O56 record-id alias helpers
+// ============================================================================
+
+namespace {
+
+constexpr int kMaxAliasChainHops = 8;
+
+// Follow an alias chain from `id` to its component sink (the id no alias
+// points away FROM — the id a mapping's baseline rows are keyed under).
+// Bounded; a malformed (cyclic) map just stops early.
+QString resolveIdThroughAliases(const QHash<QString, QString> &aliases,
+                                const QString &id)
+{
+    QString cur = id;
+    for (int hops = 0; hops < kMaxAliasChainHops && aliases.contains(cur);
+         ++hops) {
+        const QString next = aliases.value(cur);
+        if (next == cur)
+            break;
+        cur = next;
+    }
+    return cur;
+}
+
+// O56 heal: normalize a raw alias map into one where every native id points
+// DIRECTLY at its component sink, with cycles broken deterministically
+// (lexicographically smallest member wins). Handles stores poisoned by the
+// v1.00 crossing defect (bare→prefixed AND prefixed→bare): both ids resolve
+// to ONE sink, so the per-record join can no longer split them onto
+// different keys. In-memory only — the store's rows are left as-is.
+QHash<QString, QString> healedIdAliases(const QHash<QString, QString> &raw)
+{
+    QHash<QString, QString> sinkOf;
+    auto componentSink = [&](const QString &start) -> QString {
+        if (sinkOf.contains(start))
+            return sinkOf.value(start);
+        QList<QString> path{start};
+        QSet<QString> visited{start};
+        QString cur = start;
+        while (raw.contains(cur)) {
+            const QString next = raw.value(cur);
+            if (next == cur)
+                break; // self-alias: already a sink
+            if (visited.contains(next)) {
+                // Cycle among path[idx..end]: deterministic sink.
+                QString best = next;
+                const int idx = path.indexOf(next);
+                for (int i = idx; i < path.size(); ++i)
+                    if (path[i] < best)
+                        best = path[i];
+                cur = best;
+                break;
+            }
+            visited.insert(next);
+            path.append(next);
+            cur = next;
+        }
+        for (const QString &n : std::as_const(path))
+            sinkOf.insert(n, cur);
+        return cur;
+    };
+
+    QHash<QString, QString> out;
+    out.reserve(raw.size());
+    for (auto it = raw.constBegin(); it != raw.constEnd(); ++it) {
+        const QString sink = componentSink(it.key());
+        if (it.key() != sink)
+            out.insert(it.key(), sink);
+    }
+    return out;
+}
+
+} // namespace
+
 // Register metatypes for cross-thread signal/slot.
 const bool engineWorkerMetatypesRegistered = []() {
     qRegisterMetaType<SyncEngineWorker::Request>("SyncEngineWorker::Request");
@@ -3602,6 +3677,56 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
         }, Qt::BlockingQueuedConnection);
     }
 
+    // O56 heal: a store written by the v1.00 crossing defect can hold BOTH
+    // alias directions for one logical record (and one baseline row per id
+    // form). Resolve every native id to its component sink so the join sees
+    // exactly one key per record; dedupe baseline entries that collapse onto
+    // the same sink, preferring the row whose hashes match the CURRENT side
+    // records (a stale row matches neither). In-memory only.
+    idAliases = healedIdAliases(idAliases);
+    if (baselineEntries.size() > 1) {
+        QMultiHash<QString, int> bySink;
+        for (int i = 0; i < baselineEntries.size(); ++i)
+            bySink.insert(resolveIdThroughAliases(idAliases, baselineEntries[i].id), i);
+        for (auto git = bySink.constBegin(); git != bySink.constEnd(); ++git) {
+            const QList<int> group = bySink.values(git.key());
+            if (group.size() < 2)
+                continue;
+            int keep = group.first();
+            for (int idx : group) {
+                const auto &e = baselineEntries[idx];
+                bool curMatches = false;
+                for (const auto &r : std::as_const(sourceRecords))
+                    if (!e.sourceHash.isEmpty() && r.contentHash == e.sourceHash)
+                        curMatches = true;
+                for (const auto &r : std::as_const(targetRecords))
+                    if (!e.targetHash.isEmpty() && r.contentHash == e.targetHash)
+                        curMatches = true;
+                bool keepMatches = false;
+                {
+                    const auto &k = baselineEntries[keep];
+                    for (const auto &r : std::as_const(sourceRecords))
+                        if (!k.sourceHash.isEmpty() && r.contentHash == k.sourceHash)
+                            keepMatches = true;
+                    for (const auto &r : std::as_const(targetRecords))
+                        if (!k.targetHash.isEmpty() && r.contentHash == k.targetHash)
+                            keepMatches = true;
+                }
+                if (curMatches && !keepMatches)
+                    keep = idx;
+            }
+            for (int idx : group)
+                if (idx != keep)
+                    baselineEntries[idx] = {};  // dropped below
+        }
+        QList<Kalburator::Engine::BaselineEntry> consolidated;
+        consolidated.reserve(baselineEntries.size());
+        for (const auto &e : std::as_const(baselineEntries))
+            if (!e.id.isEmpty())
+                consolidated.append(e);
+        baselineEntries = consolidated;
+    }
+
     // --- Diff + merge (pure computation, worker thread) ---
     // Phase N.1: per-record diff via the domain plugin's canonical
     // RecordDiffer. Replaces the Phase Ia.5 batch helper blobBatchDiff.
@@ -3705,6 +3830,7 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // from m_currentRequest to avoid storing them as members).
     m_unifiedDiff     = std::move(engineDiff);
     m_unifiedMerge    = EngineMerge{};
+    m_unifiedIdAliases = idAliases;
     // Bug B (Task 3): per-run accumulator for injected resolutions that were
     // actually applied. Reset alongside m_unifiedMerge — it is the same kind
     // of per-run merge state.
@@ -4133,6 +4259,35 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     const QString mappingId = m_currentRequest.mapping.id;
     const QString srcColId  = m_currentRequest.mapping.sourceCalendar;
     const QString tgtColId  = m_currentRequest.mapping.targetCalendar;
+
+    // O56 (WildPalms followup): if the conflict walk deferred ANY conflict
+    // unresolved (Unmonitored AskUser), apply NOTHING from this diff — not
+    // the deferred record's own ops, and not the sibling toSource/toTarget
+    // ops the walk accumulated on the way past. A run that reports failure
+    // must not have committed data ("no data movement while a conflict is
+    // pending"); previously a phantom delete sharing a diff with a deferred
+    // conflict emptied WildPalms' hub while the conflict went unanswered.
+    // The diff itself is untouched: answered resolutions replay through
+    // pendingResolutions on the next run.
+    if (!m_currentResult.unresolvedConflicts.isEmpty()) {
+        qWarning() << "SyncEngineWorker: holding ALL writes for mapping"
+                   << mappingId << "-"
+                   << m_currentResult.unresolvedConflicts.size()
+                   << "unresolved conflict(s) pending";
+        m_unifiedMerge.finalSource.clear();
+        m_unifiedMerge.finalTarget.clear();
+        m_unifiedMerge.updatedBaselines.clear();
+        m_currentResult.success = false;
+        if (m_currentResult.errorMessage.isEmpty())
+            m_currentResult.errorMessage = QStringLiteral(
+                "%1 unresolved conflict(s); no data was written")
+                    .arg(m_currentResult.unresolvedConflicts.size());
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        m_unifiedDiffer.reset();
+        m_unifiedMerger.reset();
+        emit syncCompleted(mappingId, m_currentResult);
+        return;
+    }
 
     SyncBackendBase *srcBackend = m_registry
         ? m_registry->backendInstance(m_currentRequest.mapping.sourceBackend) : nullptr;
@@ -4594,8 +4749,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             };
             for (const auto &rec : m_unifiedMerge.updatedBaselines) {
                 if (rec.id.isEmpty() || rec.isDeleted) continue;
-                Kalburator::Engine::BaselineEntry e = toSave.value(rec.id);
-                e.id = rec.id;
+                // O56: key the saved baseline at the record's STABLE SINK,
+                // not this batch's requested id. A toSource op carries the
+                // target-space id; keying it verbatim created a SECOND row
+                // for a record whose sink-keyed row already existed — and
+                // pass 2 then split the record across two keys again.
+                const QString sinkId =
+                    resolveIdThroughAliases(m_unifiedIdAliases, rec.id);
+                Kalburator::Engine::BaselineEntry e = toSave.value(sinkId);
+                e.id = sinkId;
                 if (!readBackHash(writtenSourceHash, sourceWriteAliases, rec.id).isEmpty())
                     e.sourceHash = readBackHash(writtenSourceHash, sourceWriteAliases, rec.id);
                 else if (e.sourceHash.isEmpty())
@@ -4604,12 +4766,15 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     e.targetHash = readBackHash(writtenTargetHash, targetWriteAliases, rec.id);
                 else if (e.targetHash.isEmpty())
                     e.targetHash = rec.contentHash;
-                toSave.insert(rec.id, e);
+                toSave.insert(sinkId, e);
             }
-            // O55: persist this run's create aliases (native → canonical,
-            // i.e. assigned-id → requested-id; the baseline rows above are
-            // keyed by the requested form) alongside them, so the NEXT
-            // pass's join resolves both sides onto one logical record.
+            // O56: persist this run's create aliases — but only ones that do
+            // NOT cross the existing anchor. The canonical side is
+            // chain-resolved to its sink first: an alias whose requested id
+            // already resolves to the same sink as the assigned id is a
+            // no-op (the v1.00 defect persisted it anyway and crossed the
+            // map, splitting the next pass's join). In-memory map updated so
+            // later lookups in this function see the accepted rows.
             QList<QPair<QString, QString>> aliasPairs;  // (nativeId, canonicalId)
             for (auto it = targetWriteAliases.constBegin();
                  it != targetWriteAliases.constEnd(); ++it) {
@@ -4619,12 +4784,24 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                  it != sourceWriteAliases.constEnd(); ++it) {
                 aliasPairs.append({it.value(), it.key()});
             }
-            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave, aliasPairs]() {
+            QList<QPair<QString, QString>> acceptedAliasPairs;
+            for (const auto &pair : std::as_const(aliasPairs)) {
+                const QString nativeId    = pair.first;
+                const QString sinkCanonical =
+                    resolveIdThroughAliases(m_unifiedIdAliases, pair.second);
+                if (nativeId == sinkCanonical)
+                    continue;  // already anchored here
+                if (m_unifiedIdAliases.value(nativeId) == sinkCanonical)
+                    continue;  // row already present
+                acceptedAliasPairs.append({nativeId, sinkCanonical});
+                m_unifiedIdAliases.insert(nativeId, sinkCanonical);
+            }
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave, acceptedAliasPairs]() {
                 for (auto it = toSave.constBegin(); it != toSave.constEnd(); ++it) {
                     bbs->setBaselineHashesV4(mappingId, it.value().id,
                                              it.value().sourceHash, it.value().targetHash);
                 }
-                for (const auto &pair : aliasPairs)
+                for (const auto &pair : acceptedAliasPairs)
                     bbs->setIdAlias(mappingId, pair.first, pair.second);
             }, Qt::BlockingQueuedConnection);
         }

@@ -428,6 +428,11 @@ private:
     // Unified-path pause/resume state (valid while m_yieldedForConflict is true).
     EngineDiff m_unifiedDiff;
     EngineMerge m_unifiedMerge;
+    // O56: the mapping's healed alias map (native → sink), loaded at
+    // dispatchSync. The apply/baseline-save path needs it to key saved
+    // baselines at the record's stable sink and to guard new aliases against
+    // crossing the existing anchor.
+    QHash<QString, QString> m_unifiedIdAliases;
     int m_unifiedConflictIdx = 0;
     ConflictResolution m_unifiedPolicy = ConflictResolution::SourceWins;
     ExecutionOverride m_unifiedOverride;

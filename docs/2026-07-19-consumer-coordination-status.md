@@ -14,9 +14,9 @@ at the authoritative doc.
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, released tags **v0.98** / **v0.99**, and **v1.00** (O55 hub record-id aliasing + identity-conflict guard, 2026-08-22 — §2c). |
-| **PlanStan** | **v0.97** | Not yet bumped to v0.98/v0.99 (both additive, no code change forced). Unaffected by O55 (no sqlite-hub endpoints; engine-stable ids everywhere). |
-| **WildPalms** | **v0.97 (stated in its own handoff)** | Filed O55 (2026-08-21, catching up past a dormant pin); **RESOLVED 2026-08-22, shipped in v1.00** (§2c) — needs only a pin bump. |
+| **libkalburator** | — (self) | `main`, released tags **v0.98** / **v0.99** / **v1.00**, and **v1.01** (O56 recategorization followup: anchor-stable aliasing + unresolved-conflict hold, 2026-08-22 — §2c). |
+| **PlanStan** | **v0.97** | Not yet bumped to v0.98+ (all additive, no code change forced). Unaffected by O55/O56 (no sqlite-hub endpoints; engine-stable ids everywhere). Note O56's hold-gate changes Unmonitored AskUser semantics for it too: a run with an unresolved conflict now writes NOTHING (all-or-nothing per mapping). |
+| **WildPalms** | **v1.00 (bumped post-O55)** | Filed the O55 followup (2026-08-22); **RESOLVED same day in v1.01** (§2c) — pin bump only; v1.00-poisoned profiles self-heal. |
 
 **Both consumers pin a recent head tag; no forced bump from v0.98** — all
 conflict-resolution-repair changes are additive (§2b).
@@ -81,12 +81,13 @@ New FINDINGS: **O48, O49, O50 (fixed), O51, O52, O53**.
 
 ---
 
-## 2c. OPEN inbound — updated 2026-08-22 (O54 and O55 both RESOLVED; none open)
+## 2c. OPEN inbound — updated 2026-08-22 (O54, O55, O56 all RESOLVED; none open)
 
 | # | From | Item | Status |
 |---|---|---|---|
 | ~~**O54**~~ | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guessed every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items failed permanently (SabreDAV 400). | **RESOLVED 2026-08-22** (branch `fix/o54-uid-url-assumption`): `m_uidToUrl` cache + `resolveItemUrl()` across all update/delete/read paths, per the recommended fix shape; CardDAV audited clean. Regression test RED→GREEN in `tst_remotecalendarbackend_convergence`. Suite 177/179 (identical pre-existing baseline). Consumers need no code change; bump the pin when convenient. Closure summary: FINDINGS **O54**. |
-| ~~**O55**~~ | WildPalms (handoff, 2026-08-21, catching up past a dormant v0.77 pin) | TwoWay sync between a bare-id backend and the `GenericSqliteBackend` hub churns and empties the hub from pass 2 on — `perRecordDiff()` joins strictly by raw `BackendRecord::id` with no aliasing for the hub's `<collectionId>\x01<origId>` prefix. Regression v0.77→v0.93+, no full bisect. Silent — sync reports success. | **RESOLVED 2026-08-22** (branch `fix/o55-hub-record-id-aliasing`): engine-side id aliasing — `WriteOperation::idAliases()` captured by the default `applyRecords()`, persisted per mapping (`BaselineStore` schema v8 `blob_id_aliases`), resolved in `perRecordDiff()`; plus a fail-loud guard (`EngineDiff::identityConflicts`) that refuses canonically-equal-unjoined-twins instead of cross-creating toward an empty hub. Root cause: v0.77 converged by accident (failed duplicate-INSERT aborted the run pre-destruction); B4 per-side baselines removed the accidental abort. RED→GREEN gate `tst_engine_id_aliasing` (also closes the suite gap — `GenericSqliteBackend` is now a real mapping endpoint). Suite 177/180, identical pre-existing baseline. **No consumer code change; pin bump only.** Profiles already churned by pre-fix runs need one mapping-state clear to recover. Response: `docs/2026-08-22-o55-hub-record-id-aliasing-response.md`; closure: FINDINGS **O55**. |
+| ~~**O55**~~ | WildPalms (handoff, 2026-08-21) | TwoWay sync between a bare-id backend and the `GenericSqliteBackend` hub churns and empties the hub from pass 2 on — `perRecordDiff()` joins strictly by raw `BackendRecord::id`, no aliasing for the hub's `<collectionId>\x01<origId>` prefix. Silent data loss. | **RESOLVED 2026-08-22, shipped v1.00**: engine-side id aliasing (`WriteOperation::idAliases()`, `BaselineStore` schema v8 `blob_id_aliases`, resolved in `perRecordDiff()`), plus `EngineDiff::identityConflicts` fail-loud guard. Root cause: v0.77 converged by accident; B4 removed the accidental abort. RED→GREEN gate `tst_engine_id_aliasing`. Response: `docs/2026-08-22-o55-hub-record-id-aliasing-response.md`; closure: FINDINGS **O55**. |
+| ~~**O56**~~ | WildPalms (followup handoff, 2026-08-22, at v1.00) | Recategorization scenario: after a hub-side edit + back-propagation, pass 2 misjoins again (phantom AskUser conflict with empty error AND phantom delete emptying the hub despite the unresolved conflict). Two defects: alias/baseline anchors crossed per-batch (dual rows, bidirectional aliases); destructive ops applied under an unresolved AskUser conflict. | **RESOLVED 2026-08-22, shipped v1.01** (branch `fix/o55-followup-recategorization`): anchor-stable persisting (chain-resolve to sink; crossings become no-ops; baselines key at sink), load-time heal for v1.00-poisoned stores (cycle-breaking sink resolution + baseline dedup — no manual recovery), and an all-or-nothing hold gate (`unifiedContinueAfterConflicts` writes NOTHING while any AskUser conflict defers unresolved). Three RED→GREEN slots in `tst_engine_id_aliasing`. Suite 180 total / 177 passing, identical pre-existing baseline. Pin bump only; PlanStan sees one behavior change (hold-gate semantics). Response: `docs/2026-08-22-o56-recategorization-followup-response.md`; closure: FINDINGS **O56**. |
 
 ---
 

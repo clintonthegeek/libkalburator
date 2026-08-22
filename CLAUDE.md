@@ -1,5 +1,26 @@
 # libkalburator — Claude instructions
 
+## O56 — RESOLVED 2026-08-22, merged to `main`, tagged v1.01
+
+The WildPalms recategorization followup (FINDINGS **O56**) is fixed — two
+defects behind one handoff: (A) O55's alias/baseline anchors were chosen
+per-batch ("requested id of THIS apply"), so a back-propagation whose op
+carries the hub-space id persisted the CROSSED alias and a SECOND baseline
+row; pass 2 then split the record across two join keys → phantom AskUser
+conflict + phantom delete. Fixed by anchor-stable persisting: aliases and
+baselines chain-resolve to the component SINK before writing; crossings are
+no-ops. Plus a load-time heal (`healedIdAliases()` + baseline dedup) that
+repairs v1.00-poisoned stores in memory every run — **the manual
+mapping-state-clear recovery from O55 is no longer needed**. (B) Destructive
+ops applied while an AskUser conflict deferred unresolved: `unifiedContinueAfterConflicts`
+now holds ALL writes for a mapping with any unresolved conflict
+(all-or-nothing; "N unresolved conflict(s); no data was written"). **PlanStan
+behavior note:** this changes Unmonitored AskUser semantics for it too — a
+run with an unanswered conflict commits nothing until resolutions replay.
+Three RED→GREEN slots in `tst_engine_id_aliasing` (recategorization,
+poisoned-store heal, defer-moves-nothing). Suite 180/177 baseline unchanged.
+Wrap-up: `docs/2026-08-22-o56-recategorization-followup-response.md`.
+
 ## O55 — RESOLVED 2026-08-22, merged to `main`, tagged v1.00
 
 The WildPalms hub record-id join churn (FINDINGS **O55**) is fixed: engine-side

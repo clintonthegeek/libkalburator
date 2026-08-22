@@ -137,6 +137,9 @@ private slots:
     void initTestCase();
     void twoWayBareIdToSqliteHub_convergesWithoutChurn();
     void unjoinedEqualTwins_failLoudlyInsteadOfChurning();
+    void recategorizationViaHubEdit_anchorStaysConsolidated();
+    void poisonedCrossedAliasStore_healsWithoutDataLoss();
+    void unresolvedConflict_deferredMovesNothing();
 
 private:
     Kalburator::Shape::ShapeRegistries m_shape;
@@ -325,6 +328,315 @@ void TestEngineIdAliasing::unjoinedEqualTwins_failLoudlyInsteadOfChurning()
                             + results.first().errorMessage));
 
     // Fail loud, not destructive: both records survive untouched.
+    QCOMPARE(source->loadRecords(collection).size(), 1);
+    QCOMPARE(target->loadRecords(collection).size(), 1);
+}
+
+// The WildPalms O55-followup scenario (their 2026-08-22 recategorization
+// handoff), lib-side: after a converged first sync, the HUB record is edited
+// in place under its prefixed id. Pass 1 of the next sync pushes the change
+// back to the palm — where the backend stores by payload uid, so the write
+// lands under the BARE id and (pre-fix) persisted a CROSSED alias
+// (bare→prefixed) plus a SECOND baseline row keyed prefixed. Pass 2 then
+// misjoined again: a phantom AskUser conflict AND a phantom delete that
+// emptied the hub while reporting failure. With anchor-stable aliasing and
+// baseline sink-keying, both passes converge and exactly ONE baseline row
+// and ONE alias direction ever exist.
+void TestEngineIdAliasing::recategorizationViaHubEdit_anchorStaysConsolidated()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const Shape ical{ DomainId{"calendar"}, EncodingId{"ical"} };
+
+    const QString sourceBackendId  = QStringLiteral("palm-mock");
+    const QString targetBackendId  = QStringLiteral("sqlite-hub");
+    const QString collection       = QStringLiteral("datebook");
+    const QString mappingId        = QStringLiteral("o56-mapping");
+
+    auto source = std::make_unique<MockBackend>(sourceBackendId);
+    auto target = std::make_unique<GenericSqliteBackend>(
+        tmpDir.filePath(QStringLiteral("hub.db")));
+
+    CollectionInfo hubCol;
+    hubCol.id = collection; hubCol.name = collection;
+    hubCol.type = QStringLiteral("calendar");
+    QVERIFY(!target->createCollection(hubCol, ical).isEmpty());
+
+    QVERIFY(!source->createRecord(collection, seedEvent(QString::fromLatin1(kRecordId))).isEmpty());
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(sourceBackendId, source.get());
+    registry.registerBackendInstance(targetBackendId, target.get());
+
+    RegistrySyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+
+    BaselineStore baselines(tmpDir.filePath(QStringLiteral("baselines.db")));
+    engine.setBaselineStore(&baselines);
+
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = sourceBackendId;
+    mapping.sourceCalendar = collection;
+    mapping.targetBackend  = targetBackendId;
+    mapping.targetCalendar = collection;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::SourceWins;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    auto runOnce = [&]() {
+        SyncRequest req;
+        req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+        auto f = engine.runSync(req);
+        (void)QTest::qWaitFor([&]{ return f.isFinished(); }, kSyncTimeoutMs);
+        return f;
+    };
+
+    // --- First sync converges (the O55 gate covers this; here just setup). ---
+    {
+        auto f = runOnce();
+        QVERIFY(f.isFinished());
+        const auto results = f.resultAt(0);
+        QVERIFY2(results.first().success,
+                 qUtf8Printable(QStringLiteral("first sync failed: ")
+                                + results.first().errorMessage));
+        QCOMPARE(target->loadRecords(collection).size(), 1);
+    }
+
+    // encodeRecordId() is private; the format is "<collectionId>\x01<origId>".
+    const QString prefixedId = collection + QChar(u'\x01') + QString::fromLatin1(kRecordId);
+
+    // --- Recategorize by editing the HUB record in place (prefixed id). ---
+    {
+        QList<BackendRecord> hubRecords = target->loadRecords(collection);
+        QCOMPARE(hubRecords.size(), 1);
+        BackendRecord edited = hubRecords.first();
+        QCOMPARE(edited.id, prefixedId);
+        edited.data.replace("O55 fixture", "O55 fixture - Home");
+        edited.contentHash = QString::fromLatin1(
+            QCryptographicHash::hash(edited.data, QCryptographicHash::Sha256).toHex());
+        QVERIFY(target->updateRecord(edited));
+    }
+
+    // --- Pass 1 propagates the edit back to the palm (a create there — the
+    // palm keys by payload uid). Must succeed with zero deletes. ---
+    {
+        auto f = runOnce();
+        QVERIFY(f.isFinished());
+        const auto results = f.resultAt(0);
+        QVERIFY2(results.first().success,
+                 qUtf8Printable(QStringLiteral("pass 1 failed: ")
+                                + results.first().errorMessage));
+        QCOMPARE(results.first().targetStats.deleted, 0);
+        QCOMPARE(results.first().sourceStats.deleted, 0);
+        QCOMPARE(target->loadRecords(collection).size(), 1);
+        QCOMPARE(source->loadRecords(collection).size(), 1);
+    }
+
+    // --- Pass 2 must CONVERGE (the defect made it misjoin into a phantom
+    // conflict + hub delete): zero movement on either side. ---
+    {
+        auto f = runOnce();
+        QVERIFY(f.isFinished());
+        const auto results = f.resultAt(0);
+        QVERIFY2(results.first().success,
+                 qUtf8Printable(QStringLiteral("pass 2 failed: ")
+                                + results.first().errorMessage
+                                + QStringLiteral(" unresolved=")
+                                + QString::number(
+                                      results.first().unresolvedConflicts.size())));
+        QCOMPARE(results.first().targetStats.created, 0);
+        QCOMPARE(results.first().targetStats.deleted, 0);
+        QCOMPARE(results.first().sourceStats.created, 0);
+        QCOMPARE(results.first().sourceStats.deleted, 0);
+        QCOMPARE(target->loadRecords(collection).size(), 1);
+        QCOMPARE(source->loadRecords(collection).size(), 1);
+    }
+
+    // --- Exactly one baseline row and one alias direction, forever. ---
+    const auto rows = baselines.baselineHashesForMappingV4(mappingId);
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().recordId, QString::fromLatin1(kRecordId));
+
+    const auto aliases = baselines.idAliasesForMapping(mappingId);
+    QCOMPARE(aliases.size(), 1);
+    QCOMPARE(aliases.value(prefixedId), QString::fromLatin1(kRecordId));
+}
+
+// A store poisoned by a pre-fix (v1.00) run: crossed aliases BOTH directions
+// and two unconsolidated baseline rows for one logical record — the exact
+// shape of the WildPalms followup's evidence dump. The load-time heal must
+// collapse the component to one join key and dedupe the baselines; the run
+// must not manufacture a conflict or move/delete ANY data.
+void TestEngineIdAliasing::poisonedCrossedAliasStore_healsWithoutDataLoss()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const Shape ical{ DomainId{"calendar"}, EncodingId{"ical"} };
+
+    const QString sourceBackendId  = QStringLiteral("palm-mock");
+    const QString targetBackendId  = QStringLiteral("sqlite-hub");
+    const QString collection       = QStringLiteral("datebook");
+    const QString mappingId        = QStringLiteral("o56-poisoned");
+
+    auto source = std::make_unique<MockBackend>(sourceBackendId);
+    auto target = std::make_unique<GenericSqliteBackend>(
+        tmpDir.filePath(QStringLiteral("hub.db")));
+
+    CollectionInfo hubCol;
+    hubCol.id = collection; hubCol.name = collection;
+    hubCol.type = QStringLiteral("calendar");
+    QVERIFY(!target->createCollection(hubCol, ical).isEmpty());
+
+    // Both sides hold the SAME logical record under their own id forms.
+    QVERIFY(!source->createRecord(collection, seedEvent(QString::fromLatin1(kRecordId))).isEmpty());
+    const QList<BackendRecord> onPalm = source->loadRecords(collection);
+    QCOMPARE(onPalm.size(), 1);
+    QVERIFY(!target->createRecord(collection, onPalm.first()).isEmpty());
+
+    const QString bareId     = QString::fromLatin1(kRecordId);
+    const QString prefixedId = collection + QChar(u'\x01') + bareId;
+
+    // Realistic side hashes (the v1.00 poison carried each side's ACTUAL
+    // read-back hash on its row — the rows were real, only the anchors were
+    // crossed).
+    const QString palmHash = source->loadRecords(collection).first().contentHash;
+    const QString hubHash  = target->loadRecords(collection).first().contentHash;
+
+    BaselineStore baselines(tmpDir.filePath(QStringLiteral("baselines.db")));
+
+    // Poison exactly like the v1.00 defect left it: stale symmetric row +
+    // fresh per-side row keyed at the OTHER id form + crossed aliases.
+    QVERIFY(baselines.setBaselineHashesV4(mappingId, bareId,
+                                          QStringLiteral("deadbeef"),
+                                          QStringLiteral("deadbeef")));
+    QVERIFY(baselines.setBaselineHashesV4(mappingId, prefixedId, palmHash, hubHash));
+    QVERIFY(baselines.setIdAlias(mappingId, prefixedId, bareId));
+    QVERIFY(baselines.setIdAlias(mappingId, bareId, prefixedId));
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(sourceBackendId, source.get());
+    registry.registerBackendInstance(targetBackendId, target.get());
+
+    RegistrySyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = sourceBackendId;
+    mapping.sourceCalendar = collection;
+    mapping.targetBackend  = targetBackendId;
+    mapping.targetCalendar = collection;
+    // AskUser + Unmonitored: any manufactured conflict defers unresolved —
+    // and NOTHING may move while it pends.
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::AskUser;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto f = engine.runSync(req);
+    (void)QTest::qWaitFor([&]{ return f.isFinished(); }, kSyncTimeoutMs);
+    QVERIFY(f.isFinished());
+
+    // The heal collapses the crossed component onto one sink key and dedupes
+    // the baseline rows (the fresh row matches both sides' current hashes).
+    // The run must therefore CONVERGE — no manufactured conflict, no
+    // phantom delete, zero movement.
+    const auto results = f.resultAt(0);
+    QVERIFY2(results.first().success,
+             qUtf8Printable(QStringLiteral("healed run failed: ")
+                            + results.first().errorMessage));
+    QCOMPARE(results.first().unresolvedConflicts.size(), 0);
+    QCOMPARE(results.first().targetStats.created, 0);
+    QCOMPARE(results.first().targetStats.deleted, 0);
+    QCOMPARE(results.first().sourceStats.created, 0);
+    QCOMPARE(results.first().sourceStats.deleted, 0);
+    QCOMPARE(source->loadRecords(collection).size(), 1);
+    QCOMPARE(target->loadRecords(collection).size(), 1);
+}
+
+// WildPalms followup ask #2, as a standing contract: when an Unmonitored
+// AskUser conflict defers unresolved, NOTHING moves — no write, and above
+// all no destructive op — even though the walk's non-conflict bookkeeping
+// has already accumulated. The record stays on both sides; the run reports
+// failure honestly.
+void TestEngineIdAliasing::unresolvedConflict_deferredMovesNothing()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+
+    const Shape ical{ DomainId{"calendar"}, EncodingId{"ical"} };
+
+    const QString sourceBackendId  = QStringLiteral("palm-mock");
+    const QString targetBackendId  = QStringLiteral("sqlite-hub");
+    const QString collection       = QStringLiteral("datebook");
+    const QString mappingId        = QStringLiteral("o56-deferred");
+
+    auto source = std::make_unique<MockBackend>(sourceBackendId);
+    auto target = std::make_unique<GenericSqliteBackend>(
+        tmpDir.filePath(QStringLiteral("hub.db")));
+
+    CollectionInfo hubCol;
+    hubCol.id = collection; hubCol.name = collection;
+    hubCol.type = QStringLiteral("calendar");
+    QVERIFY(!target->createCollection(hubCol, ical).isEmpty());
+
+    QVERIFY(!source->createRecord(collection, seedEvent(QString::fromLatin1(kRecordId))).isEmpty());
+    const QList<BackendRecord> onPalm = source->loadRecords(collection);
+    QCOMPARE(onPalm.size(), 1);
+    QVERIFY(!target->createRecord(collection, onPalm.first()).isEmpty());
+
+    BaselineStore baselines(tmpDir.filePath(QStringLiteral("baselines.db")));
+    // A garbage baseline makes BOTH sides read as modified vs baseline — a
+    // genuine BothModified for AskUser to defer (same id on both sides here,
+    // so this isolates the defer semantics from any aliasing).
+    QVERIFY(baselines.setBaselineHashesV4(mappingId, QString::fromLatin1(kRecordId),
+                                          QStringLiteral("garbage"),
+                                          QStringLiteral("garbage")));
+
+    BackendRegistry registry;
+    registry.registerBackendInstance(sourceBackendId, source.get());
+    registry.registerBackendInstance(targetBackendId, target.get());
+
+    RegistrySyncHost host(&registry);
+    SyncEngine engine(&registry, &host, m_shape);
+    engine.setBaselineStore(&baselines);
+
+    SyncMapping mapping;
+    mapping.id             = mappingId;
+    mapping.sourceBackend  = sourceBackendId;
+    mapping.sourceCalendar = collection;
+    mapping.targetBackend  = targetBackendId;
+    mapping.targetCalendar = collection;
+    mapping.mode           = SyncMode::TwoWay;
+    mapping.conflictPolicy = ConflictResolution::AskUser;
+    mapping.enabled        = true;
+    engine.setSyncMappings({ mapping });
+
+    SyncRequest req;
+    req.behavior = SyncEngine::SyncBehavior::Unmonitored;
+    auto f = engine.runSync(req);
+    (void)QTest::qWaitFor([&]{ return f.isFinished(); }, kSyncTimeoutMs);
+    QVERIFY(f.isFinished());
+
+    const auto results = f.resultAt(0);
+    QVERIFY2(!results.first().success,
+             "a deferred AskUser conflict must fail the run");
+    QCOMPARE(results.first().unresolvedConflicts.size(), 1);
+
+    // Nothing moved — in particular nothing was deleted.
+    QCOMPARE(results.first().targetStats.created, 0);
+    QCOMPARE(results.first().targetStats.updated, 0);
+    QCOMPARE(results.first().targetStats.deleted, 0);
+    QCOMPARE(results.first().sourceStats.created, 0);
+    QCOMPARE(results.first().sourceStats.updated, 0);
+    QCOMPARE(results.first().sourceStats.deleted, 0);
     QCOMPARE(source->loadRecords(collection).size(), 1);
     QCOMPARE(target->loadRecords(collection).size(), 1);
 }

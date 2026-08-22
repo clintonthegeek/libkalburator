@@ -2450,3 +2450,57 @@ this commit — Radicale live-state, same family as the first).
 **Consumer impact:** PlanStan unaffected (no `GenericSqliteBackend`
 endpoints; all its backends present engine-stable ids). WildPalms needs only
 a pin bump; its two failing runtime tests should pass unmodified.
+
+### O56 — RESOLVED 2026-08-22 — recategorization churn at v1.00: alias/baseline anchors crossed per-batch, and destructive ops applied under an unresolved AskUser conflict (WildPalms followup handoff, 2026-08-22)
+
+**Resolved** on branch `fix/o55-followup-recategorization`. Full response:
+`docs/2026-08-22-o56-recategorization-followup-response.md`. Original:
+`~/dev/WildPalms/docs/2026-08-22-libkalburator-o55-followup-recategorization-handoff.md`.
+O55's aliasing worked for first-sync convergence but two defects remained:
+
+**Defect A — the canonical anchor was chosen per batch, not per record.**
+The anchor was "the requested id of THIS apply": a target-side create
+anchors canonical=bare (`prefixed→bare` alias, baseline keyed bare); a later
+back-propagation whose op carries the target-space id anchors
+canonical=prefixed — persisting the CROSSED alias (`bare→prefixed`) and a
+SECOND baseline row keyed prefixed. With the map pointing both directions,
+`joinKey()` resolved source and target onto DIFFERENT keys; the diff split
+one logical record into a phantom empty-target Conflict plus a phantom
+Delete of the hub row. Exactly the evidence dump in WP's handoff (dual
+baseline rows, asymmetric hashes, bidirectional aliases).
+
+Fixes: (1) **persist-time anchor stability** — alias persistence and
+baseline saves chain-resolve the canonical side to its component SINK first;
+a candidate alias whose requested id already resolves to the assigned id's
+sink is a no-op (the crossing row is never written), and baselines always
+overwrite the single sink-keyed row. (2) **load-time heal** for stores
+already poisoned by v1.00 runs — `healedIdAliases()` resolves every native
+id to its component sink with deterministic cycle-breaking
+(lexicographically smallest member), and baseline entries collapsing onto
+one sink are deduped preferring the row whose hashes match the current side
+records. In-memory only; fresh profiles never need it.
+
+**Defect B — data movement under an unresolved conflict.** The phantom
+Delete was not a Conflict op, so `unifiedHandleConflicts` accumulated and
+applied it in-line while the same logical record's AskUser conflict deferred
+unresolved (hub emptied, run reports failure). Worse, the TO-SOURCE ops are
+accumulated BEFORE the walk even runs, so sibling writes also landed under
+an unanswered conflict. Fix: `unifiedContinueAfterConflicts` now holds ALL
+writes when any unresolved conflict remains — clears the merge lists and
+completes with `success=false`, message "N unresolved conflict(s); no data
+was written". Answered resolutions still replay via pendingResolutions on
+the next run (suite-verified: the v0.98 resolution-injection contracts stay
+green). Decided NOT changed: unrelated records' ops are held too — an
+all-or-nothing rule per mapping-run; throughput cost accepted for the
+invariant "a failed run committed nothing".
+
+Both defects were RED→GREEN gated in `tst_engine_id_aliasing`:
+`recategorizationViaHubEdit_anchorStaysConsolidated` (WP's scenario lib-side:
+hub-edit → back-prop create on the bare-id peer → pass 2 must converge with
+exactly one baseline row and one alias direction),
+`poisonedCrossedAliasStore_healsWithoutDataLoss` (v1.00-poisoned store:
+crossed aliases + dual rows → heals, converges, zero movement), and
+`unresolvedConflict_deferredMovesNothing` (standing contract for defect B).
+Suite 180 total, 177 passing — identical pre-existing baseline. Consumers:
+pin bump only; v1.00-poisoned profiles recover WITHOUT manual clearing now
+(the load-time heal handles them).
