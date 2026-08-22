@@ -2317,3 +2317,45 @@ call sites, not all necessarily broken — each needs individual
 create-vs-update judgment), the recommended `m_uidToUrl` fix shape, and
 why the conflict-resolution test suite couldn't have caught it
 (`MockBackend` has no URL concept at all) are all in the linked doc.
+
+### O55 — OPEN, non-blocking — TwoWay sync churns and empties the hub when backend record-id namespaces differ (WildPalms handoff, 2026-08-21, regression v0.77 → v0.97)
+
+**Not investigated. Read the full writeup first —
+`~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md`
+— this entry is a pointer, not the full analysis.** WildPalms was dormant
+for months and filed this while catching up past the v0.77 pin it last
+tested against. Independent of O54 and the conflict-resolution campaign —
+no code-path overlap. **User has said this can wait; just needs to stay
+tracked for follow-up.**
+
+Any TwoWay mapping between a backend using bare record ids and the
+`GenericSqliteBackend` hub (which returns ids prefixed
+`<collectionId>\x01<origId>` on read) fails to converge:
+`perRecordDiff()` (`src/engine/perrecorddiff.cpp`) joins source/target/
+baseline strictly by raw `BackendRecord::id`, with no id-aliasing step.
+Pass 1 writes into the hub fine; from pass 2 on, the same logical record's
+two id forms (bare vs. hub-prefixed) look like "created on one side,
+deleted on the other" and the fixpoint loop (`kMaxSyncPasses`) churns
+until it empties the hub table. No error is reported — sync claims
+success while silently losing the data.
+
+Confirmed regression: passes at WP `007f4a7` + lib `v0.77`, fails at lib
+`v0.93+` (WP narrowed the window empirically to roughly `9e6dadf~1`
+(clean) → `db3f317` (failing, the `createBackends()`-contract commit) but
+did not complete a full bisect). Reproduces without Palm hardware — any
+bare-id backend TwoWay-mapped to `GenericSqliteBackend` twice.
+
+**Why our suite missed it**: the lib's own engine tests
+(`tst_engine_fixpoint_passes`, `tst_engine_skip_unchanged`,
+`tst_engine_skip_invalidation`) use mock backends on both sides of every
+mapping — `GenericSqliteBackend` is never a real mapping endpoint in our
+suite, so its id-prefixing behavior colliding with a bare-id peer is
+uncovered.
+
+WildPalms proposes three directions (their doc has full detail): (1)
+engine-side id aliasing — record the (source-id → returned-id) pair on
+Create and join on it in later passes, their recommended option; (2) drop
+the hub's read-side prefix (id-collision risk across collections, likely
+why it exists); (3) declare cross-backend engine-stable ids a hard
+contract and fix `GenericSqliteBackend` to honor it. No lib-side decision
+made yet.

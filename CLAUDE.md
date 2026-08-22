@@ -30,13 +30,17 @@ at the library's default concurrency of 1, bit-identical to before. The
 single "where do the three
 repos stand" page is **`docs/2026-07-19-consumer-coordination-status.md`** —
 consult it (and update it) whenever a consumer files an RFC/handoff, an inbound
-item resolves, or a pin moves. **Open inbound items** (both low-severity,
-non-blocking; logged in `docs/campaign/FINDINGS.md`): **O46** — surface the
-read-only write-skip in `SyncResult` (WildPalms RFC 2026-07-18); **O47** —
-`MockBlobBackend` never computes `contentHash`, manufacturing spurious conflicts
-post-v0.93 (WildPalms handoff 2026-07-19). Ready to close: **WP-A1 calendarsOnly**
-(both consumers signed off 2026-07-18 — flip the `MultiProtocolDavProvider` ctor
-default to `false`). Historical note: the **calendar per-kind VTODO/VJOURNAL
+item resolves, or a pin moves. **Open inbound items** (logged in
+`docs/campaign/FINDINGS.md`, full index in §2c of the status page): **O54**
+— CRITICAL, urgent — `RemoteCalendarBackend` guesses every item's write URL
+as `<calendar>/<uid>.ics`, false for any item another CalDAV client created;
+first edit-and-sync of an adopted calendar's pre-existing items fails
+permanently (PlanStan, live session 2026-08-21 — see the top of this file);
+**O55** — non-blocking, can wait — TwoWay sync between a bare-id backend and
+the `GenericSqliteBackend` hub churns and silently empties the hub from pass
+2 on, regression v0.77→v0.93+ (WildPalms handoff 2026-08-21, catching up past
+a dormant pin). O46, O47, and **WP-A1 calendarsOnly** are all resolved/closed
+(§3 of the status page). Historical note: the **calendar per-kind VTODO/VJOURNAL
 canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).

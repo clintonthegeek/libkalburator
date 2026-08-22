@@ -82,6 +82,15 @@ New FINDINGS: **O48, O49, O50 (fixed), O51, O52, O53**.
 
 ---
 
+## 2c. OPEN inbound — 2026-08-21
+
+| # | From | Item | Status |
+|---|---|---|---|
+| **O54** | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guesses every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items fails permanently (SabreDAV 400). **CRITICAL, urgent** — no conflict needed to trigger, close to "the first real edit a new user makes will fail." | OPEN, not yet fixed. Full writeup: `docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`. **Filed as the first item the next session must read and fix** (see `CLAUDE.md` top). |
+| **O55** | WildPalms (handoff, 2026-08-21, catching up past a dormant v0.77 pin) | TwoWay sync between a bare-id backend and the `GenericSqliteBackend` hub churns and empties the hub from pass 2 on — `perRecordDiff()` joins strictly by raw `BackendRecord::id` with no aliasing for the hub's `<collectionId>\x01<origId>` prefix. Regression v0.77→v0.93+, no full bisect yet. Silent — sync reports success. | OPEN, non-blocking, **can wait** — WildPalms itself is not currently in active development. Full writeup: `~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md`. Tracked as FINDINGS **O55**. |
+
+---
+
 ## 3. Inbound items — ALL RESOLVED 2026-07-19 (branch `feature/consumer-rfcs-o46-o47-wpa1`)
 
 None were release blockers; all were honest-reporting / test-double gaps.
