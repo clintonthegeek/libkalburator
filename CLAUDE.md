@@ -1,17 +1,19 @@
 # libkalburator — Claude instructions
 
-## 🚨 READ THIS FIRST — critical open bug, not yet fixed (filed 2026-08-21)
+## O54 — RESOLVED 2026-08-22 (was the critical open bug filed 2026-08-21)
 
-`RemoteCalendarBackend` assumes every item's server URL is
-`<calendar>/<uid>.ics`. False for any item created by another CalDAV
-client (which keeps its original server-assigned filename forever) — the
-first edit-and-sync of such an item fails permanently with a SabreDAV
-"uid already exists" 400. No conflict needed to trigger it; this is more
-severe than anything the conflict-resolution-repair work below fixed, and
-unrelated to it. **Fix this before anything else.** Full analysis, exact
-root-cause location, live confirmation, and the recommended fix shape:
-`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`
-(also logged as `docs/campaign/FINDINGS.md` **O54**).
+The `RemoteCalendarBackend` `<calendar>/<uid>.ics` URL-assumption bug
+(FINDINGS **O54**) is fixed on branch `fix/o54-uid-url-assumption`: a
+`m_uidToUrl` cache populated wherever an item's real server URL meets its
+parsed UID, resolved via `resolveItemUrl()` on every update/delete/read
+path (create-only paths deliberately keep the guess). Regression test
+RED→GREEN in `tst_remotecalendarbackend_convergence`; CardDAV
+(`RemoteContactsBackend`) audited clean — it already stores real hrefs.
+Suite 177/179, identical pre-existing baseline. Still explicitly USER-RUN:
+live verification against a real CalDAV account. Closure summary in
+`docs/campaign/FINDINGS.md` **O54**; original analysis (status header
+updated) at
+`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`.
 
 ---
 
@@ -20,7 +22,7 @@ standalone project shared with Wild Palms. The source of truth for the
 overall plan lives in PlanStan at
 `~/dev/PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md`.
 
-## Consumer coordination — cross-repo status index (updated 2026-08-21)
+## Consumer coordination — cross-repo status index (updated 2026-08-22)
 
 Current release **v0.97**, on `main` (the parallel-sync campaign merged
 2026-08-21 — see below). PlanStan pins **v0.97**. WildPalms is still on an
@@ -31,16 +33,13 @@ single "where do the three
 repos stand" page is **`docs/2026-07-19-consumer-coordination-status.md`** —
 consult it (and update it) whenever a consumer files an RFC/handoff, an inbound
 item resolves, or a pin moves. **Open inbound items** (logged in
-`docs/campaign/FINDINGS.md`, full index in §2c of the status page): **O54**
-— CRITICAL, urgent — `RemoteCalendarBackend` guesses every item's write URL
-as `<calendar>/<uid>.ics`, false for any item another CalDAV client created;
-first edit-and-sync of an adopted calendar's pre-existing items fails
-permanently (PlanStan, live session 2026-08-21 — see the top of this file);
-**O55** — non-blocking, can wait — TwoWay sync between a bare-id backend and
-the `GenericSqliteBackend` hub churns and silently empties the hub from pass
+`docs/campaign/FINDINGS.md`, full index in §2c of the status page):
+**O55** — non-blocking, can wait — TwoWay sync between a bare-id backend
+and the `GenericSqliteBackend` hub churns and silently empties the hub from pass
 2 on, regression v0.77→v0.93+ (WildPalms handoff 2026-08-21, catching up past
-a dormant pin). O46, O47, and **WP-A1 calendarsOnly** are all resolved/closed
-(§3 of the status page). Historical note: the **calendar per-kind VTODO/VJOURNAL
+a dormant pin). O54, O46, O47, and **WP-A1 calendarsOnly** are all
+resolved/closed (§2c/§3 of the status page). Historical note: the
+**calendar per-kind VTODO/VJOURNAL
 canon dispatch** shipped as **v0.80** (spec/plan under
 `docs/superpowers/{specs,plans}/2026-06-28-calendar-per-kind-canon-dispatch*`;
 resolved the 2026-06-28 PlanStan handoff).

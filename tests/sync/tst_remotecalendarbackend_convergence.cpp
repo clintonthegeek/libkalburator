@@ -53,6 +53,23 @@ bool waitForFutureBool(QFuture<bool> f, int timeoutMs = 5000)
     return doneSpy.wait(timeoutMs);
 }
 
+// O54: a minimal VEVENT blob with a caller-fixed UID (the live bug report's
+// item: uid 8fecdc8c-… living at server-assigned filename 1755247320.R237.ics).
+QByteArray aliasedEventIcs(const QString &uid, const QString &summary)
+{
+    return QString(QStringLiteral(
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//test//test//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:%1\r\n"
+        "SUMMARY:%2\r\n"
+        "DTSTART:20260821T100000Z\r\n"
+        "DTEND:20260821T110000Z\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n")).arg(uid, summary).toUtf8();
+}
+
 // A known-domain lookup against createBackends(). Task 2.1: CalDavProvider
 // now emits exactly one spec for the whole account (domainId "cal");
 // MultiProtocolDavProvider (Task 2.2, not yet collapsed) still emits one
@@ -115,6 +132,11 @@ private slots:
     void unprimed_loadCalendars_falls_back_to_network_propfind();
     void content_cache_filename_is_deterministic_and_honors_setCacheDir();
     void cancellation_during_unprimed_fallback_leaves_cache_intact();
+
+    // O54 — an item another CalDAV client created keeps its own server
+    // filename forever; editing it must PUT to the discovered URL, not a
+    // freshly-guessed "<calendar>/<uid>.ics" (which 400s on SabreDAV).
+    void o54_edit_of_adopted_item_writes_to_its_discovered_url();
 };
 
 void TstRemoteCalendarBackendConvergence::primed_loadCalendars_issues_zero_additional_propfinds()
@@ -387,6 +409,78 @@ void TstRemoteCalendarBackendConvergence::cancellation_during_unprimed_fallback_
     QVERIFY(verifyOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(verifyOp->isFinished(), 8000);
     QCOMPARE(verifyOp->state(), SyncOperation::Succeeded);
+}
+
+void TstRemoteCalendarBackendConvergence::o54_edit_of_adopted_item_writes_to_its_discovered_url()
+{
+    const QString uid = QStringLiteral("8fecdc8c-cf00-4b74-b2dc-f6d84790b74d");
+    const QString aliasedFileName = QStringLiteral("1755247320.R237");
+    const QString collectionHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString aliasedPath = collectionHref + aliasedFileName + QStringLiteral(".ics");
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("Personal"), collectionHref}});
+    // The item another client created: UID and filename diverge.
+    server.setSeedEventAt(collectionHref, aliasedFileName,
+                          aliasedEventIcs(uid, QStringLiteral("copy paylor vid tovhs")));
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("Personal"),
+                                server.baseUrl().toString() + collectionHref.mid(1));
+
+    // 1. Fetch once — this is where the item's real URL becomes known.
+    FetchOperation *fetch = backend.fetchItems(QStringLiteral("Personal"));
+    QVERIFY(fetch != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(fetch->isFinished(), 8000);
+    QCOMPARE(fetch->state(), SyncOperation::Succeeded);
+
+    bool foundUid = false;
+    for (const auto &incidence : fetch->fetchedItems()) {
+        if (incidence && incidence->uid() == uid) foundUid = true;
+    }
+    QVERIFY(foundUid);
+
+    // 2. Edit it through setRawIcsAsync — the exact write site the live
+    //    PlanStan session hit (PUT -> SabreDAV "uid already exists" 400).
+    bool writeOk = false;
+    bool writeSettled = false;
+    backend.setRawIcsAsync(QStringLiteral("Personal"), uid,
+                           aliasedEventIcs(uid, QStringLiteral("copy paylor vid tovhs (edited)")),
+                           [&writeOk, &writeSettled](bool ok) {
+                               writeOk = ok;
+                               writeSettled = true;
+                           });
+    QTRY_VERIFY_WITH_TIMEOUT(writeSettled, 8000);
+    QVERIFY(writeOk);
+
+    // The PUT must have landed on the item's ORIGINAL discovered URL.
+    const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
+    QCOMPARE(putPaths.size(), 1);
+    QCOMPARE(putPaths.first(), aliasedPath);
+    QVERIFY(server.hasEvent(collectionHref, uid));
+    const QList<QByteArray> stored = server.storedEvents(collectionHref);
+    QCOMPARE(stored.size(), 1);
+    QVERIFY(stored.first().contains("(edited)"));
+
+    // 3. Same edit shape through the blob-record path (updateRecord ->
+    //    findOwningCalendar -> setRawIcs) — the engine's steady-state route
+    //    must resolve the adopted item's calendar AND its real URL too.
+    BackendRecord rec;
+    rec.id = uid;
+    rec.data = aliasedEventIcs(uid, QStringLiteral("copy paylor vid tovhs (edited twice)"));
+    QVERIFY(backend.updateRecord(rec));
+
+    const QStringList putPathsAfterSecond = server.requestPaths(QByteArrayLiteral("PUT"));
+    QCOMPARE(putPathsAfterSecond.size(), 2);
+    QCOMPARE(putPathsAfterSecond.last(), aliasedPath);
+    QVERIFY(server.storedEvents(collectionHref).first().contains("(edited twice)"));
 }
 
 QTEST_GUILESS_MAIN(TstRemoteCalendarBackendConvergence)

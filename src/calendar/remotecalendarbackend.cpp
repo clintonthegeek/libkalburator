@@ -833,6 +833,18 @@ QUrl RemoteCalendarBackend::generateItemUrl(const KDAV::DavUrl &davUrl, const QS
     return url;
 }
 
+// O54: prefer the URL the server itself reported for this uid; only guess
+// "<uid>.ics" for a uid this instance has never seen on the server (a
+// genuine create, where the guess is correct by definition).
+QUrl RemoteCalendarBackend::resolveItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const
+{
+    const auto it = m_uidToUrl.constFind(itemUid);
+    if (it != m_uidToUrl.constEnd()) {
+        return QUrl(it.value());
+    }
+    return generateItemUrl(davUrl, itemUid);
+}
+
 // Normalize a URL for use as a cache key (removes credentials)
 QString RemoteCalendarBackend::normalizeUrlKey(const QString &urlString)
 {
@@ -1312,7 +1324,7 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
 
     KDAV::DavUrl davUrl = *davUrlFor(calId);
 
-    QUrl itemUrl = generateItemUrl(davUrl, itemUid);
+    QUrl itemUrl = resolveItemUrl(davUrl, itemUid);
     KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
 
     QString oldEtag = cachedEtag(itemUrl.toString());
@@ -1331,7 +1343,7 @@ void RemoteCalendarBackend::removeItem(const QString &calId, const QString &item
             return;
         }
 
-        noteItemErased(normalizeUrlKey(itemUrl.toString()));
+        noteItemErased(normalizeUrlKey(itemUrl.toString()), itemUid);
 
         qDebug() << "RemoteCalendarBackend::removeItem: Deleted incidence UID:" << itemUid << "from calendar" << calId;
 
@@ -1462,7 +1474,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
             const auto createdItem = createJob->item();
             const QString remoteUrl = normalizeUrlKey(createdItem.url().url().toString());
             noteItemWritten(remoteUrl, createdItem.etag(),
-                            QString::fromUtf8(icalFromIncidence(inc)));
+                            QString::fromUtf8(icalFromIncidence(inc)), inc->uid());
             emit itemLoaded(calendar, inc, createdItem.etag());
             checkDone();
         });
@@ -1475,12 +1487,14 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
     }
 
     // Launch update jobs (modify with the cached ETag; 412 retries as force).
+    // O54: the etag lookup and the modify itself must address the item's
+    // real URL, not a uid-derived guess.
     for (const auto &inc : stagedUpdates) {
         if (!inc) {
             checkDone();
             continue;
         }
-        const QString etag = cachedEtag(generateItemUrl(baseDavUrl, inc->uid()).toString());
+        const QString etag = cachedEtag(resolveItemUrl(baseDavUrl, inc->uid()).toString());
         launchStartSyncModify(calId, calendar, inc, etag,
                               /*retryOn412=*/true, checkDone);
     }
@@ -1490,7 +1504,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
         const QString &uid = it.key();
 
         KDAV::DavItem davItem;
-        davItem.setUrl(KDAV::DavUrl(generateItemUrl(baseDavUrl, uid),
+        davItem.setUrl(KDAV::DavUrl(resolveItemUrl(baseDavUrl, uid),
                                     baseDavUrl.protocol()));
         davItem.setContentType(QStringLiteral("text/calendar"));
         davItem.setData(QByteArray());
@@ -1508,7 +1522,7 @@ void RemoteCalendarBackend::startSync(const QString &collectionId,
                     }
 
                     qDebug() << "Delete job succeeded for" << uid;
-                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                    noteItemErased(normalizeUrlKey(itemUrl.toString()), uid);
                     emit itemRemoved(calId, uid);
                     checkDone();
                 });
@@ -1528,7 +1542,7 @@ void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
 {
     const KDAV::DavUrl base = davUrlFor(calId).value_or(KDAV::DavUrl());
     KDAV::DavItem davItem;
-    davItem.setUrl(KDAV::DavUrl(generateItemUrl(base, inc->uid()),
+    davItem.setUrl(KDAV::DavUrl(resolveItemUrl(base, inc->uid()),
                                 base.protocol()));
     davItem.setContentType(QStringLiteral("text/calendar"));
     davItem.setData(icalFromIncidence(inc));
@@ -1559,7 +1573,7 @@ void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
                 const auto updatedItem = modifyJob->item();
                 const QString url = normalizeUrlKey(updatedItem.url().url().toString());
                 noteItemWritten(url, updatedItem.etag(),
-                                QString::fromUtf8(icalFromIncidence(inc)));
+                                QString::fromUtf8(icalFromIncidence(inc)), inc->uid());
                 emit itemLoaded(calendar, inc, updatedItem.etag());
                 checkDone();
             });
@@ -1572,7 +1586,8 @@ void RemoteCalendarBackend::launchStartSyncModify(const QString &calId,
 }
 
 void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString &etag,
-                                            const QString &icalData)
+                                            const QString &icalData,
+                                            const QString &itemUid)
 {
     if (etag.isEmpty()) {
         return;
@@ -1582,15 +1597,34 @@ void RemoteCalendarBackend::noteItemWritten(const QString &urlKey, const QString
     }
     m_localEtags[urlKey] = etag;
     m_contentCache->store(urlKey, etag, icalData);
+    // O54: this write just established where the uid really lives.
+    if (!itemUid.isEmpty()) {
+        m_uidToUrl.insert(itemUid, urlKey);
+    }
 }
 
-void RemoteCalendarBackend::noteItemErased(const QString &urlKey)
+void RemoteCalendarBackend::noteItemErased(const QString &urlKey,
+                                           const QString &itemUid)
 {
     if (m_etagCache) {
         m_etagCache->removeEtag(urlKey);
     }
     m_localEtags.remove(urlKey);
     m_contentCache->remove(urlKey);
+    // O54: forget where the deleted uid lived. Delete paths that know the
+    // uid pass it; the rest (tombstone hrefs, deleted-item listings) evict
+    // by matching URL.
+    if (!itemUid.isEmpty()) {
+        m_uidToUrl.remove(itemUid);
+    } else {
+        for (auto it = m_uidToUrl.begin(); it != m_uidToUrl.end();) {
+            if (it.value() == urlKey) {
+                it = m_uidToUrl.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 }
 
 
@@ -1868,6 +1902,8 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
             // Phase B5: remember the verbatim bytes this incidence came
             // from — see m_lastRawIcsByUid's doc comment.
             m_lastRawIcsByUid[incidence->uid()] = row.ical.toUtf8();
+            // O54: the cache row's URL is the item's real server URL.
+            m_uidToUrl.insert(incidence->uid(), normalizeUrlKey(row.url));
             cachedIncidences.append(incidence);
         }
     }
@@ -2197,6 +2233,9 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
                     // Phase B5: remember the verbatim bytes — see
                     // m_lastRawIcsByUid's doc comment.
                     m_lastRawIcsByUid[incidence->uid()] = cachedIcal.toUtf8();
+                    // O54: the listing's URL is the item's real server URL,
+                    // even when the content itself came from the cache.
+                    m_uidToUrl.insert(incidence->uid(), urlKey);
                     fetchedIncidences.append(incidence);
                 }
 
@@ -2408,6 +2447,9 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
             // from (network response or cache) — see m_lastRawIcsByUid's
             // doc comment.
             m_lastRawIcsByUid[incidence->uid()] = icalData.toUtf8();
+            // O54: urlKey IS the item's real, correct URL, straight from
+            // the server's own listing — record it instead of discarding it.
+            m_uidToUrl.insert(incidence->uid(), urlKey);
             fetchedIncidences.append(incidence);
         }
 
@@ -2823,7 +2865,7 @@ PushOperation* RemoteCalendarBackend::pushItems(const QString &calendarId,
                 } else {
                     const KDAV::DavItem createdItem = createJob->item();
                     noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
-                                    createdItem.etag(), icalData);
+                                    createdItem.etag(), icalData, uid);
                     op->addSucceededUid(uid);
                     qDebug() << "RemoteCalendarBackend::pushItems: Created" << uid << "ETag:" << createdItem.etag();
                 }
@@ -2892,7 +2934,8 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
         };
 
         for (const QString &uid : uids) {
-            QUrl itemUrl = generateItemUrl(davUrl, uid);
+            // O54: delete at the item's real server URL, not a uid guess.
+            QUrl itemUrl = resolveItemUrl(davUrl, uid);
             KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
 
             QString oldEtag = cachedEtag(itemUrl.toString());
@@ -2916,7 +2959,7 @@ DeleteOperation* RemoteCalendarBackend::deleteItems(const QString &calendarId,
                     op->addFailedUid(uid);
                     *anyError = true;
                 } else {
-                    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                    noteItemErased(normalizeUrlKey(itemUrl.toString()), uid);
                     op->addSucceededUid(uid);
                     qDebug() << "RemoteCalendarBackend::deleteItems: Deleted" << uid;
                 }
@@ -3086,7 +3129,7 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
                     } else {
                         const KDAV::DavItem createdItem = createJob->item();
                         noteItemWritten(normalizeUrlKey(createdItem.url().url().toString()),
-                                        createdItem.etag(), QString::fromUtf8(icalData));
+                                        createdItem.etag(), QString::fromUtf8(icalData), uid);
                         opWeak->addSucceededUid(uid);
                         qDebug() << "RemoteCalendarBackend::applyRecords: Created" << uid
                                  << "ETag:" << createdItem.etag();
@@ -3129,7 +3172,8 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
 
         for (const QString &uid : batch.deletes) {
             pendingStarters->append([this, opWeak, davUrl, uid, anyError, recordDone]() {
-                QUrl itemUrl = generateItemUrl(davUrl, uid);
+                // O54: delete at the item's real server URL.
+                QUrl itemUrl = resolveItemUrl(davUrl, uid);
                 KDAV::DavUrl itemDavUrl(itemUrl, davUrl.protocol());
 
                 QString oldEtag = cachedEtag(itemUrl.toString());
@@ -3153,7 +3197,7 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
                         opWeak->addFailedUid(uid);
                         *anyError = true;
                     } else {
-                        noteItemErased(normalizeUrlKey(itemUrl.toString()));
+                        noteItemErased(normalizeUrlKey(itemUrl.toString()), uid);
                         opWeak->addSucceededUid(uid);
                         qDebug() << "RemoteCalendarBackend::applyRecords: Deleted" << uid;
                     }
@@ -3202,7 +3246,9 @@ void RemoteCalendarBackend::setRawIcsAsync(const QString &calendarId, const QStr
         return;
     }
     const KDAV::DavUrl davUrl = *maybeDavUrl;
-    const QUrl itemUrl = generateItemUrl(davUrl, uid);
+    // O54: PUT at the item's real server URL when it is known; the uid guess
+    // is only correct for a genuine client-side create.
+    const QUrl itemUrl = resolveItemUrl(davUrl, uid);
 
     QList<std::pair<QByteArray, QByteArray>> headers;
     const QString oldEtag = cachedEtag(itemUrl.toString());
@@ -3248,6 +3294,9 @@ void RemoteCalendarBackend::setRawIcsAsync(const QString &calendarId, const QStr
             }
 
             const QString urlKey = normalizeUrlKey(itemUrl.toString());
+            // O54: this write just established (or confirmed) where the uid
+            // lives — even when the server didn't return an ETag.
+            m_uidToUrl.insert(uid, urlKey);
             if (!resp.etag.isEmpty()) {
                 m_localEtags[urlKey] = resp.etag;
                 if (m_etagCache) {
@@ -3281,7 +3330,8 @@ QString RemoteCalendarBackend::getRawIcs(const QString &calendarId, const QStrin
     }
 
     KDAV::DavUrl davUrl = *davUrlFor(calendarId);
-    QUrl itemUrl = generateItemUrl(davUrl, uid);
+    // O54: GET at the item's real server URL.
+    QUrl itemUrl = resolveItemUrl(davUrl, uid);
 
     const DavResponse resp = davSyncRequest(nam(), itemUrl, QByteArrayLiteral("GET"),
                                             m_username, m_password);
@@ -3306,7 +3356,8 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
     }
 
     KDAV::DavUrl davUrl = *davUrlFor(calendarId);
-    QUrl itemUrl = generateItemUrl(davUrl, uid);
+    // O54: PUT at the item's real server URL when it is known.
+    QUrl itemUrl = resolveItemUrl(davUrl, uid);
 
     // Cached ETag goes in If-Match to prevent overwriting concurrent changes.
     QList<std::pair<QByteArray, QByteArray>> headers;
@@ -3334,6 +3385,8 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
     }
 
     const QString urlKey = normalizeUrlKey(itemUrl.toString());
+    // O54: this write just established (or confirmed) where the uid lives.
+    m_uidToUrl.insert(uid, urlKey);
     if (!resp.etag.isEmpty()) {
         m_localEtags[urlKey] = resp.etag;
         if (m_etagCache) {
@@ -3360,7 +3413,9 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 // ============================================================================
 // IBlobBackend implementation (Phase D Task 13)
 //
-// recordId     = uid (uid.ics is the CalDAV href basename)
+// recordId     = uid (O54: the CalDAV href basename need NOT be "<uid>.ics"
+//                for items another client created; write/delete/read paths
+//                resolve the real URL via resolveItemUrl())
 // collectionId = calendarId
 // data         = raw iCal bytes
 // contentHash  = SHA-256 of the bytes
@@ -3557,18 +3612,28 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
         return {};
     }
 
-    noteItemWritten(normalizeUrlKey(itemUrl.toString()), resp.etag, QString::fromUtf8(record.data));
+    noteItemWritten(normalizeUrlKey(itemUrl.toString()), resp.etag, QString::fromUtf8(record.data), record.id);
     clearCtag(collectionId);
     return record.id;
 }
 
 std::optional<QString> RemoteCalendarBackend::findOwningCalendar(const QString &uid) const
 {
+    // Pass 0 (O54): the uid->URL map — knows items whose server filename is
+    // not "<uid>.ics", which the URL-guessing passes below can never find.
+    const auto knownIt = m_uidToUrl.constFind(uid);
+    if (knownIt != m_uidToUrl.constEnd()) {
+        const QString itemPath = QUrl(knownIt.value()).path();
+        for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+            if (it->davUrl.url().isEmpty()) continue;
+            if (itemPath.startsWith(it->davUrl.url().path())) return it.key();
+        }
+    }
     // Pass 1: the ETag map — an item this backend instance has written or
     // fetched. Cheap, in-memory, the common case.
     for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
         if (it->davUrl.url().isEmpty()) continue;
-        const QUrl itemUrl = generateItemUrl(it->davUrl, uid);
+        const QUrl itemUrl = resolveItemUrl(it->davUrl, uid);
         const QString urlKey = normalizeUrlKey(itemUrl.toString());
         if (m_localEtags.contains(urlKey)) return it.key();
     }
@@ -3577,7 +3642,7 @@ std::optional<QString> RemoteCalendarBackend::findOwningCalendar(const QString &
     if (m_contentCache) {
         for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
             if (it->davUrl.url().isEmpty()) continue;
-            const QUrl itemUrl = generateItemUrl(it->davUrl, uid);
+            const QUrl itemUrl = resolveItemUrl(it->davUrl, uid);
             const QString urlKey = normalizeUrlKey(itemUrl.toString());
             if (m_contentCache->contains(urlKey)) return it.key();
         }
@@ -3619,7 +3684,8 @@ bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
         return false;
     }
     const KDAV::DavUrl davUrl = *maybeDavUrl;
-    const QUrl itemUrl = generateItemUrl(davUrl, recordId);
+    // O54: DELETE at the item's real server URL.
+    const QUrl itemUrl = resolveItemUrl(davUrl, recordId);
 
     QList<std::pair<QByteArray, QByteArray>> headers;
     const QString oldEtag = cachedEtag(itemUrl.toString());
@@ -3635,7 +3701,7 @@ bool RemoteCalendarBackend::deleteRecord(const QString &recordId)
         return false;
     }
 
-    noteItemErased(normalizeUrlKey(itemUrl.toString()));
+    noteItemErased(normalizeUrlKey(itemUrl.toString()), recordId);
     clearCtag(*calId);
     return true;
 }

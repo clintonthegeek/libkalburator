@@ -216,6 +216,26 @@ public:
     /// delete" without a real second client.
     void removeEvent(const QString &collectionHref, const QString &uid);
 
+    /// O54: seed an event at a server-assigned @p fileName that need not
+    /// equal the event's UID. Real CalDAV servers keep whatever filename the
+    /// CREATING client chose for the life of the object; every other test
+    /// here seeds at "<uid>.ics" (this fixture derives hrefs from the UID),
+    /// which hides exactly the class of bug O54 found: a client that assumes
+    /// every item lives at "<calendar>/<uid>.ics". A PUT addressed to a
+    /// DIFFERENT URL than the item's registered filename answers the
+    /// SabreDAV-shaped 400 ("Calendar object with uid already exists in this
+    /// calendar collection") a real server emits for that mistake.
+    void setSeedEventAt(const QString &collectionHref, const QString &fileName,
+                        const QByteArray &ics);
+
+    /// Recorded request target paths per method (e.g. requestPaths("PUT")),
+    /// in arrival order. Reset on startListening(). Lets tests assert WHERE
+    /// a write landed, not just that one happened (O54 regression gate).
+    QStringList requestPaths(const QByteArray &method) const
+    {
+        return m_requestPaths.value(method);
+    }
+
 protected:
     void incomingConnection(qintptr socketDescriptor) override;
 
@@ -239,6 +259,15 @@ private:
     void handleMkCalendar(QTcpSocket *socket, const QString &path);
     void handleProppatch(QTcpSocket *socket, const QString &path);
     bool isKnownCollection(const QString &href) const;
+    /// O54: the item href for @p uid in @p collectionHref — the aliased
+    /// filename when the item was seeded/PUT at a non-UID filename, else the
+    /// default "<uid>.ics".
+    QString hrefForUid(const QString &collectionHref, const QString &uid) const;
+    /// O54: inverse of hrefForUid() — the UID of the item registered at
+    /// @p fileName in @p collectionHref, or empty when no alias maps that
+    /// filename (the caller then assumes fileName IS the uid).
+    QString uidForFileName(const QString &collectionHref,
+                           const QString &fileName) const;
     void writeResponse(QTcpSocket *socket,
                        int statusCode,
                        const QByteArray &reasonPhrase,
@@ -299,6 +328,11 @@ private:
     QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
     QHash<QString, QStringList> m_componentsByHref;  // component-set overrides
     QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()
+    QHash<QByteArray, QStringList> m_requestPaths;  // method -> request target paths, reset on startListening()
+
+    /// O54: collectionHref -> (uid -> server-assigned filename, without the
+    /// .ics suffix). Absence of an entry means the item lives at "<uid>.ics".
+    QHash<QString, QHash<QString, QString>> m_fileNameByUid;
 
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
     /// then by UID.

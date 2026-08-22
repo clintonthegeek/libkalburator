@@ -585,6 +585,23 @@ private:
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
     QMap<QString, QString> m_localEtags;
 
+    // O54: uid -> normalized item URL (normalizeUrlKey form) for every item
+    // this instance has fetched or written. CalDAV keeps whatever filename
+    // the CREATING client chose for the life of the object, so an item
+    // adopted from another client generally does NOT live at
+    // "<calendar>/<uid>.ics" — deriving write URLs by UID concatenation
+    // (generateItemUrl) PUTs to a resource that doesn't exist and collides
+    // with the UID at its real URL (SabreDAV 400 "uid already exists").
+    // Populated wherever an item's real URL is known simultaneously with its
+    // parsed UID (every fetch branch + every write success handler, via
+    // noteItemWritten), evicted via noteItemErased. Write/delete/read paths
+    // resolve through resolveItemUrl(), which falls back to generateItemUrl()'s
+    // guess ONLY for a uid never seen on the server — a genuine client-side
+    // create, where the guess is correct by definition. In-memory only (same
+    // lifecycle as m_localEtags): a fresh instance repopulates it on its
+    // first fetch, which every engine run performs before it writes.
+    QHash<QString, QString> m_uidToUrl;
+
     // E6/O35: calendars whose m_etagCache rows have already been seeded from
     // m_contentCache this backend instance's lifetime. Seeding is per-
     // collection-once — see continueFetchWithListing().
@@ -639,6 +656,14 @@ private:
     QList<KCalendarCore::Incidence::Ptr> serveCachedItems(const QString &calendarId, const KDAV::DavUrl &davUrl);
 
     QUrl generateItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
+
+    // O54: where does this item live on the server? Checks m_uidToUrl first
+    // (the URL the server itself reported for this uid) and falls back to
+    // generateItemUrl()'s "<uid>.ics" guess only for a uid this instance has
+    // never seen — i.e. a genuine client-side create, which has no server
+    // URL yet by definition. Update/delete/read paths must use this, never
+    // generateItemUrl() directly.
+    QUrl resolveItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
     KDAV::DavUrl configuredDavUrl(const QString &rawUrl) const;
 
     // Fresh CS:getctag via a Depth:0 PROPFIND on the calendar's URL, async
@@ -663,13 +688,17 @@ private:
     QUrl calendarUrlForCrud(const QString &calendarId) const;
 
     // Post-write bookkeeping shared by the create/modify/push success paths:
-    // both etag stores + the content cache. No-op when @p etag is empty.
+    // both etag stores + the content cache, and (when @p itemUid is known)
+    // the O54 uid->URL map. No-op when @p etag is empty.
     void noteItemWritten(const QString &urlKey, const QString &etag,
-                         const QString &icalData);
+                         const QString &icalData,
+                         const QString &itemUid = QString());
 
     // Post-delete bookkeeping: evict from both etag stores and the content
-    // cache (cache eviction normalized across all delete paths, Plan 7 T4).
-    void noteItemErased(const QString &urlKey);
+    // cache (cache eviction normalized across all delete paths, Plan 7 T4),
+    // and from the O54 uid->URL map — by @p itemUid when known, else by
+    // scanning for the erased URL.
+    void noteItemErased(const QString &urlKey, const QString &itemUid = QString());
 
     // One startSync modify job (PUT with If-Match: @p etag). When
     // @p retryOn412 is set, a 412 retries once with If-Match: * (the

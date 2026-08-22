@@ -2279,14 +2279,65 @@ host's next sync tick would, before asserting on applied state. Full suite:
 177/179 (unchanged pre-existing baseline — `tst_remotecalendarbackend`
 Radicale auth, `tst_calendar_canon_roundtrip`).
 
-### O54 — CRITICAL, OPEN — `RemoteCalendarBackend` assumes every item's URL is `<calendar>/<uid>.ics`; false for any item another CalDAV client created (found 2026-08-21, unrelated to the conflict-resolution campaign)
+### O54 — RESOLVED 2026-08-22 — `RemoteCalendarBackend` assumed every item's URL is `<calendar>/<uid>.ics`; false for any item another CalDAV client created (found 2026-08-21, unrelated to the conflict-resolution campaign)
 
-**Not fixed. Read the full writeup first —
-`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`
-— this entry is a pointer, not the full analysis.** Found live the same
-day as the conflict-resolution-repair work but is a wholly separate,
-pre-existing defect in `RemoteCalendarBackend`'s write path, not a
-consequence of anything that campaign touched.
+**RESOLVED 2026-08-22** on branch `fix/o54-uid-url-assumption`, exactly per
+the recommended fix shape in the original writeup
+(`docs/2026-08-21-remotecalendarbackend-uid-url-assumption-critical-bug.md`
+— its status header is updated too). The fix, in `RemoteCalendarBackend`:
+
+- **`QHash<QString, QString> m_uidToUrl`** (uid → normalized real URL, the
+  `normalizeUrlKey()` form) — populated wherever an item's real URL is
+  known simultaneously with its parsed UID: `processFetchedItems()`, the
+  all-from-cache branch of `fetchItems()`, `serveCachedItems()` (covers the
+  sync-collection delta path's full-snapshot rebuild), and every write
+  success handler via `noteItemWritten(..., uid)` / `setRawIcs{,Async}`
+  success. Evicted via `noteItemErased(urlKey, uid)` — by uid where the
+  delete path knows it, by URL-scan where only the href is known
+  (tombstones, deleted-item listings).
+- **`resolveItemUrl(davUrl, uid)`** — `m_uidToUrl` first,
+  `generateItemUrl()`'s guess ONLY on a miss (a genuine client-side create,
+  where the guess is correct by definition). Every update/delete/read call
+  site converted: `removeItem`, `startSync` updates/deletes +
+  `launchStartSyncModify`, `deleteItems`, `applyRecords` deletes,
+  `setRawIcsAsync` (the live failure site), `getRawIcs`, `setRawIcs`,
+  `findOwningCalendar` (new pass 0 through the map — the old
+  URL-guessing passes could never find an adopted item at all, which made
+  `updateRecord`/`deleteRecord` fail before any network I/O). The five
+  remaining `generateItemUrl()` call sites are create-only paths and are
+  deliberately untouched.
+- In-memory only, same lifecycle as `m_localEtags`: a fresh instance
+  repopulates on its first fetch, which every engine run performs before it
+  writes. No SyncEngine changes (INVARIANTS §1 respected).
+
+**Regression test** (RED first — reproduced the live failure byte-for-byte:
+PUT to `<uid>.ics` → SabreDAV 400 "uid already exists" — then GREEN):
+`tst_remotecalendarbackend_convergence::
+o54_edit_of_adopted_item_writes_to_its_discovered_url`, driven by
+`FakeCalDavServer` extensions for exactly this bug class:
+`setSeedEventAt(collectionHref, fileName, ics)` (server-assigned filename ≠
+uid, kept for the item's life), SabreDAV-shaped 400 on a UID-colliding PUT
+to the wrong URL, and `requestPaths(method)` so tests assert WHERE a write
+landed, not just that one happened. The fake's If-Match comparison is now
+quote-insensitive (davSyncRequest strips ETag quotes before echoing one
+back — a latent fixture mismatch no prior test chained PUT→PUT through).
+
+**CardDAV audited, not affected**: `RemoteContactsBackend` keeps per-record
+`RecordHandle{href, etag}` from `loadRecords()` and PUTs/DELETEs the stored
+href; `<uid>.vcf` is derived only on create. `LocalBackend`'s `<uid>.ics`
+filename convention remains correct as documented (PlanStan creates every
+local file itself); the "imported .ics dropped in a watched directory" gap
+the original writeup flagged is still un-audited — folded into the watch
+note below.
+
+**Suite: 179 total, 177 passing** — the identical pre-existing baseline
+(`tst_remotecalendarbackend` Radicale auth — its three failing slots
+verified identical on unmodified code this session;
+`tst_calendar_canon_roundtrip`). Still explicitly USER-RUN: live
+verification against a real CalDAV account that an adopted item's edit
+lands at its original URL and syncs cleanly.
+
+**Original finding (2026-08-21), kept for context:**
 
 `generateItemUrl(davUrl, uid)` (`remotecalendarbackend.cpp:824`) guesses
 every item's URL as `<calendar>/<uid>.ics`. True only for items PlanStan

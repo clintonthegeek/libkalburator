@@ -1,8 +1,10 @@
 # CRITICAL — RemoteCalendarBackend assumes every item's URL is `<calendar>/<uid>.ics`; false for any item another CalDAV client created
 
-**Status:** OPEN. Not fixed, not attempted. **File this as the first thing
-the next session reads and addresses** — found live, urgent, affects the
-core write path of PlanStan's primary remote backend.
+**Status:** RESOLVED 2026-08-22 (branch `fix/o54-uid-url-assumption`) —
+the fix landed exactly per the "Recommended fix" section below; see
+FINDINGS **O54** for the closure summary, audit results for the other
+call sites and CardDAV/LocalBackend, and the regression test. The writeup
+below is kept as-found.
 
 **Date found:** 2026-08-21, live PlanStan session (same day as the
 conflict-resolution-repair work — unrelated to it; this is a distinct,

@@ -67,6 +67,7 @@ FakeCalDavServer::~FakeCalDavServer() = default;
 bool FakeCalDavServer::startListening()
 {
     m_requestCounts.clear();
+    m_requestPaths.clear();
     m_multigetReportCount = 0;
     m_syncCollectionReportCount = 0;
     m_serialQueue.clear();   // O45
@@ -165,8 +166,49 @@ void FakeCalDavServer::removeEvent(const QString &collectionHref, const QString 
     auto it = m_store.find(collectionHref);
     if (it == m_store.end()) return;
     if (it->remove(uid) > 0) {
+        m_fileNameByUid[collectionHref].remove(uid);
         logChange(collectionHref, uid, /*deleted=*/true);
     }
+}
+
+void FakeCalDavServer::setSeedEventAt(const QString &collectionHref,
+                                      const QString &fileName,
+                                      const QByteArray &ics)
+{
+    const QString uid = uidFromIcs(ics);
+    if (uid.isEmpty()) return;
+    IcsRecord rec;
+    rec.data = ics;
+    rec.etag = makeEtag(ics);
+    m_store[collectionHref].insert(uid, rec);
+    if (fileName != uid) {
+        m_fileNameByUid[collectionHref].insert(uid, fileName);
+    } else {
+        m_fileNameByUid[collectionHref].remove(uid);
+    }
+    // E7/O36: every seed (initial population AND a later re-seed used to
+    // simulate "another client edited this item") is a real mutation
+    // from REPORT sync-collection's point of view.
+    logChange(collectionHref, uid, /*deleted=*/false);
+}
+
+QString FakeCalDavServer::hrefForUid(const QString &collectionHref,
+                                     const QString &uid) const
+{
+    const QString fileName =
+        m_fileNameByUid.value(collectionHref).value(uid, uid);
+    return collectionHref + fileName + QStringLiteral(".ics");
+}
+
+QString FakeCalDavServer::uidForFileName(const QString &collectionHref,
+                                         const QString &fileName) const
+{
+    const auto colIt = m_fileNameByUid.constFind(collectionHref);
+    if (colIt == m_fileNameByUid.constEnd()) return QString();
+    for (auto it = colIt->constBegin(); it != colIt->constEnd(); ++it) {
+        if (it.value() == fileName) return it.key();
+    }
+    return QString();
 }
 
 void FakeCalDavServer::incomingConnection(qintptr socketDescriptor)
@@ -328,6 +370,7 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
     // Count well-formed requests per method so tests can assert request shape
     // (e.g. "the primed loadCalendars path issues zero additional PROPFINDs").
     ++m_requestCounts[method];
+    m_requestPaths[method].append(path);  // O54: assert WHERE a write landed
 
     const int headerEnd = fullRequest.indexOf("\r\n\r\n");
     const QByteArray body = (headerEnd > 0)
@@ -549,14 +592,52 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
         return;
     }
     const QString collectionHref = path.left(lastSlash + 1);
-    const QString uid = uidFromPath(path);
-    if (uid.isEmpty()) {
+    const QString fileName = uidFromPath(path);
+    if (fileName.isEmpty()) {
         writeResponse(socket, 400, "Bad Request", QByteArray());
         return;
     }
 
+    // O54: resolve the UID through the alias map. A PUT to an item whose
+    // server-assigned filename differs from its UID targets that aliased
+    // href; a PUT to any OTHER URL for a UID the store already holds is the
+    // exact mistake O54 found — SabreDAV answers it with 400 ("Calendar
+    // object with uid already exists in this calendar collection"), not 412.
+    QString uid = uidForFileName(collectionHref, fileName);
+    if (uid.isEmpty()) uid = fileName;
+
     QHash<QString, IcsRecord> &col = m_store[collectionHref];
     const bool isNew = !col.contains(uid);
+
+    if (!isNew) {
+        const QString registeredFileName =
+            m_fileNameByUid.value(collectionHref).value(uid);
+        if (!registeredFileName.isEmpty() && registeredFileName != fileName) {
+            writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
+                "  <s:exception>Sabre\\DAV\\Exception\\BadRequest</s:exception>\n"
+                "  <s:message>Calendar object with uid already exists in this "
+                "calendar collection.</s:message>\n"
+                "</d:error>\n"));
+            return;
+        }
+    } else {
+        // Creating a new resource whose payload carries a UID already stored
+        // under a different filename — same SabreDAV uniqueness violation.
+        const QString bodyUid = uidFromIcs(body);
+        if (!bodyUid.isEmpty() && col.contains(bodyUid)) {
+            writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
+                "  <s:exception>Sabre\\DAV\\Exception\\BadRequest</s:exception>\n"
+                "  <s:message>Calendar object with uid already exists in this "
+                "calendar collection.</s:message>\n"
+                "</d:error>\n"));
+            return;
+        }
+        if (!bodyUid.isEmpty()) uid = bodyUid;
+    }
 
     // RFC 7232 preconditions (E4/O32 — real servers enforce these; a fake
     // that always succeeds hides the difference between "wrote" and
@@ -573,7 +654,13 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
             writeResponse(socket, 412, "Precondition Failed", QByteArray());
             return;
         }
-        if (ifMatch.trimmed() != col.value(uid).etag.toUtf8()) {
+        // Compare quote-insensitively: real servers hand out quoted ETags,
+        // but some client helpers strip the quotes before echoing one back
+        // in If-Match (davSyncRequest does exactly that).
+        const QString given = QString::fromUtf8(ifMatch.trimmed());
+        const QString want = col.value(uid).etag;
+        if (given != want
+            && given != want.mid(1, want.length() - 2)) {
             writeResponse(socket, 412, "Precondition Failed", QByteArray());
             return;
         }
@@ -585,6 +672,11 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
     static int s_counter = 0;
     rec.etag = makeEtag(body + QByteArray::number(++s_counter));
     col.insert(uid, rec);
+    // O54: CalDAV keeps whatever filename the creating/updating client
+    // addressed — register it permanently for this UID.
+    if (fileName != uid) {
+        m_fileNameByUid[collectionHref].insert(uid, fileName);
+    }
     logChange(collectionHref, uid, /*deleted=*/false);
 
     const QByteArray etagHeader =
@@ -624,7 +716,9 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
         return;
     }
     const QString collectionHref = path.left(lastSlash + 1);
-    const QString uid = uidFromPath(path);
+    // O54: resolve through the alias map, same as handlePut().
+    QString uid = uidForFileName(collectionHref, uidFromPath(path));
+    if (uid.isEmpty()) uid = uidFromPath(path);
     if (uid.isEmpty()) {
         writeResponse(socket, 400, "Bad Request", QByteArray());
         return;
@@ -637,6 +731,7 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
     }
 
     colIt->remove(uid);
+    m_fileNameByUid[collectionHref].remove(uid);
     logChange(collectionHref, uid, /*deleted=*/true);
     writeResponse(socket, 204, "No Content", QByteArray());
     maybeDieAfterWrite();
@@ -739,8 +834,7 @@ QByteArray FakeCalDavServer::xmlForCalendarQuery(
     auto it = m_store.constFind(collectionHref);
     if (it != m_store.constEnd()) {
         for (auto recIt = it->constBegin(); recIt != it->constEnd(); ++recIt) {
-            const QString href =
-                collectionHref + recIt.key() + QStringLiteral(".ics");
+            const QString href = hrefForUid(collectionHref, recIt.key());
             xml += QStringLiteral("  <d:response>\n");
             xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
             xml += QStringLiteral("    <d:propstat>\n");
@@ -823,7 +917,7 @@ QByteArray FakeCalDavServer::xmlForSyncCollection(const QString &collectionHref,
                           " xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\n");
 
     for (auto it = lastState.constBegin(); it != lastState.constEnd(); ++it) {
-        const QString href = collectionHref + it.key() + QStringLiteral(".ics");
+        const QString href = hrefForUid(collectionHref, it.key());
         xml += QStringLiteral("  <d:response>\n");
         xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
         if (it.value()) {
@@ -862,7 +956,13 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
     auto storeIt = m_store.constFind(collectionHref);
 
     for (const QString &href : hrefs) {
-        const QString uid = uidFromPath(href);
+        const QUrl hrefUrl(href);
+        const QString hrefPath = hrefUrl.isRelative() ? href : hrefUrl.path();
+        // O54: resolve the item's UID through the alias map — a multiget
+        // href's filename need not equal the UID.
+        QString uid = uidForFileName(collectionHref,
+                                     uidFromPath(hrefPath));
+        if (uid.isEmpty()) uid = uidFromPath(hrefPath);
         if (uid.isEmpty()) continue;
 
         // Real CalDAV servers always use path-only (absolute path) hrefs in
@@ -871,8 +971,7 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
         // href by resolving both relative to the base URL — if we echo back a
         // full URL the comparison fails and the item is silently dropped.
         // Normalize to path-only here regardless of what the client sent.
-        const QUrl hrefUrl(href);
-        const QString responsePath = hrefUrl.isRelative() ? href : hrefUrl.path();
+        const QString responsePath = hrefPath;
 
         xml += QStringLiteral("  <d:response>\n");
         xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(responsePath);
