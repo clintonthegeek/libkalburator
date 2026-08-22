@@ -361,7 +361,13 @@ private:
 
     // First-sync dispatch via the engine's blob mirror (Phase D Task 21)
     bool dispatchFirstSync(const Request &request);
-    void harvestBaselinesAfterFirstSync(const Request &request);
+
+    // O55: idAliases carries this mirror's create pairings
+    // (requested → backend-assigned) so the harvested baselines resolve the
+    // target's read-back hash and the alias rows persist for later passes.
+    void harvestBaselinesAfterFirstSync(
+        const Request &request,
+        const QHash<QString, QString> &idAliases = {});
 
     // Unified domain dispatch (Phase Ia.5 Task 8). Compiles per-mapping
     // shape pipelines and runs the diff/merge/apply path.

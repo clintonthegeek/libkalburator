@@ -78,7 +78,7 @@ void TstBaselineStoreV4ToV5Migration::migrationStampsVersion5() {
         // 6 -> 7 (sync_tokens table, ensureSchemaV7()). This test's name
         // predates both bumps; the v4->v5 migration path it exercises is
         // unchanged, it just now lands further along.
-        QCOMPARE(q.value(0).toInt(), 7);
+        QCOMPARE(q.value(0).toInt(), 8);
     }
     QSqlDatabase::removeDatabase(conn);
 }

@@ -6,6 +6,7 @@
 #include "enginediff.h"
 #include "shape.h"
 
+#include <QHash>
 #include <QList>
 
 namespace Kalburator::Shape { class RecordDiffer; }
@@ -23,11 +24,20 @@ namespace Kalburator::Engine {
 /// source record is compared against its own `sourceHash`, a target
 /// record against its own `targetHash`, never against the other side's
 /// native bytes. The differ is borrowed; the caller retains ownership.
+///
+/// O55: `aliasToCanonical` maps a backend-native record id onto the id the
+/// baseline for that logical record is keyed under (native → canonical).
+/// Backends may re-namespace ids between a write and the next read (e.g.
+/// GenericSqliteBackend returns `<collectionId>\x01<origId>`); without the
+/// resolution the same logical record joins as two untracked records and
+/// the diff churns. Ids absent from the map resolve to themselves. Ops are
+/// emitted with the records' NATIVE ids so writes route correctly.
 EngineDiff perRecordDiff(const QList<Kalburator::Sync::BackendRecord>& source,
                          const QList<Kalburator::Sync::BackendRecord>& target,
                          const QList<BaselineEntry>& baseline,
                          const Kalburator::Shape::Shape& canonical,
-                         const Kalburator::Shape::RecordDiffer& differ);
+                         const Kalburator::Shape::RecordDiffer& differ,
+                         const QHash<QString, QString>& aliasToCanonical = {});
 
 /// Phase N.1: lifted from `blobbatchdiff.cpp`'s anonymous namespace.
 /// Mirror semantics for unidirectional sync — push source records to

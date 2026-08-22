@@ -156,6 +156,30 @@ public:
                          const QString &token);
     void    clearSyncTokens(const QString &mappingId);
 
+    // -----------------------------------------------------------------------
+    // Record-id aliases (O55, schema v8).
+    //
+    // Per (mappingId, nativeId) → canonicalId: when the engine applies a
+    // CREATE and the backend assigns a different id than requested
+    // (WriteOperation::idAliases — e.g. GenericSqliteBackend reads back
+    // `<collectionId>\x01<origId>`), the pair is persisted here so later
+    // passes can join the sides. canonicalId is the id the mapping's
+    // baseline rows are keyed under for that record.
+    //
+    // Aliases are additive engine state; consumers never read them.
+    // clearMappingV3() also clears a mapping's aliases (same reasoning as
+    // its sync-token wipe). Not migrated: a missing row just means "no
+    // alias", same as an absent baseline.
+    // -----------------------------------------------------------------------
+
+    bool setIdAlias(const QString &mappingId,
+                    const QString &nativeId,
+                    const QString &canonicalId);
+
+    QHash<QString, QString> idAliasesForMapping(const QString &mappingId) const;
+
+    void clearIdAliasesForMapping(const QString &mappingId);
+
 private:
     static int s_connectionCounter;
 
@@ -169,6 +193,7 @@ private:
     bool ensureSchemaV5();
     bool ensureSchemaV6();
     bool ensureSchemaV7();
+    bool ensureSchemaV8();
     void setError(const QString &message) const;
 };
 

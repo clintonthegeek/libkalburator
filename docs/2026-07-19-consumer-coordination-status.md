@@ -14,9 +14,9 @@ at the authoritative doc.
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, released tag **v0.98** (conflict-resolution repair, closed 2026-08-22 — §2b). This table's history rows below are stale as of 2026-07-19; see `CLAUDE.md` for the current campaign-by-campaign summary through v0.97/v0.98. |
-| **PlanStan** | **v0.97** | Pins the parallel-sync release; not yet bumped to v0.98 (additive, no code change forced — bump whenever convenient). |
-| **WildPalms** | **v0.97 (stated in its own handoff)** | Dormant for months; filed `~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md` (FINDINGS **O55**, §2c) while catching up. |
+| **libkalburator** | — (self) | `main`, released tags **v0.98** (conflict-resolution repair) / **v0.99** (O54); O55 fix on branch `fix/o55-hub-record-id-aliasing` (2026-08-22, additive — see §2c). |
+| **PlanStan** | **v0.97** | Not yet bumped to v0.98/v0.99 (both additive, no code change forced). Unaffected by O55 (no sqlite-hub endpoints; engine-stable ids everywhere). |
+| **WildPalms** | **v0.97 (stated in its own handoff)** | Filed O55 (2026-08-21, catching up past a dormant pin); **RESOLVED 2026-08-22** (§2c) — needs only a pin bump. |
 
 **Both consumers pin a recent head tag; no forced bump from v0.98** — all
 conflict-resolution-repair changes are additive (§2b).
@@ -81,12 +81,12 @@ New FINDINGS: **O48, O49, O50 (fixed), O51, O52, O53**.
 
 ---
 
-## 2c. OPEN inbound — updated 2026-08-22 (O54 RESOLVED; O55 remains open)
+## 2c. OPEN inbound — updated 2026-08-22 (O54 and O55 both RESOLVED; none open)
 
 | # | From | Item | Status |
 |---|---|---|---|
 | ~~**O54**~~ | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guessed every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items failed permanently (SabreDAV 400). | **RESOLVED 2026-08-22** (branch `fix/o54-uid-url-assumption`): `m_uidToUrl` cache + `resolveItemUrl()` across all update/delete/read paths, per the recommended fix shape; CardDAV audited clean. Regression test RED→GREEN in `tst_remotecalendarbackend_convergence`. Suite 177/179 (identical pre-existing baseline). Consumers need no code change; bump the pin when convenient. Closure summary: FINDINGS **O54**. |
-| **O55** | WildPalms (handoff, 2026-08-21, catching up past a dormant v0.77 pin) | TwoWay sync between a bare-id backend and the `GenericSqliteBackend` hub churns and empties the hub from pass 2 on — `perRecordDiff()` joins strictly by raw `BackendRecord::id` with no aliasing for the hub's `<collectionId>\x01<origId>` prefix. Regression v0.77→v0.93+, no full bisect yet. Silent — sync reports success. | OPEN, non-blocking, **can wait** — WildPalms itself is not currently in active development. Full writeup: `~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md`. Tracked as FINDINGS **O55**. Now the only open inbound item. |
+| ~~**O55**~~ | WildPalms (handoff, 2026-08-21, catching up past a dormant v0.77 pin) | TwoWay sync between a bare-id backend and the `GenericSqliteBackend` hub churns and empties the hub from pass 2 on — `perRecordDiff()` joins strictly by raw `BackendRecord::id` with no aliasing for the hub's `<collectionId>\x01<origId>` prefix. Regression v0.77→v0.93+, no full bisect. Silent — sync reports success. | **RESOLVED 2026-08-22** (branch `fix/o55-hub-record-id-aliasing`): engine-side id aliasing — `WriteOperation::idAliases()` captured by the default `applyRecords()`, persisted per mapping (`BaselineStore` schema v8 `blob_id_aliases`), resolved in `perRecordDiff()`; plus a fail-loud guard (`EngineDiff::identityConflicts`) that refuses canonically-equal-unjoined-twins instead of cross-creating toward an empty hub. Root cause: v0.77 converged by accident (failed duplicate-INSERT aborted the run pre-destruction); B4 per-side baselines removed the accidental abort. RED→GREEN gate `tst_engine_id_aliasing` (also closes the suite gap — `GenericSqliteBackend` is now a real mapping endpoint). Suite 177/180, identical pre-existing baseline. **No consumer code change; pin bump only.** Profiles already churned by pre-fix runs need one mapping-state clear to recover. Response: `docs/2026-08-22-o55-hub-record-id-aliasing-response.md`; closure: FINDINGS **O55**. |
 
 ---
 

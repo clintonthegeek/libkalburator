@@ -149,6 +149,18 @@ kalburator_add_engine_integration_test(tst_engine_parallel_mappings)
 # and the mapping "succeeds" with 0 records (and a clobber wipes the target).
 kalburator_add_engine_integration_test(tst_engine_fetch_failure_discrimination)
 
+# O55 (WildPalms hub record-id join churn handoff, 2026-08-21) — bare-id
+# backend <-> GenericSqliteBackend hub TwoWay convergence. Both slots were RED
+# on v0.99: the churn emptied the hub from pass 2 on while reporting success.
+# Pins id aliasing (WriteOperation::idAliases + BaselineStore blob_id_aliases)
+# and the identity-conflict fail-loud guard.
+kalburator_add_engine_integration_test(tst_engine_id_aliasing)
+target_link_libraries(tst_engine_id_aliasing
+    PRIVATE
+        Qt6::Sql
+        KF6::CalendarCore
+)
+
 # T3 — mass-delete guard engine integration test
 kalburator_add_engine_integration_test(tst_mass_delete_guard)
 

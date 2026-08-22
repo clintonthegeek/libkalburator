@@ -1,5 +1,29 @@
 # libkalburator — Claude instructions
 
+## O55 — RESOLVED 2026-08-22, branch `fix/o55-hub-record-id-aliasing` (not yet tagged)
+
+The WildPalms hub record-id join churn (FINDINGS **O55**) is fixed: engine-side
+id aliasing — `WriteOperation::idAliases()` captured by the default
+`SyncBackendBase::applyRecords()`, persisted per mapping (`BaselineStore`
+schema **v8**, `blob_id_aliases`), resolved in `perRecordDiff()`, with baseline
+hash lookups resolving through the same run's aliases and the first-sync mirror
+recording pairings too. Plus the fail-loud piece: `EngineDiff::
+identityConflicts` makes dispatchSync REFUSE a mapping whose diff would
+cross-create canonically-equal records under unjoined ids (the churn signature)
+instead of silently emptying the peer while reporting success. Root cause:
+v0.77 converged by accident (failed duplicate-INSERT aborted pre-destruction);
+B4 per-side baselines removed the accidental abort. RED→GREEN gate
+`tst_engine_id_aliasing` also closes the coverage gap (`GenericSqliteBackend`
+is now a real mapping endpoint in the suite). Schema-version pins bumped 7→8
+in the two storage tests. Suite **177/180** — identical pre-existing baseline;
+note `tst_backend_signals` is ALSO live-Radicale-state-dependent and fails on
+the pristine tree at this commit (stash-verified; same family as the documented
+`tst_remotecalendarbackend` flake). All changes additive: consumers pin-bump
+only, no code change. PlanStan unaffected (engine-stable ids everywhere).
+Profiles already churned by pre-fix runs carry orphan dual-form baselines and
+need one mapping-state clear to recover. Wrap-up for WildPalms:
+`docs/2026-08-22-o55-hub-record-id-aliasing-response.md`.
+
 ## O54 — CLOSED 2026-08-22, merged to `main`, tagged v0.99
 
 The `RemoteCalendarBackend` `<calendar>/<uid>.ics` URL-assumption bug

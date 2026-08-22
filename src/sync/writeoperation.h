@@ -5,6 +5,8 @@
 
 #include "syncoperation.h"
 
+#include <QHash>
+
 namespace Kalburator::Sync {
 
 /**
@@ -56,6 +58,24 @@ public:
     QString resultRevision() const { return m_resultRevision; }
     void setResultRevision(const QString &revision) { m_resultRevision = revision; }
 
+    /// O55: for each CREATE whose requested BackendRecord::id differs from
+    /// the id the backend actually assigned (createRecord()'s return), the
+    /// pair (requestedId → storedId). Backends that re-namespace ids
+    /// between write and read — GenericSqliteBackend returns
+    /// `<collectionId>\x01<origId>` — would otherwise leave the engine's
+    /// next diff unable to join the sides, churning toward a silently
+    /// emptied peer. The engine persists these per mapping (BaselineStore
+    /// blob_id_aliases) and resolves them during the per-record join.
+    /// Updates/deletes never alias: they operate in place under the id
+    /// the record already carries.
+    QHash<QString, QString> idAliases() const { return m_idAliases; }
+    void addIdAlias(const QString &requestedId, const QString &storedId)
+    {
+        if (!requestedId.isEmpty() && !storedId.isEmpty()
+            && requestedId != storedId)
+            m_idAliases.insert(requestedId, storedId);
+    }
+
     // Modification methods (called by backends)
     void addSucceededUid(const QString &uid);
     void addFailedUid(const QString &uid);
@@ -64,6 +84,7 @@ private:
     QStringList m_succeededUids;
     QStringList m_failedUids;
     QString m_resultRevision;
+    QHash<QString, QString> m_idAliases;
 };
 
 } // namespace Kalburator::Sync

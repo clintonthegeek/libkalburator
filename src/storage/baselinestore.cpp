@@ -15,7 +15,7 @@
 namespace Kalburator::Storage {
 
 namespace {
-constexpr int kSchemaVersion = 7;  // H3: sync_tokens table (engine-owned sync-progress tokens).
+constexpr int kSchemaVersion = 8;  // O55: blob_id_aliases table (record-id aliases).
 } // namespace
 
 int BaselineStore::s_connectionCounter = 0;
@@ -104,6 +104,11 @@ bool BaselineStore::ensureSchemaAndVersion()
 
     // H3: ensure sync_tokens table exists.
     if (!ensureSchemaV7()) {
+        return false;
+    }
+
+    // O55: ensure blob_id_aliases table exists.
+    if (!ensureSchemaV8()) {
         return false;
     }
 
@@ -306,6 +311,97 @@ void BaselineStore::clearSyncTokens(const QString &mappingId)
     q.addBindValue(mappingId);
     if (!q.exec()) {
         setError(QStringLiteral("clearSyncTokens: %1").arg(q.lastError().text()));
+    }
+}
+
+// ===========================================================================
+// Record-id aliases (O55, schema v8)
+// ===========================================================================
+
+bool BaselineStore::ensureSchemaV8()
+{
+    // O55: per-(mapping, nativeId) → canonicalId record-id aliases. Additive
+    // table, idempotent CREATE TABLE IF NOT EXISTS — no data migration (a
+    // missing row just means "no alias", same as an absent baseline).
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS blob_id_aliases ("
+            "  mapping_id   TEXT NOT NULL,"
+            "  native_id    TEXT NOT NULL,"
+            "  canonical_id TEXT NOT NULL,"
+            "  updated_at   INTEGER NOT NULL,"
+            "  PRIMARY KEY (mapping_id, native_id)"
+            ")"))) {
+        setError(QStringLiteral("ensureSchemaV8: CREATE TABLE blob_id_aliases failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+bool BaselineStore::setIdAlias(const QString &mappingId,
+                               const QString &nativeId,
+                               const QString &canonicalId)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("setIdAlias: store not open"));
+        return false;
+    }
+    if (nativeId.isEmpty() || canonicalId.isEmpty() || nativeId == canonicalId) {
+        return true;  // nothing to record
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO blob_id_aliases "
+        "(mapping_id, native_id, canonical_id, updated_at) "
+        "VALUES (?, ?, ?, ?)"));
+    q.addBindValue(mappingId);
+    q.addBindValue(nativeId);
+    q.addBindValue(canonicalId);
+    q.addBindValue(QDateTime::currentSecsSinceEpoch());
+    if (!q.exec()) {
+        setError(QStringLiteral("setIdAlias: %1").arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+QHash<QString, QString> BaselineStore::idAliasesForMapping(const QString &mappingId) const
+{
+    QHash<QString, QString> out;
+    if (!m_isOpen) {
+        return out;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral(
+        "SELECT native_id, canonical_id FROM blob_id_aliases "
+        "WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec()) {
+        setError(QStringLiteral("idAliasesForMapping: %1").arg(q.lastError().text()));
+        return out;
+    }
+    while (q.next()) {
+        out.insert(q.value(0).toString(), q.value(1).toString());
+    }
+    return out;
+}
+
+void BaselineStore::clearIdAliasesForMapping(const QString &mappingId)
+{
+    if (!m_isOpen) {
+        setError(QStringLiteral("clearIdAliasesForMapping: store not open"));
+        return;
+    }
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("DELETE FROM blob_id_aliases WHERE mapping_id = ?"));
+    q.addBindValue(mappingId);
+    if (!q.exec()) {
+        setError(QStringLiteral("clearIdAliasesForMapping: %1").arg(q.lastError().text()));
     }
 }
 
@@ -679,6 +775,10 @@ bool BaselineStore::clearMappingV3(const QString &mappingId)
     // tokens — otherwise a surviving token could let the next sync skip
     // a mapping with no baselines at all (the exact hole H3 closes).
     clearSyncTokens(mappingId);
+    // O55: and its record-id aliases — with the baselines gone, the alias
+    // targets no longer exist; stale aliases would mis-join records created
+    // fresh after the reset.
+    clearIdAliasesForMapping(mappingId);
     return true;
 }
 

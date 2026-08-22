@@ -82,10 +82,17 @@ WriteOperation* SyncBackendBase::applyRecords(const QString &collectionId,
     // keeps working unchanged for backends that reach applyRecords() via
     // this default (LocalBackend, MockBackend — no async internals).
     for (const auto &r : batch.creates) {
-        if (createRecord(collectionId, r).isEmpty()) {
+        // O55: capture the id the backend ACTUALLY assigned. A non-empty
+        // return that differs from the requested id is an alias — the
+        // record will read back under the stored form, and without it the
+        // engine's next diff cannot join the sides (the WildPalms hub
+        // churn, FINDINGS O55).
+        const QString storedId = createRecord(collectionId, r);
+        if (storedId.isEmpty()) {
             op->addFailedUid(r.id);
         } else {
             op->addSucceededUid(r.id);
+            op->addIdAlias(r.id, storedId);
         }
     }
     for (const auto &r : batch.updates) {

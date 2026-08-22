@@ -15,21 +15,9 @@ using KShape = Kalburator::Shape::Shape;
 
 namespace {
 
-QHash<QString, BackendRecord> indexById(const QList<BackendRecord>& records)
-{
-    QHash<QString, BackendRecord> out;
-    out.reserve(records.size());
-    for (const auto& r : records) out.insert(r.id, r);
-    return out;
-}
-
-QHash<QString, BaselineEntry> indexBaselineById(const QList<BaselineEntry>& entries)
-{
-    QHash<QString, BaselineEntry> out;
-    out.reserve(entries.size());
-    for (const auto& e : entries) out.insert(e.id, e);
-    return out;
-}
+// O55: the raw-id index helpers were folded into perRecordDiff() — the join
+// is now keyed by the alias-resolved canonical id, which a raw-id helper
+// cannot express.
 
 // EngineDiffOp::baselineRecord is a BackendRecord for historical/API-
 // compatibility reasons (CustomMerge/Duplicate resolution and the doomed-
@@ -100,16 +88,31 @@ EngineDiffOp makeConflict(const BackendRecord& source,
 } // namespace
 
 EngineDiff perRecordDiff(const QList<BackendRecord>& source,
-                         const QList<BackendRecord>& target,
-                         const QList<BaselineEntry>& baseline,
-                         const Kalburator::Shape::Shape& canonical,
-                         const RecordDiffer& differ)
+                          const QList<BackendRecord>& target,
+                          const QList<BaselineEntry>& baseline,
+                          const Kalburator::Shape::Shape& canonical,
+                          const RecordDiffer& differ,
+                          const QHash<QString, QString>& aliasToCanonical)
 {
     EngineDiff result;
 
-    const QHash<QString, BackendRecord>  sById = indexById(source);
-    const QHash<QString, BackendRecord>  tById = indexById(target);
-    const QHash<QString, BaselineEntry>  bById = indexBaselineById(baseline);
+    // O55: resolve each side's ids onto their canonical (baseline-key) form
+    // BEFORE joining. A backend that re-namespaces ids between write and
+    // read (e.g. GenericSqliteBackend's <collectionId>\x01<origId>) would
+    // otherwise make one logical record look like two untracked ones — the
+    // "created here + deleted there" churn. The indexes stay keyed by
+    // canonical id but store the NATIVE records, so emitted ops carry the
+    // ids each backend actually understands.
+    const auto joinKey = [&aliasToCanonical](const QString& id) -> QString {
+        return aliasToCanonical.value(id, id);
+    };
+
+    QHash<QString, BackendRecord> sById;
+    for (const auto& r : source) sById.insert(joinKey(r.id), r);
+    QHash<QString, BackendRecord> tById;
+    for (const auto& r : target) tById.insert(joinKey(r.id), r);
+    QHash<QString, BaselineEntry> bById;
+    for (const auto& e : baseline) bById.insert(joinKey(e.id), e);
 
     QSet<QString> allIds;
     for (auto it = sById.constBegin(); it != sById.constEnd(); ++it) allIds.insert(it.key());
@@ -196,6 +199,29 @@ EngineDiff perRecordDiff(const QList<BackendRecord>& source,
                 result.toTarget.append(makeConflict(sRec, tRec, BackendRecord{}));
         }
         // (!hasS && !hasT && hasB) is vestigial; ignore.
+    }
+
+    // O55 fail-loud guard: a Create toward EACH side whose records are
+    // canonically equal is not two new records — it is ONE logical record
+    // tracked under two unjoined ids (the churn signature that silently
+    // emptied WildPalms' hub from pass 2 on). Leave the ops in place (the
+    // caller decides policy) but surface the pair so the engine can refuse
+    // the mapping loudly instead of cross-creating toward an empty hub.
+    // Canonically equal INCLUDES the payload's own uid field, so two
+    // genuinely independent records never match here — only re-namespaced
+    // copies of the same logical record do.
+    for (const auto& mk : std::as_const(result.toTarget)) {
+        if (mk.kind != EngineDiffOp::Kind::Create) continue;
+        for (const auto& bk : std::as_const(result.toSource)) {
+            if (bk.kind != EngineDiffOp::Kind::Create) continue;
+            if (differ.equal(toCanonical(mk.record, canonical),
+                             toCanonical(bk.record, canonical))) {
+                EngineDiff::IdentityConflict c;
+                c.sourceRecord = bk.record;
+                c.targetRecord = mk.record;
+                result.identityConflicts.append(c);
+            }
+        }
     }
 
     return result;

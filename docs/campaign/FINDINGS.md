@@ -1417,6 +1417,9 @@ access — so it compiled cleanly without changes. Confirmed by Task 2's full bu
 
 Format: `YYYY-MM-DD — file:line — inv N — phrase`
 
+2026-08-22 — src/engine/syncengine.cpp (harvestBaselinesAfterFirstSync, pre-O55 line ~2999) — inv 9 (fixed in passing) — the "shouldn't happen" comment claiming a target hash miss was impossible was factually wrong for any id-re-namespacing target (the exact O55 case); fail-loud comments must be checked against namespace assumptions, not just emptiness.
+2026-08-22 — tests/calendar/tst_backend_signals.cpp — process/doc drift — fails on the pristine tree at this commit (Radicale live-state HTTP 412) but was absent from CLAUDE.md's known-failures list (which catalogued only two); stash-verified pre-existing during O55. Catalogued here and in CLAUDE.md's O55 note so the next suite tally isn't misread as a regression.
+
 2026-05-24 — src/contacts/vcardcanonstages.cpp (VCard4ToCanonStage, birthday mapping) — inv 4 — `birthday.hasYear` is hardcoded `true`: KContacts exposes `birthdayHasTime()` but no `birthdayHasYear()`, so a `--MMDD` (year-less) vCard4 BDAY round-trips with a spurious year. Edge case, not exercised by current tests; revisit if year-less birthdays become a contract.
 2026-05-24 — {contacts,todo,calendar}domaindefinition.cpp `richnessRank()` — deviation note — Plan 3 A4/B4/C4 specified `s==canonicalShape()?100:10`; implementations use 100 (canon) / 50 (primary legacy peer: vcard4, ical-vtodo, ical) / low (vcard3=10, todotxt=3, calendar-other=0). Documented deviation per the INVARIANTS deviation rule: only relative ordering matters (canon strictly highest) and the 3-tier scheme is consistent across all three domains and models the extra peers (vcard3, todotxt) more accurately than a flat 10. Harmless; recorded so the spec/code divergence is not mistaken for a bug.
 2026-05-24 — build system (AUTOMOC + parallel QtTest link) — process note — clean parallel builds
@@ -2380,44 +2383,70 @@ create-vs-update judgment), the recommended `m_uidToUrl` fix shape, and
 why the conflict-resolution test suite couldn't have caught it
 (`MockBackend` has no URL concept at all) are all in the linked doc.
 
-### O55 — OPEN, non-blocking — TwoWay sync churns and empties the hub when backend record-id namespaces differ (WildPalms handoff, 2026-08-21, regression v0.77 → v0.97)
+### O55 — RESOLVED 2026-08-22 — TwoWay sync churns and empties the hub when backend record-id namespaces differ (WildPalms handoff, 2026-08-21, regression v0.77 → v0.99)
 
-**Not investigated. Read the full writeup first —
-`~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md`
-— this entry is a pointer, not the full analysis.** WildPalms was dormant
-for months and filed this while catching up past the v0.77 pin it last
-tested against. Independent of O54 and the conflict-resolution campaign —
-no code-path overlap. **User has said this can wait; just needs to stay
-tracked for follow-up.**
+**Resolved** on branch `fix/o55-hub-record-id-aliasing` (engine-side id
+aliasing + identity-conflict fail-loud guard). Full response/wrap-up:
+`docs/2026-08-22-o55-hub-record-id-aliasing-response.md`. Original writeup:
+`~/dev/WildPalms/docs/2026-08-21-libkalburator-hub-record-id-join-churn-handoff.md`.
 
-Any TwoWay mapping between a backend using bare record ids and the
-`GenericSqliteBackend` hub (which returns ids prefixed
-`<collectionId>\x01<origId>` on read) fails to converge:
-`perRecordDiff()` (`src/engine/perrecorddiff.cpp`) joins source/target/
-baseline strictly by raw `BackendRecord::id`, with no id-aliasing step.
-Pass 1 writes into the hub fine; from pass 2 on, the same logical record's
-two id forms (bare vs. hub-prefixed) look like "created on one side,
-deleted on the other" and the fixpoint loop (`kMaxSyncPasses`) churns
-until it empties the hub table. No error is reported — sync claims
-success while silently losing the data.
+**Root cause (verified against code + history).** Two facts coexisted since
+G.8/v0.44 without colliding: `GenericSqliteBackend::loadRecords()` presents
+ids as `<collectionId>\x01<origId>` while storing whatever id a create
+carried, and `perRecordDiff()` joins source/target/baseline strictly by raw
+`BackendRecord::id`. At **v0.77 the topology converged by accident**: pass 2
+re-created an already-stored id, the hub's duplicate-key INSERT failed, and
+the v0.77-era engine treated the failed write as a mapping failure — aborting
+the run before its destructive ops. Phase B4's per-side baseline hashing
+(v0.82) made change detection genuinely correct but removed that accidental
+abort: pass 2 then saw each side's record as tracked-but-vanished-on-the-peer,
+emitted symmetric deletes, and churned both sides empty **while reporting
+success** — violating the file's own "fail loud, never silently-empty" rule
+(perrecorddiff.cpp). The deleted "id-prefix machinery" of fanout-collapse
+(eef7b32) is unrelated — that was DAV collection-id prefixes.
 
-Confirmed regression: passes at WP `007f4a7` + lib `v0.77`, fails at lib
-`v0.93+` (WP narrowed the window empirically to roughly `9e6dadf~1`
-(clean) → `db3f317` (failing, the `createBackends()`-contract commit) but
-did not complete a full bisect). Reproduces without Palm hardware — any
-bare-id backend TwoWay-mapped to `GenericSqliteBackend` twice.
+**Fix (all additive; no consumer code change; pin bump only):**
 
-**Why our suite missed it**: the lib's own engine tests
-(`tst_engine_fixpoint_passes`, `tst_engine_skip_unchanged`,
-`tst_engine_skip_invalidation`) use mock backends on both sides of every
-mapping — `GenericSqliteBackend` is never a real mapping endpoint in our
-suite, so its id-prefixing behavior colliding with a bare-id peer is
-uncovered.
+1. **Capture** — `WriteOperation::idAliases()` (requested create-id →
+   backend-assigned id); the default `SyncBackendBase::applyRecords()` populates
+   it whenever `createRecord()` returns a different non-empty id. Covers
+   every backend using the default write path (`GenericSqliteBackend`,
+   `MockBackend`, `LocalBackend`). Updates/deletes never alias.
+2. **Persist** — `BaselineStore` schema **v8**: `blob_id_aliases(mapping_id,
+   native_id → canonical_id)`; cleared by `clearMappingV3()` alongside sync
+   tokens. canonicalId = the id the mapping's baseline rows are keyed under.
+3. **Join** — `perRecordDiff()` takes an optional alias map (native →
+   canonical) and resolves ids at index time; ops still carry native ids so
+   writes route correctly. Baseline hash lookups resolve through the same
+   run's aliases, so each side's baseline carries its own read-back hash
+   (previously a prefixing target silently fell back to the peer's hash).
+   The first-sync mirror captures aliases too (`harvestBaselinesAfterFirstSync`).
+4. **Fail loud** — `EngineDiff::identityConflicts`: when the diff would emit
+   a Create toward EACH side whose records are canonically equal under
+   unjoined ids (the churn signature), dispatchSync fails the mapping with a
+   precise "identity conflict" error instead of cross-creating. Canonical
+   equality includes the payload uid, so genuinely independent records never
+   trip it.
 
-WildPalms proposes three directions (their doc has full detail): (1)
-engine-side id aliasing — record the (source-id → returned-id) pair on
-Create and join on it in later passes, their recommended option; (2) drop
-the hub's read-side prefix (id-collision risk across collections, likely
-why it exists); (3) declare cross-backend engine-stable ids a hard
-contract and fix `GenericSqliteBackend` to honor it. No lib-side decision
-made yet.
+**Known limitation:** profiles already poisoned by pre-fix churned runs carry
+orphan baseline rows under BOTH id forms with no alias row; those mappings
+need one `clearMappingV3()` (re-first-sync) to recover. Fresh profiles —
+including WildPalms' failing tests, which build fresh state — converge.
+
+**Tests:** `tests/engine/tst_engine_id_aliasing.cpp` (both slots RED on
+v0.99, GREEN with the fix) — (a) bare-id mock ↔ real `GenericSqliteBackend`
+TwoWay converges over three consecutive runs with exactly one hub row, zero
+steady-state writes after run 1, and ONE baseline row; (b) unjoined equal
+twins fail loudly with both records intact. This also closes the coverage gap
+that let the regression ship: `GenericSqliteBackend` is now a real mapping
+endpoint in the suite. Schema-version pins in `tst_baseline_store_v3` /
+`tst_baseline_store_v4_to_v5_migration` bumped 7→8.
+
+**Suite: 180 total, 177 passing** — identical pre-existing baseline
+(`tst_remotecalendarbackend`, `tst_calendar_canon_roundtrip`, and
+`tst_backend_signals`, which was verified failing on the pristine tree at
+this commit — Radicale live-state, same family as the first).
+
+**Consumer impact:** PlanStan unaffected (no `GenericSqliteBackend`
+endpoints; all its backends present engine-stable ids). WildPalms needs only
+a pin bump; its two failing runtime tests should pass unmodified.

@@ -45,6 +45,18 @@ struct EngineDiff
     QList<EngineDiffOp> toSource;  ///< operations to apply to source
     QList<EngineDiffOp> toTarget;  ///< operations to apply to target
 
+    /// O55: a pair of records — one per side — that are canonically equal
+    /// but tracked under different, unjoined ids with no baseline between
+    /// them. Left alone the diff would cross-create both (the churn that
+    /// silently emptied WildPalms' hub); the engine must fail the mapping
+    /// loudly instead of applying it. Populated by perRecordDiff().
+    struct IdentityConflict
+    {
+        BackendRecord sourceRecord;
+        BackendRecord targetRecord;
+    };
+    QList<IdentityConflict> identityConflicts;
+
     bool hasConflicts() const noexcept;
     int  totalOperations() const noexcept;
 };

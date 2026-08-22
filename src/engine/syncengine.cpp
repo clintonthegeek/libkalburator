@@ -2832,9 +2832,15 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     if (mirrorReadErr.isEmpty()) {
         QMetaObject::invokeMethod(tgtBackend,
             [tgt, colId, &tgtRecords, &mirrorReadErr]() {
-                tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr);
+                (void)tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr);
             }, Qt::BlockingQueuedConnection);
     }
+
+    // O55: ids the backend actually assigned to this mirror's creates
+    // (requested → assigned). GenericSqliteBackend reads back
+    // <collectionId>\x01<origId>; without recording the pairing the next
+    // sync's diff cannot join the sides and churns.
+    QHash<QString, QString> mirrorAliases;
 
     if (mirrorReadErr.isEmpty()) {
         const auto tgtById = indexBlobById(tgtRecords);
@@ -2876,10 +2882,21 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         }
 
         QMetaObject::invokeMethod(tgtBackend,
-            [tgt, colId, tgtWritable, toCreate, toUpdate, toDelete, &mirrorErrors]() {
+            [tgt, colId, tgtWritable, toCreate, toUpdate, toDelete,
+             &mirrorErrors, &mirrorAliases]() {
                 for (const auto &sr : toCreate) {
-                    if (tgtWritable && tgt->createRecord(colId, sr).isEmpty())
-                        ++mirrorErrors;
+                    // O55: capture the backend-assigned id for the alias
+                    // record (requested → assigned). A withheld (read-only)
+                    // write is a no-op, not an error — same contract as
+                    // pre-O55.
+                    QString storedId;
+                    if (tgtWritable) {
+                        storedId = tgt->createRecord(colId, sr);
+                        if (storedId.isEmpty())
+                            ++mirrorErrors;
+                        else if (storedId != sr.id)
+                            mirrorAliases.insert(sr.id, storedId);
+                    }
                 }
                 for (const auto &out : toUpdate) {
                     if (tgtWritable && !tgt->updateRecord(out))
@@ -2911,7 +2928,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         return true;
     }
 
-    harvestBaselinesAfterFirstSync(request);
+    harvestBaselinesAfterFirstSync(request, mirrorAliases);
 
     if (!tgtWritable) {
         // O46: the mirror writes were withheld because the target reports
@@ -2928,7 +2945,8 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     return true;
 }
 
-void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
+void SyncEngineWorker::harvestBaselinesAfterFirstSync(
+    const Request &request, const QHash<QString, QString> &idAliases)
 {
     if (!m_baselineStore) {
         qDebug() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - no BaselineStore, skipping";
@@ -2988,6 +3006,11 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
     const QString mappingId = request.mapping.id;
     QList<Kalburator::Engine::BaselineEntry> entries;
     entries.reserve(srcRecords.size());
+    // O55: reverse view (assigned → requested) so the target's read-back
+    // hash can be found for a create the backend re-namespaced.
+    QHash<QString, QString> assignedToRequested;
+    for (auto it = idAliases.constBegin(); it != idAliases.constEnd(); ++it)
+        assignedToRequested.insert(it.value(), it.key());
     for (const BackendRecord &r : srcRecords) {
         Kalburator::Engine::BaselineEntry e;
         e.id = r.id;
@@ -2995,8 +3018,12 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         // Fallback to the source hash only if target somehow doesn't have
         // the record yet (shouldn't happen — the mirror just wrote it —
         // but never silently leave a hash empty; see INVARIANTS "fail
-        // loud, never silently-empty").
-        e.targetHash = tgtHashById.contains(r.id) ? tgtHashById.value(r.id) : r.contentHash;
+        // loud, never silently-empty"). O55: resolve through the mirror's
+        // aliases first — a prefixing backend reads back under the
+        // assigned form, not the requested one.
+        const QString tgtId = assignedToRequested.contains(r.id)
+            ? assignedToRequested.value(r.id) : r.id;
+        e.targetHash = tgtHashById.contains(tgtId) ? tgtHashById.value(tgtId) : r.contentHash;
         entries.append(e);
     }
 
@@ -3005,10 +3032,14 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(const Request &request)
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
         // Marshal to engine thread — BaselineStore (SQLite) is not thread-safe.
         QMetaObject::invokeMethod(m_baselineStoreAnchor,
-            [bbs, mappingId, entries, now]() {
+            [bbs, mappingId, entries, now, idAliases]() {
                 for (const auto &e : entries) {
                     bbs->setBaselineHashesV4(mappingId, e.id, e.sourceHash, e.targetHash);
                 }
+                // O55: persist the mirror's create aliases so later passes'
+                // join resolves both sides onto one logical record.
+                for (auto it = idAliases.constBegin(); it != idAliases.constEnd(); ++it)
+                    bbs->setIdAlias(mappingId, it.value(), it.key());
                 bbs->setLastSyncTime(mappingId, now);
             }, Qt::BlockingQueuedConnection);
     }
@@ -3552,9 +3583,10 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // single-hash rows to "both sides equal" (see its doc comment in
     // baselinestore.cpp).
     QList<Kalburator::Engine::BaselineEntry> baselineEntries;
+    QHash<QString, QString> idAliases;
     if (!request.override.clobber && m_baselineStore && m_baselineStoreAnchor) {
         Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineEntries]() {
+        QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, &baselineEntries, &idAliases]() {
             for (const auto &h : bbs->baselineHashesForMappingV4(mappingId)) {
                 Kalburator::Engine::BaselineEntry e;
                 e.id         = h.recordId;
@@ -3562,6 +3594,11 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
                 e.targetHash = h.targetHash;
                 baselineEntries.append(e);
             }
+            // O55: native-id → canonical-id aliases recorded by previous
+            // passes' create writes (e.g. GenericSqliteBackend's
+            // <collectionId>\x01<origId>). Without resolving these the join
+            // below cannot see that both sides hold the same logical record.
+            idAliases = bbs->idAliasesForMapping(mappingId);
         }, Qt::BlockingQueuedConnection);
     }
 
@@ -3572,7 +3609,28 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     m_unifiedMerger = dd->createCanonicalMerger();
     const EngineDiff engineDiff = perRecordDiff(
         sourceRecords, targetRecords, baselineEntries,
-        canonical, *m_unifiedDiffer);
+        canonical, *m_unifiedDiffer, idAliases);
+
+    // O55 fail-loud guard: canonically-equal records under unjoined ids.
+    // Applying this diff would cross-create the same logical record toward
+    // both sides and churn until the peer empties — while reporting success
+    // (the exact WildPalms hub data-loss shape). Refuse the mapping instead.
+    if (!engineDiff.identityConflicts.isEmpty()) {
+        const auto &first = engineDiff.identityConflicts.first();
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "identity conflict: source record '%1' and target record '%2' "
+            "are canonically equal but tracked under unjoined ids with no "
+            "baseline between them — refusing to cross-create (backend id "
+            "namespace mismatch? see FINDINGS O55)")
+                .arg(first.sourceRecord.id, first.targetRecord.id);
+        m_currentResult.targetStats.errors += engineDiff.identityConflicts.size();
+        qWarning() << "SyncEngineWorker:" << m_currentResult.errorMessage
+                   << "-" << engineDiff.identityConflicts.size() << "pair(s)";
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
 
     // Seed baselines for records that are already in sync (same ID, no
     // existing baseline) so a subsequent sync can distinguish "source
@@ -4161,7 +4219,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // (engine thread) can override the pre-fetch FreshSyncState value
         // with a fresher one for the side that actually wrote — carried on
         // the per-mapping SyncResult rather than engine-side worker state.
-        QString *outRevision = nullptr)
+        QString *outRevision = nullptr,
+        // O55: out-param — filled with the settled WriteOperation's
+        // idAliases() (requested create-id → backend-assigned id). The
+        // caller resolves post-write refetch hashes through it and
+        // persists the pairs so later passes can join the sides.
+        QHash<QString, QString> *outIdAliases = nullptr)
     {
         // Authority: never write to a backend that reports read-only for this
         // collection (e.g. an ACL change at runtime). Skip is a no-op, NOT a
@@ -4373,6 +4436,13 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (outRevision && writeOp)
             *outRevision = writeOp->resultRevision();
 
+        // O55: same lifecycle as resultRevision() — read before deleteLater().
+        if (outIdAliases && writeOp) {
+            const auto aliases = writeOp->idAliases();
+            for (auto it = aliases.constBegin(); it != aliases.constEnd(); ++it)
+                outIdAliases->insert(it.key(), it.value());
+        }
+
         if (writeOp) writeOp->deleteLater();
     };
 
@@ -4393,6 +4463,12 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     // single-shared-hash bug this phase fixes.
     QHash<QString, QString> writtenTargetHash;
     QHash<QString, QString> writtenSourceHash;
+    // O55: requested-id → backend-assigned id for THIS run's create writes,
+    // per side. Resolves the post-write refetch (keyed by backend-native
+    // ids) onto the baseline-key ids, and is persisted after a successful
+    // apply so the next pass's join can resolve them too.
+    QHash<QString, QString> targetWriteAliases;
+    QHash<QString, QString> sourceWriteAliases;
 
     // Apply to target.
     if (!m_unifiedMerge.finalTarget.isEmpty()) {
@@ -4422,7 +4498,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
         applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
                    m_currentRequest.mapping.targetBackend, /*notifyHost=*/false,
-                   m_currentResult.targetStats, &m_currentResult.appliedTargetRevision);
+                   m_currentResult.targetStats, &m_currentResult.appliedTargetRevision,
+                   &targetWriteAliases);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -4461,7 +4538,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
             srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
         applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
                    m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true,
-                   m_currentResult.sourceStats, &m_currentResult.appliedSourceRevision);
+                   m_currentResult.sourceStats, &m_currentResult.appliedSourceRevision,
+                   &sourceWriteAliases);
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
@@ -4496,25 +4574,58 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         if (m_baselineStore && m_baselineStoreAnchor && !m_unifiedMerge.updatedBaselines.isEmpty()) {
             Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
             QHash<QString, Kalburator::Engine::BaselineEntry> toSave;
+            // O55: the post-write refetch is keyed by backend-native ids;
+            // a create that was re-namespaced (requested → assigned) reads
+            // back under the ASSIGNED form. Resolve through this run's
+            // aliases before concluding "no read-back hash" — otherwise a
+            // prefixing backend's baseline would silently fall back to the
+            // OTHER side's hash.
+            auto readBackHash = [](const QHash<QString, QString> &byId,
+                                   const QHash<QString, QString> &writeAliases,
+                                   const QString &id) -> QString {
+                if (byId.contains(id))
+                    return byId.value(id);
+                for (auto it = writeAliases.constBegin();
+                     it != writeAliases.constEnd(); ++it) {
+                    if (it.key() == id && byId.contains(it.value()))
+                        return byId.value(it.value());
+                }
+                return {};
+            };
             for (const auto &rec : m_unifiedMerge.updatedBaselines) {
                 if (rec.id.isEmpty() || rec.isDeleted) continue;
                 Kalburator::Engine::BaselineEntry e = toSave.value(rec.id);
                 e.id = rec.id;
-                if (writtenSourceHash.contains(rec.id))
-                    e.sourceHash = writtenSourceHash.value(rec.id);
+                if (!readBackHash(writtenSourceHash, sourceWriteAliases, rec.id).isEmpty())
+                    e.sourceHash = readBackHash(writtenSourceHash, sourceWriteAliases, rec.id);
                 else if (e.sourceHash.isEmpty())
                     e.sourceHash = rec.contentHash;
-                if (writtenTargetHash.contains(rec.id))
-                    e.targetHash = writtenTargetHash.value(rec.id);
+                if (!readBackHash(writtenTargetHash, targetWriteAliases, rec.id).isEmpty())
+                    e.targetHash = readBackHash(writtenTargetHash, targetWriteAliases, rec.id);
                 else if (e.targetHash.isEmpty())
                     e.targetHash = rec.contentHash;
                 toSave.insert(rec.id, e);
             }
-            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave]() {
+            // O55: persist this run's create aliases (native → canonical,
+            // i.e. assigned-id → requested-id; the baseline rows above are
+            // keyed by the requested form) alongside them, so the NEXT
+            // pass's join resolves both sides onto one logical record.
+            QList<QPair<QString, QString>> aliasPairs;  // (nativeId, canonicalId)
+            for (auto it = targetWriteAliases.constBegin();
+                 it != targetWriteAliases.constEnd(); ++it) {
+                aliasPairs.append({it.value(), it.key()});
+            }
+            for (auto it = sourceWriteAliases.constBegin();
+                 it != sourceWriteAliases.constEnd(); ++it) {
+                aliasPairs.append({it.value(), it.key()});
+            }
+            QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave, aliasPairs]() {
                 for (auto it = toSave.constBegin(); it != toSave.constEnd(); ++it) {
                     bbs->setBaselineHashesV4(mappingId, it.value().id,
                                              it.value().sourceHash, it.value().targetHash);
                 }
+                for (const auto &pair : aliasPairs)
+                    bbs->setIdAlias(mappingId, pair.first, pair.second);
             }, Qt::BlockingQueuedConnection);
         }
         // T9: persist property-baseline snapshot after successful write.
