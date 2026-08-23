@@ -815,3 +815,18 @@ endif()
 if(KALBURATOR_BUILD_GRAPHCLI)
     add_subdirectory(tools)
 endif()
+
+# -- GoogleCLI experiment tool -------------------------------------------------
+# Standalone Google Calendar protocol lab (loopback OAuth code flow + Calendar
+# v3 verbs + payload capture for the vendor-convergence corpus). Qt6
+# Core+Network only; does not link the library. Runtime credentials live in
+# gitignored google/.
+if(PROJECT_IS_TOP_LEVEL)
+    option(KALBURATOR_BUILD_GOOGLECLI "Build the GoogleCLI Google Calendar experiment tool" ON)
+else()
+    option(KALBURATOR_BUILD_GOOGLECLI "Build the GoogleCLI Google Calendar experiment tool" OFF)
+endif()
+
+if(KALBURATOR_BUILD_GOOGLECLI)
+    add_subdirectory(tools/googlecli)
+endif()
