@@ -26,3 +26,20 @@ function(kalburator_add_graph_test TEST_NAME)
 endfunction()
 
 kalburator_add_graph_test(tst_mock_graph_server)
+
+# EEE Phase 7.C foundation — GraphApiClient transport tests (pagination +
+# delta walks against the Stage D mock). Links the real library so the
+# client under test is the production one, not a test double.
+add_executable(tst_graph_api_client tst_graph_api_client.cpp)
+target_link_libraries(tst_graph_api_client
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        kalburator_mock_graph_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_graph_api_client COMMAND tst_graph_api_client)
+set_tests_properties(tst_graph_api_client PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

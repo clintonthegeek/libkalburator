@@ -16,7 +16,8 @@ updated in the same commit as plan state (phase-status-docs rule).
 | Stage D — mock Graph server | **done** | `tests/graph/mockgraphserver.*` + `tst_mock_graph_server` (6 slots): $top/$skip+nextLink pagination, /delta walk+replay+fixpoint+410 ResyncRequired, exact routes, 404 shape, request recording. Ready as the test bed for 7.C `MSGraphCalendarBackend`. |
 | Graph fixtures | **done** | Sanitizer + 5 committed extracts + live-fixture promotion slot (see Next actions #2). |
 | Phase 7.B — ms-event ⇄ canon edge | **done (stub-level verification)** | Converter suite FIRST (`tst_recurrence_pattern_converter`, 31 slots: every §1.3 row both directions, every cannot-represent ruling, O57(e)/(f) sentinel handling, carried-set re-promote identity, representable-set convergence). Then stages `mseventcanonstages.{h,cpp}` + catalogue + registration (now 9 edges) + `tst_ms_event_canon_edge` (10 slots): captured-shaped promote (O57 realities), declared-loss demote walk, C→G→C byte-equal identity incl. unrepresentable-rule carrier path, registry inspection, Windows-zone split-brain (O57(b)) via vendored CLDR map (`windowszonesmap.h`, 139 zones), floating pin+carrier, exception⇒recurrenceId keying. Declared-vs-actual divergence = none found. Live checkpoint still USER-RUN (proposal invariant 6) before any consumer sees it. |
-| Phase 7.C/E | not started | Stage D ready as test bed. |
+| Phase 7.C foundation — `GraphApiClient` | **done** | `src/graph/graphapiclient.{h,cpp}` + `tst_graph_api_client` (8 slots vs Stage D mock): multi-page collection walks ($top honored, order-stable), Bearer injection, delta initial/replay/fixpoint steps with typed 410 ResyncRequired surfacing, error.code extraction (O57(j)). Wire nuance pinned: a NON-EMPTY queued change page answers nextLink — the delta fixpoint is "empty change set + deltaLink", so walkers must step until complete, not until a seen token. Backend integration (fetch/applyRecords against these primitives) is the remaining 7.C work. |
+| Phase 7.E | not started | — |
 
 ## Next actions (ordered)
 
@@ -47,6 +48,6 @@ updated in the same commit as plan state (phase-status-docs rule).
 
 ## Baseline
 
-184 tests total / 182 passing. Known failures are the two documented
+185 tests total / 183 passing. Known failures are the two documented
 live-Radicale-state-dependent slots (`tst_backend_signals`,
 `tst_remotecalendarbackend`).
