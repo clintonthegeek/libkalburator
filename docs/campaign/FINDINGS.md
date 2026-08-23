@@ -2728,3 +2728,58 @@ was written. Fix: parameter-tolerant regex match
 (`^X-CANON-CLASSIFICATION(?:;[^:\r\n]*)?:personal$` multiline). The verbatim
 stash is present and recoverable as designed; no production code touched.
 Suite baseline moves to 180 total / 178 passing.
+
+### O59 — OPEN — Google-side wire truths vs the vendor-shapes reference (EEE Phase 2 edge implementation, found 2026-08-23)
+
+While implementing the `google-event ⇄ canon` edge (Phase 2), the
+hand-modeled fixture was verified against the LIVE Calendar API v3 events
+reference before trusting it — and the reference doc / our fixture both had
+deltas. Also logged: two tooling findings. Google-side live corpus capture
+is now unblocked (OAuth desktop client registered; scratch space in
+gitignored `google/`, following the `msgraph/` model) — items below should
+be re-confirmed against captured payloads when available.
+
+**(a) `reminders.overrides[]` entries are `{method, minutes}`.** Our first
+fixture invented `reminderMethod`. Both stage directions initially baked the
+wrong key in. Wire truth: `method` (`popup`/`email`), max 5 overrides,
+minutes 0..40320.
+
+**(b) `eventLabelId` exists — absent from reference doc §1.1 entirely.**
+String, writable, "supersedes the index-based colorId property" (set via
+`eventLabelVersion=1` request parameter on insert/update/patch). The canon
+catalogue has no home for it yet; the edge currently carries it verbatim in
+`providerExtras["google"]`. Watch item for the next canon catalogue review.
+
+**(c) `extendedProperties.private.(key)` values are STRING-typed.** All
+`x-canon-*` carriers must be JSON-stringified (the stage's
+valueToCarrierString/carrierStringToValue pair). This is a hard constraint
+unlike iCal X- props, which carry text anyway.
+
+**(d) `status:"cancelled"` is dual-meaning** (deleted event vs cancelled
+exception of an uncancelled series); cancelled exceptions guarantee only
+`id`, `recurringEventId`, `originalStartTime`; deleted events only `id`.
+Mirrors O57(h)'s Graph gap-not-tombstone behavior. Backend-relevant
+(Phase 7 transport layer), not edge-relevant.
+
+**(e) iCalUID ≠ id, confirmed in so many words**: occurrences of a series
+share one iCalUID but each has its own id. uid-anchored series handling
+(the O57(a) Graph finding) applies identically on the Google side.
+
+**Tooling notes (not vendor findings):**
+- **moc silently produces NO output for a Q_OBJECT class in a translation
+  unit containing a terminated raw string literal** `R"(...)"` — symptom is
+  an undefined-vtable link error, moc's only hint is "No relevant classes
+  found" when run manually. Bisected: prefix parses up to the closing `)"`,
+  fails with it present. House rule: no terminated raw strings in files with
+  Q_OBJECT classes (use concatenated quoted literals).
+- **AUTOMOC timestamp gotcha resurfaced**: adding new source files to
+  explicit lists required removing `build/**/autogen/timestamp` to get moc
+  to re-run (already documented at CMakeLists.txt:124; cost another ~20 min
+  here).
+
+**Transport research input landed:** `docs/google_rest.md` (2026-08-23) —
+Google-side analogue of `msgraph/general_plan.md`: OAuth desktop loopback
+flow, syncToken incremental semantics, external identity
+`(provider, collection, remote_id, etag)`, GoogleAccount as its own
+subsystem. Confirms the edge/transport seam: provider-local identity lives
+in `providerExtras["google"]`, sync tokens belong to the future backend.

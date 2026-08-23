@@ -2,6 +2,8 @@
 #include "icalproperties.h"
 #include "icalcanonstages.h"
 #include "orgicalcanonstages.h"
+#include "googleeventproperties.h"
+#include "googlecanonstages.h"
 #include "calendarcanonproperties.h"
 #include "lossprofile.h"
 
@@ -43,9 +45,14 @@ CalendarStockShapes::peerShapes() const
     // {calendar, org-ical} is a peer; shares the iCal field-set (same catalogue).
     const Kalburator::Shape::Shape orgIcalShape{ DomainId{QStringLiteral("calendar")},
                                                  EncodingId{QStringLiteral("org-ical")} };
+    // {calendar, google-event} is a peer; a single Google Calendar v3 `event`
+    // resource as wire-shape JSON (one object per record).
+    const Kalburator::Shape::Shape googleEventShape{
+        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("google-event")} };
     return {
-        { icalShape,    makeICalCatalogue() },
-        { orgIcalShape, makeICalCatalogue() },
+        { icalShape,        makeICalCatalogue() },
+        { orgIcalShape,     makeICalCatalogue() },
+        { googleEventShape, makeGoogleEventCatalogue() },
     };
 }
 
@@ -57,6 +64,8 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
                                          EncodingId{QStringLiteral("ical")} };
     const Kalburator::Shape::Shape orgIcal{ DomainId{QStringLiteral("calendar")},
                                              EncodingId{QStringLiteral("org-ical")} };
+    const Kalburator::Shape::Shape googleEvent{
+        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("google-event")} };
     return {
         // Identity edge: canon → canon (hub)
         TransformationEdge{
@@ -87,6 +96,20 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
             canon, orgIcal,
             canonToOrgIcalLoss(),
             std::make_shared<CanonToOrgICalStage>()
+        },
+        // EEE Phase 2 — Promote: google-event → canon (lossless; recurrence is
+        // already verbatim RFC5545 lines on both sides)
+        TransformationEdge{
+            googleEvent, canon,
+            LossProfile{},
+            std::make_shared<GoogleEventToCanonStage>()
+        },
+        // EEE Phase 2 — Demote: canon → google-event (lossy per
+        // docs/2026-08-23-google-event-edge-loss-profile.md)
+        TransformationEdge{
+            canon, googleEvent,
+            canonToGoogleEventLoss(),
+            std::make_shared<CanonToGoogleEventStage>()
         },
     };
 }

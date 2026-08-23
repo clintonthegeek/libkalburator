@@ -128,12 +128,13 @@ private slots:
         QVERIFY(cat.hasProperty(PropertyId{"guestsCanModify"}));
     }
 
-    void stockShapesHasFiveEdges()
+    void stockShapesHasSevenEdges()
     {
         // Plan 3 Task C5: canon-identity + ical→canon + canon→ical (3)
         // Plan 4 Task 3: + org-ical→canon + canon→org-ical (2) = 5
+        // EEE Phase 2: + google-event→canon + canon→google-event (2) = 7
         const CalendarStockShapes shapes;
-        QCOMPARE(shapes.edges().size(), 5);
+        QCOMPARE(shapes.edges().size(), 7);
     }
 
     void stockShapesPeerContainsOrgIcal()
