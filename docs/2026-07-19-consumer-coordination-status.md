@@ -83,6 +83,35 @@ New FINDINGS: **O48, O49, O50 (fixed), O51, O52, O53**.
 
 ## 2c. OPEN inbound — updated 2026-08-22 (O54, O55, O56 all RESOLVED; none open)
 
+## 2d. NEW (2026-08-23) — vendor-convergence (EEE) campaign opened; GraphCLI experiment live; **consumer-relevant Graph behavior findings**
+
+Not consumer-facing yet — **zero pin/code impact** — recorded here because it
+changes the roadmap picture. The vendor-convergence campaign
+(`docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md`, readiness
+assessment in `docs/2026-08-22-canon-domains-and-cross-format-readiness.md`)
+has started Phase 0: the `graphcli` experiment tool (`tools/graphcli/`,
+opt-in build `KALBURATOR_BUILD_GRAPHCLI`) is capturing a real-payload corpus
+against live Microsoft Graph accounts into gitignored `msgraph*/captured/`.
+
+**⚠ Consumers should read FINDINGS O57 (all addenda).** A substantial share
+of what it documents is host-application logic the library will NOT absorb:
+RSVP flows (Graph-native `accept`/`tentativelyAccept`+counter-proposal only;
+eventMessage actions don't exist on consumer accounts), invite-ingestion
+timing (inbox-delivered invites auto-appear on calendars in ~75s; junked
+invites are never processed, and un-junking doesn't retro-process), emailed
+iTIP REPLYs as an out-of-band mutation source (changeKey moves with no Graph
+write), and above all **(t) attendee alias expansion** — vendors rewrite
+invitee addresses to canonical internal identities, so naive email-string
+matching of attendees across vendors yields phantom non-responders and
+phantom accepters that never converge. Until the identity layer lands
+(campaign §5), hosts must treat cross-vendor attendee diffs as advisory.
+
+A future **Microsoft Graph backend** is pinned as Phase 7 of the proposal —
+now with a full work breakdown (§7.a/§7.b there). **MVP scope deliberately
+mirrors PlanStan's current event model** (solo events, no attendees/iTIP):
+attendees ride the canon read-only, RSVP flows deferred until PlanStan ships
+organization features. Consumers: nothing to do; all additive when it lands.
+
 | # | From | Item | Status |
 |---|---|---|---|
 | ~~**O54**~~ | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guessed every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items failed permanently (SabreDAV 400). | **RESOLVED 2026-08-22** (branch `fix/o54-uid-url-assumption`): `m_uidToUrl` cache + `resolveItemUrl()` across all update/delete/read paths, per the recommended fix shape; CardDAV audited clean. Regression test RED→GREEN in `tst_remotecalendarbackend_convergence`. Suite 177/179 (identical pre-existing baseline). Consumers need no code change; bump the pin when convenient. Closure summary: FINDINGS **O54**. |

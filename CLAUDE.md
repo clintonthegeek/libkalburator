@@ -1,5 +1,43 @@
 # libkalburator — Claude instructions
 
+## GraphCLI / vendor-convergence experiment (OPENED 2026-08-23)
+
+Phase 0 of the **vendor-convergence (EEE) campaign** is live: `tools/graphcli/`
+(opt-in CMake option `KALBURATOR_BUILD_GRAPHCLI`) is a Qt6 console lab that
+authenticates to Microsoft Graph via device-code flow against a personal
+Outlook.com account and captures real payloads. Everything machine-local
+lives in gitignored `msgraph/` (credentials in `GraphCLIinfo.md` — never
+commit; `token-cache.json`; `captured/*.json` = the Phase-0 golden corpus;
+`general_plan.md` = the auth/architecture research input). Scenario matrix:
+`tools/graphcli/corpus-sweep.sh list`; bulk cleanup: `graphcli sweep-clean`.
+First findings: FINDINGS **O57** (Graph payload realities vs our reference
+doc — notably: default `/events` listing returns series MASTERS ONLY, so any
+Graph backend needs `calendarview`/`instances`; events carry top-level `uid`
+= `iCalUId`; plus three addenda from live two-account iTIP experimentation:
+delivery-path-dependent attendant ingestion, consumer-account RSVP limits,
+and attendee alias expansion (t) that makes naive email-matching of
+attendees non-convergent — **consumer-relevant, see coordination page §2d**). Roadmap placement + the pinned Microsoft-Graph-backend design:
+`docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md` (§Status,
+Phase 7); readiness context:
+`docs/2026-08-22-canon-domains-and-cross-format-readiness.md`. Consumers are
+unaffected (additive-only when it lands). Do not rebuild this tooling from
+scratch — read the proposal's Status section first.
+
+**Session state at close (2026-08-23, all committed):** Phase 7 work
+breakdown + MVP scoping pinned in the proposal (§7.a/§7.b — calendar-only,
+solo events matching PlanStan's current no-iTIP model). Two live profiles
+exist: default `msgraph/` (= clintonthegeek@gmail.com MSA /
+outlook_986C… mailbox) and `msgraph-clintoneist1/`; both have Mail.Read +
+calendar scopes consented; tokens auto-refresh. Corpus (~45 captures incl.
+decoded REQUEST/REPLY iCal pairs) is machine-local only — sanitize before
+committing any of it into tests/fixtures. Pending next actions for a fresh
+session, in order: (1) Stage D mock Graph server replaying the corpus;
+(2) EEE Phases 2–4 transformation edges per proposal; (3) fix the
+pre-existing red canon slot (`canonPersonalClassificationProducesPrivateAndStash`,
+uncatalogued beyond O57 mention); (4) make corpus-sweep scenario names
+unique-per-run (timestamp suffix) to prevent the cross-series contamination
+that briefly produced a wrong O57 conclusion.
+
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 
 Canonical remote is **`origin` = `git@github.com:clintonthegeek/libkalburator.git`**.

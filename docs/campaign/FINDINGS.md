@@ -2504,3 +2504,206 @@ crossed aliases + dual rows → heals, converges, zero movement), and
 Suite 180 total, 177 passing — identical pre-existing baseline. Consumers:
 pin bump only; v1.00-poisoned profiles recover WITHOUT manual clearing now
 (the load-time heal handles them).
+
+### O57 — OPEN — First live Microsoft Graph payloads contradict the vendor-shapes reference doc in seven places (EEE Phase-0 corpus observations, found 2026-08-23)
+
+Context: the GraphCLI experiment tool (`tools/graphcli/`, device-code auth,
+payload `capture` command) produced the first real-payload corpus entries of
+the vendor-convergence (EEE) campaign against a personal Outlook.com account
+via a fresh Entra app registration. Evidence lives machine-local under
+gitignored `msgraph/captured/` (sanitization/commit into
+`tests/fixtures/vendor/` deliberately deferred). Each item below is a
+documented-vs-real delta that will bite an `ms-* ⇄ canon` stage if built
+from the docs alone:
+
+**(a) Graph events carry a top-level `uid`.** Not in the §1.2 reference
+table at all. Observed equal to `iCalUId` (the MAPI GlobalObjectID blob,
+e.g. `040000008200E0…`) on both a singleInstance and a seriesMaster. Impact:
+positive — a stable cross-system identity anchor is directly available, which
+is exactly what O55-style id aliasing wants at a future Graph edge. The
+reference table needs a `uid` row.
+
+**(b) Zone vocabulary is split-brained per event.** `start/end.timeZone` =
+`"UTC"` while `originalStartTimeZone/originalEndTimeZone` =
+`"Eastern Standard Time"` (Windows vocabulary) on the same object authored in
+ET. Confirms the reference's §0.3 warning AND adds a requirement the docs
+only imply: original-zone preservation must survive into canon alongside the
+per-endpoint zones, or round-trips through canon silently re-home the author's
+zone.
+
+**(c) Bing-resolved locations carry fields our canon `locations` shape lacks.**
+Real entries: `{displayName, address{}, coordinates{}, locationType,
+locationUri, uniqueId, uniqueIdType:"bing", addedBy}` — the last four are
+unmodeled. Decision owed: widen the `locations` Json schema or route extras
+through `providerExtras.x-ms-graph`; either way it must be a declared loss
+decision, not stage-code accident.
+
+**(d) Sentinel timestamps in the wild.** `responseStatus.time` =
+`"0001-01-01T00:00:00Z"` (.NET DateTime.MinValue) on every organizer-self
+response. Any promote/demote must neither choke nor manufacture CREATED/
+LAST-MODIFIED-class stamps from year-1 sentinels — same contract class as
+`tst_calendar_canon_roundtrip::timestampLessSourceRoundTripsWithoutManufacturedStamps`.
+
+**(e) Zero-sentinel numeric fields inside `patternedRecurrence`.**
+Unused `pattern.dayOfMonth`/`pattern.month`/`range.numberOfOccurrences`
+serialize as `0`, not null/absent. An RRULE emitter keyed on these values
+would emit garbage (`BYMONTHDAY=0`) unless it treats 0 as absent.
+
+**(f) Weekly patterns still carry `index`.** A plain weekly recurrence
+(`daysOfWeek:["thursday"]`) serializes `index:"first"` although index is
+meaningful only for relative monthly/yearly. Reference §1.3's MS→RFC5545
+table must ignore `index` for non-relative types or it will emit spurious
+`BYSETPOS`.
+
+**(g) Default event listing returns series MASTERS ONLY — no expanded
+instances, no overrides.** `GET /me/calendar/events` returned the
+seriesMaster with `type:"seriesMaster"` and nothing else. Occurrences require
+`/events/{id}/instances?startDateTime&endDateTime`; overrides/exceptions
+surface via `/me/calendarview` or the instances navigation. Corpus +
+sync-design consequence: harvesting exception records needs the calendarView/
+instances endpoints, and the engine's master+override-record model maps onto
+Graph's only if we walk those endpoints — the flat list view is not
+sufficient input for a faithful Graph backend.
+
+Corollary observation (not a defect): Graph mixes null (`"recurrence":null`,
+`"onlineMeeting":null`) with empty-struct (`location.address:{}`,
+`coordinates:{}`) representations for "no value"; stages must normalize both.
+
+Next actions: grow the corpus along the shape matrix (contacts, recurring
+exceptions via calendarView/instances, all-day, attendees, attachments);
+sanitize + commit fixtures when the corpus stabilizes; fold (a)–(g) into the
+reference doc and the future edge loss-profiles at EEE Phases 0/4.
+
+**Addendum 2026-08-23 — full scenario-matrix sweep
+(`tools/graphcli/corpus-sweep.sh all`) confirms and extends O57:**
+
+**(h) Exception overrides surface as `type:"exception"` instances.** PATCH of
+an occurrence-id (obtained from `/events/{id}/instances`) produced a record
+with its own subject inside the series' instance listing, alongside plain
+`occurrence` entries; DELETE of a different occurrence left a clean gap (no
+record at all — not a tombstone). This is the live confirmation that Graph's
+master+exception model maps onto the engine's master+override records via
+the instances walk: exception ⇒ override record, gap ⇒ EXDATE-equivalent.
+Note the deleted-occurrence case leaves NOTHING on either endpoint — the
+cancellation is only reconstructible by diffing against the pattern.
+
+**(i) `calendarview`/`instances` paginate at 10 per page** (default page size,
+no `$top` honored without asking). Pagination is mandatory machinery for any
+Graph backend read path, not an optimization; the engine's fetch gates must
+expect multi-page series expansion.
+
+**(j) Negative-corpus error shapes harvested** (all HTTP 400):
+`TimeZoneNotSupportedException` (missing `start.timeZone`),
+`ErrorInvalidRequest` ("DayOfMonth should be between 1 and 31" — month:13),
+`UnableToDeserializePostBody` (unknown property on contact create — notably
+a TRUNCATED message: "were unable to deserialize " with no object named).
+Error mapping needs to handle unhelpful/truncated messages; code field is
+the reliable discriminator.
+
+**(k) Write-side observations:** instance-level PATCH returns the mutated
+instance JSON directly (no re-fetch needed); contact create rejects unknown
+properties outright (strict schema, unlike events which tolerated extra
+fields); `sweep-clean`-style bulk deletes are plain sequential DELETEs — no
+batch endpoint was used (Graph $batch remains unexplored, watch item).
+
+Tooling notes (not vendor findings): capture filenames now use per-segment
+slugs (`me-events-<id16>-instances_startD…`) so endpoint kind survives into
+the name; `capture` stores single raw pages (wire truth) while the
+`calendarview`/`events` verbs aggregate all pages (query truth) — both are
+corpus-useful, do not conflate them when writing fixtures.
+
+**Addendum 2026-08-23 #2 — cross-mailbox iTIP topology findings (l)–(o).**
+Driven by a two-account experiment (organizer: fresh real
+`clintoneist1@outlook.com`; attendees: Gmail-hosted addresses incl. the
+primary MSA sign-in; client: Thunderbird):
+
+**(l) Consumer Outlook stamps a synthetic, externally-unaddressable ORGANIZER
+into invites.** Invites from the primary account (MSA sign-in
+`clintonthegeek@gmail.com`, Exchange identity `outlook_986C65853D873610@
+outlook.com`) carry `ORGANIZER;mailto:outlook_986C65853D873610@outlook.com`.
+That address is an internal Exchange routing identity, not a real mailbox:
+an external attendee's standards-compliant iTIP REPLY to it was refused by
+Microsoft's own MX (`550 5.5.0 mailbox unavailable, S2017062302`, at RCPT
+TO). Email-based RSVP to such invites is broken by construction — by the
+REQUEST side, not the REPLY side. Fix on the account (create a deliverable
+@outlook.com alias); fix for us (Graph-native RSVP endpoints only in any
+backend).
+
+**(m) iTIP-over-email DOES work when the ORGANIZER is deliverable.** Same
+Thunderbird REPLY flow against `clintoneist1@outlook.com`: delivered,
+ingested by Exchange, and the organizer-side Graph event flipped to
+`attendees[].status.response:"accepted"` with a real timestamp. So consumer
+Microsoft calendars accept attendance state from raw emailed iTIP REPLYs —
+a write path that bypasses Graph entirely and which a sync backend must
+treat as an out-of-band mutation source (changeKey moves; delta catches it).
+
+**(n) A Gmail-hosted MSA has NO Microsoft-side calendar copy as an invitee.**
+The attendee's accepted copy exists only in Thunderbird's local calendar.
+Graph cannot see it from either side; "attendee view" for such invitees is
+permanently outside any Graph backend's reach. Corpus pair saved:
+`captured/work-request-request.ics` + `work-reply-reply.ics` (case l),
+`captured/20260823-025138-…me-events-AQMkADAwATNiZmYA.json` (case m).
+
+**(o) Tooling: `--profile <name>`** gives graphcli persistent parallel accounts
+(`msgraph-<name>/` token isolation, one shared app registration);
+verified with two concurrent live identities. `.gitignore` widened to
+`msgraph*/`.
+
+**Addendum 2026-08-23 #3 — the full attendee/iTIP behavior matrix
+(p)–(u).** Two live consumer accounts (organizer `clintoneist1@outlook.com`;
+invitee mailbox = primary account behind aliases gmail-sign-in /
+`clintonthegeek@hotmail.com` / synthetic `outlook_986C…`), all interactions
+CLI-only. **Much of this lands on CONSUMERS (PlanStan/WildPalms), not the
+library**: RSVP flows, invite ingestion timing, and attendee identity
+resolution are host-application concerns sitting on top of the sync engine —
+see §2d of the consumer-coordination page.
+
+**(p) Calendar-attendant ingestion is delivery-path-dependent.**
+Invite delivered to Inbox (sender whitelisted): auto-materializes on the
+attendee's Graph calendar in under ~75s, `response:"notResponded"`, sentinel
+timestamp — BEFORE any human/client reads anything. Invite delivered to
+Junk: NOT processed at all (stays a plain untyped `message`). Move out of
+Junk afterwards: the entity re-types to
+`#microsoft.graph.eventMessageRequest` (`meetingMessageType:meetingRequest`)
+but the attendant does NOT retroactively run — still no calendar event, no
+`event` navigation, and the message id MUTATES on the folder move (an
+O55-class id-stability trap for any backend caching message ids).
+
+**(q) eventMessage RSVP actions do not exist on consumer accounts.**
+`POST /me/messages/{id}/(tentativelyAccept|accept|decline)` → 400
+`RequestBroker--ParseUri` on BOTH v1.0 and beta, even for a correctly-typed
+`eventMessageRequest`. The `event` navigation is likewise unreachable
+(cast attempts rejected). Programmatic RSVP against an unmaterialized invite
+is impossible; only the calendar EVENT object exposes RSVP actions.
+
+**(r) The complete loop works CLI-only end-to-end:** organizer creates event
+with attendee via Graph POST → attendant auto-adds attendee-side copy →
+attendee responds `accept` via `/me/events/{id}/accept` → REPLY travels as
+emailed iTIP → organizer-side attendee row flips to `"accepted"` with a real
+timestamp (~45s). No mail client involved at any stage.
+
+**(s) Counter-proposals (`proposedNewTime`) are server-accepted but
+email-carried.** `tentativelyAccept` with `proposedNewStart/End` succeeds
+against the event object; however the proposal reaches the organizer only
+inside the response EMAIL — when the organizer side has a synthetic
+unaddressable ORGANIZER (l), the proposal silently vanishes (never bounced
+visibly, never delivered). Emailed iTIP REPLYs carry no structured proposal
+fields, so `attendees[].proposedNewTime` on the organizer side is populated
+only by Graph-native paths.
+
+**(t) ATTENDEE ALIAS EXPANSION — the founding evidence for the identity
+layer (consumer-critical).** Organizer addressed the invite to
+`clintonthegeek@hotmail.com` (a mere alias of the primary mailbox). At
+ingestion Exchange kept the as-addressed row AND resolved the recipient to
+the canonical internal identity `outlook_986C65853D873610@outlook.com`,
+tracking BOTH rows. Our RSVP was emitted under the CANONICAL identity, so
+the canonical row flipped to `accepted` while the originally-addressed
+`hotmail` row stays `notResponded` forever. Organizer-visible result:
+one phantom non-responder + one acceptance from an address nobody was
+invited under. Consequence: **naive string-matching of attendees across
+vendors can never converge** — the same person presents different emails per
+vendor, and vendors rewrite each other's addresses into their own canonical
+vocabulary. Consumers diffing attendee state need alias-set resolution down
+to a stable sink (the exact shape of O55's record-id fix, one level up);
+this is what campaign-proposal §5's identity layer must deliver, and until
+then hosts should treat attendee diffs as advisory, not authoritative.
