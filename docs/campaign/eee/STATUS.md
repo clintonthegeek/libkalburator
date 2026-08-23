@@ -39,6 +39,6 @@ updated in the same commit as plan state (phase-status-docs rule).
 
 ## Baseline
 
-181 tests total / 179 passing. Known failures are the two documented
+182 tests total / 180 passing. Known failures are the two documented
 live-Radicale-state-dependent slots (`tst_backend_signals`,
 `tst_remotecalendarbackend`).
