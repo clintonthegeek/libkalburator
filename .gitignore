@@ -27,3 +27,7 @@ opencode.json
 # Microsoft Graph experiment (credentials, token caches, captured payloads — never commit)
 msgraph*/
 
+# Google Calendar/People experiment (OAuth client secrets, token caches,
+# captured payloads / real user data — never commit)
+google/
+
