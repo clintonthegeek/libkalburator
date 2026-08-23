@@ -1,0 +1,76 @@
+{
+ "contactGroups": [
+  {
+   "etag": "U9fwuEMvlQU=",
+   "formattedName": "YouTube",
+   "groupType": "USER_CONTACT_GROUP",
+   "metadata": {
+    "updateTime": "2012-02-11T03:41:48.340001Z"
+   },
+   "name": "YouTube",
+   "resourceName": "people/c1000000000000000139"
+  },
+  {
+   "formattedName": "Starred",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "memberCount": 4,
+   "name": "starred",
+   "resourceName": "people/c1000000000000000140"
+  },
+  {
+   "formattedName": "Friends",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "metadata": {
+    "updateTime": "2009-02-18T15:33:55.388Z"
+   },
+   "name": "friends",
+   "resourceName": "people/c1000000000000000141"
+  },
+  {
+   "formattedName": "Family",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "metadata": {
+    "updateTime": "2009-02-18T15:33:55.388Z"
+   },
+   "name": "family",
+   "resourceName": "people/c1000000000000000142"
+  },
+  {
+   "formattedName": "Coworkers",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "metadata": {
+    "updateTime": "2009-02-18T15:33:55.388Z"
+   },
+   "name": "coworkers",
+   "resourceName": "people/c1000000000000000143"
+  },
+  {
+   "formattedName": "My Contacts",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "memberCount": 72,
+   "name": "myContacts",
+   "resourceName": "people/c1000000000000000144"
+  },
+  {
+   "formattedName": "Chat contacts",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "chatBuddies",
+   "resourceName": "people/c1000000000000000145"
+  },
+  {
+   "formattedName": "All Contacts",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "memberCount": 72,
+   "name": "all",
+   "resourceName": "people/c1000000000000000146"
+  },
+  {
+   "formattedName": "Blocked",
+   "groupType": "SYSTEM_CONTACT_GROUP",
+   "name": "blocked",
+   "resourceName": "people/c1000000000000000147"
+  }
+ ],
+ "nextSyncToken": "EOOIgNWVt5YD",
+ "totalItems": 9
+}

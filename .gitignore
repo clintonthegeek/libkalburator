@@ -28,6 +28,8 @@ opencode.json
 msgraph*/
 
 # Google Calendar/People experiment (OAuth client secrets, token caches,
-# captured payloads / real user data — never commit)
-google/
+# captured payloads / real user data — never commit). Anchored to the repo
+# root so committed sanitized fixtures under tests/fixtures/vendor/google/
+# are NOT caught by this rule.
+/google/
 

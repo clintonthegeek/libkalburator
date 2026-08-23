@@ -1,0 +1,1473 @@
+{
+ "accessRole": "owner",
+ "defaultReminders": [
+  {
+   "method": "popup",
+   "minutes": 10
+  }
+ ],
+ "description": "",
+ "etag": "\"p327vfg6bom4pa0o\"",
+ "items": [
+  {
+   "created": "2014-09-24T23:51:36.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2014-09-29T11:30:59-04:00",
+    "timeZone": "UTC"
+   },
+   "etag": "\"2888188117682000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=NGdubml2czBwNTc0MmpvN2UydGlrMXZ1NWMgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person117@example.com",
+   "id": "0000000000000001",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2014-09-29T10:30:59-04:00",
+    "timeZone": "UTC"
+   },
+   "status": "confirmed",
+   "summary": "No subject",
+   "updated": "2015-10-06T01:14:18.841Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person2@example.com",
+     "responseStatus": "needsAction"
+    },
+    {
+     "email": "person3@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person1@example.com",
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "conferenceData": {
+    "conferenceId": "yqk-oumc-djh",
+    "conferenceSolution": {
+     "iconUri": "https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png",
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Google Meet"
+    },
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "label": "meet.google.com/yqk-oumc-djh",
+      "uri": "https://meet.google.com/yqk-oumc-djh"
+     }
+    ]
+   },
+   "created": "2020-12-07T00:02:15.000Z",
+   "creator": {
+    "email": "person3@example.com"
+   },
+   "description": "i don't have a clear agenda, but some ideas as following:\n\n1. introduce the beta plan of boardx, education, design thinking, community etc.\n2. discuss the next step opportunity ",
+   "end": {
+    "dateTime": "2020-12-13T21:30:00-05:00"
+   },
+   "etag": "\"3348078897158000\"",
+   "eventType": "default",
+   "hangoutLink": "https://meet.google.com/yqk-oumc-djh",
+   "htmlLink": "https://www.google.com/calendar/event?eid=M3I0c3UwNmNza2w3bzJrbm01aWllazVrNWUgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person118@example.com",
+   "id": "0000000000000002",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person3@example.com"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2020-12-13T20:30:00-05:00"
+   },
+   "status": "confirmed",
+   "summary": " boardx beta",
+   "updated": "2023-01-18T10:57:28.579Z"
+  },
+  {
+   "created": "2009-12-29T23:57:05.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2009-12-27T07:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078898668000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NrNGgxbDZjcGpjaDI1OGdzazhjMW42a3AzZWUyNjZzc2o0ZzlwNmNxajhlOWg4NHIzY2Q4IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A7339BD5336DED9D075278F792A935491A665",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csk4h1l6cpjch258gsk8c1n6kp3ee266ssj4g9p6cqj8e9h84r3cd8",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2009-12-27T06:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": ".",
+   "updated": "2023-01-18T10:57:29.334Z"
+  },
+  {
+   "created": "2011-03-27T04:21:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2011-03-24T15:30:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078900180000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=aGdhcWJxZjJzMmM5NjNpMTBiajQxOGhoMXMgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person119@example.com",
+   "id": "0000000000000003",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2011-03-24T12:15:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "test event",
+   "updated": "2023-01-18T10:57:30.090Z"
+  },
+  {
+   "created": "2012-10-17T22:01:09.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2012-09-21T22:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078901516000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/Toronto"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=aXNhNDg5NmUwc3ZtMzdoMGE5dnM0Z2xtZmMgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person120@example.com",
+   "id": "0000000000000004",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-09-21T21:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "HiyA",
+   "updated": "2023-01-18T10:57:30.758Z"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 2",
+     "email": "person4@example.com",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "created": "2011-04-12T11:26:22.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2005-05-10T13:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078903212000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqMGQxbThwMmphZTI1NmdxamNjYTE2b3FrYWdwaTg0b2ppZTlpOGtxNDZoaTM2bDJqNmM4IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A7339046FE58E4561A65EC2A1992E4CFC5E31",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csj0d1m8p2jae256gqjcca16oqkagpi84ojie9i8kq46hi36l2j6c8",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2005-05-10T12:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": ".",
+   "updated": "2023-01-18T10:57:31.606Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    },
+    {
+     "email": "person5@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    }
+   ],
+   "created": "2018-10-25T02:34:16.000Z",
+   "creator": {
+    "email": "person5@example.com"
+   },
+   "description": "whats up? dude? i wanna meet you,call me if you can 7247645628",
+   "end": {
+    "dateTime": "2018-12-26T19:30:00-05:00",
+    "timeZone": "America/Chicago"
+   },
+   "etag": "\"3348078905338000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=dnZkdmduaThvaW92bmlha2VzdmZqY3I2YmdfMjAxODEwMjdUMDAwMDAwWiBjbGludG9udGhlZ2Vla0Bt",
+   "iCalUID": "person121@example.com",
+   "id": "0000000000000005",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person5@example.com"
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;COUNT=8;BYDAY=FR,SA"
+   ],
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2018-10-26T20:00:00-04:00",
+    "timeZone": "America/Chicago"
+   },
+   "status": "confirmed",
+   "summary": "Robbie the stud ;-)",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:32.669Z",
+   "visibility": "public"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 1",
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2012-06-25T19:36:53.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "Ask about straws",
+   "end": {
+    "dateTime": "2012-06-26T12:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078907472000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/Toronto"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=YzI4NnRqdjVhMmpnbjN2aHI1NnM4dnBrOTggY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person122@example.com",
+   "id": "0000000000000006",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-06-26T11:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "Work in Warehouse",
+   "updated": "2023-01-18T10:57:33.736Z"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 1",
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2012-10-17T22:01:10.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2012-09-22T02:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078912312000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/Toronto"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=N2JvY2htOTJyNnVsa2RhZzRrbHN2dTlib3MgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person123@example.com",
+   "id": "0000000000000007",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-09-22T01:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "Vfd",
+   "updated": "2023-01-18T10:57:36.156Z"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 1",
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2012-09-22T00:46:34.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2012-09-21T22:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078914326000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/Toronto"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=dHIzODFmZDNjYzI2NTk2Z2ZzZ2V2MjJnZDggY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person124@example.com",
+   "id": "0000000000000008",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-09-21T21:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "New event on phone",
+   "updated": "2023-01-18T10:57:37.163Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2011-04-22"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMTEwNDIxIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "recurrence": [
+    "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TH"
+   ],
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2011-04-21"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-12T11:26:23.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2011-04-12T01:00:00-04:00",
+    "timeZone": "America/Toronto"
+   },
+   "etag": "\"3348078918596000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "X-MOZ-LASTACK": "2011-04-14T00:59:05Z"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqOGhpMzhrcWo0Z2hwNmtyamdoYTE2MTIzaWhpMzZzb2thYzI2OGgyM2VoMW04OHBqaWNnIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73394FCE52B9578EA0D9FC71E0FDD7D6B392",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csj8hi38kqj4ghp6krjgha16123ihi36sokac268h23eh1m88pjicg",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2011-04-12T00:00:00-04:00",
+    "timeZone": "America/Toronto"
+   },
+   "status": "confirmed",
+   "summary": "hi",
+   "updated": "2023-01-18T10:57:39.298Z"
+  },
+  {
+   "created": "2010-04-17T14:38:22.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2010-04-17T18:30:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078920868000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=YmxoMHFpMjRwa3F1Z2xic2dtZnJkaDM1dG8gY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person125@example.com",
+   "id": "0000000000000009",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2010-04-17T14:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "work",
+   "updated": "2023-01-18T10:57:40.434Z"
+  },
+  {
+   "created": "2010-02-19T23:59:15.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2010-02-20T12:45:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078923000000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=ZG5vdnRjZWw3YnF0OW1pcGF0dWF2ZjUxa2cgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person126@example.com",
+   "id": "000000000000000a",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2010-02-20T08:45:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "Work",
+   "updated": "2023-01-18T10:57:41.500Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2012-04-28T03:27:37.000Z",
+   "creator": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2012-04-29T14:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078925294000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/New_York"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=X2M1bjY4c2pmZDVpNDBjOWo2Y3FqYWUxazY0cWppZTFrNzRwMzBkcG82a28zZWM5bTY0cTNlZDlsNzBxamVkMW0gY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "android@13355841598492078507161475585746",
+   "id": "_c5n68sjfd5i40c9j6cqjae1k64qjie1k74p30dpo6ko3ec9m64q3ed9l70qjed1m",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-04-29T13:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "Dhfhyhy",
+   "updated": "2023-01-18T10:57:42.647Z"
+  },
+  {
+   "created": "2009-12-07T22:44:14.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2005-04-05T13:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078927592000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NrNmNwbDhwMTRhZTFoODkwamlkaHA2b3BqZ2gxajZoMjNlZTFtNmtya2NlOWk2bDBqNmdvIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A7339C35FBE81BA969638D34D78657F925A3C",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csk6cpl8p14ae1h890jidhp6opjgh1j6h23ee1m6krkce9i6l0j6go",
+   "kind": "calendar#event",
+   "location": "..",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2005-04-05T12:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "No subject",
+   "updated": "2023-01-18T10:57:43.796Z"
+  },
+  {
+   "created": "2011-01-29T12:34:04.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2011-02-02T18:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078929616000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=Xzg4cTM2ZDlvNnNwajBlOWg2NG8zOGdpMjYwc2o0Z3BvNjhwajJlYTY4Y3BqNmMyNThsMWowYzFnNjBvMzBjMWc2MG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMGMxZzYwbzMwYzAgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "B435873091104BB092C82319FC330EEC00000000000000000000000000000000",
+   "id": "_88q36d9o6spj0e9h64o38gi260sj4gpo68pj2ea68cpj6c258l1j0c1g60o30c1g60o30c1g60o30c1g60o30c1g60o30c1g60o30c0",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2011-02-02T12:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "Teksvy installation",
+   "updated": "2023-01-18T10:57:44.808Z"
+  },
+  {
+   "created": "2011-04-12T11:26:23.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2011-04-12T14:15:00-04:00",
+    "timeZone": "America/Toronto"
+   },
+   "etag": "\"3348078931926000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "X-MOZ-LASTACK": "2011-04-14T00:59:04Z"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2RhNTZsMGppZWE0OGtvajZjOWk4OG9rY2MyNTY0bzQ0Y3E1NzBwM2FnaGw2NHJqaWQwIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A733965E5A99DE1312B1F0E10B3E825B51794",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjcda56l0jiea48koj6c9i88okcc2564o44cq570p3aghl64rjid0",
+   "kind": "calendar#event",
+   "location": "Beats me.",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2011-04-12T13:15:00-04:00",
+    "timeZone": "America/Toronto"
+   },
+   "status": "confirmed",
+   "summary": "Hi",
+   "updated": "2023-01-18T10:57:45.963Z"
+  },
+  {
+   "created": "2010-05-03T22:20:18.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2010-05-05T11:45:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078934072000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=dnA1M3ZkdW5sMHNvcGk5ZGhmYmhzYm9oaWMgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person127@example.com",
+   "id": "000000000000000b",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2010-05-05T10:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "jlkjlk",
+   "updated": "2023-01-18T10:57:47.036Z"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 1",
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2012-06-25T19:36:52.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "dateTime": "2012-05-14T11:55:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078936274000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "CalendarSyncAdapter#originalTimezone": "America/Toronto"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=c2R1bXR0azE4YWowbjRkMTZqbGtwbXF1bjQgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person128@example.com",
+   "id": "000000000000000c",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 1,
+   "start": {
+    "dateTime": "2012-05-14T10:55:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "tentative",
+   "summary": "Us light",
+   "updated": "2023-01-18T10:57:48.137Z"
+  },
+  {
+   "created": "2009-12-07T22:44:15.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "\\",
+   "end": {
+    "dateTime": "2005-05-17T13:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078939948000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NrMmNwbzhwMGo0aDlsNmdyamNkcTM2NTJqNGRwaTZnb2phY3EyOG9ya2FlYTU2NG9qMGgwIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A7339A38FA2E54767C1E2724153BF7E9E110D",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csk2cpo8p0j4h9l6grjcdq3652j4dpi6gojacq28orkaea564oj0h0",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2005-05-17T12:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "No subject",
+   "updated": "2023-01-18T10:57:49.974Z"
+  },
+  {
+   "created": "2009-12-07T22:44:15.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "..I..",
+   "end": {
+    "dateTime": "2005-06-11T09:00:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078942172000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqZWQ5aTcxMGplY3BnNjExNDhncTM2aDBqY2MxcDc1MjNnYzltNmgzM2lkaGs4a3NqMGdnIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73397528A7300BDCC4A6099D8164F964E90B",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjed9i710jecpg61148gq36h0jcc1p7523gc9m6h33idhk8ksj0gg",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2005-06-11T08:30:00-04:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "..",
+   "updated": "2023-01-18T10:57:51.086Z"
+  },
+  {
+   "attendees": [
+    {
+     "displayName": "Person 3",
+     "email": "person6@example.com",
+     "responseStatus": "needsAction"
+    },
+    {
+     "displayName": "Person 2",
+     "email": "person4@example.com",
+     "responseStatus": "needsAction"
+    },
+    {
+     "displayName": "Person 4",
+     "email": "person7@example.com",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "created": "2009-12-07T22:44:16.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "`\n;\u00efxx/\n/  _-a\u00a9 t.\u00a9%..i\u00c6\u00efa4^\n\"",
+   "end": {
+    "dateTime": "2005-11-29T00:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3348078944622000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NrYWM5bzY0cTQ4aDFvOGgyajRjcGg2NHA0NGdobzZjcjNnZ2k2ODhwamFoaTI2OTFrOGRnIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A7339E1814DD8DE23112BB8368BFB35FB2CD6",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6cskac9o64q48h1o8h2j4cph64p44gho6cr3ggi688pjahi2691k8dg",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2005-11-28T14:30:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "f ff i <\u0153",
+   "updated": "2023-01-18T10:57:52.311Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person8@example.com",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person1@example.com",
+     "responseStatus": "accepted",
+     "self": true
+    },
+    {
+     "email": "person9@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person10@example.com",
+     "responseStatus": "accepted"
+    }
+   ],
+   "conferenceData": {
+    "conferenceId": "87817152253",
+    "conferenceSolution": {
+     "iconUri": "https://lh3.googleusercontent.com/pw/AM-JKLUkiyTEgH-6DiQP85RGtd_BORvAuFnS9katNMgwYQBJUTiDh12qtQxMJFWYH2Dj30hNsNUrr-kzKMl7jX-Qd0FR7JmVSx-Fhruf8xTPPI-wdsMYez6WJE7tz7KmqsORKBEnBTiILtMJXuMvphqKdB9X=s128-no",
+     "key": {
+      "type": "addOn"
+     },
+     "name": "Zoom Meeting"
+    },
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "label": "mightynetworks.zoom.us/j/87817152253?pwd=bmNzMXkycDhyVFpzQ1Z0WGJBbTkzQT09",
+      "meetingCode": "87817152253",
+      "passcode": "911443",
+      "uri": "https://mightynetworks.zoom.us/j/87817152253?pwd=bmNzMXkycDhyVFpzQ1Z0WGJBbTkzQT09"
+     },
+     {
+      "entryPointType": "phone",
+      "label": "+1555-2001",
+      "passcode": "911443",
+      "regionCode": "US",
+      "uri": "tel:+15642172000,,87817152253#"
+     },
+     {
+      "entryPointType": "more",
+      "uri": "https://www.google.com/url?q=https://applications.zoom.us/addon/invitation/detail?meetingUuid%3DcWpi5%252B4UT5213dBjNEWIUQ%253D%253D%26signature%3Dfe7d206ff11b293357bcc2a90d37c0cdc53262c34c6796ce5dde5d03f53baa75%26v%3D1&sa=D&source=calendar&usg=AOvVaw3gyc6CI98kZ6iZKrvLdaio"
+     }
+    ],
+    "notes": "Meeting host: <a href=\"mailto:person129@example.com\" target=\"_blank\">person129@example.com</a><br /><br />Join Zoom Meeting: <br /><a href=\"https://www.google.com/url?q=https://mightynetworks.zoom.us/j/87817152253?pwd%3DbmNzMXkycDhyVFpzQ1Z0WGJBbTkzQT09&amp;sa=D&amp;source=calendar&amp;usg=AOvVaw0LRngUhf92wTxDrqqO-JLj\" target=\"_blank\">https://mightynetworks.zoom.us/j/87817152253?pwd=bmNzMXkycDhyVFpzQ1Z0WGJBbTkzQT09</a>",
+    "parameters": {
+     "addOnParameters": {
+      "parameters": {
+       "creatorUserId": "8R8Fneu2RgGhmqfavHaZow",
+       "meetingType": "2",
+       "meetingUuid": "cWpi5+4UT5213dBjNEWIUQ==",
+       "originalEventId": "p9e1v9img2m8nhhb3u35ttk6t8",
+       "realMeetingId": "87817152253",
+       "scriptId": "1O_9DeEljSH2vrECr8XeFYYRxFFiowFKOivqSDz316BlBcDXrF00BXrkO"
+      }
+     }
+    }
+   },
+   "created": "2023-01-17T21:21:47.000Z",
+   "creator": {
+    "email": "person9@example.com"
+   },
+   "description": "Event Name: 15 Minute Meeting\n\nPlease share anything that will help prepare for our meeting.: We would like to tell you what our organization does, and seek advice on how best to navigate the platform to these ends.We call the platform the Global Village Square to share best practices, profiles , events, and collaborations amoung hundreds of organizations worldwide involved in digital media literacy. We would like \"topics\" back if possible. And we want to showcase the site at a conference we are hosting March 2-4, 2023.\n\nNeed to make changes to this event?\nCancel: https://calendly.com/cancellations/2f3cf2d1-1811-40aa-936a-ac2f048a8390\nReschedule: https://calendly.com/reschedulings/2f3cf2d1-1811-40aa-936a-ac2f048a8390\n\nPowered by Calendly.com\n",
+   "end": {
+    "dateTime": "2023-01-20T12:15:00-05:00",
+    "timeZone": "America/Los_Angeles"
+   },
+   "etag": "\"3348314693388000\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "meetingId": "87817152253",
+     "meetingParams": "{\"topic\":\"David Nostbakken and Maya Worden\",\"type\":2,\"start_time\":\"2023-01-20T09:00:00-08:00\",\"duration\":15,\"timezone\":\"America/Los_Angeles\",\"invitees_hash\":\"X0FSQQtivzwkIyP43/eptw==\"}",
+     "zmMeetingNum": "87817152253"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=cDllMXY5aW1nMm04bmhoYjN1MzV0dGs2dDggY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person130@example.com",
+   "id": "000000000000000d",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person9@example.com"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-01-20T12:00:00-05:00",
+    "timeZone": "America/Los_Angeles"
+   },
+   "status": "confirmed",
+   "summary": "David Nostbakken and Maya Worden",
+   "updated": "2023-01-19T19:42:26.694Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person11@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    },
+    {
+     "email": "person12@example.com",
+     "responseStatus": "accepted"
+    }
+   ],
+   "created": "2023-01-18T14:06:19.000Z",
+   "creator": {
+    "email": "person11@example.com"
+   },
+   "description": "Event Name: NExJ Dashboard<br><br>Join Zoom Meeting<br><a href=\"https://umontreal.zoom.us/j/89821289910?pwd=NXBwNTk3eHlRNnRGTmM4ZHFqMjlCdz09\">https://umontreal.zoom.us/j/89821289910?pwd=NXBwNTk3eHlRNnRGTmM4ZHFqMjlCdz09</a><br><br>Meeting ID: 898 2128 9910<br>Passcode: 249010<br>One tap mobile<br>+17789072071,,89821289910#,,,,*249010# Canada<br>+17806660144,,89821289910#,,,,*249010# Canada<br><br>Dial by your location<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2002 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2003 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2004 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2005 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2006 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2007 Canada<br>&nbsp; &nbsp; &nbsp; &nbsp; +1555-2008 Canada<br>Meeting ID: 898 2128 9910<br>Passcode: 249010<br>Find your local number: <a href=\"https://umontreal.zoom.us/u/k51aAnmte\">https://umontreal.zoom.us/u/k51aAnmte</a><br><br>Need to make changes to this event?<br>Cancel: <a href=\"https://calendly.com/cancellations/ed571d54-dad1-4c1d-9aea-f7316a585e34\">https://calendly.com/cancellations/ed571d54-dad1-4c1d-9aea-f7316a585e34</a><br><br>Powered by Calendly.com",
+   "end": {
+    "dateTime": "2023-01-24T10:00:00-05:00",
+    "timeZone": "America/Toronto"
+   },
+   "etag": "\"3348969137364000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=OTMwNjdoNHQ2aWk5bW42OGlvaTN1cnNvOGsgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person131@example.com",
+   "id": "000000000000000e",
+   "kind": "calendar#event",
+   "location": "https://umontreal.zoom.us/j/89821289910?pwd=NXBwNTk3eHlRNnRGTmM4ZHFqMjlCdz09",
+   "organizer": {
+    "email": "person11@example.com"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-01-24T09:00:00-05:00",
+    "timeZone": "America/Toronto"
+   },
+   "status": "confirmed",
+   "summary": "Bob Logan and Jessica Clark",
+   "updated": "2023-01-23T14:36:08.682Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    }
+   ],
+   "created": "2023-02-13T17:20:53.000Z",
+   "creator": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "\n________________________________________________________________________________\nMicrosoft Teams meeting\nJoin on your computer, mobile app or room device\nClick here to join the meeting<https://teams.microsoft.com/l/meetup-join/19%3ameeting_M2ExN2E0OGYtODJjYy00N2Y4LTg2MGUtNzk5MjQ4OTYxYWY3%40thread.v2/0?context=%7b%22Tid%22%3a%2235a3d2a4-3172-457d-8b65-131efb2a337e%22%2c%22Oid%22%3a%228425c565-7415-43a1-8fc0-50218e33a372%22%7d>\nMeeting ID: 248 828 452 152\nPasscode: iXCyZ6\nDownload Teams<https://www.microsoft.com/en-us/microsoft-teams/download-app> | Join on the web<https://www.microsoft.com/microsoft-teams/join-a-meeting>\nJoin with a video conferencing device\nperson132@example.com<mailto:person132@example.com>\nVideo Conference ID: 112 697 400 6\nAlternate VTC instructions<https://pexip.me/teams/vc.penguinrandomhouse.com/1126974006>\nLearn More<https://aka.ms/JoinTeamsMeeting> | Meeting options<https://teams.microsoft.com/meetingOptions/?organizerId=8425c565-7415-43a1-8fc0-50218e33a372&tenantId=35a3d2a4-3172-457d-8b65-131efb2a337e&threadId=19_meeting_M2ExN2E0OGYtODJjYy00N2Y4LTg2MGUtNzk5MjQ4OTYxYWY3@thread.v2&messageId=0&language=en-US>\n________________________________________________________________________________\n\n",
+   "end": {
+    "dateTime": "2023-02-14T10:00:00-05:00",
+    "timeZone": "America/Chicago"
+   },
+   "etag": "\"3352617724858000\"",
+   "eventType": "default",
+   "guestsCanInviteOthers": false,
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2MG8zY2NwbDg4cGo4ZWE0NmQzNDhlOWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnOGtyamNkcTI2dDEzYWc5aTZrcmplZTFrNmgxM2NoMjQ2OTBqNGhhMjhsMms0aDlpOGtzMCBjbGludG9udGhlZ2Vla0Bt",
+   "iCalUID": "040000008200E00074C5B7101A82E0080000000000635B349D3FD901000000000000000010000000E767B7B5A2577844B6DD2A2EBEEBE2E8",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g60o3ccpl88pj8ea46d348e9g64o30c1g60o30c1g60o30c1g60o32c1g60o30c1g8krjcdq26t13ag9i6krjee1k6h13ch24690j4ha28l2k4h9i8ks0",
+   "kind": "calendar#event",
+   "location": "Microsoft Teams Meeting",
+   "organizer": {
+    "displayName": "Person 5",
+    "email": "person13@example.com"
+   },
+   "privateCopy": true,
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-02-14T09:00:00-05:00",
+    "timeZone": "America/Chicago"
+   },
+   "status": "confirmed",
+   "summary": "Meet: Clinton and Matt",
+   "updated": "2023-02-13T17:21:02.429Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    }
+   ],
+   "created": "2023-03-14T14:35:26.000Z",
+   "creator": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "\n________________________________________________________________________________\nMicrosoft Teams meeting\nJoin on your computer, mobile app or room device\nClick here to join the meeting<https://teams.microsoft.com/l/meetup-join/19%3ameeting_NzM1MTJhMWItYTNhZS00MjQ2LWI4YjMtZGIzZTVjNzUwY2Fh%40thread.v2/0?context=%7b%22Tid%22%3a%2235a3d2a4-3172-457d-8b65-131efb2a337e%22%2c%22Oid%22%3a%228425c565-7415-43a1-8fc0-50218e33a372%22%7d>\nMeeting ID: 238 942 444 375\nPasscode: FBwGpY\nDownload Teams<https://www.microsoft.com/en-us/microsoft-teams/download-app> | Join on the web<https://www.microsoft.com/microsoft-teams/join-a-meeting>\nJoin with a video conferencing device\nperson132@example.com<mailto:person132@example.com>\nVideo Conference ID: 113 385 299 8\nAlternate VTC instructions<https://pexip.me/teams/vc.penguinrandomhouse.com/1133852998>\nLearn More<https://aka.ms/JoinTeamsMeeting> | Meeting options<https://teams.microsoft.com/meetingOptions/?organizerId=8425c565-7415-43a1-8fc0-50218e33a372&tenantId=35a3d2a4-3172-457d-8b65-131efb2a337e&threadId=19_meeting_NzM1MTJhMWItYTNhZS00MjQ2LWI4YjMtZGIzZTVjNzUwY2Fh@thread.v2&messageId=0&language=en-US>\n________________________________________________________________________________\n\n",
+   "end": {
+    "dateTime": "2023-03-15T13:00:00-04:00",
+    "timeZone": "America/Chicago"
+   },
+   "etag": "\"3357609074132000\"",
+   "eventType": "default",
+   "guestsCanInviteOthers": false,
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2Z28zZWNoazhvcTNlZDlvNmtyNDhlOWc2NG8zMGMxZzYwbzMwYzFnNjBvMzBjMWc2MG8zMmMxZzYwbzMwYzFnNnQyM2VoMWo4a29rYWMyMjhkMmo4aGhrNjEwajRoaTU2NHJrNmNpMjYwcTRjZGEzNnAyZyBjbGludG9udGhlZ2Vla0Bt",
+   "iCalUID": "040000008200E00074C5B7101A82E0080000000040724F475856D9010000000000000000100000007D7D3E1E0BCE4F40A2FE17C2B04F5C6E",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g6go3echk8oq3ed9o6kr48e9g64o30c1g60o30c1g60o30c1g60o32c1g60o30c1g6t23eh1j8kokac228d2j8hhk610j4hi564rk6ci260q4cda36p2g",
+   "kind": "calendar#event",
+   "location": "Microsoft Teams Meeting",
+   "organizer": {
+    "displayName": "Person 5",
+    "email": "person13@example.com"
+   },
+   "privateCopy": true,
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-03-15T12:00:00-04:00",
+    "timeZone": "America/Chicago"
+   },
+   "status": "confirmed",
+   "summary": "Meet: Clinton and Matt",
+   "updated": "2023-03-14T14:35:37.066Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person14@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    },
+    {
+     "email": "person15@example.com",
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person16@example.com",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "conferenceData": {
+    "conferenceId": "jyo-fgcw-mct",
+    "conferenceSolution": {
+     "iconUri": "https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png",
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Google Meet"
+    },
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "label": "meet.google.com/jyo-fgcw-mct",
+      "uri": "https://meet.google.com/jyo-fgcw-mct"
+     }
+    ]
+   },
+   "created": "2023-11-12T16:23:37.000Z",
+   "creator": {
+    "email": "person14@example.com"
+   },
+   "end": {
+    "dateTime": "2023-11-13T14:30:00-05:00",
+    "timeZone": "America/Chicago"
+   },
+   "etag": "\"3399770758532000\"",
+   "eventType": "default",
+   "hangoutLink": "https://meet.google.com/jyo-fgcw-mct",
+   "htmlLink": "https://www.google.com/calendar/event?eid=MmRkcDNtb3VkaXA5bXBlMnRzMjBoMWt0dWYgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person133@example.com",
+   "id": "000000000000000f",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person14@example.com"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-11-13T14:00:00-05:00",
+    "timeZone": "America/Chicago"
+   },
+   "status": "confirmed",
+   "summary": "Chat",
+   "updated": "2023-11-13T14:22:59.266Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person14@example.com",
+     "responseStatus": "declined"
+    },
+    {
+     "email": "person15@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    },
+    {
+     "email": "person16@example.com",
+     "responseStatus": "needsAction"
+    }
+   ],
+   "conferenceData": {
+    "conferenceId": "tjq-adig-onz",
+    "conferenceSolution": {
+     "iconUri": "https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png",
+     "key": {
+      "type": "hangoutsMeet"
+     },
+     "name": "Google Meet"
+    },
+    "entryPoints": [
+     {
+      "entryPointType": "video",
+      "label": "meet.google.com/tjq-adig-onz",
+      "uri": "https://meet.google.com/tjq-adig-onz"
+     }
+    ]
+   },
+   "created": "2023-11-13T11:42:55.000Z",
+   "creator": {
+    "email": "person15@example.com"
+   },
+   "end": {
+    "dateTime": "2023-11-15T13:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "etag": "\"3426854773856000\"",
+   "eventType": "default",
+   "hangoutLink": "https://meet.google.com/tjq-adig-onz",
+   "htmlLink": "https://www.google.com/calendar/event?eid=M3BvZXFwaTdvazZjbDNtNThmOWU1ZmhlMTlfMjAyMzExMTVUMTcwMDAwWiBjbGludG9udGhlZ2Vla0Bt",
+   "iCalUID": "person134@example.com",
+   "id": "3poeqpi7ok6cl3m58f9e5fhe19_20231115T170000Z",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person15@example.com"
+   },
+   "originalStartTime": {
+    "dateTime": "2023-11-15T12:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "recurringEventId": "3poeqpi7ok6cl3m58f9e5fhe19",
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-11-15T12:00:00-05:00",
+    "timeZone": "America/New_York"
+   },
+   "status": "confirmed",
+   "summary": "Sprint Kick-Off ",
+   "updated": "2024-04-18T08:03:06.928Z"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "organizer": true,
+     "responseStatus": "accepted",
+     "self": true
+    }
+   ],
+   "created": "2019-06-26T20:18:47.000Z",
+   "creator": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "description": "To see detailed information for automatically created events like this one, use the official Google Calendar app. https://g.co/calendar\n\nThis event was created from an email you received in Gmail. https://mail.google.com/mail?extsrc=cal&plid=ACUX6DNTKkhoV_UKE6C_OK2030KlY2yCcd9J__w\n",
+   "end": {
+    "dateTime": "2019-06-26T20:30:00-04:00",
+    "timeZone": "UTC"
+   },
+   "etag": "\"3458119425608000\"",
+   "eventType": "fromGmail",
+   "guestsCanInviteOthers": false,
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzZ0bG5hcXJsZTVwNmNwYjRkaG1qNHBocGVobDc2cXIxY2RqbjJxaHBjNXE3Y3IzM2RrcDc4ZTltY29wajhkYjJjcGo3MHExbDZwcWppcTFvY3BsbjJlM2o2Y282OGRyZzZkbmoyb2I4Nm9wbWUgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "7kukuqrfedlm2f9tjskacgqj9atvlcm2t96f345bffph56u9h8fkq8s30d7p3o1ah63g",
+   "id": "_6tlnaqrle5p6cpb4dhmj4phpehl76qr1cdjn2qhpc5q7cr33dkp78e9mcopj8db2cpj70q1l6pqjiq1ocpln2e3j6co68drg6dnj2ob86opme",
+   "kind": "calendar#event",
+   "location": "Bram and Bluma Appel Salon, 789 Yonge Street#2nd floor, Toronto, ON, CA, M4W 2G8",
+   "organizer": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "source": {
+    "title": "",
+    "url": "https://mail.google.com/mail?extsrc=cal&plid=ACUX6DNTKkhoV_UKE6C_OK2030KlY2yCcd9J__w"
+   },
+   "start": {
+    "dateTime": "2019-06-26T19:00:00-04:00",
+    "timeZone": "UTC"
+   },
+   "status": "confirmed",
+   "summary": "The Social Cost of the Information Age",
+   "transparency": "transparent",
+   "updated": "2024-10-16T06:21:52.804Z",
+   "visibility": "private"
+  },
+  {
+   "birthdayProperties": {
+    "type": "self"
+   },
+   "created": "2024-12-06T05:04:15.000Z",
+   "creator": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2024-12-19"
+   },
+   "etag": "\"3488423816789886\"",
+   "eventType": "birthday",
+   "htmlLink": "https://www.google.com/calendar/event?eid=aHY3Y29qaTF2YjRnbjlzZmx1MWJtbjg1c3NfMjAyNDEyMTggY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person135@example.com",
+   "id": "0000000000000010",
+   "kind": "calendar#event",
+   "organizer": {
+    "email": "person1@example.com",
+    "self": true
+   },
+   "recurrence": [
+    "RRULE:FREQ=YEARLY"
+   ],
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2024-12-18"
+   },
+   "status": "confirmed",
+   "summary": "Happy birthday!",
+   "transparency": "transparent",
+   "updated": "2025-02-19T16:05:31.474Z",
+   "visibility": "private"
+  },
+  {
+   "attendees": [
+    {
+     "email": "person1@example.com",
+     "responseStatus": "needsAction",
+     "self": true
+    },
+    {
+     "email": "person17@example.com",
+     "organizer": true,
+     "responseStatus": "accepted"
+    },
+    {
+     "email": "person18@example.com",
+     "responseStatus": "accepted"
+    }
+   ],
+   "created": "2023-06-13T10:26:48.000Z",
+   "creator": {
+    "email": "person17@example.com"
+   },
+   "description": "Owen is inviting you to a scheduled Zoom meeting.\n\nJoin Zoom Meeting\nhttps://us02web.zoom.us/j/5805674389\n\nMeeting ID:+1555-2009\n\n---\n\nOne tap mobile\n+442039017895,,5805674389# United Kingdom\n+442080806591,,5805674389# United Kingdom\n\n---\n\nDial by your location\n\u2022 +44+1555-2010 United Kingdom\n\u2022 +44+1555-2011 United Kingdom\n\u2022 +44+1555-2012 United Kingdom\n\u2022 +44+1555-2013 United Kingdom\n\u2022 +44+1555-2014 United Kingdom\n\u2022 +44+1555-2015 United Kingdom\n\u2022 +44+1555-2016 United Kingdom\n\u2022 +1555-2017 US\n\u2022 +1555-2018 US\n\u2022 +1555-2019 US (New York)\n\u2022 +1555-2020 US\n\u2022 +1555-2021 US (Tacoma)\n\u2022 +1555-2022 US (Washington DC)\n\u2022 +1555-2023 US\n\u2022 +1555-2024 US\n\u2022 +1555-2025 US (Chicago)\n\u2022 +1555-2026 US (Houston)\n\u2022 +1555-2027 US\n\u2022 +1555-2028 US\n\u2022 +1555-2029 US\n\u2022 +1555-2030 US\n\u2022 +1555-2031 US\n\u2022 +1555-2032 US\n\u2022 +1555-2033 US (San Jose)\n\nMeeting ID:+1555-2034\n\nFind your local number: https://us02web.zoom.us/u/k2T6AReEE\n\n",
+   "end": {
+    "dateTime": "2023-06-20T11:30:00-04:00",
+    "timeZone": "Europe/London"
+   },
+   "etag": "\"3550414118416670\"",
+   "eventType": "default",
+   "extendedProperties": {
+    "shared": {
+     "zmMeetingNum": "89512963539"
+    }
+   },
+   "htmlLink": "https://www.google.com/calendar/event?eid=OTZnaWVjdWxmOWxmNTVhc3NzOTIyamk0dTAgY2xpbnRvbnRoZWdlZWtAbQ",
+   "iCalUID": "person136@example.com",
+   "id": "0000000000000011",
+   "kind": "calendar#event",
+   "location": "https://us02web.zoom.us/j/5805674389",
+   "organizer": {
+    "email": "person17@example.com"
+   },
+   "reminders": {
+    "useDefault": true
+   },
+   "sequence": 0,
+   "start": {
+    "dateTime": "2023-06-20T10:00:00-04:00",
+    "timeZone": "Europe/London"
+   },
+   "status": "confirmed",
+   "summary": "Body Politics x President Clinton",
+   "updated": "2026-04-03T09:04:19.208Z"
+  }
+ ],
+ "kind": "calendar#events",
+ "nextSyncToken": "CI_3wMvFiZUDEI_3wMvFiZUDGAUg1_aezQMo1_aezQM=",
+ "summary": "person103@example.com",
+ "timeZone": "America/New_York",
+ "updated": "2026-06-15T15:19:15.039Z"
+}

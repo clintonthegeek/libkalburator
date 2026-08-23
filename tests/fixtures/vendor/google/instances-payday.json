@@ -1,0 +1,942 @@
+{
+ "accessRole": "owner",
+ "defaultReminders": [
+  {
+   "method": "popup",
+   "minutes": 10
+  }
+ ],
+ "description": "",
+ "etag": "\"p327vfg6bom4pa0o\"",
+ "items": [
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-01-09"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMTA4IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260108",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-01-08"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-01-08"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-01-23"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMTIyIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260122",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-01-22"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-01-22"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-02-06"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMjA1IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260205",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-02-05"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-02-05"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-02-20"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMjE5IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260219",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-02-19"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-02-19"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-03-06"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMzA1IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260305",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-03-05"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-03-05"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-03-20"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwMzE5IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260319",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-03-19"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-03-19"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-04-03"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNDAyIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260402",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-04-02"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-04-02"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-04-17"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNDE2IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260416",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-04-16"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-04-16"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-05-01"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNDMwIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260430",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-04-30"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-04-30"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-05-15"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNTE0IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260514",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-05-14"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-05-14"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-05-29"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNTI4IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260528",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-05-28"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-05-28"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-06-12"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNjExIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260611",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-06-11"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-06-11"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-06-26"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNjI1IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260625",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-06-25"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-06-25"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-07-10"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNzA5IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260709",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-07-09"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-07-09"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-07-24"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwNzIzIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260723",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-07-23"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-07-23"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-08-07"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwODA2IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260806",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-08-06"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-08-06"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-08-21"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwODIwIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260820",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-08-20"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-08-20"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-09-04"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwOTAzIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260903",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-09-03"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-09-03"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-09-18"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYwOTE3IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20260917",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-09-17"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-09-17"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-10-02"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMDAxIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261001",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-10-01"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-10-01"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-10-16"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMDE1IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261015",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-10-15"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-10-15"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-10-30"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMDI5IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261029",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-10-29"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-10-29"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-11-13"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMTEyIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261112",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-11-12"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-11-12"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-11-27"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMTI2IGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261126",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-11-26"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-11-26"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  },
+  {
+   "created": "2011-04-14T01:06:24.000Z",
+   "creator": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "end": {
+    "date": "2026-12-11"
+   },
+   "etag": "\"3348078916300000\"",
+   "eventType": "default",
+   "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc2NTM0OGNxMTZoMjNpZzluOGNxajZjcTM2a3E0MmNhMjcxMTMwZ3BnOG9wazJkcGo2Y3NqY2g5bzhsMmoyYzIzNmwyNDJnYTM4OHJrY2hhNDhncmplZDFpNjExajhjaG04Z3IzZWNnXzIwMjYxMjEwIGNsaW50b250aGVnZWVrQG0",
+   "iCalUID": "040000008200E00074C5B7101A82E008000000001FD3A4D9A7C533C54A1B8B0C0F3A73396E8EE10C5DAACB7FEDD77420C426D672",
+   "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg_20261210",
+   "kind": "calendar#event",
+   "organizer": {
+    "displayName": "Person 1",
+    "email": "person1@example.com",
+    "self": true
+   },
+   "originalStartTime": {
+    "date": "2026-12-10"
+   },
+   "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g65348cq16h23ig9n8cqj6cq36kq42ca271130gpg8opk2dpj6csjch9o8l2j2c236l242ga388rkcha48grjed1i611j8chm8gr3ecg",
+   "reminders": {
+    "useDefault": false
+   },
+   "sequence": 0,
+   "start": {
+    "date": "2026-12-10"
+   },
+   "status": "confirmed",
+   "summary": "Pay Day",
+   "transparency": "transparent",
+   "updated": "2023-01-18T10:57:38.150Z"
+  }
+ ],
+ "kind": "calendar#events",
+ "summary": "person103@example.com",
+ "timeZone": "America/New_York",
+ "updated": "2026-06-15T15:19:15.039Z"
+}

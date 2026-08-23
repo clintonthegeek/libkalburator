@@ -1,0 +1,85 @@
+{
+ "etag": "\"p327vfg6bom4pa0o\"",
+ "items": [
+  {
+   "accessRole": "reader",
+   "backgroundColor": "#d06b64",
+   "colorId": "2",
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsMeet"
+    ]
+   },
+   "defaultReminders": [],
+   "description": "Remember The Milk: http://www.rememberthemilk.com/services/modules/googlecalendar/?s=${d}",
+   "etag": "\"1546884738311000\"",
+   "foregroundColor": "#000000",
+   "id": "person101@example.com",
+   "kind": "calendar#calendarListEntry",
+   "summary": "Remember The Milk",
+   "timeZone": "America/New_York"
+  },
+  {
+   "accessRole": "reader",
+   "backgroundColor": "#16a765",
+   "colorId": "8",
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsMeet"
+    ]
+   },
+   "defaultReminders": [],
+   "description": "Holidays and Observances in Canada",
+   "etag": "\"1667538639114000\"",
+   "foregroundColor": "#000000",
+   "id": "en.canadian#person102@example.com",
+   "kind": "calendar#calendarListEntry",
+   "selected": true,
+   "summary": "Holidays in Canada",
+   "summaryOverride": "Holidays in Canada",
+   "timeZone": "America/New_York"
+  },
+  {
+   "accessRole": "owner",
+   "backgroundColor": "#9a9cff",
+   "colorId": "17",
+   "conferenceProperties": {
+    "allowedConferenceSolutionTypes": [
+     "hangoutsMeet"
+    ]
+   },
+   "defaultReminders": [
+    {
+     "method": "popup",
+     "minutes": 10
+    }
+   ],
+   "etag": "\"1747354692514767\"",
+   "foregroundColor": "#000000",
+   "id": "person103@example.com",
+   "kind": "calendar#calendarListEntry",
+   "notificationSettings": {
+    "notifications": [
+     {
+      "method": "email",
+      "type": "eventCreation"
+     },
+     {
+      "method": "email",
+      "type": "eventChange"
+     },
+     {
+      "method": "email",
+      "type": "eventCancellation"
+     }
+    ]
+   },
+   "primary": true,
+   "selected": true,
+   "summary": "person103@example.com",
+   "timeZone": "America/New_York"
+  }
+ ],
+ "kind": "calendar#calendarList",
+ "nextSyncToken": "CI_3wMvFiZUDEhhjbGludG9udGhlZ2Vla0BnbWFpbC5jb20="
+}

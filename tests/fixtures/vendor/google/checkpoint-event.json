@@ -1,0 +1,58 @@
+{
+ "attendees": [
+  {
+   "displayName": "Person 2",
+   "email": "person2@example.com",
+   "responseStatus": "needsAction"
+  }
+ ],
+ "created": "2026-08-23T16:31:20.000Z",
+ "creator": {
+  "email": "person1@example.com",
+  "self": true
+ },
+ "description": "EEE Phase 2 live checkpoint event - DELETE ME",
+ "end": {
+  "dateTime": "2026-09-10T09:00:00-04:00",
+  "timeZone": "Europe/Zurich"
+ },
+ "etag": "\"3575005392726974\"",
+ "eventType": "default",
+ "extendedProperties": {
+  "private": {
+   "x-canon-priority": "5"
+  }
+ },
+ "guestsCanModify": true,
+ "htmlLink": "https://www.google.com/calendar/event?eid=b292Z2Q4ZG9yZ2tmcDU1NjAydjk4aHRoaWNfMjAyNjA5MTBUMTIwMDAwWiBjbGludG9udGhlZ2Vla0Bt",
+ "iCalUID": "person104@example.com",
+ "id": "0000000000000001",
+ "kind": "calendar#event",
+ "location": "Probe Room 1",
+ "organizer": {
+  "email": "person1@example.com",
+  "self": true
+ },
+ "recurrence": [
+  "RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=TH"
+ ],
+ "reminders": {
+  "overrides": [
+   {
+    "method": "popup",
+    "minutes": 20
+   }
+  ],
+  "useDefault": false
+ },
+ "sequence": 0,
+ "start": {
+  "dateTime": "2026-09-10T08:00:00-04:00",
+  "timeZone": "Europe/Zurich"
+ },
+ "status": "confirmed",
+ "summary": "CORPUS: phase2-live-checkpoint",
+ "transparency": "transparent",
+ "updated": "2026-08-23T16:31:36.363Z",
+ "visibility": "private"
+}
