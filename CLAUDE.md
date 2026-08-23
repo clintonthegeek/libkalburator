@@ -23,20 +23,28 @@ Phase 7); readiness context:
 unaffected (additive-only when it lands). Do not rebuild this tooling from
 scratch — read the proposal's Status section first.
 
-**Session state at close (2026-08-23, all committed):** Phase 7 work
-breakdown + MVP scoping pinned in the proposal (§7.a/§7.b — calendar-only,
-solo events matching PlanStan's current no-iTIP model). Two live profiles
-exist: default `msgraph/` (= clintonthegeek@gmail.com MSA /
-outlook_986C… mailbox) and `msgraph-clintoneist1/`; both have Mail.Read +
-calendar scopes consented; tokens auto-refresh. Corpus (~45 captures incl.
-decoded REQUEST/REPLY iCal pairs) is machine-local only — sanitize before
-committing any of it into tests/fixtures. Pending next actions for a fresh
-session, in order: (1) Stage D mock Graph server replaying the corpus;
-(2) EEE Phases 2–4 transformation edges per proposal; (3) fix the
-pre-existing red canon slot (`canonPersonalClassificationProducesPrivateAndStash`,
-uncatalogued beyond O57 mention); (4) make corpus-sweep scenario names
-unique-per-run (timestamp suffix) to prevent the cross-series contamination
-that briefly produced a wrong O57 conclusion.
+**Session state at close (2026-08-23 evening, all committed):** Phase 2
+(google-event ⇄ canon) edge LANDED — loss profile declared first
+(`docs/2026-08-23-google-event-edge-loss-profile.md`), stages in
+`src/calendar/googlecanonstages.{h,cpp}`, registered in CalendarStockShapes
+(7 edges), gated by `tst_google_event_canon_edge`. Wire truths corrected
+against the live Calendar API reference pre-trust (FINDINGS **O59**:
+reminders `method` key not `reminderMethod`; string-typed extendedProperties
+carriers; `eventLabelId` missing from reference; cancelled dual-semantics;
+iCalUID≠id). **Stage D mock Graph server landed** (`tests/graph/`, 6 slots)
+— ready as the 7.C test bed. **googlecli landed** (`tools/googlecli/`,
+loopback OAuth + Calendar v3 verbs); credentials in gitignored `google/`
+(`GoogleAuthinfo.md` — never commit); research input `docs/google_rest.md`.
+corpus-sweep per-run tags done and live-verified (closes O57 contamination
+vector). O58 closed (red canon slot = parameter-blind assert, no production
+bug). Campaign status page: **`docs/campaign/eee/STATUS.md`**. Suite
+baseline: **181 total / 179 passing** (same two Radicale-dependent slots).
+Pending next actions, in order: (1) USER-RUN `googlecli login` → Google-side
+capture sweep + sanitize into committed fixtures; (2) Phase 2 live checkpoint
+(create→promote→demote→compare via googlecli), then tag; (3) 7.B MS event ⇄
+canon stages (loss profile FIRST; RFC5545⇄patternedRecurrence converter +
+CLDR windowsZones vendored map inside the stage per invariant 5); (4) 7.C
+MSGraphCalendarBackend on the Stage D server; (5) Phases 3–5 edges.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 
