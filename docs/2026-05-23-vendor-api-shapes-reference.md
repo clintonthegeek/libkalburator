@@ -332,3 +332,66 @@ checkbox, NOT a full task; no children**.
 The canon **schema** doc (follow-on) turns this table into concrete field definitions, property
 catalogues, and the differ/merger field lists. Live API calls, if needed, belong to that step to
 validate edge cases against real payloads.
+
+---
+
+## 5. ADDENDUM 2026-08-23 — Beta horizon diff (what GA will bring)
+
+Diffed `graph-rest-beta` resource schemas against §1–§3 (v1.0 tables) ahead of EEE Phase 4.
+Campaign invariant 4 still applies: **implement against GA only**; this section is spine-v2
+planning input so the widening is a designed `canon2` node, not a surprise.
+
+### 5.1 event — two structural additions
+
+1. **`exceptionOccurrences`** (nav, `[event]`, `$select`/`$expand` on series masters): structured
+   access to exception records directly from the master. If/when GA, this dissolves most of the
+   O57(g) problem — no calendarView/instances walking needed to collect overrides; cancelled
+   instances remain via `cancelledOccurrences`. Until then: instances/calendarView walk stands.
+2. **`occurrenceId` documented**: format `OID.{seriesMasterId}.{occurrence-start-date}` (date in
+   the range's `recurrenceTimeZone`). Stable addressing of any occurrence incl. modified/cancelled
+   — better than start-time keying for override matching. Already present in v1.0 payloads
+   (observed live); only the documentation is new.
+
+Also documented in beta: `Prefer: IdType="ImmutableId"` (id stability across container moves —
+relevant to providerExtras id handling).
+
+### 5.2 contact — beta closes nearly every gap §2.2 catalogued
+
+| v1.0 limitation (§2.2) | Beta replacement | Canon home |
+|---|---|---|
+| untyped positional emails (`primaryEmailAddress`…) | `emailAddresses: [typedEmailAddress]` (type + label) | `emails[].{type,label,primary}` — **already modeled** |
+| fixed phone buckets (home/business/mobile) | `phones: [phone]` typed collection | `phones[]` — already modeled |
+| 3 fixed address slots | `postalAddresses: [physicalAddress]` collection | `addresses[]` — already modeled |
+| single `businessHomePage` | `websites: [website]` typed collection | `urls[]` — already modeled |
+| no anniversary | `weddingAnniversary: Date` | `anniversary {date, hasYear}` — already modeled |
+| no gender | `gender: String` | `gender {value,…}` — already modeled |
+| — | `flag: followupFlag` (new) | no home → providerExtras on promote |
+
+Verdict: **`contacts+canon` needs zero widening for Graph-beta contacts** — the union design
+already covers it; the beta edge would be near-lossless promote. Strong validation of the
+superset approach.
+
+### 5.3 todoTask — no meaningful delta
+
+Beta ≈ v1.0 plus typed `taskFileAttachment` nav (§3.2 already current). Stable domain; nothing to
+plan around.
+
+### 5.4 uid/iCalUId series semantics — verified against beta AND v1.0 (2026-08-23, corrected)
+
+Initial analysis of this section claimed both doc versions misdocument uid stability. **That
+claim was wrong** — the comparison had crossed series (the mailbox held four same-named series
+from repeated sweep runs, matched by subject). Redone keyed by explicit series id, on BOTH
+`/v1.0` and `/beta` against the same live series; results identical on both surfaces:
+
+- **`uid` IS series-stable**: master, every plain occurrence, and every exception share one
+  byte-identical uid. Beta's doc is correct.
+- **`iCalUId` differs per occurrence record** (and from that record's own uid) in exactly the
+  MAPI-GOID instance-date byte run — beta's doc is correct.
+- `uid == iCalUId` holds only on series masters and single instances (as in our first captures,
+  which motivated this investigation).
+
+Identity guidance (unchanged in substance, now on solid ground): **anchor series identity on
+`uid`; never use `iCalUId` as a series key** — it is per-occurrence. When matching against
+CalDAV-side iCal UIDs, expect Exchange to expose per-occurrence iCalUIds for instances.
+Methodology note for future corpus analysis: sweep scenarios that create same-named objects
+across runs MUST be matched by id, never by subject.
