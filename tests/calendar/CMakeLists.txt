@@ -309,6 +309,13 @@ kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 # EEE Phase 2 — google-event ⇄ canon edge (loss-profile + round-trip)
 kalburator_add_calendar_test(tst_google_event_canon_edge)
 
+# EEE Phase 7.B step 1 — RFC5545 ⇄ Graph patternedRecurrence converter
+# (unit suite BEFORE the ms-event edge, per the declared loss profile)
+kalburator_add_calendar_test(tst_recurrence_pattern_converter)
+
+# EEE Phase 7.B — ms-event ⇄ canon edge (loss-profile + round-trip)
+kalburator_add_calendar_test(tst_ms_event_canon_edge)
+
 # Sync-topology promotion (2026-05-27) — domain field, collectionId, alias,
 # domain serialization, hasWritableRemoteSyncTarget() demotion fact
 kalburator_add_calendar_test(tst_logicalcalendar_domain)

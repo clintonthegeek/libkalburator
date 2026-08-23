@@ -4,6 +4,8 @@
 #include "orgicalcanonstages.h"
 #include "googleeventproperties.h"
 #include "googlecanonstages.h"
+#include "mseventproperties.h"
+#include "mseventcanonstages.h"
 #include "calendarcanonproperties.h"
 #include "lossprofile.h"
 
@@ -49,10 +51,16 @@ CalendarStockShapes::peerShapes() const
     // resource as wire-shape JSON (one object per record).
     const Kalburator::Shape::Shape googleEventShape{
         DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("google-event")} };
+    // {calendar, ms-event} is a peer; a single Microsoft Graph v1.0 `event`
+    // resource as wire-shape JSON (EEE Phase 7.B; list/delta envelopes are
+    // transport, not the edge).
+    const Kalburator::Shape::Shape msEventShape{
+        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ms-event")} };
     return {
         { icalShape,        makeICalCatalogue() },
         { orgIcalShape,     makeICalCatalogue() },
         { googleEventShape, makeGoogleEventCatalogue() },
+        { msEventShape,     makeMsEventCatalogue() },
     };
 }
 
@@ -66,7 +74,8 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
                                              EncodingId{QStringLiteral("org-ical")} };
     const Kalburator::Shape::Shape googleEvent{
         DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("google-event")} };
-    return {
+    const Kalburator::Shape::Shape msEvent{
+        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ms-event")} };    return {
         // Identity edge: canon → canon (hub)
         TransformationEdge{
             canon, canon,
@@ -110,6 +119,21 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
             canon, googleEvent,
             canonToGoogleEventLoss(),
             std::make_shared<CanonToGoogleEventStage>()
+        },
+        // EEE Phase 7.B — Promote: ms-event → canon (lossless; MS
+        // patternedRecurrence → RFC5545 is lossless per reference §1.3)
+        TransformationEdge{
+            msEvent, canon,
+            LossProfile{},
+            std::make_shared<MsEventToCanonStage>()
+        },
+        // EEE Phase 7.B — Demote: canon → ms-event (lossy per
+        // docs/2026-08-23-ms-event-edge-loss-profile.md; the deep component —
+        // RFC5545⇄patternedRecurrence lives inside via the converter)
+        TransformationEdge{
+            canon, msEvent,
+            canonToMsEventLoss(),
+            std::make_shared<CanonToMsEventStage>()
         },
     };
 }

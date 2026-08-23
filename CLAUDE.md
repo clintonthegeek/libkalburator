@@ -40,13 +40,35 @@ landed + authorized (`tools/googlecli/`, loopback OAuth; scopes:
 calendar.events, calendarlist.readonly, contacts, userinfo.email);
 credentials in gitignored `/google/`. **Google corpus captured and
 sanitized fixtures committed** under `tests/fixtures/vendor/google/`
-(generator `tools/googlecli/make-fixtures.py`). 7.B ms-event loss profile
-declared (`docs/2026-08-23-ms-event-edge-loss-profile.md`) — implementation
-not started. Campaign status page: **`docs/campaign/eee/STATUS.md`**.
-Suite baseline: **182 total / 180 passing** (same two Radicale-dependent
-slots). Pending next actions, in order: (1) 7.B converter unit suite +
-ms-event edge stages; (2) 7.C MSGraphCalendarBackend on Stage D; (3)
-Graph-side fixture sanitization; (4) Phase 3 People/Tasks edges; (5)
+(generator `tools/googlecli/make-fixtures.py`). Campaign status page:
+**`docs/campaign/eee/STATUS.md`**.
+
+**Session state at close (2026-08-23 late evening, all committed):** Phase
+**7.B (ms-event ⇄ canon) LANDED** — the campaign's one deep component.
+Order honored: converter suite first (`tst_recurrence_pattern_converter`,
+31 slots — every reference-§1.3 row both directions, every cannot-represent
+ruling, O57(e)/(f) sentinel handling, carried-set re-promote identity,
+representable-set convergence), then the stages
+(`src/calendar/mseventcanonstages.{h,cpp}` + `mseventproperties` +
+`recurrencepatternconverter.{h,cpp}` + vendored CLDR zone map
+`windowszonesmap.h`, 139 zones), registered in CalendarStockShapes (**9
+edges** now), gated by `tst_ms_event_canon_edge` (10 slots: captured-shaped
+promote with O57 realities, declared-loss demote walk, C→G→C byte-equal
+identity incl. the unrepresentable-rule carrier path, Windows-zone
+split-brain O57(b), floating pin+carrier, exception⇒recurrenceId keying).
+Declared-vs-actual divergence: none. Carriers ride
+`singleValueExtendedProperties` under pinned GUID
+`{66f5926c-9c3e-4c14-9e4b-7a2f0d1c9eee}`; Graph `type` is reconstructed
+structurally on demote with redundant-topology suppression on promote
+(keeps C→G→C byte-equal). Two traps hit + fixed → FINDINGS **O60**
+(Qt 6.11 QJsonValue default is Null-typed, not Undefined; offset-less
+wall-time parsing must construct directly in the target zone, never via
+process-local). **7.B live checkpoint still USER-RUN** (proposal invariant
+6) before any consumer sees it. Suite baseline: **184 total / 182 passing**
+(same two Radicale-dependent slots). Pending next actions, in order: (1)
+7.B live checkpoint on a real Outlook.com event; (2) Graph-side fixture
+sanitization + committed-fixture slot in the ms-event edge test; (3) 7.C
+MSGraphCalendarBackend on Stage D; (4) Phase 3 People/Tasks edges; (5)
 Phases 4–6 + matrix. NOT YET PUSHED to origin — push when convenient.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)

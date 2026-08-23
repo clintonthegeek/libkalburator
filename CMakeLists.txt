@@ -219,6 +219,12 @@ set(KALBURATOR_CALENDAR_SOURCES
     # EEE Phase 2 — Google Calendar v3 event ⇄ canon stages + catalogue
     src/calendar/googleeventproperties.cpp
     src/calendar/googlecanonstages.cpp
+    # EEE Phase 7.B — RFC5545 ⇄ Graph patternedRecurrence converter
+    # (+ vendored CLDR windowsZones map in windowszonesmap.h, header-only)
+    src/calendar/recurrencepatternconverter.cpp
+    # EEE Phase 7.B — Microsoft Graph event ⇄ canon stages + catalogue
+    src/calendar/mseventproperties.cpp
+    src/calendar/mseventcanonstages.cpp
     # N1 fix — shared component-scoped recurrence-line extraction
     src/calendar/icalcomponentscan.cpp
     # N3 fix — authoritative iCal timestamp extraction (LAST-MODIFIED/DTSTAMP/CREATED)

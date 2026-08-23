@@ -2792,3 +2792,45 @@ flow, syncToken incremental semantics, external identity
 `(provider, collection, remote_id, etag)`, GoogleAccount as its own
 subsystem. Confirms the edge/transport seam: provider-local identity lives
 in `providerExtras["google"]`, sync tokens belong to the future backend.
+
+### O60 — RESOLVED — Two implementation traps hit during the 7.B ms-event edge (found + fixed 2026-08-23)
+
+**(a) Qt 6.11 `QJsonValue` default construction is Null-typed, not Undefined.**
+The first `tst_ms_event_canon_edge` helper returned `{}` from a
+`QJsonValue`-returning "find carrier" function and asserted absence via
+`.isUndefined()` — which is FALSE for that default (`type()==0`, i.e. Null;
+Undefined is a distinct non-zero tag on this Qt). Symptom: carrier-absence
+asserts failed against provably carrier-free output. Fix: explicit boolean
+`hasCarrier(wire, key)` helper; value-extraction and presence-check are
+separate concerns now. Rule for future edge suites: never signal JSON-value
+absence with `return {}` + `isUndefined()`.
+
+**(b) Offset-less wall-time parsing must never route through the process-local
+zone.** Graph's dominant `dateTimeTimeZone.dateTime` form carries no offset
+("2026-11-26T09:00:00.0000000"). `QDateTime::fromString(..., Qt::ISODate)`
+parses it as Qt::LocalTime, so any subsequent `toTimeZone(...)`/`toUTC()`
+silently bakes in the machine's zone (observed: +4h skew on the dev box,
+America/New_York). Fix in both promote/demote helpers: wall-time forms are
+constructed directly IN the target zone (`QDateTime(date, time, QTimeZone)`),
+with Windows-vocabulary ids resolved through the vendored CLDR map
+(`windowszonesmap.h`) for interpretation only — the emitted `timeZone`
+string stays verbatim (O57(b) original-preservation).
+
+Implementation decisions pinned alongside (recorded here because they shaped
+the stages, not just the tests):
+- **Redundant-topology suppression:** demote reconstructs Graph `type`
+  structurally (recurrenceId⇒exception > patternedRecurrence⇒seriesMaster >
+  seriesMasterId⇒occurrence > singleInstance); promote therefore consumes a
+  wire `type` equal to its own derivation instead of double-stashing it in
+  providerExtras — this keeps C→G→C byte-equal while surprising topologies
+  stash verbatim and re-emerge untouched.
+- **Wire-fidelity stashes** (attendees, attachments, locations, location
+  leftovers): when the promote side had to leave MAPI/vendor fields behind,
+  demote prefers the verbatim stash over rebuilding from canon; canonical
+  edits flow through the engine baseline diff.
+- **Timestamps:** demote emits the full wire form ("yyyy-MM-ddTHH:mm:ss"
+  + ".0000000Z") — omitting the trailing Z made promote parse as local time
+  (trap (b) again).
+- **partstat vocabulary:** Graph none/tentativelyAccepted map to
+  needsAction/tentative in both directions (needsAction emits no status
+  object — "none" ≡ absent).

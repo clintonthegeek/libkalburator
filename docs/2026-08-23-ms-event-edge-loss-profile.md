@@ -108,10 +108,25 @@ untouched. Ambiguous aliases resolve to the CLDR-preferred IANA id.
    sentinel/zero handling.
 2. Edge suite `tst_ms_event_canon_edge`: captured-shaped payloads
    (sanitized corpus extracts once available), declared-vs-actual loss table
-   walk, round-trip identity for lossless+carrier set, split-brain zones
+   walk, round-trip identity for the lossless+carrier set, split-brain zones
    (O57(b)), masters-only listing shapes.
 3. Registry inspection slot mirroring the Google edge.
 4. Live checkpoint before any consumer sees it (proposal invariant 6).
+
+## Verification status
+
+Landed 2026-08-23 (stub-level; live checkpoint pending). Converter suite
+green first (31 slots), then `tst_ms_event_canon_edge` (10 slots) including
+the C→G→C byte-equal identity for BOTH the representable set and the
+unrepresentable-rule carrier path. Declared-vs-actual divergence found
+during implementation: none — two implementation traps hit and fixed are
+logged as FINDINGS O60 (QJsonValue Null-default trap; wall-time zone
+interpretation). Implementation decisions that refine this profile:
+redundant-topology suppression on promote (`type` consumed when equal to
+the structural derivation — keeps C→G→C byte-equal); wire-fidelity stashes
+preferred over rebuilds on demote (attendees/attachments/locations);
+demote timestamps carry the full ".0000000Z" wire form. The
+committed-live-fixture slot awaits Graph-side fixture sanitization.
 
 ## Out of scope
 
