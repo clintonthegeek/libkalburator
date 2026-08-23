@@ -812,10 +812,6 @@ else()
     option(KALBURATOR_BUILD_GRAPHCLI "Build the GraphCLI Microsoft Graph experiment tool" OFF)
 endif()
 
-if(KALBURATOR_BUILD_GRAPHCLI)
-    add_subdirectory(tools)
-endif()
-
 # -- GoogleCLI experiment tool -------------------------------------------------
 # Standalone Google Calendar protocol lab (loopback OAuth code flow + Calendar
 # v3 verbs + payload capture for the vendor-convergence corpus). Qt6
@@ -827,6 +823,6 @@ else()
     option(KALBURATOR_BUILD_GOOGLECLI "Build the GoogleCLI Google Calendar experiment tool" OFF)
 endif()
 
-if(KALBURATOR_BUILD_GOOGLECLI)
-    add_subdirectory(tools/googlecli)
+if(KALBURATOR_BUILD_GRAPHCLI OR KALBURATOR_BUILD_GOOGLECLI)
+    add_subdirectory(tools)
 endif()
