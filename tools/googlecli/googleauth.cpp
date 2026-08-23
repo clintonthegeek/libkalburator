@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPointer>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTcpServer>
@@ -182,46 +183,73 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
             << authUrl.toString(QUrl::FullyEncoded) << "\n\n"
             << "Waiting for the OAuth redirect on " << redirectUri << " ...\n"
             << Qt::flush;
+
     // Best-effort browser launch without a Qt6::Gui dependency; the URL is
     // printed either way.
     QProcess::startDetached(QStringLiteral("xdg-open"),
                             {authUrl.toString(QUrl::FullyEncoded)});
 
     // 3. Capture exactly one GET on the loopback socket.
+    //
+    // Concurrency notes (the original version crashed here): browsers open
+    // several short-lived connections and half-deliver requests, so every
+    // socket access is guarded through QPointer, request bytes are
+    // accumulated across readyRead deliveries, and handling latches off
+    // after the first callback request.
     QString authCode;
     QString denialError;
+    bool handled = false;
+    QHash<QTcpSocket *, QByteArray> buffers;
+
     QEventLoop loop;
-    QObject::connect(&server, &QTcpServer::newConnection, [&] {
-        QTcpSocket *sock = server.nextPendingConnection();
-        if (!sock)
-            return;
-        QObject::connect(sock, &QTcpSocket::disconnected, sock, &QTcpSocket::deleteLater);
-        QObject::connect(sock, &QTcpSocket::readyRead, [&] {
-            if (authCode.isEmpty() && denialError.isEmpty())
-                ;   // keep parsing below
-            const QByteArray request = sock->readAll();
-            const QString line = QString::fromUtf8(
-                request.left(request.indexOf("\r\n")));
-            static const QRegularExpression codeRe("[?&]code=([^&\\s]+)");
-            static const QRegularExpression errRe("[?&]error=([^&\\s]+)");
-            const auto codeMatch = codeRe.match(line);
-            const auto errMatch = errRe.match(line);
-            if (codeMatch.hasMatch()) {
-                authCode = QUrl::fromPercentEncoding(codeMatch.captured(1).toUtf8());
-            } else if (errMatch.hasMatch()) {
-                denialError = QUrl::fromPercentEncoding(errMatch.captured(1).toUtf8());
-            } else {
-                return;   // not the callback request; wait for more/further reads
-            }
-            const QByteArray body =
-                "<html><body><h2>googlecli</h2><p>Authorization received. "
-                "You may close this tab.</p></body></html>";
-            sock->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
-                        "Connection: close\r\nContent-Length: "
-                        + QByteArray::number(body.size()) + "\r\n\r\n" + body);
-            sock->disconnectFromHost();
-            loop.quit();
-        });
+    QObject::connect(&server, &QTcpServer::newConnection, &loop, [&] {
+        while (QTcpSocket *sock = server.nextPendingConnection()) {
+            const QPointer<QTcpSocket> guard(sock);
+            buffers.insert(sock, {});
+            QObject::connect(sock, &QTcpSocket::readyRead, &loop,
+                             [&, guard]() mutable {
+                if (handled || guard.isNull())
+                    return;
+                QByteArray &buf = buffers[guard.data()];
+                buf += guard->readAll();
+
+                const int lineEnd = buf.indexOf("\r\n");
+                if (lineEnd < 0)
+                    return;   // request line incomplete
+                const QString requestLine =
+                    QString::fromUtf8(buf.left(lineEnd));
+                if (!requestLine.startsWith(QLatin1String("GET ")))
+                    return;   // e.g. favicon noise; ignore politely
+
+                static const QRegularExpression codeRe("[?&]code=([^&\\s]+)");
+                static const QRegularExpression errRe("[?&]error=([^&\\s]+)");
+                const auto codeMatch = codeRe.match(requestLine);
+                const auto errMatch = errRe.match(requestLine);
+                if (!codeMatch.hasMatch() && !errMatch.hasMatch())
+                    return;
+
+                handled = true;
+                if (codeMatch.hasMatch())
+                    authCode = QUrl::fromPercentEncoding(
+                        codeMatch.captured(1).toUtf8());
+                else
+                    denialError = QUrl::fromPercentEncoding(
+                        errMatch.captured(1).toUtf8());
+
+                const QByteArray body =
+                    "<html><body><h2>googlecli</h2><p>Authorization received. "
+                    "You may close this tab.</p></body></html>";
+                guard->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
+                             "Connection: close\r\nContent-Length: "
+                             + QByteArray::number(body.size()) + "\r\n\r\n"
+                             + body);
+                guard->flush();
+                guard->disconnectFromHost();
+                loop.quit();
+            });
+            // No per-socket cleanup needed: entries are tiny and short-lived,
+            // and stale-buffer lookups are guarded by the QPointer above.
+        }
     });
     QTimer::singleShot(5 * 60 * 1000, &loop, [&] {
         QTextStream(stderr) << "\nTimed out waiting for the OAuth redirect.\n";
@@ -230,6 +258,13 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
     loop.exec();
     server.close();
 
+    if (!handled) {
+        if (!denialError.isEmpty())
+            QTextStream(stderr) << "Authorization denied: " << denialError << '\n';
+        else if (authCode.isEmpty())
+            QTextStream(stderr) << "No authorization code captured.\n";
+        return false;
+    }
     if (!denialError.isEmpty()) {
         QTextStream(stderr) << "Authorization denied: " << denialError << '\n';
         return false;

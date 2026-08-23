@@ -391,10 +391,10 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    if (!acquireTokens(session, command == "auth", googleDir))
+    if (!acquireTokens(session, command == "auth" || command == "login", googleDir))
         return 1;
 
-    if (command == "auth") {
+    if (command == "auth" || command == "login") {
         QTextStream(stdout) << "Authorized. Token cache written to "
                             << googleDir << "/token-cache.json\n";
         return 0;
