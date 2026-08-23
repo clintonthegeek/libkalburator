@@ -435,8 +435,11 @@ int cmdDelta(Session &session, const QString &graphDir, bool fresh)
     return 0;
 }
 
-int cmdSweepClean(Session &session)
+int cmdSweepClean(Session &session, const QString &tag = {})
 {
+    // tag empty → every "CORPUS:" subject; non-empty → subjects starting with
+    // that exact run tag (e.g. "CORPUS:20260823T...-1234" from corpus-sweep.sh).
+    const QString prefix = tag.isEmpty() ? QStringLiteral("CORPUS:") : tag;
     bool ok = false;
     const QJsonArray events = paginate(
         session, "/me/events?$top=50&$select=id,subject", ok);
@@ -445,7 +448,7 @@ int cmdSweepClean(Session &session)
     int deleted = 0;
     for (const QJsonValue &v : events) {
         const QJsonObject evt = v.toObject();
-        if (!evt.value("subject").toString().startsWith("CORPUS:"))
+        if (!evt.value("subject").toString().startsWith(prefix))
             continue;
         const HttpResponse resp = graphCall(
             session, "DELETE",
@@ -571,7 +574,8 @@ void printUsage()
         << "  instances <id> s e    expanded occurrences of a series in [start,end]\n"
         << "  calendarview s e      expanded calendar view (surfaces overrides)\n"
         << "  delta [--fresh]       delta-query walk; saves/resumes msgraph/delta-link.txt\n"
-        << "  sweep-clean           delete every event whose subject starts 'CORPUS:'\n"
+        << "  sweep-clean [tag]     delete every event whose subject starts 'CORPUS:'\n"
+        << "                        (or, with tag, only one run's 'CORPUS:<tag>' subjects)\n"
         << "  respond <how> <id>    RSVP to a meeting: accept|tentative|decline [comment]\n"
         << "  post <api-path> <f>   raw POST escape hatch (actions, move, ...)\n"
         << "\nprofiles:\n"
@@ -670,7 +674,7 @@ int main(int argc, char *argv[])
     if (command == "delta")
         return cmdDelta(session, graphDir, rest.contains("--fresh"));
     if (command == "sweep-clean")
-        return cmdSweepClean(session);
+        return cmdSweepClean(session, rest.isEmpty() ? QString() : rest.first());
     if (command == "respond")
         return cmdRespond(session, rest);
     if (command == "post")
