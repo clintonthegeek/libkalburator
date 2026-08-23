@@ -23,3 +23,7 @@ Testing/
 # opencode agent tooling (machine-local; not project context)
 opencode.json
 .lcm/
+
+# Microsoft Graph experiment (credentials, token caches, captured payloads — never commit)
+msgraph*/
+

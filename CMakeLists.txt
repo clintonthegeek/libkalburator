@@ -798,3 +798,17 @@ option(KALBURATOR_BUILD_EXAMPLES "Build example consumers (reference_consumer)" 
 if(KALBURATOR_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+# -- GraphCLI experiment tool -------------------------------------------------
+# Standalone Microsoft Graph protocol lab (device-code auth + /me CRUD +
+# payload capture for the vendor-convergence corpus). Qt6 Core+Network only;
+# does not link the library. Runtime credentials live in gitignored msgraph/.
+if(PROJECT_IS_TOP_LEVEL)
+    option(KALBURATOR_BUILD_GRAPHCLI "Build the GraphCLI Microsoft Graph experiment tool" ON)
+else()
+    option(KALBURATOR_BUILD_GRAPHCLI "Build the GraphCLI Microsoft Graph experiment tool" OFF)
+endif()
+
+if(KALBURATOR_BUILD_GRAPHCLI)
+    add_subdirectory(tools)
+endif()
