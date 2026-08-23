@@ -3,12 +3,15 @@
 
 set(KALBURATOR_CALENDAR_FIXTURE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+set(KALBURATOR_VENDOR_FIXTURE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor")
 
 function(kalburator_add_calendar_test TEST_NAME)
     add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
     target_compile_definitions(${TEST_NAME}
         PRIVATE
             KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+            KALBURATOR_VENDOR_FIXTURE_DIR="${KALBURATOR_VENDOR_FIXTURE_DIR}"
     )
     target_link_libraries(${TEST_NAME}
         PRIVATE
@@ -47,6 +50,7 @@ add_executable(tst_backend_op_queue tst_backend_op_queue.cpp)
 target_compile_definitions(tst_backend_op_queue
     PRIVATE
         KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+            KALBURATOR_VENDOR_FIXTURE_DIR="${KALBURATOR_VENDOR_FIXTURE_DIR}"
 )
 target_link_libraries(tst_backend_op_queue
     PRIVATE
@@ -78,6 +82,7 @@ add_executable(tst_backend_thread_relocation
 )
 target_compile_definitions(tst_backend_thread_relocation
     PRIVATE KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+            KALBURATOR_VENDOR_FIXTURE_DIR="${KALBURATOR_VENDOR_FIXTURE_DIR}"
 )
 target_include_directories(tst_backend_thread_relocation
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync
@@ -125,6 +130,7 @@ add_executable(tst_remotecalendarbackend_blob_view
 )
 target_compile_definitions(tst_remotecalendarbackend_blob_view
     PRIVATE KALBURATOR_CALENDAR_FIXTURE_DIR="${KALBURATOR_CALENDAR_FIXTURE_DIR}"
+            KALBURATOR_VENDOR_FIXTURE_DIR="${KALBURATOR_VENDOR_FIXTURE_DIR}"
 )
 target_include_directories(tst_remotecalendarbackend_blob_view
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync

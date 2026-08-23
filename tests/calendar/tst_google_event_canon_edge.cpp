@@ -1,4 +1,5 @@
 #include <QTest>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -14,6 +15,7 @@
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
+using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Calendar::GoogleEventToCanonStage;
 using Kalburator::Calendar::CanonToGoogleEventStage;
 using Kalburator::Shape::DomainId;
@@ -431,6 +433,42 @@ private slots:
         const QJsonObject cStart = repromoted.value(QStringLiteral("start")).toObject();
         QCOMPARE(cStart.value(QStringLiteral("floating")).toBool(), true);
         QVERIFY(!cStart.contains(QStringLiteral("tz")));
+    }
+
+    // Slot 6 — the committed live-capture fixture (tests/fixtures/vendor/
+    // google/checkpoint-event.json, sanitized extract of the real account's
+    // Phase-2 checkpoint event) promotes cleanly: recurrence verbatim,
+    // carriers re-promoted, providerExtras populated.
+    void promoteCommittedLiveFixture()
+    {
+        QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                + QStringLiteral("/google/checkpoint-event.json"));
+        QVERIFY2(f.open(QIODevice::ReadOnly), qPrintable(f.errorString()));
+        const QJsonObject wire = QJsonDocument::fromJson(f.readAll()).object();
+        QVERIFY(!wire.isEmpty());
+
+        GoogleEventToCanonStage stage;
+        const QJsonObject canon = parse(stage.transform(
+            QJsonDocument(wire).toJson(QJsonDocument::Compact)));
+
+        // uid ← iCalUID (sanitizer may have rewritten the domain; the
+        // promote rule itself is what we're pinning).
+        QCOMPARE(canon.value(QStringLiteral("uid")).toString(),
+                 wire.value(QStringLiteral("iCalUID")).toString());
+        // recurrence verbatim
+        QCOMPARE(canon.value(QStringLiteral("recurrence")).toArray().size(), 1);
+        QCOMPARE(canon.value(QStringLiteral("recurrence")).toArray().at(0).toString(),
+                 QStringLiteral("RRULE:FREQ=WEEKLY;COUNT=4;BYDAY=TH"));
+        // carrier re-promoted to a canon property
+        QCOMPARE(canon.value(QStringLiteral("priority")).toInt(), 5);
+        // zone preserved from the wire (Europe/Zurich authored event)
+        QCOMPARE(canon.value(QStringLiteral("start")).toObject()
+                     .value(QStringLiteral("tz")).toString(),
+                 QStringLiteral("Europe/Zurich"));
+        // transport identity stashed
+        QVERIFY(!canon.value(providerExtrasKey()).toObject()
+                     .value(QStringLiteral("google")).toObject()
+                     .value(QStringLiteral("id")).toString().isEmpty());
     }
 };
 

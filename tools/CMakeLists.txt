@@ -1,4 +1,6 @@
-add_subdirectory(graphcli)
+if(KALBURATOR_BUILD_GRAPHCLI)
+    add_subdirectory(graphcli)
+endif()
 if(KALBURATOR_BUILD_GOOGLECLI)
     add_subdirectory(googlecli)
 endif()
