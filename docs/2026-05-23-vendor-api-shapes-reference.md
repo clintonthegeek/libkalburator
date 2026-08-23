@@ -9,6 +9,17 @@ normalized superset from these tables; this file is the input to that work.
 **Verified:** 2026-05-23 from vendor reference docs + Microsoft `[MS-OXCICAL]`/`[MS-STANOICAL]`
 open specs. Microsoft pages were `graph-rest-1.0` (GA) unless marked beta.
 
+**⚠ Live-corpus deltas (2026-08-23):** real captured payloads contradict
+some rows here. Read FINDINGS **O57** (Graph: top-level `uid`, split-brain
+zone vocabulary, masters-only default listings, exception/instance shapes,
+attendee alias expansion) and **O59** (Google: `reminders.overrides[].method`,
+undocumented-in-tables `eventLabelId` superseding index-based `colorId`,
+string-typed extendedProperties, cancelled dual-semantics, iCalUID≠id,
+consent-scope silent drops) before trusting any table below against live
+data. The EEE edge loss profiles
+(`docs/2026-08-23-{google-event,ms-event}-edge-loss-profile.md`) already
+incorporate these corrections.
+
 ---
 
 ## 0. Cross-cutting findings (read first)

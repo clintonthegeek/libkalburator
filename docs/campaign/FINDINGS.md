@@ -2777,6 +2777,15 @@ share one iCalUID but each has its own id. uid-anchored series handling
   to re-run (already documented at CMakeLists.txt:124; cost another ~20 min
   here).
 
+**(f) Google silently drops consent-screen-unapproved scopes from the
+grant.** First googlecli authorization came back carrying ONLY
+`userinfo.email`/`openid` even though `calendar.events` was requested — no
+error, just a narrower token (verified via tokeninfo). Cause: the scope was
+not yet on the OAuth consent screen's approved list. Any future Google
+transport must verify granted scopes at login and warn per missing scope
+(googlecli now does). Discovered live 2026-08-23; re-consent after adding
+the scopes to the consent screen fixed it.
+
 **Transport research input landed:** `docs/google_rest.md` (2026-08-23) —
 Google-side analogue of `msgraph/general_plan.md`: OAuth desktop loopback
 flow, syncToken incremental semantics, external identity

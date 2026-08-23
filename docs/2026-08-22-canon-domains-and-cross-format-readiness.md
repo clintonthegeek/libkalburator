@@ -1,6 +1,12 @@
 # Canon Domains & Cross-Format Conversion Readiness
 
 **Date:** 2026-08-22
+**Status update 2026-08-23:** written at v1.01, when zero vendor edges
+existed. As of **v1.02**, the first vendor edge exists —
+`google-event ⇄ calendar/canon` (EEE Phase 2, live-checkpointed; see
+`docs/campaign/eee/STATUS.md`) — and the ms-event loss profile is declared.
+The assessment below remains the roadmap baseline; treat "zero vendor-JSON
+edges" claims as historical.
 **Type:** Reference + evaluation. Explains the data domains and canonical formats the shape graph defines today, evaluates them, and assesses whether we are ready to begin testing cross-format conversions with consumers that exceed iCalendar/vCard.
 **Grounded in:** `src/shape/` (registries, envelope, loss profile), the per-domain canon catalogues (`src/{calendar,todo,contacts,note,outline,blob}/`), the plugin contract (`src/plugin/`), the schema design (`docs/2026-05-23-canon-schema-design.md`), the vendor-shapes reference (`docs/2026-05-23-vendor-api-shapes-reference.md`), and the test suite state on `main` @ `bb88dcf` (v1.01).
 

@@ -10,11 +10,11 @@ at the authoritative doc.
 
 ---
 
-## 1. Release / pin state (as of 2026-07-19)
+## 1. Release / pin state (as of 2026-08-23)
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, released tags **v0.98** / **v0.99** / **v1.00**, and **v1.01** (O56 recategorization followup: anchor-stable aliasing + unresolved-conflict hold, 2026-08-22 — §2c). |
+| **libkalburator** | — (self) | `main`, tags up to **v1.02** (EEE Phase 2 google-event ⇄ canon edge + Stage D mock Graph server + googlecli lab, 2026-08-23 — §2d). Fully additive; consumers unaffected. |
 | **PlanStan** | **v0.97** | Not yet bumped to v0.98+ (all additive, no code change forced). Unaffected by O55/O56 (no sqlite-hub endpoints; engine-stable ids everywhere). Note O56's hold-gate changes Unmonitored AskUser semantics for it too: a run with an unresolved conflict now writes NOTHING (all-or-nothing per mapping). |
 | **WildPalms** | **v1.00 (bumped post-O55)** | Filed the O55 followup (2026-08-22); **RESOLVED same day in v1.01** (§2c) — pin bump only; v1.00-poisoned profiles self-heal. |
 
@@ -112,6 +112,15 @@ mirrors PlanStan's current event model** (solo events, no attendees/iTIP):
 attendees ride the canon read-only, RSVP flows deferred until PlanStan ships
 organization features. Consumers: nothing to do; all additive when it lands.
 
+**Progress 2026-08-23 (tag v1.02):** EEE Phase 2 landed and live-checkpointed
+— `google-event ⇄ calendar/canon` edge stages with declared loss profile,
+Google-side corpus fixtures committed (`tests/fixtures/vendor/google/`),
+Stage D mock Graph server test bed (`tests/graph/`), googlecli transport
+lab authorized. Google wire-truth findings in **O59** — note (f): Google
+silently drops consent-screen-unapproved OAuth scopes (relevant to any
+future Google transport work). Still zero consumer impact; campaign status:
+`docs/campaign/eee/STATUS.md`.
+
 | # | From | Item | Status |
 |---|---|---|---|
 | ~~**O54**~~ | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guessed every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items failed permanently (SabreDAV 400). | **RESOLVED 2026-08-22** (branch `fix/o54-uid-url-assumption`): `m_uidToUrl` cache + `resolveItemUrl()` across all update/delete/read paths, per the recommended fix shape; CardDAV audited clean. Regression test RED→GREEN in `tst_remotecalendarbackend_convergence`. Suite 177/179 (identical pre-existing baseline). Consumers need no code change; bump the pin when convenient. Closure summary: FINDINGS **O54**. |
@@ -161,15 +170,16 @@ Once merged, cut a release tag (v0.95) and notify both consumers — no pin bump
 is forced (all three are additive/non-breaking for consumers; WP-A1 only flips
 a default the sole real caller already overrode).
 
-## 7. Known pre-existing failures (NOT introduced by §3; carried from v0.94)
+## 7. Known pre-existing failures (NOT introduced by §3)
 
-The full suite is 171/173. The two reds predate this branch (documented in
-`CLAUDE.md` at the v0.94 close) and are untouched by the O46/O47/WP-A1 work:
+Updated 2026-08-23: the full suite is **180 passing / 182 total** (EEE
+Phase 2 + Stage D gates included). The reds are the two documented
+live-Radicale-state-dependent slots:
 
-- **`tst_calendar_canon_roundtrip::canonPersonalClassificationProducesPrivateAndStash`**
-  — `classification=personal` no longer stashes `X-CANON-CLASSIFICATION:personal`
-  on demote. A genuine calendar-canon classification-encoding regression, in
-  `icalcanonstages.cpp` (not touched here). Worth its own fix.
+- **`tst_backend_signals`** — live-Radicale-state-dependent.
 - **`tst_remotecalendarbackend`** — the long-standing Radicale live-state flake.
 
-Neither shares a code path with §3.
+(The third historical red,
+`tst_calendar_canon_roundtrip::canonPersonalClassificationProducesPrivateAndStash`,
+was RESOLVED 2026-08-23 as FINDINGS **O58** — a parameter-blind test assert;
+production behavior was always correct.)
