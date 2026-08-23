@@ -1,5 +1,6 @@
 if(KALBURATOR_BUILD_GRAPHCLI)
     add_subdirectory(graphcli)
+    add_subdirectory(msroundtrip)
 endif()
 if(KALBURATOR_BUILD_GOOGLECLI)
     add_subdirectory(googlecli)

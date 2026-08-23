@@ -116,17 +116,41 @@ untouched. Ambiguous aliases resolve to the CLDR-preferred IANA id.
 ## Verification status
 
 Landed 2026-08-23 (stub-level; live checkpoint pending). Converter suite
-green first (31 slots), then `tst_ms_event_canon_edge` (10 slots) including
-the C→G→C byte-equal identity for BOTH the representable set and the
-unrepresentable-rule carrier path. Declared-vs-actual divergence found
-during implementation: none — two implementation traps hit and fixed are
-logged as FINDINGS O60 (QJsonValue Null-default trap; wall-time zone
-interpretation). Implementation decisions that refine this profile:
-redundant-topology suppression on promote (`type` consumed when equal to
-the structural derivation — keeps C→G→C byte-equal); wire-fidelity stashes
-preferred over rebuilds on demote (attendees/attachments/locations);
-demote timestamps carry the full ".0000000Z" wire form. The
-committed-live-fixture slot awaits Graph-side fixture sanitization.
+green first (31 slots), then `tst_ms_event_canon_edge` (11 slots incl. a
+committed-live-fixture promotion) including the C→G→C byte-equal identity
+for BOTH the representable set and the unrepresentable-rule carrier path.
+Declared-vs-actual divergence found during implementation: none — two
+implementation traps hit and fixed are logged as FINDINGS O60 (QJsonValue
+Null-default trap; wall-time zone interpretation). Implementation decisions
+that refine this profile: redundant-topology suppression on promote (`type`
+consumed when equal to the structural derivation — keeps C→G→C byte-equal);
+wire-fidelity stashes preferred over rebuilds on demote
+(attendees/attachments/locations); demote timestamps carry the full
+".0000000Z" wire form.
+
+**Additional declared normalizations (2026-08-23, checkpoint-runner pass).**
+Running the offline harness (`tools/msroundtrip`, `roundtrip` verb) over all
+four committed event fixtures surfaced four G→C→G diff classes that are
+design decisions rather than accidents — declared here so the runner's exit
+code stays honest:
+
+1. **`type` emission**: demote ALWAYS emits the structurally reconstructed
+   topology; wires captured without a `type` field ($select projections)
+   gain one. Canon never stores topology — this is the demote side of the
+   reconstruction decision above.
+2. **Attendee `status.time` sentinels**: year-1 .NET sentinel times on
+   attendee response rows normalize ABSENT (O57(d), same ruling as the
+   owner's `responseStatus`).
+3. **partstat vocabulary**: canon `needsAction` ≡ Graph `"none"` — demote
+   emits no `status` object for needs-action rows.
+4. **uid fallback chain**: promote resolves uid as top-level `uid` ←
+   `iCalUId` ← transport `id`; captures lacking both uid fields ($select
+   projections) promote under the transport id and demote emit it as
+   top-level `uid`. Full listings always carry `uid`/`iCalUId` and never
+   hit this path.
+
+Fixture round-trip counts after declaration: event-single 4 (all declared),
+events-listing 1, calendarview 1, event-instances 1 — zero undeclared.
 
 ## Out of scope
 
