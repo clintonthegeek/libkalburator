@@ -245,28 +245,31 @@ QByteArray readJsonFile(const QString &path, bool &ok)
     return raw;
 }
 
+/// args exclude the leading kind word ("event"): either [jsonFile] or
+/// [calendarId, jsonFile].
 QString eventCollectionPath(const QStringList &args)
 {
     QString calendarId = QStringLiteral("primary");
-    if (!args.isEmpty())
+    if (args.size() >= 2)
         calendarId = args.first();
     return "/calendars/" + urlEncodePathSegment(calendarId) + "/events";
 }
 
 int cmdCreate(Session &session, const QStringList &args)
 {
-    if (args.size() != 2) {
-        QTextStream(stderr) << "usage: googlecli create event [calendarId] <json-file>\n"
-                            << "       (calendarId defaults to primary; pass it as the\n"
-                            << "        second-to-last argument)\n";
+    if (args.size() < 1 || args.size() > 2) {
+        QTextStream(stderr) << "usage: googlecli create event <json-file>\n"
+                            << "       googlecli create event <calendarId> <json-file>\n";
         return 2;
     }
     bool ok = false;
     const QByteArray body = readJsonFile(args.last(), ok);
     if (!ok) return 2;
 
+    // Strip the leading kind word ("event"): eventCollectionPath expects
+    // [jsonFile] or [calendarId, jsonFile].
     const HttpResponse resp = googleCall(session, "POST",
-                                         eventCollectionPath(args.mid(0, args.size() - 1)), body);
+                                         eventCollectionPath(args.mid(1)), body);
     if (!resp.ok()) {
         printGoogleError("create event", resp.status, resp.body);
         return 1;

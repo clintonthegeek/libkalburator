@@ -752,21 +752,34 @@ QByteArray CanonToGoogleEventStage::transform(const QByteArray& canonBytes) cons
                 const QString name = a.value(QStringLiteral("name")).toString();
                 if (!name.isEmpty())
                     entry.insert(QStringLiteral("displayName"), name);
-                // role → optional boolean only (chair/required distinction lost)
+                // role → optional boolean only (chair/required distinction
+                // lost). Emit the key ONLY when true: false is Google's
+                // default and a re-promote derives it identically — emitting
+                // it always made G→C→G round-trips differ additively.
                 const bool optional =
                     a.value(QStringLiteral("role")).toString() == QStringLiteral("optional");
-                entry.insert(QStringLiteral("optional"), optional);
+                if (optional)
+                    entry.insert(QStringLiteral("optional"), true);
                 const QString partstat = a.value(QStringLiteral("partstat")).toString();
                 entry.insert(QStringLiteral("responseStatus"),
                              partstat.isEmpty() ? QStringLiteral("needsAction") : partstat);
-                // canon-only attendee fields carried per-entry
+                // canon-only attendee fields carried per-entry. Default-valued
+                // scalars (false/0/empty) are NOT carried — same additive-
+                // noise ruling as `optional` above.
                 for (auto it = a.constBegin(); it != a.constEnd(); ++it) {
                     if (it.key() == QStringLiteral("email")
                         || it.key() == QStringLiteral("name")
                         || it.key() == QStringLiteral("role")
                         || it.key() == QStringLiteral("partstat"))
                         continue;
-                    entry.insert(carrierKey(it.key()), valueToCarrierString(it.value()));
+                    const QJsonValue v = it.value();
+                    const bool defaultVal =
+                        (v.isBool() && !v.toBool())
+                        || (v.isDouble() && v.toDouble() == 0.0)
+                        || (v.isString() && v.toString().isEmpty());
+                    if (!defaultVal)
+                        entry.insert(carrierKey(it.key()),
+                                     valueToCarrierString(v));
                 }
                 arr.append(entry);
             }

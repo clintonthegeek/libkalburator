@@ -37,11 +37,11 @@ point — the analogue of iCal X- props) and re-promoted on the way back.
 |---|---|---|
 | `uid` | lossless | ⇄ `iCalUID`. (Google `id` is transport-local → `providerExtras["google"]["id"]`, not canon.) |
 | `sequence` | lossless | ⇄ `sequence` |
-| `created` / `lastModified` | lossless | ⇄ `created` / `updated` |
+| `created` / `lastModified` | Simplified | ⇄ `created` / `updated`. Canon is second-granular (house convention); Google's millisecond precision (`.000Z`) truncates. Instant-preserving. |
 | `summary` | lossless | ⇄ `summary` |
 | `description` | lossless | ⇄ `description` |
 | `location` | lossless | ⇄ `location` (free-form string both sides) |
-| `start` / `end` | lossless; floating → Reversible | `{date}` ⇄ all-day `{date}`; `{dateTime,tz,floating:false}` ⇄ `{dateTime,timeZone}`. **`floating:true` has no Google form** (§1.5): pinned to UTC, original carried (`x-canon-floating`) and restored on re-promote. |
+| `start` / `end` | lossless; floating → Reversible | `{date}` ⇄ all-day `{date}`; `{dateTime,tz,floating:false}` ⇄ `{dateTime,timeZone}`. Google's offset-local form (`-04:00`) canonicalizes to UTC-ISO (`Z`) with the IANA zone preserved — instant- and zone-preserving normalization. **`floating:true` has no Google form** (§1.5): pinned to UTC, original carried (`x-canon-floating`) and restored on re-promote. |
 | `allDay` | lossless | ⇄ date-only start/end |
 | `recurrence` | lossless | RFC5545 lines ⇄ RFC5545 lines (verbatim) |
 | `recurrenceId` / `recurrenceRange` | lossless | ⇄ `recurringEventId` + `originalStartTime` (§1.4: all three key on original start) |
