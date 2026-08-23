@@ -64,12 +64,28 @@ structurally on demote with redundant-topology suppression on promote
 (Qt 6.11 QJsonValue default is Null-typed, not Undefined; offset-less
 wall-time parsing must construct directly in the target zone, never via
 process-local). **7.B live checkpoint still USER-RUN** (proposal invariant
-6) before any consumer sees it. Suite baseline: **184 total / 182 passing**
+6) before any consumer sees it. **Graph-side corpus sanitization DONE** (commit 1c1d91f):
+`tools/graphcli/make-fixtures.py` mirrors the Google two-pass sanitizer —
+note `@odata.context` URLs leak the internal Exchange identity and raw item
+ids through key-driven rules, hence the dedicated context-rewrite pass. Five
+fixtures under `tests/fixtures/vendor/microsoft/`; committed-fixture slot in
+the ms-event edge test (11 slots).
+
+**Phase 7.C foundation DONE** (commit b761a31): `src/graph/graphapiclient.{h,cpp}`
++ `tst_graph_api_client` (8 slots vs Stage D mock) — pagination walks, delta
+steps with typed 410 ResyncRequired, error.code extraction. Wire nuance
+pinned: a non-empty queued change page answers nextLink; the fixpoint is
+"empty set + deltaLink" — walk until complete.
+
+Suite baseline: **185 total / 183 passing**
 (same two Radicale-dependent slots). Pending next actions, in order: (1)
-7.B live checkpoint on a real Outlook.com event; (2) Graph-side fixture
-sanitization + committed-fixture slot in the ms-event edge test; (3) 7.C
-MSGraphCalendarBackend on Stage D; (4) Phase 3 People/Tasks edges; (5)
-Phases 4–6 + matrix. NOT YET PUSHED to origin — push when convenient.
+7.B live checkpoint on a real Outlook.com event (USER-RUN); (2) remaining
+7.C work: `MSGraphCalendarBackend` fetch/applyRecords on the GraphApiClient +
+Stage D primitives (design decision owed: calendar backends hand out
+Incidence::Ptr — decide whether Graph JSON converts via pipeline
+ms-event→canon→iCal inside the backend or the engine boundary grows a
+JSON-native path); (3) Phase 3 People/Tasks edges; (4) Phases 4–6 + matrix.
+NOT YET PUSHED to origin — push when convenient.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 
