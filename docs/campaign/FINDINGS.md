@@ -2707,3 +2707,24 @@ vocabulary. Consumers diffing attendee state need alias-set resolution down
 to a stable sink (the exact shape of O55's record-id fix, one level up);
 this is what campaign-proposal §5's identity layer must deliver, and until
 then hosts should treat attendee diffs as advisory, not authoritative.
+
+### O58 — RESOLVED — `canonPersonalClassificationProducesPrivateAndStash` red slot was a test-string bug, not a data-loss defect (found + fixed 2026-08-23)
+
+The uncatalogued pre-existing failure in `tst_calendar_canon_roundtrip`
+(called out in the EEE proposal Phase 0 and CLAUDE.md) is closed. Diagnosis:
+production behavior is correct — `canonObjectToEventBytes()`
+(`src/calendar/eventcanonfields.cpp:527-543`) sets
+`X-CANON-CLASSIFICATION=personal` via
+`setNonKDECustomProperty`, but KCalendarCore serializes non-KDE custom
+properties with an explicit value-type parameter:
+
+```
+X-CANON-CLASSIFICATION;VALUE=TEXT:personal
+```
+
+The slot asserted the literal substring `"X-CANON-CLASSIFICATION:personal"`,
+which can never occur in kcalendarcore output → guaranteed red since the slot
+was written. Fix: parameter-tolerant regex match
+(`^X-CANON-CLASSIFICATION(?:;[^:\r\n]*)?:personal$` multiline). The verbatim
+stash is present and recoverable as designed; no production code touched.
+Suite baseline moves to 180 total / 178 passing.

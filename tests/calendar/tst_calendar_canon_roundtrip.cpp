@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QRegularExpression>
 
 #include "canonenvelope.h"
 #include "icalcanonstages.h"
@@ -408,8 +409,13 @@ private slots:
         QVERIFY2(output.contains("CLASS:PRIVATE"),
                  "classification=personal must produce CLASS:PRIVATE in iCal output");
 
-        // Must stash the verbatim original (invariant 4: recoverable)
-        QVERIFY2(output.contains("X-CANON-CLASSIFICATION:personal"),
+        // Must stash the verbatim original (invariant 4: recoverable).
+        // KCalendarCore serializes non-KDE custom properties with an explicit
+        // VALUE=TEXT parameter, so match parameter-tolerantly.
+        static const QRegularExpression stashRe(
+            QStringLiteral("^X-CANON-CLASSIFICATION(?:;[^:\\r\\n]*)?:personal\\r?$"),
+            QRegularExpression::MultilineOption);
+        QVERIFY2(stashRe.match(QString::fromUtf8(output)).hasMatch(),
                  "classification=personal must stash verbatim value in X-CANON-CLASSIFICATION");
     }
 
