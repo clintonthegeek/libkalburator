@@ -42,6 +42,7 @@ Tokens TokenStore::load() const
     tokens.accessToken = obj.value("access_token").toString();
     tokens.refreshToken = obj.value("refresh_token").toString();
     tokens.expiresAtSecs = static_cast<qint64>(obj.value("expires_at").toDouble());
+    tokens.grantedScopes = obj.value("granted_scopes").toString();
     return tokens;
 }
 
@@ -52,6 +53,8 @@ void TokenStore::save(const Tokens &tokens) const
     if (!tokens.refreshToken.isEmpty())
         obj.insert("refresh_token", tokens.refreshToken);
     obj.insert("expires_at", double(tokens.expiresAtSecs));
+    if (!tokens.grantedScopes.isEmpty())
+        obj.insert("granted_scopes", tokens.grantedScopes);
     QFile file(m_path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         QTextStream(stderr) << "Cannot write token cache " << m_path << ": "
@@ -141,6 +144,7 @@ static Tokens tokenResponseToObject(const HttpResponse &resp, bool &ok)
     }
     out.accessToken = obj.value("access_token").toString();
     out.refreshToken = obj.value("refresh_token").toString();   // absent on refresh grant
+    out.grantedScopes = obj.value("scope").toString();
     out.expiresAtSecs = QDateTime::currentSecsSinceEpoch()
         + obj.value("expires_in").toInt(3600);
     ok = !out.accessToken.isEmpty();

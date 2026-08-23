@@ -14,6 +14,7 @@
 
 static const char *kScopes =
     "https://www.googleapis.com/auth/calendar.events "
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly "
     "https://www.googleapis.com/auth/contacts "
     "https://www.googleapis.com/auth/userinfo.email";
 
@@ -397,7 +398,17 @@ int main(int argc, char *argv[])
 
     if (command == "auth" || command == "login") {
         QTextStream(stdout) << "Authorized. Token cache written to "
-                            << googleDir << "/token-cache.json\n";
+                            << googleDir << "/token-cache.json\n"
+                            << "Granted scopes: " << session.tokens.grantedScopes << "\n";
+        // Warn loudly about silently-dropped scopes (Google drops
+        // unapproved scopes from the grant instead of erroring — O59-class
+        // gotcha, found 2026-08-23 when calendar.events vanished).
+        const QStringList requested = QString::fromUtf8(kScopes).split(' ');
+        for (const QString &scope : requested)
+            if (!session.tokens.grantedScopes.contains(scope))
+                QTextStream(stderr) << "WARNING: scope NOT granted (check the "
+                                    << "OAuth consent screen's approved scopes): "
+                                    << scope << '\n';
         return 0;
     }
     if (command == "me")

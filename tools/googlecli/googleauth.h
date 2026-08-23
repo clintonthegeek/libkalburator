@@ -6,6 +6,7 @@ struct Tokens {
     QString accessToken;
     QString refreshToken;
     qint64 expiresAtSecs = 0;
+    QString grantedScopes;   // verbatim scope string from the token response
 
     bool hasLiveAccessToken() const;
 };
