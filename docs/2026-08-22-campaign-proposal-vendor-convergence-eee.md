@@ -7,7 +7,28 @@
 
 ---
 
-## Status (2026-08-23): EXPERIMENT IN FLIGHT — GraphCLI
+## Status (2026-08-23, evening): Phase 2 edge + Stage D landed; Google transport lab live
+
+Progress this session (details in `docs/campaign/eee/STATUS.md`):
+
+- **Phase 2 (google-event ⇄ canon) implemented at the edge level** — loss
+  profile declared first per invariant 2
+  (`docs/2026-08-23-google-event-edge-loss-profile.md`), stages + registry
+  edges + `tst_google_event_canon_edge` (7 slots). Wire truths corrected
+  against the live Calendar API reference before trusting fixtures
+  (FINDINGS **O59**). Live checkpoint still pending → no tag yet.
+- **Stage D (mock Graph server) done** — `tests/graph/`, CI-able, replaying
+  pagination/delta/error semantics; ready as the 7.C test bed.
+- **googlecli** (`tools/googlecli/`) — loopback-OAuth Google Calendar lab
+  mirroring graphcli; credentials machine-local in gitignored `google/`
+  (`GoogleAuthinfo.md` — never commit). Research input:
+  `docs/google_rest.md`.
+- corpus-sweep now mints per-run tags (closes the O57 cross-contamination
+  vector; verified live).
+- O58 closed: the red canon slot was a test-string bug, not data loss.
+  Suite baseline: **181 total / 179 passing**.
+
+Earlier status (2026-08-23): Phase 0 experiment in flight — GraphCLI.
 
 Phase 0 of this campaign has started early, via a live-account experiment
 pinned here so future sessions don't have to rediscover it:
