@@ -625,6 +625,48 @@ private slots:
         QCOMPARE(out.value(QStringLiteral("originalStart")).toString(),
                  QStringLiteral("2026-12-03T14:00:00.0000000Z"));
     }
+
+    // Slot 8 — the committed live-capture fixture
+    // (tests/fixtures/vendor/microsoft/events-listing.json, sanitized extract
+    // of the real account's masters-only listing, O57(g)) promotes cleanly:
+    // every event in the page yields a uid, recurrence lines materialize for
+    // series masters, and transport identity stashes under msgraph extras.
+    void promoteCommittedLiveFixture()
+    {
+        QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                + QStringLiteral("/microsoft/events-listing.json"));
+        QVERIFY2(f.open(QIODevice::ReadOnly), qPrintable(f.errorString()));
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        QVERIFY(doc.isObject());
+        const QJsonArray items = doc.object().value(QStringLiteral("value")).toArray();
+        QVERIFY2(!items.isEmpty(), "fixture listing has no events");
+
+        MsEventToCanonStage stage;
+        int promoted = 0;
+        for (const auto& iv : items) {
+            const QJsonObject wire = iv.toObject();
+            const QJsonObject canon = parse(stage.transform(
+                QJsonDocument(wire).toJson(QJsonDocument::Compact)));
+            QVERIFY2(!canon.isEmpty(), "promote returned empty canon");
+            // uid ← top-level uid (= iCalUId, O57(a)); every corpus event has one
+            const QString expectedUid = wire.value(QStringLiteral("uid")).toString();
+            if (!expectedUid.isEmpty())
+                QCOMPARE(canon.value(QStringLiteral("uid")).toString(), expectedUid);
+            else
+                QCOMPARE(canon.value(QStringLiteral("uid")).toString(),
+                         wire.value(QStringLiteral("iCalUId")).toString());
+            // envelope stamped for the calendar domain
+            QCOMPARE(canon.value(QStringLiteral("_canon")).toObject()
+                         .value(QStringLiteral("domain")).toString(),
+                     QStringLiteral("calendar"));
+            // transport identity stashed
+            QVERIFY(!canon.value(providerExtrasKey()).toObject()
+                         .value(QStringLiteral("msgraph")).toObject()
+                         .value(QStringLiteral("id")).toString().isEmpty());
+            ++promoted;
+        }
+        QVERIFY(promoted >= 3);
+    }
 };
 
 QTEST_MAIN(TestMsEventCanonEdge)

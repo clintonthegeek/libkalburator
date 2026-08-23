@@ -1,0 +1,530 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('REDACTED_ACCOUNT')/calendar/events",
+ "value": [
+  {
+   "@odata.etag": "fake-id-000",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA011==",
+   "createdDateTime": "2026-08-23T15:59:58.7242414Z",
+   "end": {
+    "dateTime": "2026-09-15T19:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000002",
+   "id": "AQMkADAwATFALEVIEW003",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": false,
+   "lastModifiedDateTime": "2026-08-23T15:59:58.7817179Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": null,
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "Eastern Standard Time",
+   "originalStartTimeZone": "Eastern Standard Time",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-09-15T18:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS:20260823T155954Z-2900296 authored Eastern",
+   "transactionId": null,
+   "type": "singleInstance",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000002",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-004",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA015==",
+   "createdDateTime": "2026-08-23T15:59:55.1559791Z",
+   "end": {
+    "dateTime": "2026-09-11T00:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000006",
+   "id": "AQMkADAwATFALEVIEW007",
+   "importance": "normal",
+   "isAllDay": true,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T15:59:55.3457173Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": null,
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-09-10T00:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS:20260823T155954Z-2900296 all-day event",
+   "transactionId": null,
+   "type": "singleInstance",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000006",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-008",
+   "allowNewTimeProposals": true,
+   "attendees": [
+    {
+     "emailAddress": {
+      "address": "person2@example.com",
+      "name": "Person 2"
+     },
+     "status": {
+      "response": "none",
+      "time": "0001-01-01T00:00:00Z"
+     },
+     "type": "required"
+    },
+    {
+     "emailAddress": {
+      "address": "person3@example.com",
+      "name": "Person 3"
+     },
+     "status": {
+      "response": "none",
+      "time": "0001-01-01T00:00:00Z"
+     },
+     "type": "required"
+    },
+    {
+     "emailAddress": {
+      "address": "person1@example.com",
+      "name": "Person 1"
+     },
+     "status": {
+      "response": "accepted",
+      "time": "0001-01-01T00:00:00Z"
+     },
+     "type": "optional"
+    }
+   ],
+   "body": {
+    "content": "",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA019==",
+   "createdDateTime": "2026-08-23T07:31:38.4877176Z",
+   "end": {
+    "dateTime": "2026-08-26T17:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000000A",
+   "id": "AQMkADAwATFALEVIEW011",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": false,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T07:34:52.7267397Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": null,
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person2@example.com",
+     "name": "Person 2"
+    }
+   },
+   "originalEndTimeZone": "Greenwich Standard Time",
+   "originalStartTimeZone": "Greenwich Standard Time",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "accepted",
+    "time": "2026-08-23T07:33:50.5418088Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-08-26T15:30:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "Sample Event 1",
+   "transactionId": null,
+   "type": "singleInstance",
+   "uid": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000000A",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-012",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA023==",
+   "createdDateTime": "2026-08-23T05:43:36.4600659Z",
+   "end": {
+    "dateTime": "2026-10-02T21:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000000E",
+   "id": "AQMkADAwATFALEVIEW015",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T05:43:36.6441694Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": null,
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "Eastern Standard Time",
+   "originalStartTimeZone": "Eastern Standard Time",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-10-02T19:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "Sample Event 2",
+   "transactionId": "fake-id-016",
+   "type": "singleInstance",
+   "uid": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000000E",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-017",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html>\r\n<head>\r\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n</head>\r\n<body>\r\n<div class=\"elementToProof\" style=\"font-family:Aptos,&quot;Aptos_EmbeddedFont&quot;,&quot;Aptos_MSFontService&quot;,Calibri,Helvetica,sans-serif; font-size:12pt; color:rgb(0,0,0)\">\r\nOnline on zoom</div>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [
+    "Purple category"
+   ],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA028==",
+   "createdDateTime": "2026-08-23T05:29:08.7011035Z",
+   "end": {
+    "dateTime": "2026-08-27T17:15:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000013",
+   "id": "AQMkADAwATFALEVIEW020",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T05:31:09.4485092Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": null,
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "Eastern Standard Time",
+   "originalStartTimeZone": "Eastern Standard Time",
+   "recurrence": {
+    "pattern": {
+     "dayOfMonth": 0,
+     "daysOfWeek": [
+      "thursday"
+     ],
+     "firstDayOfWeek": "sunday",
+     "index": "first",
+     "interval": 1,
+     "month": 0,
+     "type": "weekly"
+    },
+    "range": {
+     "endDate": "2027-02-18",
+     "numberOfOccurrences": 0,
+     "recurrenceTimeZone": "Eastern Standard Time",
+     "startDate": "2026-08-27",
+     "type": "endDate"
+    }
+   },
+   "reminderMinutesBeforeStart": 5,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-08-27T15:45:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "Sample Event 3",
+   "transactionId": "fake-id-021",
+   "type": "seriesMaster",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000013",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-022",
+   "allowNewTimeProposals": true,
+   "attendees": [
+    {
+     "emailAddress": {
+      "address": "person4@example.com",
+      "name": "Person 4"
+     },
+     "status": {
+      "response": "none",
+      "time": "0001-01-01T00:00:00Z"
+     },
+     "type": "required"
+    },
+    {
+     "emailAddress": {
+      "address": "person5@example.com",
+      "name": "Person 5"
+     },
+     "status": {
+      "response": "none",
+      "time": "0001-01-01T00:00:00Z"
+     },
+     "type": "required"
+    }
+   ],
+   "body": {
+    "content": "<html>\r\n<head>\r\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n</head>\r\n<body>\r\n<div class=\"elementToProof\" style=\"font-family:Aptos,&quot;Aptos_EmbeddedFont&quot;,&quot;Aptos_MSFontService&quot;,Calibri,Helvetica,sans-serif; font-size:12pt; color:rgb(0,0,0)\">\r\nWorking with Kim!</div>\r\n<br>\r\n<div style=\"width:100%\"><span style=\"white-space:nowrap; color:#5F5F5F; opacity:.36\">________________________________________________________________________________</span>\r\n</div>\r\n<div class=\"me-email-text\" lang=\"\" style=\"color:#252424; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">\r\n<div style=\"margin-top:24px; margin-bottom:20px\"><span style=\"font-size:24px; color:#252424\">Microsoft Teams meeting</span>\r\n</div>\r\n<div style=\"margin-bottom:20px\">\r\n<div style=\"margin-top:0px; margin-bottom:0px; font-weight:bold\"><span style=\"font-size:14px; color:#252424\">Join on your computer, mobile app or room device</span>\r\n</div>\r\n<a href=\"https://teams.live.com/meet/9321351922051?p=PgaDagndODuNatQT6k\" class=\"me-email-headline\" style=\"font-size:14px; font-family:'Segoe UI Semibold','Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif; text-decoration:underline; color:#6264a7\">Click\r\n here to join the meeting</a> </div>\r\n<div style=\"margin-bottom:20px; margin-top:20px\">\r\n<div style=\"margin-bottom:4px\"><span data-tid=\"meeting-code\" style=\"font-size:14px; color:#252424\">Meeting ID:\r\n<span style=\"font-size:16px; color:#252424\">932 135 192 205 1</span> </span><br>\r\n<span style=\"font-size:14px; color:#252424\">Passcode: </span><span style=\"font-size:16px; color:#252424\">BM6Fi2\r\n</span>\r\n<div style=\"font-size:14px\"><a href=\"https://www.microsoft.com/en-us/microsoft-teams/download-app\" class=\"me-email-link\" style=\"font-size:14px; text-decoration:underline; color:#6264a7; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">Download\r\n Teams</a> | <a href=\"https://www.microsoft.com/microsoft-teams/join-a-meeting\" class=\"me-email-link\" style=\"font-size:14px; text-decoration:underline; color:#6264a7; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">\r\nJoin on the web</a></div>\r\n</div>\r\n</div>\r\n<div style=\"margin-bottom:24px; margin-top:20px\"><a href=\"https://aka.ms/JoinTeamsFreeMeeting\" class=\"me-email-link\" style=\"font-size:14px; text-decoration:underline; color:#6264a7; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">Learn More</a>\r\n | <a href=\"https://teams.live.com/meetingOptions/meetings/9321351922051/view?localeCode=en-CA\" class=\"me-email-link\" style=\"font-size:14px; text-decoration:underline; color:#6264a7; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">\r\nMeeting options</a> </div>\r\n</div>\r\n<div style=\"font-size:14px; margin-bottom:4px; font-family:'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif\">\r\n</div>\r\n<div style=\"font-size:12px\"></div>\r\n<div></div>\r\n<div style=\"width:100%\"><span style=\"white-space:nowrap; color:#5F5F5F; opacity:.36\">________________________________________________________________________________</span>\r\n</div>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+   "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA033==",
+   "createdDateTime": "2026-08-23T05:12:20.7410122Z",
+   "end": {
+    "dateTime": "2026-08-23T22:30:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": true,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000018",
+   "id": "AQMkADAwATFALEVIEW025",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": true,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:20:13.3352553Z",
+   "location": {
+    "address": {
+     "city": "Ottawa",
+     "countryOrRegion": "Canada",
+     "postalCode": "K1K 0T9",
+     "state": "Ontario",
+     "street": "548 Montreal Rd"
+    },
+    "coordinates": {},
+    "displayName": "Person 6",
+    "locationType": "postalAddress",
+    "locationUri": "https://redacted.example.com/fake-id-026",
+    "uniqueId": "https://redacted.example.com/fake-id-026",
+    "uniqueIdType": "bing"
+   },
+   "locations": [
+    {
+     "addedBy": "",
+     "address": {
+      "city": "Ottawa",
+      "countryOrRegion": "Canada",
+      "postalCode": "K1K 0T9",
+      "state": "Ontario",
+      "street": "548 Montreal Rd"
+     },
+     "coordinates": {},
+     "displayName": "Person 6",
+     "locationType": "postalAddress",
+     "locationUri": "https://redacted.example.com/fake-id-026",
+     "uniqueId": "https://redacted.example.com/fake-id-026",
+     "uniqueIdType": "bing"
+    }
+   ],
+   "occurrenceId": null,
+   "onlineMeeting": {
+    "joinUrl": "https://redacted.example.com/fake-id-027"
+   },
+   "onlineMeetingProvider": "teamsForBusiness",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "Eastern Standard Time",
+   "originalStartTimeZone": "Eastern Standard Time",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": null,
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-08-23T15:30:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "Sample Event 4",
+   "transactionId": "fake-id-028",
+   "type": "singleInstance",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000018",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  }
+ ]
+}

@@ -1,0 +1,617 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('REDACTED_ACCOUNT')/events('REDACTED_ITEM_ID')/instances",
+ "value": [
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:19.2508712Z",
+   "end": {
+    "dateTime": "2026-10-01T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000031",
+   "id": "AQMkADAwATFALEVIEW050",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.2963089Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-051",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-10-01T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: OVERRIDDEN occurrence",
+   "transactionId": null,
+   "type": "exception",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-10-15T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000036",
+   "id": "AQMkADAwATFALEVIEW055",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-056",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-10-15T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-10-22T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000039",
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA068==",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-059",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-10-22T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-10-29T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000003C",
+   "id": "AQMkADAwATFALEVIEW061",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-062",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-10-29T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-11-05T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000003F",
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA074==",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-065",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-11-05T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-11-12T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000042",
+   "id": "AQMkADAwATFALEVIEW067",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-068",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-11-12T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-11-19T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000045",
+   "id": "AQMkADAwATFALEVIEW070",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-071",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-11-19T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-11-26T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000048",
+   "id": "AQMkADAwATFALEVIEW073",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-074",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-11-26T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  },
+  {
+   "@odata.etag": "fake-id-047",
+   "allowNewTimeProposals": true,
+   "attendees": [],
+   "body": {
+    "content": "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\">\r\n<meta name=\"Generator\" content=\"Microsoft Exchange Server\">\r\n<!-- converted from text -->\r\n<style><!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --></style></head>\r\n<body>\r\n<font size=\"2\"><span style=\"font-size:11pt;\"><div class=\"PlainText\">&nbsp;</div></span></font>\r\n</body>\r\n</html>\r\n",
+    "contentType": "html"
+   },
+   "bodyPreview": "",
+   "categories": [],
+   "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA058==",
+   "createdDateTime": "2026-08-23T06:08:17.3391034Z",
+   "end": {
+    "dateTime": "2026-12-03T11:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "hideAttendees": false,
+   "iCalUId": "040000008200E00074C5B7101A82E008000000000000000000000000000000000000004B",
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA086==",
+   "importance": "normal",
+   "isAllDay": false,
+   "isCancelled": false,
+   "isDraft": false,
+   "isOnlineMeeting": false,
+   "isOrganizer": true,
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T06:08:19.8976259Z",
+   "location": {
+    "address": {},
+    "coordinates": {},
+    "displayName": "",
+    "locationType": "default",
+    "uniqueIdType": "unknown"
+   },
+   "locations": [],
+   "occurrenceId": "fake-id-077",
+   "onlineMeeting": null,
+   "onlineMeetingProvider": "unknown",
+   "onlineMeetingUrl": null,
+   "organizer": {
+    "emailAddress": {
+     "address": "person1@example.com",
+     "name": "Person 1"
+    }
+   },
+   "originalEndTimeZone": "UTC",
+   "originalStartTimeZone": "UTC",
+   "recurrence": null,
+   "reminderMinutesBeforeStart": 15,
+   "responseRequested": true,
+   "responseStatus": {
+    "response": "organizer",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "sensitivity": "normal",
+   "seriesMasterId": "AQMkADAwATFALEVIEW052",
+   "showAs": "busy",
+   "start": {
+    "dateTime": "2026-12-03T10:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "subject": "CORPUS: exception source series",
+   "transactionId": null,
+   "type": "occurrence",
+   "uid": "040000008200E00074C5B7101A82E0080000000000000000000000000000000000000035",
+   "webLink": "https://outlook.live.com/owa/?itemid=REDACTED"
+  }
+ ]
+}

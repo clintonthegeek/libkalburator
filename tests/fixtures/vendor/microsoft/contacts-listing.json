@@ -1,0 +1,282 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('REDACTED_ACCOUNT')/contacts",
+ "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/contacts?%24top=10&%24skip=10",
+ "value": [
+  {
+   "@odata.etag": "fake-id-078",
+   "assistantName": null,
+   "birthday": "1815-12-10T11:59:00Z",
+   "businessAddress": {},
+   "businessHomePage": null,
+   "businessPhones": [
+    "+1 613 555 0100"
+   ],
+   "categories": [
+    "CORPUS"
+   ],
+   "changeKey": "fake-id-079",
+   "children": [],
+   "companyName": "Analytical Engines",
+   "createdDateTime": "2026-08-23T06:06:07Z",
+   "department": "Engines",
+   "displayName": "Person 7",
+   "emailAddresses": [
+    {
+     "address": "ada@example.com",
+     "name": "Person 8"
+    },
+    {
+     "address": "ada2@example.com",
+     "name": "Person 9"
+    }
+   ],
+   "fileAs": "Lovelace, Ada",
+   "generation": null,
+   "givenName": "Ada",
+   "homeAddress": {
+    "city": "London",
+    "countryOrRegion": "UK",
+    "postalCode": "W1J",
+    "street": "1 Charles St"
+   },
+   "homePhones": [],
+   "id": "AQMkADAwATFALEVIEW080",
+   "imAddresses": [],
+   "initials": null,
+   "jobTitle": "Analyst",
+   "lastModifiedDateTime": "2026-08-23T06:06:07Z",
+   "manager": null,
+   "middleName": "Augusta",
+   "mobilePhone": "+1 613 555 0101",
+   "nickName": "Ada",
+   "officeLocation": null,
+   "otherAddress": {},
+   "parentFolderId": "REDACTED_ITEM_ID",
+   "personalNotes": "",
+   "primaryEmailAddress": {
+    "address": "ada@example.com",
+    "name": "Person 8"
+   },
+   "profession": null,
+   "secondaryEmailAddress": {
+    "address": "ada2@example.com",
+    "name": "Person 9"
+   },
+   "spouseName": null,
+   "surname": "Lovelace",
+   "title": null,
+   "yomiCompanyName": null,
+   "yomiGivenName": null,
+   "yomiSurname": null
+  },
+  {
+   "@odata.etag": "fake-id-081",
+   "assistantName": "",
+   "birthday": null,
+   "businessAddress": {},
+   "businessHomePage": "",
+   "businessPhones": [],
+   "categories": [],
+   "changeKey": "fake-id-082",
+   "children": [],
+   "companyName": null,
+   "createdDateTime": "2017-05-18T16:18:09Z",
+   "department": "",
+   "displayName": "Person 10",
+   "emailAddresses": [
+    {
+     "address": "person6@example.com",
+     "name": "Person 11"
+    }
+   ],
+   "fileAs": "brittany",
+   "generation": null,
+   "givenName": "brittany",
+   "homeAddress": {},
+   "homePhones": [],
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA093==",
+   "imAddresses": [],
+   "initials": null,
+   "jobTitle": "",
+   "lastModifiedDateTime": "2025-04-05T14:40:04Z",
+   "manager": "",
+   "middleName": null,
+   "mobilePhone": "",
+   "nickName": null,
+   "officeLocation": "",
+   "otherAddress": {},
+   "parentFolderId": "REDACTED_ITEM_ID",
+   "personalNotes": "",
+   "primaryEmailAddress": {
+    "address": "person6@example.com",
+    "name": "Person 11"
+   },
+   "profession": null,
+   "spouseName": "",
+   "surname": null,
+   "title": null,
+   "yomiCompanyName": "",
+   "yomiGivenName": null,
+   "yomiSurname": null
+  },
+  {
+   "@odata.etag": "fake-id-084",
+   "assistantName": "",
+   "birthday": null,
+   "businessAddress": {},
+   "businessHomePage": "",
+   "businessPhones": [],
+   "categories": [],
+   "changeKey": "fake-id-085",
+   "children": [],
+   "companyName": null,
+   "createdDateTime": "2017-05-18T16:18:09Z",
+   "department": "",
+   "displayName": "Person 12",
+   "emailAddresses": [
+    {
+     "address": "person7@example.com",
+     "name": "Person 13"
+    }
+   ],
+   "fileAs": "W35l3Y",
+   "generation": null,
+   "givenName": "W35l3Y",
+   "homeAddress": {
+    "city": "barrie",
+    "countryOrRegion": "Canada"
+   },
+   "homePhones": [],
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA096==",
+   "imAddresses": [],
+   "initials": null,
+   "jobTitle": "",
+   "lastModifiedDateTime": "2025-04-05T14:40:05Z",
+   "manager": "",
+   "middleName": null,
+   "mobilePhone": "",
+   "nickName": null,
+   "officeLocation": "",
+   "otherAddress": {},
+   "parentFolderId": "REDACTED_ITEM_ID",
+   "personalNotes": "",
+   "primaryEmailAddress": {
+    "address": "person7@example.com",
+    "name": "Person 13"
+   },
+   "profession": null,
+   "spouseName": "",
+   "surname": null,
+   "title": null,
+   "yomiCompanyName": "",
+   "yomiGivenName": null,
+   "yomiSurname": null
+  },
+  {
+   "@odata.etag": "fake-id-087",
+   "assistantName": "",
+   "birthday": null,
+   "businessAddress": {},
+   "businessHomePage": "",
+   "businessPhones": [],
+   "categories": [],
+   "changeKey": "fake-id-088",
+   "children": [],
+   "companyName": null,
+   "createdDateTime": "2017-05-18T16:18:09Z",
+   "department": "",
+   "displayName": "Person 14",
+   "emailAddresses": [
+    {
+     "address": "person8@example.com",
+     "name": "Person 15"
+    }
+   ],
+   "fileAs": "rosella",
+   "generation": null,
+   "givenName": "rosella",
+   "homeAddress": {
+    "city": "calgary",
+    "countryOrRegion": "Canada"
+   },
+   "homePhones": [],
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA099==",
+   "imAddresses": [],
+   "initials": null,
+   "jobTitle": "",
+   "lastModifiedDateTime": "2025-04-05T14:40:05Z",
+   "manager": "",
+   "middleName": null,
+   "mobilePhone": "",
+   "nickName": null,
+   "officeLocation": "",
+   "otherAddress": {},
+   "parentFolderId": "REDACTED_ITEM_ID",
+   "personalNotes": "",
+   "primaryEmailAddress": {
+    "address": "person8@example.com",
+    "name": "Person 15"
+   },
+   "profession": null,
+   "spouseName": "",
+   "surname": null,
+   "title": null,
+   "yomiCompanyName": "",
+   "yomiGivenName": null,
+   "yomiSurname": null
+  },
+  {
+   "@odata.etag": "fake-id-090",
+   "assistantName": "",
+   "birthday": "1988-03-02T11:59:00Z",
+   "businessAddress": {},
+   "businessHomePage": "",
+   "businessPhones": [],
+   "categories": [],
+   "changeKey": "fake-id-091",
+   "children": [],
+   "companyName": null,
+   "createdDateTime": "2017-05-18T16:18:09Z",
+   "department": "",
+   "displayName": "Person 16",
+   "emailAddresses": [
+    {
+     "address": "person9@example.com",
+     "name": "Person 17"
+    }
+   ],
+   "fileAs": "\u2665Sexi_dancer\u2665",
+   "generation": null,
+   "givenName": "\u2665Sexi_dancer\u2665",
+   "homeAddress": {
+    "city": "A dot...AnGuS...KiCks As*",
+    "countryOrRegion": "Canada"
+   },
+   "homePhones": [],
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA102==",
+   "imAddresses": [],
+   "initials": null,
+   "jobTitle": "",
+   "lastModifiedDateTime": "2025-04-05T14:40:06Z",
+   "manager": "",
+   "middleName": null,
+   "mobilePhone": "",
+   "nickName": null,
+   "officeLocation": "",
+   "otherAddress": {},
+   "parentFolderId": "REDACTED_ITEM_ID",
+   "personalNotes": "",
+   "primaryEmailAddress": {
+    "address": "person9@example.com",
+    "name": "Person 17"
+   },
+   "profession": null,
+   "spouseName": "",
+   "surname": null,
+   "title": null,
+   "yomiCompanyName": "",
+   "yomiGivenName": null,
+   "yomiSurname": null
+  }
+ ]
+}

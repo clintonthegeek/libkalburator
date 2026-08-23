@@ -1,0 +1,22 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('REDACTED_ACCOUNT')/events(subject,attendees,changeKey)/$entity",
+ "@odata.etag": "fake-id-044",
+ "attendees": [
+  {
+   "emailAddress": {
+    "address": "person2@example.com",
+    "name": "Person 2"
+   },
+   "status": {
+    "response": "none",
+    "time": "0001-01-01T00:00:00Z"
+   },
+   "type": "required"
+  }
+ ],
+ "calendar@odata.associationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')/$ref",
+ "calendar@odata.navigationLink": "https://graph.microsoft.com/v1.0/users('person201@example.com')/calendars('REDACTED_ITEM_ID')",
+ "changeKey": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA055==",
+ "id": "AQMkADAwATFALEVIEW046",
+ "subject": "CORPUS: counter-offer dance 2 (whitelisted)"
+}
