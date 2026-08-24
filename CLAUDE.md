@@ -23,98 +23,82 @@ Phase 7); readiness context:
 unaffected (additive-only when it lands). Do not rebuild this tooling from
 scratch — read the proposal's Status section first.
 
-**Session state at close (2026-08-23 evening, all committed):** Phase 2
-(google-event ⇄ canon) LANDED AND TAGGED **v1.02** — loss profile declared
-first (`docs/2026-08-23-google-event-edge-loss-profile.md`), stages in
-`src/calendar/googlecanonstages.{h,cpp}`, registered in CalendarStockShapes
-(7 edges), gated by `tst_google_event_canon_edge` (8 slots incl.
-committed-fixture promotion). Wire truths corrected against the live
-Calendar API reference pre-trust (FINDINGS **O59**: reminders `method` key;
-string-typed extendedProperties carriers; `eventLabelId`; cancelled
-dual-semantics; iCalUID≠id; Google silently drops consent-screen-unapproved
-scopes). **Live checkpoint PASSED**: G→C→G diffs = 4 (all declared
-normalizations); round-tripped body re-created on the real account; both
-server copies promote to identical canon. **Stage D mock Graph server**
-landed (`tests/graph/`, 6 slots) — ready as the 7.C test bed. **googlecli**
-landed + authorized (`tools/googlecli/`, loopback OAuth; scopes:
-calendar.events, calendarlist.readonly, contacts, userinfo.email);
-credentials in gitignored `/google/`. **Google corpus captured and
-sanitized fixtures committed** under `tests/fixtures/vendor/google/`
-(generator `tools/googlecli/make-fixtures.py`). Campaign status page:
-**`docs/campaign/eee/STATUS.md`**.
+## EEE campaign — current state (CONSOLIDATED 2026-08-23; history in git + STATUS.md)
 
-**Session state at close (2026-08-23 late evening, all committed):** Phase
-**7.B (ms-event ⇄ canon) LANDED** — the campaign's one deep component.
-Order honored: converter suite first (`tst_recurrence_pattern_converter`,
-31 slots — every reference-§1.3 row both directions, every cannot-represent
-ruling, O57(e)/(f) sentinel handling, carried-set re-promote identity,
-representable-set convergence), then the stages
-(`src/calendar/mseventcanonstages.{h,cpp}` + `mseventproperties` +
-`recurrencepatternconverter.{h,cpp}` + vendored CLDR zone map
-`windowszonesmap.h`, 139 zones), registered in CalendarStockShapes (**9
-edges** now), gated by `tst_ms_event_canon_edge` (10 slots: captured-shaped
-promote with O57 realities, declared-loss demote walk, C→G→C byte-equal
-identity incl. the unrepresentable-rule carrier path, Windows-zone
-split-brain O57(b), floating pin+carrier, exception⇒recurrenceId keying).
-Declared-vs-actual divergence: none. Carriers ride
-`singleValueExtendedProperties` under pinned GUID
-`{66f5926c-9c3e-4c14-9e4b-7a2f0d1c9eee}`; Graph `type` is reconstructed
-structurally on demote with redundant-topology suppression on promote
-(keeps C→G→C byte-equal). Two traps hit + fixed → FINDINGS **O60**
-(Qt 6.11 QJsonValue default is Null-typed, not Undefined; offset-less
-wall-time parsing must construct directly in the target zone, never via
-process-local). **7.B live checkpoint still USER-RUN** (proposal invariant
-6) before any consumer sees it. **Graph-side corpus sanitization DONE** (commit 1c1d91f):
-`tools/graphcli/make-fixtures.py` mirrors the Google two-pass sanitizer —
-note `@odata.context` URLs leak the internal Exchange identity and raw item
-ids through key-driven rules, hence the dedicated context-rewrite pass. Five
-fixtures under `tests/fixtures/vendor/microsoft/`; committed-fixture slot in
-the ms-event edge test (11 slots).
+All work below is on `main`, PUSHED to origin (through 9d34fd1 + docs).
+Campaign status page: **`docs/campaign/eee/STATUS.md`** (snapshot table,
+ordered next actions, findings index). Findings: **O57–O62** in
+`docs/campaign/FINDINGS.md`.
 
-**Phase 7.C foundation DONE** (commit b761a31): `src/graph/graphapiclient.{h,cpp}`
-+ `tst_graph_api_client` (8 slots vs Stage D mock) — pagination walks, delta
-steps with typed 410 ResyncRequired, error.code extraction. Wire nuance
-pinned: a non-empty queued change page answers nextLink; the fixpoint is
-"empty set + deltaLink" — walk until complete.
+**Landed, in build order:**
 
-**7.B LIVE CHECKPOINT PASSED** (commit db8a993, delegated run): caught a
-BLOCKING stub-invisible bug — sentinel `range.endDate:"0001-01-01"` on
-numbered ranges was honored as real UNTIL (series amputation; O61(a),
-fixed) — plus 3 stash/passthrough defects (O61(b)-(d), fixed). **Carriers
-do NOT survive creates on consumer Outlook.com** (O61(e)): Reversible loss
-class is offline-only; 7.C must prefer PATCH over delete+re-create.
-uid/iCalUId confirmed as per-copy anchors (regenerate per create). Probe
-events cleaned up; runner is `tools/msroundtrip` (promote/demote/roundtrip/
-canon-compare).
+- Phase 0 (corpus): Google + Graph corpora captured live; sanitized
+  fixtures committed under `tests/fixtures/vendor/{google,microsoft}/`
+  (generators: `tools/googlecli/make-fixtures.py`,
+  `tools/graphcli/make-fixtures.py` — note the @odata.context rewrite pass;
+  key-driven rules alone leak the Exchange identity).
+- Phase 2 (google-event ⇄ canon) TAGGED v1.02, live checkpoint PASSED
+  (G→C→G diffs = 4, all declared normalizations).
+- Stage D mock Graph server (`tests/graph/mockgraphserver.*`) + transport
+  foundation `src/graph/graphapiclient.{h,cpp}` (pagination walks, /delta
+  steps with typed 410 ResyncRequired; wire nuance: non-empty change pages
+  answer nextLink — fixpoint is "empty set + deltaLink").
+- Phase 7.B (ms-event ⇄ canon) — THE deep component:
+  `recurrencepatternconverter` (MS→RFC5545 lossless; RFC5545→MS carries
+  every cannot-represent ruling verbatim), `mseventcanonstages` +
+  vendored CLDR zone map (`windowszonesmap.h`, 139 zones), CalendarStockShapes
+  at **9 edges**, `tst_ms_event_canon_edge` (11 slots incl. committed-fixture
+  promotion). Live checkpoint PASSED (delegated run) and caught a BLOCKING
+  stub-invisible bug: sentinel `range.endDate:"0001-01-01"` on numbered
+  ranges honored as real UNTIL ⇒ series amputation (O61(a), fixed) plus 3
+  stash/passthrough defects (O61(b)-(d)). Offline checkpoint runner:
+  `tools/msroundtrip` (promote/demote/roundtrip/canon-compare; exit 1 iff
+  UNDECLARED diffs).
+- **KEY FINDING O61(e): carriers do NOT survive creates on consumer
+  Outlook.com** — Reversible loss class is OFFLINE-only. Any backend write
+  path must prefer PATCH over delete+re-create. Also O61(f): uid/iCalUId are
+  PER-COPY anchors (regenerate per create) — identity layer input.
+- Phase 7.C COMPLETE (`MSGraphCalendarBackend`, Stage-D verified,
+  `tst_ms_graph_calendar_backend` 11 slots):
+  - Design decision RESOLVED: records carry RAW ms-event wire JSON
+    (`nativeShapes={calendar,ms-event}`); the ENGINE promotes via the
+    registered edge. Incidence conversion exists only for FetchOperation's
+    legacy surface.
+  - Delta-driven fetches: initial walk seeds merged cache + resume token;
+    later walks upsert changes (@removed ⇒ evict) and report FULL merged
+    views; 410 self-heals via fresh initial walk (O42 pattern).
+  - Discovery: /me/calendars → calendarDiscovered + collections DTOs
+    (VEVENT-only; tasks live in /me/todo/lists); per-calendar event paths
+    for reads AND writes.
+  - Persistence: `setCacheDir()` atomic JSON — restarted backends present
+    the PERSISTED token with no re-listing.
+  - Writes POST/PATCH/DELETE sequentially-async; creates bridge ids via
+    WriteOperation::idAliases (O55); updates PATCH-in-place per O61(e).
+- Phase 3 google-person ⇄ contacts-canon edge LANDED (stub-level): loss
+  profile declared first (`docs/2026-08-23-google-person-edge-loss-profile.md`);
+  carriers ride Google People `clientData` rows (the resource's only
+  extension point; write-back semantics UNVERIFIED until checkpoint);
+  uid ⇄ resourceName (per-account anchor); ContactsStockShapes at
+  **7 edges**; `tst_google_person_canon_edge` 7 slots incl. promotion of
+  all 72 sanitized fixture connections.
 
-**Phase 3 google-person edge DONE** (loss profile declared first;
-clientData-row carriers; resourceName per-account anchor; 7-slot suite
-incl. committed-fixture promotion of all 72 sanitized connections).
+**Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
+not Undefined — never signal absence with `return {}` + isUndefined();
+offset-less wall time must be constructed directly IN the target zone),
+O62 (async continuations must own heap-held state — three occurrences this
+campaign), O59 tooling notes (moc × terminated raw string literals = silent
+no-output; AUTOMOC timestamp staleness).
 
-**7.C polish DONE** (persistence via `setCacheDir()` — atomic JSON,
-restart resumes from the persisted token with no re-listing; per-calendar
-event paths for reads AND writes):
+Suite baseline: **187 total / 184 passing** (two documented Radicale slots;
+`tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
+load-flaky under full-suite parallelism but pass isolated).
 
-**Phase 7.C delta + discovery DONE** (`MSGraphCalendarBackend` grows
-delta-driven fetches with merged full-view reporting + /me/calendars
-discovery surface; Stage-D verified):
-
-**Phase 7.C v1 DONE** (`MSGraphCalendarBackend`, Stage-D verified):
-records carry RAW ms-event wire JSON (`nativeShapes={calendar,ms-event}`),
-engine promotes via the registered 7.B edge — design decision RESOLVED
-(pipeline-inside-backend for the Incidence legacy surface only; the engine
-boundary stays record-native). Writes POST/PATCH/DELETE sequentially-async,
-creates bridge ids via WriteOperation::idAliases, updates PATCH-in-place
-per O61(e). New FINDINGS **O62**: async-lifetime house rule made explicit
-(heap-owned state; three occurrences this campaign).
-
-Suite baseline: **186 total / 183 passing**
-(same two Radicale-dependent slots + `tst_backend_thread_relocation`
-load-flaky under full-suite parallelism, passes 3/3 isolated with and
-without changes — same documented family). Pending next actions, in order:
-(1) Phase 3 People/Tasks edges (Google contacts fixtures committed;
-Graph contacts fixture landed); (2) Phases 4–6 + convergence matrix.
-NOT YET PUSHED — push when convenient.
+**Pending next actions (ordered):**
+1. Phase 3 remaining: Graph `contact` ⇄ canon edge (fixture
+   `contacts-listing.json` committed), then Tasks/Todos edges both vendors.
+2. Phases 4–6 + convergence matrix generation.
+3. Deferred checkpoints: People clientData write-back semantics; Graph
+   calendar write-path drill via msroundtrip.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 
