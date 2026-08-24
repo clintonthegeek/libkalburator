@@ -3017,3 +3017,49 @@ URL-encoded in paths (encoded form ⇒ 404), but $expand filter values need
 
 **(e) OAuth:** Tasks API must be enabled per GCP project even when the
 scope is granted (accessNotConfigured 403 until console activation).
+
+### O66 CORRECTION — 2026-08-24, same day: verdicts (a) revised after docs review + proper-methodology re-drills
+
+Operator pushback ("graph can't be that broken") triggered a docs audit
+(opentypeextension POST/GET pages) and corrected drills. The original
+verdicts were contaminated by two methodology errors: (1) PATCH-with-
+extensions is NOT a documented operation — adding to an EXISTING instance
+requires POST to the `/extensions` nav property; (2) reads require
+COLLECTION-level `$expand=extensions($filter=Id eq '<full-id>')`, and the
+full-id prefix for Outlook resources is **Microsoft.OutlookServices.
+OpenTypeExtension.<name>** — NOT `microsoft.graph.openTypeExtension.<name>`
+(filtering on the wrong prefix ⇒ HTTP 500).
+
+**Corrected carrier-survival verdicts:**
+
+| Channel | Corrected verdict |
+|---|---|
+| Google People clientData | SURVIVED (unchanged) |
+| todoTask open extensions via nav `POST .../tasks/{id}/extensions` | **SURVIVED** create + filtered-expand read |
+| todoTask extensions INLINE at task-create body | **echoed-not-persisted** (docs list inline-create as supported; behavior diverges — wire-lie) |
+| Graph contact open extensions via nav POST | **SURVIVED** create + collection-level expand read |
+
+Net: BOTH Graph channels are live-workable when spoken to properly. The
+Reversible rulings keep their offline-only caution only for the
+inline-create path. Backend rules: nav-property POSTs, never PATCH-borne
+extensions; filtered expand with the RETURNED full id; never trust a
+create echo.
+
+**(f) NEW transport finding — consumer contact GET-by-id is flaky/broken
+on this mailbox:** `/me/contacts/{id}` returns ErrorItemNotFound for ALL
+recently-created contacts (both test contacts), persistently, while the
+SAME ids appear in collection listings and the extension data is intact
+via listing-level expand. Plain/encoded ids, ImmutableId prefer header,
+and beta endpoint all 404; direct `/extensions` nav GET ⇒ "The OData
+request is not supported"; DELETE-by-id also 404s. Earlier today one
+contact GET-by-id DID work, so it is intermittent or state-dependent.
+Backend consequence: ms-contact backends must treat item-by-id reads/
+deletes as UNRELIABLE on consumer accounts — drive reads through listings
+/ delta / $expand, exactly the shape our fixtures already use. (The two
+GraphCLI Test probes could not be deleted by id for this reason; they are
+disposable and may need manual removal in the Outlook UI.)
+
+Methodology note appended to doctrine Part III: **drill by the book
+first** — pull the API page BEFORE concluding server brokenness; a wrong
+verb produces a false server-fault verdict (this correction was nearly an
+O-entry of shame).

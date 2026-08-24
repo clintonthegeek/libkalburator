@@ -147,8 +147,10 @@ limits, and the seizure test — every new component must pass it):
    meetings).
 2. A2/A3 live-session DONE 2026-08-24 — captures exist machine-local
    (/me/todo + Google Tasks corpora), carrier verdicts in FINDINGS O66
-   (People clientData SURVIVED = first proven live-Reversible channel;
-   todoTask extensions PHANTOM; contact extensions SERVER-BROKEN 500s).
+   ALL THREE channels SURVIVE when spoken to per docs (People clientData;
+todoTask/contact extensions via nav POSTs; Outlook extension-id prefix is
+Microsoft.OutlookServices.OpenTypeExtension.*); consumer contact GET-by-id
+is flaky — drive reads through listings/delta (O66 + correction).
    NEXT: sanitize task fixtures + promotion slots for both todo edges,
    annotate matrix with carrier verdicts. Runbook (reusable):
    `docs/campaign/eee/2026-08-24-live-session-runbook-a2-a3-a4.md`.
