@@ -285,6 +285,7 @@ set(KALBURATOR_STORAGE_SOURCES
 set(KALBURATOR_IDENTITY_HEADERS
     src/identity/identitystore.h
     src/identity/identityresolver.h
+    src/identity/persondirectory.h
 )
 set(KALBURATOR_IDENTITY_SOURCES
     src/identity/identitystore.cpp

@@ -118,13 +118,18 @@ no-output; AUTOMOC timestamp staleness).
   `(domain, record-uid) → entity-id`; one rule: contacts emails[].value ↔
   calendar organizer.email/attendees[].email share an entity; never a
   merge; unlink dissolves only the own link. `tst_identity_links` 10 slots.
+  Plus **PersonDirectory** (`persondirectory.h`) — the §5 payoff:
+  observe() ingests both vendors' fixture corpora into one store;
+  eventRoster(event) answers "who is in this meeting?" with names joined
+  across vendors (strangers stay strangers). `tst_person_directory` 7
+  slots. This is the Phase-6 demo artifact.
 - Phase 6 pipeline gate LANDED: `tst_gm_pipeline_convergence` (8 slots) —
   every vendor crossing must stay within the declared LossProfile union;
   plus the GENERATED convergence ledger at
   `docs/campaign/eee/CONVERGENCE-MATRIX.md` (regenerate with
   `tools/matrixgen`; byte-pinned by the suite).
 
-Suite baseline: **192 total / 190 passing** (two documented Radicale slots;
+Suite baseline: **193 total / 191 passing** (two documented Radicale slots;
 `tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
 load-flaky under full-suite parallelism but pass isolated).
 

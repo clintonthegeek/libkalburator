@@ -15,7 +15,7 @@ namespace Kalburator::Identity {
 
 namespace {
 
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;
 
 }  // namespace
 
@@ -74,6 +74,25 @@ bool IdentityStore::ensureSchemaAndVersion()
         "entity_id TEXT NOT NULL, "
         "linked_at TEXT, "
         "PRIMARY KEY(domain, record_uid))"));
+    // v2: display-name projection column (SQLite has no ADD COLUMN IF NOT
+    // EXISTS — probe table_info like BaselineStore's ensureColumn).
+    {
+        QSqlQuery probe(db);
+        probe.exec(QStringLiteral("PRAGMA table_info(record_links)"));
+        bool hasDisplayName = false;
+        while (probe.next()) {
+            if (probe.value(1).toString() == QLatin1String("display_name"))
+                hasDisplayName = true;
+        }
+        if (!hasDisplayName) {
+            if (!q.exec(QStringLiteral(
+                    "ALTER TABLE record_links ADD COLUMN display_name TEXT"))) {
+                m_lastError = QStringLiteral("v2 migration failed: %1")
+                                  .arg(q.lastError().text());
+                return false;
+            }
+        }
+    }
     q.exec(QStringLiteral(
         "CREATE INDEX IF NOT EXISTS idx_record_links_entity "
         "ON record_links(entity_id)"));
@@ -99,7 +118,8 @@ bool IdentityStore::ensureSchemaAndVersion()
 
 QString IdentityStore::linkRecord(const QString& domain,
                                   const QString& recordUid,
-                                  const QStringList& emails)
+                                  const QStringList& emails,
+                                  const QString& displayName)
 {
     if (!m_isOpen || domain.isEmpty() || recordUid.isEmpty())
         return {};
@@ -122,15 +142,26 @@ QString IdentityStore::linkRecord(const QString& domain,
         }
     }
 
-    // 2. Existing link on this record.
+    // 2. Existing link on this record (and its stored projection).
+    QString existingDisplayName;
     if (entityId.isEmpty()) {
         q.prepare(QStringLiteral(
-            "SELECT entity_id FROM record_links "
+            "SELECT entity_id, display_name FROM record_links "
+            "WHERE domain = ? AND record_uid = ?"));
+        q.addBindValue(domain);
+        q.addBindValue(recordUid);
+        if (q.exec() && q.next()) {
+            entityId = q.value(0).toString();
+            existingDisplayName = q.value(1).toString();
+        }
+    } else {
+        q.prepare(QStringLiteral(
+            "SELECT display_name FROM record_links "
             "WHERE domain = ? AND record_uid = ?"));
         q.addBindValue(domain);
         q.addBindValue(recordUid);
         if (q.exec() && q.next())
-            entityId = q.value(0).toString();
+            existingDisplayName = q.value(0).toString();
     }
 
     // 3. Mint.
@@ -138,13 +169,22 @@ QString IdentityStore::linkRecord(const QString& domain,
         entityId = QStringLiteral("ent-%1")
                        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
 
+    // Empty never overwrites an existing projection.
+    const QString nameToStore =
+        displayName.isEmpty() ? existingDisplayName : displayName;
+
     q.prepare(QStringLiteral(
         "INSERT OR REPLACE INTO record_links "
-        "(domain, record_uid, entity_id, linked_at) VALUES (?, ?, ?, ?)"));
+        "(domain, record_uid, entity_id, linked_at, display_name) "
+        "VALUES (?, ?, ?, ?, ?)"));
     q.addBindValue(domain);
     q.addBindValue(recordUid);
     q.addBindValue(entityId);
     q.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    if (!nameToStore.isEmpty())
+        q.addBindValue(nameToStore);
+    else
+        q.bindValue(4, QVariant());  // SQL NULL, not '' — keeps empty distinct
     if (!q.exec()) {
         m_lastError = QStringLiteral("linkRecord failed: %1")
                           .arg(q.lastError().text());
@@ -174,6 +214,35 @@ QString IdentityStore::entityIdFor(const QString& domain,
     QSqlQuery q(QSqlDatabase::database(m_connName));
     q.prepare(QStringLiteral(
         "SELECT entity_id FROM record_links WHERE domain = ? AND record_uid = ?"));
+    q.addBindValue(domain);
+    q.addBindValue(recordUid);
+    if (q.exec() && q.next())
+        return q.value(0).toString();
+    return {};
+}
+
+QString IdentityStore::entityIdForEmail(const QString& email) const
+{
+    if (!m_isOpen || email.isEmpty())
+        return {};
+    QSqlQuery q(QSqlDatabase::database(m_connName));
+    q.prepare(QStringLiteral(
+        "SELECT entity_id FROM email_index WHERE email = ?"));
+    q.addBindValue(email.toLower());
+    if (q.exec() && q.next())
+        return q.value(0).toString();
+    return {};
+}
+
+QString IdentityStore::displayNameFor(const QString& domain,
+                                      const QString& recordUid) const
+{
+    if (!m_isOpen)
+        return {};
+    QSqlQuery q(QSqlDatabase::database(m_connName));
+    q.prepare(QStringLiteral(
+        "SELECT display_name FROM record_links "
+        "WHERE domain = ? AND record_uid = ?"));
     q.addBindValue(domain);
     q.addBindValue(recordUid);
     if (q.exec() && q.next())

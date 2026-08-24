@@ -9,8 +9,11 @@
  * domains. Entities LINK records; they never collapse them. Deleting a
  * record dissolves only its own link; peer records are untouched.
  *
- * Schema v1:
- *   record_links(domain, record_uid) PK → entity_id   (+ entity index)
+ * Schema v2:
+ *   record_links(domain, record_uid) PK → entity_id, display_name
+ *       (+ entity index)                                   — v2 adds the
+ *       display-name PROJECTION written at link time (contacts only), so a
+ *       directory can answer "who is this?" without re-fetching payloads.
  *   email_index(email) PK               → entity_id   (the first resolver's
  *   rule: contacts' emails[].value ↔ calendar attendees[].email /
  *   organizer.email share an entity)
@@ -51,12 +54,24 @@ public:
     /// two entities). Otherwise a fresh entity id is minted. Idempotent:
     /// re-linking an already-linked record keeps its entity unless email
     /// evidence points elsewhere.
+    /// `displayName` is the optional human projection (contacts: the canon
+    /// primary formatted name); empty never overwrites an existing one.
     /// Returns the entity id, or empty on error/invalid input.
     QString linkRecord(const QString& domain, const QString& recordUid,
-                       const QStringList& emails);
+                       const QStringList& emails,
+                       const QString& displayName = {});
 
     /// Empty string when the record has no link.
     QString entityIdFor(const QString& domain, const QString& recordUid) const;
+
+    /// The email→entity half of the resolver rule (attendees are emails,
+    /// not records).
+    QString entityIdForEmail(const QString& email) const;
+
+    /// The stored display-name projection for a linked record ("" when
+    /// none).
+    QString displayNameFor(const QString& domain,
+                           const QString& recordUid) const;
 
     /// All records linked to one entity ("this meeting's people are these
     /// contacts").

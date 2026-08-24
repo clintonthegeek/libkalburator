@@ -10,7 +10,8 @@
 namespace Kalburator::Identity {
 
 /// The first resolver's key extraction (EEE campaign §5, one rule):
-///   contacts  → canon["emails"][i]["value"]
+///   contacts  → canon["emails"][i]["value"] (+ names[0].formatted as the
+///               display-name projection)
 ///   calendar  → canon["organizer"]["email"] + canon["attendees"][i]["email"]
 ///   (todo: no rule yet)
 /// Empty-email rows are skipped (every vendor edge already drops them at
@@ -19,6 +20,7 @@ struct CanonKeys {
     QString domain;
     QString uid;
     QStringList emails;
+    QString displayName;  ///< contacts only: names[0].formatted
 };
 
 inline CanonKeys extractCanonKeys(const QJsonObject& canon)
@@ -39,6 +41,13 @@ inline CanonKeys extractCanonKeys(const QJsonObject& canon)
             if (!v.isEmpty())
                 out.emails << v;
         }
+        out.displayName =
+            canon.value(QStringLiteral("names"))
+                .toArray()
+                .at(0)
+                .toObject()
+                .value(QStringLiteral("formatted"))
+                .toString();
     } else if (out.domain == QLatin1String("calendar")) {
         const QString org = canon.value(QStringLiteral("organizer"))
                                 .toObject()
@@ -57,14 +66,15 @@ inline CanonKeys extractCanonKeys(const QJsonObject& canon)
 }
 
 /// Convenience: extract keys from canon JSON bytes and link through `store`.
-/// Returns the entity id (empty when the record carries no resolvable keys
-/// or linking failed).
+/// Any record with a valid domain+uid gets an entity (people exist without
+/// emails); emails are evidence for CROSS-record convergence only.
 inline QString linkCanonRecord(IdentityStore& store, const QByteArray& canonBytes)
 {
     const QJsonObject canon =
         Kalburator::Shape::CanonEnvelope::parse(canonBytes);
     const CanonKeys keys = extractCanonKeys(canon);
-    return store.linkRecord(keys.domain, keys.uid, keys.emails);
+    return store.linkRecord(keys.domain, keys.uid, keys.emails,
+                            keys.displayName);
 }
 
 }  // namespace Kalburator::Identity

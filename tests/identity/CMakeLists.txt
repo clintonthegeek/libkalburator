@@ -14,3 +14,12 @@ endfunction()
 
 # EEE identity layer — first resolver (one rule: shared email ⇒ one entity)
 kalburator_add_identity_test(tst_identity_links)
+target_compile_definitions(tst_identity_links
+    PRIVATE KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)
+
+# PersonDirectory — the §5 payoff: "who is in this meeting?"
+kalburator_add_identity_test(tst_person_directory)
+target_compile_definitions(tst_person_directory
+    PRIVATE KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)
