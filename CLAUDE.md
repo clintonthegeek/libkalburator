@@ -87,6 +87,10 @@ uid/iCalUId confirmed as per-copy anchors (regenerate per create). Probe
 events cleaned up; runner is `tools/msroundtrip` (promote/demote/roundtrip/
 canon-compare).
 
+**7.C polish DONE** (persistence via `setCacheDir()` — atomic JSON,
+restart resumes from the persisted token with no re-listing; per-calendar
+event paths for reads AND writes):
+
 **Phase 7.C delta + discovery DONE** (`MSGraphCalendarBackend` grows
 delta-driven fetches with merged full-view reporting + /me/calendars
 discovery surface; Stage-D verified):
@@ -104,11 +108,9 @@ Suite baseline: **186 total / 183 passing**
 (same two Radicale-dependent slots + `tst_backend_thread_relocation`
 load-flaky under full-suite parallelism, passes 3/3 isolated with and
 without changes — same documented family). Pending next actions, in order:
-(1) remaining 7.C polish: token PERSISTENCE across restarts (in-memory
-today — a restart re-runs the initial walk), per-calendar event paths
-(v1 pins one collection path); (2) Phase 3 People/Tasks edges (Google
-contacts fixtures already committed); (3) Phases 4–6 + convergence
-matrix.
+(1) Phase 3 People/Tasks edges (Google contacts fixtures committed;
+Graph contacts fixture landed); (2) Phases 4–6 + convergence matrix.
+NOT YET PUSHED — push when convenient.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 

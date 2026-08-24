@@ -6,6 +6,9 @@
 #include "icalcodec.h"
 
 #include <QCryptographicHash>
+#include <QDir>
+#include <QJsonParseError>
+#include <QTemporaryFile>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -60,6 +63,11 @@ void MSGraphCalendarBackend::setCollectionPath(const QString &path)
     m_collectionPath = path;
 }
 
+void MSGraphCalendarBackend::setCacheDir(const QString &dir)
+{
+    m_cacheDir = dir;
+}
+
 QString MSGraphCalendarBackend::backendType() const
 {
     return QStringLiteral("msgraph");
@@ -73,6 +81,101 @@ QList<Kalburator::Shape::Shape> MSGraphCalendarBackend::nativeShapes() const
 }
 
 // ---------------------------------------------------------------------------
+// Persistence (delta tokens + merged record caches)
+// ---------------------------------------------------------------------------
+
+QString MSGraphCalendarBackend::pathForCalendar(
+    const QString &calendarId) const
+{
+    const auto it = m_calendarPaths.constFind(calendarId);
+    return it == m_calendarPaths.constEnd() ? m_collectionPath : it.value();
+}
+
+void MSGraphCalendarBackend::ensurePersistedStateLoaded()
+{
+    if (m_persistenceLoaded || m_cacheDir.isEmpty())
+        return;
+    m_persistenceLoaded = true;
+
+    QFile f(m_cacheDir + QStringLiteral("/msgraph-delta-state.json"));
+    if (!f.open(QIODevice::ReadOnly))
+        return;   // no state yet: first run
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    if (!doc.isObject())
+        return;
+    const QJsonObject collections =
+        doc.object().value(QStringLiteral("collections")).toObject();
+    for (auto cit = collections.constBegin(); cit != collections.constEnd();
+         ++cit) {
+        const QJsonObject c = cit.value().toObject();
+        m_deltaTokens.insert(cit.key(),
+                             c.value(QStringLiteral("token")).toString());
+        QHash<QString, BackendRecord> cache;
+        for (const auto &rv : c.value(QStringLiteral("records")).toArray()) {
+            const QJsonObject ro = rv.toObject();
+            BackendRecord r;
+            r.id = ro.value(QStringLiteral("id")).toString();
+            r.type = QStringLiteral("event");
+            r.displayName = ro.value(QStringLiteral("displayName")).toString();
+            r.data = QJsonDocument(
+                         ro.value(QStringLiteral("wire")).toObject())
+                         .toJson(QJsonDocument::Compact);
+            r.contentHash = sha256Hex(r.data);
+            r.lastModified = QDateTime::fromString(
+                ro.value(QStringLiteral("lastModified")).toString(),
+                Qt::ISODate);
+            cache.insert(r.id, r);
+        }
+        m_cache.insert(cit.key(), cache);
+    }
+}
+
+void MSGraphCalendarBackend::persistState() const
+{
+    if (m_cacheDir.isEmpty())
+        return;
+    QDir().mkpath(m_cacheDir);
+
+    QJsonObject collections;
+    for (auto it = m_cache.constBegin(); it != m_cache.constEnd(); ++it) {
+        QJsonArray records;
+        for (auto rit = it.value().constBegin();
+             rit != it.value().constEnd(); ++rit) {
+            const BackendRecord &r = rit.value();
+            QJsonObject ro;
+            ro.insert(QStringLiteral("id"), r.id);
+            ro.insert(QStringLiteral("displayName"), r.displayName);
+            ro.insert(QStringLiteral("lastModified"),
+                      r.lastModified.toString(Qt::ISODate));
+            ro.insert(QStringLiteral("wire"),
+                      QJsonDocument::fromJson(r.data).object());
+            records.append(ro);
+        }
+        collections.insert(it.key(),
+                           QJsonObject{
+                               { QStringLiteral("token"),
+                                 m_deltaTokens.value(it.key()) },
+                               { QStringLiteral("records"), records } });
+    }
+
+    // Atomic replace: temp file in the same directory, then rename.
+    QTemporaryFile tmp(m_cacheDir + QStringLiteral("/msgraph-delta-XXXXXX"));
+    if (!tmp.open())
+        return;
+    tmp.write(QJsonDocument(QJsonObject{
+                                  { QStringLiteral("v"), 1 },
+                                  { QStringLiteral("collections"),
+                                    collections } })
+                  .toJson(QJsonDocument::Compact));
+    tmp.flush();
+    const QString target =
+        m_cacheDir + QStringLiteral("/msgraph-delta-state.json");
+    tmp.close();
+    QFile::remove(target);
+    QDir().rename(tmp.fileName(), target);   // same-dir rename ⇒ atomic-ish
+}
+
+// ---------------------------------------------------------------------------
 // Read path
 // ---------------------------------------------------------------------------
 
@@ -81,6 +184,7 @@ QList<Kalburator::Shape::Shape> MSGraphCalendarBackend::nativeShapes() const
 struct MSGraphCalendarBackend::FetchState {
     FetchOperation *op = nullptr;
     QString calendarId;
+    QString path;          // resolved once; stable across the whole walk
     QString token;
     QHash<QString, BackendRecord> cache;
     bool resynced = false;
@@ -96,9 +200,11 @@ FetchOperation *MSGraphCalendarBackend::fetchItems(const QString &calendarId)
         op->setState(SyncOperation::Running);
         emit fetchStarted(calendarId, 0);
 
+        ensurePersistedStateLoaded();
         auto st = std::make_shared<FetchState>();
         st->op = op;
         st->calendarId = calendarId;
+        st->path = pathForCalendar(calendarId);
         // Resume from the stored token (empty ⇒ initial full walk) and the
         // merged cache; the walk upserts changes and reports everything.
         st->token = m_deltaTokens.value(calendarId);
@@ -112,7 +218,7 @@ void MSGraphCalendarBackend::startDeltaFetch(std::shared_ptr<FetchState> st)
 {
     auto *op = st->op;
     m_client->deltaStep(
-        m_collectionPath, st->token,
+        st->path, st->token,
         [this, st](const GraphApiClient::DeltaPage &page,
                    const GraphError &err) {
             auto *op = st->op;
@@ -174,6 +280,7 @@ void MSGraphCalendarBackend::startDeltaFetch(std::shared_ptr<FetchState> st)
             // report the FULL collection (engine diffs expect whole views).
             m_deltaTokens[st->calendarId] = page.deltaToken;
             m_cache[st->calendarId] = st->cache;
+            persistState();
 
             QList<BackendRecord> records;
             for (const auto &r : st->cache)
@@ -269,6 +376,8 @@ void MSGraphCalendarBackend::loadCalendars(const QString &collectionId)
                 if (id.isEmpty())
                     continue;
                 m_calendars.insert(id, meta);
+                m_calendarPaths.insert(
+                    id, QStringLiteral("/me/calendars/%1/events").arg(id));
                 emit calendarDiscovered(collectionId, id);
             }
             emit loadCalendarsFinished(collectionId, true);
@@ -327,6 +436,7 @@ Kalburator::Sync::DiscoveredCalendar MSGraphCalendarBackend::discoveredCalendar(
 struct MSGraphCalendarBackend::ApplyState {
     WriteOperation *op = nullptr;
     QString collectionId;
+    QString path;
     QList<BackendRecord> creates;
     QList<BackendRecord> updates;
     QStringList deletes;
@@ -345,6 +455,7 @@ WriteOperation *MSGraphCalendarBackend::applyRecords(
         auto st = std::make_shared<ApplyState>();
         st->op = op;
         st->collectionId = collectionId;
+        st->path = pathForCalendar(collectionId);
         st->creates = batch.creates;
         st->updates = batch.updates;
         st->deletes = batch.deletes;
@@ -387,7 +498,7 @@ void MSGraphCalendarBackend::applyStep(std::shared_ptr<ApplyState> st)
     if (!st->creates.isEmpty()) {
         const BackendRecord r = st->creates.takeFirst();
         m_client->rawRequest(
-            QByteArrayLiteral("POST"), m_collectionPath, r.data,
+            QByteArrayLiteral("POST"), st->path, r.data,
             [this, st, r, settleOne](int status, const QByteArray &body,
                           bool networkError) {
                 if (networkError || status < 200 || status >= 300) {
@@ -415,7 +526,7 @@ void MSGraphCalendarBackend::applyStep(std::shared_ptr<ApplyState> st)
         const BackendRecord r = st->updates.takeFirst();
         m_client->rawRequest(
             QByteArrayLiteral("PATCH"),
-            m_collectionPath + QLatin1Char('/') + r.id, r.data,
+            st->path + QLatin1Char('/') + r.id, r.data,
             [this, st, r, settleOne](int status, const QByteArray &body,
                           bool networkError) {
                 Q_UNUSED(body);
@@ -429,7 +540,7 @@ void MSGraphCalendarBackend::applyStep(std::shared_ptr<ApplyState> st)
         const QString id = st->deletes.takeFirst();
         m_client->rawRequest(
             QByteArrayLiteral("DELETE"),
-            m_collectionPath + QLatin1Char('/') + id, {},
+            st->path + QLatin1Char('/') + id, {},
             [this, st, id, settleOne](int status, const QByteArray &body,
                            bool networkError) {
                 Q_UNUSED(body);

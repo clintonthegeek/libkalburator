@@ -315,6 +315,112 @@ private slots:
         QVERIFY(!ro.writable);
     }
 
+    // Persistence: a fresh backend instance over the same cacheDir resumes
+    // from the persisted delta token (no re-listing) and merges changes.
+    void persistenceSurvivesRestartAndReusesToken()
+    {
+        QTemporaryDir cacheDir;
+        QVERIFY(cacheDir.isValid());
+
+        QJsonArray initial;
+        initial.append(wireEvent(QStringLiteral("evt-1"),
+                                 QStringLiteral("Original")));
+        m_server->addCollection(QStringLiteral("/me/events"), initial);
+
+        m_backend->setCacheDir(cacheDir.path());
+        auto *op1 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op1->isFinished(), 5000);
+        const int requestsAfterFirstFetch = m_server->requests().size();
+
+        // Change queued under the token the FIRST backend now holds.
+        QJsonArray changes;
+        changes.append(wireEvent(QStringLiteral("evt-2"),
+                                 QStringLiteral("Added later")));
+        m_server->queueDeltaChanges(QStringLiteral("/me/events"),
+                                    QStringLiteral("delta_1"), changes);
+
+        // "Restart": brand-new backend over the same cacheDir and the SAME
+        // live server (only the client process state is lost).
+        m_backend->deleteLater();
+        m_backend = new MSGraphCalendarBackend(this);
+        m_backend->setBaseUrl(m_server->baseUrl());
+        m_backend->setAccessToken(QStringLiteral("test-token"));
+        m_backend->setCacheDir(cacheDir.path());
+        auto *op2 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op2->isFinished(), 5000);
+        QCOMPARE(op2->state(), Kalburator::Sync::SyncOperation::Succeeded);
+
+        // The resumed walk presented the PERSISTED token on its very first
+        // delta request — no initial full walk happened.
+        const auto reqs = m_server->requests();
+        QVERIFY2(reqs.size() > requestsAfterFirstFetch,
+                 "second session must issue requests");
+        QVERIFY(reqs.at(requestsAfterFirstFetch).path
+                    .contains(QStringLiteral("$deltatoken=delta_1")));
+
+        QList<BackendRecord> records;
+        QString err;
+        QVERIFY(m_backend->recordsFromLastFetch(QStringLiteral("cal"),
+                                                records, err));
+        QCOMPARE(records.size(), 2);   // cached evt-1 merged with queued evt-2
+    }
+
+    // Per-calendar event paths: calendars discovered via /me/calendars get
+    // their own events endpoints for both reads and writes.
+    void perCalendarPathsDriveReadsAndWrites()
+    {
+        QJsonArray cals;
+        cals.append(QJsonObject{
+            { QStringLiteral("id"), QStringLiteral("calX") },
+            { QStringLiteral("name"), QStringLiteral("X") },
+            { QStringLiteral("canEdit"), true } });
+        m_server->addCollection(QStringLiteral("/me/calendars"), cals);
+        bool done = false;
+        connect(m_backend,
+                &Kalburator::Sync::SyncBackend::loadCalendarsFinished,
+                this, [&](const QString &, bool ok) { done = ok; });
+        m_backend->loadCalendars(QStringLiteral("coll"));
+        QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
+
+        QJsonArray events;
+        events.append(wireEvent(QStringLiteral("x-1"), QStringLiteral("In X")));
+        m_server->addCollection(QStringLiteral("/me/calendars/calX/events"),
+                                events);
+
+        auto *op = m_backend->fetchItems(QStringLiteral("calX"));
+        QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 5000);
+        QCOMPARE(op->state(), Kalburator::Sync::SyncOperation::Succeeded);
+
+        // The delta walk addressed the calendar's OWN events endpoint.
+        bool sawCalendarScopedDelta = false;
+        for (const auto &req : m_server->requests()) {
+            if (req.method == "GET"
+                && req.path.startsWith(
+                    QStringLiteral("/me/calendars/calX/events/delta")))
+                sawCalendarScopedDelta = true;
+        }
+        QVERIFY2(sawCalendarScopedDelta, "reads must scope to the calendar");
+
+        // Writes too.
+        const QJsonObject createdWire =
+            wireEvent(QStringLiteral("x-new"), QStringLiteral("Created"));
+        m_server->addRoute(QStringLiteral("POST"),
+                           QStringLiteral("/me/calendars/calX/events"),
+                           createdWire, 201);
+        WriterBatch batch;
+        BackendRecord r;
+        r.id = QStringLiteral("local");
+        r.data = QJsonDocument(wireEvent(QString(), QStringLiteral("Created")))
+                     .toJson(QJsonDocument::Compact);
+        batch.creates.append(r);
+        auto *wop = m_backend->applyRecords(QStringLiteral("calX"), batch);
+        QTRY_VERIFY_WITH_TIMEOUT(wop->isFinished(), 5000);
+        QCOMPARE(wop->state(), Kalburator::Sync::SyncOperation::Succeeded);
+        const auto &last = m_server->requests().last();
+        QCOMPARE(last.method, QByteArrayLiteral("POST"));
+        QCOMPARE(last.path, QStringLiteral("/me/calendars/calX/events"));
+    }
+
     void failingBatchReportsPerRecordFailures()
     {
         // Unmatched ids get the mock's 404 shape; a lone create against a

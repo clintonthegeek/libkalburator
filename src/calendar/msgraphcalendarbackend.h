@@ -41,8 +41,15 @@ public:
     void setBaseUrl(const QString &baseUrl);
     void setAccessToken(const QString &token);
     /// Events-folder path; default "/me/events". Tests point it at any
-    /// mock-server collection path.
+    /// mock-server collection path. Per-calendar paths discovered via
+    /// loadCalendars() take precedence for their calendar id.
     void setCollectionPath(const QString &path);
+    /// Persist delta tokens + merged record caches under this directory
+    /// (JSON, atomic replace). Unset ⇒ in-memory only (a restart re-runs
+    /// the initial walk — correct, just wasteful).
+    void setCacheDir(const QString &dir);
+
+    // ==== discovery ====
 
     // ==== discovery ====
     void loadCalendars(const QString &collectionId) override;
@@ -97,6 +104,19 @@ private:
         bool isDefault = false;
     };
     QHash<QString, CalMeta> m_calendars;
+
+    /// Resolved events path per discovered calendar (from /me/calendars
+    /// navigation); falls back to m_collectionPath.
+    QHash<QString, QString> m_calendarPaths;
+
+    /// Persistence (setCacheDir): load lazily before a fetch needs state,
+    /// save atomically after each successful fixpoint commit.
+    QString m_cacheDir;
+    bool m_persistenceLoaded = false;
+    void ensurePersistedStateLoaded();
+    void persistState() const;
+    /// Events path serving `calendarId` (discovered per-calendar path wins).
+    QString pathForCalendar(const QString &calendarId) const;
 };
 
 } // namespace Kalburator::Sync
