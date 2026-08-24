@@ -206,7 +206,14 @@ QStringList patternedRecurrenceToRruleLines(const QJsonObject& pr,
     // the RRULE line (RFC5545 grammar) — never as separate lines.
     const QString endDateIso =
         datePortionOf(range.value(QStringLiteral("endDate")).toString());
-    const QDate endDate = QDate::fromString(endDateIso, QStringLiteral("yyyy-MM-dd"));
+    // LIVE-CHECKPOINT FINDING (7.B): Graph serializes range.endDate as the
+    // .NET year-1 sentinel ("0001-01-01") on numbered ranges instead of
+    // omitting it. Treating it as a real UNTIL amputates the series at
+    // year 1 — same sentinel discipline as O57(d).
+    const QDate endDate =
+        endDateIso == QLatin1String("0001-01-01")
+            ? QDate()
+            : QDate::fromString(endDateIso, QStringLiteral("yyyy-MM-dd"));
     const int count = range.value(QStringLiteral("numberOfOccurrences")).toInt();
     if (endDate.isValid()) {
         rruleParts << QStringLiteral("UNTIL=%1T235959Z")

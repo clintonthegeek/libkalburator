@@ -152,6 +152,22 @@ code stays honest:
 Fixture round-trip counts after declaration: event-single 4 (all declared),
 events-listing 1, calendarview 1, event-instances 1 — zero undeclared.
 
+## Live checkpoint (2026-08-23): PASSED after one blocking fix
+
+Full protocol run against the real account (probe events → capture →
+roundtrip → re-create → canon-compare; details in FINDINGS **O61**). The
+checkpoint caught one blocking bug the stub suite could not see — sentinel
+`range.endDate:"0001-01-01"` on numbered ranges being honored as a real
+UNTIL (series amputation) — plus three stash/passthrough defects, all fixed.
+The demoted bodies were accepted by the server; both server copies promote
+to identical canon modulo per-copy identity fields.
+
+**Standing amendment to this profile (O61(e)):** the Reversible/carrier
+loss class holds OFFLINE only. Consumer Outlook.com silently drops our
+`singleValueExtendedProperties` carriers on create — carrier-only data does
+not survive a server-mediated create. Backend write paths must prefer PATCH
+over delete+re-create.
+
 ## Out of scope
 
 - RSVP/accept endpoints (PlanStan has no organization affordances yet;

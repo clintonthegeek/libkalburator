@@ -2834,3 +2834,84 @@ the stages, not just the tests):
 - **partstat vocabulary:** Graph none/tentativelyAccepted map to
   needsAction/tentative in both directions (needsAction emits no status
   object — "none" ≡ absent).
+
+### O61 — OPEN → partially RESOLVED — 7.B live checkpoint: one blocking bug caught, carrier loss on write confirmed (found 2026-08-23)
+
+The proposal-invariant-6 live checkpoint for the ms-event edge ran against
+the real Outlook.com account (probe events created via graphcli, captured,
+round-tripped through `tools/msroundtrip`, re-created on the server,
+canon-compared; all payloads machine-local under gitignored `msgraph/`).
+It validated the campaign discipline again — the stub suite was green
+while the live wire carried a blocking bug:
+
+**(a) RESOLVED — BLOCKING: sentinel `range.endDate` amputated numbered series.**
+Graph serializes `recurrence.range.endDate` as the .NET year-1 sentinel
+(`"0001-01-01"`) on `numbered` ranges instead of omitting it. Promote read
+it as a valid date and emitted `UNTIL=00010101T235959Z`; demote round-trips
+that to `endDate:"0001-01-01"` — and any consumer honoring the UNTIL would
+terminate the series immediately. Same O57(d) sentinel family; fixed by
+sentinel-guarding endDate (and startDate) in the converter. Hand-modeled
+fixtures never carried this — only the live service does.
+
+**(b) RESOLVED — `original*TimeZone` dropped by demote.** The fields sat in
+the demote passthrough skip-set, so the author's zone vocabulary never
+re-emitted. Live confirmation they matter: Exchange re-homes authored IANA
+zones (`America/New_York`) to UTC endpoints AND translates the recurrence
+range into Windows vocabulary (`recurrenceTimeZone:"Eastern Standard Time"`)
+— O57(b) split-brain happens AT AUTHORING TIME on consumer accounts.
+
+**(c) RESOLVED — `iCalUId` consumed instead of stashed.** Live wires carry
+BOTH top-level `uid` AND `iCalUId` (identical MAPI blobs); consuming the key
+meant demote emitted only `uid`. Now stashed → byte-equal via passthrough.
+
+**(d) RESOLVED — organizer responseStatus dropped wholesale on sentinel.**
+Organizer-self rows carry `response:"organizer"` WITH the year-1 time
+sentinel; dropping the whole object lost the value. Fix: strip the sentinel
+time, keep the object.
+
+**(e) CONFIRMED — CARRIERS DO NOT SURVIVE WRITES (design consequence).**
+The re-created event was POSTed with our
+`singleValueExtendedProperties[{x-canon-classification:"personal"}]`
+carrier; the stored copy returns NO SVEP — consumer Outlook.com silently
+drops unknown extended properties on create (contrast O57(k): plain unknown
+fields are tolerated on events). Consequence: the Reversible loss class
+holds OFFLINE only. Any data that lives solely in carriers (canon
+`personal`, `sequence`, guestsCan*/locked/privateCopy, typedProperties,
+carried unrepresentable RRULEs) is LOST when a record is re-created from
+canon. Backend rule for 7.C: prefer PATCH of an existing server copy over
+delete+re-create; treat carrier-only data as declared-lost across creates.
+This also means the C→G→C byte-equal guarantee is a STUB-level contract;
+live writes degrade it exactly along the carrier set.
+
+**(f) CONFIRMED — uid/iCalUId regenerate per copy.** The MAPI GlobalObjectID
+blob embeds creation-time data; each newly created copy gets a fresh blob.
+Two server copies of one logical event therefore NEVER share uid after a
+re-create — unlike Google, where iCalUId can be SET on create and survives.
+Identity-layer consequence: Graph uid is a PER-COPY anchor (join key within
+one copy's history), not a portable logical id; cross-copy identity needs
+providerExtras["msgraph"].id lineage or content fingerprints.
+
+**(g) CONFIRMED — generational decay of original*TimeZone.** The server
+ignores client-supplied `originalStartTimeZone/originalEndTimeZone` on
+create: the re-authored copy recorded UTC. Author-zone metadata survives
+one promote→demote cycle but not a server-mediated generation. Declared
+Degraded, not fixable edge-side.
+
+**(h) CONFIRMED — Exchange body synthesis noise.** Empty/text bodies come
+back wrapped in generated HTML boilerplate ("converted from text", EmailQuote
+styles) whose FORMATTING differs per copy while semantics (`&nbsp;`) match.
+canon-compare must tolerate semantically-equal body variants; canon carries
+both description/descriptionHtml so the wrapper lands in descriptionHtml.
+
+Declared-normalization additions (mirrored in the loss-profile doc and the
+runner's declared set): false-flag absence (`isCancelled`/`isAllDay`/
+`isOnlineMeeting` omitted when false), no-meeting triad collapse, body
+contentType case normalization, `range.recurrenceTimeZone` dropped (zones
+live on endpoints), empty-string location.displayName dropped, `sensitivity`
+personal→private + carrier paths, SVEP carrier channel paths, `recurrence`
+null-vs-absent.
+
+Post-fix probe results: rich weekly ET probe G→C→G = 18 diffs (all
+declared); all-day probe = 10 (all declared); both demoted bodies ACCEPTED
+by the server; canon-compare divergences reduce to per-copy identity
+(uid/iCalUId/created/lastModified/url) plus (e)/(g)/(h).

@@ -566,13 +566,15 @@ QByteArray MsEventToCanonStage::transform(const QByteArray& msBytes) const
 
     // ---- owner's own responseStatus (sentinels normalize ABSENT, O57(d)) --------
     {
-        const QJsonObject rs =
-            ev.value(QStringLiteral("responseStatus")).toObject();
-        const QString time = rs.value(QStringLiteral("time")).toString();
-        if (!rs.isEmpty() && !isYearOneSentinel(time))
+        // LIVE-CHECKPOINT FINDING: organizer-self rows carry response:"organizer"
+        // WITH the year-1 time sentinel. Dropping the whole object lost the
+        // response VALUE — normalize only the sentinel time away.
+        QJsonObject rs = ev.value(QStringLiteral("responseStatus")).toObject();
+        if (!rs.isEmpty()) {
+            if (isYearOneSentinel(rs.value(QStringLiteral("time")).toString()))
+                rs.remove(QStringLiteral("time"));
             extrasMs.insert(QStringLiteral("responseStatus"), rs);
-        else
-            extrasMs.remove(QStringLiteral("responseStatus"));
+        }
     }
 
     // ---- priority ⇄ importance (bucket mapping) -----------------------------------
@@ -737,7 +739,9 @@ QByteArray MsEventToCanonStage::transform(const QByteArray& msBytes) const
             // NOTE: id/changeKey deliberately NOT consumed — transport-local
             // identity stashes under providerExtras["msgraph"] (O55-style
             // aliasing anchor lives in `uid`, which IS consumed above).
-            QStringLiteral("iCalUId"),
+            // iCalUId deliberately NOT consumed: live wires carry BOTH
+            // uid AND iCalUId (identical values, O57(a)); stashing keeps
+            // G→C→G byte-equal via passthrough.
             QStringLiteral("uid"),
             QStringLiteral("createdDateTime"),
             QStringLiteral("lastModifiedDateTime"),
@@ -824,8 +828,11 @@ QByteArray CanonToMsEventStage::transform(const QByteArray& canonBytes) const
         QStringLiteral("location"), QStringLiteral("locations"),
         QStringLiteral("start"), QStringLiteral("end"), QStringLiteral("isAllDay"),
         QStringLiteral("recurrence"), QStringLiteral("cancelledOccurrences"),
-        QStringLiteral("originalStart"), QStringLiteral("originalStartTimeZone"),
-        QStringLiteral("originalEndTimeZone"), QStringLiteral("type"),
+        // originalStart IS rebuilt for exceptions; the two original*TimeZone
+        // fields are NOT rebuilt — they are master-level creation metadata
+        // and ride the passthrough verbatim (LIVE-CHECKPOINT FINDING: they
+        // carry the author's zone even when endpoints were re-homed to UTC).
+        QStringLiteral("originalStart"), QStringLiteral("type"),
         QStringLiteral("categories"), QStringLiteral("organizer"),
         QStringLiteral("attendees"), QStringLiteral("responseRequested"),
         QStringLiteral("importance"), QStringLiteral("sensitivity"),
@@ -834,8 +841,9 @@ QByteArray CanonToMsEventStage::transform(const QByteArray& canonBytes) const
         QStringLiteral("onlineMeeting"), QStringLiteral("webLink"),
         QStringLiteral("allowNewTimeProposals"), QStringLiteral("hideAttendees"),
         QStringLiteral("singleValueExtendedProperties"),
-        QStringLiteral("multiValueExtendedProperties"),
-        QStringLiteral("responseStatus")
+        QStringLiteral("multiValueExtendedProperties")
+        // responseStatus deliberately NOT rebuilt: the promote stash
+        // (sentinel-time-stripped) rides the passthrough back verbatim.
     };
     for (auto it = extrasMs.constBegin(); it != extrasMs.constEnd(); ++it)
         if (!kRebuilt.contains(it.key()))

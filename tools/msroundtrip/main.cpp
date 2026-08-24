@@ -111,6 +111,27 @@ QStringList declaredNormalizations()
         // uid fallback chain: top-level uid ← iCalUId ← transport id (fires
         // only on $select-projection captures lacking both uid fields)
         "^uid$",
+        // --- live-checkpoint declarations (2026-08-23, see loss-profile doc
+        //     "Additional declared normalizations") ---
+        // false-flag absence: omitted ≡ false for these booleans on reads
+        "^isCancelled$", "^isAllDay$", "^isOnlineMeeting$",
+        // no-meeting triad: onlineMeeting null / provider "unknown" collapse
+        // to full absence when there is no meeting
+        "^onlineMeeting$", "^onlineMeetingProvider$",
+        // body.contentType case normalized to the Graph canonical form
+        "^body\\.contentType$",
+        // range.recurrenceTimeZone dropped: zone vocabulary lives on
+        // start/end (+ original*TimeZone passthrough)
+        "^recurrence\\.range\\.recurrenceTimeZone$",
+        // empty-string displayName inside the rich location struct drops
+        "^location\\.displayName$",
+        // classification Degraded row: personal → private + carrier
+        "^sensitivity$",
+        // the carrier channel itself (x-canon-* values)
+        "^singleValueExtendedProperties",
+        // recurrence absent vs explicit null (O57 corollary: Graph mixes
+        // null and absent representations for "no value")
+        "^recurrence$",
     };
 }
 
