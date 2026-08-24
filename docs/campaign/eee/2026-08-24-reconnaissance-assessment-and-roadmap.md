@@ -104,3 +104,45 @@ Ordered by value-per-session; each gets its own mini-campaign page under
 4. **PATCH over re-create** wherever carriers matter (O61(e)) — until
    carrier survival is proven per channel, treat Reversible rulings as
    offline-only.
+
+---
+
+## Part IV — Ethics of the data model (adopted 2026-08-24, binding)
+
+The person-object the titans already run (Google People aggregation,
+Graph `person` scoring) is an *assertion* held in central custody. Ours
+must remain a *hypothesis with receipts* held by its subject. The
+distinction is architectural, not aspirational — each ruling below is
+enforced by tests and must survive every future phase:
+
+1. **Never a merge.** Entities LINK records; they never collapse them.
+   There is no authoritative person record — only a join table whose
+   links are individually dissolvable. The totalitarian operation is
+   collapse-into-one-master-record; this invariant forbids it as code,
+   not policy. (`tst_identity_links`, `tst_person_directory`.)
+2. **The graph forgets.** Unlinking a record dissolves only its own link;
+   when an entity's last record unlinks, its email evidence is pruned.
+   Dead testimony must not resurrect dead entities.
+3. **Strangers stay strangers.** Unresolvable roster entries return
+   empty — never invented, never confabulated, no relevance scores, no
+   behavioral inference. Graph's `person`/`profile` resources are
+   quarantined as insight metadata, permanently outside authored canon.
+4. **One rule, explicit.** The resolver grows only by deliberate,
+   documented, tested rules (currently: shared email). No inference
+   machinery, ever, without a new adopted doctrine page.
+5. **Local custody, opt-in per host.** Identity state lives in a local
+   SQLite file owned by the host application; nothing in the identity
+   path performs network I/O; consumers adopt voluntarily.
+6. **Loud about limits.** The convergence matrix publishes every declared
+   loss and is machine-checked against regeneration. A model that
+   confesses its blindness cannot credibly pose as omniscient.
+7. **Seizure test.** Every component must survive the question: *could
+   this survive being seized?* A merge-graph could not; a disjointed
+   link-index plus a confession of unknowns can. When a design fails the
+   seizure test, redesign it.
+
+Rationale: interoperability is a defensive technology. A local, honest,
+portable representation of one's own time and relations is what keeps
+exit cost from growing inside platforms that triangulate their users.
+Embrace-and-extend here means re-opening fences using the vendors' own
+documented front doors.

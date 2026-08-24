@@ -137,10 +137,10 @@ load-flaky under full-suite parallelism but pass isolated).
 `docs/campaign/eee/2026-08-24-reconnaissance-assessment-and-roadmap.md`
 (read it; it also holds the Tier-B interior expeditions — scheduling/
 free-busy, visibility/ACLs, resource calendars, taxonomy entities, MAPI
-named properties, beta-horizon watch — and the binding doctrine: corpus-
-first per interior, crossing-gate coverage mandatory, matrix regenerated
-in the same commit as edge growth, PATCH over re-create while carrier
-survival is unproven):
+named properties, beta-horizon watch — and the binding doctrine incl.
+**Part IV ethics of the data model**: never a merge, the graph forgets,
+strangers stay strangers, one explicit rule, local custody, loud about
+limits, and the seizure test — every new component must pass it):
 1. A1 engine-level vendor-shaped hub convergence.
 2. A2 task-side corpus captures → fixture promotion for both todo edges.
 3. A3 carrier-survival drills (People clientData; open extensions;
