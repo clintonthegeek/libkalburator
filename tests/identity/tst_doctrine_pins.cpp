@@ -191,12 +191,10 @@ private slots:
         }
     }
 
-    // Part IV rule 4 — ONE EXPLICIT RULE: email evidence bridges records;
-    // anything else (even a shared DISPLAY NAME riding the same email
-    // later renamed away) does not create new bridges. Pin the minimal
-    // convergence surface: link, then REMOVE the shared email from one
-    // side — the existing entity persists (links are durable once made),
-    // but no FURTHER record joins through the dead email.
+    // Part IV rule 4 — ONE EXPLICIT RULE: email evidence bridges PERSON
+    // records only. An event never joins a person's entity via its
+    // attendees (O65: convergence belongs to persons, not meetings), and
+    // records with no shared evidence stay apart.
     void onlyEmailEvidenceBridgesRecords()
     {
         IdentityStore store(m_dir->filePath("identity.db"));
@@ -207,23 +205,27 @@ private slots:
                                      QStringLiteral("Pat One"),
                                      { QStringLiteral("bridge@x.com") }));
 
-        // A calendar attendee with the bridged email joins the entity…
+        // A calendar event carrying Pat's email must NOT adopt her
+        // identity — its own entity is its uid alone.
         QByteArray evt =
             QStringLiteral("{\"_canon\":{\"domain\":\"calendar\",\"v\":1},"
                            "\"uid\":\"evt-b1\",\"attendees\":"
                            "[{\"email\":\"bridge@x.com\"}]}")
                 .toUtf8();
-        // (observe() on events links the EVENT record itself)
         const QString eEvt = dir.observe(evt);
-        QCOMPARE(eEvt, e1);
+        QVERIFY(!eEvt.isEmpty());
+        QVERIFY2(eEvt != e1,
+                 "an event must never merge into a person's entity (O65)");
+        // …yet Pat still RESOLVES as that event's participant.
+        QCOMPARE(store.entityIdForEmail(QStringLiteral("bridge@x.com")), e1);
 
-        // …and a THIRD record with a fresh, unrelated email must NOT land
-        // on the same entity merely because it shares nothing at all.
+        // A third record with fresh, unrelated evidence stays apart.
         const QString e3 =
             dir.observe(contactCanon(QStringLiteral("people/p3"),
                                      QStringLiteral("Unrelated Person"),
                                      { QStringLiteral("other@x.com") }));
         QVERIFY2(e3 != e1, "unrelated records must not share an entity");
+        QVERIFY2(e3 != eEvt, "persons and events never share entities");
     }
 
     // Part IV rule 7 — SEIZURE TEST, storage half: the schema version is

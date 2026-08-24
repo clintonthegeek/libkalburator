@@ -12,10 +12,14 @@ namespace Kalburator::Identity {
 /// The first resolver's key extraction (EEE campaign §5, one rule):
 ///   contacts  → canon["emails"][i]["value"] (+ names[0].formatted as the
 ///               display-name projection)
-///   calendar  → canon["organizer"]["email"] + canon["attendees"][i]["email"]
-///   (todo: no rule yet)
-/// Empty-email rows are skipped (every vendor edge already drops them at
-/// promote time). Returns domain/uid from the canon envelope.
+///   calendar  → NO email keys (FINDINGS O65): an event's attendee/
+///               organizer emails are ROSTER QUERIES, never identity
+///               evidence — indexing them would fuse every participant
+///               onto the meeting's entity. Events join by uid alone;
+///               participants converge at RESOLUTION time via the
+///               contact-owned email_index.
+///   todo      → no rule yet
+/// Returns domain/uid from the canon envelope.
 struct CanonKeys {
     QString domain;
     QString uid;
@@ -48,20 +52,8 @@ inline CanonKeys extractCanonKeys(const QJsonObject& canon)
                 .toObject()
                 .value(QStringLiteral("formatted"))
                 .toString();
-    } else if (out.domain == QLatin1String("calendar")) {
-        const QString org = canon.value(QStringLiteral("organizer"))
-                                .toObject()
-                                .value(QStringLiteral("email"))
-                                .toString();
-        if (!org.isEmpty())
-            out.emails << org;
-        for (const auto& av :
-             canon.value(QStringLiteral("attendees")).toArray()) {
-            const QString e = av.toObject().value(QStringLiteral("email")).toString();
-            if (!e.isEmpty())
-                out.emails << e;
-        }
     }
+    // calendar/todo: deliberately no emails (O65).
     return out;
 }
 

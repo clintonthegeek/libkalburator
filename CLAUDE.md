@@ -129,7 +129,7 @@ no-output; AUTOMOC timestamp staleness).
   `docs/campaign/eee/CONVERGENCE-MATRIX.md` (regenerate with
   `tools/matrixgen`; byte-pinned by the suite).
 
-Suite baseline: **194 total / 192 passing** (two documented Radicale slots;
+Suite baseline: **195 total / 193 passing** (two documented Radicale slots;
 `tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
 load-flaky under full-suite parallelism but pass isolated).
 
@@ -141,7 +141,10 @@ named properties, beta-horizon watch — and the binding doctrine incl.
 **Part IV ethics of the data model**: never a merge, the graph forgets,
 strangers stay strangers, one explicit rule, local custody, loud about
 limits, and the seizure test — every new component must pass it):
-1. A1 engine-level vendor-shaped hub convergence.
+1. ~~A1 engine-level vendor-shaped hub convergence~~ DONE 2026-08-24
+   (`tst_engine_vendor_shaped_hub` 6 slots; FINDINGS O65: events never
+   index participant emails — convergence belongs to persons, not
+   meetings).
 2. A2 task-side corpus captures → fixture promotion for both todo edges.
 3. A3 carrier-survival drills (People clientData; open extensions;
    Graph write path via msroundtrip).

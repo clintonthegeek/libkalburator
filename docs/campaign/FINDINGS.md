@@ -2958,3 +2958,20 @@ Google's wire home exists — `emailAddresses[].displayName`. Fixed both ways
 triggers for plain named emails; demote re-emits displayName). Lesson: the
 pipeline-level crossing gate catches per-edge suite blindness because each
 edge's own round-trip never exercises a FOREIGN edge's richer canon shape.
+
+### O65 — RESOLVED — event records must never index participant emails; convergence belongs to persons, not meetings (found 2026-08-24, Tier-A1 gate)
+
+The first engine-level vendor-shaped run (`tst_engine_vendor_shaped_hub::
+rosterResolvesNamedPersonsAfterConvergence`) caught PersonDirectory
+resolving attendee bob@example.com to ADA's name. Root cause:
+`extractCanonKeys` treated calendar organizer/attendee emails as the
+EVENT record's own identity keys, so observing an event indexed every
+participant onto the meeting's entity — and the next contact sharing any
+attendee email was ADOPTED into it. Design ruling (now pinned three
+ways): calendar/todo canon contributes NO email-index entries; events
+join by uid alone and are never persons; participants converge at
+RESOLUTION time via the contact-owned email_index. Enforced by
+`tst_identity_links::extractKeysFromVendorEdgeOutput` (extraction-level),
+`tst_doctrine_pins::onlyEmailEvidenceBridgesRecords` (rule-4 pin), and
+the roster slot itself (end-to-end). Second consecutive campaign gate
+that caught what per-component suites structurally could not (cf. O64).

@@ -161,6 +161,17 @@ target_link_libraries(tst_engine_id_aliasing
         KF6::CalendarCore
 )
 
+# EEE Tier A1 — vendor-shaped hub convergence: google-event and ms-event
+# wire JSON meeting through a canon-shaped GenericSqliteBackend hub in one
+# Queue-mode run (O55 aliasing, L2 fixpoint, O56 holds on vendor records;
+# closing slot feeds PersonDirectory).
+kalburator_add_engine_integration_test(tst_engine_vendor_shaped_hub)
+target_link_libraries(tst_engine_vendor_shaped_hub
+    PRIVATE
+        Qt6::Sql
+        KF6::CalendarCore
+)
+
 # T3 — mass-delete guard engine integration test
 kalburator_add_engine_integration_test(tst_mass_delete_guard)
 

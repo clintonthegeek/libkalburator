@@ -9,7 +9,7 @@ updated in the same commit as plan state (phase-status-docs rule).
 Tier-A/Tier-B expedition order. Future sessions: read this STATUS for live
 state, that roadmap for direction.
 
-**Last updated:** 2026-08-24 (identity layer + Phase 6 pipeline/matrix landed)
+**Last updated:** 2026-08-24 (Tier A1 landed; A2–A5 remain)
 
 ## Current phase snapshot
 
@@ -28,6 +28,7 @@ state, that roadmap for direction.
 | Phase 3 — ms-todotask ⇄ todo-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-ms-todotask-edge-loss-profile.md`); `mstodotaskcanonstages.{h,cpp}` + catalogue; TodoStockShapes now **9 edges**. Recurrence reuses the 7.B converter: MS→RFC5545 lossless promote; cannot-represent rulings + EXDATEs ride the `kalburator.canon` open-extension carrier (byte-equal re-promote). importance⇄priority via {low:9,normal:5,high:1} table; body contentType splits description/descriptionHtml; completed zone dropped to UTC form (declared Simplified); checklistItems/linkedResources = transport (separate endpoints), out of edge scope. Gated by `tst_ms_todotask_canon_edge` (7 slots incl. unrepresentable-RRULE carry drill). Fixture-promotion slot DEFERRED until a /me/todo corpus capture lands. |
 | Identity layer (proposal §5) | **done** | `src/identity/{identitystore,identityresolver}`: SQLite registry `(domain, record-uid) → entity-id` (BaselineStore template, schema v2 — v2 adds the display-name projection column). First resolver, one rule: contacts `emails[].value` ↔ calendar `organizer.email`/`attendees[].email` share an entity; deterministic sorted-email adoption; NEVER a merge. Unlink dissolves only the own link; last-unlink prunes email evidence so dead entities don't resurrect. Records earn entities even with no emails (people exist without addresses). Gated RED→GREEN by `tst_identity_links` (10 slots incl. key extraction against real google-person/ms-event/google-event promote output). Additive; opt-in per host. |
 | PersonDirectory (§5 payoff) | **done** | `src/identity/persondirectory.h`: composes edges + canon + identity into the Nepomuk moment — `observe()` ingests any canon record (both vendors' committed fixtures bulk-observed in one store); `eventRoster()` answers "who is in this meeting?" resolving attendee emails to named persons ACROSS vendors; unresolved emails stay strangers, never invented. Gated by `tst_person_directory` (7 slots incl. the cross-vendor single-human proof + both-fixture bulk ingestion). This is the Phase-6 demo artifact. |
+| Tier A1 — engine-level vendor-shaped hub convergence | **done** | `tst_engine_vendor_shaped_hub` (6 slots, first engine test to mix two vendor encodings): a google-event wire record crosses a canon-shaped GenericSqliteBackend hub into ms-event within ONE Queue-mode runSync — O55 aliases persist sink-anchored (`{hub-prefixed → source-id}`), L2 re-prime carries the cross-mapping create, steady-state run moves zero records; canonically-equal vendor twins (built by demoting ONE minimal canon through both stages) are REFUSED loudly on BOTH mappings; O56 unresolved-conflict holds ALL writes on vendor-shaped records; closing slot feeds the converged hub into PersonDirectory — the roster of a synced event resolves to named persons ingested from both vendors. Gate catch: FINDINGS O65. |
 | Part IV doctrine pins | **done** | `tst_doctrine_pins` (7 slots) makes the ethics falsifiable: name-similarity must NEVER merge (rule 1, anti-"smart matching"); forgetting verified at BYTE level via raw sweep of both tables post-unlink (rule 2); 100-stranger bulk roster stays unresolved with nothing invented (rule 3); only email evidence bridges records (rule 4 surface pinned); schema user_version pinned at v2 (rule 7, storage half). |
 | Phase 6 — pipeline convergence gate | **done** | `tst_gm_pipeline_convergence`: for every vendor pair + direction (calendar/contacts/todo), canon promoted losslessly from a vendor-A wire crosses vendor B (demote→re-promote); EVERY differing top-level canon property must be declared in B's demote LossProfile — undeclared divergence = RED. First run caught O64 (google-person email displayName drop — fixed in stage, not declared away). All crossings now within declared unions. |
 | Phase 6 — convergence matrix | **done** | GENERATED ledger committed at `docs/campaign/eee/CONVERGENCE-MATRIX.md`; generator = `ConvergenceMatrix::generate()` (`src/shape/convergencematrix.h`) + `tools/matrixgen` CLI; byte-enforced by `committedMatrixMatchesGenerated` (O63 discipline applied to the ledger — growing an edges() list without regenerating is RED). |
@@ -45,10 +46,8 @@ state, that roadmap for direction.
 Per the adopted roadmap (Tier A — owed gates; rationale + Tier-B interiors
 in `2026-08-24-reconnaissance-assessment-and-roadmap.md`):
 
-1. **A1** Engine-level vendor-shaped hub convergence — stub G-shaped/
-   MS-shaped backends vs one `GenericSqliteBackend` hub; fixpoint
-   convergence; O55/O56 aliasing/conflict machinery re-proven on
-   vendor-shaped records. RED→GREEN suite.
+1. ~~**A1** Engine-level vendor-shaped hub convergence~~ DONE 2026-08-24
+   (`tst_engine_vendor_shaped_hub`, FINDINGS O65 caught+fixed).
 2. **A2** Task-side corpus captures (Google Tasks list+tasks; Graph
    /me/todo/lists+tasks via the CLI sweep tools) → sanitize → fixture
    promotion slots for both todo edges. Expect wire-lie discoveries.
@@ -116,7 +115,7 @@ Completion record of prior sessions:
 
 194 tests total / 192 passing (two documented live-Radicale-state-dependent
 slots `tst_backend_signals`, `tst_remotecalendarbackend`; occasionally
-load-flaky under full-suite parallelism but pass isolated). Identity layer
-added `tst_identity_links` (10); PersonDirectory added `tst_person_directory`
-(7); Phase 6 added `tst_gm_pipeline_convergence` (8 slots incl. the matrix
-byte-pin).
+load-flaky under full-suite parallelism but pass isolated). Identity layer added
+`tst_identity_links` (10) + `tst_person_directory` (7) + `tst_doctrine_pins`
+(7); Phase 6 added `tst_gm_pipeline_convergence` (8 incl. matrix byte-pin);
+Tier A1 added `tst_engine_vendor_shaped_hub` (6).

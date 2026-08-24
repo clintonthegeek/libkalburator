@@ -45,11 +45,12 @@ private slots:
         QCOMPARE(def.richnessRank(def.canonicalShape()), 100);
     }
 
-    void stockShapesHasFiveEdges()
+    void stockShapesHasNineEdges()
     {
         const ContactsStockShapes shapes;
         // canon-identity + v4→canon + canon→v4 + v3→v4 + v4→v3
-        QCOMPARE(shapes.edges().size(), 5);
+        // + google-person⇄canon (EEE Phase 3) + ms-contact⇄canon (EEE Phase 3)
+        QCOMPARE(shapes.edges().size(), 9);
     }
 
     void stockShapesPeerContainsVcard3()

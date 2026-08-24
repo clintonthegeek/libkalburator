@@ -40,14 +40,6 @@ const QByteArray kEventCanon =
     "]"
     "}";
 
-const QByteArray kSecondContactCanon =
-    "{"
-    "\"_canon\": {\"domain\": \"contacts\", \"v\": 1},"
-    "\"uid\": \"people/c222\","
-    "\"names\": [{\"formatted\": \"Carol Contact\"}],"
-    "\"emails\": [{\"value\": \"carol@example.com\"}]"
-    "}";
-
 } // namespace
 
 class TestIdentityLinks : public QObject {
@@ -64,7 +56,9 @@ private slots:
     }
 
     // THE rule: a contact and an event participant sharing an email link
-    // to one entity — "this meeting's people are these contacts".
+    // to one entity — resolved through the contact-owned email index.
+    // The EVENT record itself never adopts participant identities
+    // (FINDINGS O65: convergence belongs to persons, not meetings).
     void sharedEmailLinksContactAndAttendee()
     {
         IdentityStore store(m_dir->filePath("identity.db"));
@@ -74,41 +68,40 @@ private slots:
             linkCanonRecord(store, kContactCanon);
         QVERIFY2(!contactEnt.isEmpty(), "contact must mint an entity");
 
+        // The event record links independently — its OWN identity is its
+        // uid, never its participants'.
         const QString eventEnt = linkCanonRecord(store, kEventCanon);
-        QCOMPARE(eventEnt, contactEnt);
+        QVERIFY2(!eventEnt.isEmpty(), "event must earn an entity");
+        QVERIFY2(eventEnt != contactEnt,
+                 "an event is not a person (O65)");
 
-        // The event's organizer (bob) has no contact yet — the EVENT record
-        // links via alice's email and joins the same entity.
-        const auto records =
-            store.recordsForEntity(contactEnt);
-        QCOMPARE(records.size(), 2);
-        bool sawContact = false;
-        bool sawEvent = false;
-        for (const auto& r : records) {
-            if (r.domain == QLatin1String("contacts")
-                && r.recordUid == QLatin1String("people/c111"))
-                sawContact = true;
-            if (r.domain == QLatin1String("calendar")
-                && r.recordUid == QLatin1String("evt-42"))
-                sawEvent = true;
-        }
-        QVERIFY(sawContact);
-        QVERIFY(sawEvent);
+        // But the attendee RESOLVES to the contact's entity through the
+        // email half of the rule.
+        QCOMPARE(store.entityIdForEmail(QStringLiteral("alice@example.com")),
+                 contactEnt);
+        const auto records = store.recordsForEntity(contactEnt);
+        QCOMPARE(records.size(), 1);
+        QCOMPARE(records.first().domain, QLatin1String("contacts"));
     }
 
-    // Second contact joins the entity through her OWN shared email
-    // (attendee carol ↔ contact carol).
+    // Second contact joins the entity through a SHARED CONTACT EMAIL.
     void secondContactJoinsViaOwnEmail()
     {
         IdentityStore store(m_dir->filePath("identity.db"));
         QVERIFY(store.isOpen());
 
         const QString ent1 = linkCanonRecord(store, kContactCanon);
-        linkCanonRecord(store, kEventCanon);
-        const QString ent3 = linkCanonRecord(store, kSecondContactCanon);
+        // Carol also carries alice's address (same human, second record).
+        const QByteArray carolCanon =
+            "{\"_canon\":{\"domain\":\"contacts\",\"v\":1},"
+            "\"uid\":\"people/c222\","
+            "\"names\":[{\"formatted\":\"Carol Contact\"}],"
+            "\"emails\":[{\"value\":\"carol@example.com\"},"
+            "            {\"value\":\"alice@example.com\"}]}";
+        const QString ent3 = linkCanonRecord(store, carolCanon);
         QCOMPARE(ent3, ent1);
 
-        QCOMPARE(store.recordsForEntity(ent1).size(), 3);
+        QCOMPARE(store.recordsForEntity(ent1).size(), 2);
         QVERIFY(store.emailsForEntity(ent1)
                     .contains(QStringLiteral("carol@example.com")));
     }
@@ -153,25 +146,29 @@ private slots:
         IdentityStore store(m_dir->filePath("identity.db"));
         QVERIFY(store.isOpen());
         const QString ent = linkCanonRecord(store, kContactCanon);
-        linkCanonRecord(store, kEventCanon);
+        const QString eventEnt = linkCanonRecord(store, kEventCanon);
+        QVERIFY(eventEnt != ent);  // O65: events are not persons
 
         store.unlinkRecord(QStringLiteral("contacts"),
                            QStringLiteral("people/c111"));
         QVERIFY(store.entityIdFor(QStringLiteral("contacts"),
                                   QStringLiteral("people/c111"))
                     .isEmpty());
-        // event untouched
+        // The event record is untouched — it never depended on the
+        // contact's link.
         QCOMPARE(store.entityIdFor(QStringLiteral("calendar"),
                                    QStringLiteral("evt-42")),
-                 ent);
+                 eventEnt);
 
-        // A NEW contact with alice's email re-joins the surviving entity
-        // (the event attendee still holds the evidence alive).
+        // Alice's email evidence died with her ONLY contact record, so a
+        // NEW same-email contact mints fresh rather than resurrecting
+        // (the graph forgets).
         const QByteArray aliceAgain =
             "{\"_canon\":{\"domain\":\"contacts\",\"v\":1},"
             "\"uid\":\"people/c333\","
             "\"emails\":[{\"value\":\"alice@example.com\"}]}";
-        QCOMPARE(linkCanonRecord(store, aliceAgain), ent);
+        const QString fresh = linkCanonRecord(store, aliceAgain);
+        QVERIFY2(fresh != ent, "dead entity must not resurrect");
     }
 
     // Full dissolution: when the LAST record of an entity unlinks, the
@@ -243,7 +240,10 @@ private slots:
         const auto msKeys = extractCanonKeys(msCanon);
         QCOMPARE(msKeys.domain, QLatin1String("calendar"));
         QCOMPARE(msKeys.uid, QLatin1String("e1"));
-        QVERIFY(msKeys.emails.contains(QStringLiteral("lee@example.com")));
+        // O65: events carry NO email keys — attendee emails are roster
+        // queries, never identity evidence.
+        QVERIFY2(msKeys.emails.isEmpty(),
+                 "calendar extraction must not index attendees");
 
         GoogleEventToCanonStage gPromote;
         const QJsonObject gCanon = Kalburator::Shape::CanonEnvelope::parse(
@@ -254,7 +254,7 @@ private slots:
                 "\"end\":{\"date\":\"2026-09-01\"}}")));
         const auto gKeys = extractCanonKeys(gCanon);
         QCOMPARE(gKeys.uid, QLatin1String("g1"));
-        QVERIFY(gKeys.emails.contains(QStringLiteral("pat@example.com")));
+        QVERIFY(gKeys.emails.isEmpty());
     }
 
 private:
