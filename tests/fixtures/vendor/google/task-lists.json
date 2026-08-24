@@ -1,0 +1,22 @@
+{
+ "etag": "\"Fa88yyJdWrk\"",
+ "items": [
+  {
+   "etag": "\"V5sJpL-Zh1g\"",
+   "id": "0000000000000095",
+   "kind": "tasks#taskList",
+   "selfLink": "https://www.googleapis.com/tasks/v1/users/@me/lists/REDACTED",
+   "title": "Sample Task 1",
+   "updated": "2026-08-24T18:46:08.351Z"
+  },
+  {
+   "etag": "\"OPyx7cvMyEU\"",
+   "id": "0000000000000096",
+   "kind": "tasks#taskList",
+   "selfLink": "https://www.googleapis.com/tasks/v1/users/@me/lists/REDACTED",
+   "title": "Sample Task 2",
+   "updated": "2026-08-24T18:45:41.026Z"
+  }
+ ],
+ "kind": "tasks#taskLists"
+}

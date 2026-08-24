@@ -13,6 +13,7 @@ import glob
 import os
 import re
 import sys
+from urllib.parse import urlsplit, urlunsplit
 
 SRC = "google/captured"
 DST = "tests/fixtures/vendor/google"
@@ -21,6 +22,8 @@ email_map = {}
 name_map = {}
 phone_counter = [1000]
 id_map = {}
+text_map = {}
+text_counter = [0]
 
 
 def sub_email(e):
@@ -35,11 +38,62 @@ def sub_name(n):
     return name_map[n]
 
 
-def scrub(obj):
+def sub_text(s, kind):
+    """Free-text redaction for task titles/notes (mirrors graphcli's
+    text_map): deterministic "Sample Task N" / "Sample Note N"; empty
+    strings stay empty."""
+    if not isinstance(s, str):
+        return s
+    if not s.strip():
+        return s
+    key = (kind, s)
+    if key not in text_map:
+        text_counter[0] += 1
+        text_map[key] = f"Sample {kind} {text_counter[0]}"
+    return text_map[key]
+
+
+_IDSEG = re.compile(r"[A-Za-z0-9+/_:\-]{8,}")
+
+
+def _redact_segment(seg):
+    return "REDACTED" if _IDSEG.fullmatch(seg) else seg
+
+
+def sub_url(u):
+    """Shape-preserving link redaction: keep scheme+host+query, re-mint
+    id-like path segments and fragment tails (gmail thread ids, task ids,
+    list ids)."""
+    parts = urlsplit(u)
+    path = "/".join(_redact_segment(s) for s in parts.path.split("/"))
+    frag = "/".join(_redact_segment(s) for s in parts.fragment.split("/")) \
+        if parts.fragment else parts.fragment
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, frag))
+
+
+def scrub(obj, in_tasks=False):
     if isinstance(obj, dict):
+        kind = obj.get("kind")
+        tasks = in_tasks or (isinstance(kind, str) and kind.startswith("tasks#"))
         out = {}
         for k, v in obj.items():
-            if k in ("email",) and isinstance(v, str) and "@" in v and "example.com" not in v:
+            # Tasks free text (scoped to tasks#* payloads so calendar/
+            # people fixture output stays byte-stable).
+            if tasks and k == "title" and isinstance(v, str):
+                out[k] = sub_text(v, "Task")
+            elif tasks and k in ("notes", "description") and isinstance(v, str):
+                out[k] = sub_text(v, "Note")
+            elif k in ("selfLink", "webViewLink", "link") \
+                    and isinstance(v, str) and v.startswith("http"):
+                out[k] = sub_url(v)
+            elif k == "id" and isinstance(v, str) and len(v) >= 16 \
+                    and (v.isalnum() or re.fullmatch(r"[A-Za-z0-9]+:[A-Za-z0-9:]+", v)):
+                # alnum base64ish ids (legacy rule) AND colon-suffixed
+                # list-scoped task-list ids ("MTYw...NjU6MDox")
+                if v not in id_map:
+                    id_map[v] = f"{len(id_map)+1:016x}"
+                out[k] = id_map[v]
+            elif k in ("email",) and isinstance(v, str) and "@" in v and "example.com" not in v:
                 out[k] = sub_email(v)
             elif k in ("displayName", "displayNameLastFirst", "givenName",
                        "familyName", "middleName", "unstructuredName",
@@ -55,19 +109,15 @@ def scrub(obj):
                 if v not in id_map:
                     id_map[v] = f"people/c{1000000000000000000 + len(id_map)}"
                 out[k] = id_map[v]
-            elif k == "id" and isinstance(v, str) and len(v) >= 16 and v.isalnum():
-                if v not in id_map:
-                    id_map[v] = f"{len(id_map)+1:016x}"
-                out[k] = id_map[v]
             elif k == "biographies":
                 out[k] = []
             elif k == "biography" and isinstance(v, str):
                 out[k] = ""
             else:
-                out[k] = scrub(v)
+                out[k] = scrub(v, tasks)
         return out
     if isinstance(obj, list):
-        return [scrub(x) for x in obj]
+        return [scrub(x, in_tasks) for x in obj]
     return obj
 
 
@@ -81,6 +131,10 @@ def main():
         "checkpoint-event": "*oovgd8dorgkfp556.json",
         "contacts-connections": sorted(glob.glob(f"{SRC}/*connections*"))[-1],
         "contact-groups": "*contactGroups*.json",
+        # Tasks corpus (2026-08-24 captures)
+        "task-lists": "*users-_me-lists*.json",
+        "task-listing-default": "*lists-MTYwNzYwNjgxNzQx-tasks*.json",
+        "task-listing-fog": "*lists-YVVibHlpcVpFRjFK-tasks*.json",
     }
     for label, pattern in picks.items():
         files = sorted(glob.glob(f"{SRC}/{pattern}")) if "*" in str(pattern) else [pattern]

@@ -19,4 +19,11 @@ kalburator_add_todo_test(tst_todotxt_stage)
 kalburator_add_todo_test(tst_todo_canon_roundtrip)
 # EEE Phase 3 — google-task / ms-todotask ⇄ canon edges
 kalburator_add_todo_test(tst_google_task_canon_edge)
+# Fixture-promotion slot reads committed vendor fixtures directly.
+target_compile_definitions(tst_google_task_canon_edge PRIVATE
+    KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)
 kalburator_add_todo_test(tst_ms_todotask_canon_edge)
+# Fixture-promotion slot: committed live-capture corpus extracts
+target_compile_definitions(tst_ms_todotask_canon_edge PRIVATE
+    KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor")

@@ -1,0 +1,53 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('person201@example.com')/todo/lists('REDACTED_ITEM_ID')/tasks",
+ "value": [
+  {
+   "@odata.etag": "fake-id-112",
+   "body": {
+    "content": "Sample body",
+    "contentType": "text"
+   },
+   "categories": [],
+   "createdDateTime": "2026-08-23T05:26:58.2399166Z",
+   "dueDateTime": {
+    "dateTime": "2026-08-24T04:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "hasAttachments": false,
+   "id": "AQMkADAwATFALEVIEW113",
+   "importance": "normal",
+   "isReminderOn": true,
+   "lastModifiedDateTime": "2026-08-23T05:27:17.2325966Z",
+   "recurrence": {
+    "pattern": {
+     "dayOfMonth": 0,
+     "daysOfWeek": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday"
+     ],
+     "firstDayOfWeek": "sunday",
+     "index": "first",
+     "interval": 1,
+     "month": 0,
+     "type": "weekly"
+    },
+    "range": {
+     "endDate": "0001-01-01",
+     "numberOfOccurrences": 0,
+     "recurrenceTimeZone": "UTC",
+     "startDate": "2026-08-24",
+     "type": "noEnd"
+    }
+   },
+   "reminderDateTime": {
+    "dateTime": "2026-08-24T13:00:00.0000000",
+    "timeZone": "UTC"
+   },
+   "status": "notStarted",
+   "title": "Sample Task 1"
+  }
+ ]
+}

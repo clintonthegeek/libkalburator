@@ -1,0 +1,58 @@
+{
+ "etag": "\"069_aBtzuf4\"",
+ "items": [
+  {
+   "etag": "\"RhQccURcM-4\"",
+   "id": "000000000000009d",
+   "kind": "tasks#task",
+   "links": [],
+   "notes": "Sample Note 11",
+   "position": "00000000000000000000",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 12",
+   "updated": "2026-08-24T18:45:47.326Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "due": "2026-08-24T00:00:00.000Z",
+   "etag": "\"taD-EFgm1b4\"",
+   "id": "000000000000009e",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000000000000001",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 13",
+   "updated": "2026-08-24T18:45:30.821Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "due": "2026-08-24T00:00:00.000Z",
+   "etag": "\"zzi2XVl-6_o\"",
+   "id": "000000000000009f",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000000000000002",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 14",
+   "updated": "2026-08-24T18:45:13.177Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "due": "2026-08-25T00:00:00.000Z",
+   "etag": "\"24T9YnnWfs0\"",
+   "id": "00000000000000a0",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000000000000003",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 15",
+   "updated": "2026-08-24T18:44:51.724Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  }
+ ],
+ "kind": "tasks#tasks"
+}

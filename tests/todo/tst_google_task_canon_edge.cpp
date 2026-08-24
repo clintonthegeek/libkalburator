@@ -5,8 +5,8 @@
 // identity for the representable set, registry inspection.
 //
 // NOTE: no terminated raw string literals in this TU (O59 moc tooling rule).
-// Fixture-promotion slot deferred until a tasks corpus capture lands.
 
+#include <QFile>
 #include <QTest>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -236,6 +236,72 @@ private slots:
 
         const auto promoteLoss = regs.transformation.inspect(gt, canon);
         QVERIFY2(promoteLoss.isLossless(), "promote must be lossless");
+    }
+
+    // Slot — the committed live-capture fixtures (tests/fixtures/vendor/
+    // google/task-listing-default.json and task-lists.json, sanitized
+    // extracts of the real account's 2026-08-24 Tasks captures) promote
+    // cleanly: every wire item maps to non-empty canon with uid/summary/
+    // status pinned to the (sanitized) wire values, transport identity
+    // stashed in providerExtras; the taskLists collection parses as a
+    // shape smoke check.
+    void promoteCommittedLiveFixture()
+    {
+        QFile listing(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                      + QStringLiteral("/google/task-listing-default.json"));
+        QVERIFY2(listing.open(QIODevice::ReadOnly),
+                 qPrintable(listing.errorString()));
+        const QJsonObject wire =
+            QJsonDocument::fromJson(listing.readAll()).object();
+        QVERIFY(!wire.isEmpty());
+        QCOMPARE(wire.value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("tasks#tasks"));
+
+        const QJsonArray items = wire.value(QStringLiteral("items")).toArray();
+        QVERIFY2(!items.isEmpty(), "fixture has no items");
+
+        GoogleTaskToCanonStage stage;
+        for (const auto& it : items) {
+            const QJsonObject task = it.toObject();
+            QVERIFY(!task.isEmpty());
+            const QByteArray bytes = stage.transform(
+                QJsonDocument(task).toJson(QJsonDocument::Compact));
+            const QJsonObject canon = parse(bytes);
+            QVERIFY2(!canon.isEmpty(), "promote returned empty canon");
+
+            // uid ← wire id; summary ← wire title (post-sanitization);
+            // status vocabulary collapses to needsAction/completed.
+            QCOMPARE(canon.value(QStringLiteral("uid")).toString(),
+                     task.value(QStringLiteral("id")).toString());
+            QCOMPARE(canon.value(QStringLiteral("summary")).toString(),
+                     task.value(QStringLiteral("title")).toString());
+            const QString status =
+                canon.value(QStringLiteral("status")).toString();
+            QVERIFY2(status == QLatin1String("needsAction")
+                         || status == QLatin1String("completed"),
+                     qPrintable(QStringLiteral("unexpected status: %1")
+                                    .arg(status)));
+
+            // transport identity stashed: id itself is consumed into uid
+            // (NOT duplicated in extras), but kind/etag ride the stash.
+            const QJsonObject extras =
+                canon.value(providerExtrasKey()).toObject()
+                    .value(QStringLiteral("google")).toObject();
+            QCOMPARE(extras.value(QStringLiteral("kind")).toString(),
+                     QStringLiteral("tasks#task"));
+            QCOMPARE(extras.value(QStringLiteral("etag")).toString(),
+                     task.value(QStringLiteral("etag")).toString());
+            QVERIFY(!extras.isEmpty());
+        }
+
+        // Collection-level shape smoke check.
+        QFile lists(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                    + QStringLiteral("/google/task-lists.json"));
+        QVERIFY2(lists.open(QIODevice::ReadOnly), qPrintable(lists.errorString()));
+        const QJsonDocument doc = QJsonDocument::fromJson(lists.readAll());
+        QVERIFY2(doc.isObject(), "task-lists.json is not a JSON object");
+        QCOMPARE(doc.object().value(QStringLiteral("kind")).toString(),
+                 QStringLiteral("tasks#taskLists"));
     }
 };
 

@@ -4,7 +4,8 @@ Vendor-convergence (EEE) campaign per
 `docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md`. Updated in
 the same commit as plan state (phase-status-docs rule).
 
-**Last updated:** 2026-08-24 (Tier A2/A3 done; sanitize + A4 remain)
+**Last updated:** 2026-08-24 (fixtures sanitized + promoted; matrix
+annotations next; A4 user-run remains)
 
 ## Reading order for a fresh session
 
@@ -22,7 +23,8 @@ the same commit as plan state (phase-status-docs rule).
 | Work item | State |
 |---|---|
 | Phase 0 corpus; Phase 2 google-event (+live checkpoint, v1.02); 7.B ms-event (+live checkpoint); 7.C GraphApiClient + MSGraphCalendarBackend + mock server | **done** |
-| Phase 3 — all four edges (`google-person`, `ms-contact`, `google-task`, `ms-todotask`), stub-level | **done** — both stock-shape registries at **9 edges**; loss profiles declared first under `docs/2026-08-2*-edge-loss-profile.md`; task-side fixture promotion slots still pending (captures exist machine-local) |
+| Phase 3 — all four edges (`google-person`, `ms-contact`, `google-task`, `ms-todotask`), stub-level | **done** — both stock-shape registries at **9 edges**; loss profiles declared first under `docs/2026-08-2*-edge-loss-profile.md` |
+| Task-fixture promotion (Next-action 1) | **done 2026-08-24** — sanitized 2026-08-24 Tasks/todoTask captures committed under `tests/fixtures/vendor/{google,microsoft}/` via the extended `make-fixtures.py` sanitizers; promotion slots live in both todo-edge suites (`promoteCommittedLiveFixture`); pre-existing fixtures byte-stable |
 | Identity layer (§5) | **done** — `src/identity/`: IdentityStore schema v2, resolver, PersonDirectory ("who is in this meeting?"), doctrine pins |
 | Phase 6 pipeline gate + matrix | **done** — `tst_gm_pipeline_convergence` byte-pins the generated `CONVERGENCE-MATRIX.md`; engine slice A1 also done (below) |
 | Tier A1 engine vendor-shaped hub | **done** — `tst_engine_vendor_shaped_hub`: G-wire ⇄ canon-hub ⇄ MS-wire in one Queue run; O55/O56 re-proven on vendor records; roster payoff slot |
@@ -30,10 +32,11 @@ the same commit as plan state (phase-status-docs rule).
 
 ## Next actions (ordered)
 
-1. **Sanitize task fixtures** (from machine-local captures) via
-   `tools/{googlecli,graphcli}/make-fixtures.py` conventions → commit
-   under `tests/fixtures/vendor/{google,microsoft}/` → promotion slots in
-   `tst_google_task_canon_edge` / `tst_ms_todotask_canon_edge`.
+1. ~~Sanitize task fixtures~~ **done 2026-08-24** — six new fixtures
+   (`task-lists`, `task-listing-default`, `task-listing-fog`,
+   `todo-lists`, `todo-tasks-listing`, `todo-task-carrier-extension`)
+   + promotion slots in `tst_google_task_canon_edge` /
+   `tst_ms_todotask_canon_edge`.
 2. **Annotate CONVERGENCE-MATRIX.md + loss profiles** with the O66
    carrier verdicts (People clientData = proven live-Reversible;
    Graph channels live-workable via nav POSTs only; regenerate matrix).

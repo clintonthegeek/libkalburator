@@ -1,0 +1,29 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('person201@example.com')/todo/lists('REDACTED_ITEM_ID')/tasks(extensions())/$entity",
+ "@odata.etag": "fake-id-114",
+ "body": {
+  "content": "",
+  "contentType": "text"
+ },
+ "categories": [],
+ "createdDateTime": "2026-08-24T19:05:14.1961988Z",
+ "dueDateTime": {
+  "dateTime": "2026-08-26T00:00:00.0000000",
+  "timeZone": "UTC"
+ },
+ "extensions": [
+  {
+   "extensionName": "kalburator.canon",
+   "id": "microsoft.graph.openTypeExtension.kalburator.canon",
+   "x-canon-priority": "5"
+  }
+ ],
+ "extensions@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('person201@example.com')/todo/lists('REDACTED_ITEM_ID')/tasks('REDACTED_ITEM_ID')/extensions",
+ "hasAttachments": false,
+ "id": "AQMkADAwATFALEVIEW115",
+ "importance": "normal",
+ "isReminderOn": false,
+ "lastModifiedDateTime": "2026-08-24T19:05:14.8762377Z",
+ "status": "notStarted",
+ "title": "CORPUS:carrier-probe2"
+}

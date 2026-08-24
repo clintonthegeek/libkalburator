@@ -1,0 +1,13 @@
+{
+ "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('person201@example.com')/todo/lists",
+ "value": [
+  {
+   "@odata.etag": "fake-id-110",
+   "displayName": "Sample List 1",
+   "id": "ZmFrZXZhbHVlJdGVzdGluZ3NlYXJjaA121==",
+   "isOwner": true,
+   "isShared": false,
+   "wellknownListName": "defaultList"
+  }
+ ]
+}

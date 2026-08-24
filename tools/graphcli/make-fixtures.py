@@ -22,6 +22,8 @@ DST = "tests/fixtures/vendor/microsoft"
 email_map = {}
 name_map = {}
 subject_counter = [0]
+task_counter = [0]
+list_counter = [0]
 id_map = {}
 text_map = {}
 
@@ -73,15 +75,54 @@ def sub_text(s):
     return text_map[s]
 
 
+def sub_task_text(s):
+    """Free-text redaction for todo task titles ("Sample Task N")."""
+    s2 = s.strip()
+    if not s2:
+        return s
+    if s2.startswith("CORPUS:"):
+        return s          # corpus-sweep markers are already synthetic
+    if s in text_map and text_map[s].startswith("Sample Task "):
+        return text_map[s]
+    task_counter[0] += 1
+    t = f"Sample Task {task_counter[0]}"
+    text_map[s] = t
+    return t
+
+
+def sub_list_name(n):
+    """Todo list display names → neutral "Sample List N" (never Person N)."""
+    n2 = n.strip()
+    if not n2:
+        return n
+    if n in name_map:
+        return name_map[n]
+    list_counter[0] += 1
+    m = f"Sample List {list_counter[0]}"
+    name_map[n] = m
+    return m
+
+
 _NOT_SCRUBBED = object()
 
 
-def scrub_key(k, v):
+def scrub_key(k, v, ctx=None):
     """Key-driven scrub rules; returns REPLACEMENT or _NOT_SCRUBBED."""
     if isinstance(k, str) and k.endswith("@odata.etag") and isinstance(v, str):
         return sub_id(v)
     if not isinstance(v, str):
         return _NOT_SCRUBBED
+    # OpenTypeExtension identity ids are vocabulary, not PII — keep verbatim.
+    if k == "id" and v.startswith("microsoft.graph.openTypeExtension."):
+        return v
+    # todo payloads: titles / list names / body content get todo-specific
+    # treatment BEFORE the generic person/subject rules.
+    if k == "title":
+        return sub_task_text(v)
+    if ctx == "todo" and k == "displayName":
+        return sub_list_name(v)
+    if ctx == "todo" and k == "content":
+        return "" if not v.strip() else "Sample body"
     if k in ("email", "address") and "@" in v and "example.com" not in v:
         return sub_email(v)
     if k in ("name", "displayName"):
@@ -100,21 +141,29 @@ def scrub_key(k, v):
     return _NOT_SCRUBBED
 
 
-def scrub(obj):
+def scrub(obj, ctx=None):
     if isinstance(obj, dict):
+        # A todo/lists @odata.context scopes the payload: displayNames are
+        # list names and body content is task text (not people/events).
+        child = "todo" if (
+            isinstance(obj.get("@odata.context"), str)
+            and "/todo/" in obj["@odata.context"]) else ctx
         out = {}
         for k, v in obj.items():
-            r = scrub_key(k, v)
-            out[k] = scrub(v) if r is _NOT_SCRUBBED else r
+            r = scrub_key(k, v, child)
+            out[k] = scrub(v, child) if r is _NOT_SCRUBBED else r
         return out
     if isinstance(obj, list):
-        return [scrub(x) for x in obj]
+        return [scrub(x, ctx) for x in obj]
     return obj
 
 
 def deepscrub(o, email_map=None, counter=None):
     """Belt-and-suspenders final pass over ALL string values."""
     EMAIL = re.compile(r'[A-Za-z0-9._%+\-]+@(?!example\.com)[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
+    # %40-encoded emails inside Graph URLs (consumer accounts have no
+    # outlook_* prefix — e.g. users('name%40gmail.com')).
+    PCT_EMAIL = re.compile(r'[A-Za-z0-9._\-]+%40(?!example\.com)[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
     # @odata.context URLs embed the internal Exchange identity and raw item
     # ids — rewrite them wherever they appear.
     ACCOUNT = re.compile(r'outlook_[A-Z0-9]+(?:%40|@)[a-zA-Z.]+')
@@ -136,6 +185,14 @@ def deepscrub(o, email_map=None, counter=None):
             s = EMAIL.sub(sub, s)
         if "graph.microsoft.com" in s or "%40" in s:
             s = ACCOUNT.sub("REDACTED_ACCOUNT", s)
+            if email_map is None:
+                email_map = {}
+            def pctsub(m):
+                e = m.group(0)
+                if e not in email_map:
+                    email_map[e] = "person%d@example.com" % (len(email_map) + 201)
+                return email_map[e]
+            s = PCT_EMAIL.sub(pctsub, s)
         s = ITEMID.sub("REDACTED_ITEM_ID", s)
         return s
     return o
@@ -154,6 +211,13 @@ def main():
         "event-single": "*me-events-AQMkADAwATM0MDAA.json",
         "event-instances": "*me-events-AQMkADAwATM0MDAA-instances_startD.json",
         "contacts-listing": "*me_contacts__top_10.json",
+        "todo-lists": "*me-todo-lists__top_10.json",
+        "todo-tasks-listing": "*me-todo-lists-AQMkADAwATM0MDAA-tasks__top_25.json",
+        # NOTE: the __extension.json capture is a plain tasks listing with no
+        # extensions[] payload; the carrier channel is documented by this
+        # single-task $entity GET instead (extensions() expand, 2026-08-24).
+        "todo-task-carrier-extension":
+            "20260824-150537-077-me-todo-lists-AQMkADAwATM0MDAA-tasks-AQMkADAwATM0MDAA.json",
     }
     failures = []
     for label, pattern in picks.items():

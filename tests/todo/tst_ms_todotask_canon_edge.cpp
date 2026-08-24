@@ -6,9 +6,11 @@
 // inspection.
 //
 // NOTE: no terminated raw string literals in this TU (O59 moc tooling rule).
-// Fixture-promotion slot deferred until a /me/todo corpus capture lands.
+// Fixture-promotion slot pins the sanitized 2026-08-24 /me/todo corpus
+// captures under tests/fixtures/vendor/microsoft/.
 
 #include <QTest>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -287,6 +289,80 @@ private slots:
 
         const auto promoteLoss = regs.transformation.inspect(mt, canon);
         QVERIFY2(promoteLoss.isLossless(), "promote must be lossless");
+    }
+
+    // Slot — the committed live-capture fixtures (sanitized 2026-08-24
+    // corpus extracts under tests/fixtures/vendor/microsoft/) promote
+    // cleanly: every listed task maps through the canon edge with wire
+    // identity, title, and importance→priority intact, and the todo-lists
+    // collection keeps its well-known-list vocabulary.
+    void promoteCommittedLiveFixture()
+    {
+        QFile tasksFile(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                        + QStringLiteral("/microsoft/todo-tasks-listing.json"));
+        QVERIFY2(tasksFile.open(QIODevice::ReadOnly),
+                 qPrintable(tasksFile.errorString()));
+        const QJsonDocument tasksDoc = QJsonDocument::fromJson(tasksFile.readAll());
+        QVERIFY2(!tasksDoc.isNull(), "todo-tasks-listing.json is not valid JSON");
+        const QJsonArray tasks = tasksDoc.object()
+                                     .value(QStringLiteral("value")).toArray();
+        QVERIFY2(!tasks.isEmpty(), "todo-tasks-listing.json has no value[]");
+
+        MsTodoTaskToCanonStage stage;
+        for (const auto& item : tasks) {
+            const QJsonObject wire = item.toObject();
+            const QJsonObject canon =
+                parse(stage.transform(
+                    QJsonDocument(wire).toJson(QJsonDocument::Compact)));
+
+            QVERIFY2(!canon.isEmpty(), "promote returned empty canon");
+            QCOMPARE(canon.value(QStringLiteral("uid")).toString(),
+                     wire.value(QStringLiteral("id")).toString());
+            QCOMPARE(canon.value(QStringLiteral("summary")).toString(),
+                     wire.value(QStringLiteral("title")).toString());
+
+            // importance ∈ {low, normal, high} → priority {9, 5, 1}
+            const QString importance =
+                wire.value(QStringLiteral("importance")).toString();
+            int expectedPriority = 5;
+            if (importance == QLatin1String("low"))
+                expectedPriority = 9;
+            else if (importance == QLatin1String("high"))
+                expectedPriority = 1;
+            QCOMPARE(canon.value(QStringLiteral("priority")).toInt(),
+                     expectedPriority);
+
+            // due / completed handling must survive the real wire shapes.
+            if (wire.contains(QLatin1String("dueDateTime"))) {
+                QCOMPARE(canon.value(QStringLiteral("due")).toObject()
+                             .value(QStringLiteral("dateTime")).toString(),
+                         wire.value(QStringLiteral("dueDateTime")).toObject()
+                             .value(QStringLiteral("dateTime")).toString());
+            }
+            if (wire.contains(QLatin1String("completedDateTime")))
+                QVERIFY(canon.contains(QLatin1String("completed")));
+
+            const QJsonObject extras = canon.value(providerExtrasKey())
+                                           .toObject()
+                                           .value(QStringLiteral("msgraph"))
+                                           .toObject();
+            QVERIFY(!extras.value(QStringLiteral("@odata.etag")).toString()
+                         .isEmpty());
+        }
+
+        // todo-lists: the default list keeps its well-known name.
+        QFile listsFile(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)
+                        + QStringLiteral("/microsoft/todo-lists.json"));
+        QVERIFY2(listsFile.open(QIODevice::ReadOnly),
+                 qPrintable(listsFile.errorString()));
+        const QJsonDocument listsDoc = QJsonDocument::fromJson(listsFile.readAll());
+        QVERIFY2(!listsDoc.isNull(), "todo-lists.json is not valid JSON");
+        const QJsonArray lists = listsDoc.object()
+                                     .value(QStringLiteral("value")).toArray();
+        QVERIFY2(!lists.isEmpty(), "todo-lists.json has no value[]");
+        QCOMPARE(lists.at(0).toObject()
+                     .value(QStringLiteral("wellknownListName")).toString(),
+                 QStringLiteral("defaultList"));
     }
 };
 

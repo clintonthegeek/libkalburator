@@ -1,0 +1,98 @@
+{
+ "etag": "\"E6bPkOHGuIE\"",
+ "items": [
+  {
+   "etag": "\"ZQVos5vzqX8\"",
+   "id": "0000000000000097",
+   "kind": "tasks#task",
+   "links": [
+    {
+     "description": "Sample Note 3",
+     "link": "https://mail.google.com/mail/#all/REDACTED",
+     "type": "email"
+    }
+   ],
+   "position": "00000000000000000000",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 4",
+   "updated": "2026-08-24T18:46:08.351Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "etag": "\"UE16B-otyCw\"",
+   "id": "0000000000000098",
+   "kind": "tasks#task",
+   "links": [
+    {
+     "description": "Sample Note 5",
+     "link": "https://mail.google.com/mail/#all/REDACTED",
+     "type": "email"
+    }
+   ],
+   "position": "00000000000000000001",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 6",
+   "updated": "2023-03-15T19:53:26.997Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "etag": "\"gYOAQfI314M\"",
+   "id": "0000000000000099",
+   "kind": "tasks#task",
+   "links": [
+    {
+     "description": "Sample Note 7",
+     "link": "https://mail.google.com/mail/#all/REDACTED",
+     "type": "email"
+    }
+   ],
+   "position": "00000000000000000002",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 8",
+   "updated": "2023-01-06T21:32:39.194Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "etag": "\"4KqceryMhys\"",
+   "id": "000000000000009a",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000000000000004",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "",
+   "updated": "2019-06-19T02:23:42.546Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "etag": "\"P35JnRZLzEA\"",
+   "id": "000000000000009b",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000000000000003",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "needsAction",
+   "title": "Sample Task 9",
+   "updated": "2019-06-19T02:23:42.546Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  },
+  {
+   "completed": "2012-03-19T03:07:01.000Z",
+   "due": "2012-01-16T00:00:00.000Z",
+   "etag": "\"_0y3GRGg4jA\"",
+   "id": "000000000000009c",
+   "kind": "tasks#task",
+   "links": [],
+   "position": "00000000002147483647",
+   "selfLink": "https://www.googleapis.com/tasks/v1/lists/REDACTED/tasks/REDACTED",
+   "status": "completed",
+   "title": "Sample Task 10",
+   "updated": "2019-06-19T02:23:42.546Z",
+   "webViewLink": "https://tasks.google.com/task/REDACTED?sa=6"
+  }
+ ],
+ "kind": "tasks#tasks"
+}
