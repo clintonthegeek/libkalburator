@@ -180,6 +180,35 @@ void GraphApiClient::deltaStep(const QString &collectionPath,
     });
 }
 
+void GraphApiClient::rawRequest(const QByteArray &method, const QString &path,
+                                const QByteArray &body, RawCallback done)
+{
+    const bool absolute = path.startsWith(QLatin1String("http://"))
+        || path.startsWith(QLatin1String("https://"));
+    QNetworkRequest request(absolute ? QUrl(path) : QUrl(m_baseUrl + path));
+    request.setTransferTimeout(60'000);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::NoLessSafeRedirectPolicy);
+    if (!m_token.isEmpty())
+        request.setRawHeader(QByteArrayLiteral("Authorization"),
+                             "Bearer " + m_token.toUtf8());
+    if (!body.isEmpty())
+        request.setRawHeader(QByteArrayLiteral("Content-Type"),
+                             QByteArrayLiteral("application/json"));
+
+    QNetworkReply *reply = m_nam->sendCustomRequest(request, method, body);
+    connect(reply, &QNetworkReply::finished, this,
+            [reply, done = std::move(done)] {
+                const int status = reply->attribute(
+                    QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                const bool networkError =
+                    reply->error() != QNetworkReply::NoError && status == 0;
+                const QByteArray bodyBytes = reply->readAll();
+                reply->deleteLater();
+                done(status, bodyBytes, networkError);
+            });
+}
+
 std::pair<std::optional<QJsonArray>, GraphError>
 GraphApiClient::fetchCollectionSync(const QString &path)
 {

@@ -43,3 +43,19 @@ add_test(NAME tst_graph_api_client COMMAND tst_graph_api_client)
 set_tests_properties(tst_graph_api_client PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# EEE Phase 7.C — MSGraphCalendarBackend against the Stage D mock.
+add_executable(tst_ms_graph_calendar_backend tst_ms_graph_calendar_backend.cpp)
+target_link_libraries(tst_ms_graph_calendar_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_mock_graph_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_ms_graph_calendar_backend COMMAND tst_ms_graph_calendar_backend)
+set_tests_properties(tst_ms_graph_calendar_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

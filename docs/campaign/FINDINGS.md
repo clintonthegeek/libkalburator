@@ -2915,3 +2915,18 @@ Post-fix probe results: rich weekly ET probe G→C→G = 18 diffs (all
 declared); all-day probe = 10 (all declared); both demoted bodies ACCEPTED
 by the server; canon-compare divergences reduce to per-copy identity
 (uid/iCalUId/created/lastModified/url) plus (e)/(g)/(h).
+
+### O62 — RESOLVED — recurring async-lifetime trap; house rule now explicit (found 2026-08-23)
+
+Three occurrences this campaign of one disease: **async continuations
+referencing dead stack frames.** (1) `GraphApiClient`'s collection walk
+self-captured a stack-local `std::function` by value before assignment
+(`bad_function_call`); (2) the backend apply-batch draft captured the
+enqueueOperation functor's locals by reference (`[&]`) while callbacks fire
+on later event-loop turns (SIGSEGV); (3) the same pattern nearly shipped in
+the mock-server era helpers. Rule going forward: any state an async chain
+mutates or reads MUST be heap-owned (`shared_ptr<struct>` captured by value)
+or be a member whose owner provably outlives the chain; recursive step
+functions must re-arm through the heap state, never through stack captures.
+Both 7.C components now follow it (GraphApiClient::getPage member recursion;
+MSGraphCalendarBackend::ApplyState).

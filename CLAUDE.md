@@ -87,15 +87,23 @@ uid/iCalUId confirmed as per-copy anchors (regenerate per create). Probe
 events cleaned up; runner is `tools/msroundtrip` (promote/demote/roundtrip/
 canon-compare).
 
-Suite baseline: **185 total / 183 passing**
-(same two Radicale-dependent slots). Pending next actions, in order: (1)
-7.B live checkpoint on a real Outlook.com event (USER-RUN); (2) remaining
-7.C work: `MSGraphCalendarBackend` fetch/applyRecords on the GraphApiClient +
-Stage D primitives (design decision owed: calendar backends hand out
-Incidence::Ptr — decide whether Graph JSON converts via pipeline
-ms-event→canon→iCal inside the backend or the engine boundary grows a
-JSON-native path); (3) Phase 3 People/Tasks edges; (4) Phases 4–6 + matrix.
-NOT YET PUSHED to origin — push when convenient.
+**Phase 7.C v1 DONE** (`MSGraphCalendarBackend`, Stage-D verified):
+records carry RAW ms-event wire JSON (`nativeShapes={calendar,ms-event}`),
+engine promotes via the registered 7.B edge — design decision RESOLVED
+(pipeline-inside-backend for the Incidence legacy surface only; the engine
+boundary stays record-native). Writes POST/PATCH/DELETE sequentially-async,
+creates bridge ids via WriteOperation::idAliases, updates PATCH-in-place
+per O61(e). New FINDINGS **O62**: async-lifetime house rule made explicit
+(heap-owned state; three occurrences this campaign).
+
+Suite baseline: **186 total / 183 passing**
+(same two Radicale-dependent slots + `tst_backend_thread_relocation`
+load-flaky under full-suite parallelism, passes 3/3 isolated with and
+without changes — same documented family). Pending next actions, in order:
+(1) 7.C delta-walk integration + calendar discovery surface; (2) Phase 3
+People/Tasks edges (Google contacts fixtures already committed); (3)
+Phases 4–6 + convergence matrix. NOT YET PUSHED to origin — push when
+convenient.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 

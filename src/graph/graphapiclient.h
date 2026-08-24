@@ -67,6 +67,13 @@ public:
     void deltaStep(const QString &collectionPath, const QString &deltaToken,
                    DeltaCallback done);
 
+    using RawCallback =
+        std::function<void(int status, const QByteArray &body, bool networkError)>;
+    /// Arbitrary-method request against `<path>` (relative) — the backend
+    /// write path's primitive (POST/PATCH/DELETE). Absolute URLs also work.
+    void rawRequest(const QByteArray &method, const QString &path,
+                    const QByteArray &body, RawCallback done);
+
     // Synchronous conveniences (tests/tools; spin a local event loop).
     std::pair<std::optional<QJsonArray>, GraphError>
     fetchCollectionSync(const QString &path);
