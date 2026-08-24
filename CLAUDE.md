@@ -78,27 +78,61 @@ ordered next actions, findings index). Findings: **O57–O62** in
   profile declared first (`docs/2026-08-23-google-person-edge-loss-profile.md`);
   carriers ride Google People `clientData` rows (the resource's only
   extension point; write-back semantics UNVERIFIED until checkpoint);
-  uid ⇄ resourceName (per-account anchor); ContactsStockShapes at
-  **7 edges**; `tst_google_person_canon_edge` 7 slots incl. promotion of
-  all 72 sanitized fixture connections.
+  uid ⇄ resourceName (per-account anchor); `tst_google_person_canon_edge`
+  7 slots incl. promotion of all 72 sanitized fixture connections.
+
+- Phase 3 COMPLETE (`google-person`, `ms-contact`, `google-task`,
+  `ms-todotask` edges all landed stub-level, loss profiles declared first):
+  - contacts: `mscontactcanonstages` — flat Graph name collapses onto
+    names[0], fixed phone/address buckets typed on promote, positional
+    primaryEmailAddress ⇒ primary flag, carriers ride `kalburator.canon`
+    open extensions (survival UNVERIFIED, O61(e) class);
+    ContactsStockShapes at **9 edges**; `tst_ms_contact_canon_edge`
+    (7 slots incl. contacts-listing.json fixture promotion).
+  - todo: `googletaskcanonstages` (NO carrier channel exists on Tasks —
+    unrepresented props declared Dropped honestly) and
+    `mstodotaskcanonstages` (recurrence reuses the 7.B converter;
+    cannot-represent rulings + EXDATEs ride the open-extension carrier;
+    importance⇄priority {low:9,normal:5,high:1}; checklistItems/
+    linkedResources = transport, out of edge scope); TodoStockShapes at
+    **9 edges**; suites `tst_google_task_canon_edge` (6 slots),
+    `tst_ms_todotask_canon_edge` (7 slots incl. unrepresentable-RRULE
+    carry drill).
+  - Deferred: task-side corpus captures (corpus sweeps never covered
+    Google Tasks or /me/todo) + live checkpoints incl. open-extension
+    carrier survival.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();
 offset-less wall time must be constructed directly IN the target zone),
 O62 (async continuations must own heap-held state — three occurrences this
-campaign), O59 tooling notes (moc × terminated raw string literals = silent
+campaign), O63 (stock-shape edge-count pins must be grepped/updated in the
+SAME commit that grows an `edges()` list; Graph `dateTimeTimeZone` is the
+TYPE name, its zone property key is plain `timeZone`), O64 (the Phase-6
+crossing gate catches per-edge suite blindness — google-person demote was
+silently dropping email display names; fixed via displayName, not declared
+away), O59 tooling notes (moc × terminated raw string literals = silent
 no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **187 total / 184 passing** (two documented Radicale slots;
+- Identity layer LANDED (proposal §5): `src/identity/` — SQLite registry
+  `(domain, record-uid) → entity-id`; one rule: contacts emails[].value ↔
+  calendar organizer.email/attendees[].email share an entity; never a
+  merge; unlink dissolves only the own link. `tst_identity_links` 10 slots.
+- Phase 6 pipeline gate LANDED: `tst_gm_pipeline_convergence` (8 slots) —
+  every vendor crossing must stay within the declared LossProfile union;
+  plus the GENERATED convergence ledger at
+  `docs/campaign/eee/CONVERGENCE-MATRIX.md` (regenerate with
+  `tools/matrixgen`; byte-pinned by the suite).
+
+Suite baseline: **192 total / 190 passing** (two documented Radicale slots;
 `tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
 load-flaky under full-suite parallelism but pass isolated).
 
 **Pending next actions (ordered):**
-1. Phase 3 remaining: Graph `contact` ⇄ canon edge (fixture
-   `contacts-listing.json` committed), then Tasks/Todos edges both vendors.
-2. Phases 4–6 + convergence matrix generation.
-3. Deferred checkpoints: People clientData write-back semantics; Graph
-   calendar write-path drill via msroundtrip.
+1. Phase 6 remaining slices: engine-level vendor-shaped hub convergence;
+   live checkpoint (capture→translate→replay→compare); task-side corpus
+   captures → fixture promotion for both todo edges.
+2. Tag the phase boundary; consumer pin bumps voluntary.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 

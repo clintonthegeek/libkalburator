@@ -4,7 +4,7 @@ Vendor-convergence (EEE) campaign per
 `docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md`. This file is
 updated in the same commit as plan state (phase-status-docs rule).
 
-**Last updated:** 2026-08-23
+**Last updated:** 2026-08-24 (identity layer + Phase 6 pipeline/matrix landed)
 
 ## Current phase snapshot
 
@@ -17,7 +17,15 @@ updated in the same commit as plan state (phase-status-docs rule).
 | Graph fixtures | **done** | Sanitizer + 5 committed extracts + live-fixture promotion slot (see Next actions #2). |
 | Phase 7.B — ms-event ⇄ canon edge | **done incl. live checkpoint** | Converter suite FIRST (`tst_recurrence_pattern_converter`, 31 slots: every §1.3 row both directions, every cannot-represent ruling, O57(e)/(f) sentinel handling, carried-set re-promote identity, representable-set convergence). Then stages `mseventcanonstages.{h,cpp}` + catalogue + registration (now 9 edges) + `tst_ms_event_canon_edge` (10 slots): captured-shaped promote (O57 realities), declared-loss demote walk, C→G→C byte-equal identity incl. unrepresentable-rule carrier path, registry inspection, Windows-zone split-brain (O57(b)) via vendored CLDR map (`windowszonesmap.h`, 139 zones), floating pin+carrier, exception⇒recurrenceId keying. Declared-vs-actual divergence = none found. **Live checkpoint PASSED 2026-08-23** (delegated run): caught one BLOCKING bug the stub suite missed — sentinel `range.endDate:"0001-01-01"` on numbered ranges honored as real UNTIL ⇒ series amputation (fixed; O61(a)) — plus three stash/passthrough defects (O61(b)-(d), fixed). Demoted bodies accepted by the server; server copies promote to identical canon modulo per-copy identity. Standing discovery: carriers do NOT survive creates on consumer Outlook.com (O61(e)) — Reversible class is offline-only; backends must prefer PATCH over re-create. |
 | Phase 7.C polish — persistence + per-calendar paths | **done (Stage-D verified)** | `setCacheDir()`: delta tokens + merged record caches persist as atomic-replace JSON; a restarted backend presents the PERSISTED token on its first request (no re-listing) and merges changes into the restored cache. Per-calendar event paths: discovered calendars get `/me/calendars/{id}/events` for both reads (delta walks) and writes (POST/PATCH/DELETE). Suite: `tst_ms_graph_calendar_backend` 11 slots. Baseline 186/184. |
-| Phase 3 — google-person ⇄ contacts-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-google-person-edge-loss-profile.md`); `googlepersoncanonstages.{h,cpp}` + catalogue, registered in ContactsStockShapes (**7 edges** now). Carriers ride Google People `clientData` rows (the resource's only extension point) under the x-canon-* key discipline. uid ⇄ resourceName (per-account anchor). Gated by `tst_google_person_canon_edge` (7 slots incl. all-72-connections fixture promotion). Live checkpoint deferred until googlecli grows people write verbs. |
+| Phase 3 — google-person ⇄ contacts-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-google-person-edge-loss-profile.md`); `googlepersoncanonstages.{h,cpp}` + catalogue, registered in ContactsStockShapes. Carriers ride Google People `clientData` rows (the resource's only extension point) under the x-canon-* key discipline. uid ⇄ resourceName (per-account anchor). Gated by `tst_google_person_canon_edge` (7 slots incl. all-72-connections fixture promotion). Live checkpoint deferred until googlecli grows people write verbs. |
+| Phase 3 — ms-contact ⇄ contacts-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-ms-contact-edge-loss-profile.md`); `mscontactcanonstages.{h,cpp}` + catalogue; ContactsStockShapes now **9 edges**. Flat Graph name collapses onto names[0]; fixed phone/address buckets typed on promote; positional primaryEmailAddress ⇒ primary flag; birthday rides verbatim {dateTime} stash form; carriers ride `kalburator.canon` open extensions (survival UNVERIFIED — O61(e) class). uid ⇄ id, no duplicate extras copy (byte-equal C→MS→C). Gated by `tst_ms_contact_canon_edge` (7 slots incl. contacts-listing.json fixture promotion). |
+| Phase 3 — google-task ⇄ todo-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-google-task-edge-loss-profile.md`); `googletaskcanonstages.{h,cpp}` + catalogue. **NO carrier channel exists** on the Tasks resource — unrepresented canon props (priority/recurrence/percentComplete/…) declared Dropped honestly. due Degraded to date-part; status collapses to needsAction/completed; parent+position ⇄ parentUid/sortOrder. Gated by `tst_google_task_canon_edge` (6 slots). Fixture-promotion slot DEFERRED until a tasks corpus capture lands. |
+| Phase 3 — ms-todotask ⇄ todo-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-ms-todotask-edge-loss-profile.md`); `mstodotaskcanonstages.{h,cpp}` + catalogue; TodoStockShapes now **9 edges**. Recurrence reuses the 7.B converter: MS→RFC5545 lossless promote; cannot-represent rulings + EXDATEs ride the `kalburator.canon` open-extension carrier (byte-equal re-promote). importance⇄priority via {low:9,normal:5,high:1} table; body contentType splits description/descriptionHtml; completed zone dropped to UTC form (declared Simplified); checklistItems/linkedResources = transport (separate endpoints), out of edge scope. Gated by `tst_ms_todotask_canon_edge` (7 slots incl. unrepresentable-RRULE carry drill). Fixture-promotion slot DEFERRED until a /me/todo corpus capture lands. |
+| Identity layer (proposal §5) | **done** | `src/identity/{identitystore,identityresolver}`: SQLite registry `(domain, record-uid) → entity-id` (BaselineStore template, schema v1, WAL). First resolver, one rule: contacts `emails[].value` ↔ calendar `organizer.email`/`attendees[].email` share an entity; deterministic sorted-email adoption; NEVER a merge. Unlink dissolves only the own link; last-unlink prunes email evidence so dead entities don't resurrect. Gated RED→GREEN by `tst_identity_links` (10 slots incl. key extraction against real google-person/ms-event/google-event promote output). Additive; opt-in per host. |
+| Phase 6 — pipeline convergence gate | **done** | `tst_gm_pipeline_convergence`: for every vendor pair + direction (calendar/contacts/todo), canon promoted losslessly from a vendor-A wire crosses vendor B (demote→re-promote); EVERY differing top-level canon property must be declared in B's demote LossProfile — undeclared divergence = RED. First run caught O64 (google-person email displayName drop — fixed in stage, not declared away). All crossings now within declared unions. |
+| Phase 6 — convergence matrix | **done** | GENERATED ledger committed at `docs/campaign/eee/CONVERGENCE-MATRIX.md`; generator = `ConvergenceMatrix::generate()` (`src/shape/convergencematrix.h`) + `tools/matrixgen` CLI; byte-enforced by `committedMatrixMatchesGenerated` (O63 discipline applied to the ledger — growing an edges() list without regenerating is RED). |
+| Phase 6 — engine-level vendor-shaped hub | not started | Google-shaped and Graph-shaped stub backends against one GenericSqliteBackend hub; fixpoint convergence; O55/O56 aliasing/conflict machinery on vendor-shaped records. |
+| Phase 6 — live checkpoint | not started | One real round-trip: capture from Google, translate to Graph shape, replay into a Graph-backed store, return, compare vs canon with only declared losses differing. |
 
 
 | Phase 7.C — `MSGraphCalendarBackend` delta + discovery | **done (Stage-D verified)** | fetchItems now drives /delta walks: initial walk seeds a merged cache + resume token; later walks upsert changes (@removed ⇒ evict) and report the FULL merged collection (E7 sync-collection semantics); 410 ResyncRequired self-heals via one fresh initial walk (O42 pattern). Discovery: /me/calendars → calendarDiscovered + availableCollections/discoveredCalendar DTOs (VEVENT-only; Graph tasks live in /me/todo/lists). Mock server grew invalidateDeltaTokens() for the expiry drill. Suite: `tst_ms_graph_calendar_backend` 9 slots. |
@@ -35,13 +43,25 @@ updated in the same commit as plan state (phase-status-docs rule).
    added to `tst_ms_event_canon_edge` (11 slots).
 3. ~~7.C~~ DONE (three slices: v1 backend, delta+discovery,
    persistence+per-calendar paths; Stage-D verified throughout).
-4. Phase 3 remaining: Graph `contact` ⇄ canon edge
-   (`tests/fixtures/vendor/microsoft/contacts-listing.json` fixture
-   committed), then Tasks/Todos edges for both vendors
-   (`google-task` ⇄ todos canon; Graph `todoTask`).
-5. Phases 4–6; convergence matrix generation.
-6. Deferred live checkpoints: People clientData write-back semantics and
-   a Graph calendar write-path drill via msroundtrip (O61(e)-class).
+4. ~~Phase 3 remaining~~ DONE 2026-08-23: Graph `contact` ⇄ canon edge
+   (fixture promotion from committed contacts-listing.json) + Tasks/Todos
+   edges both vendors (`google-task` ⇄ todos canon; Graph `ms-todotask`).
+   All stub-level; task-side fixture captures + live checkpoints deferred
+   (corpus sweeps never covered /me/todo or Google Tasks; carriers are the
+   specific O61(e)-class question).
+5. ~~Identity layer + Phase 6 pipeline/matrix~~ DONE 2026-08-24 (see
+   snapshot rows; FINDINGS O64 caught+fixed by the gate). Remaining Phase-6
+   slices, ordered:
+   a. Engine-level vendor-shaped hub convergence (stub backends vs
+      GenericSqliteBackend; fixpoint; O55/O56 on vendor-shaped records).
+   b. Phase-6 live checkpoint (capture→translate→replay→compare).
+   c. Task-side corpus captures (Google Tasks, /me/todo) → fixture
+      promotion slots for the two todo edges.
+   d. Deferred live checkpoints: People clientData write-back semantics,
+      Graph calendar write-path drill via msroundtrip (O61(e)-class),
+      open-extension carrier survival on ms-contact/ms-todotask.
+6. Tag the phase boundary (house convention) when the remaining 6.a/6.b
+   land; consumers pin-bump voluntarily.
 
 ## Findings index (this campaign)
 
@@ -70,8 +90,19 @@ updated in the same commit as plan state (phase-status-docs rule).
   helpers; wall-time zone interpretation must never route through the
   process-local zone (both hit and fixed during 7.B).
 
+- **O63** — RESOLVED: stale edge-count pin (`tst_vcard_plugin` expected 5
+  while stock shapes had 7 since google-person landed — pre-existing fail
+  on main, missed by baseline); Graph dateTimeTimeZone type-name vs
+  timeZone property-key trap (O60 family).
+
+- **O64** — RESOLVED: google-person demote dropped canon email display
+  names (Google home = `emailAddresses[].displayName`); caught by the
+  Phase-6 pipeline convergence gate, fixed in the stage.
+
 ## Baseline
 
-187 tests total / 184 passing. Known failures are the two documented
-live-Radicale-state-dependent slots (`tst_backend_signals`,
-`tst_remotecalendarbackend`).
+192 tests total / 190 passing (two documented live-Radicale-state-dependent
+slots `tst_backend_signals`, `tst_remotecalendarbackend`; occasionally
+load-flaky under full-suite parallelism but pass isolated). Identity layer
+added `tst_identity_links` (10); Phase 6 added `tst_gm_pipeline_convergence`
+(8 slots incl. the matrix byte-pin).

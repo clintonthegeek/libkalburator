@@ -2930,3 +2930,31 @@ or be a member whose owner provably outlives the chain; recursive step
 functions must re-arm through the heap state, never through stack captures.
 Both 7.C components now follow it (GraphApiClient::getPage member recursion;
 MSGraphCalendarBackend::ApplyState).
+
+### O63 — RESOLVED — stale stock-shape edge-count pin + Graph dateTimeTimeZone naming trap (found 2026-08-23, Phase 3 close-out)
+
+(a) `tst_vcard_plugin::stockShapesHasFiveEdges` expected 5 edges while
+ContactsStockShapes had carried **7** since the google-person landing
+(927390d) — i.e. the slot was failing on `main` and missed by the
+consolidated baseline count. Root cause: the Phase-3 google-person commit
+updated STATUS ("7 edges") but not the count-pinning plugin test. Rule:
+when a StockShapes `edges()` list grows, grep for `edges().size()` across
+the domain's tests IN THE SAME COMMIT (both pins now read 9).
+
+(b) Graph's `dateTimeTimeZone` is the TYPE name; its zone PROPERTY is
+plain `timeZone` (`dueDateTime: {dateTime, timeZone}`). Writing the type
+name as the zone key silently promotes an empty-string zone through
+QJsonValue defaults (O60 family). Caught by a promote assertion in
+`tst_ms_todotask_canon_edge`, fixed in the fixture.
+
+### O64 — RESOLVED — google-person demote dropped canon email display names; caught by the Phase-6 convergence gate (found 2026-08-24)
+
+`tst_gm_pipeline_convergence::contactCrossingMsToGoogleStaysDeclared` found
+`emails` diverging across MS→G UNDECLARED (canonToGooglePersonLoss declares
+emails lossless): CanonToGooglePersonStage emitted only {value, type,
+metadata.primary}, silently dropping the canon email entry's `name` key.
+Google's wire home exists — `emailAddresses[].displayName`. Fixed both ways
+(promote maps displayName→name via mapRows so leftovers-stash no longer
+triggers for plain named emails; demote re-emits displayName). Lesson: the
+pipeline-level crossing gate catches per-edge suite blindness because each
+edge's own round-trip never exercises a FOREIGN edge's richer canon shape.
