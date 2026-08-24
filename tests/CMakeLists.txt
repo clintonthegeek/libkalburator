@@ -3,10 +3,12 @@
 # related test executables (QTEST_MAIN style).
 
 add_subdirectory(blob)
+add_subdirectory(convergence)
 add_subdirectory(graph)
 add_subdirectory(engine)
 add_subdirectory(journal)
 add_subdirectory(storage)
+add_subdirectory(identity)
 add_subdirectory(calendar)
 add_subdirectory(shape)
 add_subdirectory(todo)
