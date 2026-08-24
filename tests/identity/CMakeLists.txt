@@ -23,3 +23,6 @@ kalburator_add_identity_test(tst_person_directory)
 target_compile_definitions(tst_person_directory
     PRIVATE KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
 )
+
+# Part IV doctrine pins — ethics made falsifiable
+kalburator_add_identity_test(tst_doctrine_pins)

@@ -129,7 +129,7 @@ no-output; AUTOMOC timestamp staleness).
   `docs/campaign/eee/CONVERGENCE-MATRIX.md` (regenerate with
   `tools/matrixgen`; byte-pinned by the suite).
 
-Suite baseline: **193 total / 191 passing** (two documented Radicale slots;
+Suite baseline: **194 total / 192 passing** (two documented Radicale slots;
 `tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
 load-flaky under full-suite parallelism but pass isolated).
 
