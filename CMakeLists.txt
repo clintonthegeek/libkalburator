@@ -427,6 +427,8 @@ set(KALBURATOR_CONTACTS_HEADERS
 set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/vcardproperties.cpp
     src/contacts/contactscanonproperties.cpp
+    src/contacts/googlepersonproperties.cpp
+    src/contacts/googlepersoncanonstages.cpp
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
     src/contacts/vcard3to4transformation.cpp

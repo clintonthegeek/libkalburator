@@ -1,6 +1,8 @@
 #include "contactsstockshapes.h"
 #include "vcardproperties.h"
 #include "vcardcanonstages.h"
+#include "googlepersonproperties.h"
+#include "googlepersoncanonstages.h"
 #include "vcard3to4transformation.h"
 #include "lossprofile.h"
 
@@ -38,7 +40,12 @@ QList<std::pair<Shape::Shape, Shape::PropertyCatalogue>> ContactsStockShapes::pe
 {
     const Shape::Shape vcard4{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard4")} };
     const Shape::Shape vcard3{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard3")} };
-    return { { vcard4, makeVCardCatalogue() }, { vcard3, makeVCardCatalogue() } };
+    // EEE Phase 3 — Google People API `Person` as a peer encoding.
+    const Shape::Shape googlePerson{ DomainId{QStringLiteral("contacts")},
+                                     EncodingId{QStringLiteral("google-person")} };
+    return { { vcard4, makeVCardCatalogue() },
+             { vcard3, makeVCardCatalogue() },
+             { googlePerson, makeGooglePersonCatalogue() } };
 }
 
 QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
@@ -46,6 +53,8 @@ QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
     const Shape::Shape canon{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("canon")} };
     const Shape::Shape v4{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard4")} };
     const Shape::Shape v3{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard3")} };
+    const Shape::Shape googlePerson{ DomainId{QStringLiteral("contacts")},
+                                     EncodingId{QStringLiteral("google-person")} };
 
     return {
         // Identity hub: canon → canon
@@ -58,6 +67,13 @@ QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
         TransformationEdge{ v3, v4, LossProfile{}, std::make_shared<VCard3To4Stage>() },
         // vcard4 → vcard3: lossy (existing)
         TransformationEdge{ v4, v3, vcard4ToVcard3Loss(), std::make_shared<VCard4To3Stage>() },
+        // EEE Phase 3 — google-person ⇄ canon (loss profile declared first:
+        // docs/2026-08-23-google-person-edge-loss-profile.md)
+        TransformationEdge{ googlePerson, canon, LossProfile{},
+                            std::make_shared<GooglePersonToCanonStage>() },
+        TransformationEdge{ canon, googlePerson,
+                            canonToGooglePersonLoss(),
+                            std::make_shared<CanonToGooglePersonStage>() },
     };
 }
 
