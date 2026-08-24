@@ -71,3 +71,10 @@ kalburator_add_contacts_test(tst_google_person_canon_edge)
 target_compile_definitions(tst_google_person_canon_edge
     PRIVATE KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
 )
+
+# EEE Phase 3 — ms-contact ⇄ contacts-canon edge (loss-profile +
+# round-trip + committed-fixture promotion)
+kalburator_add_contacts_test(tst_ms_contact_canon_edge)
+target_compile_definitions(tst_ms_contact_canon_edge
+    PRIVATE KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)

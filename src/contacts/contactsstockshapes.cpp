@@ -3,6 +3,8 @@
 #include "vcardcanonstages.h"
 #include "googlepersonproperties.h"
 #include "googlepersoncanonstages.h"
+#include "mscontactproperties.h"
+#include "mscontactcanonstages.h"
 #include "vcard3to4transformation.h"
 #include "lossprofile.h"
 
@@ -43,9 +45,13 @@ QList<std::pair<Shape::Shape, Shape::PropertyCatalogue>> ContactsStockShapes::pe
     // EEE Phase 3 — Google People API `Person` as a peer encoding.
     const Shape::Shape googlePerson{ DomainId{QStringLiteral("contacts")},
                                      EncodingId{QStringLiteral("google-person")} };
+    // EEE Phase 3 — Microsoft Graph `contact` as a peer encoding.
+    const Shape::Shape msContact{ DomainId{QStringLiteral("contacts")},
+                                  EncodingId{QStringLiteral("ms-contact")} };
     return { { vcard4, makeVCardCatalogue() },
              { vcard3, makeVCardCatalogue() },
-             { googlePerson, makeGooglePersonCatalogue() } };
+             { googlePerson, makeGooglePersonCatalogue() },
+             { msContact, makeMsContactCatalogue() } };
 }
 
 QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
@@ -55,6 +61,8 @@ QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
     const Shape::Shape v3{ DomainId{QStringLiteral("contacts")}, EncodingId{QStringLiteral("vcard3")} };
     const Shape::Shape googlePerson{ DomainId{QStringLiteral("contacts")},
                                      EncodingId{QStringLiteral("google-person")} };
+    const Shape::Shape msContact{ DomainId{QStringLiteral("contacts")},
+                                  EncodingId{QStringLiteral("ms-contact")} };
 
     return {
         // Identity hub: canon → canon
@@ -74,6 +82,13 @@ QList<Shape::TransformationEdge> ContactsStockShapes::edges() const
         TransformationEdge{ canon, googlePerson,
                             canonToGooglePersonLoss(),
                             std::make_shared<CanonToGooglePersonStage>() },
+        // EEE Phase 3 — ms-contact ⇄ canon (loss profile declared first:
+        // docs/2026-08-23-ms-contact-edge-loss-profile.md)
+        TransformationEdge{ msContact, canon, LossProfile{},
+                            std::make_shared<MsContactToCanonStage>() },
+        TransformationEdge{ canon, msContact,
+                            canonToMsContactLoss(),
+                            std::make_shared<CanonToMsContactStage>() },
     };
 }
 
