@@ -214,7 +214,8 @@ QByteArray GooglePersonToCanonStage::transform(const QByteArray& googleBytes) co
             const auto mapped = mapRows(
                 emailSrc,
                 { { QStringLiteral("value"), QStringLiteral("value") },
-                  { QStringLiteral("type"), QStringLiteral("type") } },
+                  { QStringLiteral("type"), QStringLiteral("type") },
+                  { QStringLiteral("displayName"), QStringLiteral("name") } },
                 &leftovers);
             QJsonArray fixed;
             for (int i = 0; i < mapped.size(); ++i) {
@@ -607,6 +608,9 @@ QByteArray CanonToGooglePersonStage::transform(const QByteArray& canonBytes) con
                 const QString t = e.value(QStringLiteral("type")).toString();
                 if (!t.isEmpty())
                     entry.insert(QStringLiteral("type"), t);
+                const QString name = e.value(QStringLiteral("name")).toString();
+                if (!name.isEmpty())
+                    entry.insert(QStringLiteral("displayName"), name);
                 if (e.value(QStringLiteral("primary")).toBool(false))
                     entry.insert(QStringLiteral("metadata"),
                                  QJsonObject{ { QStringLiteral("primary"), true } });
