@@ -8,6 +8,8 @@ updated in the same commit as plan state (phase-status-docs rule).
 
 ## Current phase snapshot
 
+| Phase 3 — google-person ⇄ contacts-canon edge | **done (stub-level)** | Loss profile declared first (`docs/2026-08-23-google-person-edge-loss-profile.md`); `googlepersoncanonstages.{h,cpp}` + catalogue, registered in ContactsStockShapes (**7 edges** now). Carriers ride Google People `clientData` rows (the resource's only extension point) under the x-canon-* key discipline. uid ⇄ resourceName (per-account anchor). Gated by `tst_google_person_canon_edge` (7 slots incl. all-72-connections fixture promotion). Live checkpoint deferred until googlecli grows people write verbs. |
+
 | Work item | State | Notes |
 |---|---|---|
 | Phase 0 — corpus + hygiene | **largely done** | Google corpus captured 2026-08-23 (32 events incl. a birthday-type series + 250-instance monthly series, 72 People connections, 9 groups, nextSyncToken walk); sanitized extracts committed under `tests/fixtures/vendor/google/` (generator: `tools/googlecli/make-fixtures.py`). Graph corpus still machine-local (`msgraph/captured/`, ~45 captures) — sanitize before committing any of it. |
@@ -31,8 +33,9 @@ updated in the same commit as plan state (phase-status-docs rule).
    (generator `tools/graphcli/make-fixtures.py`); committed-fixture slot
    added to `tst_ms_event_canon_edge` (11 slots).
 3. 7.C: `MSGraphCalendarBackend` on top of Stage D's mock server.
-4. Phase 3: Google People ⇄ contacts canon (fixtures already committed);
-   Google Tasks rides along.
+4. Phase 3: google-person edge DONE; remaining: Graph contact
+   (`contacts-listing.json` fixture committed), Tasks/Todos edges both
+   vendors.
 5. Phases 4–6; convergence matrix generation.
 
 ## Findings index (this campaign)
@@ -56,6 +59,6 @@ updated in the same commit as plan state (phase-status-docs rule).
 
 ## Baseline
 
-186 tests total / 183 passing. Known failures are the two documented
+187 tests total / 184 passing. Known failures are the two documented
 live-Radicale-state-dependent slots (`tst_backend_signals`,
 `tst_remotecalendarbackend`).

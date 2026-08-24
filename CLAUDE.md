@@ -87,6 +87,10 @@ uid/iCalUId confirmed as per-copy anchors (regenerate per create). Probe
 events cleaned up; runner is `tools/msroundtrip` (promote/demote/roundtrip/
 canon-compare).
 
+**Phase 3 google-person edge DONE** (loss profile declared first;
+clientData-row carriers; resourceName per-account anchor; 7-slot suite
+incl. committed-fixture promotion of all 72 sanitized connections).
+
 **7.C polish DONE** (persistence via `setCacheDir()` — atomic JSON,
 restart resumes from the persisted token with no re-listing; per-calendar
 event paths for reads AND writes):
