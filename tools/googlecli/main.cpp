@@ -306,6 +306,33 @@ int cmdPatch(Session &session, const QStringList &args)
     return 0;
 }
 
+// raw <METHOD> <path-or-url> [json-file] — escape hatch for any API
+// surface the CLI has no dedicated verb for (People clientData drills,
+// Tasks API writes, ...). Mirrors graphcli's `post`.
+int cmdRaw(Session &session, const QStringList &args)
+{
+    if (args.size() < 2) {
+        QTextStream(stderr) << "usage: googlecli raw <METHOD> <path-or-url> [json-file]\n";
+        return 2;
+    }
+    const QString method = args.at(0).toUpper();
+    QByteArray body;
+    if (args.size() > 2) {
+        bool ok = false;
+        body = readJsonFile(args.at(2), ok);
+        if (!ok) return 2;
+    }
+    const HttpResponse resp =
+        googleCall(session, method, args.at(1), body);
+    if (!resp.ok()) {
+        printGoogleError(QStringLiteral("raw %1").arg(method), resp.status,
+                         resp.body);
+        return 1;
+    }
+    QTextStream(stdout) << QString::fromUtf8(resp.body) << '\n';
+    return 0;
+}
+
 int cmdDelete(Session &session, const QStringList &args)
 {
     if (args.size() != 2) {
@@ -431,6 +458,8 @@ int main(int argc, char *argv[])
         return cmdDelete(session, rest);
     if (command == "sweep-clean")
         return cmdSweepClean(session, rest);
+    if (command == "raw")
+        return cmdRaw(session, rest);
 
     QTextStream(stderr) << "Unknown command: " << command << "\n\n";
     printUsage();

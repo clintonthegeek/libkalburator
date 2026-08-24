@@ -2975,3 +2975,45 @@ RESOLUTION time via the contact-owned email_index. Enforced by
 `tst_doctrine_pins::onlyEmailEvidenceBridgesRecords` (rule-4 pin), and
 the roster slot itself (end-to-end). Second consecutive campaign gate
 that caught what per-component suites structurally could not (cf. O64).
+
+### O66 — OPEN — live drill results, 2026-08-24: carrier-survival verdicts + todoTask wire truths (Tier A2/A3 session)
+
+Drills run against live consumer accounts (probes CORPUS-tagged, cleaned
+afterwards; captures stay machine-local under msgraph/captured/ and
+google/captured/).
+
+**(a) Carrier-survival verdicts — the O61(e) question, answered per channel:**
+
+| Channel | Verdict | Evidence |
+|---|---|---|
+| Google People `clientData` | **SURVIVED** create + fresh read (both x-canon rows intact, metadata stamped server-side) | people.createContact → people.get personFields=clientData |
+| Graph todoTask open extensions (`kalburator.canon`) | **PHANTOM** — echoed in the POST response, ABSENT on every read ($expand=extensions null on v1.0 AND beta) | POST /me/todo/lists/{id}/tasks → GET |
+| Graph contact open extensions | **SERVER-BROKEN** — PATCH accepted ("patched-ok") but ALL read surfaces fail: plain GET extensions=null; $expand+filter ⇒ HTTP 500 ErrorInternalServerError; direct extension path ⇒ HTTP 500 (v1.0 and beta) | consumer Outlook.com |
+
+Consequence for the loss profiles: People clientData is the FIRST proven
+live-Reversible channel on a consumer account. The Graph channels remain
+offline-only (O61(e) class) — and todoTask's phantom echo is WORSE than
+event-SVEP's honest strip: a naive implementation would trust the create
+response. Backends must re-READ after write to know what survived.
+
+**(b) todoTask wire truths (docs-always-lie department):**
+1. Creating a task WITH recurrence REQUIRES dueDateTime — undocumented
+   400 "The property 'dueDateTime' is required when creating recurrence".
+2. Server REWRITES your dueDateTime to align with the pattern (posted
+   2026-08-25T10:00 → stored 2026-08-31T00:00:00, the next occurrence).
+3. Sentinel family confirmed on tasks too: range.endDate "0001-01-01",
+   zeroed dayOfMonth/month/numberOfOccurrences (O57(e)/(f) disease, new organ).
+
+**(c) Google Tasks wire truths:** UI-recurrent tasks ("this happens every
+monday", "do this every three days") carry NO recurrence field of any kind
+on the wire — §3.1's ruling now corpus-backed. due is date-only midnight
+UTC ".000Z"; position strings are lexicographic ("00000000000000000002").
+
+**(d) Tooling notes:** graphcli `patch`/`delete` cover event|contact|
+calendar only (no task verbs); googlecli grew a `raw <METHOD> <path-or-url>
+[file]` escape hatch this session. Contact ids ending '=' must NOT be
+URL-encoded in paths (encoded form ⇒ 404), but $expand filter values need
+%27 quoting — and the filtered expand 500s anyway.
+
+**(e) OAuth:** Tasks API must be enabled per GCP project even when the
+scope is granted (accessNotConfigured 403 until console activation).
