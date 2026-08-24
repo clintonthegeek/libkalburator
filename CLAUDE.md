@@ -77,6 +77,16 @@ steps with typed 410 ResyncRequired, error.code extraction. Wire nuance
 pinned: a non-empty queued change page answers nextLink; the fixpoint is
 "empty set + deltaLink" — walk until complete.
 
+**7.B LIVE CHECKPOINT PASSED** (commit db8a993, delegated run): caught a
+BLOCKING stub-invisible bug — sentinel `range.endDate:"0001-01-01"` on
+numbered ranges was honored as real UNTIL (series amputation; O61(a),
+fixed) — plus 3 stash/passthrough defects (O61(b)-(d), fixed). **Carriers
+do NOT survive creates on consumer Outlook.com** (O61(e)): Reversible loss
+class is offline-only; 7.C must prefer PATCH over delete+re-create.
+uid/iCalUId confirmed as per-copy anchors (regenerate per create). Probe
+events cleaned up; runner is `tools/msroundtrip` (promote/demote/roundtrip/
+canon-compare).
+
 Suite baseline: **185 total / 183 passing**
 (same two Radicale-dependent slots). Pending next actions, in order: (1)
 7.B live checkpoint on a real Outlook.com event (USER-RUN); (2) remaining
