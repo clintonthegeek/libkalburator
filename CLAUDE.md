@@ -128,11 +128,20 @@ Suite baseline: **192 total / 190 passing** (two documented Radicale slots;
 `tst_backend_thread_relocation`/`tst_engine_cancellation` occasionally
 load-flaky under full-suite parallelism but pass isolated).
 
-**Pending next actions (ordered):**
-1. Phase 6 remaining slices: engine-level vendor-shaped hub convergence;
-   live checkpoint (capture→translate→replay→compare); task-side corpus
-   captures → fixture promotion for both todo edges.
-2. Tag the phase boundary; consumer pin bumps voluntary.
+**Pending next actions (ordered)** — Tier A of the adopted roadmap in
+`docs/campaign/eee/2026-08-24-reconnaissance-assessment-and-roadmap.md`
+(read it; it also holds the Tier-B interior expeditions — scheduling/
+free-busy, visibility/ACLs, resource calendars, taxonomy entities, MAPI
+named properties, beta-horizon watch — and the binding doctrine: corpus-
+first per interior, crossing-gate coverage mandatory, matrix regenerated
+in the same commit as edge growth, PATCH over re-create while carrier
+survival is unproven):
+1. A1 engine-level vendor-shaped hub convergence.
+2. A2 task-side corpus captures → fixture promotion for both todo edges.
+3. A3 carrier-survival drills (People clientData; open extensions;
+   Graph write path via msroundtrip).
+4. A4 Phase-6 live checkpoint (capture→translate→replay→compare).
+5. A5 tag the phase boundary; consumer pin bumps voluntary.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)
 

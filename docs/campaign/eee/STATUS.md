@@ -4,6 +4,11 @@ Vendor-convergence (EEE) campaign per
 `docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md`. This file is
 updated in the same commit as plan state (phase-status-docs rule).
 
+**Doctrine + roadmap:** `2026-08-24-reconnaissance-assessment-and-roadmap.md`
+(adopted 2026-08-24) — the strata assessment, justice verdict, and the
+Tier-A/Tier-B expedition order. Future sessions: read this STATUS for live
+state, that roadmap for direction.
+
 **Last updated:** 2026-08-24 (identity layer + Phase 6 pipeline/matrix landed)
 
 ## Current phase snapshot
@@ -35,6 +40,25 @@ updated in the same commit as plan state (phase-status-docs rule).
 
 ## Next actions (ordered)
 
+Per the adopted roadmap (Tier A — owed gates; rationale + Tier-B interiors
+in `2026-08-24-reconnaissance-assessment-and-roadmap.md`):
+
+1. **A1** Engine-level vendor-shaped hub convergence — stub G-shaped/
+   MS-shaped backends vs one `GenericSqliteBackend` hub; fixpoint
+   convergence; O55/O56 aliasing/conflict machinery re-proven on
+   vendor-shaped records. RED→GREEN suite.
+2. **A2** Task-side corpus captures (Google Tasks list+tasks; Graph
+   /me/todo/lists+tasks via the CLI sweep tools) → sanitize → fixture
+   promotion slots for both todo edges. Expect wire-lie discoveries.
+3. **A3** Carrier-survival drills: People clientData write-back;
+   ms-contact/ms-todotask open-extension survival (O61(e) class); Graph
+   calendar write-path drill via msroundtrip.
+4. **A4** Phase-6 live checkpoint (capture→translate→replay→compare; only
+   declared losses may differ).
+5. **A5** Tag the phase boundary; consumer pin bumps voluntary.
+
+Completion record of prior sessions:
+
 1. ~~7.B live checkpoint~~ DONE 2026-08-23 (FINDINGS O61) — PASSED after
    fixes; probe events cleaned up.
 2. ~~Sanitize + commit Graph-side corpus fixtures~~ DONE (commit 1c1d91f):
@@ -46,22 +70,9 @@ updated in the same commit as plan state (phase-status-docs rule).
 4. ~~Phase 3 remaining~~ DONE 2026-08-23: Graph `contact` ⇄ canon edge
    (fixture promotion from committed contacts-listing.json) + Tasks/Todos
    edges both vendors (`google-task` ⇄ todos canon; Graph `ms-todotask`).
-   All stub-level; task-side fixture captures + live checkpoints deferred
-   (corpus sweeps never covered /me/todo or Google Tasks; carriers are the
-   specific O61(e)-class question).
+   All stub-level.
 5. ~~Identity layer + Phase 6 pipeline/matrix~~ DONE 2026-08-24 (see
-   snapshot rows; FINDINGS O64 caught+fixed by the gate). Remaining Phase-6
-   slices, ordered:
-   a. Engine-level vendor-shaped hub convergence (stub backends vs
-      GenericSqliteBackend; fixpoint; O55/O56 on vendor-shaped records).
-   b. Phase-6 live checkpoint (capture→translate→replay→compare).
-   c. Task-side corpus captures (Google Tasks, /me/todo) → fixture
-      promotion slots for the two todo edges.
-   d. Deferred live checkpoints: People clientData write-back semantics,
-      Graph calendar write-path drill via msroundtrip (O61(e)-class),
-      open-extension carrier survival on ms-contact/ms-todotask.
-6. Tag the phase boundary (house convention) when the remaining 6.a/6.b
-   land; consumers pin-bump voluntarily.
+   snapshot rows; FINDINGS O64 caught+fixed by the gate).
 
 ## Findings index (this campaign)
 
