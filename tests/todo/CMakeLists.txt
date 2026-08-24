@@ -17,3 +17,6 @@ kalburator_add_todo_test(tst_vtodo_differ)
 kalburator_add_todo_test(tst_todotxt_stage)
 # Plan 3 Task B2/B3/B5 — vtodo ↔ canon round-trip + loss profile tests
 kalburator_add_todo_test(tst_todo_canon_roundtrip)
+# EEE Phase 3 — google-task / ms-todotask ⇄ canon edges
+kalburator_add_todo_test(tst_google_task_canon_edge)
+kalburator_add_todo_test(tst_ms_todotask_canon_edge)

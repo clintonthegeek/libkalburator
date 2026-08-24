@@ -52,11 +52,12 @@ private slots:
         QVERIFY(def.richnessRank(todotxt) < 100);
     }
 
-    void stockShapesHasFiveEdges()
+    void stockShapesHasNineEdges()
     {
         const TodoStockShapes shapes;
-        // canon-identity + vtodo→canon + canon→vtodo + vtodo→todotxt + todotxt→vtodo
-        QCOMPARE(shapes.edges().size(), 5);
+        // canon-identity + vtodo→canon + canon→vtodo + vtodo→todotxt
+        // + todotxt→vtodo + google-task⇄canon + ms-todotask⇄canon (EEE Phase 3)
+        QCOMPARE(shapes.edges().size(), 9);
     }
 
     void stockShapesPeerContainsTodoTxt()

@@ -282,6 +282,14 @@ set(KALBURATOR_STORAGE_SOURCES
     src/storage/idmappingstore.cpp
 )
 
+set(KALBURATOR_IDENTITY_HEADERS
+    src/identity/identitystore.h
+    src/identity/identityresolver.h
+)
+set(KALBURATOR_IDENTITY_SOURCES
+    src/identity/identitystore.cpp
+)
+
 set(KALBURATOR_DISCOVERY_HEADERS
     src/discovery/syncthingdiscovery.h
     src/discovery/syncthingmonitor.h
@@ -401,6 +409,11 @@ set(KALBURATOR_TODO_SOURCES
     src/todo/icalvtododiffer.cpp
     src/todo/todotxttransformation.cpp
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
+    src/todo/googletaskproperties.cpp
+    src/todo/googletaskcanonstages.cpp
+    src/todo/mstodotaskproperties.cpp
+    src/todo/mstodotaskcanonstages.cpp
+    # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.cpp
     src/todo/vtodocanonfields.cpp
     src/todo/tododomaindefinition.cpp
@@ -429,6 +442,9 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/contactscanonproperties.cpp
     src/contacts/googlepersonproperties.cpp
     src/contacts/googlepersoncanonstages.cpp
+    # EEE Phase 3 — ms-contact ⇄ contacts-canon edge
+    src/contacts/mscontactproperties.cpp
+    src/contacts/mscontactcanonstages.cpp
     src/contacts/vcarddiffer.cpp
     src/contacts/vcardmerger.cpp
     src/contacts/vcard3to4transformation.cpp
@@ -654,6 +670,7 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_DIFF_HEADERS}
     ${KALBURATOR_JOURNAL_HEADERS}
     ${KALBURATOR_STORAGE_HEADERS}
+    ${KALBURATOR_IDENTITY_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
@@ -673,6 +690,7 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_DIFF_SOURCES}
     ${KALBURATOR_JOURNAL_SOURCES}
     ${KALBURATOR_STORAGE_SOURCES}
+    ${KALBURATOR_IDENTITY_SOURCES}
     ${KALBURATOR_DISCOVERY_SOURCES}
     ${KALBURATOR_BLOB_SOURCES}
     ${KALBURATOR_ENGINE_SOURCES}
@@ -730,6 +748,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/diff>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/identity>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/journal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/discovery>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/universal>
