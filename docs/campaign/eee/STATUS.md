@@ -37,9 +37,13 @@ annotations next; A4 user-run remains)
    `todo-lists`, `todo-tasks-listing`, `todo-task-carrier-extension`)
    + promotion slots in `tst_google_task_canon_edge` /
    `tst_ms_todotask_canon_edge`.
-2. **Annotate CONVERGENCE-MATRIX.md + loss profiles** with the O66
-   carrier verdicts (People clientData = proven live-Reversible;
-   Graph channels live-workable via nav POSTs only; regenerate matrix).
+2. ~~Annotate CONVERGENCE-MATRIX.md + loss profiles~~ **done
+   2026-08-24** — carrier-survival verdict section added to the matrix
+   generator preamble (`src/shape/convergencematrix.h`, survives
+   regeneration; byte pin green) and standing amendments landed in all
+   four Phase-3 loss profiles (google-person lifted to live-Reversible;
+   ms-contact/ms-todotask live-workable via nav POSTs + filtered expand;
+   google-task Dropped rulings corpus-confirmed).
 3. **A4 Phase-6 live checkpoint** (USER-RUN per
    `2026-08-24-live-session-runbook-a2-a3-a4.md`): capture→translate→
    replay→compare; only declared losses may differ.

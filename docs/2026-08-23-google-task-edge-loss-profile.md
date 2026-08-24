@@ -26,6 +26,10 @@ provider-extras bag.) Hierarchy note: `parent`+`position` cover ONE level
 of full subtasks; deeper canon `relatedTo` trees degrade to the topmost
 resolvable parent only.
 
+O66(c) live-corpus check (2026-08-24) CONFIRMS this ruling: UI-recurrent
+tasks carry no recurrence field of any kind on the wire; the Tasks API
+remains extension-free. Dropped rulings stand.
+
 ## Per-property declarations — `canon → google-task`
 
 | Canon property | LossKind | Notes |

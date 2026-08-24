@@ -35,6 +35,16 @@ UNVERIFIED until the Phase 3 checkpoint — same suspicion class as O61(e)
 Until verified, treat every carrier-routed ruling as offline-Reversible
 only; backend write paths must prefer PATCH over re-create.
 
+**Standing amendment (O66 + correction, 2026-08-24):** carrier survival
+VERIFIED live — via nav `POST .../contacts/{id}/extensions` (NOT
+PATCH-borne extensions; NOT inline at create) + collection-level
+`$expand=extensions($filter=Id eq 'Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon')`.
+The Reversible rulings below are live-workable under that protocol.
+Supersedes the "prefer PATCH" advice above: nav POST, then re-read — never
+trust a create echo. Additional transport finding (O66(f)): consumer
+GET-by-id is flaky/broken on this mailbox class — drive reads/deletes
+through listings/delta/$expand (our fixture shape is already correct).
+
 ## Per-property declarations — `canon → ms-contact`
 
 | Canon property | LossKind | Notes |

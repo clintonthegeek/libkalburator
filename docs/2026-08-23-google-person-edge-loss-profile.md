@@ -31,6 +31,12 @@ wire caveat): clientData rows are returned by people.get
 accounts are UNVERIFIED until the Phase 3 checkpoint — same suspicion class
 as O61(e).
 
+**Standing amendment (O66, 2026-08-24):** clientData write-back VERIFIED
+live on a consumer account — create + fresh read (`personFields=clientData`)
+returned both x-canon rows intact, metadata stamped server-side. First
+proven live-Reversible carrier channel. The offline-only caution above is
+lifted for this edge.
+
 ## Per-property declarations — `canon → google-person`
 
 | Canon property | LossKind | Notes |

@@ -49,6 +49,29 @@ public:
             "`Dropped` < `Simplified` < `Degraded` < `Reversible` in\n"
             "increasing fidelity (Reversible = carried verbatim in a vendor\n"
             "extension channel).\n\n");
+        out += QLatin1String(
+            "## Carrier-survival verdicts (O66 + correction, 2026-08-24)\n\n"
+            "Live drills on consumer accounts settled the O61(e) question\n"
+            "per channel. `Reversible` rulings split three ways:\n\n"
+            "- **live-Reversible** — Google People `clientData`\n"
+            "  (create + fresh read proven) and both Graph open-extension\n"
+            "  channels (`contact`, `todoTask`), which SURVIVE when spoken\n"
+            "  to properly: nav-property `POST .../{id}/extensions` — never\n"
+            "  PATCH-borne, never inline-at-create (todoTask inline-create\n"
+            "  is echoed but NOT persisted) — then collection-level\n"
+            "  `$expand=extensions($filter=Id eq '<full-id>')`; the Outlook\n"
+            "  full-id prefix is `Microsoft.OutlookServices.\n"
+            "  OpenTypeExtension.*`.\n"
+            "- **offline-only** — Google Calendar `extendedProperties` and\n"
+            "  MS Graph event `singleValueExtendedProperties` (O61(e):\n"
+            "  silently stripped on consumer creates).\n"
+            "- **no channel** — Google Tasks has no extension point; all\n"
+            "  its non-carried properties remain `Dropped` (O66(c)\n"
+            "  corpus-confirms).\n\n"
+            "Backend rules (binding): nav POSTs only; filtered expand with\n"
+            "the RETURNED full id; re-READ after write — never trust a\n"
+            "create echo. Consumer contact GET-by-id is unreliable — drive\n"
+            "reads through listings/delta/$expand.\n\n");
 
         for (const DomainInput& input : inputs) {
             const auto* c = input.contribution;

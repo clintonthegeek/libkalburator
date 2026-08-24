@@ -28,6 +28,14 @@ Same open-extensions channel as the ms-contact edge
 mirroring the 7.B event edge's carried-set discipline). Write-back
 survival UNVERIFIED until a live drill — O61(e) suspicion class.
 
+**Standing amendment (O66 + correction, 2026-08-24):** survival VERIFIED
+live via nav `POST .../tasks/{id}/extensions` + filtered collection-level
+expand (`Microsoft.OutlookServices.OpenTypeExtension.*` id prefix). Wire-lie
+on record: extensions INLINE in the task-create body are echoed in the
+response but NOT persisted ($expand null on v1.0 AND beta) — worse than the
+event-SVEP honest strip. Backends must re-READ after write; never trust a
+create echo.
+
 ## Nav collections = transport, not edge scope
 
 `checklistItems`, `linkedResources`, `attachments` are separate-endpoint

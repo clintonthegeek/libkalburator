@@ -13,6 +13,32 @@ edge's rows survives that crossing unchanged. Loss kinds:
 increasing fidelity (Reversible = carried verbatim in a vendor
 extension channel).
 
+## Carrier-survival verdicts (O66 + correction, 2026-08-24)
+
+Live drills on consumer accounts settled the O61(e) question
+per channel. `Reversible` rulings split three ways:
+
+- **live-Reversible** â Google People `clientData`
+  (create + fresh read proven) and both Graph open-extension
+  channels (`contact`, `todoTask`), which SURVIVE when spoken
+  to properly: nav-property `POST .../{id}/extensions` â never
+  PATCH-borne, never inline-at-create (todoTask inline-create
+  is echoed but NOT persisted) â then collection-level
+  `$expand=extensions($filter=Id eq '<full-id>')`; the Outlook
+  full-id prefix is `Microsoft.OutlookServices.
+  OpenTypeExtension.*`.
+- **offline-only** â Google Calendar `extendedProperties` and
+  MS Graph event `singleValueExtendedProperties` (O61(e):
+  silently stripped on consumer creates).
+- **no channel** â Google Tasks has no extension point; all
+  its non-carried properties remain `Dropped` (O66(c)
+  corpus-confirms).
+
+Backend rules (binding): nav POSTs only; filtered expand with
+the RETURNED full id; re-READ after write â never trust a
+create echo. Consumer contact GET-by-id is unreliable â drive
+reads through listings/delta/$expand.
+
 ## calendar
 
 ### Edge inventory
