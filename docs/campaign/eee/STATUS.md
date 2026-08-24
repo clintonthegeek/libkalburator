@@ -48,7 +48,11 @@ in `2026-08-24-reconnaissance-assessment-and-roadmap.md`):
 
 1. ~~**A1** Engine-level vendor-shaped hub convergence~~ DONE 2026-08-24
    (`tst_engine_vendor_shaped_hub`, FINDINGS O65 caught+fixed).
-2. **A2** Task-side corpus captures (Google Tasks list+tasks; Graph
+2. **A2** Task-side corpus captures — RUNBOOK READY:
+   `2026-08-24-live-session-runbook-a2-a3-a4.md` (scopes widened this
+   session: graphcli +Tasks.ReadWrite, googlecli +auth/tasks; re-consent
+   required). Covers A2 captures, the four A3 carrier-survival drills,
+   and the A4 roundtrip invocation. (Google Tasks list+tasks; Graph
    /me/todo/lists+tasks via the CLI sweep tools) → sanitize → fixture
    promotion slots for both todo edges. Expect wire-lie discoveries.
 3. **A3** Carrier-survival drills: People clientData write-back;

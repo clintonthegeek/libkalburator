@@ -145,10 +145,13 @@ limits, and the seizure test — every new component must pass it):
    (`tst_engine_vendor_shaped_hub` 6 slots; FINDINGS O65: events never
    index participant emails — convergence belongs to persons, not
    meetings).
-2. A2 task-side corpus captures → fixture promotion for both todo edges.
-3. A3 carrier-survival drills (People clientData; open extensions;
-   Graph write path via msroundtrip).
-4. A4 Phase-6 live checkpoint (capture→translate→replay→compare).
+2. A2/A3/A4 are USER-RUN — hand the operator
+   `docs/campaign/eee/2026-08-24-live-session-runbook-a2-a3-a4.md`
+   (scopes widened 2026-08-24: graphcli Tasks.ReadWrite, googlecli
+   auth/tasks; re-consent needed). Hand back: captured JSON paths,
+   carrier-survival verdicts, surprise 4xx bodies. Then: fixture
+   sanitization + promotion slots for both todo edges, matrix annotation
+   of carrier verdicts, live checkpoint replay.
 5. A5 tag the phase boundary; consumer pin bumps voluntary.
 
 ## Remotes — push to `origin` (GitHub), NOT `codeberg` (2026-08-22)

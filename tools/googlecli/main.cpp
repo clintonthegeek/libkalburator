@@ -16,6 +16,7 @@ static const char *kScopes =
     "https://www.googleapis.com/auth/calendar.events "
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly "
     "https://www.googleapis.com/auth/contacts "
+    "https://www.googleapis.com/auth/tasks "
     "https://www.googleapis.com/auth/userinfo.email";
 
 namespace {

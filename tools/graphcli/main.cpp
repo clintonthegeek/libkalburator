@@ -14,7 +14,8 @@
 #include <QUrlQuery>
 
 static const char *kScopes =
-    "offline_access User.Read Mail.Read Calendars.ReadWrite Contacts.ReadWrite";
+    "offline_access User.Read Mail.Read Calendars.ReadWrite Contacts.ReadWrite"
+    " Tasks.ReadWrite";
 
 namespace {
 
