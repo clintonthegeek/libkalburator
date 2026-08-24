@@ -190,6 +190,131 @@ private slots:
                  QStringLiteral("Created"));
     }
 
+    // Delta integration: the first fetch walks /delta initially; a second
+    // fetch presents the stored token, applies only changes, and still
+    // reports the FULL merged collection (engine diffs expect whole views).
+    void deltaWalksMergeChangesIntoFullViews()
+    {
+        const QString col = QStringLiteral("/me/events");
+        QJsonArray initial;
+        initial.append(wireEvent(QStringLiteral("evt-1"),
+                                 QStringLiteral("Original subject")));
+        m_server->addCollection(col, initial);
+
+        // First fetch: initial delta walk seeds cache + token.
+        auto *op1 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op1->isFinished(), 5000);
+        QCOMPARE(op1->state(), Kalburator::Sync::SyncOperation::Succeeded);
+        QList<BackendRecord> records;
+        QString err;
+        QVERIFY(m_backend->recordsFromLastFetch(QStringLiteral("cal"),
+                                                records, err));
+        QCOMPARE(records.size(), 1);
+        QCOMPARE(records.first().displayName,
+                 QStringLiteral("Original subject"));
+
+        // Server-side change queued under the token the client now holds.
+        QJsonArray changes;
+        changes.append(wireEvent(QStringLiteral("evt-1"),
+                                 QStringLiteral("Updated subject")));
+        changes.append(wireEvent(QStringLiteral("evt-2"),
+                                 QStringLiteral("Brand new")));
+        m_server->queueDeltaChanges(col, QStringLiteral("delta_1"), changes);
+
+        // Second fetch: token replay merges into the cached view.
+        auto *op2 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op2->isFinished(), 5000);
+        QVERIFY(m_backend->recordsFromLastFetch(QStringLiteral("cal"),
+                                                records, err));
+        QCOMPARE(records.size(), 2);
+        for (const auto &r : records) {
+            if (r.id == QStringLiteral("evt-1"))
+                QCOMPARE(r.displayName, QStringLiteral("Updated subject"));
+            else
+                QCOMPARE(r.displayName, QStringLiteral("Brand new"));
+        }
+
+        // Wire truth: second fetch hit /delta with $deltatoken, NOT the
+        // plain listing.
+        bool sawDeltaToken = false;
+        for (const auto &req : m_server->requests()) {
+            if (req.method == "GET" && req.path.contains(QStringLiteral("$deltatoken")))
+                sawDeltaToken = true;
+        }
+        QVERIFY2(sawDeltaToken, "incremental fetch must present the token");
+    }
+
+    // 410 ResyncRequired self-heals to a fresh full listing (O42 pattern).
+    void resyncRequiredFallsBackToFullListing()
+    {
+        const QString col = QStringLiteral("/me/events");
+        QJsonArray items;
+        items.append(wireEvent(QStringLiteral("evt-1"), QStringLiteral("One")));
+        m_server->addCollection(col, items);
+
+        auto *op1 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op1->isFinished(), 5000);
+
+        // Simulate server-side token expiry.
+        m_server->invalidateDeltaTokens(col);
+
+        QJsonArray fresh;
+        fresh.append(wireEvent(QStringLiteral("evt-1"), QStringLiteral("One v2")));
+        fresh.append(wireEvent(QStringLiteral("evt-2"), QStringLiteral("Two")));
+        m_server->setCollectionItems(col, fresh);
+
+        auto *op2 = m_backend->fetchItems(QStringLiteral("cal"));
+        QTRY_VERIFY_WITH_TIMEOUT(op2->isFinished(), 5000);
+        QCOMPARE(op2->state(), Kalburator::Sync::SyncOperation::Succeeded);
+
+        QList<BackendRecord> records;
+        QString err;
+        QVERIFY(m_backend->recordsFromLastFetch(QStringLiteral("cal"),
+                                                records, err));
+        QCOMPARE(records.size(), 2);   // full re-listing, not an error
+    }
+
+    // Discovery: /me/calendars feeds calendarDiscovered + collections.
+    void discoveryListsCalendarsAndCollections()
+    {
+        QJsonArray cals;
+        cals.append(QJsonObject{
+            { QStringLiteral("id"), QStringLiteral("calA") },
+            { QStringLiteral("name"), QStringLiteral("Calendar A") },
+            { QStringLiteral("color"), QStringLiteral("#ff8800") },
+            { QStringLiteral("canEdit"), true },
+            { QStringLiteral("isDefaultCalendar"), true } });
+        cals.append(QJsonObject{
+            { QStringLiteral("id"), QStringLiteral("calB") },
+            { QStringLiteral("name"), QStringLiteral("Archive") },
+            { QStringLiteral("canEdit"), false } });
+        m_server->addCollection(QStringLiteral("/me/calendars"), cals);
+
+        bool done = false;
+        connect(m_backend,
+                &Kalburator::Sync::SyncBackend::loadCalendarsFinished,
+                this, [&](const QString &, bool ok) { done = ok; });
+        m_backend->loadCalendars(QStringLiteral("coll"));
+        QTRY_VERIFY_WITH_TIMEOUT(done, 5000);
+
+        const auto cols = m_backend->availableCollections();
+        QCOMPARE(cols.size(), 2);
+        for (const auto &c : cols) {
+            QCOMPARE(c.type, QStringLiteral("calendar"));
+            QVERIFY(c.contentTypes.contains(QStringLiteral("VEVENT")));
+        }
+
+        const auto dflt = m_backend->discoveredCalendar(QStringLiteral("calA"));
+        QCOMPARE(dflt.name, QStringLiteral("Calendar A"));
+        QCOMPARE(dflt.backendType, QStringLiteral("msgraph"));
+        QVERIFY(dflt.writable);
+        QVERIFY(!dflt.supportsVTodo);   // Graph tasks live in /me/todo/lists
+        QCOMPARE(dflt.color, QColor(QStringLiteral("#ff8800")));
+
+        const auto ro = m_backend->discoveredCalendar(QStringLiteral("calB"));
+        QVERIFY(!ro.writable);
+    }
+
     void failingBatchReportsPerRecordFailures()
     {
         // Unmatched ids get the mock's 404 shape; a lone create against a

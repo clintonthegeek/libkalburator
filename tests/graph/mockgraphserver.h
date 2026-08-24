@@ -78,6 +78,10 @@ public:
                            const QString &deltaToken,
                            const QJsonArray &changedItems);
 
+    /// Forget the most recently issued delta token for a collection —
+    /// presenting it afterwards yields 410 ResyncRequired (expiry drill).
+    void invalidateDeltaTokens(const QString &collectionPath);
+
     QList<RecordedRequest> requests() const;
     void clearRequests();
 

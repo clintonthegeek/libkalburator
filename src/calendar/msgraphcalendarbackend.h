@@ -4,7 +4,11 @@
 // EEE Phase 7.C — Microsoft Graph calendar backend on the transport
 // foundation (`GraphApiClient`, Stage-D tested). v1 scope:
 //   - ONE collection ("me-events"): the caller's default events folder,
-//     walked with pagination; delta rides a later slice.
+//     fetched through /delta walks (initial walk seeds a merged cache;
+//     later walks upsert changes into it and report the FULL merged set —
+//     engine diffs expect whole-collection views, mirroring the E7
+//     sync-collection design). 410 ResyncRequired self-heals to a fresh
+//     initial walk (O42 pattern).
 //   - Records carry RAW ms-event wire JSON in BackendRecord::data and the
 //     backend declares nativeShapes = {{calendar, ms-event}} — the engine
 //     promotes/demotes through the registered Phase 7.B edge itself. The
@@ -40,6 +44,12 @@ public:
     /// mock-server collection path.
     void setCollectionPath(const QString &path);
 
+    // ==== discovery ====
+    void loadCalendars(const QString &collectionId) override;
+    QList<Kalburator::Sync::CollectionInfo> availableCollections() override;
+    Kalburator::Sync::DiscoveredCalendar discoveredCalendar(
+        const QString &calendarId) const override;
+
     // ==== identity ====
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
@@ -64,11 +74,29 @@ private:
     struct ApplyState;
     void applyStep(std::shared_ptr<ApplyState> st);
 
+    /// Heap-owned delta-walk state for one fetchItems() pass (same rule).
+    struct FetchState;
+    void startDeltaFetch(std::shared_ptr<FetchState> st);
+
     Kalburator::Graph::GraphApiClient *m_client;
     QString m_collectionPath = QStringLiteral("/me/events");
     // Last successful fetch's memo, served once by recordsFromLastFetch()
     // (H5/O23 contract) and by loadRecords() until superseded.
     QHash<QString, QList<BackendRecord>> m_lastFetchRecords;
+
+    // Delta machinery: merged collection view + per-collection resume token.
+    // In-memory v1 (a process restart simply re-runs the initial walk).
+    QHash<QString, QHash<QString, BackendRecord>> m_cache;
+    QHash<QString, QString> m_deltaTokens;
+
+    // Discovery metadata (/me/calendars wire objects keyed by calendar id).
+    struct CalMeta {
+        QString name;
+        QString colorHex;
+        bool canEdit = true;
+        bool isDefault = false;
+    };
+    QHash<QString, CalMeta> m_calendars;
 };
 
 } // namespace Kalburator::Sync

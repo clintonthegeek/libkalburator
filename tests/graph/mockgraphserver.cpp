@@ -127,6 +127,12 @@ void MockGraphServer::queueDeltaChanges(const QString &collectionPath,
         c->deltaQueue.append({ deltaToken, changedItems });
 }
 
+void MockGraphServer::invalidateDeltaTokens(const QString &collectionPath)
+{
+    if (Collection *c = findCollection(collectionPath))
+        c->lastDeltaToken.clear();
+}
+
 QList<MockGraphServer::RecordedRequest> MockGraphServer::requests() const
 {
     return m_requests;

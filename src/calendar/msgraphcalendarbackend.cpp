@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <algorithm>
 #include <memory>
 
 using Kalburator::Graph::GraphApiClient;
@@ -75,6 +76,16 @@ QList<Kalburator::Shape::Shape> MSGraphCalendarBackend::nativeShapes() const
 // Read path
 // ---------------------------------------------------------------------------
 
+/// Heap-owned delta-walk state (see header): all mutable walk state lives
+/// here so async continuations never touch dead frames (O62).
+struct MSGraphCalendarBackend::FetchState {
+    FetchOperation *op = nullptr;
+    QString calendarId;
+    QString token;
+    QHash<QString, BackendRecord> cache;
+    bool resynced = false;
+};
+
 FetchOperation *MSGraphCalendarBackend::fetchItems(const QString &calendarId)
 {
     auto *op = new FetchOperation(calendarId, this);
@@ -85,54 +96,106 @@ FetchOperation *MSGraphCalendarBackend::fetchItems(const QString &calendarId)
         op->setState(SyncOperation::Running);
         emit fetchStarted(calendarId, 0);
 
-        m_client->fetchCollection(
-            m_collectionPath,
-            [this, op, calendarId](std::optional<QJsonArray> items,
-                                   const GraphError &err) {
-                if (op->state() == SyncOperation::Cancelled)
-                    return;
-                if (!items.has_value()) {
-                    const QString msg = err.networkError
-                        ? QStringLiteral("network error: %1").arg(err.message)
-                        : QStringLiteral("graph error %1 (%2): %3")
-                              .arg(err.httpStatus).arg(err.code, err.message);
-                    op->fail(msg);
-                    emit fetchFinished(calendarId, false, msg);
-                    return;
-                }
-
-                QList<BackendRecord> records;
-                for (const auto &iv : *items) {
-                    const QJsonObject ev = iv.toObject();
-                    BackendRecord r;
-                    r.id = ev.value(QStringLiteral("id")).toString();
-                    r.type = QStringLiteral("event");
-                    r.displayName =
-                        ev.value(QStringLiteral("subject")).toString();
-                    r.data = compactWire(ev);
-                    r.contentHash = sha256Hex(r.data);
-                    r.lastModified = QDateTime::fromString(
-                        ev.value(QStringLiteral("lastModifiedDateTime"))
-                            .toString(),
-                        Qt::ISODate);
-                    records.append(r);
-                }
-
-                QList<KCalendarCore::Incidence::Ptr> incidences;
-                for (const auto &r : records) {
-                    for (const auto &inc : incidencesForRecord(r.data))
-                        incidences.append(inc);
-                }
-
-                emit itemsFetched(calendarId, incidences);
-                op->setFetchedItems(incidences);
-                m_lastFetchRecords[calendarId] = records;
-                op->complete();
-                emit fetchFinished(calendarId, true);
-                emit syncCompleted(calendarId);
-            });
+        auto st = std::make_shared<FetchState>();
+        st->op = op;
+        st->calendarId = calendarId;
+        // Resume from the stored token (empty ⇒ initial full walk) and the
+        // merged cache; the walk upserts changes and reports everything.
+        st->token = m_deltaTokens.value(calendarId);
+        st->cache = m_cache.value(calendarId);
+        startDeltaFetch(st);
     });
     return op;
+}
+
+void MSGraphCalendarBackend::startDeltaFetch(std::shared_ptr<FetchState> st)
+{
+    auto *op = st->op;
+    m_client->deltaStep(
+        m_collectionPath, st->token,
+        [this, st](const GraphApiClient::DeltaPage &page,
+                   const GraphError &err) {
+            auto *op = st->op;
+            if (op->state() == SyncOperation::Cancelled)
+                return;
+
+            // O42-style self-healing: an expired/unknown token gets ONE
+            // fresh initial walk (which re-seeds the whole cache).
+            if (err.isResyncRequired() && !st->resynced) {
+                st->resynced = true;
+                st->token.clear();
+                st->cache.clear();
+                startDeltaFetch(st);
+                return;
+            }
+            if (!err.ok()) {
+                const QString msg = err.networkError
+                    ? QStringLiteral("network error: %1").arg(err.message)
+                    : QStringLiteral("graph error %1 (%2): %3")
+                          .arg(err.httpStatus).arg(err.code, err.message);
+                op->fail(msg);
+                emit fetchFinished(st->calendarId, false, msg);
+                return;
+            }
+
+            for (const auto &iv : page.items) {
+                const QJsonObject ev = iv.toObject();
+                const QString id =
+                    ev.value(QStringLiteral("id")).toString();
+                // Real Graph marks deletions with an @removed annotation.
+                if (ev.contains(QStringLiteral("@removed"))) {
+                    st->cache.remove(id);
+                    continue;
+                }
+                BackendRecord r;
+                r.id = id;
+                r.type = QStringLiteral("event");
+                r.displayName =
+                    ev.value(QStringLiteral("subject")).toString();
+                r.data = compactWire(ev);
+                r.contentHash = sha256Hex(r.data);
+                r.lastModified = QDateTime::fromString(
+                    ev.value(QStringLiteral("lastModifiedDateTime"))
+                        .toString(),
+                    Qt::ISODate);
+                st->cache.insert(id, r);
+            }
+
+            if (!page.complete) {
+                // Non-empty change page answered nextLink — keep stepping to
+                // the fixpoint (empty set + deltaLink), per the wire nuance
+                // pinned by tst_graph_api_client.
+                st->token = page.deltaToken;
+                startDeltaFetch(st);
+                return;
+            }
+
+            // Fixpoint reached: persist the merged view + resume token and
+            // report the FULL collection (engine diffs expect whole views).
+            m_deltaTokens[st->calendarId] = page.deltaToken;
+            m_cache[st->calendarId] = st->cache;
+
+            QList<BackendRecord> records;
+            for (const auto &r : st->cache)
+                records.append(r);
+            std::sort(records.begin(), records.end(),
+                      [](const BackendRecord &a, const BackendRecord &b) {
+                          return a.id < b.id;
+                      });
+
+            QList<KCalendarCore::Incidence::Ptr> incidences;
+            for (const auto &r : records) {
+                for (const auto &inc : incidencesForRecord(r.data))
+                    incidences.append(inc);
+            }
+
+            emit itemsFetched(st->calendarId, incidences);
+            op->setFetchedItems(incidences);
+            m_lastFetchRecords[st->calendarId] = records;
+            op->complete();
+            emit fetchFinished(st->calendarId, true);
+            emit syncCompleted(st->calendarId);
+        });
 }
 
 bool MSGraphCalendarBackend::recordsFromLastFetch(
@@ -172,6 +235,86 @@ MSGraphCalendarBackend::incidencesForRecord(const QByteArray &wireJson) const
     if (icalBytes.isEmpty())
         return {};
     return incidencesFromIcal(QString::fromUtf8(icalBytes));
+}
+
+
+// ---------------------------------------------------------------------------
+// Discovery
+// ---------------------------------------------------------------------------
+
+void MSGraphCalendarBackend::loadCalendars(const QString &collectionId)
+{
+    m_client->fetchCollection(
+        QStringLiteral("/me/calendars"),
+        [this, collectionId](std::optional<QJsonArray> items,
+                             const GraphError &err) {
+            if (!items.has_value()) {
+                const QString msg = err.networkError
+                    ? QStringLiteral("network error: %1").arg(err.message)
+                    : QStringLiteral("graph error %1 (%2): %3")
+                          .arg(err.httpStatus).arg(err.code, err.message);
+                emit loadCalendarsFinished(collectionId, false, msg);
+                return;
+            }
+            for (const auto &cv : *items) {
+                const QJsonObject cal = cv.toObject();
+                CalMeta meta;
+                meta.name = cal.value(QStringLiteral("name")).toString();
+                meta.colorHex =
+                    cal.value(QStringLiteral("color")).toString();
+                meta.canEdit = cal.value(QStringLiteral("canEdit")).toBool(true);
+                meta.isDefault =
+                    cal.value(QStringLiteral("isDefaultCalendar")).toBool(false);
+                const QString id = cal.value(QStringLiteral("id")).toString();
+                if (id.isEmpty())
+                    continue;
+                m_calendars.insert(id, meta);
+                emit calendarDiscovered(collectionId, id);
+            }
+            emit loadCalendarsFinished(collectionId, true);
+        });
+}
+
+QList<Kalburator::Sync::CollectionInfo>
+MSGraphCalendarBackend::availableCollections()
+{
+    QList<Kalburator::Sync::CollectionInfo> out;
+    for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
+        Kalburator::Sync::CollectionInfo info;
+        info.id = it.key();
+        info.name = it.value().name;
+        info.type = QStringLiteral("calendar");
+        info.isDefault = it.value().isDefault;
+        info.readOnly = !it.value().canEdit;
+        info.contentTypes = { QStringLiteral("VEVENT") };
+        out.append(info);
+    }
+    return out;
+}
+
+Kalburator::Sync::DiscoveredCalendar MSGraphCalendarBackend::discoveredCalendar(
+    const QString &calendarId) const
+{
+    Kalburator::Sync::DiscoveredCalendar d;
+    d.calendarId = calendarId;
+    d.backendType = QStringLiteral("msgraph");
+    d.backendId = resourceId();
+    // Graph calendars hold events; tasks live in /me/todo/lists.
+    d.supportsVEvent = true;
+    d.supportsVTodo = false;
+    d.supportsVJournal = false;
+
+    const auto it = m_calendars.constFind(calendarId);
+    if (it != m_calendars.constEnd()) {
+        d.name = it.value().name;
+        d.writable = it.value().canEdit;
+        d.color = QColor(it.value().colorHex);
+        if (!d.color.isValid())
+            d.color = QColor();
+    } else {
+        d.writable = discoveredWritable(calendarId);
+    }
+    return d;
 }
 
 // ---------------------------------------------------------------------------
