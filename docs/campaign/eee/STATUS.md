@@ -71,7 +71,12 @@ annotations next; A4 user-run remains)
 
 ## Baseline
 
-195 tests total / 193 passing. The two failures are the documented
-live-Radicale-state-dependent slots (`tst_backend_signals`,
-`tst_remotecalendarbackend`) — occasionally load-flaky under full-suite
-parallelism but green isolated.
+195 tests total. As of 2026-08-25 (evening), 4 Radicale/backend slots fail
+(`tst_backend_signals`, `tst_backend_thread_relocation`,
+`tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — KDAV 30s
+transfer-timeout pattern against the live Radicale / latency-injected fake
+server. Verified PRE-EXISTING environmental: all four reproduce identically
+at pre-session commit `e1846a3` (worktree build, same evening). Not caused
+by EEE work; re-check when the local Radicale state is reset. All other
+191 slots green, including both new fixture-promotion suites and the matrix
+byte pin.
