@@ -1,19 +1,16 @@
-#include "graphauth.h"
-#include "graphclient.h"
+#include "graphauthenticator.h"
+#include "blockinghttp.h"
 
 #include <QDateTime>
-#include <QDir>
 #include <QFile>
-#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QRegularExpression>
 #include <QTextStream>
 #include <QThread>
 #include <QUrl>
 #include <QUrlQuery>
 
-static const char *kAuthorityBase = "https://login.microsoftonline.com/common/oauth2/v2.0";
+namespace Kalburator::Graph {
 
 bool Tokens::hasLiveAccessToken() const
 {
@@ -66,11 +63,17 @@ static QByteArray formBody(const QUrlQuery &query)
     return query.toString(QUrl::FullyEncoded).toUtf8();
 }
 
-DeviceCodeFlow::DeviceCodeFlow(QString clientId, QString scopes, bool promptConsent)
+DeviceCodeFlow::DeviceCodeFlow(QString clientId, QString scopes,
+                               bool promptConsent)
     : m_clientId(std::move(clientId))
     , m_scopes(std::move(scopes))
     , m_promptConsent(promptConsent)
 {
+}
+
+void DeviceCodeFlow::setAuthorityBase(const QString &authorityBase)
+{
+    m_authorityBase = authorityBase;
 }
 
 bool DeviceCodeFlow::runInteractive(Tokens &out) const
@@ -81,15 +84,18 @@ bool DeviceCodeFlow::runInteractive(Tokens &out) const
     if (m_promptConsent)
         start.addQueryItem("prompt", "consent");
 
-    const HttpResponse startResp = httpRequest(
-        QUrl(QString::fromUtf8(kAuthorityBase) + "/devicecode"),
+    const Net::HttpResponse startResp = Net::httpRequest(
+        QUrl(m_authorityBase + "/devicecode"),
         "POST",
         {{"Content-Type", "application/x-www-form-urlencoded"}},
         formBody(start));
 
     const QJsonObject startObj = QJsonDocument::fromJson(startResp.body).object();
     if (!startResp.ok() || startObj.isEmpty()) {
-        printGraphError("device code request", startResp.status, startResp.body);
+        QTextStream(stderr) << "device code request failed";
+        if (startResp.status > 0)
+            QTextStream(stderr) << " (HTTP " << startResp.status << ')';
+        QTextStream(stderr) << '\n' << QString::fromUtf8(startResp.body) << '\n';
         return false;
     }
 
@@ -113,8 +119,8 @@ bool DeviceCodeFlow::runInteractive(Tokens &out) const
         poll.addQueryItem("client_id", m_clientId);
         poll.addQueryItem("device_code", deviceCode);
 
-        const HttpResponse resp = httpRequest(
-            QUrl(QString::fromUtf8(kAuthorityBase) + "/token"),
+        const Net::HttpResponse resp = Net::httpRequest(
+            QUrl(m_authorityBase + "/token"),
             "POST",
             {{"Content-Type", "application/x-www-form-urlencoded"}},
             formBody(poll));
@@ -142,9 +148,11 @@ bool DeviceCodeFlow::runInteractive(Tokens &out) const
     }
 
     QTextStream(stderr) << "Device code expired before authorization completed.\n";
-    return false;}
+    return false;
+}
 
-Tokens refreshTokens(const QString &clientId, const QString &scopes, const Tokens &old)
+Tokens refreshTokens(const QString &clientId, const QString &scopes,
+                     const Tokens &old, const QString &authorityBase)
 {
     Tokens out;
     if (old.refreshToken.isEmpty())
@@ -156,8 +164,8 @@ Tokens refreshTokens(const QString &clientId, const QString &scopes, const Token
     body.addQueryItem("refresh_token", old.refreshToken);
     body.addQueryItem("scope", scopes);
 
-    const HttpResponse resp = httpRequest(
-        QUrl(QString::fromUtf8(kAuthorityBase) + "/token"),
+    const Net::HttpResponse resp = Net::httpRequest(
+        QUrl(authorityBase + "/token"),
         "POST",
         {{"Content-Type", "application/x-www-form-urlencoded"}},
         formBody(body));
@@ -172,51 +180,4 @@ Tokens refreshTokens(const QString &clientId, const QString &scopes, const Token
     return out;
 }
 
-QString msgraphDir()
-{
-    const QString envDir = qEnvironmentVariable("KALBURATOR_MSGRAPH_DIR");
-    if (!envDir.isEmpty())
-        return envDir;
-
-    QDir dir = QDir::current();
-    for (int i = 0; i < 6; ++i) {
-        const QString candidate = dir.filePath("msgraph");
-        if (QFileInfo::exists(candidate + "/GraphCLIinfo.md"))
-            return candidate;
-        if (!dir.cdUp())
-            break;
-    }
-    return QDir::current().filePath("msgraph");
-}
-
-QString readClientId(const QString &dir)
-{
-    const QString envId = qEnvironmentVariable("KALBURATOR_GRAPH_CLIENT_ID");
-    if (!envId.isEmpty())
-        return envId;
-
-    QFile file(dir + "/GraphCLIinfo.md");
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream(stderr) << "Cannot read " << dir
-                            << "/GraphCLIinfo.md (set KALBURATOR_GRAPH_CLIENT_ID or KALBURATOR_MSGRAPH_DIR)\n";
-        return {};
-    }
-    static const QRegularExpression re("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
-    const QString text = QString::fromUtf8(file.readAll());
-    const QRegularExpressionMatch match = re.match(text);
-    if (!match.hasMatch()) {
-        QTextStream(stderr) << "No Application ID found in GraphCLIinfo.md\n";
-        return {};
-    }
-    return match.captured();
-}
-
-void printGraphError(const QString &label, int status, const QByteArray &body)
-{
-    QTextStream(stderr) << label << " failed";
-    if (status > 0)
-        QTextStream(stderr) << " (HTTP " << status << ')';
-    QTextStream(stderr) << '\n';
-    if (!body.isEmpty())
-        QTextStream(stderr) << QString::fromUtf8(body) << '\n';
-}
+} // namespace Kalburator::Graph

@@ -1,5 +1,7 @@
-#include "graphauth.h"
-#include "graphclient.h"
+#include "labpaths.h"
+
+#include <graphauthenticator.h>
+#include <blockinghttp.h>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -18,6 +20,14 @@ static const char *kScopes =
     " Tasks.ReadWrite";
 
 namespace {
+
+using Kalburator::Graph::Tokens;
+using Kalburator::Graph::TokenStore;
+using Kalburator::Graph::DeviceCodeFlow;
+using Kalburator::Graph::refreshTokens;
+using Kalburator::Net::HttpResponse;
+using Kalburator::Net::httpRequest;
+using Kalburator::Net::urlEncodePathSegment;
 
 struct Session {
     QString clientId;
