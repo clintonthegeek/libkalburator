@@ -52,6 +52,11 @@ public:
     void setBaseUrl(const QString &baseUrl);
     void setAccessToken(const QString &token);
 
+    /// B2C P0 — transient-failure retries for idempotent GETs (network
+    /// errors + 502/503/504), exponential backoff (src/net/backoff.h).
+    /// Default 2. Writes are never auto-retried.
+    void setTransientRetryAttempts(int attempts);
+
     using CollectionCallback =
         std::function<void(std::optional<QJsonArray> items, const GraphError &)>;
     /// GET `<path>` (path+query relative to baseUrl) and aggregate every
@@ -88,6 +93,8 @@ private:
     };
     void get(const QUrl &url,
              std::function<void(const RawReply &)> done);
+    void getWithRetry(const QUrl &url, int attempt,
+                      std::function<void(const RawReply &)> done);
     /// One page of a collection walk; recurses through nextLink via
     /// heap-owned state (async continuations outlive the caller's frame).
     void getPage(std::shared_ptr<QJsonArray> items,
@@ -99,6 +106,7 @@ private:
     QNetworkAccessManager *m_nam = nullptr;
     QString m_baseUrl;
     QString m_token;
+    int m_transientRetryAttempts = 2;
 };
 
 } // namespace Kalburator::Graph

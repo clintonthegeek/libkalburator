@@ -174,10 +174,13 @@ void MockGraphServer::handleSocket(QTcpSocket *socket)
     const QByteArray method = parts.at(0);
 
     int contentLength = 0;
+    QByteArray authorization;
     for (const QByteArray &raw : lines.mid(1)) {
         const QByteArray line = raw.trimmed();
         if (line.toLower().startsWith(QByteArray("content-length:")))
             contentLength = line.mid(15).trimmed().toInt();
+        if (line.toLower().startsWith(QByteArray("authorization:")))
+            authorization = line.mid(14).trimmed();
     }
     if (buf.size() < headerEnd + 4 + contentLength)
         return;   // body not complete yet
@@ -192,6 +195,7 @@ void MockGraphServer::handleSocket(QTcpSocket *socket)
     rec.path = QUrl::fromPercentEncoding(
         url.toString(QUrl::FullyEncoded).toUtf8());
     rec.body = body;
+    rec.authorizationHeader = authorization;
     m_requests.append(rec);
     buffers.remove(socket);
 

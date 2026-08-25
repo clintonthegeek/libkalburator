@@ -10,6 +10,7 @@
 
 #include "graphapiclient.h"
 #include "mockgraphserver.h"
+#include "backoff.h"
 
 using Kalburator::Graph::GraphApiClient;
 using Kalburator::Graph::GraphError;
@@ -91,6 +92,22 @@ private slots:
         QCOMPARE(m_server->requests().size(), 1);
     }
 
+    // B2C P0 — retry policy facts (pure helpers; see src/net/backoff.h).
+    void retryPolicyUnitFacts()
+    {
+        using Kalburator::Net::isTransientFailure;
+        using Kalburator::Net::retryDelayMsecs;
+        QVERIFY(isTransientFailure(0, true));
+        QVERIFY(isTransientFailure(503, false));
+        QVERIFY(!isTransientFailure(500, false));   // not transient
+        QVERIFY(!isTransientFailure(404, false));
+        QCOMPARE(retryDelayMsecs(1), 1000);
+        QCOMPARE(retryDelayMsecs(2), 2000);
+        QCOMPARE(retryDelayMsecs(9), 30000);        // capped
+        QCOMPARE(retryDelayMsecs(1, 4500), 4500);   // server Retry-After wins
+        QCOMPARE(retryDelayMsecs(1, 90000), 30000); // ...but still capped
+    }
+
     void bearerTokenInjectedOnEveryRequest()
     {
         m_server->addCollection(QStringLiteral("/me/calendar/events"),
@@ -99,12 +116,14 @@ private slots:
             m_client->fetchCollectionSync(QStringLiteral("/me/calendar/events"));
         QVERIFY2(err.ok(), qPrintable(err.message));
         Q_UNUSED(items);
-        // The mock server doesn't validate auth headers, but every request
-        // must have been made — auth-header presence is pinned by inspection
-        // of the transport layer here via request count only (header capture
-        // is a MockGraphServer extension, deliberately not needed: QNAM sets
-        // it from setRawHeader unconditionally).
         QCOMPARE(m_server->requests().size(), 2);
+        // B2C P0 — the mock now records the Authorization header: every
+        // request must carry the Bearer token (extraction guard: deleting
+        // the duplicated lab clients must not drop header injection).
+        for (const auto &rec : m_server->requests()) {
+            QCOMPARE(rec.authorizationHeader,
+                     QByteArray("Bearer test-token"));
+        }
     }
 
     // Delta: initial call returns everything + a token; presenting the token

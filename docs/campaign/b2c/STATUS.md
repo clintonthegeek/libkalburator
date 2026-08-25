@@ -6,14 +6,14 @@ Per `docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md`
 `docs/campaign/eee/vendor-rest-api-wire-notes.md` — same-commit rule
 applies to new O-entries.
 
-**Last updated:** 2026-08-25 (campaign opened; P0 in progress)
+**Last updated:** 2026-08-25 (P0 CLOSED; P1 next)
 
 ## Where we stand
 
 | Phase | State |
 |---|---|
-| P0 transport library-ization | **in progress** — see `2026-08-25-p0-transport-status.md` |
-| P1 calendar backends live | not started |
+| P0 transport library-ization | **done 2026-08-25** — `src/net/blockinghttp` + `src/net/backoff.h`; Graph OAuth in `src/graph/graphauthenticator`, Google OAuth in `src/google/googleauth` (injectable endpoints/browser hook); both CLIs re-pointed, lab auth/HTTP deleted; mock records Authorization header (pin); GraphApiClient GETs retry transient failures (default 2, writes never) |
+| P1 calendar backends live | **next** — GoogleCalendarBackend (new) + MSGraph live hardening |
 | P2 contacts backends | not started |
 | P3 todo backends | not started |
 | P4 providers/config UX | not started |

@@ -1,4 +1,5 @@
 #include "graphapiclient.h"
+#include "backoff.h"
 
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -6,10 +7,13 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 
 namespace Kalburator::Graph {
+
+namespace Net = Kalburator::Net;
 
 namespace {
 // Safety valve against server nextLink loops (Graph never paginates beyond
@@ -33,6 +37,29 @@ void GraphApiClient::setBaseUrl(const QString &baseUrl)
 void GraphApiClient::setAccessToken(const QString &token)
 {
     m_token = token;
+}
+
+void GraphApiClient::setTransientRetryAttempts(int attempts)
+{
+    m_transientRetryAttempts = qMax(0, attempts);
+}
+
+void GraphApiClient::getWithRetry(const QUrl &url, int attempt,
+                                  std::function<void(const RawReply &)> done)
+{
+    get(url, [this, url, attempt, done = std::move(done)](const RawReply &r) {
+        if (attempt < m_transientRetryAttempts
+            && Net::isTransientFailure(r.status, r.networkError)) {
+            const int delay = Net::retryDelayMsecs(attempt);
+            // Heap-held continuation state (O62): url/attempt/done live in
+            // the single-shot's closure, not on this frame.
+            QTimer::singleShot(delay, this, [this, url, attempt, done] {
+                getWithRetry(url, attempt + 1, done);
+            });
+            return;
+        }
+        done(r);
+    });
 }
 
 void GraphApiClient::get(const QUrl &url,
@@ -84,7 +111,7 @@ void GraphApiClient::getPage(std::shared_ptr<QJsonArray> items,
                              std::shared_ptr<int> pages,
                              const QUrl &url, CollectionCallback done)
 {
-    get(url, [this, items, pages, done = std::move(done)](const RawReply &r) {
+    getWithRetry(url, 1, [this, items, pages, done = std::move(done)](const RawReply &r) {
         if (!(r.status >= 200 && r.status < 300)) {
             done(std::nullopt, parseError(r));
             return;

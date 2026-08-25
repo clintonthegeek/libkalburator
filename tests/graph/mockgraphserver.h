@@ -49,6 +49,7 @@ public:
         QByteArray method;
         QString path;      // path + query, URL-decoded
         QByteArray body;
+        QByteArray authorizationHeader;   // B2C P0: pin Bearer injection
     };
 
     explicit MockGraphServer(QObject *parent = nullptr);
