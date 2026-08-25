@@ -55,8 +55,12 @@ Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
 - [ ] P1.c: `GoogleCalendarBackend` reads (discovery, syncToken fetch,
       tombstones, 410 resync, persistence resume)
 - [ ] P1.d: writes (strip rules, PATCH-in-place, idempotent delete) + pins
-- [ ] P1.e: MSGraphCalendarBackend hardening (live delta verify,
-      PATCH-over-recreate audit, post-create remap audit)
+- [x] P1.e: MSGraphCalendarBackend hardening audit (2026-08-25):
+      PATCH-in-place ✓ structural; post-create id-alias bridging ✓
+      (addIdAlias on create); body→HTML/Teams-provisioning normalization ✓
+      owned by edge stages per loss profile; FIXED — deltaStep now uses
+      getWithRetry (delta walks were the only GETs without transient
+      retries). Remaining MS item = live delta verification → P1.f.
 - [ ] P1.f: live checkpoints both directions (g-roundtrip / ms-roundtrip
       protocol; verdicts into wire-notes + FINDINGS)
 

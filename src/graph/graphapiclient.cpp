@@ -159,8 +159,11 @@ void GraphApiClient::deltaStep(const QString &collectionPath,
     if (!deltaToken.isEmpty())
         path += QStringLiteral("?$deltatoken=") + deltaToken;
 
-    get(QUrl(m_baseUrl + path), [this, done = std::move(done)](
-                                    const RawReply &r) mutable {
+    // B2C P0/P1 consistency: delta steps are idempotent GETs — they get
+    // the same transient-failure retries as collection page fetches.
+    getWithRetry(QUrl(m_baseUrl + path), 1,
+                 [this, done = std::move(done)](
+                                     const RawReply &r) mutable {
         DeltaPage page;
         if (r.status == 410) {
             const GraphError e = parseError(r);
