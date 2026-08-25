@@ -4,8 +4,7 @@ Vendor-convergence (EEE) campaign per
 `docs/2026-08-22-campaign-proposal-vendor-convergence-eee.md`. Updated in
 the same commit as plan state (phase-status-docs rule).
 
-**Last updated:** 2026-08-24 (fixtures sanitized + promoted; matrix
-annotations next; A4 user-run remains)
+**Last updated:** 2026-08-25 (A4 live checkpoint PASSED; A5 tag next)
 
 ## Reading order for a fresh session
 
@@ -44,9 +43,14 @@ annotations next; A4 user-run remains)
    four Phase-3 loss profiles (google-person lifted to live-Reversible;
    ms-contact/ms-todotask live-workable via nav POSTs + filtered expand;
    google-task Dropped rulings corpus-confirmed).
-3. **A4 Phase-6 live checkpoint** (USER-RUN per
-   `2026-08-24-live-session-runbook-a2-a3-a4.md`): capture→translate→
-   replay→compare; only declared losses may differ.
+3. ~~A4 Phase-6 live checkpoint~~ **PASSED 2026-08-25** (USER-DELEGATED,
+   per runbook protocol) — fresh captures both vendors; single-event G→C→G
+   gates green after two new declarations (google attendee `organizer`
+   flag; ms empty `body.content` ≡ absent); cross-vendor replays both
+   directions with CORPUS probes PASSED (declared-class diffs only);
+   findings + create-path wire truths in FINDINGS **O67**. New tool:
+   `tools/groundtrip` (`g-roundtrip`, google-event mirror of ms-roundtrip).
+   Probes swept clean.
 4. **A5 tag the phase boundary**; consumer pin bumps voluntary.
 5. Then Tier-B interiors (roadmap doc): scheduling/free-busy,
    visibility/ACLs, resource calendars, taxonomy entities, MAPI named

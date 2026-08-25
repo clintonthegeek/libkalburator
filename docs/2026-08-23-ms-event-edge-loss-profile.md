@@ -152,6 +152,12 @@ code stays honest:
 Fixture round-trip counts after declaration: event-single 4 (all declared),
 events-listing 1, calendarview 1, event-instances 1 — zero undeclared.
 
+**Additional declared normalizations (2026-08-25, Tier A4 live checkpoint).**
+
+5. **Empty body content ≡ absent**: a captured `body.content` of `""`
+   (server-normalized empty HTML body) demotes to full absence of the
+   content key. Empty string and missing key are the same fact.
+
 ## Live checkpoint (2026-08-23): PASSED after one blocking fix
 
 Full protocol run against the real account (probe events → capture →

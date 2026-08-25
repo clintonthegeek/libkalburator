@@ -1,41 +1,39 @@
-// EEE Phase 7.B live-checkpoint runner (offline stage harness).
+// EEE Tier A4 live-checkpoint runner for the google-event edge — mirrors
+// tools/msroundtrip (offline stage harness over real captured payloads):
 //
-// Runs the ms-event ⇄ canon stages over real captured payloads so a human
-// can execute the proposal-invariant-6 checkpoint without writing throwaway
-// code:
-//
-//   ms-roundtrip promote <wire.json>
-//       wire ms-event JSON → canon JSON on stdout
-//   ms-roundtrip demote <canon.json>
-//       canon JSON → ms-event wire JSON on stdout
-//   ms-roundtrip roundtrip <wire.json> [--identity <file>]
+//   g-roundtrip promote <wire.json>
+//       wire google-event JSON → canon JSON on stdout
+//   g-roundtrip demote <canon.json>
+//       canon JSON → google-event wire JSON on stdout
+//   g-roundtrip roundtrip <wire.json>
 //       G→C→G: prints the demoted wire′ to stdout (redirect to a file for
-//       `graphcli create event`) and a per-path diff report to stderr.
-//       Exit 0 iff every differing path is in the DECLARED-normalization set.
-//   ms-roundtrip canon-compare <a.json> <b.json>
+//       `googlecli create event primary`) and a per-path diff report to
+//       stderr. Exit 0 iff every differing path is in the
+//       DECLARED-normalization set.
+//   g-roundtrip canon-compare <a.json> <b.json>
 //       semantic compare of two promoted canon records modulo identity
-//       fields; exit 0 = identical. For step 5 of the protocol (both server
-//       copies promote identically).
+//       fields; exit 0 = identical.
 //
 // The declared-normalization path set mirrors
-// docs/2026-08-23-ms-event-edge-loss-profile.md — extend BOTH that doc and
-// kDeclaredNormalizations together, never silently.
+// docs/2026-08-23-google-event-edge-loss-profile.md — extend BOTH that doc
+// and kDeclaredNormalizations together, never silently.
 
-#include <QCommandLineParser>
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSet>
 #include <QTextStream>
 
-#include "mseventcanonstages.h"
+#include "googlecanonstages.h"
 #include "canonenvelope.h"
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;
-using Kalburator::Calendar::MsEventToCanonStage;
-using Kalburator::Calendar::CanonToMsEventStage;
+using Kalburator::Calendar::GoogleEventToCanonStage;
+using Kalburator::Calendar::CanonToGoogleEventStage;
 
 namespace {
 
@@ -46,11 +44,10 @@ QJsonObject loadObject(const QString &path, bool *ok)
     if (!*ok)
         return {};
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
-    // Accept both bare event objects and {value:[…]} pages (promote the
+    // Accept both bare event objects and {items:[…]} pages (promote the
     // first item of a page for convenience).
     if (doc.isObject()) {
-        const QJsonValue v =
-            doc.object().value(QStringLiteral("value"));
+        const QJsonValue v = doc.object().value(QStringLiteral("items"));
         if (v.isArray() && v.toArray().size() == 1)
             return v.toArray().first().toObject();
         return doc.object();
@@ -81,59 +78,57 @@ void flatten(const QJsonValue &v, const QString &prefix,
 }
 
 /// Paths whose divergence is DECLARED by the loss profile. Wire-level paths,
-/// i.e. keys as they appear in the demoted ms-event object.
+/// i.e. keys as they appear in the demoted google-event object.
 QStringList declaredNormalizations()
 {
     return {
-        // timestamps: promote truncates to second-granular canon UTC ISO;
-        // demote re-emits ".0000000Z" — sub-second precision is lost by design
-        "^createdDateTime$",
-        "^lastModifiedDateTime$",
-        // start/end: offset-less wall time is re-derived from canon UTC +
-        // zone; fraction form normalized to .0000000
+        // created/updated: promote truncates to second-granular canon UTC;
+        // demote re-emits without the ".000Z" millisecond pad (Simplified row)
+        "^created$", "^updated$",
+        // start/end: offset-local dateTime canonicalizes to UTC Z-form with
+        // fraction normalized; timeZone preserved verbatim
         "^start\\.dateTime$", "^end\\.dateTime$",
-        // recurrence: pattern/range re-derived through the converter
-        // (interval defaults, WKST emission) — any RRULE-equivalent delta
-        // is a converter-declared normalization
-        "^recurrence\\.pattern\\.", "^recurrence\\.range\\.",
-        // bodyPreview is server-derived and absent from authored bodies
-        "^bodyPreview$",
-        // @odata.etag / changeKey move when the server accepts a write
-        "^@odata\\.etag$", "^changeKey$",
-        // Graph `type` is reconstructed structurally on demote (declared
-        // decision: canon never stores record topology)
-        "^type$",
-        // O57(d): year-1 .NET sentinels normalize ABSENT
-        "^attendees\\[\\d+\\]\\.status\\.time$",
-        "^responseStatus\\.",
-        // partstat vocabulary: canon needsAction ≡ Graph "none" (absent)
-        "^attendees\\[\\d+\\]\\.status\\.response$",
-        // uid fallback chain: top-level uid ← iCalUId ← transport id (fires
-        // only on $select-projection captures lacking both uid fields)
-        "^uid$",
-        // --- live-checkpoint declarations (2026-08-23, see loss-profile doc
-        //     "Additional declared normalizations") ---
+        // transport fields live in providerExtras, not canon: they do not
+        // survive a canon crossing by design
+        "^etag$", "^htmlLink$", "^hangoutLink$", "^creator", "^kind$",
+        "^selfLink$", "^gadget",
+        // sequence absent from reads ≡ 0 on authored bodies
+        "^sequence$",
+        // visibility "default" ⇄ absent (losslessValues row: omitted both ways)
+        "^visibility$",
+        // transparency "transparent" ⇄ absent... demote emits only when
+        // non-default; reads omit it entirely
+        "^transparency$",
         // false-flag absence: omitted ≡ false for these booleans on reads
-        "^isCancelled$", "^isAllDay$", "^isOnlineMeeting$",
-        // no-meeting triad: onlineMeeting null / provider "unknown" collapse
-        // to full absence when there is no meeting
-        "^onlineMeeting$", "^onlineMeetingProvider$",
-        // body.contentType case normalized to the Graph canonical form;
-        // empty-string content collapses to full absence on demote (A4 live
-        // checkpoint declaration: "" ≡ absent for body.content)
-        "^body\\.contentType$", "^body\\.content$",
-        // range.recurrenceTimeZone dropped: zone vocabulary lives on
-        // start/end (+ original*TimeZone passthrough)
-        "^recurrence\\.range\\.recurrenceTimeZone$",
-        // empty-string displayName inside the rich location struct drops
-        "^location\\.displayName$",
-        // classification Degraded row: personal → private + carrier
-        "^sensitivity$",
-        // the carrier channel itself (x-canon-* values)
-        "^singleValueExtendedProperties",
-        // recurrence absent vs explicit null (O57 corollary: Graph mixes
-        // null and absent representations for "no value")
+        "^guestsCanModify$", "^guestsCanInviteOthers$",
+        "^guestsCanSeeOtherGuests$", "^privateCopy$", "^locked$",
+        "^anyoneCanAddSelf$", "^attendeesOmitted$",
+        // reminders.useDefault false-flag + overrides[] normalization through
+        // the alarms mapping (method vocabulary + minute triggers)
+        "^reminders",
+        // attendees: role→optional Simplified row + partstat vocab 1:1 +
+        // self/id flags transport-local; organizer flag is redundant with
+        // top-level organizer/creator (A4 live checkpoint declaration)
+        "^attendees\\[\\d+\\]\\.(self|id|additionalGuests|comment|organizer)$",
+        "^attendees\\[\\d+\\]\\.optional$",
+        // organizer.self flag is transport-local
+        "^organizer\\.self$", "^organizer\\.id$",
+        // recurrenceId/originalStartTime re-derive through §1.4 keying
+        "^recurringEventId$", "^originalStartTime",
+        // status case-normalized (canon holds lowercase)
+        "^status$",
+        // carrier channel itself (x-canon-* values) + typedProperties shared
+        "^extendedProperties",
+        // recurrence absent vs explicit empty array
         "^recurrence$",
+        // source.title has no canon home → providerExtras (url Simplified row)
+        "^source",
+        // descriptionHtml carrier → x-canon-description-html round-trips via
+        // extendedProperties (covered above); description absent ≡ empty
+        "^description$",
+        // colorId: canon color string passthrough only when numeric;
+        // eventLabelId rides providerExtras
+        "^colorId$", "^eventLabelId$",
     };
 }
 
@@ -160,8 +155,8 @@ int cmdRoundtrip(const QString &wirePath)
         return 2;
     }
 
-    MsEventToCanonStage promote;
-    CanonToMsEventStage demote;
+    GoogleEventToCanonStage promote;
+    CanonToGoogleEventStage demote;
 
     const QByteArray canonBytes = promote.transform(
         QJsonDocument(wire).toJson(QJsonDocument::Compact));
@@ -223,7 +218,7 @@ int cmdCanonCompare(const QString &aPath, const QString &bPath)
         return 2;
     }
 
-    MsEventToCanonStage promote;
+    GoogleEventToCanonStage promote;
     const QByteArray ca = promote.transform(
         QJsonDocument(a).toJson(QJsonDocument::Compact));
     const QByteArray cb = promote.transform(
@@ -236,12 +231,19 @@ int cmdCanonCompare(const QString &aPath, const QString &bPath)
     // Identity fields: transport-local and per-copy; their canon carriers
     // differ between two distinct server copies BY DESIGN.
     static const QStringList identityPrefixes = {
-        QStringLiteral("providerExtras.msgraph.id"),
-        QStringLiteral("providerExtras.msgraph.changeKey"),
-        QStringLiteral("providerExtras.msgraph.webLink"),
-        QStringLiteral("providerExtras.msgraph.@odata.etag"),
-        QStringLiteral("providerExtras.msgraph.createdDateTime"),
-        QStringLiteral("providerExtras.msgraph.lastModifiedDateTime"),
+        QStringLiteral("providerExtras.google.id"),
+        QStringLiteral("providerExtras.google.etag"),
+        QStringLiteral("providerExtras.google.htmlLink"),
+        QStringLiteral("providerExtras.google.hangoutLink"),
+        QStringLiteral("providerExtras.google.creator"),
+        QStringLiteral("providerExtras.google.gadget"),
+        QStringLiteral("providerExtras.google.created"),
+        QStringLiteral("providerExtras.google.updated"),
+        QStringLiteral("providerExtras.google.eventTypePayloads"),
+        QStringLiteral("providerExtras.google.organizer"),
+        QStringLiteral("providerExtras.google.reminders"),
+        QStringLiteral("providerExtras.google.recurringEventId"),
+        QStringLiteral("providerExtras.google.originalStartTime"),
     };
     auto isIdentity = [](const QString &path) {
         for (const QString &p : identityPrefixes)
@@ -280,10 +282,10 @@ int main(int argc, char *argv[])
     if (args.size() < 2) {
         QTextStream(stderr)
             << "usage:\n"
-            << "  ms-roundtrip promote <wire.json>\n"
-            << "  ms-roundtrip demote <canon.json>\n"
-            << "  ms-roundtrip roundtrip <wire.json>\n"
-            << "  ms-roundtrip canon-compare <a.json> <b.json>\n";
+            << "  g-roundtrip promote <wire.json>\n"
+            << "  g-roundtrip demote <canon.json>\n"
+            << "  g-roundtrip roundtrip <wire.json>\n"
+            << "  g-roundtrip canon-compare <a.json> <b.json>\n";
         return 2;
     }
     const QString cmd = args.first();
@@ -292,8 +294,8 @@ int main(int argc, char *argv[])
     if (cmd == QLatin1String("canon-compare") && args.size() >= 3)
         return cmdCanonCompare(args.at(1), args.at(2));
 
-    MsEventToCanonStage p;
-    CanonToMsEventStage d;
+    GoogleEventToCanonStage p;
+    CanonToGoogleEventStage d;
     bool ok = false;
     const QByteArray bytes = [&] {
         QFile f(args.at(1));

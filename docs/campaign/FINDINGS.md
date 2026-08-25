@@ -3063,3 +3063,56 @@ Methodology note appended to doctrine Part III: **drill by the book
 first** — pull the API page BEFORE concluding server brokenness; a wrong
 verb produces a false server-fault verdict (this correction was nearly an
 O-entry of shame).
+
+### O67 — OPEN — A4 Phase-6 live checkpoint, 2026-08-25: cross-vendor replay verdicts + create-path wire truths
+
+Full pipeline executed live (USER-DELEGATED): fresh captures both vendors →
+per-edge G→C→G roundtrips (`tools/msroundtrip`, new `tools/groundtrip`) →
+crossing replays with CORPUS-tagged probes both directions → server copies
+re-promoted and compared. Probes swept clean afterwards. Both directions
+**PASSED** — every divergence is a declared-class normalization.
+
+**(a) Roundtrip gates:** google-event " boardx beta" (3 attendees):
+6 diffs, all declared after one NEW declaration — per-attendee `organizer`
+flag has no canon home (redundant with top-level organizer; declared in
+`groundtrip` + loss profile). ms-event "wild hackathon bring a friend":
+16 diffs, all declared after one NEW declaration — empty-string
+`body.content` ≡ absent on demote.
+
+**(b) MS→canon→Google live create:**
+1. **Google events.insert REJECTS read-only `created`/`updated`** (400
+   Bad Request). Demote emits them; the create path must strip. (Graph
+   accepts its equivalents — asymmetry.)
+2. Google rewrites organizer to the AUTHENTICATED account on insert
+   (source organizer clintoneist1@outlook.com → gmail account).
+3. Server normalizations on read-back: attendee email local-parts
+   lowercased; attendee displayName dropped when it equals the email;
+   default-value echoes (`status:"confirmed"`, `eventType:"default"`,
+   `transparency` opaque stripped as default).
+4. **Identity anchor honored**: client-supplied iCalUID (the MS GUID)
+   survives insert — uid byte-equal across the crossing.
+
+**(c) Google→canon→MS live create (consumer Outlook.com):**
+1. Graph mints a NEW uid on create (client uid/iCalUId NOT honored) —
+   opposite of Google; anchor continuity needs post-create mapping.
+2. Organizer rewritten to authenticating account (same rule as Google).
+3. Text body converted to HTML body (contentType rewrite).
+4. Teams meeting AUTO-PROVISIONED per mailbox default (location +
+   onlineMeeting.joinUrl appear from nowhere); default reminder alarm
+   injected (alarms[0] -900/type display); importance→priority,
+   sensitivity→classification, showAs→freeBusyStatus defaults echoed.
+5. Carriers (singleValueExtendedProperties) stripped at create as before
+   (O61(e) stands for events).
+
+**(d) Cross-vendor invitation propagation observed live**: the Google-side
+probe appeared on the Outlook account as an invitation copy (attendee alias
+hotmail), deleted by the same sweep-clean.
+
+Backend consequences: create paths must strip read-only fields per vendor
+(Google: created/updated), never assume uid continuity across a Graph
+create (re-read + remap), expect organizer rewrite + consumer defaults on
+both vendors. Tool note: `tools/groundtrip` added (g-roundtrip, mirrors
+ms-roundtrip; declared-normalization set mirrors the google-event profile).
+
+Methodology: drill-by-the-book held — the two blocking UNDECLARED diffs
+were fixed by DECLARING them (doc + tool together), not by loosening code.

@@ -97,6 +97,19 @@ JSON-stringified); `eventLabelId` exists in the wire schema (supersedes
 index-based `colorId`) and is carried verbatim via providerExtras until the
 canon catalogue grows a home for it.
 
+**Additional declared normalizations (2026-08-25, Tier A4 live checkpoint,
+via `tools/groundtrip`).**
+
+1. **Attendee `organizer` flag**: redundant with the top-level
+   `organizer`/`creator` identity; no canon home, not carried — demote emits
+   no per-attendee `organizer` boolean. The organizer fact itself survives at
+   top level.
+2. Transport-field absence (`etag`, `htmlLink`, `hangoutLink`, `creator`,
+   `kind`, `sequence`, false-flag booleans, etc.): these live in
+   `providerExtras["google"]`, not canon, and do not survive a canon crossing
+   by design (declared in the runner's normalization set, same discipline as
+   the ms-event profile).
+
 ## Out of scope for this edge (deliberately)
 
 - Transport (OAuth, list/delta/syncToken envelopes) — Phase 7 layering.
