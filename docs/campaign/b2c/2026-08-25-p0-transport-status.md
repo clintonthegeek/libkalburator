@@ -2,7 +2,11 @@
 
 **Status:** in progress (opened 2026-08-25). P0.b landed 2026-08-25:
 Graph OAuth + shared blocking HTTP in the library; graphcli re-pointed
-(graph suites green: api_client, mock_server, ms_backend).
+(graph suites green). P0.c landed 2026-08-25: Google OAuth transport in
+`src/google/googleauth.{h,cpp}` (Kalburator::Google: Tokens/TokenStore/
+LoopbackCodeFlow/refreshTokens; endpoints + browser-launch hook injectable —
+library never shells out); googlecli re-pointed (labpaths split), suites
+green.
 
 Goal (proposal §4 P0): port auth + HTTP out of the lab CLIs into the
 library, async per the E5 threading contract, base-URL injection preserved,
@@ -30,12 +34,14 @@ duplicated auth deleted; mock suites green.
       namespace Kalburator::Graph: Tokens/TokenStore/DeviceCodeFlow/
       refreshTokens; authority URL injectable; consent printing + lab paths
       remain in tools/graphcli/labpaths)
-- [ ] GoogleAuthentication → src/
+- [x] GoogleAuthentication → src/ (`src/google/googleauth.{h,cpp}`;
+      injectable auth/token endpoints for mock grants; injectable
+      browser-launcher std::function replaces the library-side xdg-open)
 - [ ] Async HTTP + retry/backoff + typed errors (blocking HTTP now shared
-      via `src/net/blockinghttp.{h,cpp}` — Kalburator::Net)
-- [~] CLIs re-pointed; duplication deleted (graphcli done — graphauth/
-      graphclient removed, links Kalburator::Sync); googlecli pending
-- [ ] Mock server Authorization-header recording + pin (test gap)
+      via `src/net/blockinghttp.{h,cpp}` — Kalburator::Net; GraphApiClient
+      already async + typed-error; retry/backoff outstanding)
+- [x] CLIs re-pointed; duplication deleted (graphauth/graphclient and
+      googleauth/googleclient removed from tools/, both link Kalburator::Sync)
 
 ## Next
 

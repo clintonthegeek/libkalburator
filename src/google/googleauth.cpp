@@ -1,15 +1,14 @@
 #include "googleauth.h"
-#include "googleclient.h"
+#include "blockinghttp.h"
 
 #include <QDateTime>
-#include <QDir>
 #include <QEventLoop>
 #include <QFile>
-#include <QFileInfo>
+#include <QHash>
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPointer>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -18,8 +17,7 @@
 #include <QUrl>
 #include <QUrlQuery>
 
-static const char *kAuthEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
-static const char *kTokenEndpoint = "https://oauth2.googleapis.com/token";
+namespace Kalburator::Google {
 
 bool Tokens::hasLiveAccessToken() const
 {
@@ -70,71 +68,19 @@ void TokenStore::clear() const
     QFile::remove(m_path);
 }
 
-QString googledir()
-{
-    const QString envDir = qEnvironmentVariable("KALBURATOR_GOOGLE_DIR");
-    if (!envDir.isEmpty())
-        return envDir;
-
-    QDir dir = QDir::current();
-    for (int i = 0; i < 6; ++i) {
-        const QString candidate = dir.filePath("google");
-        if (QFileInfo::exists(candidate + "/GoogleAuthinfo.md"))
-            return candidate;
-        if (!dir.cdUp())
-            break;
-    }
-    return QDir::current().filePath("google");
-}
-
-ClientCredentials readClientCredentials(const QString &dir)
-{
-    ClientCredentials creds;
-
-    creds.clientId = qEnvironmentVariable("KALBURATOR_GOOGLE_CLIENT_ID");
-    creds.clientSecret = qEnvironmentVariable("KALBURATOR_GOOGLE_CLIENT_SECRET");
-    if (creds.valid())
-        return creds;
-
-    QFile file(dir + "/GoogleAuthinfo.md");
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream(stderr) << "Cannot read " << dir
-                            << "/GoogleAuthinfo.md (set KALBURATOR_GOOGLE_CLIENT_ID"
-                            << " and KALBURATOR_GOOGLE_CLIENT_SECRET, or KALBURATOR_GOOGLE_DIR)\n";
-        return {};
-    }
-    static const QRegularExpression idRe("Client ID:\\s*([^\\s]+)");
-    static const QRegularExpression secretRe("Client Secret:\\s*([^\\s]+)");
-    const QString text = QString::fromUtf8(file.readAll());
-    const auto idMatch = idRe.match(text);
-    const auto secretMatch = secretRe.match(text);
-    if (idMatch.hasMatch())
-        creds.clientId = idMatch.captured(1);
-    if (secretMatch.hasMatch())
-        creds.clientSecret = secretMatch.captured(1);
-    if (!creds.valid())
-        QTextStream(stderr) << "GoogleAuthinfo.md lacks 'Client ID:' / 'Client Secret:' lines\n";
-    return creds;
-}
-
-void printGoogleError(const QString &label, int status, const QByteArray &body)
-{
-    QTextStream(stderr) << label << " failed: HTTP " << status << "\n"
-                        << QString::fromUtf8(body) << '\n';
-}
-
 static QByteArray formBody(const QUrlQuery &query)
 {
     return query.toString(QUrl::FullyEncoded).toUtf8();
 }
 
-static Tokens tokenResponseToObject(const HttpResponse &resp, bool &ok)
+static Tokens tokenResponseToObject(const Net::HttpResponse &resp, bool &ok)
 {
     Tokens out;
     const QJsonObject obj = QJsonDocument::fromJson(resp.body).object();
     ok = false;
     if (!resp.ok() || obj.isEmpty()) {
-        printGoogleError("token endpoint", resp.status, resp.body);
+        QTextStream(stderr) << "token endpoint failed: HTTP " << resp.status
+                            << '\n' << QString::fromUtf8(resp.body) << '\n';
         return out;
     }
     if (obj.contains("error")) {
@@ -155,6 +101,22 @@ LoopbackCodeFlow::LoopbackCodeFlow(ClientCredentials creds, QString scopes)
     : m_creds(std::move(creds))
     , m_scopes(std::move(scopes))
 {
+}
+
+void LoopbackCodeFlow::setAuthEndpoint(const QString &url)
+{
+    m_authEndpoint = url;
+}
+
+void LoopbackCodeFlow::setTokenEndpoint(const QString &url)
+{
+    m_tokenEndpoint = url;
+}
+
+void LoopbackCodeFlow::setBrowserLauncher(
+    std::function<void(const QUrl &)> launcher)
+{
+    m_launcher = std::move(launcher);
 }
 
 bool LoopbackCodeFlow::runInteractive(Tokens &out) const
@@ -178,7 +140,7 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
     authQuery.addQueryItem("scope", m_scopes);
     authQuery.addQueryItem("access_type", "offline");
     authQuery.addQueryItem("prompt", "consent");
-    QUrl authUrl(QString::fromUtf8(kAuthEndpoint));
+    QUrl authUrl(m_authEndpoint);
     authUrl.setQuery(authQuery);
 
     QTextStream console(stdout);
@@ -188,10 +150,8 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
             << "Waiting for the OAuth redirect on " << redirectUri << " ...\n"
             << Qt::flush;
 
-    // Best-effort browser launch without a Qt6::Gui dependency; the URL is
-    // printed either way.
-    QProcess::startDetached(QStringLiteral("xdg-open"),
-                            {authUrl.toString(QUrl::FullyEncoded)});
+    if (m_launcher)
+        m_launcher(authUrl);
 
     // 3. Capture exactly one GET on the loopback socket.
     //
@@ -241,7 +201,7 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
                         errMatch.captured(1).toUtf8());
 
                 const QByteArray body =
-                    "<html><body><h2>googlecli</h2><p>Authorization received. "
+                    "<html><body><h2>kalburator</h2><p>Authorization received. "
                     "You may close this tab.</p></body></html>";
                 guard->write("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
                              "Connection: close\r\nContent-Length: "
@@ -286,10 +246,10 @@ bool LoopbackCodeFlow::runInteractive(Tokens &out) const
     exchange.addQueryItem("redirect_uri", redirectUri);
     exchange.addQueryItem("grant_type", "authorization_code");
     bool ok = false;
-    out = tokenResponseToObject(httpRequest(QUrl(QString::fromUtf8(kTokenEndpoint)),
-                                            "POST",
-                                            {{"Content-Type", "application/x-www-form-urlencoded"}},
-                                            formBody(exchange)), ok);
+    out = tokenResponseToObject(Net::httpRequest(QUrl(m_tokenEndpoint),
+                                                 "POST",
+                                                 {{"Content-Type", "application/x-www-form-urlencoded"}},
+                                                 formBody(exchange)), ok);
     return ok;
 }
 
@@ -301,12 +261,15 @@ Tokens refreshTokens(const ClientCredentials &creds, const Tokens &old)
     query.addQueryItem("client_secret", creds.clientSecret);
     query.addQueryItem("grant_type", "refresh_token");
     bool ok = false;
-    Tokens fresh = tokenResponseToObject(httpRequest(QUrl(QString::fromUtf8(kTokenEndpoint)),
-                                                     "POST",
-                                                     {{"Content-Type", "application/x-www-form-urlencoded"}},
-                                                     formBody(query)), ok);
+    Tokens fresh = tokenResponseToObject(Net::httpRequest(
+                                             QUrl(QStringLiteral("https://oauth2.googleapis.com/token")),
+                                             "POST",
+                                             {{"Content-Type", "application/x-www-form-urlencoded"}},
+                                             formBody(query)), ok);
     // The refresh grant does not rotate the refresh token.
     if (fresh.refreshToken.isEmpty())
         fresh.refreshToken = old.refreshToken;
     return fresh;
 }
+
+} // namespace Kalburator::Google

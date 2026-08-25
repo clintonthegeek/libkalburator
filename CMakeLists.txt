@@ -231,6 +231,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/net/blockinghttp.cpp
     # B2C P0 — Graph OAuth transport extracted from the GraphCLI lab
     src/graph/graphauthenticator.cpp
+    # B2C P0 — Google OAuth transport extracted from the googlecli lab
+    src/google/googleauth.cpp
     # EEE Phase 7.C — Microsoft Graph calendar backend (Stage-D tested)
     src/calendar/msgraphcalendarbackend.cpp
     # N1 fix — shared component-scoped recurrence-line extraction
@@ -767,6 +769,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/sync>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/graph>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/net>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/google>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/plugin>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/ui>
 )

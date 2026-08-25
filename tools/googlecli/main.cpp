@@ -1,5 +1,7 @@
-#include "googleauth.h"
-#include "googleclient.h"
+#include "labpaths.h"
+
+#include <googleauth.h>
+#include <blockinghttp.h>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -8,6 +10,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
 #include <QTextStream>
 #include <QUrl>
 #include <QUrlQuery>
@@ -20,6 +23,14 @@ static const char *kScopes =
     "https://www.googleapis.com/auth/userinfo.email";
 
 namespace {
+
+using Kalburator::Google::Tokens;
+using Kalburator::Google::TokenStore;
+using Kalburator::Google::LoopbackCodeFlow;
+using Kalburator::Google::refreshTokens;
+using Kalburator::Net::HttpResponse;
+using Kalburator::Net::httpRequest;
+using Kalburator::Net::urlEncodePathSegment;
 
 struct Session {
     ClientCredentials creds;
@@ -54,6 +65,12 @@ bool acquireTokens(Session &session, bool forceLogin, const QString &googleDir)
     }
 
     LoopbackCodeFlow flow(session.creds, QString::fromUtf8(kScopes));
+    // Lab convenience: best-effort browser launch without a Qt6::Gui
+    // dependency; the URL is printed by the flow either way.
+    flow.setBrowserLauncher([](const QUrl &url) {
+        QProcess::startDetached(QStringLiteral("xdg-open"),
+                                {url.toString(QUrl::FullyEncoded)});
+    });
     Tokens fresh;
     if (!flow.runInteractive(fresh))
         return false;
