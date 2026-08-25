@@ -3131,3 +3131,25 @@ offline-only channel (O61(e)). Matrix preamble regenerated; byte pin green.
 Lesson: verdict tables must cite their evidence per row — the offline-only
 pairing was inherited from O61(e)'s framing without checking the Google
 side had its own live proof.
+
+### O68 — OPEN — B2C P1.f live checkpoint, 2026-08-25: Google rejects client-supplied event ids on insert
+
+First live drill of `GoogleCalendarBackend` (probe cycle vs the real
+consumer account; reads passed immediately: discovery 3 calendars,
+initial listing 33 records). The create probe FAILED with 400
+"Invalid resource id value" — reproduced via raw POST with a single-field
+delta: a client-supplied transport `id` ("requested-b2c-probe") is
+REJECTED on events.insert regardless of the other fields. Google mints
+its own id unconditionally (like Graph's uid behavior — but here it is the
+TRANSPORT id, and unlike Graph the iCalUID anchor still honors client
+values).
+
+Backend consequence: the create seam strips THREE read-only/rejected
+fields now (`created`, `updated`, `id`) — see
+`GoogleCalendarBackend::stripReadOnlyFields`. Mock updated to enforce all
+three rejections so this can never silently regress. The demote stage
+still emits an authored `id`; that remains correct for PATCH (where the
+path carries the server id) but must never reach an insert body.
+
+Sweep note: the failed probe never landed server-side (400), so no
+cleanup was needed for it; the manual reproduction probe was swept.

@@ -444,10 +444,15 @@ QByteArray GoogleCalendarBackend::stripReadOnlyFields(const QByteArray &wireJson
 {
     // O67(b)(1): Google events.insert REJECTS read-only created/updated
     // (400 Bad Request) even though the canon→google-event demote emits
-    // them from canon created/lastModified. Strip at the transport seam.
+    // them from canon created/lastModified.
+    // O68 (live checkpoint, 2026-08-25): Google ALSO rejects a
+    // client-supplied transport `id` ("Invalid resource id value") — the
+    // server mints its own. Strip all three at the transport seam; the
+    // iCalUID anchor is what survives.
     QJsonObject obj = QJsonDocument::fromJson(wireJson).object();
     obj.remove(QStringLiteral("created"));
     obj.remove(QStringLiteral("updated"));
+    obj.remove(QStringLiteral("id"));
     return QJsonDocument(obj).toJson(QJsonDocument::Compact);
 }
 

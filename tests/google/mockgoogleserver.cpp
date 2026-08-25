@@ -288,8 +288,11 @@ QByteArray MockGoogleServer::respond(const RecordedRequest &req)
                 const QJsonObject posted =
                     QJsonDocument::fromJson(req.body).object();
                 // O67(b)(1): Google REJECTS read-only created/updated.
+                // O68: Google REJECTS a client-supplied transport id
+                // ("Invalid resource id value") — server mints its own.
                 if (posted.contains(QStringLiteral("created"))
-                    || posted.contains(QStringLiteral("updated"))) {
+                    || posted.contains(QStringLiteral("updated"))
+                    || posted.contains(QStringLiteral("id"))) {
                     const QByteArray body = QJsonDocument(errorBody(
                         400, QStringLiteral("invalid"),
                         QStringLiteral("Bad Request"))).toJson(QJsonDocument::Compact);

@@ -41,3 +41,18 @@ add_test(NAME tst_google_calendar_backend COMMAND tst_google_calendar_backend)
 set_tests_properties(tst_google_calendar_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# B2C P1.f — LIVE checkpoint (skips without KALBURATOR_GOOGLE_DIR).
+add_executable(tst_google_calendar_backend_live tst_google_calendar_backend_live.cpp)
+target_link_libraries(tst_google_calendar_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_google_calendar_backend_live COMMAND tst_google_calendar_backend_live)
+set_tests_properties(tst_google_calendar_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

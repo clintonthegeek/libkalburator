@@ -13,7 +13,7 @@ applies to new O-entries.
 | Phase | State |
 |---|---|
 | P0 transport library-ization | **done 2026-08-25** — `src/net/blockinghttp` + `src/net/backoff.h`; Graph OAuth in `src/graph/graphauthenticator`, Google OAuth in `src/google/googleauth` (injectable endpoints/browser hook); both CLIs re-pointed, lab auth/HTTP deleted; mock records Authorization header (pin); GraphApiClient GETs retry transient failures (default 2, writes never) |
-| P1 calendar backends live | **next** — GoogleCalendarBackend (new) + MSGraph live hardening |
+| P1 calendar backends live | **in progress** — GoogleCalendarBackend DONE incl. LIVE checkpoint passed (O68 caught + fixed); MS live-delta verification remains |
 | P2 contacts backends | not started |
 | P3 todo backends | not started |
 | P4 providers/config UX | not started |

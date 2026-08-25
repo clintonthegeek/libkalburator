@@ -19,6 +19,7 @@ and the roundtrip harnesses `tools/msroundtrip` / `tools/groundtrip`.
 | Behavior | Detail | Finding |
 |---|---|---|
 | **Read-only fields REJECTED** | `created` / `updated` in an insert body ⇒ HTTP 400 Bad Request (generic message). Demote output must strip before create. | O67(b)(1) |
+| **Client transport id REJECTED** | A supplied top-level `id` ⇒ HTTP 400 "Invalid resource id value" regardless of charset conformance. Server mints its own id; the iCalUID anchor is what honors client values. Create seams must strip `id` too. | O68 |
 | **Organizer rewritten** | Server replaces any supplied organizer with the AUTHENTICATED account. Source-organizer identity is not preservable through a create. | O67(b)(2) |
 | **iCalUID honored** | Client-supplied `iCalUID` survives insert — cross-vendor identity anchors are preservable (unlike Graph). Enables G→C→G byte-equal identity. | O67(b)(4), Phase-2 checkpoint |
 | Read-back default echoes | Freshly created events read back with `status:"confirmed"`, `eventType:"default"` even when omitted at create; `transparency` non-default values survive, default (opaque) collapses to absent. | O67(b)(3) |

@@ -279,8 +279,8 @@ private slots:
         }
         QVERIFY(aliasFound);
 
-        // Wire truth: the POST body must NOT contain created/updated but
-        // MUST keep iCalUID.
+        // Wire truth: the POST body must NOT contain created/updated/id
+        // (O67(b)(1) + O68) but MUST keep iCalUID.
         const QByteArray postBody =
             m_server->requests().last().method == "POST"
                 ? m_server->requests().last().body : QByteArray();
@@ -289,6 +289,7 @@ private slots:
             QJsonDocument::fromJson(postBody).object();
         QVERIFY(!sent.contains(QLatin1String("created")));
         QVERIFY(!sent.contains(QLatin1String("updated")));
+        QVERIFY(!sent.contains(QLatin1String("id")));
         QCOMPARE(sent.value(QStringLiteral("iCalUID")).toString(),
                  QStringLiteral("anchor-uid@example.com"));
     }

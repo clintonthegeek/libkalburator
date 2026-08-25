@@ -61,8 +61,16 @@ Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
       owned by edge stages per loss profile; FIXED — deltaStep now uses
       getWithRetry (delta walks were the only GETs without transient
       retries). Remaining MS item = live delta verification → P1.f.
-- [ ] P1.f: live checkpoints both directions (g-roundtrip / ms-roundtrip
-      protocol; verdicts into wire-notes + FINDINGS)
+- [x] P1.f (Google leg): **LIVE CHECKPOINT PASSED 2026-08-25** —
+      `tst_google_calendar_backend_live` full probe cycle vs the real
+      account: discovery (3 calendars) → initial listing (33 records) →
+      CORPUS-probe create → incremental visibility with iCalUID anchor
+      byte-honored + organizer rewrite observed → PATCH-in-place → delete
+      verified gone; account swept clean. The drill CAUGHT a real wire
+      truth before any consumer could hit it — FINDINGS **O68**: Google
+      rejects client-supplied transport ids on insert ("Invalid resource
+      value"); create seam now strips created/updated/id, mock enforces
+      all three. MS live-delta leg remains (next session).
 
 ## Open risks carried
 
