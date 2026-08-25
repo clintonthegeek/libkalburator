@@ -51,16 +51,35 @@ consumer contact GET-by-id flaky → listings/delta), O67 (Google insert
 REJECTS read-only created/updated and HONORS client iCalUID; Graph create
 mints fresh uid, rewrites organizer, converts body→HTML, auto-provisions
 Teams meetings; Google Calendar extendedProperties are live-Reversible —
-see O67 addendum).
+see O67 addendum), O68 (Google insert also REJECTS a client-supplied
+transport id — strip created/updated/id at every Google create seam),
+O69 (consumer Graph delta pages deliver SKELETON projections — no uid/
+iCalUId/subject; union-merge delta items over cached records; identity
+fallback chain fires on normal traffic).
 
 **Next (Tier-B interiors, roadmap doc):** scheduling/free-busy,
 visibility/ACLs, resource calendars, taxonomy entities, MAPI named
 properties, beta-horizon watch.
-**Successor campaign proposed (DRAFT):**
-`docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md` —
-production transports + five vendor backends to consumer-droppable state
-(P0 transport library-ization → P1 calendars live → P2 contacts → P3 todo
-→ P4 providers/UX → P5 identity wiring → P6 consumer handoff).
+
+## B2C campaign (vendor backends to consumers) — OPENED & ACTIVE 2026-08-25
+
+Proposal: `docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md`
+(§3 invariants binding — esp. invariant 1: NO backend without a live-account
+checkpoint). Live state + phase table: `docs/campaign/b2c/STATUS.md`.
+
+**Landed:** P0 transport library-ization (`src/net/blockinghttp` +
+`backoff.h`; `src/graph/graphauthenticator`; `src/google/googleauth`; lab
+CLIs re-pointed onto the library); P1 calendar backends —
+`GoogleApiClient`, `MockGoogleServer` (tests/google/),
+`GoogleCalendarBackend`, MSGraph hardening (deltaStep retries, O69
+skeleton union-merge); **BOTH live checkpoints PASSED** vs real accounts
+(`tst_{google,ms}_calendar_backend_live` in-repo, QSKIP without creds via
+KALBURATOR_{GOOGLE,MSGRAPH}_DIR). Findings O68/O69 caught+fixed same-session.
+
+**Next (P2):** contacts backends — Graph contacts via listings/delta ONLY
+(O66(f)) with nav-POST extension carriers; Google People via
+people.connections with clientData carriers. Then P3 todo, P4 providers/
+UX, P5 identity wiring, P6 consumer handoff.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();

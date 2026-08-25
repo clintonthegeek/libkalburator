@@ -59,3 +59,18 @@ add_test(NAME tst_ms_graph_calendar_backend COMMAND tst_ms_graph_calendar_backen
 set_tests_properties(tst_ms_graph_calendar_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# B2C P1.f — LIVE checkpoint (skips without KALBURATOR_MSGRAPH_DIR).
+add_executable(tst_ms_graph_calendar_backend_live tst_ms_graph_calendar_backend_live.cpp)
+target_link_libraries(tst_ms_graph_calendar_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_ms_graph_calendar_backend_live COMMAND tst_ms_graph_calendar_backend_live)
+set_tests_properties(tst_ms_graph_calendar_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

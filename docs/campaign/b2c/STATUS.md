@@ -6,15 +6,15 @@ Per `docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md`
 `docs/campaign/eee/vendor-rest-api-wire-notes.md` — same-commit rule
 applies to new O-entries.
 
-**Last updated:** 2026-08-25 (P0 CLOSED; P1 next)
+**Last updated:** 2026-08-25 (P1 CLOSED — both calendar backends live-checkpointed; P2 next)
 
 ## Where we stand
 
 | Phase | State |
 |---|---|
 | P0 transport library-ization | **done 2026-08-25** — `src/net/blockinghttp` + `src/net/backoff.h`; Graph OAuth in `src/graph/graphauthenticator`, Google OAuth in `src/google/googleauth` (injectable endpoints/browser hook); both CLIs re-pointed, lab auth/HTTP deleted; mock records Authorization header (pin); GraphApiClient GETs retry transient failures (default 2, writes never) |
-| P1 calendar backends live | **in progress** — GoogleCalendarBackend DONE incl. LIVE checkpoint passed (O68 caught + fixed); MS live-delta verification remains |
-| P2 contacts backends | not started |
+| P1 calendar backends live | **done 2026-08-25** — GoogleApiClient + MockGoogleServer + GoogleCalendarBackend (syncToken walks, tombstones, 410 self-heal, persisted resume, O67/O68 write rules) and MSGraph hardening (deltaStep retries, O69 skeleton union-merge); BOTH live checkpoints PASSED vs real accounts (`tst_google_calendar_backend_live`, `tst_ms_graph_calendar_backend_live`; skip without creds). Findings O68 + O69 caught & fixed same-session |
+| P2 contacts backends | next — Graph contacts (listings/delta reads only, O66(f)) + Google People (clientData carriers) |
 | P3 todo backends | not started |
 | P4 providers/config UX | not started |
 | P5 identity wiring | not started |
@@ -32,4 +32,12 @@ applies to new O-entries.
 
 ## Findings index (this campaign)
 
-(none yet)
+- **O68** — Google events.insert REJECTS client-supplied transport ids
+  (400 "Invalid resource id value"); create seams strip
+  created/updated/id. Caught by the P1.f Google live checkpoint.
+- **O69** — consumer Graph delta pages deliver SKELETON projections
+  (no uid/iCalUId/subject); MSGraphCalendarBackend union-merges skeletons
+  over cached records; identity fallback chain fires on normal traffic.
+  Caught by the P1.f MS live checkpoint.
+(evidence in repo-root `docs/campaign/FINDINGS.md`; wire knowledge in
+`docs/campaign/eee/vendor-rest-api-wire-notes.md`)

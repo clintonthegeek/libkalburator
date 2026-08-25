@@ -253,15 +253,36 @@ void MSGraphCalendarBackend::startDeltaFetch(std::shared_ptr<FetchState> st)
                     st->cache.remove(id);
                     continue;
                 }
+
+                // O69: consumer delta pages can deliver SKELETON projections
+                // ({id,start,end,type,etag} only). When a richer cached copy
+                // exists, union-merge the skeleton OVER it instead of
+                // replacing — otherwise an incremental walk would clobber
+                // full records. Tombstones handled above; declared
+                // limitation: subject-only edits/field deletions are not
+                // observable through a skeleton page.
+                QJsonObject effective = ev;
+                const auto existing = st->cache.constFind(id);
+                if (!ev.contains(QStringLiteral("createdDateTime"))
+                    && existing != st->cache.constEnd()) {
+                    const QJsonObject cached =
+                        QJsonDocument::fromJson(existing->data).object();
+                    for (auto it = ev.constBegin(); it != ev.constEnd(); ++it)
+                        effective.insert(it.key(), it.value());
+                    for (auto it = cached.constBegin(); it != cached.constEnd(); ++it)
+                        if (!effective.contains(it.key()))
+                            effective.insert(it.key(), it.value());
+                }
+
                 BackendRecord r;
                 r.id = id;
                 r.type = QStringLiteral("event");
                 r.displayName =
-                    ev.value(QStringLiteral("subject")).toString();
-                r.data = compactWire(ev);
+                    effective.value(QStringLiteral("subject")).toString();
+                r.data = compactWire(effective);
                 r.contentHash = sha256Hex(r.data);
                 r.lastModified = QDateTime::fromString(
-                    ev.value(QStringLiteral("lastModifiedDateTime"))
+                    effective.value(QStringLiteral("lastModifiedDateTime"))
                         .toString(),
                     Qt::ISODate);
                 st->cache.insert(id, r);

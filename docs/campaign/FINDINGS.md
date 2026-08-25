@@ -3153,3 +3153,27 @@ path carries the server id) but must never reach an insert body.
 
 Sweep note: the failed probe never landed server-side (400), so no
 cleanup was needed for it; the manual reproduction probe was swept.
+
+### O69 — OPEN — B2C P1.f MS live drill, 2026-08-25: consumer delta pages deliver SKELETON projections
+
+Second live-drill discovery of the day, on the MS leg
+(`MSGraphCalendarBackend` vs the real consumer Outlook.com mailbox):
+`/me/events/delta` pages deliver items carrying ONLY
+`{id, start, end, type, @odata.type, @odata.etag}` — no subject, no uid,
+no iCalUId, no body, no timestamps — while plain `/me/events?$top=N`
+listings return FULL resources (verified side-by-side, same minute).
+Observed on BOTH the initial walk and replays; `Prefer:
+return=representation` did not restore richness (returned an empty page).
+All five observed delta items were skeletons across two independent walks.
+
+Backend consequence (fixed in the same commit): the backend must treat a
+delta item lacking `createdDateTime` as PARTIAL when a richer cached copy
+exists — union-merge the skeleton OVER the cached record instead of
+replacing it (tombstones via `@removed` unaffected). Declared limitation:
+field-level deletions and subject-only edits cannot be observed through a
+skeleton page; correctness relies on periodic full listings (410 resyncs,
+re-adds) surfacing them eventually.
+
+Identity consequence: records delivered via delta may lack uid/iCalUId —
+the loss-profile fallback chain (uid ← iCalUId ← transport id) is not just
+a $select-projection concern, it fires on NORMAL consumer delta traffic.

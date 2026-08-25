@@ -1,6 +1,7 @@
 # P1 — Calendar backends to production: status
 
-**Status:** in progress (opened 2026-08-25)
+**Status:** CLOSED 2026-08-25 — both legs live-checkpointed; see checklist.
+Remaining follow-ups are recorded as P2+ scope, not P1 debt.
 
 Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
 `MSGraphCalendarBackend` hardening; live checkpoints both directions.
@@ -71,6 +72,25 @@ Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
       rejects client-supplied transport ids on insert ("Invalid resource
       value"); create seam now strips created/updated/id, mock enforces
       all three. MS live-delta leg remains (next session).
+- [x] P1.f (MS leg): **LIVE CHECKPOINT PASSED 2026-08-25** —
+      `tst_ms_graph_calendar_backend_live` full probe cycle vs the real
+      Outlook.com account: discovery (3 calendars) → initial delta walk →
+      probe create (Graph minted transport id; alias bridged) →
+      incremental walk visible → PATCH-in-place → delete verified gone;
+      swept clean. The drill CONFIRMED FINDINGS **O69 live**: consumer
+      delta pages deliver SKELETON projections (probe arrived with NO
+      uid/iCalUId/subject); backend now union-merges skeletons over cached
+      rich records instead of clobbering. Identity fallback chain
+      (uid ← iCalUId ← transport id) fires on NORMAL consumer traffic.
+
+## Close-out notes
+
+- Both calendar backends now satisfy proposal invariant 1 (live checkpoint
+  before any consumer exposure). Two new findings (O68, O69) landed in the
+  same session as their fixes — the checkpoints paid for themselves.
+- Known deferred (P2+ scope): series/override fetch via instances/
+  calendarView (v2 write-back of overrides likewise); rate-limit tuning if
+  live load demands; MSGraph provider/contribution registration is P4.
 
 ## Open risks carried
 
