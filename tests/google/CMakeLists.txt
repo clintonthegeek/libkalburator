@@ -25,3 +25,19 @@ add_test(NAME tst_google_api_client COMMAND tst_google_api_client)
 set_tests_properties(tst_google_api_client PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# B2C P1 — GoogleCalendarBackend against the mock Google server.
+add_executable(tst_google_calendar_backend tst_google_calendar_backend.cpp)
+target_link_libraries(tst_google_calendar_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        kalburator_mock_google_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_google_calendar_backend COMMAND tst_google_calendar_backend)
+set_tests_properties(tst_google_calendar_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

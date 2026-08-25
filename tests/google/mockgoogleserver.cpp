@@ -234,9 +234,9 @@ QByteArray MockGoogleServer::respond(const RecordedRequest &req)
                        queryValue(req.path, "maxResults").toInt(), {});
     }
 
-    // 3. Events collections: /calendars/<id>/events.
+    // 3. Events collections: /calendars/<id>/events[/item-id].
     if (p.startsWith(QLatin1String("/calendars/"))
-        && p.endsWith(QLatin1String("/events"))) {
+        && p.contains(QLatin1String("/events"))) {
         const QString calId = p.section(QLatin1Char('/'), 2, 2);
         const QJsonArray items = m_events.value(calId);
 
@@ -322,7 +322,11 @@ QByteArray MockGoogleServer::respond(const RecordedRequest &req)
             }
         }
 
-        // GET listing with sync-token semantics.
+        // GET listing with sync-token semantics (collection path only).
+        if (!p.endsWith(QLatin1String("/events"))) {
+            return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+                   "Connection: close\r\n\r\n";
+        }
         const QString syncToken = queryValue(req.path, "syncToken");
         QString nextSyncToken;
         QJsonArray effective = items;

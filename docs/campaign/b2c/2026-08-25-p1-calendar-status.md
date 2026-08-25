@@ -43,6 +43,15 @@ Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
       isGone(); pageToken aggregation with nextSyncToken surfacing;
       mock fakes sync-token/410 semantics + O67 insert rejection,
       iCalUID honoring, organizer rewrite; 5 slots green)
+- [x] P1.c+d: `GoogleCalendarBackend`
+      (`src/calendar/googlecalendarbackend.{h,cpp}`; landed 2026-08-25) —
+      calendarList discovery w/ accessRole→writable mapping; syncToken
+      incremental fetch (full merged set per engine contract);
+      status:"cancelled" tombstones; 410 Gone one-shot self-heal (O42);
+      atomic persisted state resume across instances; O67 writes
+      (created/updated stripped at POST seam, client iCalUID preserved,
+      minted-transport-id alias bridging via addIdAlias, PATCH in place,
+      410-delete-as-success). 9 slots green in tst_google_calendar_backend.
 - [ ] P1.c: `GoogleCalendarBackend` reads (discovery, syncToken fetch,
       tombstones, 410 resync, persistence resume)
 - [ ] P1.d: writes (strip rules, PATCH-in-place, idempotent delete) + pins
