@@ -51,10 +51,14 @@ the same commit as plan state (phase-status-docs rule).
    findings + create-path wire truths in FINDINGS **O67**. New tool:
    `tools/groundtrip` (`g-roundtrip`, google-event mirror of ms-roundtrip).
    Probes swept clean.
-4. **A5 tag the phase boundary**; consumer pin bumps voluntary.
-5. Then Tier-B interiors (roadmap doc): scheduling/free-busy,
-   visibility/ACLs, resource calendars, taxonomy entities, MAPI named
-   properties, beta-horizon watch.
+4. ~~A5 tag the phase boundary~~ **done 2026-08-25** — tagged `v1.03`.
+   Consumer pin bumps voluntary (coordination page self row updated).
+
+**Tier A is CLOSED.** Consolidated wire knowledge for both REST APIs now
+lives in `docs/campaign/eee/vendor-rest-api-wire-notes.md` (update it in
+the same commit as any new O-entry). Next: Tier-B interiors (roadmap doc):
+scheduling/free-busy, visibility/ACLs, resource calendars, taxonomy
+entities, MAPI named properties, beta-horizon watch.
 
 ## Findings index (this campaign)
 

@@ -19,17 +19,20 @@ Live drills on consumer accounts settled the O61(e) question
 per channel. `Reversible` rulings split three ways:
 
 - **live-Reversible** â Google People `clientData`
-  (create + fresh read proven) and both Graph open-extension
-  channels (`contact`, `todoTask`), which SURVIVE when spoken
-  to properly: nav-property `POST .../{id}/extensions` â never
-  PATCH-borne, never inline-at-create (todoTask inline-create
-  is echoed but NOT persisted) â then collection-level
+  (create + fresh read proven), Google Calendar
+  `extendedProperties.private` (carriers survive consumer
+  creates byte-exact â Phase-2 checkpoint and A4 replay both
+  proven), and both Graph open-extension channels (`contact`,
+  `todoTask`), which SURVIVE when spoken to properly:
+  nav-property `POST .../{id}/extensions` â never PATCH-borne,
+  never inline-at-create (todoTask inline-create is echoed but
+  NOT persisted) â then collection-level
   `$expand=extensions($filter=Id eq '<full-id>')`; the Outlook
   full-id prefix is `Microsoft.OutlookServices.
   OpenTypeExtension.*`.
-- **offline-only** â Google Calendar `extendedProperties` and
-  MS Graph event `singleValueExtendedProperties` (O61(e):
-  silently stripped on consumer creates).
+- **offline-only** â MS Graph event
+  `singleValueExtendedProperties` (O61(e): silently stripped
+  on consumer creates; PATCH-in-place works).
 - **no channel** â Google Tasks has no extension point; all
   its non-carried properties remain `Dropped` (O66(c)
   corpus-confirms).

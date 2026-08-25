@@ -10,11 +10,11 @@ at the authoritative doc.
 
 ---
 
-## 1. Release / pin state (as of 2026-08-23)
+## 1. Release / pin state (as of 2026-08-25)
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, tags up to **v1.02** (EEE Phase 2 google-event ⇄ canon edge + Stage D mock Graph server + googlecli lab, 2026-08-23 — §2d). Fully additive; consumers unaffected. |
+| **libkalburator** | — (self) | `main`, tags up to **v1.03** (EEE Tier A closed: all four vendor edges + fixture promotion, O66/O67 carrier verdicts, A4 live checkpoint both directions, `tools/groundtrip`; 2026-08-25 — §2e). Fully additive; consumers unaffected. |
 | **PlanStan** | **v0.97** | Not yet bumped to v0.98+ (all additive, no code change forced). Unaffected by O55/O56 (no sqlite-hub endpoints; engine-stable ids everywhere). Note O56's hold-gate changes Unmonitored AskUser semantics for it too: a run with an unresolved conflict now writes NOTHING (all-or-nothing per mapping). |
 | **WildPalms** | **v1.00 (bumped post-O55)** | Filed the O55 followup (2026-08-22); **RESOLVED same day in v1.01** (§2c) — pin bump only; v1.00-poisoned profiles self-heal. |
 
@@ -121,6 +121,27 @@ silently drops consent-screen-unapproved OAuth scopes (relevant to any
 future Google transport work). Still zero consumer impact; campaign status:
 `docs/campaign/eee/STATUS.md`.
 
+## 2e. Tier A CLOSED (2026-08-25, tag v1.03) — vendor edges complete; wire knowledge consolidated
+
+Still **zero pin/code impact** for consumers — everything is additive.
+Tier A of the EEE campaign closed: all four vendor edges
+(`google-person`, `ms-contact`, `google-task`, `ms-todotask`) + the two
+event edges live-checkpointed in BOTH directions (A4, FINDINGS **O67**),
+sanitized task fixtures committed with promotion slots, O66/O67 carrier
+verdicts annotated into CONVERGENCE-MATRIX + loss profiles. Roundtrip
+harnesses `tools/msroundtrip` / `tools/groundtrip` let hosts replay the
+checkpoint protocol without throwaway code.
+
+**Durable REST-API knowledge for BOTH vendors now lives in one page:**
+`docs/campaign/eee/vendor-rest-api-wire-notes.md` (Google Calendar/Tasks +
+MS Graph create/read/carrier/identity behaviors, O57–O67 consolidated).
+Consumers building their own vendor transports should read it before
+touching either API — highlights: Google insert rejects read-only
+created/updated but HONORS client iCalUID; Graph create mints a fresh uid,
+rewrites organizer, auto-provisions Teams meetings; both vendors rewrite
+organizer to the authenticating account; Graph consumer GET-by-id is
+unreliable (use listings/delta).
+
 | # | From | Item | Status |
 |---|---|---|---|
 | ~~**O54**~~ | PlanStan (live session, 2026-08-21) | `RemoteCalendarBackend` guessed every item's write URL as `<calendar>/<uid>.ics`; false for any item another CalDAV client created — first edit-and-sync of an adopted calendar's pre-existing items failed permanently (SabreDAV 400). | **RESOLVED 2026-08-22** (branch `fix/o54-uid-url-assumption`): `m_uidToUrl` cache + `resolveItemUrl()` across all update/delete/read paths, per the recommended fix shape; CardDAV audited clean. Regression test RED→GREEN in `tst_remotecalendarbackend_convergence`. Suite 177/179 (identical pre-existing baseline). Consumers need no code change; bump the pin when convenient. Closure summary: FINDINGS **O54**. |
@@ -172,12 +193,14 @@ a default the sole real caller already overrode).
 
 ## 7. Known pre-existing failures (NOT introduced by §3)
 
-Updated 2026-08-23: the full suite is **180 passing / 182 total** (EEE
-Phase 2 + Stage D gates included). The reds are the two documented
-live-Radicale-state-dependent slots:
+Updated 2026-08-25: the full suite is **191 passing / 195 total** (EEE
+Tier A included). The four reds are environmental, verified PRE-EXISTING
+(reproduce at pre-session `e1846a3`; KDAV 30s-transfer-timeout pattern vs
+the local Radicale):
 
-- **`tst_backend_signals`** — live-Radicale-state-dependent.
-- **`tst_remotecalendarbackend`** — the long-standing Radicale live-state flake.
+- **`tst_backend_signals`**, **`tst_backend_thread_relocation`**,
+  **`tst_backend_reentrancy_pin`**, **`tst_remotecalendarbackend`** —
+  live-Radicale-state-dependent; re-check when Radicale state resets.
 
 (The third historical red,
 `tst_calendar_canon_roundtrip::canonPersonalClassificationProducesPrivateAndStash`,

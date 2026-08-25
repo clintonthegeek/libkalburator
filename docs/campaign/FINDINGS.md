@@ -3116,3 +3116,18 @@ ms-roundtrip; declared-normalization set mirrors the google-event profile).
 
 Methodology: drill-by-the-book held — the two blocking UNDECLARED diffs
 were fixed by DECLARING them (doc + tool together), not by loosening code.
+
+### O67 ADDENDUM — 2026-08-25, same session: Google Calendar extendedProperties re-classed live-Reversible (matrix verdict corrected)
+
+While consolidating the wire notes it emerged that the carrier-survival
+preamble added to CONVERGENCE-MATRIX.md earlier today misclassed Google
+Calendar `extendedProperties.private` as offline-only. The evidence says
+otherwise: the Phase-2 checkpoint event's `x-canon-priority` came back from
+a live create+read (v1.02 fixture), and the A4 MS→canon→Google replay
+carried ALL five x-canon rows through a consumer create byte-exact.
+Corrected verdict: Google Calendar extendedProperties = **live-Reversible**
+(the calendar-domain channel that works); MS event SVEP remains the only
+offline-only channel (O61(e)). Matrix preamble regenerated; byte pin green.
+Lesson: verdict tables must cite their evidence per row — the offline-only
+pairing was inherited from O61(e)'s framing without checking the Google
+side had its own live proof.
