@@ -5,6 +5,7 @@
 add_subdirectory(blob)
 add_subdirectory(convergence)
 add_subdirectory(graph)
+add_subdirectory(google)
 add_subdirectory(engine)
 add_subdirectory(journal)
 add_subdirectory(storage)

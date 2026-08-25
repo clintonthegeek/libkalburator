@@ -37,7 +37,12 @@ Goal (proposal §4 P1): `GoogleCalendarBackend` (new) +
 
 ## Checklist
 
-- [ ] P1.b: `GoogleApiClient` + `MockGoogleServer` + `tst_google_api_client`
+- [x] P1.b: `GoogleApiClient` + `MockGoogleServer` + `tst_google_api_client`
+      (landed 2026-08-25 — envelope-only async transport mirroring
+      GraphApiClient; typed `GoogleError` with reason discriminator +
+      isGone(); pageToken aggregation with nextSyncToken surfacing;
+      mock fakes sync-token/410 semantics + O67 insert rejection,
+      iCalUID honoring, organizer rewrite; 5 slots green)
 - [ ] P1.c: `GoogleCalendarBackend` reads (discovery, syncToken fetch,
       tombstones, 410 resync, persistence resume)
 - [ ] P1.d: writes (strip rules, PATCH-in-place, idempotent delete) + pins

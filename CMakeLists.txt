@@ -233,6 +233,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/graph/graphauthenticator.cpp
     # B2C P0 — Google OAuth transport extracted from the googlecli lab
     src/google/googleauth.cpp
+    # B2C P1 — Google Calendar v3 transport client (pagination + sync tokens)
+    src/google/googleapiclient.cpp
     # EEE Phase 7.C — Microsoft Graph calendar backend (Stage-D tested)
     src/calendar/msgraphcalendarbackend.cpp
     # N1 fix — shared component-scoped recurrence-line extraction
