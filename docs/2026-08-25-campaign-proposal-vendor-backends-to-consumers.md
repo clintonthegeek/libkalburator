@@ -129,6 +129,24 @@ resolution holding (strangers stay strangers).
   server dueDateTime rewrite tolerance; extension carriers via nav POST;
   **re-read after every write** (inline-create wire-lie).
 
+**Kind-demux deliverable (added 2026-08-25, architecture decision):**
+iCal bundles VEVENT+VTODO in ONE collection while vendor-native providers
+keep events and tasks discrete. The rectification rule — adopted because
+the `todo` canon domain's spine IS `[ical-vtodo → canon]` (EEE Phase 3),
+making Radicale VTODOs and vendor tasks data-model peers already — is that
+**transport grouping never crosses a domain boundary**: a mixed DAV
+collection surfaces as TWO `ProviderBackendSpec`s from one provider (a
+calendar-domain spec filtered to VEVENT/VJOURNAL; a todo-domain spec
+filtered to VTODO), using the proven multi-spec mechanism
+(`MultiProtocolDavProvider` precedent) plus `RecordFilter`/
+`FilteredCollectionBackend` (already inside `RemoteCalendarBackend`).
+Filters guarantee disjoint record sets ⇒ no write contention on shared
+hrefs; ids stay href-stable in both views; `DiscoveredCalendar`
+supportsVTodo-style flags demote to discovery/UI metadata only. This
+unlocks the full EEE triangle (DAV todo ⇄ vendor task convergence through
+the todo hub); without it only vendor⇄vendor task sync works. Vendor-side
+todo backends need nothing here — they are discrete by construction.
+
 Exit: fixture-promotion corpora replayed through the real backends; both
 todo-edge roundtrip contracts survive the network.
 
