@@ -56,8 +56,11 @@ the same commit as plan state (phase-status-docs rule).
 
 **Tier A is CLOSED.** Consolidated wire knowledge for both REST APIs now
 lives in `docs/campaign/eee/vendor-rest-api-wire-notes.md` (update it in
-the same commit as any new O-entry). Next: Tier-B interiors (roadmap doc):
-scheduling/free-busy, visibility/ACLs, resource calendars, taxonomy
+the same commit as any new O-entry). Successor campaign proposed:
+`docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md`
+(DRAFT — production backends + transports for all five vendor/domain
+pairs, consumer-droppable). Tier-B interiors continue per the roadmap
+doc: scheduling/free-busy, visibility/ACLs, resource calendars, taxonomy
 entities, MAPI named properties, beta-horizon watch.
 
 ## Findings index (this campaign)

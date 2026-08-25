@@ -56,6 +56,11 @@ see O67 addendum).
 **Next (Tier-B interiors, roadmap doc):** scheduling/free-busy,
 visibility/ACLs, resource calendars, taxonomy entities, MAPI named
 properties, beta-horizon watch.
+**Successor campaign proposed (DRAFT):**
+`docs/2026-08-25-campaign-proposal-vendor-backends-to-consumers.md` —
+production transports + five vendor backends to consumer-droppable state
+(P0 transport library-ization → P1 calendars live → P2 contacts → P3 todo
+→ P4 providers/UX → P5 identity wiring → P6 consumer handoff).
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();
