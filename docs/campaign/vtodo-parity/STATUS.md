@@ -53,4 +53,8 @@ the live execution tracker; the response doc holds decisions + receipts.
   `tests/sync/tst_calendar_capabilities.cpp` (+ FakeCalDavServer prodid/
   Server-header/sync-collection fixture knobs). Full suite green except the
   4 known environmental Radicale slots; tst_syncengine_unification flaked
-  under parallel load, PASSED isolated.
+  under parallel load, PASSED isolated. Return receipt:
+  `2026-08-26-w8-return-receipt.md`. Four evidence-based capability-value
+  corrections vs the original spec (receipt §contracts): googleCalendar
+  exceptions TRUE / unknown XOnly; msGraphCalendar exceptions FALSE (v1
+  read-only); localBlob+caldav alarms Full.
