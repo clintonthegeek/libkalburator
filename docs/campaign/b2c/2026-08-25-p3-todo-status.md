@@ -106,7 +106,12 @@ backends are its W1/W2 Google/MSToDo test legs.
 - [x] Design pass (2026-08-25): stage shapes, wire rules (O66/O67/O68/O73),
       client-envelope fit, demux machinery + filter-gap flag — decisions
       above
-- [ ] P3.b: `MockGoogleTasksServer` + `MockGraphTodoServer` + transport pins
+- [x] P3.b: `MockGoogleTasksServer` + `MockGraphTodoServer` + transport
+      pins (landed 2026-08-25 — Tasks double w/ maxResults pagination +
+      default-omits-completed/deleted semantics + O68 400-rejections;
+      todoTask double w/ expand-on/off, inline-create wire-lie (echoed,
+      not stored), nav-POST UPSERT, PATCH-with-extensions ⇒ 500; 10+12
+      slots green)
 - [ ] P3.c: `GoogleTasksBackend` + suite
 - [ ] P3.d: `GraphTodoTaskBackend` + suite
 - [ ] P3.e: kind-demux multi-spec split + suites (incl. raw-bytes filter)

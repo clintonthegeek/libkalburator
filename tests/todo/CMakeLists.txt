@@ -27,3 +27,45 @@ kalburator_add_todo_test(tst_ms_todotask_canon_edge)
 # Fixture-promotion slot: committed live-capture corpus extracts
 target_compile_definitions(tst_ms_todotask_canon_edge PRIVATE
     KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor")
+
+# B2C P3.b — tasks-flavored vendor doubles (Google Tasks + Graph todoTask)
+# mirroring the P1/P2 mock mechanics; transport-level suites pin pagination,
+# visibility flags / expand carriers, create truths, and delete semantics.
+
+add_library(kalburator_mock_google_tasks_server STATIC
+    mockgoogletasksserver.cpp
+    mockgoogletasksserver.h
+)
+target_link_libraries(kalburator_mock_google_tasks_server
+    PUBLIC Qt6::Core Qt6::Network)
+target_include_directories(kalburator_mock_google_tasks_server
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(kalburator_mock_graph_todo_server STATIC
+    mockgraphtodoserver.cpp
+    mockgraphtodoserver.h
+)
+target_link_libraries(kalburator_mock_graph_todo_server
+    PUBLIC Qt6::Core Qt6::Network)
+target_include_directories(kalburator_mock_graph_todo_server
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+function(kalburator_add_todo_vendor_mock_test TEST_NAME MOCK_LIB)
+    add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
+    target_link_libraries(${TEST_NAME}
+        PRIVATE
+            Qt6::Core
+            Qt6::Network
+            Qt6::Test
+            ${MOCK_LIB}
+    )
+    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+    set_tests_properties(${TEST_NAME} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endfunction()
+
+kalburator_add_todo_vendor_mock_test(tst_mockgoogle_tasks_server
+    kalburator_mock_google_tasks_server)
+kalburator_add_todo_vendor_mock_test(tst_mockgraph_todo_server
+    kalburator_mock_graph_todo_server)
