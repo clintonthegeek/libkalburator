@@ -83,7 +83,7 @@ private slots:
         m_server.reset();
     }
 
-    // Discovery: GET /v1/users/me/lists surfaces every task list as an
+    // Discovery: GET /v1/users/@me/lists surfaces every task list as an
     // available collection (writable v1); the DiscoveredCalendar-style DTO
     // pins todo-only component support.
     void discoverySurfacesTaskListsAsCollections()

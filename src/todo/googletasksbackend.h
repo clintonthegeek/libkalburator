@@ -6,10 +6,12 @@
 // (todo domain); the P2 contacts backends are the structural template.
 //
 // Wire truths pinned by the P3 design pass and vendor-rest-api-wire-notes:
-//   - Discovery walks /v1/users/me/lists; every taskList becomes an
-//     available collection (v1: all writable). DiscoveredCalendar-style
+//   - Discovery walks /v1/users/@me/lists (live truth 2026-08-26: plain
+//     users/me 404s with an HTML front-end page); every taskList becomes
+//     an available collection (v1: all writable). DiscoveredCalendar-style
 //     surfacing (supportsVTodo=true, supportsVEvent=false) via
-//     discoveredTaskList().
+//     discoveredTaskList(). Base is version-less with the /tasks prefix
+//     (https://tasks.googleapis.com/tasks); paths author /v1/... verbatim.
 //   - The Tasks API has NO sync tokens: READS are FULL paged listings of
 //     /v1/lists/{id}/tasks?showCompleted=true&showHidden=true&maxResults=100
 //     EVERY fetch. Both visibility flags are mandatory — default listings
@@ -63,7 +65,7 @@ public:
     void setCacheDir(const QString &dir);
 
     // ==== discovery ====
-    /// GET /v1/users/me/lists; every taskList becomes an available
+    /// GET /v1/users/@me/lists; every taskList becomes an available
     /// collection (writable v1). Emits listDiscovered per list, then
     /// listsLoadFinished exactly once.
     void loadTaskLists(const QString &requestId);

@@ -49,6 +49,12 @@ by contrast (O61(e)).
 
 ## 2. Google Tasks API
 
+- **Discovery REQUIRES `/users/@me`** (live 2026-08-26): plain
+  `users/me` — captured working 2026-08-24 — now 404s with an HTML
+  front-end page on both hosts. Task-level paths unaffected.
+  Version-less base carries the `/tasks` prefix
+  (`https://tasks.googleapis.com/tasks`); paths author `/v1/...`
+  verbatim. O75.
 - **No extension point of any kind** — no extendedProperties, no
   clientData, no custom scalars. Every canon property without a Task home
   is honestly `Dropped`. O66(c) corpus-confirms: UI-recurrent tasks carry
@@ -127,6 +133,14 @@ by contrast (O61(e)).
 
 ### Todo (todoTask)
 
+- **The v1.0 wire property is `title`** (live 2026-08-26): create
+  REQUIRES it (400 invalidRequest "The property 'title' is required…");
+  listings deliver `title`, never `subject`. O76.
+- **Extension-id prefix on todoTask is
+  `microsoft.graph.openTypeExtension.*`** — NOT the contacts'
+  `Microsoft.OutlookServices.*` form; a filtered expand naming an
+  OutlookServices-prefixed Id ⇒ HTTP 500 deterministically (any other
+  filter string ⇒ 200). O77.
 - Inline-create extensions are a WIRE-LIE: echoed in the POST response,
   NOT persisted ($expand null on v1.0 AND beta). Never trust a create
   echo — re-read after write. O66 correction.

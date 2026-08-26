@@ -1,7 +1,9 @@
 # P3 — Todo backends + kind-demux: status
 
-**Status:** IN PROGRESS (design pass pinned 2026-08-25; implementation
-next).
+**Status:** CLOSED 2026-08-26 — both vendor todo backends live-
+checkpointed (P3.f PASSED); kind-demux landed. Remaining follow-up:
+kind-demux consumer wiring is P4 scope. See also session log tail in
+`2026-08-25-p2-session-log.md`.
 
 Goal (proposal §4 P3): `GoogleTasksBackend` + `GraphTodoTaskBackend`,
 plus the **kind-demux deliverable** (mixed DAV collections surface as TWO
@@ -138,14 +140,23 @@ backends are its W1/W2 Google/MSToDo test legs.
       Watch item: tst_syncengine_unification flaked once under parallel
       load, passes isolated — same environmental class as the Radicale
       set)
-- [ ] P3.f: live checkpoints both vendors (invariant 1) + fixture corpora
-      replay through real backends
+- [x] P3.f: live checkpoints + fixture replay (landed 2026-08-26, BOTH
+      PASSED vs real accounts — orchestrator re-ran binaries with creds
+      env to confirm non-skip; fixture-replay slots included). Findings
+      caught & fixed same-session: **O75** (Google Tasks discovery now
+      REQUIRES `/users/@me` — vendor regression caught by the
+      checkpoint; ctor base corrected to version-less-with-/tasks),
+      **O76** (todoTask wire property is `title`, NOT `subject`; create
+      REQUIRES it — backend/mock/tests re-pinned), **O77** (todoTask
+      extension-id prefix is `microsoft.graph.openTypeExtension.*`;
+      OutlookServices-prefixed expand filter 500s deterministically on
+      /me/todo — contacts-style prefix does NOT generalize). Due
+      midnight-UTC degradation pinned live; O66(b) gate fired live with
+      no write landed. Accounts swept clean.
 
 ## Open questions
 
-1. (P3.e) Does FilteredCollectionBackend's filter operate on raw bytes at
-   all, or canon-JSON only? Resolve during implementation; extension must
-   keep sinks suite green.
-2. (P3.f probe) Do Google Tasks creates reject any fields beyond
-   created/updated/id (e.g. etag)? Observe at live checkpoint; extend
-   strip seam only on evidence.
+1. ~~FilteredCollectionBackend raw-bytes support~~ — SETTLED (P3.e):
+   additive raw-kind ctor mode; JSON filter-stamping untouched.
+2. ~~Google Tasks create rejections beyond created/updated/id~~ —
+   SETTLED (P3.f): none observed beyond the O68 trio; etag tolerated.

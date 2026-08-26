@@ -282,8 +282,9 @@ QByteArray MockGoogleTasksServer::respond(const RecordedRequest &req)
         queryValue(req.path, QStringLiteral("showHidden"))
         == QLatin1String("true");
 
-    // 2. Task lists listing.
-    if (req.method == "GET" && p == QLatin1String("/v1/users/me/lists")) {
+    // 2. Task lists listing. Live truth 2026-08-26: the API addresses
+    // users/@me (plain users/me 404s with an HTML page).
+    if (req.method == "GET" && p == QLatin1String("/v1/users/@me/lists")) {
         return makeReply(200,
                          paginateItems(m_taskLists,
                                        queryValue(req.path,

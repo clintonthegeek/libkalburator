@@ -8,7 +8,7 @@
 //
 //   - lists served at GET /v1.0/me/todo/lists; tasks keyed per list under
 //     /v1.0/me/todo/lists/{id}/tasks
-//   - $expand=extensions($filter=Id eq 'Microsoft.OutlookServices.OpenTypeExtension.*')
+//   - $expand=extensions($filter=Id eq 'microsoft.graph.openTypeExtension.*')
 //     (%27-quoted variants too) reveals stored extension carriers; WITHOUT
 //     the expand, extensions[] keys are stripped from served records
 //   - inline-create WIRE-LIE faked: a POST whose body carries extensions[]

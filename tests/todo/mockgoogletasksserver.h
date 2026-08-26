@@ -5,7 +5,7 @@
 // (QTcpServer on localhost, request recording incl. Authorization,
 // exact-route table) but speaks the TASKS wire conventions:
 //
-//   - task lists served at GET /v1/users/me/lists; per-list task
+//   - task lists served at GET /v1/users/@me/lists; per-list task
 //     collections at /v1/lists/{listId}/tasks — both paginate via items[]
 //     + nextPageToken honoring maxResults/pageToken
 //   - DEFAULT listing OMITS completed (status:"completed") and deleted
@@ -65,7 +65,7 @@ public:
     quint16 port() const;
     QString baseUrl() const;
 
-    /// Task lists served at /v1/users/me/lists.
+    /// Task lists served at /v1/users/@me/lists.
     void setTaskLists(const QJsonArray &lists);
     /// Tasks seeded for a list id (the path segment after /v1/lists/).
     void setTasks(const QString &listId, const QJsonArray &tasks);

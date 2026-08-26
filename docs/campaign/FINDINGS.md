@@ -3276,3 +3276,52 @@ Discovered during W7/W6 recon for the PlanStan VTODO-parity handoff
 derived extras digest or add an explicit extras key to the compared set.
 Until fixed, X-prop-only edits rely on byte-level paths (raw-bytes
 backends) to propagate.
+
+### O75 — OPEN — B2C P3.f live checkpoint, 2026-08-26: Google Tasks discovery now REQUIRES /users/@me (plain /users/me 404s with an HTML page)
+
+`GET https://tasks.googleapis.com/tasks/v1/users/me/lists` — the exact
+form captured working on 2026-08-24
+(`google/captured/20260824-145201-245-…users-_me-lists.json`) — NOW
+returns HTTP 404 with a Google HTML front-end error page on BOTH
+`tasks.googleapis.com` and `www.googleapis.com`. The `@me` form
+(`/tasks/v1/users/@me/lists`) returns 200. Task-level paths
+(`/tasks/v1/lists/{id}/tasks`) are unaffected. Vendor-side regression
+between 2026-08-24 and 2026-08-26; caught by the P3.f live checkpoint
+(invariant 1 vindicated: mock-green could never see this).
+
+Backend consequence (fixed same commit): `GoogleTasksBackend::loadTaskLists`
+walks `/v1/users/@me/lists`; mock serves the @me path. ALSO fixed per the
+B2C version-less-base doctrine: the ctor base was
+`https://tasks.googleapis.com` (missing the `/tasks` version prefix
+entirely — every live request would 404); now
+`https://tasks.googleapis.com/tasks` with `/v1/...` authored verbatim.
+
+### O76 — OPEN — B2C P3.f live ground truth, 2026-08-26: v1.0 todoTask wire property is `title`, NOT `subject` (create REQUIRES it)
+
+The todoTask backend, mock, and mock suite were all modeled with
+`subject` as the display property. Live truth against the real Outlook.com
+account: create WITHOUT `title` ⇒ 400 invalidRequest "The property 'title'
+is required when creating the task entity"; listings deliver `title` and
+never `subject`. The EEE canon edge (`MsTodoTaskToCanonStage`) already
+read `title` correctly — only the B2C transport layer drifted.
+
+Backend consequence (fixed same commit): displayName extraction reads
+`title` (defensive `subject` fallback for cached legacy copies); mock +
+mock suite + P3.f live suite pin `title`.
+
+### O77 — OPEN — B2C P3.f live ground truth, 2026-08-26: todoTask open-extension ids use microsoft.graph.openTypeExtension.* prefix; an OutlookServices-prefixed Id filter 500s on /me/todo expand
+
+Nav POST of an open extension to
+`/v1.0/me/todo/lists/{id}/tasks/{taskId}/extensions` mints extension id
+`microsoft.graph.openTypeExtension.kalburator.canon` — NOT the contacts'
+`Microsoft.OutlookServices.OpenTypeExtension.*` form (O66 correction was
+contacts-scoped). Deterministic curl matrix (3× each): filtered expand
+`extensions($filter=Id eq 'Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon')`
+⇒ HTTP 500 generalException EVERY time; the same filter with the
+microsoft.graph prefix (or any other string) ⇒ 200. Carrier persistence
+verified end-to-end: nav POST → `$expand=extensions` read-back delivers
+the row (create echo remains a wire-lie).
+
+Backend consequence (fixed same commit): `kCanonExtensionId` and the
+expanded-listing filter switched to the microsoft.graph prefix; mock +
+suites re-pinned.

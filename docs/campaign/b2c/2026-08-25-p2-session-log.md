@@ -120,4 +120,18 @@ this file records per-step progress, decisions, and deviations.
   slots; sinks suite untouched. WATCH: tst_syncengine_unification flaked
   once under full-suite parallel load, green on re-runs + isolation —
   likely environmental (Radicale stress); re-check at Radicale reset.
+- **P3.f LANDED — LIVE CHECKPOINTS PASSED BOTH DIRECTIONS** (subagent;
+  orchestrator re-ran binaries with creds env: 4 passed / 3.5s Google,
+  4 passed / 2.6s Graph — genuine non-skip). Findings **O75** (Google
+  Tasks discovery requires `/users/@me` — vendor regression caught by
+  invariant 1; ctor base fixed), **O76** (todoTask wire property is
+  `title` not `subject`, create REQUIRES it), **O77** (todoTask
+  extension prefix is `microsoft.graph.openTypeExtension.*` — the
+  contacts OutlookServices prefix does NOT generalize across resources).
+  Due midnight-UTC degradation pinned live; fixture-replay slots green.
+  Accounts swept clean.
+- **P3 CLOSED 2026-08-26.** Full suite 204/204 excluding known Radicale
+  set (unification flake did not recur). The vtodo-parity campaign's
+  W1/W2 vendor test legs now exist. Remaining P3-scoped follow-up:
+  kind-demux consumer wiring → P4. Next: vtodo-parity VP.a (W8).
 - (progress appended as work lands)

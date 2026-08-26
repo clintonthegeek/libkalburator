@@ -27,7 +27,7 @@ using Kalburator::Todo::MockGraphTodoServer;
 namespace {
 
 const QString kCanonExtensionId = QStringLiteral(
-    "Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon");
+    "microsoft.graph.openTypeExtension.kalburator.canon");
 
 QJsonObject carrierRow(const QString &noteValue)
 {
@@ -44,7 +44,7 @@ QJsonObject wireTask(const QString &id, const QString &subject,
 {
     QJsonObject task{
         { QStringLiteral("id"), id },
-        { QStringLiteral("subject"), subject },
+        { QStringLiteral("title"), subject },
         { QStringLiteral("importance"), QStringLiteral("normal") },
         { QStringLiteral("status"),
           QStringLiteral("notStarted") },
@@ -335,7 +335,7 @@ private slots:
         // no lastModifiedDateTime, no extensions).
         QJsonObject skeleton{
             { QStringLiteral("id"), QStringLiteral("t1") },
-            { QStringLiteral("subject"), QStringLiteral("Renamed") } };
+            { QStringLiteral("title"), QStringLiteral("Renamed") } };
         m_server->setCollectionItems(tasksPath(QStringLiteral("L1")),
                                      QJsonArray{ skeleton });
 
@@ -351,7 +351,7 @@ private slots:
         const QJsonObject wire =
             QJsonDocument::fromJson(records.first().data).object();
         // Skeleton keys won...
-        QCOMPARE(wire.value(QStringLiteral("subject")).toString(),
+        QCOMPARE(wire.value(QStringLiteral("title")).toString(),
                  QStringLiteral("Renamed"));
         // ...cached-only keys survived the merge.
         QCOMPARE(wire.value(QStringLiteral("importance")).toString(),
@@ -399,7 +399,7 @@ private slots:
             QJsonDocument::fromJson(reqs.at(0).body).object();
         QVERIFY2(!postedBody.contains(QStringLiteral("extensions")),
                  "create must strip extensions[] before POST");
-        QCOMPARE(postedBody.value(QStringLiteral("subject")).toString(),
+        QCOMPARE(postedBody.value(QStringLiteral("title")).toString(),
                  QStringLiteral("Created"));
 
         QCOMPARE(reqs.at(1).method, QByteArrayLiteral("POST"));
@@ -542,7 +542,7 @@ private slots:
             QJsonDocument::fromJson(reqs.at(0).body).object();
         QVERIFY2(!patched.contains(QStringLiteral("extensions")),
                  "PATCH must carry plain fields only");
-        QCOMPARE(patched.value(QStringLiteral("subject")).toString(),
+        QCOMPARE(patched.value(QStringLiteral("title")).toString(),
                  QStringLiteral("After"));
         QCOMPARE(reqs.at(1).method, QByteArrayLiteral("POST"));
         QCOMPARE(reqs.at(1).path,
@@ -653,7 +653,7 @@ private slots:
         // Server now serves a SKELETON projection of t1 plus a newcomer t2.
         QJsonObject skeleton{
             { QStringLiteral("id"), QStringLiteral("t1") },
-            { QStringLiteral("subject"), QStringLiteral("Renamed") } };
+            { QStringLiteral("title"), QStringLiteral("Renamed") } };
         QJsonArray projected;
         projected.append(skeleton);
         projected.append(
@@ -675,14 +675,14 @@ private slots:
                 QJsonDocument::fromJson(r.data).object();
             if (r.id == QLatin1String("t1")) {
                 // Skeleton keys won; cached-only keys survived the merge.
-                QCOMPARE(wire.value(QStringLiteral("subject")).toString(),
+                QCOMPARE(wire.value(QStringLiteral("title")).toString(),
                          QStringLiteral("Renamed"));
                 QCOMPARE(wire.value(QStringLiteral("importance")).toString(),
                          QStringLiteral("normal"));
                 QVERIFY(wire.contains(QStringLiteral("extensions")));
             } else {
                 QCOMPARE(r.id, QStringLiteral("t2"));
-                QCOMPARE(wire.value(QStringLiteral("subject")).toString(),
+                QCOMPARE(wire.value(QStringLiteral("title")).toString(),
                          QStringLiteral("Newcomer"));
             }
         }

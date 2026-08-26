@@ -18,8 +18,12 @@ using Kalburator::Graph::GraphError;
 
 namespace {
 
+// Live ground truth 2026-08-26: todoTask open-extension ids are minted
+// with the microsoft.graph.openTypeExtension.* prefix (NOT the contacts'
+// Microsoft.OutlookServices.* form), and a filtered expand naming an
+// OutlookServices-prefixed Id 500s deterministically on /me/todo.
 constexpr auto kCanonExtensionId =
-    "Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon";
+    "microsoft.graph.openTypeExtension.kalburator.canon";
 
 constexpr auto kRecurrenceDueError =
     "graph-todo: recurrence requires dueDateTime (O66(b))";
@@ -354,8 +358,15 @@ void GraphTodoTaskBackend::startListingFetch(std::shared_ptr<FetchState> st)
                 BackendRecord r;
                 r.id = id;
                 r.type = QStringLiteral("todo");
+                // Live truth 2026-08-26: the v1.0 todoTask wire property is
+                // `title` (create REQUIRES it; listings deliver it); there
+                // is no `subject`. Fallback kept defensively for cached
+                // legacy copies.
                 r.displayName =
-                    effective.value(QStringLiteral("subject")).toString();
+                    effective.value(QStringLiteral("title")).toString();
+                if (r.displayName.isEmpty())
+                    r.displayName = effective.value(
+                        QStringLiteral("subject")).toString();
                 r.data = compactWire(effective);
                 r.contentHash = sha256Hex(r.data);
                 r.lastModified = QDateTime::fromString(

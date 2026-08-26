@@ -103,3 +103,41 @@ add_test(NAME tst_graph_todo_backend COMMAND tst_graph_todo_backend)
 set_tests_properties(tst_graph_todo_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# B2C P3.f — LIVE checkpoints (skip without KALBURATOR_GOOGLE_DIR /
+# KALBURATOR_MSGRAPH_DIR); wiring mirrors tests/contacts P2.f live suites:
+# no mock lib, production whole-archive, offscreen. Fixture-replay slots
+# read committed vendor fixtures directly.
+add_executable(tst_google_tasks_backend_live tst_google_tasks_backend_live.cpp)
+target_link_libraries(tst_google_tasks_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+target_compile_definitions(tst_google_tasks_backend_live PRIVATE
+    KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)
+add_test(NAME tst_google_tasks_backend_live
+    COMMAND tst_google_tasks_backend_live)
+set_tests_properties(tst_google_tasks_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(tst_graph_todo_backend_live tst_graph_todo_backend_live.cpp)
+target_link_libraries(tst_graph_todo_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+target_compile_definitions(tst_graph_todo_backend_live PRIVATE
+    KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor"
+)
+add_test(NAME tst_graph_todo_backend_live
+    COMMAND tst_graph_todo_backend_live)
+set_tests_properties(tst_graph_todo_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

@@ -19,7 +19,7 @@ using Kalburator::Todo::MockGraphTodoServer;
 namespace {
 
 const QString kCanonExtensionId = QStringLiteral(
-    "Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon");
+    "microsoft.graph.openTypeExtension.kalburator.canon");
 
 const QString kListTasksPath =
     QStringLiteral("/v1.0/me/todo/lists/list-1/tasks");
@@ -53,7 +53,7 @@ QUrl expandUrl(const QString &base, const QString &path, bool preEncoded)
         return QUrl(base + path
                     + QStringLiteral(
                         "?%24expand=extensions(%24filter=Id%20eq%20%27"
-                        "Microsoft.OutlookServices.OpenTypeExtension."
+                        "microsoft.graph.openTypeExtension."
                         "kalburator.canon%27)"));
     QUrl url(base + path);
     QUrlQuery query;

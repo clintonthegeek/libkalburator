@@ -14,7 +14,7 @@ namespace Kalburator::Todo {
 
 namespace {
 const QString kExtensionPrefix =
-    QStringLiteral("Microsoft.OutlookServices.OpenTypeExtension.");
+    QStringLiteral("microsoft.graph.openTypeExtension.");
 }
 
 HttpResponse httpRequest(const QUrl &url,

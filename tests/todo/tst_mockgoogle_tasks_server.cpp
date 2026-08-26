@@ -36,7 +36,7 @@ class TestMockGoogleTasksServer : public QObject {
     Q_OBJECT
 
 private Q_SLOTS:
-    void taskListsServedAtUsersMeListsEndpoint()
+    void taskListsServedAtUsersAtMeListsEndpoint()
     {
         MockGoogleTasksServer server;
         QVERIFY(server.start());
@@ -45,7 +45,7 @@ private Q_SLOTS:
             { QStringLiteral("title"), QStringLiteral("Kalburator") } } });
 
         const auto resp = httpRequest(
-            QUrl(server.baseUrl() + QStringLiteral("/v1/users/me/lists")),
+            QUrl(server.baseUrl() + QStringLiteral("/v1/users/@me/lists")),
             "GET");
         QVERIFY(resp.ok());
         const QJsonObject page = QJsonDocument::fromJson(resp.body).object();
@@ -348,7 +348,7 @@ private Q_SLOTS:
         server.setTaskLists({});
 
         httpRequest(
-            QUrl(server.baseUrl() + QStringLiteral("/v1/users/me/lists")),
+            QUrl(server.baseUrl() + QStringLiteral("/v1/users/@me/lists")),
             "GET",
             { { QByteArrayLiteral("Authorization"),
                 QByteArrayLiteral("Bearer test-token") } });

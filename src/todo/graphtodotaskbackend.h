@@ -6,7 +6,14 @@
 // the P2 GraphContactsBackend is the structural template — same discipline
 // pointed at todoTask resources.
 //
-// Wire truths pinned by FINDINGS O66/O69/O73 and the P3 design pass:
+// Wire truths pinned by FINDINGS O66/O69/O73, the P3 design pass, and the
+// P3.f live checkpoint (2026-08-26):
+//   - The v1.0 todoTask wire property is `title` — create REQUIRES it,
+//     listings deliver it; there is no `subject` anywhere.
+//   - Open-extension ids minted on todoTask carry the
+//     microsoft.graph.openTypeExtension.* prefix (NOT contacts'
+//     Microsoft.OutlookServices.*); a filtered expand naming an
+//     OutlookServices-prefixed Id 500s deterministically on /me/todo.
 //   - READS = expanded FULL listings, NEVER delta (O69: consumer delta pages
 //     deliver SKELETON projections — carriers unreachable). Every fetch walks
 //     <list>/tasks?$expand=extensions($filter=Id eq '…kalburator.canon') and

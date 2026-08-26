@@ -44,7 +44,11 @@ GoogleTasksBackend::GoogleTasksBackend(QObject *parent)
     : SyncBackendBase(parent)
     , m_client(new GoogleApiClient(this))
 {
-    m_client->setBaseUrl(QStringLiteral("https://tasks.googleapis.com"));
+    // Version-less base (P2 doctrine): the Tasks version prefix is
+    // /tasks/v1, so the base carries /tasks and paths author /v1/...
+    // verbatim. Live truth 2026-08-26: discovery must address
+    // users/@me — plain users/me now 404s with an HTML front-end page.
+    m_client->setBaseUrl(QStringLiteral("https://tasks.googleapis.com/tasks"));
 }
 
 GoogleTasksBackend::~GoogleTasksBackend() = default;
@@ -177,7 +181,7 @@ void GoogleTasksBackend::persistState() const
 void GoogleTasksBackend::loadTaskLists(const QString &requestId)
 {
     m_client->fetchCollection(
-        QStringLiteral("/v1/users/me/lists"),
+        QStringLiteral("/v1/users/@me/lists"),
         [this, requestId](std::optional<QJsonArray> items,
                           const QString &,
                           const GoogleError &err) {
