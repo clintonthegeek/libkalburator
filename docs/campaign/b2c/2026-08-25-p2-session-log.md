@@ -77,4 +77,17 @@ this file records per-step progress, decisions, and deviations.
 - **P2 CLOSED.** Suite baseline 205 slots (203 mock + 2 live); only the
   4 known Radicale-environmental failures remain. Next phase: P3 todo
   backends + kind-demux deliverable.
+- **Post-close integration (same session):** PlanStan filed the VTODO
+  semantic-parity handoff (W1–W8). Read the handoff + all four audit
+  docs in their repo; ran scoped recon of our todo machinery
+  (`vtodocanonfields`, differ wiring, BaselineStore, capability
+  discovery, org backend, vendor task stages). Accepted all items with
+  scoping edits — response:
+  `docs/2026-08-25-vtodo-parity-handoff-response.md`; new campaign
+  tracker: `docs/campaign/vtodo-parity/STATUS.md`; coordination page §2f;
+  FINDINGS **O74** (providerExtras invisible to canonical differ).
+  Key recon surprises: blob pipeline keys by UID alone (master+exception
+  collide → W1 is real identity work, not documentation); VALARM already
+  first-class; org backend drops unknown X-props; BaselineStore has no
+  multi-record transactions. P3 now gates the parity work.
 - (progress appended as work lands)

@@ -85,7 +85,21 @@ UPSERT — Q4 settled). NOTE: vendor base URLs must be VERSION-LESS —
 backends author `/v1…` paths verbatim.
 
 **Next (P3):** todo backends + kind-demux deliverable, then P4 providers/
-UX, P5 identity wiring, P6 consumer handoff.
+UX, P5 identity wiring, P6 consumer handoff. P3 now GATES the vtodo-parity
+campaign (vendor todo backends are its W1/W2 test legs).
+
+## VTODO-parity campaign (OPENED 2026-08-25)
+
+PlanStan's W1–W8 semantic-parity handoff ACCEPTED with scoping edits —
+decisions + Q1–Q4 answers: `docs/2026-08-25-vtodo-parity-handoff-response.md`;
+live tracker: `docs/campaign/vtodo-parity/STATUS.md`. Order: B2C P3 →
+W8 capabilities API → W2 per-instance completion → W1 composite exception
+identity → W4 completion-anchored recurrence → W3 series-split →
+W5/W6.2/W7. Recon findings pinned there: blob pipeline keys by UID alone
+(master+exception collide), providerExtras invisible to the canonical
+differ (**O74**), VALARM already first-class in todo canon, org backend
+drops unknown X-props, BaselineStore lacks multi-record transactions.
+Return receipts owed to PlanStan per delivered item.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();

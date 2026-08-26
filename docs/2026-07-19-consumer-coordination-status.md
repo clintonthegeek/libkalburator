@@ -121,6 +121,24 @@ silently drops consent-screen-unapproved OAuth scopes (relevant to any
 future Google transport work). Still zero consumer impact; campaign status:
 `docs/campaign/eee/STATUS.md`.
 
+## 2f. NEW (2026-08-25) — PlanStan VTODO semantic-parity handoff ACCEPTED (W1–W8); vtodo-parity campaign opened
+
+PlanStan filed `docs/handoffs/2026-08-25-libkalburator-vtodo-parity-handoff.md`
+(+ 4-part audit under `docs/audits/2026-08-25-vtodo-parity/` in their repo):
+semantic work on our side of the todo parity line — detached-exception
+contracts, per-instance completion, this-and-future, completion-anchored
+org recurrence, VALARM surface, producer shims, passthrough verification,
+and a unified capability/trait API (W8 first).
+
+**Accepted in full with scoping edits** — response + decisions +
+inline answers to their Q1–Q4:
+**`docs/2026-08-25-vtodo-parity-handoff-response.md`**; execution tracker:
+`docs/campaign/vtodo-parity/STATUS.md`. Sequencing: after B2C P3 (vendor
+todo backends are the W1/W2 test legs), then W8 → W2 → W1 → W4 → W3 →
+W5/W6/W7. New FINDINGS **O74** (providerExtras invisible to the canonical
+differ) recorded during recon. Consumers: nothing to do yet; receipts
+will list exact keys/headers per delivered item.
+
 ## 2e. Tier A CLOSED (2026-08-25, tag v1.03) — vendor edges complete; wire knowledge consolidated
 
 Still **zero pin/code impact** for consumers — everything is additive.

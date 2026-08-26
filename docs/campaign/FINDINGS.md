@@ -3258,3 +3258,21 @@ end-to-end through `GraphContactsBackend::applyRecords` update path
 refetch served `x-canon-gender=female`, one row. NO backend change needed
 — the existing strip-then-nav-POST channel handles carrier updates
 correctly; a nav-PATCH variant would be redundant complexity.
+
+### O74 — OPEN — VTODO-parity recon, 2026-08-25: providerExtras is invisible to the canonical todo differ
+
+The todo domain's canonical differ is `CanonJsonDiffer(todoCanonPropertyIds())`
+(`src/todo/tododomaindefinition.cpp:27`) — it diffs catalogued canon
+property ids only. `providerExtras` (which carries `x-vtodo` unknown-
+property stashes, vendor extras stashes, and carrier rows) is NOT
+catalogued, so a change confined to X-/extra properties never produces a
+diff: two syncs of a record whose ONLY delta is an X-prop edit converge
+as no-op and the edit does not propagate. Same shape presumably holds for
+any domain whose differ is catalogue-scoped (contacts/events use the same
+CanonJsonDiffer pattern).
+
+Discovered during W7/W6 recon for the PlanStan VTODO-parity handoff
+(response doc §0.1). Fix folds into parity VP.f/W7: either catalogue a
+derived extras digest or add an explicit extras key to the compared set.
+Until fixed, X-prop-only edits rely on byte-level paths (raw-bytes
+backends) to propagate.
