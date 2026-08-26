@@ -26,8 +26,18 @@ namespace Kalburator::Calendar {
 /// authoritative recurrence rule — is preferred. If no such master-shaped
 /// block exists, every matching block's recurrence lines are concatenated
 /// (defensive fallback; does not occur for well-formed input).
+///
+/// Pass a non-empty `recurrenceIdUtc` to select a SPECIFIC override block
+/// instead: the block whose UID matches AND whose RECURRENCE-ID value,
+/// normalized to UTC ISO-8601, equals `recurrenceIdUtc` (compare like with
+/// like — compose the selector from the same normalization, e.g.
+/// QDateTime::toUTC().toString(Qt::ISODate)). In this mode only that block's
+/// lines are returned; an empty result means no block matched (no fallback
+/// to master preference — the caller asked for a specific instance).
+/// The default (empty selector) keeps the master-preference behavior.
 QStringList extractComponentRecurrenceLines(const QByteArray &icalBytes,
                                              QByteArrayView componentName,
-                                             const QString &uid);
+                                             const QString &uid,
+                                             const QString &recurrenceIdUtc = {});
 
 }  // namespace Kalburator::Calendar

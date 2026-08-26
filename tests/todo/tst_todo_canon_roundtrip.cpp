@@ -380,6 +380,99 @@ private slots:
         QVERIFY2(outTodo, "output must parse as a valid VTODO via KCalendarCore");
         QVERIFY2(!outTodo->recurs(), "output todo must not recur");
     }
+    // VP.c-step-1a — detached-exception identity: RECURRENCE-ID must survive
+    // promote → demote byte-equivalently (UTC DATE-TIME form, mirroring the
+    // event path's recurrenceId canon object).
+    void vtodoRoundTripPreservesRecurrenceId()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:series-todo-1\r\n"
+            "SUMMARY:Moved instance\r\n"
+            "RECURRENCE-ID:20260602T090000Z\r\n"
+            "DUE:20260602T170000Z\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
+        QCOMPARE(recIdObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-02T09:00:00Z"));
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Byte-equivalent RECURRENCE-ID line in the output.
+        QVERIFY2(output.contains("RECURRENCE-ID:20260602T090000Z"),
+                 qPrintable(QStringLiteral(
+                     "demoted bytes must carry RECURRENCE-ID:20260602T090000Z; got:\n")
+                     + QString::fromUtf8(output)));
+
+        // And it re-parses as a real exception identity.
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QVERIFY(outTodo->hasRecurrenceId());
+        QCOMPARE(outTodo->recurrenceId().toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-06-02T09:00:00Z"), Qt::ISODate));
+        QVERIFY(!outTodo->thisAndFuture());
+    }
+
+    // RANGE=THISANDFUTURE rides along as the recurrenceRange canon string
+    // (mirrors the event path) and re-emits as RANGE=THISANDFUTURE.
+    void vtodoRoundTripPreservesThisAndFutureRange()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:series-todo-2\r\n"
+            "SUMMARY:this-and-future instance\r\n"
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260602T090000Z\r\n"
+            "DUE:20260602T170000Z\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        QCOMPARE(obj.value(QStringLiteral("recurrenceRange")).toString(),
+                 QStringLiteral("thisAndFuture"));
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("RANGE=THISANDFUTURE"),
+                 qPrintable(QStringLiteral(
+                     "demoted bytes must carry RANGE=THISANDFUTURE; got:\n")
+                     + QString::fromUtf8(output)));
+
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QVERIFY(outTodo->hasRecurrenceId());
+        QVERIFY(outTodo->thisAndFuture());
+    }
+
+    // A master VTODO (no RECURRENCE-ID) must NOT gain a recurrenceId key.
+    void vtodoMasterHasNoRecurrenceId()
+    {
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(kTestVTodoWithRecurrence);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.contains(QStringLiteral("recurrenceId")),
+                 "master todo must not carry a recurrenceId key");
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTodoCanonRoundtrip)

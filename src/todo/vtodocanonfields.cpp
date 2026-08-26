@@ -213,6 +213,23 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
+    // ---- recurrenceId / recurrenceRange ------------------------------------
+    // Mirrors the event path (eventcanonfields.cpp): detached-exception
+    // identity is promoted so an exception VTODO is distinguishable from its
+    // master in canon (vtodo-parity VP.c-step-1a).
+    {
+        const QDateTime recId = todo->recurrenceId();
+        if (recId.isValid()) {
+            QJsonObject recIdObj;
+            recIdObj.insert(QStringLiteral("dateTime"), recId.toUTC().toString(Qt::ISODate));
+            obj.insert(QStringLiteral("recurrenceId"), recIdObj);
+
+            // RANGE=THISANDFUTURE → recurrenceRange
+            if (todo->thisAndFuture())
+                obj.insert(QStringLiteral("recurrenceRange"), QStringLiteral("thisAndFuture"));
+        }
+    }
+
     // ---- alarms (VALARM) ---------------------------------------------------
     {
         const auto alarms = todo->alarms();
@@ -413,6 +430,25 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     // construction; we inject them via the serialised iCal text below.
     // For now, store them for post-serialization injection.
     const QJsonArray recurrenceArr = obj.value(QStringLiteral("recurrence")).toArray();
+
+    // ---- recurrenceId / recurrenceRange ------------------------------------
+    // Mirrors the event path (eventcanonfields.cpp): the canon object carries
+    // the exception identity as {dateTime: <UTC ISO>}; KCalendarCore re-emits
+    // RECURRENCE-ID (with RANGE=THISANDFUTURE when set) at serialization.
+    {
+        const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
+        if (!recIdObj.isEmpty()) {
+            const QString dtStr = recIdObj.value(QStringLiteral("dateTime")).toString();
+            if (!dtStr.isEmpty()) {
+                const QDateTime dt = QDateTime::fromString(dtStr, Qt::ISODate);
+                if (dt.isValid()) {
+                    const QString range = obj.value(QStringLiteral("recurrenceRange")).toString();
+                    todo->setRecurrenceId(dt);
+                    todo->setThisAndFuture(range == QStringLiteral("thisAndFuture"));
+                }
+            }
+        }
+    }
 
     // ---- alarms (VALARM) ---------------------------------------------------
     {

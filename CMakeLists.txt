@@ -605,6 +605,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/changedetection.h
     # E11: generalized async-blocking rendezvous (audit B7 / FINDINGS O39)
     src/sync/blockonasync.h
+    # VP.c-step-1a (vtodo-parity): detached-exception record identity
+    src/sync/recordidentity.h
     # Phase K.7.1: account-neutral IProvider adapter
     src/sync/neutralprovider.h
     # Phase L.1: Akonadi first-class provider (gated on HAVE_AKONADI)

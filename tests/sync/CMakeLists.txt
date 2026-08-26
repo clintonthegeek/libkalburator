@@ -21,6 +21,10 @@ kalburator_add_sync_test(tst_provider_manager)
 # Pure QString helper; runs in the default profile.
 kalburator_add_sync_test(tst_davslug)
 
+# VP.c-step-1a (vtodo-parity) — detached-exception blob-pipeline record
+# identity. Pure QString/QDateTime helper; runs in the default profile.
+kalburator_add_sync_test(tst_record_identity)
+
 # 2026-06-14 — shared Akonadi collection-id scheme helper (producer<->consumer
 # single source of truth). Pure QString helper; runs in the default profile.
 kalburator_add_sync_test(tst_akonadicollectionid)

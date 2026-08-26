@@ -35,6 +35,9 @@ Kalburator::Shape::PropertyCatalogue makeTodoCanonCatalogue()
 
     // Recurrence (verbatim RFC5545 lines — invariant 3)
     cat.addProperty({ PropertyId{"recurrence"},       PropertyKind::StringList, QStringLiteral("Recurrence") });
+    // Detached-exception identity (mirrors the event canon catalogue)
+    cat.addProperty({ PropertyId{"recurrenceId"},     PropertyKind::Json,       QStringLiteral("Recurrence ID") });
+    cat.addProperty({ PropertyId{"recurrenceRange"},  PropertyKind::String,     QStringLiteral("Recurrence Range") });
 
     // Alarms and extra data
     cat.addProperty({ PropertyId{"alarms"},           PropertyKind::Json,       QStringLiteral("Alarms") });
