@@ -6,6 +6,7 @@
 #include "backendcapabilities.h"
 #include "logicalcalendar.h"
 #include "discoveredcalendar.h"
+#include "calendarcapabilities.h"
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "davslug.h"
@@ -1300,6 +1301,15 @@ DiscoveredCalendar RemoteCalendarBackend::discoveredCalendar(const QString &cale
                         || (facts.contentTypes & KDAV::DavCollection::Calendar);
     }
     d.writable = discoveredWritable(calendarId);  // KDAV: always true (see above)
+
+    // VP.a (W8): CalDAV family capabilities derived from the discovered
+    // component facts. No PRODID/producer knowledge reaches this backend
+    // (KDAV discovery), so the derivation falls back to the "caldav"
+    // producer id; use CalDavCapabilityDiscovery for the discovered form.
+    PerCalendarCapabilities pcc;
+    pcc.supportsVEvent = d.supportsVEvent;
+    pcc.supportsVTodo = d.supportsVTodo;
+    d.setCapabilities(capabilitiesFromDiscovery(pcc));
 
     // Only the URL discovery/registration actually recorded — the davUrlFor
     // derive-on-miss fallback is deliberately NOT reflected (same "is this

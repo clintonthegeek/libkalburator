@@ -196,6 +196,18 @@ public:
         m_componentsByHref.insert(href, components);
     }
 
+    /// VP.a (W8): HTTP Server header emitted with every response (e.g.
+    /// "Radicale/3.5.0"). Empty by default (no header).
+    void setServerProductHeader(const QByteArray &value) { m_serverHeader = value; }
+
+    /// VP.a (W8): inject an explicit <prodid> element into one calendar's
+    /// prop block in the calendar-list multistat. href must match one set
+    /// via setCalendars().
+    void setCalendarProducerId(const QString &href, const QString &prodid)
+    {
+        m_prodidByHref.insert(href, prodid);
+    }
+
     /// Pre-populate a calendar collection with iCal event blobs.
     /// Each blob must be a full VCALENDAR containing a UID property.
     /// collectionHref must match one of the hrefs set via setCalendars()
@@ -327,6 +339,8 @@ private:
     QSet<QString> m_createdCollections;  // hrefs created via MKCALENDAR
     QStringList m_readOnlyHrefs;  // hrefs advertised with read-only privilege-set
     QHash<QString, QStringList> m_componentsByHref;  // component-set overrides
+    QByteArray m_serverHeader;   // VP.a (W8): Server header value, if set
+    QHash<QString, QString> m_prodidByHref;  // href -> explicit <prodid> element text
     QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()
     QHash<QByteArray, QStringList> m_requestPaths;  // method -> request target paths, reset on startListening()
 

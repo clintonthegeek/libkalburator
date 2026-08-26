@@ -6,6 +6,7 @@
 #include <QDomDocument>
 #include <QDateTime>
 #include <QDebug>
+#include <functional>
 
 namespace Kalburator::Sync {
 
@@ -238,7 +239,8 @@ void CalDavCapabilityDiscovery::discoverCalendars()
         QStringLiteral("supported-calendar-component-set"),
         QStringLiteral("calendar-color"),
         QStringLiteral("max-resource-size"),
-        QStringLiteral("current-user-privilege-set")  // For detecting read-only calendars
+        QStringLiteral("current-user-privilege-set"),  // For detecting read-only calendars
+        QStringLiteral("supported-report-set")         // VP.a (W8): sync-collection probing
     });
 
     QNetworkReply *reply = m_networkManager->sendCustomRequest(request, "PROPFIND", body);
@@ -260,6 +262,11 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
     }
 
     QByteArray response = reply->readAll();
+
+    // VP.a (W8): resolve the producer identity once for this PROPFIND —
+    // explicit <prodid> element, else known-product sniff across the body
+    // and the HTTP Server header. Applied to every calendar in the multistat.
+    const QString producerId = extractProducerId(response, reply->rawHeader("Server"));
 
     // Parse calendar list and their properties
     QDomDocument doc;
@@ -311,6 +318,7 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
 
         // Parse calendar properties
         PerCalendarCapabilities caps;
+        caps.producerId = producerId;
 
         // Display name (in DAV namespace)
         QDomNodeList displayNames = respElement.elementsByTagNameNS(NS_DAV, QStringLiteral("displayname"));
@@ -408,6 +416,27 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
         }
         // If no privilege set returned, we assume writable (server doesn't support ACL reporting)
 
+        // VP.a (W8): supported-report-set — detect RFC 6578 sync-collection
+        // delta support from the same multistat (cheap additive parse).
+        caps.supportsSyncCollection = false;
+        const QDomNodeList reportSets =
+            respElement.elementsByTagNameNS(NS_DAV, QStringLiteral("supported-report-set"));
+        for (int j = 0; j < reportSets.count(); ++j) {
+            const QDomElement reportSetElement = reportSets.at(j).toElement();
+            if (reportSetElement.isNull())
+                continue;
+            const QDomNodeList reports =
+                reportSetElement.elementsByTagNameNS(NS_DAV, QStringLiteral("report"));
+            for (int k = 0; k < reports.count(); ++k) {
+                const QDomElement reportElement = reports.at(k).toElement();
+                if (!reportElement.isNull()
+                    && !reportElement.elementsByTagNameNS(NS_DAV,
+                        QStringLiteral("sync-collection")).isEmpty()) {
+                    caps.supportsSyncCollection = true;
+                }
+            }
+        }
+
         // Extract calendar ID from display name or href
         QString calendarId = caps.serverDisplayName;
         if (calendarId.isEmpty()) {
@@ -483,6 +512,8 @@ QByteArray CalDavCapabilityDiscovery::buildPropfindRequest(const QStringList &pr
             xml += QStringLiteral("    <cal:max-resource-size/>\n");
         } else if (prop == QStringLiteral("current-user-privilege-set")) {
             xml += QStringLiteral("    <d:current-user-privilege-set/>\n");
+        } else if (prop == QStringLiteral("supported-report-set")) {
+            xml += QStringLiteral("    <d:supported-report-set/>\n");
         }
     }
 
@@ -569,6 +600,55 @@ QString CalDavCapabilityDiscovery::parseServerProduct(const QByteArray &response
     }
 
     return QString();
+}
+
+QString CalDavCapabilityDiscovery::extractProducerId(
+    const QByteArray &response, const QByteArray &serverHeader) const
+{
+    // 1. Explicit <prodid> element anywhere in the multistat (any prefix /
+    //    namespace — match on local name so both unprefixed and prefixed
+    //    spellings hit). Some servers/proxies echo an iCal-style PRODID.
+    //    Recursive walk: local-name matching across namespaces.
+    QDomDocument doc;
+    if (doc.setContent(response)) {
+        std::function<QString(const QDomElement &)> findProdid =
+            [&](const QDomElement &elem) -> QString {
+            // Prefix-stripped tag name (localName() is unreliable for
+            // unprefixed elements parsed through the legacy setContent
+            // overload this file already uses).
+            QString name = elem.tagName();
+            const int colon = name.lastIndexOf(QLatin1Char(':'));
+            if (colon >= 0)
+                name = name.mid(colon + 1);
+            if (name.compare(QStringLiteral("prodid"), Qt::CaseInsensitive) == 0) {
+                const QString text = elem.text().trimmed();
+                if (!text.isEmpty())
+                    return text;
+            }
+            for (QDomNode child = elem.firstChild(); !child.isNull();
+                 child = child.nextSibling()) {
+                const QDomElement childElem = child.toElement();
+                if (childElem.isNull())
+                    continue;
+                const QString found = findProdid(childElem);
+                if (!found.isEmpty())
+                    return found;
+            }
+            return QString();
+        };
+        const QString found = findProdid(doc.documentElement());
+        if (!found.isEmpty())
+            return found;
+    }
+
+    // 2. Known-product sniff across the body AND the HTTP Server header
+    //    (e.g. "Radicale/3.5.0" never appears in a body).
+    QByteArray combined = response;
+    if (!serverHeader.isEmpty()) {
+        combined += "\n";
+        combined += serverHeader;
+    }
+    return parseServerProduct(combined);
 }
 
 void CalDavCapabilityDiscovery::finishWithError(const QString &error)

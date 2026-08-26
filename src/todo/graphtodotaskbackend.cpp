@@ -1,6 +1,7 @@
 #include "graphtodotaskbackend.h"
 
 #include "graphapiclient.h"
+#include "calendarcapabilities.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -276,6 +277,7 @@ Kalburator::Sync::DiscoveredCalendar GraphTodoTaskBackend::discoveredTaskList(
     } else {
         d.writable = discoveredWritable(collectionId);
     }
+    d.setCapabilities(Kalburator::Sync::CapabilityReports::msGraphTodo());
     return d;
 }
 

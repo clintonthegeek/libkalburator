@@ -19,6 +19,9 @@ PerCalendarCapabilities PerCalendarCapabilities::fromJson(const QJsonObject &jso
     caps.writable = json.value(QStringLiteral("writable")).toBool(true);
     caps.maxResourceSize = json.value(QStringLiteral("maxResourceSize")).toInt(0);
     caps.serverDisplayName = json.value(QStringLiteral("displayName")).toString();
+    caps.producerId = json.value(QStringLiteral("producerId")).toString();
+    caps.supportsSyncCollection =
+        json.value(QStringLiteral("supportsSyncCollection")).toBool(false);
 
     const QString colorStr = json.value(QStringLiteral("color")).toString();
     if (!colorStr.isEmpty()) {
@@ -45,6 +48,12 @@ QJsonObject PerCalendarCapabilities::toJson() const
     }
     if (serverColor.isValid()) {
         json[QStringLiteral("color")] = serverColor.name(QColor::HexArgb);
+    }
+    if (!producerId.isEmpty()) {
+        json[QStringLiteral("producerId")] = producerId;
+    }
+    if (supportsSyncCollection) {
+        json[QStringLiteral("supportsSyncCollection")] = true;
     }
     return json;
 }

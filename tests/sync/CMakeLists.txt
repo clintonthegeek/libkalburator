@@ -70,6 +70,26 @@ set_tests_properties(tst_caldav_provider PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# VP.a (vtodo-parity W8) — unified capability/trait query API. Static
+# report pins, JSON round-trips, discovery-fact derivation, and the PRODID/
+# sync-collection discovery extensions (reuses FakeCalDavServer).
+add_executable(tst_calendar_capabilities
+    tst_calendar_capabilities.cpp
+    fakecaldavserver.cpp
+    fakecaldavserver.h
+)
+target_link_libraries(tst_calendar_capabilities
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        Kalburator::Sync
+)
+add_test(NAME tst_calendar_capabilities COMMAND tst_calendar_capabilities)
+set_tests_properties(tst_calendar_capabilities PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # v0.63 RemoteCalendarBackend convergence: discovery primer (zero redundant
 # PROPFINDs) + content-cache filename determinism. Reuses FakeCalDavServer.
 add_executable(tst_remotecalendarbackend_convergence

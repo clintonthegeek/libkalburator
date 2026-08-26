@@ -4,6 +4,7 @@
 #include "mseventcanonstages.h"
 #include "icalcanonstages.h"
 #include "icalcodec.h"
+#include "calendarcapabilities.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -444,6 +445,7 @@ Kalburator::Sync::DiscoveredCalendar MSGraphCalendarBackend::discoveredCalendar(
     } else {
         d.writable = discoveredWritable(calendarId);
     }
+    d.setCapabilities(Kalburator::Sync::CapabilityReports::msGraphCalendar());
     return d;
 }
 

@@ -146,6 +146,11 @@ private:
     PerCalendarCapabilities parseCalendarProperties(const QByteArray &response,
                                                      const QString &calendarUrl) const;
     QString parseServerProduct(const QByteArray &response) const;
+    /// VP.a (W8): producer identity — explicit <prodid> element in the
+    /// multistat when a server exposes one, else the known-product sniff
+    /// across body + HTTP Server header.
+    QString extractProducerId(const QByteArray &response,
+                              const QByteArray &serverHeader) const;
 
     void finishWithError(const QString &error);
     void finishWithSuccess();

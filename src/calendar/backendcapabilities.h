@@ -222,32 +222,11 @@ struct BackendCapabilities
     static BackendCapabilities planstanDefaults();
 };
 
-/**
- * @brief Per-calendar capability information (discovered from server).
- *
- * CalDAV servers can restrict individual calendars to specific component
- * types. This struct stores discovered per-calendar capabilities.
- */
-struct CalendarCapabilities
-{
-    QString calendarId;
-    bool supportsVEvent = true;
-    bool supportsVTodo = true;
-    bool supportsVJournal = false;
-    QColor serverColor;        ///< Color from calendar-color property
-    QString serverDisplayName; ///< Display name from server
-    int maxResourceSize = 0;   ///< Max item size in bytes (0 = unlimited)
-
-    /**
-     * @brief Check if this calendar supports a specific calendar type.
-     */
-    bool supportsCalendarType(CalendarType type) const;
-
-    /**
-     * @brief Get supported component types as string list.
-     */
-    QStringList supportedComponentTypes() const;
-};
+// NOTE: the former legacy `struct CalendarCapabilities` here was REMOVED
+// (VP.a, 2026-08-26): it was an unused near-duplicate of
+// PerCalendarCapabilities (audit S5 spelling drift), and the name now
+// belongs to the consumer-facing capability/trait contract in
+// src/sync/calendarcapabilities.h (vtodo-parity W8).
 
 } // namespace Kalburator::Sync
 

@@ -27,6 +27,15 @@ struct PerCalendarCapabilities
     QString serverDisplayName;
     int maxResourceSize = 0;  // 0 = unlimited
 
+    // VP.a (vtodo-parity W8): producer identity + report-set probing.
+    /// Server producer id — PRODID-derived where the PROPFIND exposes it,
+    /// else the known-product sniff (body + Server header). Empty when
+    /// undiscoverable (capabilitiesFromDiscovery() then falls back to
+    /// "caldav").
+    QString producerId;
+    /// RFC 6578 sync-collection REPORT advertised in supported-report-set.
+    bool supportsSyncCollection = false;
+
     static PerCalendarCapabilities fromJson(const QJsonObject &json);
     QJsonObject toJson() const;
 };

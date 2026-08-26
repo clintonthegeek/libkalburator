@@ -6,6 +6,7 @@
 #include "icalcanonstages.h"
 #include "icalcodec.h"
 #include "blockinghttp.h"
+#include "calendarcapabilities.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -433,6 +434,7 @@ Kalburator::Sync::DiscoveredCalendar GoogleCalendarBackend::discoveredCalendar(
     } else {
         d.writable = discoveredWritable(calendarId);
     }
+    d.setCapabilities(Kalburator::Sync::CapabilityReports::googleCalendar());
     return d;
 }
 

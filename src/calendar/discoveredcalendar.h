@@ -8,6 +8,7 @@
 #include <QMetaType>
 
 #include "calendartype.h"
+#include "calendarcapabilities.h"
 
 namespace Kalburator::Sync {
 
@@ -55,6 +56,30 @@ struct DiscoveredCalendar {
      * @brief Set the CalDAV URL.
      */
     void setDavUrl(const QString &url) { metadata.insert(QStringLiteral("davUrl"), url); }
+
+    // === VP.a (vtodo-parity W8): unified capability exposure ===
+
+    /**
+     * @brief The capabilities/trait report for this collection.
+     *
+     * Metadata-backed (key "capabilities", JSON-encoded CalendarCapabilities)
+     * so existing constructors and serialization stay valid. Backends either
+     * derive from discovery facts (CalDAV) or pin the static family report
+     * (CapabilityReports). Default-constructed when never set — hosts must
+     * treat an all-defaults report as "unknown backend, query the family
+     * reports instead".
+     */
+    Kalburator::Sync::CalendarCapabilities capabilities() const {
+        return Kalburator::Sync::CalendarCapabilities::fromJson(
+            metadata.value(QStringLiteral("capabilities")).value<QJsonObject>());
+    }
+
+    /**
+     * @brief Attach a capability report to this discovered calendar.
+     */
+    void setCapabilities(const Kalburator::Sync::CalendarCapabilities &caps) {
+        metadata.insert(QStringLiteral("capabilities"), caps.toJson());
+    }
 
     bool isValid() const {
         return !calendarId.isEmpty() && !backendId.isEmpty();

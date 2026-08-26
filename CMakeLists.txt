@@ -593,6 +593,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     src/sync/caldavconfigwidget.h
     src/sync/caldavcapabilitydiscovery.h
     src/sync/carddavcapabilitydiscovery.h
+    # VP.a (vtodo-parity W8): unified capability/trait query API (public)
+    src/sync/calendarcapabilities.h
     src/sync/carddavprovider.h
     src/sync/carddavconfigwidget.h
     # Phase K.4: domain-neutral sync-backend base
@@ -635,6 +637,7 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/caldavconfigwidget.cpp
     src/sync/caldavcapabilitydiscovery.cpp
     src/sync/carddavcapabilitydiscovery.cpp
+    src/sync/calendarcapabilities.cpp
     src/sync/carddavprovider.cpp
     src/sync/carddavconfigwidget.cpp
     # Phase K.4: domain-neutral sync-backend base

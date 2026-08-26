@@ -641,34 +641,7 @@ BackendCapabilities BackendCapabilities::planstanDefaults()
     return caps;
 }
 
-// ============================================================================
-// CalendarCapabilities implementation
-// ============================================================================
-
-bool CalendarCapabilities::supportsCalendarType(CalendarType type) const
-{
-    switch (type) {
-    case CalendarType::Event:
-        return supportsVEvent;
-    case CalendarType::Todo:
-        return supportsVTodo;
-    case CalendarType::Hybrid:
-        return supportsVEvent && supportsVTodo;
-    }
-    return false;
-}
-
-QStringList CalendarCapabilities::supportedComponentTypes() const
-{
-    QStringList types;
-    if (supportsVEvent)
-        types << QStringLiteral("VEVENT");
-    if (supportsVTodo)
-        types << QStringLiteral("VTODO");
-    if (supportsVJournal)
-        types << QStringLiteral("VJOURNAL");
-    return types;
-}
-
+// The former legacy CalendarCapabilities implementation was REMOVED with the
+// struct (VP.a, 2026-08-26) — see backendcapabilities.h.
 
 } // namespace Kalburator::Sync

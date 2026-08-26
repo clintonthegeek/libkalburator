@@ -318,6 +318,9 @@ void FakeCalDavServer::writeResponse(QTcpSocket *socket,
 {
     QByteArray resp;
     resp += "HTTP/1.1 " + QByteArray::number(statusCode) + ' ' + reasonPhrase + "\r\n";
+    if (!m_serverHeader.isEmpty()) {
+        resp += "Server: " + m_serverHeader + "\r\n";
+    }
     if (statusCode == 401) {
         resp += "WWW-Authenticate: Basic realm=\"fake\"\r\n";
     }
@@ -819,6 +822,22 @@ QString FakeCalDavServer::xmlForCalendars() const
         for (const QString &comp : comps)
             xml += QStringLiteral("<cal:comp name=\"%1\"/>").arg(comp);
         xml += QStringLiteral("</cal:supported-calendar-component-set>\n");
+        // VP.a (W8): explicit producer id, when configured.
+        if (m_prodidByHref.contains(cal.second)) {
+            xml += QStringLiteral("        <prodid>%1</prodid>\n")
+                       .arg(m_prodidByHref.value(cal.second));
+        }
+        // VP.a (W8): advertise RFC 6578 sync-collection in the depth-1
+        // calendar-list multistat when enabled, so discovery's per-calendar
+        // supported-report-set parse sees it (mirrors real servers like
+        // Radicale >=3 / Nextcloud which include it here).
+        if (m_supportsSyncCollection) {
+            xml += QStringLiteral(
+                "        <d:supported-report-set>"
+                "<d:supported-report><d:report><d:sync-collection/>"
+                "</d:report></d:supported-report>"
+                "</d:supported-report-set>\n");
+        }
         // getctag, when configured via setCollectionCtag() — real servers
         // commonly include it in the depth-1 calendar-list response too, so
         // discovery (not just the later Depth:0 optimisation PROPFIND) can

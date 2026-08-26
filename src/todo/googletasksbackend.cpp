@@ -1,6 +1,7 @@
 #include "googletasksbackend.h"
 
 #include "googleapiclient.h"
+#include "calendarcapabilities.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -240,6 +241,7 @@ Kalburator::Sync::DiscoveredCalendar GoogleTasksBackend::discoveredTaskList(
     } else {
         d.writable = discoveredWritable(collectionId);
     }
+    d.setCapabilities(Kalburator::Sync::CapabilityReports::googleTasks());
     return d;
 }
 
