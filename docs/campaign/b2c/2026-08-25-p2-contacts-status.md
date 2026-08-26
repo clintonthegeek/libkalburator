@@ -111,7 +111,13 @@ crossing-gated both directions, live-checkpointed per invariant 1.
       anchor policy pinned (`=` ids never URL-encoded); live probes
       settled delta-vs-listing (**O70**), carrier ingest shape, photo
       scope, identity interplay — decisions above
-- [ ] P2.b: Mock servers (contacts-flavored) + transport-level pins
+- [x] P2.b: contacts-flavored mocks + transport pins (landed 2026-08-25 —
+      `MockGraphContactsServer` (folders, expand-on/off carrier
+      projection, nav-POST carriers, PATCH-with-extensions ⇒ 500,
+      wrong-prefix filter ⇒ 500, `=`-suffixed minted ids) +
+      `MockPeopleServer` (pageSize/pageToken, personFields projection,
+      requestSyncToken + queued changes + expired-token 410,
+      createContact clientData echo); 11+9 slots green)
 - [ ] P2.c: `GraphContactsBackend`: expanded-listing reads, nav-POST
       carrier writes, folder discovery
 - [ ] P2.d: `GooglePeopleBackend`: connections paging, clientData carriers

@@ -54,6 +54,47 @@ set_tests_properties(tst_remote_contacts_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# B2C P2.b — contacts-flavored vendor doubles (Graph contacts + Google
+# People) mirroring the P1 calendar mock mechanics; transport-level suites
+# pin pagination, carrier visibility, sync tokens, and create/delete truths.
+
+add_library(kalburator_mock_graph_contacts_server STATIC
+    mockgraphcontactsserver.cpp
+    mockgraphcontactsserver.h
+)
+target_link_libraries(kalburator_mock_graph_contacts_server
+    PUBLIC Qt6::Core Qt6::Network)
+target_include_directories(kalburator_mock_graph_contacts_server
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(kalburator_mock_people_server STATIC
+    mockpeopleserver.cpp
+    mockpeopleserver.h
+)
+target_link_libraries(kalburator_mock_people_server PUBLIC Qt6::Core Qt6::Network)
+target_include_directories(kalburator_mock_people_server
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+function(kalburator_add_vendor_mock_test TEST_NAME MOCK_LIB)
+    add_executable(${TEST_NAME} ${TEST_NAME}.cpp)
+    target_link_libraries(${TEST_NAME}
+        PRIVATE
+            Qt6::Core
+            Qt6::Network
+            Qt6::Test
+            ${MOCK_LIB}
+    )
+    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+    set_tests_properties(${TEST_NAME} PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endfunction()
+
+kalburator_add_vendor_mock_test(tst_mockgraphcontactsserver
+    kalburator_mock_graph_contacts_server)
+kalburator_add_vendor_mock_test(tst_mockpeopleserver
+    kalburator_mock_people_server)
+
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadicontactsbackend tst_akonadicontactsbackend.cpp)
     target_link_libraries(tst_akonadicontactsbackend

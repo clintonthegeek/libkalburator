@@ -31,4 +31,9 @@ this file records per-step progress, decisions, and deviations.
   losses, identity-free backends). Open Q4 added: nav-PATCH extension
   update seam — probe at P2.f.
 - Next: P2.b contacts-flavored mock servers + transport pins.
+- **P2.b LANDED** (subagent): `MockGraphContactsServer` +
+  `MockPeopleServer` + two transport suites (11+9 slots green). Note:
+  QUrlQuery PrettyDecoded does not match `%24expand`-style encoded keys —
+  the Graph double resolves query items FullyDecoded (O60-family; pin
+  candidate for an O-entry if it bites again).
 - (progress appended as work lands)
