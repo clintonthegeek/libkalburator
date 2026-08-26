@@ -90,4 +90,14 @@ this file records per-step progress, decisions, and deviations.
   collide → W1 is real identity work, not documentation); VALARM already
   first-class; org backend drops unknown X-props; BaselineStore has no
   multi-record transactions. P3 now gates the parity work.
+- **P3 OPENED** (same session, continuing autonomously): design pass done
+  via recon subagent; decisions pinned in
+  `docs/campaign/b2c/2026-08-25-p3-todo-status.md`. Key pins: Tasks API
+  has NO sync tokens (full paged listings); envelopes fit stock clients
+  (items[] / value[]) so no People-style rawRequest walks; Graph todo
+  reads = expanded listings never delta (O70-family); due-required-with-
+  recurrence create fails LOUD; demux = two specs (cal/todo) over shared
+  RemoteCalendarBackend with FilteredCollectionBackend views — RAW-BYTES
+  filter gap flagged (RecordFilter speaks canon-JSON, CalDAV records are
+  iCal bytes).
 - (progress appended as work lands)
