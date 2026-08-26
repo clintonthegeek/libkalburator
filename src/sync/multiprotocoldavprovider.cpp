@@ -4,6 +4,8 @@
 #include "caldavcapabilitydiscovery.h"
 #include "../calendar/remotecalendarbackend.h"
 #include "../contacts/remotecontactsbackend.h"
+#include "../universal/filteredcollectionbackend.h"
+#include "../universal/kinddemuxbackend.h"
 #include "carddavcapabilitydiscovery.h"
 #include "caldavcontenttypes.h"
 #include "davslug.h"
@@ -187,6 +189,10 @@ void MultiProtocolDavProvider::disconnect()
 
 std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()
 {
+    using Kalburator::Sinks::FilteredCollectionBackend;
+    using Kalburator::Sinks::KindDemuxBackend;
+    using SyncBackendBasePtr = std::shared_ptr<SyncBackendBase>;
+
     std::vector<ProviderBackendSpec> out;
     if (!m_connected) return out;
 
@@ -195,22 +201,109 @@ std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()
         (col.type == QLatin1String("contacts") ? contactCols : calCols) << col;
 
     if (!calCols.isEmpty()) {
-        ProviderBackendSpec spec;
-        spec.domainId = QStringLiteral("cal");
-        auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
-        QList<RemoteCalendarBackend::PrimedCalendar> primed;
-        for (const auto &col : std::as_const(calCols)) {
-            const QString url = m_calUrlBySlug.value(col.id);
-            backend->registerCalendarUrl(col.id, url);
-            const auto capIt = m_calCapsBySlug.constFind(col.id);
-            if (capIt != m_calCapsBySlug.constEnd())
-                primed.append(RemoteCalendarBackend::PrimedCalendar{
-                    col.id, url, capIt->serverColor, contentTypesFromCaps(*capIt)});
+        // B2C P3.e kind-demux partition. Rectification rule (binding):
+        // transport grouping never crosses a domain boundary — a CalDAV
+        // collection advertising BOTH VTODO and VEVENT/VJOURNAL (hybrid)
+        // must surface in the "cal" domain only as a VEVENT/VJOURNAL-filtered
+        // view and in a NEW "todo" domain as a VTODO-filtered view, both over
+        // the SAME underlying RemoteCalendarBackend instance, both keeping
+        // the SAME collection id. Pure-VTODO-only collections go todo-spec
+        // only; collections without VTODO stay cal-spec only; collections
+        // with NO advertised contentTypes keep the legacy behavior (cal-spec
+        // only, no filtering).
+        const auto advertisesVTodo =
+            [](const CollectionInfo &c) { return c.contentTypes.contains(QLatin1String("VTODO")); };
+        const auto advertisesCalKind =
+            [](const CollectionInfo &c) {
+                return c.contentTypes.contains(QLatin1String("VEVENT"))
+                    || c.contentTypes.contains(QLatin1String("VJOURNAL"));
+            };
+
+        bool anyTodoBearing = false;
+        for (const auto &col : std::as_const(calCols))
+            anyTodoBearing |= advertisesVTodo(col);
+
+        if (!anyTodoBearing) {
+            // Legacy shape: one unfiltered RemoteCalendarBackend for every
+            // calendar (byte-for-byte today's behavior).
+            ProviderBackendSpec spec;
+            spec.domainId = QStringLiteral("cal");
+            auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);
+            QList<RemoteCalendarBackend::PrimedCalendar> primed;
+            for (const auto &col : std::as_const(calCols)) {
+                const QString url = m_calUrlBySlug.value(col.id);
+                backend->registerCalendarUrl(col.id, url);
+                const auto capIt = m_calCapsBySlug.constFind(col.id);
+                if (capIt != m_calCapsBySlug.constEnd())
+                    primed.append(RemoteCalendarBackend::PrimedCalendar{
+                        col.id, url, capIt->serverColor, contentTypesFromCaps(*capIt)});
+            }
+            backend->primeCalendars(primed);
+            spec.collections = calCols;
+            spec.backend = std::move(backend);
+            out.push_back(std::move(spec));
+        } else {
+            // Demuxed shape: shared transport + per-domain routed views.
+            const QString parentId = QStringLiteral("%1-cal-transport").arg(m_id);
+            auto parentShared = std::make_shared<RemoteCalendarBackend>(
+                m_serverUrl, m_username, m_password);
+            RemoteCalendarBackend *parent = parentShared.get();
+            QList<RemoteCalendarBackend::PrimedCalendar> primed;
+            QList<QPair<QString, SyncBackendBase*>> calRoutes;
+            QList<QPair<QString, SyncBackendBase*>> todoRoutes;
+            QList<CollectionInfo> calSpecCols, todoSpecCols;
+            for (const auto &col : std::as_const(calCols)) {
+                const QString url = m_calUrlBySlug.value(col.id);
+                parent->registerCalendarUrl(col.id, url);
+                const auto capIt = m_calCapsBySlug.constFind(col.id);
+                if (capIt != m_calCapsBySlug.constEnd())
+                    primed.append(RemoteCalendarBackend::PrimedCalendar{
+                        col.id, url, capIt->serverColor, contentTypesFromCaps(*capIt)});
+
+                if (advertisesVTodo(col) && advertisesCalKind(col)) {
+                    // Hybrid: filtered views in BOTH domains, same id.
+                    FilteredCollectionBackend *calView =
+                        new FilteredCollectionBackend(parent, parentId, col.id, col.id,
+                            QStringList{ QStringLiteral("VEVENT"),
+                                         QStringLiteral("VJOURNAL") });
+                    calRoutes.append({col.id, calView});
+                    calSpecCols.append(col);
+                    FilteredCollectionBackend *todoView =
+                        new FilteredCollectionBackend(parent, parentId, col.id, col.id,
+                            QStringList{ QStringLiteral("VTODO") });
+                    todoRoutes.append({col.id, todoView});
+                    todoSpecCols.append(col);
+                } else if (advertisesVTodo(col)) {
+                    // Pure-VTODO-only: todo domain exclusively.
+                    FilteredCollectionBackend *todoView =
+                        new FilteredCollectionBackend(parent, parentId, col.id, col.id,
+                            QStringList{ QStringLiteral("VTODO") });
+                    todoRoutes.append({col.id, todoView});
+                    todoSpecCols.append(col);
+                } else {
+                    // Calendar-only: direct route into the shared transport.
+                    calRoutes.append({col.id, parent});
+                    calSpecCols.append(col);
+                }
+            }
+            parent->primeCalendars(primed);
+
+            ProviderBackendSpec calSpec;
+            calSpec.domainId = QStringLiteral("cal");
+            calSpec.collections = calSpecCols;
+            calSpec.backend = std::make_unique<KindDemuxBackend>(
+                calRoutes, parentShared);
+            out.push_back(std::move(calSpec));
+
+            if (!todoRoutes.isEmpty()) {
+                ProviderBackendSpec todoSpec;
+                todoSpec.domainId = QStringLiteral("todo");
+                todoSpec.collections = todoSpecCols;
+                todoSpec.backend = std::make_unique<KindDemuxBackend>(
+                    todoRoutes, std::move(parentShared));
+                out.push_back(std::move(todoSpec));
+            }
         }
-        backend->primeCalendars(primed);
-        spec.collections = calCols;
-        spec.backend = std::move(backend);
-        out.push_back(std::move(spec));
     }
     if (!m_calendarsOnly && !contactCols.isEmpty()) {
         ProviderBackendSpec spec;

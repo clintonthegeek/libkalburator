@@ -125,7 +125,19 @@ backends are its W1/W2 Google/MSToDo test legs.
       create AND update; PATCH-in-place; 404-then-relist deletes;
       wellknownListName discovery; atomic cache persistence. 11 slots
       green)
-- [ ] P3.e: kind-demux multi-spec split + suites (incl. raw-bytes filter)
+- [x] P3.e: kind-demux (landed 2026-08-26 — hybrid collections surface in
+      BOTH "cal" (VEVENT/VJOURNAL view) and NEW "todo" (VTODO view) specs
+      as FilteredCollectionBackend raw-kind views over ONE shared
+      RemoteCalendarBackend, routed via new `KindDemuxBackend`
+      (`src/universal/kinddemuxbackend.*`); same collection/record ids in
+      both views; raw iCal discriminator = first-component-block sniff;
+      neither-kind records drop from both views (deliberate); writes
+      passthrough unstamped in raw mode; no-VTODO accounts keep legacy
+      single-spec shape byte-for-byte. 5 new slots in
+      tst_multiprotocoldavprovider (26 total), sinks suite untouched.
+      Watch item: tst_syncengine_unification flaked once under parallel
+      load, passes isolated — same environmental class as the Radicale
+      set)
 - [ ] P3.f: live checkpoints both vendors (invariant 1) + fixture corpora
       replay through real backends
 

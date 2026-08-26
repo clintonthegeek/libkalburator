@@ -16,6 +16,19 @@ namespace Kalburator::Sinks {
 /// collection. Reads filter; writes stamp the filter property (`Contains`
 /// additive, `Equals` filter-authoritative); delete + writability delegate.
 ///
+/// Raw-bytes component-kind mode (B2C P3.e kind-demux): the second
+/// constructor takes accepted iCal component kinds ("VTODO",
+/// "VEVENT"+"VJOURNAL", …) instead of a `RecordFilter`. CalDAV records are
+/// RAW iCal bytes ({calendar, ical} shape), not canon JSON, so the JSON
+/// RecordFilter cannot parse them; in this mode a record is admitted iff
+/// its first component block (the first BEGIN:<comp> after skipping the
+/// VCALENDAR wrapper and any leading VTIMEZONE blocks) names one of the
+/// accepted kinds. Records whose first block is neither kind are dropped by
+/// BOTH views (deliberate: an unknown-kind record belongs to no domain).
+/// Writes pass through UNCHANGED — stamping a filter property into iCal
+/// bytes would corrupt them, and passthrough semantics suffice because the
+/// caller only ever writes records of its own domain through the view.
+///
 /// The parent pointer is borrowed — not owned. If a `BackendRegistry` is
 /// passed to the constructor, the FCB listens for
 /// `backendInstanceUnregistered(parentBackendId)` and nulls its parent
@@ -39,6 +52,20 @@ public:
                               QString parentCollectionId,
                               QString virtualCollectionId,
                               Kalburator::Shape::RecordFilter filter,
+                              Kalburator::Sync::BackendRegistry* registry = nullptr,
+                              QString displayNameOverride = QString(),
+                              QObject* parent = nullptr);
+
+    /// Raw-bytes component-kind view (B2C P3.e kind-demux). `acceptedKinds`
+    /// are upper-case iCal component names ("VTODO", "VEVENT", "VJOURNAL");
+    /// a record is visible iff its first component block's kind is in the
+    /// set. Writes pass through unchanged (no filter stamping — see the
+    /// class comment).
+    FilteredCollectionBackend(Kalburator::Sync::SyncBackendBase* parentBackend,
+                              QString parentBackendId,
+                              QString parentCollectionId,
+                              QString virtualCollectionId,
+                              const QStringList& acceptedComponentKinds,
                               Kalburator::Sync::BackendRegistry* registry = nullptr,
                               QString displayNameOverride = QString(),
                               QObject* parent = nullptr);
@@ -86,6 +113,9 @@ public:
     const Kalburator::Shape::RecordFilter& filter() const { return m_filter; }
 
 private:
+    /// Shared BackendRegistry-unregister guard for both constructors.
+    void initRegistryGuard(Kalburator::Sync::BackendRegistry* registry);
+
     /// The parent's Sync::ChangeDetection interface, or null if the parent is
     /// gone (post-unregister) or doesn't implement it. Centralizes the cross-
     /// cast the four ChangeDetection overrides share.
@@ -105,6 +135,11 @@ private:
     /// Returns the original bytes unchanged if the payload is not a
     /// JSON object (caller decides what to do with that).
     QByteArray stampFilterValue(const QByteArray& payload) const;
+
+    /// Dispatch a record to this view's admission rule: raw-kind mode
+    /// sniffs the first iCal component block; canon-JSON mode evaluates
+    /// the RecordFilter.
+    bool acceptsRecord(const QByteArray& payload) const;
 
     /// Canonical JSON serialization of the filter value, suitable for
     /// embedding in resourceId(). Strings come back as JSON (`"Work"`);
@@ -129,6 +164,10 @@ private:
     QString                          m_parentColId;
     QString                          m_virtualColId;
     Kalburator::Shape::RecordFilter  m_filter;
+    /// Raw-kind mode: non-empty iff the raw-kind constructor was used
+    /// (upper-case iCal component names); JSON-filter mode leaves it empty.
+    bool                             m_rawKindMode = false;
+    QStringList                      m_rawKinds;
     QString                          m_displayNameOverride;
 };
 

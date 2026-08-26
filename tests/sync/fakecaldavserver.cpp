@@ -434,6 +434,27 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
     } else if (method == "REPORT") {
         handleReport(socket, path, body);
 
+    } else if (method == "GET") {
+        // Item-level fetch (RemoteCalendarBackend::getRawIcs / loadRecord):
+        // serve the stored iCal body for "/<collection>/<fileName>".
+        const int lastSlash = path.lastIndexOf(QLatin1Char('/'));
+        const QString uid = uidFromPath(path);
+        if (lastSlash > 0 && !uid.isEmpty()) {
+            const QString colHref = path.left(lastSlash + 1);
+            const QString aliased = uidForFileName(colHref, uid);
+            const QString realUid = aliased.isEmpty() ? uid : aliased;
+            auto colIt = m_store.constFind(colHref);
+            if (colIt != m_store.constEnd()) {
+                auto recIt = colIt->constFind(realUid);
+                if (recIt != colIt->constEnd()) {
+                    writeResponse(socket, 200, "OK", recIt.value().data,
+                                  "ETag: " + makeEtag(recIt.value().data).toUtf8() + "\r\n");
+                    return;
+                }
+            }
+        }
+        writeResponse(socket, 404, "Not Found", QByteArray());
+
     } else if (method == "PUT") {
         const QByteArray headers = (headerEnd > 0) ? fullRequest.left(headerEnd) : QByteArray();
         handlePut(socket, path, body, headers);

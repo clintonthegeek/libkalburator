@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QRegularExpression>
 #include <QUrl>
 
 #include "backendregistry.h"  // Kalburator::Sync::BackendRegistry
@@ -30,6 +31,33 @@ FilteredCollectionBackend::FilteredCollectionBackend(
     , m_virtualColId(std::move(virtualCollectionId))
     , m_filter(std::move(filter))
     , m_displayNameOverride(std::move(displayNameOverride))
+{
+    initRegistryGuard(registry);
+}
+
+FilteredCollectionBackend::FilteredCollectionBackend(
+        Kalburator::Sync::SyncBackendBase* parentBackend,
+        QString parentBackendId,
+        QString parentCollectionId,
+        QString virtualCollectionId,
+        const QStringList& acceptedComponentKinds,
+        Kalburator::Sync::BackendRegistry* registry,
+        QString displayNameOverride,
+        QObject* parent)
+    : Kalburator::Sync::SyncBackendBase(parent)
+    , m_parent(parentBackend)
+    , m_parentBackendId(std::move(parentBackendId))
+    , m_parentColId(std::move(parentCollectionId))
+    , m_virtualColId(std::move(virtualCollectionId))
+    , m_rawKindMode(true)
+    , m_rawKinds(acceptedComponentKinds)
+    , m_displayNameOverride(std::move(displayNameOverride))
+{
+    initRegistryGuard(registry);
+}
+
+void FilteredCollectionBackend::initRegistryGuard(
+        Kalburator::Sync::BackendRegistry* registry)
 {
     if (registry && !m_parentBackendId.isEmpty()) {
         // BackendRegistry mutation is assumed single-threaded (same thread as
@@ -58,6 +86,8 @@ QString FilteredCollectionBackend::displayName() const
 
 QString FilteredCollectionBackend::filterDescription() const
 {
+    if (m_rawKindMode)
+        return m_rawKinds.join(QLatin1Char('+'));
     using Op = Kalburator::Shape::RecordFilter::Op;
     const QString prop = m_filter.property.toString();
     const QString val  = m_filter.value.toString();
@@ -145,10 +175,17 @@ QString FilteredCollectionBackend::opToken(Kalburator::Shape::RecordFilter::Op o
 QString FilteredCollectionBackend::resourceId() const
 {
     const QString parentRes = m_parent ? m_parent->resourceId() : QString();
-    const QString encodedProp  = QString::fromUtf8(
-        QUrl::toPercentEncoding(m_filter.property.toString()));
     const QString encodedColId = QString::fromUtf8(
         QUrl::toPercentEncoding(m_parentColId));
+    if (m_rawKindMode) {
+        return QStringLiteral("filtered-view:%1/%2?kind=%3")
+            .arg(parentRes,
+                 encodedColId,
+                 QString::fromUtf8(QUrl::toPercentEncoding(
+                     m_rawKinds.join(QLatin1Char('+')))));
+    }
+    const QString encodedProp  = QString::fromUtf8(
+        QUrl::toPercentEncoding(m_filter.property.toString()));
     const QString encodedValue = QString::fromUtf8(
         QUrl::toPercentEncoding(QString::fromUtf8(canonJsonOfValue(m_filter.value))));
     return QStringLiteral("filtered-view:%1/%2?p=%3&op=%4&v=%5")
@@ -166,6 +203,55 @@ bool FilteredCollectionBackend::discoveredWritable(const QString& collectionId) 
     return m_parent->discoveredWritable(m_parentColId);
 }
 
+namespace {
+
+/// Minimal first-component-block sniff over raw iCal bytes (B2C P3.e).
+/// Unfolds continuations, normalizes line endings, skips the VCALENDAR
+/// wrapper and any leading VTIMEZONE blocks, and returns the upper-case
+/// component name of the FIRST remaining BEGIN:<comp> block. Empty bytes
+/// => empty result (matches nothing). BEGIN lines are never folded in
+/// practice (RFC 5545 folds only long content lines), so the unfold pass
+/// is defensive rather than load-bearing for the kind itself.
+QByteArray firstComponentKind(const QByteArray& icalBytes)
+{
+    QString text = QString::fromUtf8(icalBytes);
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    static const QRegularExpression foldRe(QStringLiteral("\\n[ \\t]"));
+    text.replace(foldRe, QString());
+
+    bool inTimezone = false;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (const QString& raw : lines) {
+        const QString line = raw.trimmed();
+        if (line.compare(QLatin1String("BEGIN:VTIMEZONE"), Qt::CaseInsensitive) == 0) {
+            inTimezone = true;
+            continue;
+        }
+        if (inTimezone) {
+            if (line.compare(QLatin1String("END:VTIMEZONE"), Qt::CaseInsensitive) == 0)
+                inTimezone = false;
+            continue;
+        }
+        if (!line.startsWith(QLatin1String("BEGIN:"), Qt::CaseInsensitive))
+            continue;
+        const QString name = line.mid(6).trimmed().toUpper();
+        if (name == QLatin1String("VCALENDAR"))
+            continue;   // wrapper — keep descending
+        return name.toUtf8();
+    }
+    return {};
+}
+
+} // namespace
+
+bool FilteredCollectionBackend::acceptsRecord(const QByteArray& payload) const
+{
+    if (m_rawKindMode)
+        return m_rawKinds.contains(QString::fromUtf8(firstComponentKind(payload)));
+    return m_filter.matches(payload);
+}
+
 QList<BackendRecord> FilteredCollectionBackend::loadRecords(const QString& collectionId)
 {
     if (!m_parent || collectionId != m_virtualColId) return {};
@@ -173,7 +259,7 @@ QList<BackendRecord> FilteredCollectionBackend::loadRecords(const QString& colle
     QList<BackendRecord> filtered;
     filtered.reserve(all.size());
     for (int i = 0; i < all.size(); ++i) {
-        if (m_filter.matches(all[i].data))
+        if (acceptsRecord(all[i].data))
             filtered.append(std::move(all[i]));
     }
     filtered.squeeze();
@@ -185,7 +271,7 @@ std::optional<BackendRecord> FilteredCollectionBackend::loadRecord(const QString
     if (!m_parent) return std::nullopt;
     auto rec = m_parent->loadRecord(recordId);
     if (!rec.has_value()) return std::nullopt;
-    if (!m_filter.matches(rec->data)) return std::nullopt;
+    if (!acceptsRecord(rec->data)) return std::nullopt;
     return rec;
 }
 
@@ -223,6 +309,12 @@ QString FilteredCollectionBackend::createRecord(const QString& collectionId,
                                                 const BackendRecord& record)
 {
     if (!m_parent || collectionId != m_virtualColId) return {};
+    if (m_rawKindMode) {
+        // Raw iCal bytes: passthrough unchanged. Stamping the filter
+        // property into iCal would corrupt the payload, and the caller only
+        // writes its own domain's records through this view (B2C P3.e).
+        return m_parent->createRecord(m_parentColId, record);
+    }
     BackendRecord stamped = record;
     stamped.data = stampFilterValue(record.data);
     return m_parent->createRecord(m_parentColId, stamped);
@@ -231,6 +323,8 @@ QString FilteredCollectionBackend::createRecord(const QString& collectionId,
 bool FilteredCollectionBackend::updateRecord(const BackendRecord& record)
 {
     if (!m_parent) return false;
+    if (m_rawKindMode)
+        return m_parent->updateRecord(record);   // passthrough — see createRecord()
     BackendRecord stamped = record;
     stamped.data = stampFilterValue(record.data);
     return m_parent->updateRecord(stamped);

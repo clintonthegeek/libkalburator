@@ -26,10 +26,17 @@ class CardDavCapabilityDiscovery;
  * into a single collections() list. Collection ids are bare DAV URL slugs
  * (davSlugFromUrl(href)) — no per-domain prefix; CollectionInfo::type
  * ("calendar"/"contacts") distinguishes the two domains. createBackends()
- * emits up to two ProviderBackendSpecs: one "cal" spec (a single
+ * emits up to three ProviderBackendSpecs: one "cal" spec (a single
  * RemoteCalendarBackend hosting every discovered calendar) and — when
  * !m_calendarsOnly and addressbooks were discovered — one "contacts" spec
  * (a single RemoteContactsBackend hosting every discovered addressbook).
+ * B2C P3.e kind-demux: when any calendar advertises VTODO in its
+ * contentTypes, the calendars are partitioned per domain instead — hybrid
+ * (VEVENT/VTODO) collections surface as component-kind-filtered
+ * FilteredCollectionBackend views in BOTH a "cal" and a NEW "todo" spec
+ * over one shared transport backend (same collection ids everywhere);
+ * pure-VTODO-only collections go todo-spec only (rectification rule:
+ * transport grouping never crosses a domain boundary).
  *
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"                       QString — server base URL

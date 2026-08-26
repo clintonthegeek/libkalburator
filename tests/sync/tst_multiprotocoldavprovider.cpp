@@ -11,6 +11,8 @@
 #include "../../src/calendar/syncbackend.h"
 #include "../../src/calendar/remotecalendarbackend.h"
 #include "../../src/contacts/remotecontactsbackend.h"
+#include "../../src/universal/kinddemuxbackend.h"
+#include "../../src/universal/filteredcollectionbackend.h"
 #include "../../src/plugin/pluginmanager.h"
 #include "../../src/shape/shaperegistries.h"
 #include "../../src/plugin/stock_plugins.h"
@@ -35,6 +37,32 @@ backendForDomain(IProvider &provider, const QString &domainId)
         if (spec.domainId == domainId) return std::move(spec.backend);
     }
     return nullptr;
+}
+
+// ---- B2C P3.e kind-demux helpers -------------------------------------------
+
+// Full VCALENDAR wrapper around one component block of @p kind ("VEVENT",
+// "VTODO", …) with the given UID — the raw-bytes shape a CalDAV server
+// returns per calendar object.
+QByteArray icsBlob(const QString &uid, const char *kind, const char *summary)
+{
+    return QByteArray("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//test//EN\r\nBEGIN:")
+        + kind + "\r\nUID:" + uid.toUtf8()
+        + "\r\nSUMMARY:" + summary + "\r\nEND:" + kind
+        + "\r\nEND:VCALENDAR\r\n";
+}
+
+void hybridTestConfig(BackendConfiguration &cfg, const char *cfgId)
+{
+    // Shared connect recipe for the demux slots: one CalDAV server with a
+    // single MIXED collection (VEVENT+VTODO advertised), CardDAV pointed at
+    // a bogus principal.
+    cfg.id   = QString::fromLatin1(cfgId);
+    cfg.type = QStringLiteral("multiproto-dav");
+    cfg.connectionParams.insert(QStringLiteral("username"), QStringLiteral("testuser"));
+    cfg.connectionParams.insert(QStringLiteral("password"), QStringLiteral("testpass"));
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                QStringLiteral("/bogus-carddav/"));
 }
 
 } // anonymous namespace
@@ -64,6 +92,12 @@ private slots:
     void testTwoDomainSpecs();
     void testCalendarsOnlySingleSpec();
     void testSlugIdsNoPrefixes();
+    // B2C P3.e kind-demux
+    void hybridCollectionYieldsTodoDomainSpec();
+    void threeSpecsWhenContactsAlsoExist();
+    void viewsSplitRecordsByComponentKind();
+    void viewRecordIdsMatchParentUids();
+    void writesThroughViewsReachSharedTransport();
 };
 
 void TstMultiProtocolDavProvider::kindIsMultiprotoDav()
@@ -590,6 +624,317 @@ void TstMultiProtocolDavProvider::testTwoDomainSpecs()
     }
     QVERIFY(sawCal);
     QVERIFY(sawContacts);
+}
+
+// ---- B2C P3.e kind-demux ----------------------------------------------------
+//
+// A mixed CalDAV collection (VEVENT+VTODO in ONE DAV collection) must
+// surface as TWO ProviderBackendSpecs: "cal" filtered to VEVENT/VJOURNAL and
+// a NEW "todo" spec filtered to VTODO — both over the same underlying
+// RemoteCalendarBackend transport, both keeping the SAME collection id.
+// Rectification rule (binding): transport grouping never crosses a domain
+// boundary.
+
+void TstMultiProtocolDavProvider::hybridCollectionYieldsTodoDomainSpec()
+{
+    FakeCalDavServer server;
+    const QString mixedHref = QStringLiteral("/calendars/testuser/mixed/");
+    server.setCalendars({ { QStringLiteral("Mixed"), mixedHref } });
+    server.setCalendarComponents(mixedHref,
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    server.setSeedEvents(mixedHref, {
+        icsBlob(QStringLiteral("evt-1"), "VEVENT", "One"),
+        icsBlob(QStringLiteral("evt-2"), "VEVENT", "Two"),
+        icsBlob(QStringLiteral("tdo-1"), "VTODO",  "Task One"),
+        icsBlob(QStringLiteral("tdo-2"), "VTODO",  "Task Two"),
+    });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    hybridTestConfig(cfg, "demux-two-spec");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+
+    MultiProtocolDavProvider provider;   // calendarsOnly default: no contacts
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(2));
+
+    bool sawCal = false, sawTodo = false;
+    QString calColId, todoColId;
+    for (auto &spec : specs) {
+        if (spec.domainId == QStringLiteral("cal")) {
+            sawCal = true;
+            QCOMPARE(spec.collections.size(), 1);
+            calColId = spec.collections.first().id;
+            // Demuxed shape: the cal domain no longer hands out the raw
+            // RemoteCalendarBackend (which would leak VTODOs across the
+            // boundary) but the routed KindDemuxBackend.
+            QVERIFY(dynamic_cast<RemoteCalendarBackend *>(spec.backend.get()) == nullptr);
+            QVERIFY(dynamic_cast<Kalburator::Sinks::KindDemuxBackend *>(spec.backend.get()) != nullptr);
+        } else if (spec.domainId == QStringLiteral("todo")) {
+            sawTodo = true;
+            QCOMPARE(spec.collections.size(), 1);
+            todoColId = spec.collections.first().id;
+            QVERIFY(dynamic_cast<Kalburator::Sinks::KindDemuxBackend *>(spec.backend.get()) != nullptr);
+        }
+    }
+    QVERIFY(sawCal);
+    QVERIFY(sawTodo);
+    // Pinned decision 3: the filtered views keep the SAME collection id —
+    // disambiguation lives at the spec (domain) level, never in ids.
+    QCOMPARE(calColId, todoColId);
+}
+
+void TstMultiProtocolDavProvider::threeSpecsWhenContactsAlsoExist()
+{
+    FakeCalDavServer calServer;
+    const QString mixedHref = QStringLiteral("/calendars/testuser/mixed/");
+    calServer.setCalendars({ { QStringLiteral("Mixed"), mixedHref } });
+    calServer.setCalendarComponents(mixedHref,
+                                    { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    QVERIFY(calServer.startListening());
+
+    FakeCardDavServer cardServer;
+    cardServer.setAddressbooks({
+        { QStringLiteral("personal"), QStringLiteral("Personal") }
+    });
+    QVERIFY(cardServer.startListening());
+    QString cardBase = cardServer.baseUrl().toString();
+    if (cardBase.endsWith(QLatin1Char('/'))) cardBase.chop(1);
+    cardServer.setContextPath(cardBase);
+
+    BackendConfiguration cfg;
+    hybridTestConfig(cfg, "demux-three-spec");
+    cfg.connectionParams.insert(QStringLiteral("url"), calServer.baseUrl().toString());
+    cfg.connectionParams.insert(QStringLiteral("manualCarddavPrincipal"),
+                                cardBase + QStringLiteral("/principals/users/testuser/"));
+
+    MultiProtocolDavProvider provider(false);   // full mode
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(3));
+    QStringList domains;
+    for (auto &spec : specs)
+        domains << spec.domainId;
+    domains.sort();
+    QCOMPARE(domains, (QStringList{ QStringLiteral("cal"),
+                                    QStringLiteral("contacts"),
+                                    QStringLiteral("todo") }));
+
+    for (auto &spec : specs) {
+        if (spec.domainId == QLatin1String("contacts"))
+            QVERIFY(dynamic_cast<RemoteContactsBackend *>(spec.backend.get()) != nullptr);
+    }
+}
+
+void TstMultiProtocolDavProvider::viewsSplitRecordsByComponentKind()
+{
+    FakeCalDavServer server;
+    const QString mixedHref = QStringLiteral("/calendars/testuser/mixed/");
+    server.setCalendars({ { QStringLiteral("Mixed"), mixedHref } });
+    server.setCalendarComponents(mixedHref,
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    server.setSeedEvents(mixedHref, {
+        icsBlob(QStringLiteral("evt-1"), "VEVENT", "One"),
+        icsBlob(QStringLiteral("evt-2"), "VEVENT", "Two"),
+        icsBlob(QStringLiteral("tdo-1"), "VTODO",  "Task One"),
+        icsBlob(QStringLiteral("tdo-2"), "VTODO",  "Task Two"),
+    });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    hybridTestConfig(cfg, "demux-split");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+
+    MultiProtocolDavProvider provider;
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(2));
+
+    QString colId;
+    std::unique_ptr<IBlobBackend> calBackend, todoBackend;
+    for (auto &spec : specs) {
+        if (spec.domainId == QLatin1String("cal")) {
+            colId = spec.collections.first().id;
+            calBackend = std::move(spec.backend);
+        } else if (spec.domainId == QLatin1String("todo")) {
+            todoBackend = std::move(spec.backend);
+        }
+    }
+    QVERIFY(calBackend && todoBackend);
+
+    auto *calDemux = dynamic_cast<SyncBackendBase *>(calBackend.get());
+    auto *todoDemux = dynamic_cast<SyncBackendBase *>(todoBackend.get());
+    QVERIFY(calDemux && todoDemux);
+
+    // TODO view: ONLY VTODO records from the mixed server payload.
+    const QList<BackendRecord> todoRecs = todoDemux->loadRecords(colId);
+    QCOMPARE(todoRecs.size(), 2);
+    QSet<QString> todoUids;
+    for (const auto &r : todoRecs) {
+        QVERIFY(r.data.contains("BEGIN:VTODO"));
+        QVERIFY(!r.data.contains("BEGIN:VEVENT"));
+        todoUids.insert(r.id);
+    }
+    QCOMPARE(todoUids, (QSet<QString>{ QStringLiteral("tdo-1"), QStringLiteral("tdo-2") }));
+
+    // CAL view: ONLY VEVENT records.
+    const QList<BackendRecord> calRecs = calDemux->loadRecords(colId);
+    QCOMPARE(calRecs.size(), 2);
+    QSet<QString> calUids;
+    for (const auto &r : calRecs) {
+        QVERIFY(r.data.contains("BEGIN:VEVENT"));
+        QVERIFY(!r.data.contains("BEGIN:VTODO"));
+        calUids.insert(r.id);
+    }
+    QCOMPARE(calUids, (QSet<QString>{ QStringLiteral("evt-1"), QStringLiteral("evt-2") }));
+
+    // Singular reads respect the split too.
+    QVERIFY(todoDemux->loadRecord(QStringLiteral("tdo-1")).has_value());
+    QVERIFY(!todoDemux->loadRecord(QStringLiteral("evt-1")).has_value());
+    QVERIFY(calDemux->loadRecord(QStringLiteral("evt-1")).has_value());
+    QVERIFY(!calDemux->loadRecord(QStringLiteral("tdo-1")).has_value());
+
+    // availableCollections() on each view reports exactly the one shared id.
+    QCOMPARE(todoDemux->availableCollections().size(), 1);
+    QCOMPARE(todoDemux->availableCollections().first().id, colId);
+    QCOMPARE(calDemux->availableCollections().first().id, colId);
+}
+
+void TstMultiProtocolDavProvider::viewRecordIdsMatchParentUids()
+{
+    // Ids identical across both views: record ids are the parent transport's
+    // UIDs verbatim (no view-suffixing); collection id is identical too.
+    FakeCalDavServer server;
+    const QString mixedHref = QStringLiteral("/calendars/testuser/mixed/");
+    server.setCalendars({ { QStringLiteral("Mixed"), mixedHref } });
+    server.setCalendarComponents(mixedHref,
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    server.setSeedEvents(mixedHref, {
+        icsBlob(QStringLiteral("shared-check-evt"), "VEVENT", "E"),
+        icsBlob(QStringLiteral("shared-check-tdo"), "VTODO",  "T"),
+    });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    hybridTestConfig(cfg, "demux-ids");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+
+    MultiProtocolDavProvider provider;
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(2));
+    QString colId;
+    std::unique_ptr<IBlobBackend> calBackend, todoBackend;
+    for (auto &spec : specs) {
+        if (spec.domainId == QLatin1String("cal")) {
+            colId = spec.collections.first().id;
+            calBackend = std::move(spec.backend);
+        } else if (spec.domainId == QLatin1String("todo")) {
+            QCOMPARE(spec.collections.first().id, colId);
+            todoBackend = std::move(spec.backend);
+        }
+    }
+    QVERIFY(!colId.isEmpty() && calBackend && todoBackend);
+
+    auto *calDemux = dynamic_cast<SyncBackendBase *>(calBackend.get());
+    auto *todoDemux = dynamic_cast<SyncBackendBase *>(todoBackend.get());
+    QVERIFY(calDemux && todoDemux);
+
+    QCOMPARE(todoDemux->loadRecords(colId).first().id,
+             QStringLiteral("shared-check-tdo"));
+    QCOMPARE(calDemux->loadRecords(colId).first().id,
+             QStringLiteral("shared-check-evt"));
+    // hrefs stay stable in both views: writes/reads address the same server
+    // store, so the collection id both specs advertise is byte-equal.
+    QCOMPARE(colId, QStringLiteral("mixed"));
+}
+
+void TstMultiProtocolDavProvider::writesThroughViewsReachSharedTransport()
+{
+    FakeCalDavServer server;
+    const QString mixedHref = QStringLiteral("/calendars/testuser/mixed/");
+    server.setCalendars({ { QStringLiteral("Mixed"), mixedHref } });
+    server.setCalendarComponents(mixedHref,
+                                 { QStringLiteral("VEVENT"), QStringLiteral("VTODO") });
+    QVERIFY(server.startListening());
+
+    BackendConfiguration cfg;
+    hybridTestConfig(cfg, "demux-writes");
+    cfg.connectionParams.insert(QStringLiteral("url"), server.baseUrl().toString());
+
+    MultiProtocolDavProvider provider;
+    provider.load(cfg);
+    QFuture<bool> fut = provider.connect();
+    QTRY_VERIFY_WITH_TIMEOUT(fut.isFinished(), 20000);
+    QCOMPARE(fut.resultAt(0), true);
+
+    auto specs = provider.createBackends();
+    QCOMPARE(specs.size(), std::size_t(2));
+    QString colId;
+    std::unique_ptr<IBlobBackend> calBackend, todoBackend;
+    for (auto &spec : specs) {
+        if (spec.domainId == QLatin1String("cal")) {
+            colId = spec.collections.first().id;
+            calBackend = std::move(spec.backend);
+        } else if (spec.domainId == QLatin1String("todo")) {
+            todoBackend = std::move(spec.backend);
+        }
+    }
+    QVERIFY(calBackend && todoBackend);
+    auto *calDemux = dynamic_cast<SyncBackendBase *>(calBackend.get());
+    auto *todoDemux = dynamic_cast<SyncBackendBase *>(todoBackend.get());
+    QVERIFY(calDemux && todoDemux);
+
+    // Create through the TODO view → lands on the shared transport as-is
+    // (raw iCal passthrough, no JSON filter stamping).
+    const QByteArray todoIcs = icsBlob(QStringLiteral("new-todo"), "VTODO", "Fresh");
+    BackendRecord rec;
+    rec.id   = QStringLiteral("new-todo");
+    rec.type = QStringLiteral("todo");
+    rec.data = todoIcs;
+    const QString storedId = todoDemux->createRecord(colId, rec);
+    QCOMPARE(storedId, QStringLiteral("new-todo"));
+    QTRY_VERIFY_WITH_TIMEOUT(server.hasEvent(mixedHref, QStringLiteral("new-todo")), 5000);
+    const QList<QByteArray> stored = server.storedEvents(mixedHref);
+    bool bytesExact = false;
+    for (const auto &b : stored) {
+        if (b == todoIcs) bytesExact = true;
+    }
+    QVERIFY2(bytesExact, "expected the VTODO bytes stored UNCHANGED by the todo view");
+
+    // Create through the CAL view with VEVENT bytes → also reaches the same
+    // shared transport.
+    const QByteArray evtIcs = icsBlob(QStringLiteral("new-evt"), "VEVENT", "Fresh");
+    BackendRecord erec;
+    erec.id   = QStringLiteral("new-evt");
+    erec.type = QStringLiteral("event");
+    erec.data = evtIcs;
+    QCOMPARE(calDemux->createRecord(colId, erec), QStringLiteral("new-evt"));
+    QTRY_VERIFY_WITH_TIMEOUT(server.hasEvent(mixedHref, QStringLiteral("new-evt")), 5000);
+
+    // Writes were PUTs to the shared collection in both cases.
+    QCOMPARE(server.requestPaths("PUT").size(), 2);
+
+    // Delete through either view reaches the shared store.
+    QVERIFY(todoDemux->deleteRecord(QStringLiteral("new-todo")));
+    QVERIFY(!server.hasEvent(mixedHref, QStringLiteral("new-todo")));
 }
 
 QTEST_GUILESS_MAIN(TstMultiProtocolDavProvider)

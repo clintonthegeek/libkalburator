@@ -113,4 +113,11 @@ this file records per-step progress, decisions, and deviations.
   fires pre-network on create AND update; terminal error message now
   prefers recorded per-record validation messages so the rule is
   nameable. Full suite 205/205 excluding known Radicale set.
+- **P3.e LANDED** (subagent): kind-demux — hybrid DAV collections demux
+  into cal+todo specs over a shared transport via new `KindDemuxBackend`;
+  FCB gained an additive raw-kind mode (first-component-block sniff);
+  neither-kind records drop from both views; writes passthrough. 5 new
+  slots; sinks suite untouched. WATCH: tst_syncengine_unification flaked
+  once under full-suite parallel load, green on re-runs + isolation —
+  likely environmental (Radicale stress); re-check at Radicale reset.
 - (progress appended as work lands)
