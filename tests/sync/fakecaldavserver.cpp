@@ -185,6 +185,26 @@ void FakeCalDavServer::removeEvent(const QString &collectionHref, const QString 
     logChange(collectionHref, uid, /*deleted=*/true);
 }
 
+void FakeCalDavServer::removeEventAt(const QString &collectionHref,
+                                     const QString &fileName)
+{
+    // VP.c (W1 matrix): "reabsorb" — a server-side change that drops ONE
+    // resource (e.g. a detached exception) while the UID's other resources
+    // (the master) stay. Mirrors removeEvent() but keyed by resource file
+    // name, not by UID, so master + exception survive independently.
+    auto it = m_store.find(collectionHref);
+    if (it == m_store.end()) return;
+    if (!it->contains(fileName)) return;
+    const QString uid = uidForFileName(collectionHref, fileName);
+    it->remove(fileName);
+    if (!uid.isEmpty()) {
+        auto &files = m_uidToFileNames[collectionHref][uid];
+        files.removeAll(fileName);
+        if (files.isEmpty()) m_uidToFileNames[collectionHref].remove(uid);
+        logChange(collectionHref, uid, /*deleted=*/true);
+    }
+}
+
 void FakeCalDavServer::setSeedEventAt(const QString &collectionHref,
                                       const QString &fileName,
                                       const QByteArray &ics)

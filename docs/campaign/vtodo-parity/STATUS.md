@@ -6,7 +6,7 @@ PlanStan's W1–W8 handoff,
 audit in `PlanStan/docs/audits/2026-08-25-vtodo-parity/`). This file is
 the live execution tracker; the response doc holds decisions + receipts.
 
-**Last updated:** 2026-08-26 (VP.c-step-1c landed — SubscriptionBackend composite identity; LocalBackend full-bytes decision)
+**Last updated:** 2026-08-26 (VP.c W1 COMPLETE — composite identity + written contract + full test matrix; next is W4)
 
 ## Where we stand
 
@@ -15,7 +15,7 @@ the live execution tracker; the response doc holds decisions + receipts.
 | — | (prereq) B2C P3 vendor todo backends + kind-demux | tracked in `docs/campaign/b2c/STATUS.md` — lands FIRST (W1/W2 test legs) |
 | VP.a | **W8** capabilities API (`CalendarCapabilities`, discovery extensions, static per-backend reports, DiscoveredCalendar exposure) | **DONE 2026-08-26** — public header `src/sync/calendarcapabilities.h`; static reports in `CapabilityReports` + `capabilitiesFromDiscovery()`; discovery gains `<prodid>` extraction (recursive local-name match; falls back to known-product sniff over body + HTTP Server header), `producerId` + `supportsSyncCollection` on `PerCalendarCapabilities` (additive JSON, round-trip pinned); supported-report-set requested+parsed from the depth-1 multistat; DiscoveredCalendar exposure = metadata-backed typed pair (`capabilities()`/`setCapabilities()`, key `"capabilities"`, non-breaking) populated in the 4 vendor backends + RemoteCalendarBackend derivation; suite `tst_calendar_capabilities` (19 slots). Value corrections vs first-pass spec: googleCalendar recurrenceExceptions TRUE + unknown XOnly; msGraphCalendar recurrenceExceptions FALSE (v1 writes flat events+masters only, O61(e)); localBlob/calDAV alarms Full. Legacy dead `struct CalendarCapabilities` removed from backendcapabilities.{h,cpp} (name now owned by the W8 contract). |
 | VP.b | **W2** per-instance completion rep + BaselineStore transactions + Google/MSToDo producer mappings | not started |
-| VP.c | **W1** composite record identity (`uid\x01recurrenceId`) for blob pipeline + contract doc + matrices (needs P3) | **STEP-1c DONE 2026-08-26** — step-1a library foundation (recordidentity.h, vtodo canon recurrenceId/recurrenceRange, scanner recurrenceIdUtc selector); **step-1b RemoteCalendarBackend blob-view wiring** (records minted via `composeRecordIdentity(uid, recurrenceId)` at every incidence-parse site, composite-keyed `m_lastRawIcsByUid`/`m_uidToUrl`, decompose-at-seam for resolveItemUrl/findOwningCalendar/applyRecords+createRecord URL guesses/loadRecord with graceful bare fallback; FakeCalDavServer store refactored from UID-keyed to RESOURCE-FILE-NAME-keyed; tst_remotecalendarbackend_blob_view +5 slots); **step-1c SubscriptionBackend + LocalBackend**. SubscriptionBackend: `subscriptionBlobRecord` now mints via `composeRecordIdentity(uid, hasRecurrenceId() ? recurrenceId() : invalid)` — a feed with a master + detached exception block (separate VTODO/VEVENT sharing one UID) yields TWO records (bare uid + composite, both bytes preserved); `loadRecord` decomposes (composite id → the exception, bare uid → the master, graceful master fallback when a composite id's block was dropped from the feed); write/delete seams stay rejected no-ops (read-only — a composite id never becomes a path). LocalBackend DECISION: do NOT compound record ids at the file level (record id == filename minus `.ics` is a bijection to ONE file path; compounding would break id→filename). Audit found NO truncation — `recordFromBytes` already stores the FULL file bytes (`rec.data = bytes`), so a single `.ics` parsing to master + co-located exception already keeps the RECURRENCE-ID block verbatim. No code change; pin test added. Follow-ups (recon): DecSyncBackend / AkonadiBackend / OrgBackend / GenericSqliteBackend not compounded at this stage. |
+| VP.c | **W1** composite record identity (`uid\x01recurrenceId`) for blob pipeline + contract doc + matrices (needs P3) | **DONE 2026-08-26** — step-1a library foundation (recordidentity.h, vtodo canon recurrenceId/recurrenceRange, scanner recurrenceIdUtc selector); **step-1b RemoteCalendarBackend blob-view wiring** (records minted via `composeRecordIdentity(uid, recurrenceId)` at every incidence-parse site, composite-keyed `m_lastRawIcsByUid`/`m_uidToUrl`, decompose-at-seam for resolveItemUrl/findOwningCalendar/applyRecords+createRecord URL guesses/loadRecord with graceful bare fallback; FakeCalDavServer store refactored from UID-keyed to RESOURCE-FILE-NAME-keyed; tst_remotecalendarbackend_blob_view +5 slots); **step-1c SubscriptionBackend + LocalBackend**. SubscriptionBackend: `subscriptionBlobRecord` now mints via `composeRecordIdentity(uid, hasRecurrenceId() ? recurrenceId() : invalid)` — a feed with a master + detached exception block (separate VTODO/VEVENT sharing one UID) yields TWO records (bare uid + composite, both bytes preserved); `loadRecord` decomposes (composite id → the exception, bare uid → the master, graceful master fallback when a composite id's block was dropped from the feed); write/delete seams stay rejected no-ops (read-only — a composite id never becomes a path). LocalBackend DECISION: do NOT compound record ids at the file level (record id == filename minus `.ics` is a bijection to ONE file path; compounding would break id→filename). Audit found NO truncation — `recordFromBytes` already stores the FULL file bytes (`rec.data = bytes`), so a single `.ics` parsing to master + co-located exception already keeps the RECURRENCE-ID block verbatim. No code change; pin test added. Follow-ups (recon): DecSyncBackend / AkonadiBackend / OrgBackend / GenericSqliteBackend not compounded at this stage. **STEP-2/3 (written contract + matrices) DONE same day** — binding contract `docs/campaign/vtodo-parity/2026-08-26-w1-detached-exceptions-contract.md` (§1 keying, §2 differ treatment of master+exception pairs, §3 delete semantics, §4 non-supporting-peer flatten strategy, §7 full matrix create/edit/delete/reabsorb × caldav/subscription/local/org/google/ms); return receipt `2026-08-26-w1-return-receipt.md`. Two new CalDAV pins: `detachedException_reabsorb_surfacesMasterOnly` + `detachedException_masterDelete_removesOnlyMasterHref` (+ `FakeCalDavServer::removeEventAt`). Engine-level uid-family propagation/cascade remain SPECIFIED-not-executed (§5 of contract doc; per-record engine behavior unchanged). |
 | VP.d | **W4** completion-anchor canon key (catalogued) + CalDAV derived-RRULE write-out + differ non-conflict treatment | not started |
 | VP.e | **W3** series-split mechanics + split-association carrier | not started |
 | VP.f | **W5** alarm shape extension (abs trigger/RELATED/REPEAT/DURATION) + **W6.2** malformed-date coercion + **W7** passthrough round-trip tests | not started |
@@ -79,8 +79,7 @@ the live execution tracker; the response doc holds decisions + receipts.
     nav-POST x-canon-recurrence (already Reversible).
   - Consumer note delivered to PlanStan (`e1856650` in their repo):
     ConflictInfo ids may now be composite; decompose before display.
-- **NEXT:** W1 written contract doc + full matrices (CalDAV/org/Google/MS)
-  → W4 completion-anchored recurrence.
+- **NEXT:** W4 completion-anchored recurrence (VP.d) → W3 series-split (VP.e) → W5+W6.2+W7 (VP.f).
 - **SEQUENCING CORRECTION (2026-08-26):** VP.b (W2) and VP.c (W1) are
   SWAPPED relative to the response doc — W2's detached-instance
   representation CANNOT round-trip until composite record identity
@@ -146,3 +145,22 @@ the live execution tracker; the response doc holds decisions + receipts.
   non-environmental (excl. the 4 known Radicale slots). Follow-ups per
   recon (NOT this stage): DecSyncBackend / AkonadiBackend / OrgBackend /
   GenericSqliteBackend.
+- 2026-08-26: **VP.c (W1) COMPLETE** — written contract + full test matrix.
+  Binding contract: `2026-08-26-w1-detached-exceptions-contract.md`
+  (§1 keying, §2 differ treatment of master+exception pairs — independent
+  diffs joined by shared uid for propagation, §3 delete semantics —
+  exception-only delete = EXDATE removal + tombstone; master delete =
+  cascade tombstone of all keyed exceptions, §4 non-supporting-peer
+  flatten strategy shared with W2, §7 full matrix create/edit/delete/
+  reabsorb × caldav/subscription/local/org/google/ms). Return receipt:
+  `2026-08-26-w1-return-receipt.md`. Two new CalDAV pins landed:
+  `detachedException_reabsorb_surfacesMasterOnly` (server-side drop of the
+  exception resource → 1 master record; stale composite loadRecord
+  degrades to master) and `detachedException_masterDelete_removesOnlyMasterHref`
+  (bare-uid delete removes ONLY the master href; exception resource
+  survives; refetch = 1 composite record) — supporting seam
+  `FakeCalDavServer::removeEventAt(href, fileName)` added.
+  tst_remotecalendarbackend_blob_view now 27 slots. Engine-level
+  uid-family propagation/cascade remain SPECIFIED-not-executed (per-record
+  engine behavior unchanged; contract doc §5). Full suite green except the
+  4 known environmental Radicale slots.

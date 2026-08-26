@@ -228,6 +228,11 @@ public:
     /// delete" without a real second client.
     void removeEvent(const QString &collectionHref, const QString &uid);
 
+    /// Remove ONE resource by its file name, leaving other resources of the
+    /// same UID (e.g. a series master) in place. Simulates a server-side
+    /// reabsorb of a detached exception. No-op if the file isn't present.
+    void removeEventAt(const QString &collectionHref, const QString &fileName);
+
     /// O54: seed an event at a server-assigned @p fileName that need not
     /// equal the event's UID. Real CalDAV servers keep whatever filename the
     /// CREATING client chose for the life of the object; every other test
