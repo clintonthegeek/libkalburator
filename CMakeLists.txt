@@ -448,6 +448,9 @@ set(KALBURATOR_CONTACTS_HEADERS
     # B2C P2.c: Microsoft Graph contacts backend (expanded-listing reads,
     # nav-POST carrier writes; O66/O70 wire truths)
     src/contacts/graphcontactsbackend.h
+    # B2C P2.d: Google People contacts backend (sync-token walks with 410
+    # self-heal; inline clientData carriers; mask-derived PATCH)
+    src/contacts/googlepeoplebackend.h
     # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
     src/contacts/akonadicontactsbackend.h
 )
@@ -471,6 +474,8 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/remotecontactsbackend.cpp
     # B2C P2.c: Microsoft Graph contacts backend
     src/contacts/graphcontactsbackend.cpp
+    # B2C P2.d: Google People contacts backend
+    src/contacts/googlepeoplebackend.cpp
     # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
     src/contacts/akonadicontactsbackend.cpp
 )

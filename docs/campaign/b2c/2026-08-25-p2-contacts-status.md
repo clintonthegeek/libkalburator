@@ -124,7 +124,15 @@ crossing-gated both directions, live-checkpointed per invariant 1.
       extensions[] → POST → nav POST carriers → alias bridge;
       PATCH-in-place plain-fields; delete 204/200 with 404-then-relist
       confirmation; atomic state resume. 10 slots green)
-- [ ] P2.d: `GooglePeopleBackend`: connections paging, clientData carriers
+- [x] P2.d: `GooglePeopleBackend` (landed 2026-08-25 — manual page-walk
+      over connections[] (fetchCollection hard-reads items[] — calendar
+      transport only); shared personFields constant = promote-stage read
+      surface; sync_token incremental + 410 one-shot re-walk (O42);
+      metadata.deleted tombstones; create rides clientData inline,
+      alias bridged to minted resourceName; updatePersonFields derived
+      from body keys; 404-delete-as-success (People not flaky —
+      deliberate deviation from Graph pin); state keyed to query-
+      template sha256. 12 slots green)
 - [ ] P2.e: Crossing gates both directions (O64 rule)
 - [ ] P2.f: Live checkpoints vs real accounts (invariant 1)
 

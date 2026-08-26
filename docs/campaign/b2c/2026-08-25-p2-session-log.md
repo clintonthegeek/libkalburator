@@ -43,4 +43,11 @@ this file records per-step progress, decisions, and deviations.
   merge-enrichment only. Carrier-POST failure settles the record failed
   (fail-loud over silent carrier loss). Suite baseline now 202 slots;
   only the 4 known Radicale-environmental failures remain.
+- **P2.d LANDED** (subagent): `GooglePeopleBackend` +
+  `tst_google_people_backend` (12 slots green). Notable: People speaks
+  `connections[]`, so the page walk is rawRequest-based (fetchCollection
+  is calendar-shaped); tombstones via `metadata.deleted`; delete treats
+  404 as success WITHOUT a confirming re-list (deliberate deviation from
+  Graph O66(f) pin — People deletes are not flaky). Suite baseline now
+  203 slots.
 - (progress appended as work lands)

@@ -112,6 +112,23 @@ set_tests_properties(tst_graph_contacts_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# B2C P2.d — GooglePeopleBackend against the P2.b mock People server.
+# Links the real library (whole-archive) so the backend under test is the
+# production one, mirroring tst_graph_contacts_backend.
+add_executable(tst_google_people_backend tst_google_people_backend.cpp)
+target_link_libraries(tst_google_people_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        kalburator_mock_people_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_google_people_backend COMMAND tst_google_people_backend)
+set_tests_properties(tst_google_people_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadicontactsbackend tst_akonadicontactsbackend.cpp)
     target_link_libraries(tst_akonadicontactsbackend
