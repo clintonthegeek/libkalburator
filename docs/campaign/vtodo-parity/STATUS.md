@@ -45,6 +45,17 @@ the live execution tracker; the response doc holds decisions + receipts.
 - 2026-08-25: campaign opened; handoff accepted with scoping edits
   (response doc); sequencing integrated after B2C P3; recon findings
   pinned above; O74 recorded.
+- **SEQUENCING CORRECTION (2026-08-26):** VP.b (W2) and VP.c (W1) are
+  SWAPPED relative to the response doc — W2's detached-instance
+  representation CANNOT round-trip until composite record identity
+  exists (the blob pipeline still keys by UID alone; master+exception
+  collide — see recon finding above). New order: VP.c-step-1 (composite
+  identity `uid\x01recurrenceId` in the blob pipeline) FIRST, then
+  VP.b (W2 rep + BaselineStore transactions + producer mappings), then
+  the rest of W1 (contract doc + matrices). PlanStan was told W8 → W2 →
+  W1 in the receipt note; the receipt for W2 will state the dependency
+  explicitly. No consumer impact (they consume receipts, not our internal
+  order).
 - 2026-08-26: **VP.a (W8) landed.** Files: `src/sync/calendarcapabilities.{h,cpp}`
   (+ CMake registration), `backendconfiguration.{h,cpp}` (additive
   producerId/supportsSyncCollection + JSON), `caldavcapabilitydiscovery.{h,cpp}`,
