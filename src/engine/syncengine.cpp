@@ -4797,12 +4797,26 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 m_unifiedIdAliases.insert(nativeId, sinkCanonical);
             }
             QMetaObject::invokeMethod(m_baselineStoreAnchor, [bbs, mappingId, toSave, acceptedAliasPairs]() {
-                for (auto it = toSave.constBegin(); it != toSave.constEnd(); ++it) {
-                    bbs->setBaselineHashesV4(mappingId, it.value().id,
-                                             it.value().sourceHash, it.value().targetHash);
-                }
-                for (const auto &pair : acceptedAliasPairs)
-                    bbs->setIdAlias(mappingId, pair.first, pair.second);
+                // VP.b (W2): persist the whole batch atomically — a
+                // master+exception pair must land in ONE transaction (a
+                // mid-loop failure rolls the pair back instead of leaving a
+                // half-written master or a baseline whose exception is
+                // missing). Always wrapped: WAL makes the transaction cheap,
+                // and it is correct for a single pair or many records alike.
+                // Each setter's bool is ANDed so any failure rolls back all.
+                bbs->transaction([&]() {
+                    bool allOk = true;
+                    for (auto it = toSave.constBegin(); it != toSave.constEnd(); ++it) {
+                        allOk = bbs->setBaselineHashesV4(mappingId, it.value().id,
+                                                         it.value().sourceHash,
+                                                         it.value().targetHash)
+                                && allOk;
+                    }
+                    for (const auto &pair : acceptedAliasPairs)
+                        allOk = bbs->setIdAlias(mappingId, pair.first, pair.second)
+                                && allOk;
+                    return allOk;
+                });
             }, Qt::BlockingQueuedConnection);
         }
         // T9: persist property-baseline snapshot after successful write.

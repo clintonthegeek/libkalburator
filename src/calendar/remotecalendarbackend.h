@@ -669,6 +669,17 @@ private:
 
     QUrl generateItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const;
 
+    // VP.b (W2): create-time URL GUESS for a record id. Masters keep
+    // generateItemUrl()'s "<uid>.ics" guess; a detached EXCEPTION (composite
+    // id, src/sync/recordidentity.h) must NOT guess "<uid>.ics" — that href
+    // already belongs to the client-created master, and a PUT to it would
+    // clobber the master. Derives a distinct "<uid>-<sanitizedUTCstamp>.ics"
+    // href from the composite's recurrence-id half instead. Only for GENUINE
+    // creates; existing items resolve through resolveItemUrl() (backed by the
+    // server-reported m_uidToUrl map), never here.
+    QUrl generateItemUrlForCreate(const KDAV::DavUrl &davUrl,
+                                  const QString &recordId) const;
+
     // O54: where does this item live on the server? Checks m_uidToUrl first
     // (the URL the server itself reported for this uid) and falls back to
     // generateItemUrl()'s "<uid>.ics" guess only for a uid this instance has

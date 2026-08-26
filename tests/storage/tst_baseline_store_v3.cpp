@@ -6,12 +6,16 @@
 
 #include "baselinestore.h"
 #include "canonicalrecord.h"
+#include "recordidentity.h"
 
 using Kalburator::Storage::BaselineStore;
 using Kalburator::Shape::CanonicalRecord;
 using Kalburator::Shape::Shape;
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;
+using Kalburator::Sync::composeRecordIdentity;
+using Kalburator::Sync::decomposeRecordIdentity;
+using Kalburator::Sync::isExceptionRecordId;
 
 namespace {
 
@@ -46,6 +50,14 @@ private slots:
     void newRow_perSideHashesPersistIndependently();
     void perSideHashes_roundTripAcrossReopen();
     void legacyAndPerSideRows_coexistInSameMapping();
+
+    // VP.b (W2): transaction() wrapper — atomic persist of a
+    // master+exception pair (the engine persist-loop wrap).
+    void transaction_commit_persistsAll();
+    void transaction_rollback_persistsNone();
+    void transaction_nested_call_joinsOuter();
+    void transaction_afterFailure_reportsLastError();
+    void masterAndException_pair_savedAtomically();
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -356,6 +368,200 @@ void TestBlobBaselineStoreV3::legacyAndPerSideRows_coexistInSameMapping()
     QVERIFY(byId.contains(QStringLiteral("r2")));
     QCOMPARE(byId.value(QStringLiteral("r2")).sourceHash, QStringLiteral("src-2"));
     QCOMPARE(byId.value(QStringLiteral("r2")).targetHash, QStringLiteral("tgt-2"));
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// VP.b (W2): transaction() wrapper.
+//
+// The engine's persist loop now wraps its per-record setBaselineHashesV4 /
+// setIdAlias writes in one transaction, so a master+exception pair lands
+// atomically. These slots pin the wrapper's contract: commit on true,
+// rollback on false, nested calls join the outer transaction, failures set
+// lastError, and the bare-uid + composite-id pair is all-or-nothing.
+// ───────────────────────────────────────────────────────────────────────────
+
+void TestBlobBaselineStoreV3::transaction_commit_persistsAll()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BaselineStore store(dir.filePath(QStringLiteral("test.db")));
+    QVERIFY(store.isOpen());
+
+    const QString mid = QStringLiteral("m1");
+    const bool ok = store.transaction([&]() {
+        bool wrote = store.setBaselineHashesV4(mid, QStringLiteral("r1"),
+                                               QStringLiteral("src-1"),
+                                               QStringLiteral("tgt-1"));
+        wrote = store.setIdAlias(mid, QStringLiteral("native-1"),
+                                 QStringLiteral("canon-1")) && wrote;
+        return wrote;
+    });
+    QVERIFY2(ok, qUtf8Printable(store.lastError()));
+
+    const auto got = store.baselineHashesV4(mid, QStringLiteral("r1"));
+    QVERIFY(got.has_value());
+    QCOMPARE(got->sourceHash, QStringLiteral("src-1"));
+    QCOMPARE(got->targetHash, QStringLiteral("tgt-1"));
+    QVERIFY(store.idAliasesForMapping(mid).value(QStringLiteral("native-1"))
+                == QStringLiteral("canon-1"));
+}
+
+void TestBlobBaselineStoreV3::transaction_rollback_persistsNone()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("test.db"));
+    const QString mid = QStringLiteral("m1");
+
+    {
+        BaselineStore store(dbPath);
+        QVERIFY(store.isOpen());
+
+        // fn writes rows, then returns false — a simulated mid-loop setter
+        // failure. The whole batch must roll back.
+        const bool ok = store.transaction([&]() {
+            bool wrote = store.setBaselineHashesV4(mid, QStringLiteral("r1"),
+                                                   QStringLiteral("src-1"),
+                                                   QStringLiteral("tgt-1"));
+            wrote = store.setIdAlias(mid, QStringLiteral("native-1"),
+                                     QStringLiteral("canon-1")) && wrote;
+            (void)wrote;
+            return false;
+        });
+        QVERIFY(!ok);
+        // Same-connection view: nothing persisted.
+        QVERIFY(!store.baselineHashesV4(mid, QStringLiteral("r1")).has_value());
+        QVERIFY(store.idAliasesForMapping(mid).isEmpty());
+    }
+
+    // Reopen: the rollback was durable — nothing on disk either.
+    {
+        BaselineStore reopened(dbPath);
+        QVERIFY(reopened.isOpen());
+        QVERIFY(!reopened.baselineHashesV4(mid, QStringLiteral("r1")).has_value());
+        QVERIFY(reopened.idAliasesForMapping(mid).isEmpty());
+    }
+}
+
+void TestBlobBaselineStoreV3::transaction_nested_call_joinsOuter()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    BaselineStore store(dir.filePath(QStringLiteral("test.db")));
+    QVERIFY(store.isOpen());
+
+    const QString mid = QStringLiteral("m1");
+    const bool ok = store.transaction([&]() {
+        bool wrote = store.setBaselineHashesV4(mid, QStringLiteral("r1"),
+                                               QStringLiteral("src-1"),
+                                               QStringLiteral("tgt-1"));
+        // Inner call must NOT begin a nested transaction — it runs directly
+        // against the outer frame and commits with it.
+        const bool inner = store.transaction([&]() {
+            return store.setBaselineHashesV4(mid, QStringLiteral("r2"),
+                                             QStringLiteral("src-2"),
+                                             QStringLiteral("tgt-2"));
+        });
+        wrote = inner && wrote;
+        return wrote;
+    });
+    QVERIFY2(ok, qUtf8Printable(store.lastError()));
+
+    QVERIFY(store.baselineHashesV4(mid, QStringLiteral("r1")).has_value());
+    QVERIFY(store.baselineHashesV4(mid, QStringLiteral("r2")).has_value());
+}
+
+void TestBlobBaselineStoreV3::transaction_afterFailure_reportsLastError()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("test.db"));
+    BaselineStore store(dbPath);
+    QVERIFY(store.isOpen());
+
+    // Hold an EXCLUSIVE lock from a second connection so the store's
+    // BEGIN IMMEDIATE fails with SQLITE_BUSY — the wrapper must report the
+    // failure through lastError() and return false.
+    const QString connName = QStringLiteral("txn_locker");
+    {
+        QSqlDatabase locker = QSqlDatabase::addDatabase(
+            QStringLiteral("QSQLITE"), connName);
+        locker.setDatabaseName(dbPath);
+        QVERIFY(locker.open());
+        QSqlQuery lockQ(locker);
+        QVERIFY(lockQ.exec(QStringLiteral("BEGIN EXCLUSIVE")));
+
+        const bool ok = store.transaction([&]() { return true; });
+        QVERIFY(!ok);
+        QVERIFY2(!store.lastError().isEmpty(),
+                 "the wrapper must set lastError on a failed BEGIN");
+
+        QVERIFY(lockQ.exec(QStringLiteral("ROLLBACK")));
+        locker.close();
+    }
+    QSqlDatabase::removeDatabase(connName);
+}
+
+void TestBlobBaselineStoreV3::masterAndException_pair_savedAtomically()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString dbPath = dir.filePath(QStringLiteral("test.db"));
+    const QString mid = QStringLiteral("master-exc-mapping");
+    const QString masterId = QStringLiteral("series-1");
+    const QString excId = composeRecordIdentity(
+        masterId,
+        QDateTime(QDate(2026, 6, 2), QTime(9, 0, 0), QTimeZone::utc()));
+    QVERIFY(isExceptionRecordId(excId));
+    QVERIFY(decomposeRecordIdentity(excId).uid == masterId);
+
+    // Commit phase: both rows land in ONE transaction.
+    {
+        BaselineStore store(dbPath);
+        QVERIFY(store.isOpen());
+        const bool ok = store.transaction([&]() {
+            bool wrote = store.setBaselineHashesV4(mid, masterId,
+                                                   QStringLiteral("src-m"),
+                                                   QStringLiteral("tgt-m"));
+            wrote = store.setBaselineHashesV4(mid, excId,
+                                              QStringLiteral("src-x"),
+                                              QStringLiteral("tgt-x")) && wrote;
+            return wrote;
+        });
+        QVERIFY2(ok, qUtf8Printable(store.lastError()));
+        QVERIFY(store.baselineHashesV4(mid, masterId).has_value());
+        QVERIFY(store.baselineHashesV4(mid, excId).has_value());
+    }
+
+    // Rollback phase (the crash-implies-both-or-neither shape): a mid-loop
+    // failure on the pair leaves NEITHER row — reopen proves it on disk.
+    {
+        BaselineStore store(dbPath);
+        QVERIFY(store.isOpen());
+        const bool ok = store.transaction([&]() {
+            bool wrote = store.setBaselineHashesV4(mid, QStringLiteral("series-2"),
+                                                   QStringLiteral("src-m2"),
+                                                   QStringLiteral("tgt-m2"));
+            wrote = store.setBaselineHashesV4(
+                         mid, composeRecordIdentity(
+                                  QStringLiteral("series-2"),
+                                  QDateTime(QDate(2026, 6, 2), QTime(9, 0, 0),
+                                            QTimeZone::utc())),
+                         QStringLiteral("src-x2"), QStringLiteral("tgt-x2"))
+                    && wrote;
+            (void)wrote;
+            return false;  // simulated setter failure mid-pair
+        });
+        QVERIFY(!ok);
+        QVERIFY(!store.baselineHashesV4(mid, QStringLiteral("series-2")).has_value());
+    }
+
+    // Reopen: the committed pair survived, the rolled-back pair did not.
+    BaselineStore reopened(dbPath);
+    QVERIFY(reopened.isOpen());
+    QVERIFY(reopened.baselineHashesV4(mid, masterId).has_value());
+    QVERIFY(reopened.baselineHashesV4(mid, excId).has_value());
+    QVERIFY(!reopened.baselineHashesV4(mid, QStringLiteral("series-2")).has_value());
 }
 
 QTEST_MAIN(TestBlobBaselineStoreV3)

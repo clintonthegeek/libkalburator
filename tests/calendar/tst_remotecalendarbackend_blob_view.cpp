@@ -60,6 +60,10 @@ private slots:
     void detachedException_deleteRecord_removesOnlyExceptionHref();
     void detachedException_refetchAfterWrite_keepsIdsStable();
     void detachedException_loadRecord_bareUidServesMaster();
+
+    // VP.b (W2) — exception-create must not guess the master's "<uid>.ics".
+    void detachedException_applyRecordsCreate_mintsDistinctHref();
+    void detachedException_dualWrite_masterEditAndExceptionCreate_twoHrefs();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -1093,6 +1097,187 @@ void TestRemoteCalendarBackendBlobView::detachedException_loadRecord_bareUidServ
     QCOMPARE(exc->id, fx.excRecordId);
     QVERIFY2(exc->data.contains("RECURRENCE-ID:20260602T090000Z"),
              "loadRecord(composite id) must serve the exception's own bytes");
+}
+
+// VP.b (W2): an EXCEPTION record created through applyRecords (the engine's
+// steady-state write route) must NOT guess the master's "<uid>.ics" href —
+// that href already belongs to a client-created master, and a PUT to it would
+// clobber the master. The create URL guess must mint a distinct composite
+// href ("<uid>-<sanitizedUTCstamp>.ics"), the server must store it, and a
+// subsequent fetch must surface the exception with its own record.
+void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsCreate_mintsDistinctHref()
+{
+    const QString uid = QStringLiteral("series-6");
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    FakeCalDavServer server;
+    // Seed ONLY the master, at the href a client-created master owns.
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
+    server.setSeedEventAt(calHref, uid, makeSeriesMasterIcs(uid));
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    // Exception-create carrying ONLY the composite-id record.
+    const QString excRecordId =
+        composeRecordIdentity(uid, seriesExceptionRecurrenceId());
+    WriterBatch batch;
+    BackendRecord rec;
+    rec.id   = excRecordId;
+    rec.type = QStringLiteral("calendar");
+    rec.data = makeSeriesExceptionIcs(uid, QString());
+    batch.creates.append(rec);
+
+    WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
+    QVERIFY(op != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
+    QCOMPARE(op->state(), SyncOperation::Succeeded);
+    QVERIFY2(op->succeededUids().contains(excRecordId),
+             "the exception record id must be reported as succeeded");
+
+    // The PUT must land at a DISTINCT href, not the master's "<uid>.ics".
+    // seriesExceptionRecurrenceId()'s UTC-ISO "2026-06-02T09:00:00Z"
+    // sanitizes to "20260602T090000Z".
+    const QString expectedExcPath =
+        calHref + uid + QStringLiteral("-20260602T090000Z.ics");
+    const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
+    QCOMPARE(putPaths.size(), 1);
+    QCOMPARE(putPaths.first(), expectedExcPath);
+    QVERIFY2(putPaths.first() != calHref + uid + QStringLiteral(".ics"),
+             "the exception-create PUT must not target the master's <uid>.ics href");
+
+    // Server stores it alongside the master (no clobber).
+    QVERIFY2(server.hasEvent(calHref, uid), "the series must exist on the server");
+    QCOMPARE(server.storedEvents(calHref).size(), 2);
+
+    // Refetch surfaces TWO records — the exception under its own composite id.
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records =
+        blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 2);
+    const BackendRecord *masterRec = nullptr;
+    const BackendRecord *excRec = nullptr;
+    for (const BackendRecord &r : records) {
+        if (r.id == uid)         masterRec = &r;
+        else if (r.id == excRecordId) excRec = &r;
+    }
+    QVERIFY2(masterRec, "the master record must keep its bare-uid id");
+    QVERIFY2(excRec, "the exception record must surface under its composite id");
+    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-6"),
+             "the exception record must carry the exception resource's bytes");
+}
+
+// VP.b (W2) companion: ONE WriterBatch carrying a master-edit (EXDATE added)
+// AND an exception-create must emit TWO PUTs to TWO DISTINCT hrefs — the
+// master's own "<uid>.ics" and the exception's composite-aware href — both
+// succeeding with no clobber. Refetch shows the master updated and the
+// exception present as its own record.
+void TestRemoteCalendarBackendBlobView::detachedException_dualWrite_masterEditAndExceptionCreate_twoHrefs()
+{
+    const QString uid = QStringLiteral("series-7");
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
+    server.setSeedEventAt(calHref, uid, makeSeriesMasterIcs(uid));
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    const QString excRecordId =
+        composeRecordIdentity(uid, seriesExceptionRecurrenceId());
+
+    // Master-edit: exclude the first recurrence instance via EXDATE.
+    QByteArray masterEdited = makeSeriesMasterIcs(uid);
+    masterEdited.replace("RRULE:FREQ=DAILY\r\n",
+                         "RRULE:FREQ=DAILY\r\nEXDATE:20260601T120000Z\r\n");
+
+    WriterBatch batch;
+    BackendRecord masterEdit;
+    masterEdit.id   = uid;
+    masterEdit.type = QStringLiteral("calendar");
+    masterEdit.data = masterEdited;
+    batch.updates.append(masterEdit);
+
+    BackendRecord excCreate;
+    excCreate.id   = excRecordId;
+    excCreate.type = QStringLiteral("calendar");
+    excCreate.data = makeSeriesExceptionIcs(uid, QStringLiteral(" (moved)"));
+    batch.creates.append(excCreate);
+
+    WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
+    QVERIFY(op != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
+    QCOMPARE(op->state(), SyncOperation::Succeeded);
+
+    // Two PUTs, two DISTINCT hrefs: the create's composite-aware href and the
+    // master's own "<uid>.ics". (Dispatch order between the concurrent writes
+    // is not guaranteed — assert the set, not the sequence.)
+    const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
+    QCOMPARE(putPaths.size(), 2);
+    const QString masterPath = calHref + uid + QStringLiteral(".ics");
+    const QString excPath =
+        calHref + uid + QStringLiteral("-20260602T090000Z.ics");
+    QVERIFY2(putPaths.contains(excPath),
+             "exception-create must PUT to its composite-aware href");
+    QVERIFY2(putPaths.contains(masterPath),
+             "master-edit must PUT to the master's own href");
+    QVERIFY2(putPaths.first() != putPaths.last(),
+             "master-edit and exception-create must write to DISTINCT hrefs");
+
+    // Server state: master edited in place, exception stored — no clobber.
+    QCOMPARE(server.storedEvents(calHref).size(), 2);
+    bool masterHasExdate = false;
+    bool exceptionStored = false;
+    for (const QByteArray &data : server.storedEvents(calHref)) {
+        if (data.contains("EXDATE:20260601T120000Z")) masterHasExdate = true;
+        if (data.contains("SUMMARY:Series override series-7 (moved)")) exceptionStored = true;
+    }
+    QVERIFY2(masterHasExdate, "the master's bytes must reflect the EXDATE edit");
+    QVERIFY2(exceptionStored, "the exception resource must be stored");
+
+    // Refetch: master updated + exception present as its own record.
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records =
+        blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 2);
+    const BackendRecord *masterRec = nullptr;
+    const BackendRecord *excRec = nullptr;
+    for (const BackendRecord &r : records) {
+        if (r.id == uid)         masterRec = &r;
+        else if (r.id == excRecordId) excRec = &r;
+    }
+    QVERIFY2(masterRec && excRec, "refetch must surface master + exception records");
+    QVERIFY2(masterRec->data.contains("EXDATE:20260601T120000Z"),
+             "refetched master must carry the EXDATE edit");
+    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-7 (moved)"),
+             "refetched exception must carry its own bytes");
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)

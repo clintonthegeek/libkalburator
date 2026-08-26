@@ -180,13 +180,53 @@ public:
 
     void clearIdAliasesForMapping(const QString &mappingId);
 
+    // -----------------------------------------------------------------------
+    // Transaction wrapper (VP.b / W2).
+    //
+    // Single-statement autocommit is the default (WAL, foreign_keys ON,
+    // caller-serialized — this store is not thread-safe), but a
+    // master+exception pair must persist atomically: the engine's persist
+    // loop now wraps its per-record setBaselineHashesV4/setIdAlias writes in
+    // one transaction so a mid-loop failure rolls the whole batch back
+    // instead of leaving a half-written pair.
+    //
+    // @p fn runs with the transaction open; its bool return true COMMITs,
+    // false ROLLBACKs. Nested transaction() calls JOIN the outer transaction
+    // (fn runs directly, no nested BEGIN — the outer frame owns commit/rollback
+    // regardless of the inner frame's return). BEGIN IMMEDIATE is used for the
+    // outer frame (write-immediate; callers serialize, so there is no
+    // concurrent reader to stall) rather than Qt's QSqlDatabase::transaction()
+    // deferred BEGIN. On BEGIN/COMMIT/ROLLBACK failure setError() and return
+    // false.
+    // -----------------------------------------------------------------------
+
+    template<typename Callable>
+    bool transaction(Callable &&fn)
+    {
+        if (m_inTransaction)
+            return fn();  // nested: join the outer transaction, no own BEGIN
+        if (!beginTransaction())
+            return false;
+        const bool ok = fn();
+        m_inTransaction = false;
+        if (ok)
+            return commitTransaction();
+        rollbackTransaction();  // false result; setError() only on SQL failure
+        return false;
+    }
+
 private:
     static int s_connectionCounter;
 
     QString         m_dbPath;
     QString         m_connName;
     bool            m_isOpen = false;
+    bool            m_inTransaction = false;
     mutable QString m_lastError;
+
+    bool beginTransaction();
+    bool commitTransaction();
+    bool rollbackTransaction();
 
     bool ensureSchemaAndVersion();
     bool ensureSchemaV3();

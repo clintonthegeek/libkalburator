@@ -70,6 +70,48 @@ void BaselineStore::setError(const QString &message) const
     m_lastError = message;
 }
 
+bool BaselineStore::beginTransaction()
+{
+    // BEGIN IMMEDIATE (write-immediate) per the recon: callers serialize on
+    // this instance, so there is no concurrent reader to stall — and a write
+    // lock is exactly what a master+exception pair persist needs.
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("BEGIN IMMEDIATE"))) {
+        setError(QStringLiteral("transaction: BEGIN IMMEDIATE failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    m_inTransaction = true;
+    return true;
+}
+
+bool BaselineStore::commitTransaction()
+{
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("COMMIT"))) {
+        setError(QStringLiteral("transaction: COMMIT failed: %1")
+                     .arg(q.lastError().text()));
+        return false;
+    }
+    return true;
+}
+
+bool BaselineStore::rollbackTransaction()
+{
+    QSqlDatabase db = QSqlDatabase::database(m_connName);
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("ROLLBACK"))) {
+        setError(QStringLiteral("transaction: ROLLBACK failed: %1")
+                     .arg(q.lastError().text()));
+    }
+    // A rollback is a failure of the wrapped work by definition — the caller
+    // already returned false; report false (with setError only if the
+    // ROLLBACK itself also failed).
+    return false;
+}
+
 bool BaselineStore::ensureSchemaAndVersion()
 {
     QSqlDatabase db = QSqlDatabase::database(m_connName);

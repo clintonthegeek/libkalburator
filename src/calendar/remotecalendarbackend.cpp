@@ -849,6 +849,36 @@ QUrl RemoteCalendarBackend::generateItemUrl(const KDAV::DavUrl &davUrl, const QS
     return url;
 }
 
+// VP.b (W2): composite-aware create URL. Masters keep the "<uid>.ics" guess;
+// a detached EXCEPTION (composite id) decomposes to its bare uid + UTC
+// recurrence-id stamp and mints "<uid>-<sanitizedStamp>.ics" — a DISTINCT
+// href from the master's, so the exception-create PUT cannot clobber the
+// client-created master resource. The stamp is the composite's UTC-ISO
+// recurrence-id half with non-alphanumerics stripped (e.g.
+// "2026-06-02T09:00:00Z" -> "20260602T090000Z"), so the resulting filename
+// is URL/filesystem-safe and stable across zone forms of the same instant.
+// Malformed composites fall back to the bare-uid guess rather than failing.
+QUrl RemoteCalendarBackend::generateItemUrlForCreate(const KDAV::DavUrl &davUrl,
+                                                     const QString &recordId) const
+{
+    const auto decomposed = decomposeRecordIdentity(recordId);
+    if (!isExceptionRecordId(recordId)
+        || decomposed.uid.isEmpty() || !decomposed.recurrenceId.isValid()) {
+        return generateItemUrl(davUrl, decomposed.uid);
+    }
+    QString sanitized;
+    const QString stamp =
+        decomposed.recurrenceId.toUTC().toString(Qt::ISODate);
+    sanitized.reserve(stamp.size());
+    for (const QChar c : stamp) {
+        if (c.isLetterOrNumber())
+            sanitized += c;
+    }
+    if (sanitized.isEmpty())
+        return generateItemUrl(davUrl, decomposed.uid);
+    return generateItemUrl(davUrl, decomposed.uid + QLatin1Char('-') + sanitized);
+}
+
 // O54: prefer the URL the server itself reported for this uid; only guess
 // "<uid>.ics" for a uid this instance has never seen on the server (a
 // genuine create, where the guess is correct by definition).
@@ -3158,10 +3188,13 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
             const QByteArray icalData = rec.data;
             pendingStarters->append([this, opWeak, davUrl, uid, icalData, anyError,
                                      recordDone]() {
-                // VP.c-step-1b: the URL guess must use the bare uid part —
-                // a composite id is not a valid "<...>.ics" filename.
-                const QString uidPart = decomposeRecordIdentity(uid).uid;
-                QUrl itemUrl = generateItemUrl(davUrl, uidPart);
+                // VP.c-step-1b/VP.b (W2): the URL guess must use the bare uid
+                // part — a composite id is not a valid "<...>.ics" filename.
+                // VP.b (W2): and an EXCEPTION create must NOT guess the
+                // master's "<uid>.ics" (that href already belongs to the
+                // client-created master) — generateItemUrlForCreate mints a
+                // distinct composite-aware href for it.
+                QUrl itemUrl = generateItemUrlForCreate(davUrl, uid);
 
                 KDAV::DavItem davItem;
                 davItem.setUrl(KDAV::DavUrl(itemUrl, davUrl.protocol()));
@@ -3682,10 +3715,13 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
         return {};
     }
     const KDAV::DavUrl davUrl = *maybeDavUrl;
-    // VP.c-step-1b: the URL guess decomposes to the bare uid part (a
-    // composite id is not a valid "<...>.ics" filename); the record id
+    // VP.c-step-1b/VP.b (W2): the URL guess decomposes to the bare uid part
+    // (a composite id is not a valid "<...>.ics" filename); the record id
     // itself stays composite so noteItemWritten keys the maps correctly.
-    const QUrl itemUrl = generateItemUrl(davUrl, decomposeRecordIdentity(record.id).uid);
+    // VP.b (W2): an EXCEPTION create must not guess the master's "<uid>.ics"
+    // (that href already belongs to the client-created master) —
+    // generateItemUrlForCreate mints a distinct composite-aware href.
+    const QUrl itemUrl = generateItemUrlForCreate(davUrl, record.id);
 
     m_contentCache->ensureOpen();
 
