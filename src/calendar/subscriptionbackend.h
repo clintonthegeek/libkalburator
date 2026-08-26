@@ -91,7 +91,13 @@ public:
 
     // ========== IBlobBackend Overrides (Phase D Task 17) ==========
     // Read-only: writes return {} / false.
-    // recordId     = uid (from incidence->uid())
+    // recordId     = COMPOSITE record id (VP.c-step-1b): bare uid for a
+    //                master, "uid\x01<UTC-ISO recurrenceId>" for a detached
+    //                exception (a separate block in the feed sharing the
+    //                master's UID). Minted in subscriptionBlobRecord();
+    //                loadRecord accepts both forms (composite matches the
+    //                exception, bare uid matches the master, graceful master
+    //                fallback for a composite id whose block was dropped).
     // collectionId = sourceId
     // data         = serialised iCal bytes via ICalFormat::toString()
     // contentHash  = SHA-256 of data

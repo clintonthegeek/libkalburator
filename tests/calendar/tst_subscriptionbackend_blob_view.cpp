@@ -18,11 +18,14 @@
 
 #include <QtTest>
 #include <KCalendarCore/Event>
+#include <KCalendarCore/Todo>
 #include <KCalendarCore/Incidence>
 
 #include "subscriptionbackend.h"
 #include "iblobbackend.h"
 #include "backendrecord.h"
+#include "recordidentity.h"
+#include "icalcodec.h"
 
 using namespace Kalburator::Sync;
 
@@ -76,6 +79,40 @@ static KCalendarCore::Event::Ptr makeEvent(const QString &uid,
 }
 
 // ---------------------------------------------------------------------------
+// VP.c-step-1b fixtures: a recurring todo series' MASTER and one DETACHED
+// EXCEPTION, delivered the way a subscription feed stores them — as SEPARATE
+// VTODO blocks in one document that share the RFC 5545 UID. The exception
+// block carries the RECURRENCE-ID line.
+// ---------------------------------------------------------------------------
+
+static KCalendarCore::Todo::Ptr makeTodoMaster(const QString &uid)
+{
+    auto t = KCalendarCore::Todo::Ptr::create();
+    t->setUid(uid);
+    t->setSummary(QStringLiteral("Series master %1").arg(uid));
+    t->setDtStart(QDateTime(QDate(2026, 6, 1), QTime(9, 0), QTimeZone::utc()));
+    t->setLastModified(QDateTime::currentDateTimeUtc());
+    return t;
+}
+
+static KCalendarCore::Todo::Ptr makeTodoException(const QString &uid)
+{
+    auto t = KCalendarCore::Todo::Ptr::create();
+    t->setUid(uid);
+    t->setSummary(QStringLiteral("Series override %1").arg(uid));
+    t->setDtStart(QDateTime(QDate(2026, 6, 2), QTime(9, 0), QTimeZone::utc()));
+    t->setRecurrenceId(QDateTime(QDate(2026, 6, 2), QTime(9, 0), QTimeZone::utc()));
+    t->setLastModified(QDateTime::currentDateTimeUtc());
+    return t;
+}
+
+// The UTC recurrence instant the exception fixture expresses.
+static QDateTime seriesExceptionRecurrenceId()
+{
+    return QDateTime(QDate(2026, 6, 2), QTime(9, 0), QTimeZone::utc());
+}
+
+// ---------------------------------------------------------------------------
 // Test class
 // ---------------------------------------------------------------------------
 
@@ -93,6 +130,11 @@ private slots:
     void createRecord_returnsEmptyString();
     void updateRecord_returnsFalse();
     void deleteRecord_returnsFalse();
+
+    // VP.c-step-1b — detached exceptions as distinct blob records.
+    void detachedException_masterAndExceptionAreTwoRecords();
+    void detachedException_loadRecord_addressesByIdentity();
+    void detachedException_writePath_stillRejectedForCompositeId();
 };
 
 void TestSubscriptionBackendBlobView::castSucceeds()
@@ -209,6 +251,117 @@ void TestSubscriptionBackendBlobView::deleteRecord_returnsFalse()
     auto *blob = static_cast<IBlobBackend *>(&backend);
 
     QVERIFY(!blob->deleteRecord(QStringLiteral("anything")));
+}
+
+// ============================================================================
+// VP.c-step-1b — detached exceptions as distinct blob records.
+//
+// A subscription feed delivers a recurring series' master and its detached
+// exceptions as SEPARATE blocks sharing one RFC 5545 UID. The blob pipeline
+// keys records by the COMPOSITE identity (uid\x01<UTC-ISO recurrenceId>,
+// src/sync/recordidentity.h) so the exception block no longer clobbers the
+// master (the old one-record-per-uid behavior).
+// ============================================================================
+
+void TestSubscriptionBackendBlobView::detachedException_masterAndExceptionAreTwoRecords()
+{
+    const QString uid = QStringLiteral("vtodo-series-1");
+    StubSubscriptionBackend backend;
+    backend.addSource(QStringLiteral("feed"), QStringLiteral("stub"), {});
+    backend.addFixtureEvent(makeTodoMaster(uid));
+    backend.addFixtureEvent(makeTodoException(uid));
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("feed"));
+
+    // One record per block: the master (bare uid) and the exception
+    // (composite id) — no last-block-wins collision.
+    QCOMPARE(records.size(), 2);
+
+    const BackendRecord *masterRec = nullptr;
+    const BackendRecord *excRec = nullptr;
+    for (const auto &rec : records) {
+        if (rec.id == uid) {
+            masterRec = &rec;
+        } else if (isExceptionRecordId(rec.id)) {
+            excRec = &rec;
+        }
+    }
+    QVERIFY2(masterRec, "the master record must keep the bare-uid record id");
+    QVERIFY2(excRec, "the exception must mint a composite record id");
+    QCOMPARE(excRec->id, composeRecordIdentity(uid, seriesExceptionRecurrenceId()));
+    QVERIFY2(masterRec->id != excRec->id,
+             "master and exception must be distinct records");
+
+    // Both blocks' serialised bytes preserved, each from its own incidence.
+    QVERIFY2(masterRec->data.contains("SUMMARY:Series master vtodo-series-1"),
+             "the master record must carry the master block's bytes");
+    QVERIFY2(!masterRec->data.contains("RECURRENCE-ID"),
+             "the master record's payload must not carry a RECURRENCE-ID");
+    QVERIFY2(excRec->data.contains("RECURRENCE-ID:20260602T090000Z"),
+             "the exception record must retain its RECURRENCE-ID line");
+    QVERIFY2(excRec->data.contains("SUMMARY:Series override vtodo-series-1"),
+             "the exception record must carry the exception block's bytes");
+    QVERIFY2(masterRec->contentHash != excRec->contentHash,
+             "two distinct blocks must not hash to identical record content");
+}
+
+void TestSubscriptionBackendBlobView::detachedException_loadRecord_addressesByIdentity()
+{
+    const QString uid = QStringLiteral("vtodo-series-2");
+    StubSubscriptionBackend backend;
+    backend.addSource(QStringLiteral("feed"), QStringLiteral("stub"), {});
+    backend.addFixtureEvent(makeTodoMaster(uid));
+    backend.addFixtureEvent(makeTodoException(uid));
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    QCOMPARE(blob->loadRecords(QStringLiteral("feed")).size(), 2);
+
+    // Bare master uid resolves to the master record only.
+    const auto master = blob->loadRecord(uid);
+    QVERIFY(master.has_value());
+    QCOMPARE(master->id, uid);
+    QVERIFY2(master->data.contains("SUMMARY:Series master vtodo-series-2"),
+             "loadRecord(bare uid) must serve the master's own bytes");
+    QVERIFY2(!master->data.contains("RECURRENCE-ID"),
+             "loadRecord(bare uid) must not surface the exception block");
+
+    // Composite exception id resolves to the exception record — never the
+    // master sharing the UID.
+    const QString excRecordId = composeRecordIdentity(uid, seriesExceptionRecurrenceId());
+    const auto exc = blob->loadRecord(excRecordId);
+    QVERIFY(exc.has_value());
+    QCOMPARE(exc->id, excRecordId);
+    QVERIFY2(exc->data.contains("RECURRENCE-ID:20260602T090000Z"),
+             "loadRecord(composite id) must serve the exception's own bytes");
+
+    // A composite id whose exception block the feed no longer carries
+    // falls back to the bare master (graceful for stale callers).
+    StubSubscriptionBackend backendWithoutException;
+    backendWithoutException.addSource(QStringLiteral("feed"), QStringLiteral("stub"), {});
+    backendWithoutException.addFixtureEvent(makeTodoMaster(uid));
+    auto *staleBlob = static_cast<IBlobBackend *>(&backendWithoutException);
+    const auto stale = staleBlob->loadRecord(excRecordId);
+    QVERIFY(stale.has_value());
+    QCOMPARE(stale->id, uid);
+}
+
+void TestSubscriptionBackendBlobView::detachedException_writePath_stillRejectedForCompositeId()
+{
+    const QString uid = QStringLiteral("vtodo-series-3");
+    StubSubscriptionBackend backend;
+    backend.addSource(QStringLiteral("feed"), QStringLiteral("stub"), {});
+    backend.addFixtureEvent(makeTodoException(uid));
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+
+    // Read-only backend: writes addressed by the COMPOSITE id are rejected
+    // exactly like bare-uid writes — the composite id never becomes a path.
+    BackendRecord rec;
+    rec.id   = composeRecordIdentity(uid, seriesExceptionRecurrenceId());
+    rec.data = icalFromIncidence(makeTodoException(uid));
+    QVERIFY(!blob->updateRecord(rec));
+    QVERIFY(!blob->deleteRecord(rec.id));
 }
 
 // ---------------------------------------------------------------------------

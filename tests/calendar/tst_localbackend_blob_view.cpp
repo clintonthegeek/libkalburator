@@ -5,6 +5,7 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QCryptographicHash>
 
 #include "localbackend.h"
 #include "iblobbackend.h"
@@ -93,6 +94,14 @@ private slots:
     void lastModified_explicitStamp_authoritativeOverFileMtime();
     void lastModified_fileMtime_subsecondTiebreakWithinSameSecond();
     void lastModified_fileMtime_whenNoExplicitStamp();
+
+    // VP.c-step-1b — composite-identity follow-up (LocalBackend decision).
+    // LocalBackend does NOT compound record ids (record id == filename minus
+    // ".ics"; one record per FILE). This pins the accompanying guarantee:
+    // a single .ics file parsing to multiple incidences (master + detached
+    // exception co-located) still round-trips with FULL file bytes — the
+    // exception's RECURRENCE-ID block survives verbatim in the record.
+    void coLocatedMasterAndException_preservesFullFileBytes();
 };
 
 // ---------------------------------------------------------------------------
@@ -477,6 +486,84 @@ void TestLocalBackendBlobView::lastModified_fileMtime_whenNoExplicitStamp()
 
     // No stamp → file mtime is authoritative.
     QCOMPARE(rec->lastModified.toUTC(), QFileInfo(filePath).lastModified().toUTC());
+}
+
+// ---------------------------------------------------------------------------
+// coLocatedMasterAndException_preservesFullFileBytes
+//
+// VP.c-step-1b decision: LocalBackend record ids stay BARE (record id ==
+// filename minus ".ics" — one record per FILE, id→filename is a bijection;
+// compounding would break it). The compensating guarantee is that the single
+// record's data is the FULL file bytes, so a file holding a master + a
+// detached exception (RECURRENCE-ID block) in one VCALENDAR round-trips
+// verbatim — the exception is never truncated away.
+// ---------------------------------------------------------------------------
+
+void TestLocalBackendBlobView::coLocatedMasterAndException_preservesFullFileBytes()
+{
+    QTemporaryDir root;
+    QVERIFY(root.isValid());
+
+    const QString calendarId = QStringLiteral("cal-coloc");
+    const QString calPath    = root.filePath(calendarId);
+    QVERIFY(QDir().mkpath(calPath));
+
+    // One .ics file, one VCALENDAR, TWO VEVENT blocks sharing a UID: the
+    // master and its detached exception (RECURRENCE-ID present).
+    const QByteArray data = QStringLiteral(
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//test//test//EN\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:co-located-1\r\n"
+        "SUMMARY:Series master\r\n"
+        "DTSTART:20260101T090000Z\r\n"
+        "RRULE:FREQ=DAILY\r\n"
+        "END:VEVENT\r\n"
+        "BEGIN:VEVENT\r\n"
+        "UID:co-located-1\r\n"
+        "RECURRENCE-ID:20260103T090000Z\r\n"
+        "SUMMARY:Series override\r\n"
+        "DTSTART:20260103T140000Z\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n").toUtf8();
+
+    const QString filePath = calPath + QStringLiteral("/co-located-1.ics");
+    {
+        QFile f(filePath);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(data);
+    }
+
+    LocalBackend backend(root.path());
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+
+    // Exactly ONE record (one per file), id == filename minus ".ics".
+    const QList<BackendRecord> records = blob->loadRecords(calendarId);
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().id, QStringLiteral("co-located-1"));
+
+    // The record's data is the FULL file bytes — the exception's
+    // RECURRENCE-ID block survives verbatim, and the contentHash is the
+    // hash of those full bytes.
+    QCOMPARE(records.first().data, data);
+    QVERIFY2(QString::fromUtf8(records.first().data)
+                 .contains(QStringLiteral("RECURRENCE-ID:20260103T090000Z")),
+             "the exception's RECURRENCE-ID block must survive in the record");
+    QVERIFY2(QString::fromUtf8(records.first().data)
+                 .contains(QStringLiteral("SUMMARY:Series override")),
+             "the exception's own content must survive in the record");
+    QVERIFY2(QString::fromUtf8(records.first().data)
+                 .contains(QStringLiteral("SUMMARY:Series master")),
+             "the master's content must survive in the record");
+    QCOMPARE(records.first().contentHash,
+             QString::fromLatin1(QCryptographicHash::hash(
+                                     data, QCryptographicHash::Sha256).toHex()));
+
+    // The single-record view also round-trips through loadRecord.
+    const auto loaded = blob->loadRecord(QStringLiteral("co-located-1"));
+    QVERIFY(loaded.has_value());
+    QCOMPARE(loaded->data, data);
 }
 
 // ---------------------------------------------------------------------------

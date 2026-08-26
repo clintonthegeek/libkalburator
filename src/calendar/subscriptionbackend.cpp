@@ -1,6 +1,7 @@
 #include "subscriptionbackend.h"
 #include "backendcapabilities.h"
 #include "syncoperation.h"
+#include "../sync/recordidentity.h"
 #include <KCalendarCore/ICalFormat>
 #include <QCryptographicHash>
 #include <QDebug>
@@ -244,6 +245,18 @@ QString SubscriptionBackend::sourceDisplayName(const QString &sourceId) const
 
 namespace {
 
+// VP.c-step-1b: the blob-pipeline record identity for a parsed incidence —
+// the bare uid for a master, "uid\x01<UTC-ISO recurrenceId>" for a detached
+// exception. Subscription feeds (a single remote VCALENDAR) routinely
+// contain a master and its detached exceptions as SEPARATE blocks sharing
+// one RFC 5545 UID, so the identity must distinguish them.
+inline QString recordIdForIncidence(const KCalendarCore::Incidence::Ptr &inc)
+{
+    return Kalburator::Sync::composeRecordIdentity(
+        inc->uid(),
+        inc->hasRecurrenceId() ? inc->recurrenceId() : QDateTime{});
+}
+
 /// Build a BackendRecord from a single incidence serialised to iCal.
 /// Uses toICalString() to produce a complete VCALENDAR-wrapped payload so
 /// that the stored blob can be fed back into any compliant iCal parser.
@@ -253,7 +266,7 @@ static BackendRecord subscriptionBlobRecord(const KCalendarCore::Incidence::Ptr 
     const QByteArray ical = fmt.toICalString(inc).toUtf8();
 
     BackendRecord rec;
-    rec.id           = inc->uid();
+    rec.id           = recordIdForIncidence(inc);
     rec.type         = QStringLiteral("event");
     rec.displayName  = inc->summary();
     rec.data         = ical;
@@ -345,7 +358,16 @@ QList<BackendRecord> SubscriptionBackend::loadRecords(const QString &collectionI
 
 std::optional<BackendRecord> SubscriptionBackend::loadRecord(const QString &recordId)
 {
-    // Search all sources for a matching uid
+    // VP.c-step-1b: recordId may be a bare master uid OR a composite
+    // exception id ("uid\x01<UTC-ISO recurrenceId>"). The incidence whose
+    // COMPOSED identity equals the query wins — a bare uid matches only the
+    // master, a composite id only the exception carrying that recurrence-id
+    // (never the master sharing the UID). Graceful fallback: a composite id
+    // whose exception block is absent from the source's feed (e.g. the
+    // upstream feed dropped it after a previous loadRecords minted the id)
+    // resolves to the bare master — the record shape such a caller would
+    // have stored.
+    const auto decomposed = decomposeRecordIdentity(recordId);
     for (const SourceInfo &info : m_sources) {
         const QDate today     = QDate::currentDate();
         const QDate startDate = today.addYears(-1);
@@ -355,8 +377,16 @@ std::optional<BackendRecord> SubscriptionBackend::loadRecord(const QString &reco
             fetchEventsForSource(info.sourceId, startDate, endDate);
 
         for (const auto &inc : incidences) {
-            if (inc && inc->uid() == recordId) {
+            if (inc && recordIdForIncidence(inc) == recordId) {
                 return subscriptionBlobRecord(inc);
+            }
+        }
+        if (isExceptionRecordId(recordId) && !decomposed.uid.isEmpty()) {
+            for (const auto &inc : incidences) {
+                if (inc && !inc->hasRecurrenceId()
+                    && inc->uid() == decomposed.uid) {
+                    return subscriptionBlobRecord(inc);
+                }
             }
         }
     }
