@@ -50,4 +50,10 @@ this file records per-step progress, decisions, and deviations.
   404 as success WITHOUT a confirming re-list (deliberate deviation from
   Graph O66(f) pin — People deletes are not flaky). Suite baseline now
   203 slots.
+- **P2.e LANDED** (subagent): contacts superset crossing gates both
+  directions green on first iteration — all 26 catalogue properties
+  crossed G⇄M, every divergence declared. No undeclared losses. Two
+  observations recorded in the status doc: Google primary-invention on
+  unpinned name rows; MS photos profile row mislabeled Dropped vs actual
+  carrier-Reversible (conservative direction).
 - (progress appended as work lands)

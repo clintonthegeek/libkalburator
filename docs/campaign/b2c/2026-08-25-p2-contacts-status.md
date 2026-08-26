@@ -133,7 +133,15 @@ crossing-gated both directions, live-checkpointed per invariant 1.
       from body keys; 404-delete-as-success (People not flaky —
       deliberate deviation from Graph pin); state keyed to query-
       template sha256. 12 slots green)
-- [ ] P2.e: Crossing gates both directions (O64 rule)
+- [x] P2.e: Crossing gates both directions (landed 2026-08-25 — superset
+      canon (all 26 catalogue props) crossed both ways, every divergence
+      declared; no undeclared losses found. Two notes: Google demote
+      defaults `primary:true` on every name row when canon has none
+      (gate-legal, semantically inventive — future O-note candidate);
+      `canonToMsContactLoss` declares photos Dropped but the MS demote's
+      unhandled-set routing actually makes it carrier-Reversible —
+      declared ⊇ actual, conservative, mislabel to fix next time the
+      profile is touched)
 - [ ] P2.f: Live checkpoints vs real accounts (invariant 1)
 
 ## Open questions to settle in the design pass

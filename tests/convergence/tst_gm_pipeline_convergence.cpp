@@ -170,6 +170,214 @@ QStringList diffKeys(const QJsonObject& a, const QJsonObject& b)
     return out;
 }
 
+/// Superset contacts canon touching EVERY canon contact property row
+/// (property surface per makeContactsCanonCatalogue()). Hand-built, so the
+/// crossings below exercise every ruling of both vendors' demote profiles.
+QJsonObject makeSupersetContact()
+{
+    QJsonObject obj;
+    obj.insert(QStringLiteral("uid"), QStringLiteral("contact-superset"));
+
+    // names: every canon name sub-key (incl. phonetic triplet + fileAs);
+    // no explicit primary — primaries are vendor-invented on demote.
+    obj.insert(QStringLiteral("names"), QJsonArray{
+        QJsonObject{
+            { QStringLiteral("formatted"),        QStringLiteral("Alice Meta Example") },
+            { QStringLiteral("given"),            QStringLiteral("Alice") },
+            { QStringLiteral("family"),           QStringLiteral("Example") },
+            { QStringLiteral("middle"),           QStringLiteral("Meta") },
+            { QStringLiteral("prefix"),           QStringLiteral("Dr.") },
+            { QStringLiteral("suffix"),           QStringLiteral("PhD") },
+            { QStringLiteral("phoneticFormatted"), QStringLiteral("ALisa Meta Egzampul") },
+            { QStringLiteral("phoneticGiven"),    QStringLiteral("ALisa") },
+            { QStringLiteral("phoneticFamily"),   QStringLiteral("Egzampul") },
+            { QStringLiteral("fileAs"),           QStringLiteral("Example, Alice") }
+        },
+        QJsonObject{
+            { QStringLiteral("given"),  QStringLiteral("Ally") },
+            { QStringLiteral("family"), QStringLiteral("Ex") }
+        }
+    });
+
+    obj.insert(QStringLiteral("nicknames"), QJsonArray{
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("Ally") } },
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("AME") } }
+    });
+
+    obj.insert(QStringLiteral("emails"), QJsonArray{
+        QJsonObject{
+            { QStringLiteral("value"),   QStringLiteral("alice@example.com") },
+            { QStringLiteral("type"),    QStringLiteral("home") },
+            { QStringLiteral("name"),    QStringLiteral("Alice Example") },
+            { QStringLiteral("primary"), true }
+        },
+        QJsonObject{
+            { QStringLiteral("value"), QStringLiteral("alice@example.org") },
+            { QStringLiteral("type"),  QStringLiteral("work") }
+        }
+    });
+
+    obj.insert(QStringLiteral("phones"), QJsonArray{
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("+1555-0100") },
+                     { QStringLiteral("type"),  QStringLiteral("home") } },
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("+1555-0101") },
+                     { QStringLiteral("type"),  QStringLiteral("work") } },
+        QJsonObject{ { QStringLiteral("value"),        QStringLiteral("+1555-0102") },
+                     { QStringLiteral("type"),         QStringLiteral("mobile") },
+                     { QStringLiteral("canonicalForm"), QStringLiteral("+15550102") } },
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("+1555-0103") },
+                     { QStringLiteral("type"),  QStringLiteral("other") } }
+    });
+
+    // addresses: all three typed slots + full sub-key surface
+    const auto address = [](const QString& street, const QString& city,
+                            const QString& region) {
+        return QJsonObject{
+            { QStringLiteral("street"),      street },
+            { QStringLiteral("city"),        city },
+            { QStringLiteral("region"),      region },
+            { QStringLiteral("country"),     QStringLiteral("USA") },
+            { QStringLiteral("countryCode"), QStringLiteral("US") },
+            { QStringLiteral("postalCode"),  QStringLiteral("62701") },
+            { QStringLiteral("formatted"),   street + QStringLiteral(", ") + city }
+        };
+    };
+    obj.insert(QStringLiteral("addresses"), QJsonArray{
+        [&] {
+            QJsonObject a = address(QStringLiteral("1 Main St"),
+                                    QStringLiteral("Springfield"),
+                                    QStringLiteral("IL"));
+            a.insert(QStringLiteral("type"), QStringLiteral("home"));
+            return a;
+        }(),
+        [&] {
+            QJsonObject a = address(QStringLiteral("2 Work Ave"),
+                                    QStringLiteral("Springfield"),
+                                    QStringLiteral("IL"));
+            a.insert(QStringLiteral("type"), QStringLiteral("work"));
+            return a;
+        }(),
+        [&] {
+            QJsonObject a = address(QStringLiteral("3 Other Ln"),
+                                    QStringLiteral("Shelbyville"),
+                                    QStringLiteral("IN"));
+            a.insert(QStringLiteral("type"), QStringLiteral("other"));
+            return a;
+        }()
+    });
+
+    obj.insert(QStringLiteral("organizations"), QJsonArray{
+        QJsonObject{
+            { QStringLiteral("name"),       QStringLiteral("Acme") },
+            { QStringLiteral("title"),      QStringLiteral("Engineer") },
+            { QStringLiteral("department"), QStringLiteral("R&D") },
+            { QStringLiteral("location"),   QStringLiteral("HQ 4") },
+            { QStringLiteral("symbol"),     QStringLiteral("ACME") },
+            { QStringLiteral("current"),    true }
+        },
+        QJsonObject{
+            { QStringLiteral("name"),  QStringLiteral("Prev Corp") },
+            { QStringLiteral("title"), QStringLiteral("Intern") }
+        }
+    });
+
+    obj.insert(QStringLiteral("occupations"),
+               QJsonArray{ QStringLiteral("Engineering"),
+                           QStringLiteral("Cooking") });
+
+    obj.insert(QStringLiteral("urls"), QJsonArray{
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("https://alice.example") },
+                     { QStringLiteral("type"),  QStringLiteral("blog") } },
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("https://alice.example/cv") },
+                     { QStringLiteral("type"),  QStringLiteral("profile") } }
+    });
+
+    obj.insert(QStringLiteral("imClients"), QJsonArray{
+        QJsonObject{ { QStringLiteral("username"), QStringLiteral("alice@example.com") } }
+    });
+
+    obj.insert(QStringLiteral("sipAddresses"),
+               QJsonArray{ QStringLiteral("sip:alice@example.com") });
+
+    obj.insert(QStringLiteral("calendarUrls"), QJsonArray{
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("webcal://alice.example/cal") },
+                     { QStringLiteral("type"),  QStringLiteral("freeBusy") } }
+    });
+
+    obj.insert(QStringLiteral("relations"), QJsonArray{
+        QJsonObject{ { QStringLiteral("person"), QStringLiteral("Carol") },
+                     { QStringLiteral("type"),   QStringLiteral("assistant") } },
+        QJsonObject{ { QStringLiteral("person"), QStringLiteral("Dave") },
+                     { QStringLiteral("type"),   QStringLiteral("manager") } },
+        QJsonObject{ { QStringLiteral("person"), QStringLiteral("Eve") },
+                     { QStringLiteral("type"),   QStringLiteral("spouse") } },
+        QJsonObject{ { QStringLiteral("person"), QStringLiteral("Frank") },
+                     { QStringLiteral("type"),   QStringLiteral("child") } },
+        QJsonObject{ { QStringLiteral("person"), QStringLiteral("Grace") },
+                     { QStringLiteral("type"),   QStringLiteral("partner") } }
+    });
+
+    obj.insert(QStringLiteral("birthday"),
+               QJsonObject{ { QStringLiteral("date"),
+                              QJsonObject{ { QStringLiteral("year"), 1990 },
+                                           { QStringLiteral("month"), 8 },
+                                           { QStringLiteral("day"), 23 } } } });
+
+    obj.insert(QStringLiteral("anniversary"),
+               QJsonObject{ { QStringLiteral("date"),
+                              QJsonObject{ { QStringLiteral("year"), 2015 },
+                                           { QStringLiteral("month"), 6 },
+                                           { QStringLiteral("day"), 1 } } } });
+
+    obj.insert(QStringLiteral("significantDates"), QJsonArray{
+        QJsonObject{ { QStringLiteral("date"),
+                       QJsonObject{ { QStringLiteral("year"), 2020 },
+                                    { QStringLiteral("month"), 3 },
+                                    { QStringLiteral("day"), 14 } } },
+                     { QStringLiteral("type"), QStringLiteral("anniversaryOther") } }
+    });
+
+    obj.insert(QStringLiteral("gender"),
+               QJsonObject{ { QStringLiteral("value"), QStringLiteral("female") },
+                            { QStringLiteral("formattedValue"), QStringLiteral("Female") },
+                            { QStringLiteral("addressMeAs"), QStringLiteral("she/her") } });
+
+    obj.insert(QStringLiteral("notes"), QStringLiteral("Met at conf"));
+
+    obj.insert(QStringLiteral("photos"), QJsonArray{
+        QJsonObject{ { QStringLiteral("url"),     QStringLiteral("https://alice.example/me.png") },
+                     { QStringLiteral("primary"), true } }
+    });
+
+    obj.insert(QStringLiteral("categories"),
+               QJsonArray{ QStringLiteral("CORPUS") });
+
+    obj.insert(QStringLiteral("languages"),
+               QJsonArray{ QStringLiteral("en"), QStringLiteral("de") });
+
+    obj.insert(QStringLiteral("timeZone"), QStringLiteral("America/New_York"));
+
+    obj.insert(QStringLiteral("externalIds"), QJsonArray{
+        QJsonObject{ { QStringLiteral("value"), QStringLiteral("emp-42") },
+                     { QStringLiteral("type"),  QStringLiteral("employee") } }
+    });
+
+    obj.insert(QStringLiteral("memberships"), QJsonArray{
+        QJsonObject{ { QStringLiteral("contactGroupMembership"),
+                       QJsonObject{ { QStringLiteral("contactGroupResourceName"),
+                                      QStringLiteral("contactGroups/friends") } } } }
+    });
+
+    obj.insert(QStringLiteral("interests"),
+               QJsonArray{ QStringLiteral("astronomy") });
+    obj.insert(QStringLiteral("skills"),
+               QJsonArray{ QStringLiteral("cpp"), QStringLiteral("qt") });
+
+    stampEnvelope(obj, QStringLiteral("contacts"),
+                  QStringLiteral("contact-superset"));
+    return obj;
+}
+
 void reportAndAssertWithin(const QString& context,
                            const QJsonObject& before,
                            const QJsonObject& after,
@@ -272,6 +480,43 @@ private slots:
         QVERIFY2(!canon1.isEmpty(), "person re-promote returned empty");
 
         reportAndAssertWithin(QStringLiteral("contacts MS→G"),
+                              canon0, canon1,
+                              Kalburator::Contacts::canonToGooglePersonLoss());
+    }
+
+    // contacts superset: EVERY canon contact property row crossed G→MS.
+    // Hand-built canon (todo-domain pattern): exercises every declared
+    // ruling in canonToMsContactLoss().
+    void contactSupersetCrossingGoogleToMsStaysDeclared()
+    {
+        Kalburator::Contacts::CanonToMsContactStage msDemote;
+        Kalburator::Contacts::MsContactToCanonStage msPromote;
+
+        const QJsonObject canon0 = makeSupersetContact();
+        const QByteArray wire = msDemote.transform(serialize(canon0));
+        QVERIFY2(!wire.isEmpty(), "ms demote returned empty");
+        const QJsonObject canon1 = parse(msPromote.transform(wire));
+        QVERIFY2(!canon1.isEmpty(), "ms re-promote returned empty");
+
+        reportAndAssertWithin(QStringLiteral("contacts superset →MS"),
+                              canon0, canon1,
+                              Kalburator::Contacts::canonToMsContactLoss());
+    }
+
+    // contacts superset: same canon crossed MS→G against
+    // canonToGooglePersonLoss().
+    void contactSupersetCrossingMsToGoogleStaysDeclared()
+    {
+        Kalburator::Contacts::CanonToGooglePersonStage gDemote;
+        Kalburator::Contacts::GooglePersonToCanonStage gPromote;
+
+        const QJsonObject canon0 = makeSupersetContact();
+        const QByteArray wire = gDemote.transform(serialize(canon0));
+        QVERIFY2(!wire.isEmpty(), "person demote returned empty");
+        const QJsonObject canon1 = parse(gPromote.transform(wire));
+        QVERIFY2(!canon1.isEmpty(), "person re-promote returned empty");
+
+        reportAndAssertWithin(QStringLiteral("contacts superset →G"),
                               canon0, canon1,
                               Kalburator::Contacts::canonToGooglePersonLoss());
     }
