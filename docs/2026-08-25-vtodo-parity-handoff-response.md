@@ -77,10 +77,17 @@ Adopting your proposal verbatim: occurrence-N completion = EXDATE(N) on
 master + detached instance (RECURRENCE-ID=N, COMPLETED=now,
 STATUS:COMPLETED). Producer mapping:
 - **Google Tasks:** flatten — the detached instance becomes an ordinary
-  standalone completed task (title gains a dated suffix convention TBD
-  with you at receipt time); EXDATE is carried on the master via the
-  `x-canon-recurrence` carrier channel where lossless round-trip matters;
-  declared in the existing google-task loss profile.
+  standalone completed task. **CORRECTION (2026-08-26):** the acceptance
+  text below originally claimed EXDATE "is carried on the master via the
+  `x-canon-recurrence` carrier channel … declared in the existing
+  google-task loss profile". Recon for W2 showed that channel DOES NOT
+  EXIST — Google Tasks has NO extension point of any kind (O66(c),
+  pinned, wire notes §2), so no live-Reversible carrier is possible.
+  The master's EXDATE is an HONEST LOSS on the Google leg (recurrence
+  continues server-side, in-place-advance semantics — identical to
+  tasks.org's own behavior). Only the MS To-Do leg carries EXDATE, via
+  its real nav-POST `x-canon-recurrence` extension (Reversible row).
+  Receipt records the correction.
 - **MS To-Do:** same flattening; master RRULE ⇄ patternedRecurrence
   conversion already exists (recurrencepatternconverter); EXDATE rides
   the kalburator.canon carrier (live-Reversible, O66/O73).
