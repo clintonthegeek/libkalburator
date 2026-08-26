@@ -24,6 +24,9 @@
 #include "iblobbackend.h"
 #include "backendrecord.h"
 #include "syncoperation.h"
+#include "recordidentity.h"
+#include "writeoperation.h"
+#include "writerbatch.h"
 
 #include "fakecaldavserver.h"
 
@@ -50,6 +53,13 @@ private slots:
     void collectionRevision_droppedRequests_failsWithinTimeout();
     void fetchItems_droppedRequests_failsWithinTimeout();
     void pushItems_droppedRequests_failsWithinTimeout();
+
+    // VP.c-step-1b — detached exceptions as distinct blob records.
+    void detachedException_masterAndExceptionAreTwoRecords();
+    void detachedException_applyRecordsUpdate_targetsExceptionHref();
+    void detachedException_deleteRecord_removesOnlyExceptionHref();
+    void detachedException_refetchAfterWrite_keepsIdsStable();
+    void detachedException_loadRecord_bareUidServesMaster();
 };
 
 void TestRemoteCalendarBackendBlobView::castSucceeds()
@@ -421,6 +431,68 @@ QByteArray makeEventIcs(const QString &uid)
         .arg(uid)
         .toUtf8();
 }
+
+// VP.c-step-1b fixtures: a recurring series' MASTER and one DETACHED
+// EXCEPTION, delivered the way a real CalDAV server stores them — as two
+// SEPARATE resources (hrefs) that share the RFC 5545 UID. The exception's
+// own resource carries the RECURRENCE-ID line.
+QByteArray makeSeriesMasterIcs(const QString &uid)
+{
+    return QStringLiteral(
+               "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:%1\r\n"
+               "SUMMARY:Series master %1\r\n"
+               "DTSTART:20260601T120000Z\r\n"
+               "RRULE:FREQ=DAILY\r\n"
+               "END:VEVENT\r\nEND:VCALENDAR\r\n")
+        .arg(uid)
+        .toUtf8();
+}
+
+QByteArray makeSeriesExceptionIcs(const QString &uid, const QString &summarySuffix)
+{
+    return QStringLiteral(
+               "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+               "BEGIN:VEVENT\r\nUID:%1\r\n"
+               "RECURRENCE-ID:20260602T090000Z\r\n"
+               "SUMMARY:Series override %1%2\r\n"
+               "DTSTART:20260602T110000Z\r\n"
+               "END:VEVENT\r\nEND:VCALENDAR\r\n")
+        .arg(uid, summarySuffix)
+        .toUtf8();
+}
+
+// The UTC recurrence instant the exception fixture expresses — the composite
+// record id normalizes to this regardless of the parse-time zone form.
+QDateTime seriesExceptionRecurrenceId()
+{
+    return QDateTime(QDate(2026, 6, 2), QTime(9, 0, 0), QTimeZone::utc());
+}
+
+// Seed a master + detached-exception pair at their own hrefs in one
+// collection. Returns the collection-relative paths (for request-path
+// assertions) and the expected composite exception record id.
+struct DetachedExceptionFixture {
+    QString calHref;
+    QString masterPath;
+    QString excPath;
+    QString excRecordId;
+};
+DetachedExceptionFixture seedMasterAndException(FakeCalDavServer &server,
+                                                const QString &uid)
+{
+    DetachedExceptionFixture fx;
+    fx.calHref = QStringLiteral("/calendars/testuser/personal/");
+    fx.masterPath = fx.calHref + QStringLiteral("series-master.ics");
+    fx.excPath = fx.calHref + QStringLiteral("series-exc.ics");
+    fx.excRecordId = composeRecordIdentity(uid, seriesExceptionRecurrenceId());
+    server.setCalendars({{QStringLiteral("personal"), fx.calHref}});
+    server.setSeedEventAt(fx.calHref, QStringLiteral("series-master"),
+                          makeSeriesMasterIcs(uid));
+    server.setSeedEventAt(fx.calHref, QStringLiteral("series-exc"),
+                          makeSeriesExceptionIcs(uid, QString()));
+    return fx;
+}
 }  // namespace
 
 void TestRemoteCalendarBackendBlobView::loadRecords_chunksMultigetAcrossBatches()
@@ -724,6 +796,303 @@ void TestRemoteCalendarBackendBlobView::pushItems_droppedRequests_failsWithinTim
     QVERIFY(pushOp != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(pushOp->isFinished(), 7000);
     QCOMPARE(pushOp->state(), SyncOperation::Failed);
+}
+
+// ============================================================================
+// VP.c-step-1b — detached exceptions as distinct blob records.
+//
+// A real CalDAV server stores a recurring series' master and each detached
+// exception as SEPARATE resources (separate hrefs/etags) sharing one RFC
+// 5545 UID. The blob pipeline keys records by the COMPOSITE identity
+// (uid\x01<UTC-ISO recurrenceId>, src/sync/recordidentity.h) so the second
+// resource no longer clobbers the first (the old last-block-wins behavior).
+// ============================================================================
+
+void TestRemoteCalendarBackendBlobView::detachedException_masterAndExceptionAreTwoRecords()
+{
+    const QString uid = QStringLiteral("series-1");
+    FakeCalDavServer server;
+    const DetachedExceptionFixture fx = seedMasterAndException(server, uid);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + fx.calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    // fetchItems itself must surface both incidences — one per delivered href.
+    FetchOperation *fetchOp = backend.fetchItems(QStringLiteral("personal"));
+    QVERIFY(fetchOp != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(fetchOp->isFinished(), 8000);
+    QCOMPARE(fetchOp->state(), SyncOperation::Succeeded);
+    int masterIncidences = 0;
+    int exceptionIncidences = 0;
+    for (const auto &inc : fetchOp->fetchedItems()) {
+        if (!inc || inc->uid() != uid) continue;
+        if (inc->hasRecurrenceId()) ++exceptionIncidences;
+        else ++masterIncidences;
+    }
+    QCOMPARE(masterIncidences, 1);
+    QCOMPARE(exceptionIncidences, 1);
+
+    // The blob-record view must mint TWO records: master id == bare uid,
+    // exception id == composed identity — no last-block-wins collision.
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 2);
+
+    const BackendRecord *masterRec = nullptr;
+    const BackendRecord *excRec = nullptr;
+    for (const auto &rec : records) {
+        if (rec.id == uid) {
+            masterRec = &rec;
+        } else if (isExceptionRecordId(rec.id)) {
+            excRec = &rec;
+        }
+    }
+    QVERIFY2(masterRec, "the master record must keep the bare-uid record id");
+    QVERIFY2(excRec, "the exception must mint a composite record id");
+    QCOMPARE(excRec->id, fx.excRecordId);
+    QVERIFY2(masterRec->id != excRec->id,
+             "master and exception must be distinct records");
+
+    // Both payloads preserved, each from its own resource.
+    QVERIFY2(masterRec->data.contains("SUMMARY:Series master series-1"),
+             "the master record must carry the master resource's bytes");
+    QVERIFY2(!masterRec->data.contains("RECURRENCE-ID"),
+             "the master record's payload must not carry a RECURRENCE-ID");
+    QVERIFY2(excRec->data.contains("RECURRENCE-ID:20260602T090000Z"),
+             "the exception record must retain its RECURRENCE-ID line");
+    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-1"),
+             "the exception record must carry the exception resource's bytes");
+    QVERIFY2(masterRec->contentHash != excRec->contentHash,
+             "two distinct resources must not hash to identical record content");
+}
+
+void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsUpdate_targetsExceptionHref()
+{
+    const QString uid = QStringLiteral("series-2");
+    FakeCalDavServer server;
+    const DetachedExceptionFixture fx = seedMasterAndException(server, uid);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + fx.calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    // First fetch populates the composite-id->URL map and per-href etags.
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 2);
+
+    // Edit the EXCEPTION through the blob write path (the engine's
+    // steady-state route). Addressing the exception's COMPOSITE id must PUT
+    // to the exception's own href, not the master's.
+    BackendRecord rec;
+    rec.id = fx.excRecordId;
+    rec.type = QStringLiteral("calendar");
+    rec.data = makeSeriesExceptionIcs(uid, QStringLiteral(" (edited)"));
+
+    WriterBatch batch;
+    batch.updates.append(rec);
+    WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
+    QVERIFY(op != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
+    QCOMPARE(op->state(), SyncOperation::Succeeded);
+    QVERIFY2(op->succeededUids().contains(fx.excRecordId),
+             "the exception record id must be reported as succeeded");
+
+    const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
+    QCOMPARE(putPaths.size(), 1);
+    QCOMPARE(putPaths.first(), fx.excPath);
+
+    // Master resource untouched; exception updated in place.
+    QVERIFY2(server.hasEvent(fx.calHref, uid), "the series must still exist");
+    const QList<QByteArray> stored = server.storedEvents(fx.calHref);
+    QCOMPARE(stored.size(), 2);
+    bool masterUnchanged = false;
+    bool exceptionEdited = false;
+    for (const QByteArray &data : stored) {
+        if (data.contains("SUMMARY:Series master series-2")) masterUnchanged = true;
+        if (data.contains("SUMMARY:Series override series-2 (edited)")) exceptionEdited = true;
+    }
+    QVERIFY2(masterUnchanged, "the master's bytes must be untouched by the exception PUT");
+    QVERIFY2(exceptionEdited, "the exception's bytes must reflect the update");
+}
+
+void TestRemoteCalendarBackendBlobView::detachedException_deleteRecord_removesOnlyExceptionHref()
+{
+    const QString uid = QStringLiteral("series-3");
+    FakeCalDavServer server;
+    const DetachedExceptionFixture fx = seedMasterAndException(server, uid);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + fx.calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 2);
+
+    // Delete ONLY the exception record — must DELETE the exception's href.
+    QVERIFY2(backend.deleteRecord(fx.excRecordId),
+             "deleteRecord must succeed for the exception record id");
+    const QStringList delPaths = server.requestPaths(QByteArrayLiteral("DELETE"));
+    QCOMPARE(delPaths.size(), 1);
+    QCOMPARE(delPaths.first(), fx.excPath);
+
+    // The master survives and still owns the UID; the exception href is gone.
+    QVERIFY2(server.hasEvent(fx.calHref, uid),
+             "the master must still own the UID after the exception is deleted");
+    const QList<QByteArray> stored = server.storedEvents(fx.calHref);
+    QCOMPARE(stored.size(), 1);
+    QVERIFY2(stored.first().contains("SUMMARY:Series master series-3"),
+             "only the master resource must remain on the server");
+
+    // Refetch now reports exactly one record — the bare-uid master.
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().id, uid);
+}
+
+void TestRemoteCalendarBackendBlobView::detachedException_refetchAfterWrite_keepsIdsStable()
+{
+    const QString uid = QStringLiteral("series-4");
+    FakeCalDavServer server;
+    const DetachedExceptionFixture fx = seedMasterAndException(server, uid);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + fx.calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> first = blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(first.size(), 2);
+    QString firstMasterHash;
+    for (const auto &rec : first) {
+        if (rec.id == uid) firstMasterHash = rec.contentHash;
+    }
+    QVERIFY2(!firstMasterHash.isEmpty(), "the master record must be present");
+
+    // Push an edit to the exception through the blob write path.
+    BackendRecord rec;
+    rec.id = fx.excRecordId;
+    rec.data = makeSeriesExceptionIcs(uid, QStringLiteral(" (edited)"));
+    WriterBatch batch;
+    batch.updates.append(rec);
+    WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
+    QVERIFY(op != nullptr);
+    QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
+    QCOMPARE(op->state(), SyncOperation::Succeeded);
+
+    // Refetch: both ids must be byte-identical to the first pass — a record
+    // id depends only on uid + recurrence-id, never on write order.
+    const QList<BackendRecord> second = blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(second.size(), 2);
+    const BackendRecord *masterRec = nullptr;
+    const BackendRecord *excRec = nullptr;
+    for (const auto &rec : second) {
+        if (rec.id == uid) {
+            masterRec = &rec;
+        } else if (isExceptionRecordId(rec.id)) {
+            excRec = &rec;
+        }
+    }
+    QVERIFY2(masterRec && excRec, "both records must survive the refetch");
+    QCOMPARE(excRec->id, fx.excRecordId);
+    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-4 (edited)"),
+             "the refetch must surface the edited exception bytes");
+    QVERIFY2(masterRec->data.contains("SUMMARY:Series master series-4"),
+             "the master record's payload must be unchanged");
+    QCOMPARE(masterRec->contentHash, firstMasterHash);
+}
+
+void TestRemoteCalendarBackendBlobView::detachedException_loadRecord_bareUidServesMaster()
+{
+    const QString uid = QStringLiteral("series-5");
+    FakeCalDavServer server;
+    const DetachedExceptionFixture fx = seedMasterAndException(server, uid);
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString() + fx.calHref.mid(1);
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY(loadSpy.first().at(1).toBool());
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    QCOMPARE(blob->loadRecords(QStringLiteral("personal")).size(), 2);
+
+    // Bare master uid still resolves to the master record.
+    const auto master = backend.loadRecord(uid);
+    QVERIFY(master.has_value());
+    QCOMPARE(master->id, uid);
+    QVERIFY2(master->data.contains("SUMMARY:Series master series-5"),
+             "loadRecord(bare uid) must serve the master's own bytes");
+
+    // Composite exception id resolves to the exception record.
+    const auto exc = backend.loadRecord(fx.excRecordId);
+    QVERIFY(exc.has_value());
+    QCOMPARE(exc->id, fx.excRecordId);
+    QVERIFY2(exc->data.contains("RECURRENCE-ID:20260602T090000Z"),
+             "loadRecord(composite id) must serve the exception's own bytes");
 }
 
 QTEST_MAIN(TestRemoteCalendarBackendBlobView)

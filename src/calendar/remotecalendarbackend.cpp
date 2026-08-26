@@ -10,6 +10,7 @@
 #include "backendrecord.h"
 #include "collectioninfo.h"
 #include "davslug.h"
+#include "../sync/recordidentity.h"
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -56,13 +57,27 @@ QUrl parentUrl(const QUrl &url)
     return parent;
 }
 
+// VP.c-step-1b: the blob-pipeline record identity for a parsed incidence —
+// the bare uid for a master, "uid\x01<UTC-ISO recurrenceId>" for a detached
+// exception. On real CalDAV, master and exceptions are SEPARATE resources
+// with separate hrefs/etags, so the identity must distinguish them.
+inline QString recordIdForIncidence(const KCalendarCore::Incidence::Ptr &incidence)
+{
+    return Kalburator::Sync::composeRecordIdentity(
+        incidence->uid(),
+        incidence->hasRecurrenceId() ? incidence->recurrenceId() : QDateTime{});
+}
+
 } // anonymous namespace
 
 namespace Kalburator::Sync {
 
 // Forward declaration: defined in the anonymous namespace near loadRecords()
 // below, needed by the recordsFromLastFetch() memo hook in fetchItems().
-namespace { BackendRecord blobRecordFromIcal(const QString &uid, const QByteArray &icalBytes); }
+namespace {
+BackendRecord blobRecordFromIcal(const QString &uid, const QByteArray &icalBytes,
+                                 const QDateTime &recurrenceId = {});
+}
 
 // ============================================================================
 // CTagStore — private inner store for per-backend CalDAV CTags
@@ -837,13 +852,27 @@ QUrl RemoteCalendarBackend::generateItemUrl(const KDAV::DavUrl &davUrl, const QS
 // O54: prefer the URL the server itself reported for this uid; only guess
 // "<uid>.ics" for a uid this instance has never seen on the server (a
 // genuine create, where the guess is correct by definition).
+//
+// VP.c-step-1b: @p itemUid may be a COMPOSITE record id
+// ("uid\x01<UTC-ISO recurrenceId>") for a detached exception. m_uidToUrl is
+// keyed by composite id, so the map lookup uses the full id; only the URL
+// GUESS (which has no server URL to consult) decomposes to the bare uid
+// part. A composite id absent from the maps but whose bare uid is present
+// resolves to the bare master's URL — graceful for pre-existing cached state
+// that predates composite identity.
 QUrl RemoteCalendarBackend::resolveItemUrl(const KDAV::DavUrl &davUrl, const QString &itemUid) const
 {
-    const auto it = m_uidToUrl.constFind(itemUid);
-    if (it != m_uidToUrl.constEnd()) {
+    if (const auto it = m_uidToUrl.constFind(itemUid); it != m_uidToUrl.constEnd()) {
         return QUrl(it.value());
     }
-    return generateItemUrl(davUrl, itemUid);
+    const auto decomposed = decomposeRecordIdentity(itemUid);
+    if (isExceptionRecordId(itemUid)) {
+        if (const auto master = m_uidToUrl.constFind(decomposed.uid);
+            master != m_uidToUrl.constEnd()) {
+            return QUrl(master.value());
+        }
+    }
+    return generateItemUrl(davUrl, decomposed.uid);
 }
 
 // Normalize a URL for use as a cache key (removes credentials)
@@ -1910,10 +1939,13 @@ QList<KCalendarCore::Incidence::Ptr> RemoteCalendarBackend::serveCachedItems(
         const auto incidences = incidencesFromIcal(row.ical);
         for (const auto &incidence : incidences) {
             // Phase B5: remember the verbatim bytes this incidence came
-            // from — see m_lastRawIcsByUid's doc comment.
-            m_lastRawIcsByUid[incidence->uid()] = row.ical.toUtf8();
+            // from — see m_lastRawIcsByUid's doc comment. VP.c-step-1b:
+            // keyed by the COMPOSITE record id (detached exceptions get
+            // their own id, distinct from their master's).
+            const QString recordId = recordIdForIncidence(incidence);
+            m_lastRawIcsByUid[recordId] = row.ical.toUtf8();
             // O54: the cache row's URL is the item's real server URL.
-            m_uidToUrl.insert(incidence->uid(), normalizeUrlKey(row.url));
+            m_uidToUrl.insert(recordId, normalizeUrlKey(row.url));
             cachedIncidences.append(incidence);
         }
     }
@@ -1938,9 +1970,13 @@ FetchOperation* RemoteCalendarBackend::fetchItems(const QString &calendarId)
         QList<BackendRecord> records;
         for (const auto &incidence : op->fetchedItems()) {
             if (incidence.isNull()) continue;
-            const QByteArray rawIcs = m_lastRawIcsByUid.value(incidence->uid());
+            const QDateTime recId =
+                incidence->hasRecurrenceId() ? incidence->recurrenceId() : QDateTime{};
+            const QString recordId = composeRecordIdentity(incidence->uid(), recId);
+            const QByteArray rawIcs = m_lastRawIcsByUid.value(recordId);
             records.append(blobRecordFromIcal(
-                incidence->uid(), !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence)));
+                incidence->uid(),
+                !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence), recId));
         }
         m_lastFetchRecords[calendarId] = records;
     });
@@ -2241,11 +2277,13 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
 
                 for (const auto &incidence : incidences) {
                     // Phase B5: remember the verbatim bytes — see
-                    // m_lastRawIcsByUid's doc comment.
-                    m_lastRawIcsByUid[incidence->uid()] = cachedIcal.toUtf8();
+                    // m_lastRawIcsByUid's doc comment. VP.c-step-1b: composite
+                    // record-id keying (detached exceptions distinguished).
+                    const QString recordId = recordIdForIncidence(incidence);
+                    m_lastRawIcsByUid[recordId] = cachedIcal.toUtf8();
                     // O54: the listing's URL is the item's real server URL,
                     // even when the content itself came from the cache.
-                    m_uidToUrl.insert(incidence->uid(), urlKey);
+                    m_uidToUrl.insert(recordId, urlKey);
                     fetchedIncidences.append(incidence);
                 }
 
@@ -2455,11 +2493,14 @@ void RemoteCalendarBackend::processFetchedItems(FetchOperation *op, const QStrin
         for (const auto &incidence : incidences) {
             // Phase B5: remember the verbatim bytes this incidence came
             // from (network response or cache) — see m_lastRawIcsByUid's
-            // doc comment.
-            m_lastRawIcsByUid[incidence->uid()] = icalData.toUtf8();
+            // doc comment. VP.c-step-1b: composite record-id keying so a
+            // detached exception fetched from its own href is not mistaken
+            // for the master.
+            const QString recordId = recordIdForIncidence(incidence);
+            m_lastRawIcsByUid[recordId] = icalData.toUtf8();
             // O54: urlKey IS the item's real, correct URL, straight from
             // the server's own listing — record it instead of discarding it.
-            m_uidToUrl.insert(incidence->uid(), urlKey);
+            m_uidToUrl.insert(recordId, urlKey);
             fetchedIncidences.append(incidence);
         }
 
@@ -3117,7 +3158,10 @@ WriteOperation* RemoteCalendarBackend::applyRecords(const QString &calendarId,
             const QByteArray icalData = rec.data;
             pendingStarters->append([this, opWeak, davUrl, uid, icalData, anyError,
                                      recordDone]() {
-                QUrl itemUrl = generateItemUrl(davUrl, uid);
+                // VP.c-step-1b: the URL guess must use the bare uid part —
+                // a composite id is not a valid "<...>.ics" filename.
+                const QString uidPart = decomposeRecordIdentity(uid).uid;
+                QUrl itemUrl = generateItemUrl(davUrl, uidPart);
 
                 KDAV::DavItem davItem;
                 davItem.setUrl(KDAV::DavUrl(itemUrl, davUrl.protocol()));
@@ -3423,9 +3467,12 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 // ============================================================================
 // IBlobBackend implementation (Phase D Task 13)
 //
-// recordId     = uid (O54: the CalDAV href basename need NOT be "<uid>.ics"
-//                for items another client created; write/delete/read paths
-//                resolve the real URL via resolveItemUrl())
+// recordId     = COMPOSITE record id (VP.c-step-1b): bare uid for a master,
+//                "uid\x01<UTC-ISO recurrenceId>" for a detached exception
+//                (separate CalDAV resource sharing the master's UID). O54:
+//                the CalDAV href basename need NOT be "<uid>.ics" for items
+//                another client created; write/delete/read paths resolve the
+//                real URL via resolveItemUrl() (composite-aware).
 // collectionId = calendarId
 // data         = raw iCal bytes
 // contentHash  = SHA-256 of the bytes
@@ -3438,13 +3485,18 @@ bool RemoteCalendarBackend::setRawIcs(const QString &calendarId, const QString &
 
 namespace {
 
-/// Build a BackendRecord from raw iCal bytes and a uid.
+/// Build a BackendRecord from raw iCal bytes, a uid, and (for a detached
+/// exception) its recurrence-id. VP.c-step-1b: the record's id is the
+/// COMPOSITE identity — the bare uid for a master, "uid\x01<UTC-ISO
+/// recurrenceId>" for an exception — so master and exception are distinct
+/// records even though they share the RFC 5545 UID.
 Kalburator::Sync::BackendRecord blobRecordFromIcal(
     const QString &uid,
-    const QByteArray &icalBytes)
+    const QByteArray &icalBytes,
+    const QDateTime &recurrenceId)
 {
     Kalburator::Sync::BackendRecord rec;
-    rec.id          = uid;
+    rec.id          = composeRecordIdentity(uid, recurrenceId);
     rec.type        = QStringLiteral("calendar");
     rec.data        = icalBytes;
     rec.contentHash = QString::fromLatin1(
@@ -3550,10 +3602,15 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
         // content, silently defeating convergence. Only falls back to
         // re-derivation if the map has no entry (shouldn't happen for
         // anything fetchItems() actually produced, but fail soft rather
-        // than drop the record).
-        const QByteArray rawIcs = m_lastRawIcsByUid.value(incidence->uid());
+        // than drop the record). VP.c-step-1b: composite record-id keying —
+        // the map is keyed by the record id the fetch loops minted.
+        const QDateTime recId =
+            incidence->hasRecurrenceId() ? incidence->recurrenceId() : QDateTime{};
+        const QString recordId = composeRecordIdentity(incidence->uid(), recId);
+        const QByteArray rawIcs = m_lastRawIcsByUid.value(recordId);
         result.append(blobRecordFromIcal(
-            incidence->uid(), !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence)));
+            incidence->uid(),
+            !rawIcs.isEmpty() ? rawIcs : icalFromIncidence(incidence), recId));
     }
 
     op->deleteLater();
@@ -3576,12 +3633,30 @@ bool RemoteCalendarBackend::recordsFromLastFetch(const QString &collectionId,
 
 std::optional<BackendRecord> RemoteCalendarBackend::loadRecord(const QString &recordId)
 {
-    // recordId == uid; search all registered calendars.
+    // VP.c-step-1b: recordId may be a bare master uid OR a composite
+    // exception id ("uid\x01<UTC-ISO recurrenceId>"). Search all registered
+    // calendars; decompose so the record minted from a composite id keeps the
+    // composite id (and the raw bytes found via its own href).
+    const auto decomposed = decomposeRecordIdentity(recordId);
     for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {
         if (it->davUrl.url().isEmpty()) continue;
+        // Graceful for pre-existing cached state: a composite id whose map
+        // entry was never minted (the exception was collapsed into the bare
+        // master record) resolves to the bare master's URL and is served as a
+        // bare master record — the exact shape that state stores.
+        if (isExceptionRecordId(recordId)
+            && !m_uidToUrl.contains(recordId)
+            && m_uidToUrl.contains(decomposed.uid)) {
+            const QString masterIcs = getRawIcs(it.key(), decomposed.uid);
+            if (!masterIcs.isEmpty()) {
+                return blobRecordFromIcal(decomposed.uid, masterIcs.toUtf8());
+            }
+            continue;
+        }
         const QString icsContent = getRawIcs(it.key(), recordId);
         if (!icsContent.isEmpty()) {
-            return blobRecordFromIcal(recordId, icsContent.toUtf8());
+            return blobRecordFromIcal(decomposed.uid, icsContent.toUtf8(),
+                                      decomposed.recurrenceId);
         }
     }
     return std::nullopt;
@@ -3607,7 +3682,10 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
         return {};
     }
     const KDAV::DavUrl davUrl = *maybeDavUrl;
-    const QUrl itemUrl = generateItemUrl(davUrl, record.id);
+    // VP.c-step-1b: the URL guess decomposes to the bare uid part (a
+    // composite id is not a valid "<...>.ics" filename); the record id
+    // itself stays composite so noteItemWritten keys the maps correctly.
+    const QUrl itemUrl = generateItemUrl(davUrl, decomposeRecordIdentity(record.id).uid);
 
     m_contentCache->ensureOpen();
 
@@ -3629,9 +3707,15 @@ QString RemoteCalendarBackend::createRecord(const QString &collectionId,
 
 std::optional<QString> RemoteCalendarBackend::findOwningCalendar(const QString &uid) const
 {
-    // Pass 0 (O54): the uid->URL map — knows items whose server filename is
-    // not "<uid>.ics", which the URL-guessing passes below can never find.
-    const auto knownIt = m_uidToUrl.constFind(uid);
+    // Pass 0 (O54): the composite-id->URL map — knows items whose server
+    // filename is not "<uid>.ics", which the URL-guessing passes below can
+    // never find. VP.c-step-1b: @p uid may be a composite (exception) record
+    // id; look up the full id first, then fall back to the bare uid for
+    // pre-existing cached state that predates composite identity.
+    auto knownIt = m_uidToUrl.constFind(uid);
+    if (knownIt == m_uidToUrl.constEnd() && isExceptionRecordId(uid)) {
+        knownIt = m_uidToUrl.constFind(decomposeRecordIdentity(uid).uid);
+    }
     if (knownIt != m_uidToUrl.constEnd()) {
         const QString itemPath = QUrl(knownIt.value()).path();
         for (auto it = m_calendars.constBegin(); it != m_calendars.constEnd(); ++it) {

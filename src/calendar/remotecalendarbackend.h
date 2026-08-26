@@ -585,10 +585,10 @@ private:
     std::shared_ptr<KDAV::EtagCache> m_etagCache;
     QMap<QString, QString> m_localEtags;
 
-    // O54: uid -> normalized item URL (normalizeUrlKey form) for every item
-    // this instance has fetched or written. CalDAV keeps whatever filename
-    // the CREATING client chose for the life of the object, so an item
-    // adopted from another client generally does NOT live at
+    // O54: record id -> normalized item URL (normalizeUrlKey form) for every
+    // item this instance has fetched or written. CalDAV keeps whatever
+    // filename the CREATING client chose for the life of the object, so an
+    // item adopted from another client generally does NOT live at
     // "<calendar>/<uid>.ics" — deriving write URLs by UID concatenation
     // (generateItemUrl) PUTs to a resource that doesn't exist and collides
     // with the UID at its real URL (SabreDAV 400 "uid already exists").
@@ -600,6 +600,15 @@ private:
     // create, where the guess is correct by definition. In-memory only (same
     // lifecycle as m_localEtags): a fresh instance repopulates it on its
     // first fetch, which every engine run performs before it writes.
+    //
+    // VP.c-step-1b: keyed by the COMPOSITE record id — bare uid for a master,
+    // "uid\x01<UTC-ISO recurrenceId>" for a detached exception (see
+    // src/sync/recordidentity.h). A master and its exceptions are separate
+    // CalDAV resources, so each gets its own URL entry; resolveItemUrl() and
+    // findOwningCalendar() look up the full composite id and only decompose
+    // for the URL-guess fallback. Incidence-world callers (startSync,
+    // pushItems, launchStartSyncModify) keep bare-uid keying — they only ever
+    // see the master incidence.
     QHash<QString, QString> m_uidToUrl;
 
     // E6/O35: calendars whose m_etagCache rows have already been seeded from
@@ -611,9 +620,12 @@ private:
     // caldavcontentcache.h). Lazily opened on first fetchItems()/pushItems().
     std::unique_ptr<CalDavContentCache> m_contentCache;
 
-    // Phase B5 finding: the last VERBATIM raw iCal bytes served for each uid
-    // (whether from the network or the content cache), keyed by uid.
-    // loadRecords() uses this instead of re-deriving bytes via
+    // Phase B5 finding: the last VERBATIM raw iCal bytes served for each
+    // record id (whether from the network or the content cache). Keyed by
+    // the COMPOSITE record id (VP.c-step-1b, src/sync/recordidentity.h) —
+    // bare uid for a master, "uid\x01<UTC-ISO recurrenceId>" for a detached
+    // exception — so each fetched resource's own bytes stay attached to its
+    // own record. loadRecords() uses this instead of re-deriving bytes via
     // icalFromIncidence(incidence) when available. Re-deriving is NOT
     // equivalent to the original bytes: KCalendarCore::Incidence defaults
     // created()/lastModified() to the parse-time wall clock when the source

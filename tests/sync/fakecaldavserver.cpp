@@ -128,7 +128,14 @@ void FakeCalDavServer::setSeedEvents(const QString &collectionHref,
         IcsRecord rec;
         rec.data = ics;
         rec.etag = makeEtag(ics);
-        col.insert(uid, rec);
+        // VP.c-step-1b: the store is keyed by RESOURCE FILE NAME. The default
+        // resource for a seeded event lives at "<uid>.ics" (fileName == uid).
+        const QString fileName = uid;
+        const bool isNew = !col.contains(fileName);
+        col.insert(fileName, rec);
+        if (isNew) {
+            m_uidToFileNames[collectionHref][uid].append(fileName);
+        }
         // E7/O36: every seed (initial population AND a later re-seed used to
         // simulate "another client edited this item") is a real mutation
         // from REPORT sync-collection's point of view.
@@ -144,9 +151,9 @@ void FakeCalDavServer::logChange(const QString &collectionHref, const QString &u
 bool FakeCalDavServer::hasEvent(const QString &collectionHref,
                                 const QString &uid) const
 {
-    auto it = m_store.constFind(collectionHref);
-    if (it == m_store.constEnd()) return false;
-    return it->contains(uid);
+    // A UID exists if ANY resource in the collection carries it (a master or
+    // one of its detached exceptions).
+    return m_uidToFileNames.value(collectionHref).contains(uid);
 }
 
 QList<QByteArray> FakeCalDavServer::storedEvents(
@@ -163,12 +170,19 @@ QList<QByteArray> FakeCalDavServer::storedEvents(
 
 void FakeCalDavServer::removeEvent(const QString &collectionHref, const QString &uid)
 {
+    // "Another client deleted the event" — removes EVERY resource carrying
+    // the uid (a master and any detached exceptions share it).
     auto it = m_store.find(collectionHref);
     if (it == m_store.end()) return;
-    if (it->remove(uid) > 0) {
-        m_fileNameByUid[collectionHref].remove(uid);
-        logChange(collectionHref, uid, /*deleted=*/true);
+    auto uidFilesIt = m_uidToFileNames.find(collectionHref);
+    if (uidFilesIt == m_uidToFileNames.end()) return;
+    const QList<QString> files = uidFilesIt->value(uid);
+    if (files.isEmpty()) return;
+    for (const QString &fileName : files) {
+        it->remove(fileName);
     }
+    uidFilesIt->remove(uid);
+    logChange(collectionHref, uid, /*deleted=*/true);
 }
 
 void FakeCalDavServer::setSeedEventAt(const QString &collectionHref,
@@ -180,11 +194,12 @@ void FakeCalDavServer::setSeedEventAt(const QString &collectionHref,
     IcsRecord rec;
     rec.data = ics;
     rec.etag = makeEtag(ics);
-    m_store[collectionHref].insert(uid, rec);
-    if (fileName != uid) {
-        m_fileNameByUid[collectionHref].insert(uid, fileName);
-    } else {
-        m_fileNameByUid[collectionHref].remove(uid);
+    // VP.c-step-1b: keyed by the resource's file name; a UID may have
+    // several resources (a master plus its detached exceptions).
+    const bool isNew = !m_store[collectionHref].contains(fileName);
+    m_store[collectionHref].insert(fileName, rec);
+    if (isNew) {
+        m_uidToFileNames[collectionHref][uid].append(fileName);
     }
     // E7/O36: every seed (initial population AND a later re-seed used to
     // simulate "another client edited this item") is a real mutation
@@ -195,18 +210,19 @@ void FakeCalDavServer::setSeedEventAt(const QString &collectionHref,
 QString FakeCalDavServer::hrefForUid(const QString &collectionHref,
                                      const QString &uid) const
 {
-    const QString fileName =
-        m_fileNameByUid.value(collectionHref).value(uid, uid);
+    const QList<QString> files =
+        m_uidToFileNames.value(collectionHref).value(uid);
+    const QString fileName = files.isEmpty() ? uid : files.first();
     return collectionHref + fileName + QStringLiteral(".ics");
 }
 
 QString FakeCalDavServer::uidForFileName(const QString &collectionHref,
                                          const QString &fileName) const
 {
-    const auto colIt = m_fileNameByUid.constFind(collectionHref);
-    if (colIt == m_fileNameByUid.constEnd()) return QString();
+    const auto colIt = m_uidToFileNames.constFind(collectionHref);
+    if (colIt == m_uidToFileNames.constEnd()) return QString();
     for (auto it = colIt->constBegin(); it != colIt->constEnd(); ++it) {
-        if (it.value() == fileName) return it.key();
+        if (it.value().contains(fileName)) return it.key();
     }
     return QString();
 }
@@ -441,14 +457,12 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
         // Item-level fetch (RemoteCalendarBackend::getRawIcs / loadRecord):
         // serve the stored iCal body for "/<collection>/<fileName>".
         const int lastSlash = path.lastIndexOf(QLatin1Char('/'));
-        const QString uid = uidFromPath(path);
-        if (lastSlash > 0 && !uid.isEmpty()) {
+        const QString fileName = uidFromPath(path);
+        if (lastSlash > 0 && !fileName.isEmpty()) {
             const QString colHref = path.left(lastSlash + 1);
-            const QString aliased = uidForFileName(colHref, uid);
-            const QString realUid = aliased.isEmpty() ? uid : aliased;
             auto colIt = m_store.constFind(colHref);
             if (colIt != m_store.constEnd()) {
-                auto recIt = colIt->constFind(realUid);
+                auto recIt = colIt->constFind(fileName);
                 if (recIt != colIt->constEnd()) {
                     writeResponse(socket, 200, "OK", recIt.value().data,
                                   "ETag: " + makeEtag(recIt.value().data).toUtf8() + "\r\n");
@@ -622,35 +636,36 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
         return;
     }
 
-    // O54: resolve the UID through the alias map. A PUT to an item whose
-    // server-assigned filename differs from its UID targets that aliased
-    // href; a PUT to any OTHER URL for a UID the store already holds is the
-    // exact mistake O54 found — SabreDAV answers it with 400 ("Calendar
-    // object with uid already exists in this calendar collection"), not 412.
+    // O54/VP.c-step-1b: resolve which UID THIS RESOURCE carries. The store is
+    // keyed by file name, and several resources may share one UID (a master
+    // plus its detached exceptions) — the resource's own href is what
+    // distinguishes them. A PUT to an item whose server-assigned filename
+    // differs from its UID targets that aliased href; a PUT creating a NEW
+    // resource whose UID already lives at a DIFFERENT filename is the exact
+    // mistake O54 found — SabreDAV answers it with 400 ("Calendar object
+    // with uid already exists in this calendar collection"), not 412.
     QString uid = uidForFileName(collectionHref, fileName);
-    if (uid.isEmpty()) uid = fileName;
 
     QHash<QString, IcsRecord> &col = m_store[collectionHref];
-    const bool isNew = !col.contains(uid);
+    const bool isNew = !col.contains(fileName);
 
     if (!isNew) {
-        const QString registeredFileName =
-            m_fileNameByUid.value(collectionHref).value(uid);
-        if (!registeredFileName.isEmpty() && registeredFileName != fileName) {
-            writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
-                "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
-                "  <s:exception>Sabre\\DAV\\Exception\\BadRequest</s:exception>\n"
-                "  <s:message>Calendar object with uid already exists in this "
-                "calendar collection.</s:message>\n"
-                "</d:error>\n"));
-            return;
-        }
+        // Updating an existing resource at its own href — always legal.
+        // (The wrong-URL duplicate-uid mistake cannot reach here: the target
+        // filename already exists, so it is this resource's own href.)
+        if (uid.isEmpty()) uid = uidFromIcs(body);
     } else {
-        // Creating a new resource whose payload carries a UID already stored
-        // under a different filename — same SabreDAV uniqueness violation.
+        // Creating a NEW resource: the body's UID is authoritative. O54:
+        // creating a resource whose UID already lives under a DIFFERENT
+        // filename is the SabreDAV uniqueness violation — UNLESS the payload
+        // is a detached exception (RECURRENCE-ID present) sharing the
+        // master's UID, which is legal CalDAV.
         const QString bodyUid = uidFromIcs(body);
-        if (!bodyUid.isEmpty() && col.contains(bodyUid)) {
+        if (!bodyUid.isEmpty()) uid = bodyUid;
+        const QList<QString> existing =
+            m_uidToFileNames.value(collectionHref).value(bodyUid);
+        if (!bodyUid.isEmpty() && !existing.isEmpty()
+            && !body.contains("RECURRENCE-ID")) {
             writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
                 "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
                 "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
@@ -660,7 +675,6 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
                 "</d:error>\n"));
             return;
         }
-        if (!bodyUid.isEmpty()) uid = bodyUid;
     }
 
     // RFC 7232 preconditions (E4/O32 — real servers enforce these; a fake
@@ -682,7 +696,7 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
         // but some client helpers strip the quotes before echoing one back
         // in If-Match (davSyncRequest does exactly that).
         const QString given = QString::fromUtf8(ifMatch.trimmed());
-        const QString want = col.value(uid).etag;
+        const QString want = col.value(fileName).etag;
         if (given != want
             && given != want.mid(1, want.length() - 2)) {
             writeResponse(socket, 412, "Precondition Failed", QByteArray());
@@ -695,11 +709,15 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
     // Salt with a counter so repeated PUTs produce distinct ETags.
     static int s_counter = 0;
     rec.etag = makeEtag(body + QByteArray::number(++s_counter));
-    col.insert(uid, rec);
-    // O54: CalDAV keeps whatever filename the creating/updating client
-    // addressed — register it permanently for this UID.
-    if (fileName != uid) {
-        m_fileNameByUid[collectionHref].insert(uid, fileName);
+    col.insert(fileName, rec);
+    // O54/VP.c-step-1b: CalDAV keeps whatever filename the
+    // creating/updating client addressed — register it for this UID (once,
+    // even across re-PUTs of the same resource).
+    if (!uid.isEmpty()) {
+        QList<QString> &files = m_uidToFileNames[collectionHref][uid];
+        if (!files.contains(fileName)) {
+            files.append(fileName);
+        }
     }
     logChange(collectionHref, uid, /*deleted=*/false);
 
@@ -740,23 +758,35 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
         return;
     }
     const QString collectionHref = path.left(lastSlash + 1);
-    // O54: resolve through the alias map, same as handlePut().
-    QString uid = uidForFileName(collectionHref, uidFromPath(path));
-    if (uid.isEmpty()) uid = uidFromPath(path);
-    if (uid.isEmpty()) {
+    // VP.c-step-1b: delete the RESOURCE at this href (file-name keyed). A
+    // master and its detached exceptions are separate resources and are
+    // deleted independently. UID resolution is only needed for the change
+    // journal.
+    const QString fileName = uidFromPath(path);
+    if (fileName.isEmpty()) {
         writeResponse(socket, 400, "Bad Request", QByteArray());
         return;
     }
 
     auto colIt = m_store.find(collectionHref);
-    if (colIt == m_store.end() || !colIt->contains(uid)) {
+    if (colIt == m_store.end() || !colIt->contains(fileName)) {
         writeResponse(socket, 404, "Not Found", QByteArray());
         return;
     }
 
-    colIt->remove(uid);
-    m_fileNameByUid[collectionHref].remove(uid);
-    logChange(collectionHref, uid, /*deleted=*/true);
+    colIt->remove(fileName);
+    const QString uid = uidForFileName(collectionHref, fileName);
+    if (!uid.isEmpty()) {
+        auto uidFilesIt = m_uidToFileNames.find(collectionHref);
+        if (uidFilesIt != m_uidToFileNames.end()) {
+            QList<QString> &files = uidFilesIt.value()[uid];
+            files.removeAll(fileName);
+            if (files.isEmpty()) {
+                uidFilesIt.value().remove(uid);
+            }
+        }
+        logChange(collectionHref, uid, /*deleted=*/true);
+    }
     writeResponse(socket, 204, "No Content", QByteArray());
     maybeDieAfterWrite();
 }
@@ -874,7 +904,10 @@ QByteArray FakeCalDavServer::xmlForCalendarQuery(
     auto it = m_store.constFind(collectionHref);
     if (it != m_store.constEnd()) {
         for (auto recIt = it->constBegin(); recIt != it->constEnd(); ++recIt) {
-            const QString href = hrefForUid(collectionHref, recIt.key());
+            // VP.c-step-1b: one href per RESOURCE — two resources sharing a
+            // UID (master + detached exception) both appear.
+            const QString href =
+                collectionHref + recIt.key() + QStringLiteral(".ics");
             xml += QStringLiteral("  <d:response>\n");
             xml += QStringLiteral("    <d:href>%1</d:href>\n").arg(href);
             xml += QStringLiteral("    <d:propstat>\n");
@@ -998,12 +1031,12 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
     for (const QString &href : hrefs) {
         const QUrl hrefUrl(href);
         const QString hrefPath = hrefUrl.isRelative() ? href : hrefUrl.path();
-        // O54: resolve the item's UID through the alias map — a multiget
-        // href's filename need not equal the UID.
-        QString uid = uidForFileName(collectionHref,
-                                     uidFromPath(hrefPath));
-        if (uid.isEmpty()) uid = uidFromPath(hrefPath);
-        if (uid.isEmpty()) continue;
+        // VP.c-step-1b: resolve the resource by its FILE NAME — a multiget
+        // href's filename need not equal the UID, and two resources may
+        // share one UID (master + detached exception), so per-UID lookup
+        // would serve the wrong bytes for one of them.
+        const QString fileName = uidFromPath(hrefPath);
+        if (fileName.isEmpty()) continue;
 
         // Real CalDAV servers always use path-only (absolute path) hrefs in
         // multistatus responses, never full URLs with scheme+host. KDAV's
@@ -1019,7 +1052,7 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
         xml += QStringLiteral("      <d:prop>\n");
 
         if (storeIt != m_store.constEnd()) {
-            auto recIt = storeIt->constFind(uid);
+            auto recIt = storeIt->constFind(fileName);
             if (recIt != storeIt->constEnd()) {
                 xml += QStringLiteral("        <d:getetag>%1</d:getetag>\n")
                            .arg(recIt->etag);

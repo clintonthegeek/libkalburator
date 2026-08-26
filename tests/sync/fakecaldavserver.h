@@ -271,13 +271,18 @@ private:
     void handleMkCalendar(QTcpSocket *socket, const QString &path);
     void handleProppatch(QTcpSocket *socket, const QString &path);
     bool isKnownCollection(const QString &href) const;
-    /// O54: the item href for @p uid in @p collectionHref — the aliased
-    /// filename when the item was seeded/PUT at a non-UID filename, else the
-    /// default "<uid>.ics".
+    /// O54: the item href for @p uid in @p collectionHref — the FIRST
+    /// registered filename for that uid (the aliased filename when the item
+    /// was seeded/PUT at a non-UID filename, else the default "<uid>.ics").
+    /// When a UID is shared across several resources (a master plus its
+    /// detached exceptions), the primary resource's href is returned — the
+    /// sync-collection report's per-UID dedup only ever reports one href.
     QString hrefForUid(const QString &collectionHref, const QString &uid) const;
-    /// O54: inverse of hrefForUid() — the UID of the item registered at
-    /// @p fileName in @p collectionHref, or empty when no alias maps that
-    /// filename (the caller then assumes fileName IS the uid).
+    /// O54/VP.c-step-1b: the UID of the resource registered at @p fileName
+    /// in @p collectionHref, or empty when no resource registers that
+    /// filename. With detached exceptions, several filenames can resolve to
+    /// the SAME UID (master + exceptions share it); the resource's OWN href
+    /// is what distinguishes them.
     QString uidForFileName(const QString &collectionHref,
                            const QString &fileName) const;
     void writeResponse(QTcpSocket *socket,
@@ -344,12 +349,18 @@ private:
     QHash<QByteArray, int> m_requestCounts;  // method -> count, reset on startListening()
     QHash<QByteArray, QStringList> m_requestPaths;  // method -> request target paths, reset on startListening()
 
-    /// O54: collectionHref -> (uid -> server-assigned filename, without the
-    /// .ics suffix). Absence of an entry means the item lives at "<uid>.ics".
-    QHash<QString, QHash<QString, QString>> m_fileNameByUid;
+    /// VP.c-step-1b: collectionHref -> (uid -> filenames, in registration
+    /// order, WITHOUT the .ics suffix). A UID legitimately maps to SEVERAL
+    /// filenames when a master and its detached exceptions share it — each
+    /// is a separate CalDAV resource with its own href. The first entry is
+    /// the "primary" resource (the bare-UID master in the common case).
+    /// Presence of a uid here is the collection-level "does this event
+    /// exist" predicate (hasEvent).
+    QHash<QString, QHash<QString, QList<QString>>> m_uidToFileNames;
 
     /// Keyed by collectionHref (e.g. "/calendars/testuser/personal/")
-    /// then by UID.
+    /// then by RESOURCE FILE NAME (without the .ics suffix) — two resources
+    /// sharing one UID (master + detached exception) coexist as two entries.
     QHash<QString, QHash<QString, IcsRecord>> m_store;
 
     // ---- E7/O36: RFC 6578 sync-collection ----
