@@ -99,6 +99,16 @@ by contrast (O61(e)).
 - Open-extension carriers SURVIVE via nav `POST …/contacts/{id}/extensions`
   + collection-level `$expand=extensions($filter=Id eq '<full-id>')`.
   PATCH-borne extensions break (500s); wrong prefix in filter ⇒ HTTP 500. O66 correction.
+- **Contacts delta rejects ALL shaping params**: `$orderby, $filter,
+  $select, $expand, $search, $top` on `/me/contacts/delta` ⇒ 400
+  `ErrorInvalidUrlQuery`. Carrier `$expand` therefore CANNOT ride delta —
+  expanded full listings are the only record+carrier read surface.
+  Initial delta walks DO return full projections (no O69-style skeletons
+  observed). O70.
+- Expanded listing verified live: carriers return inline as
+  `extensions[]` rows with full-prefix ids
+  (`Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon`) and
+  `@odata.type: "#microsoft.graph.openTypeExtension"`. O70.
 
 ### Todo (todoTask)
 

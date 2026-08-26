@@ -1,10 +1,62 @@
 # P2 — Contacts backends: status
 
-**Status:** OPEN (handed to a fresh session 2026-08-25). Nothing started
-beyond this scoping.
+**Status:** IN PROGRESS (design pass pinned 2026-08-25; implementation
+next). See `2026-08-25-p2-session-log.md` for the running log.
 
 Goal (proposal §4 P2): `GraphContactsBackend` + `GooglePeopleBackend`,
 crossing-gated both directions, live-checkpointed per invariant 1.
+
+## Design decisions (pinned 2026-08-25, from the design pass + live probes)
+
+- **File placement:** `src/contacts/graphcontactsbackend.{h,cpp}` +
+  `src/contacts/googlepeoplebackend.{h,cpp}`; test bed `tests/contacts/`
+  (`mockgraphcontactsserver`, `mockpeopleserver`, backend suites, live
+  suites) wired like `tests/graph/` / `tests/google/`.
+- **Base class: `SyncBackendBase` directly** (contacts domain has no
+  calendar-typed `SyncBackend` subclass; the P1 backends are the shape
+  template — heap-held FetchState/ApplyState via shared_ptr, single-shot
+  fetch memo, atomic persisted state file per cacheDir, per-collection
+  FIFO via enqueueOperation, terminal write contract).
+- **BackendRecord.id = server contact id** (Graph: raw `id` — ids ending
+  `=` must NEVER be URL-encoded in paths, O66(d); Google:
+  `resourceName` e.g. `people/c123`). Vendor JSON rides in record data;
+  canon conversion stays owned by the landed edge stages.
+- **Graph READS = expanded full listings, NOT delta** — live probe found
+  contacts change tracking rejects `$expand/$top/$filter/...` outright
+  (**FINDINGS O70**), so carriers are unreachable on delta pages and
+  GET-by-id enrichment is broken (O66(f)). Every fetch = per-folder walk
+  of `/me/contactFolders/{id}/contacts?$expand=extensions($filter=Id eq
+  'Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon')`
+  (+ `/me/contacts` for the default folder), reporting the FULL merged
+  set. Correctness over incrementality; delta is a v2 option.
+- **Graph WRITES:** create = POST `/me/contacts` with demoted body MINUS
+  the `extensions[]` carrier row (never inline-at-create, O66
+  correction); then nav POST the carrier to `/contacts/{id}/extensions`;
+  never trust the create echo — next fetch's expand re-reads. Update =
+  PATCH in place with plain fields only (carrier changes routed to the
+  nav channel, not PATCH-borne). addIdAlias bridged on create.
+  Delete-by-id accepts 204/200; a 404 triggers one confirming re-list —
+  gone ⇒ success (idempotent semantics under O66(f) flakiness),
+  still-present ⇒ fail loud (no silent best-effort).
+- **Folder discovery:** GET `/me/contactFolders`; each folder becomes an
+  available collection (writable except `contacts`-style system folders?
+  — v1: all folders writable; `parentFolderId` recorded in extras).
+- **Google reads/writes:** `people.connections?pageSize=&pageToken=&
+  personFields=` paging per the promote stage's field needs;
+  `personFields` must cover every field the promote stage reads (fields
+  list shared constant between client call and stage expectations);
+  `nextSyncToken` captured when present. Creates/updates ride the normal
+  People API seams (`createContact`, `{resourceName}:updateContact` with
+  `updatePersonFields`) — clientData carriers ride inline (live-Reversible,
+  O66 verdict table). Deletes via `{resourceName}:deleteContact`.
+- **Photos:** v1 declares existing loss-profile rows and does nothing
+  more — MS Dropped (nav resource), Google Simplified URL-only. No
+  binary fetch in P2 (open question Q3 closed).
+- **Identity-free backends:** records carry exactly what the edges emit
+  (anchors + email rows); resolver needs nothing extra (open Q2 closed).
+- **O69 lesson retained where applicable:** any listing page item lacking
+  expected richness is union-merged over cached rich records rather than
+  clobbering (defensive, cheap).
 
 ## Binding constraints for this phase
 
@@ -55,21 +107,25 @@ crossing-gated both directions, live-checkpointed per invariant 1.
 
 ## Checklist
 
-- [ ] Design pass: read SyncBackend contract notes (see P1 file's design
-      decisions), decide record-id anchor policy per vendor (contact ids
-      ending `=` must NOT be URL-encoded in paths — encoded ⇒ 404)
-- [ ] Mock servers (contacts-flavored) + transport-level pins
-- [ ] `GraphContactsBackend`: listings/delta reads, nav-POST carrier
-      writes, folder discovery
-- [ ] `GooglePeopleBackend`: connections paging, clientData carriers
-- [ ] Crossing gates both directions (O64 rule)
-- [ ] Live checkpoints vs real accounts (invariant 1)
+- [x] Design pass (2026-08-25): SyncBackend contract read; record-id
+      anchor policy pinned (`=` ids never URL-encoded); live probes
+      settled delta-vs-listing (**O70**), carrier ingest shape, photo
+      scope, identity interplay — decisions above
+- [ ] P2.b: Mock servers (contacts-flavored) + transport-level pins
+- [ ] P2.c: `GraphContactsBackend`: expanded-listing reads, nav-POST
+      carrier writes, folder discovery
+- [ ] P2.d: `GooglePeopleBackend`: connections paging, clientData carriers
+- [ ] P2.e: Crossing gates both directions (O64 rule)
+- [ ] P2.f: Live checkpoints vs real accounts (invariant 1)
 
 ## Open questions to settle in the design pass
 
-1. Delta vs listing reads on Graph contacts: does `/me/contacts/delta`
-   suffer O69-style skeletons here too? Probe BEFORE building on it.
-2. Person-identity interplay: contacts sync touches the §5 identity layer
-   (P5 wires it into the engine) — keep backends identity-free, but make
-   sure records carry whatever the resolver needs.
-3. Photo/binary fields (contact photos) — v1 scope or declared Dropped?
+1. ~~Delta vs listing reads on Graph contacts~~ — SETTLED: delta rejects
+   `$expand` (O70) ⇒ expanded listings every fetch; see pinned decisions.
+2. ~~Person-identity interplay~~ — SETTLED: backends identity-free; edges
+   already emit what the resolver needs.
+3. ~~Photo/binary fields~~ — SETTLED: declared per existing loss profiles
+   (MS Dropped, Google Simplified URL-only); no binary fetch in P2.
+4. NEW (live-checkpoint probe): carrier UPDATE path on Graph — nav PATCH
+   of the existing extension instance (`/contacts/{id}/extensions/{extId}`)
+   is the only unproven seam; probe at P2.f, declare loss if it breaks.

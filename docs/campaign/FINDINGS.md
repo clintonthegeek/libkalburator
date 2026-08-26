@@ -3177,3 +3177,23 @@ re-adds) surfacing them eventually.
 Identity consequence: records delivered via delta may lack uid/iCalUId —
 the loss-profile fallback chain (uid ← iCalUId ← transport id) is not just
 a $select-projection concern, it fires on NORMAL consumer delta traffic.
+
+### O70 — OPEN — B2C P2 design-pass live probe, 2026-08-25: contacts change tracking rejects $expand (and every shaping param)
+
+Design-pass probe of `/me/contacts/delta` against the real consumer
+account: ANY of `$orderby, $filter, $select, $expand, $search, $top` on
+contacts change tracking ⇒ HTTP 400 `ErrorInvalidUrlQuery` ("not
+supported with change tracking over the 'Contacts' resource"). Plain
+`/me/contacts?$expand=extensions($filter=Id eq 'Microsoft.OutlookServices.
+OpenTypeExtension.kalburator.canon')` works and returns carriers inline
+(full-prefix extension ids confirmed in the wild).
+
+Backend consequence: unlike events (where O69 forced union-merge over
+delta skeletons), contacts cannot ride delta at all in v1 — the carrier
+channel ($expand) is UNREACHABLE on delta pages and GET-by-id enrichment
+is broken (O66(f)). The only single surface delivering records AND
+carriers is the expanded full listing; `GraphContactsBackend` fetch =
+expanded listing walk per folder, every time (correctness over
+incrementality). Initial delta walk DID return full projections (not
+skeletons), so delta remains a v2 option if a carrier-less incremental
+pre-pass ever becomes worth its merge complexity.
