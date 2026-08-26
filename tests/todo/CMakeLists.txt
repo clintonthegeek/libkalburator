@@ -69,3 +69,20 @@ kalburator_add_todo_vendor_mock_test(tst_mockgoogle_tasks_server
     kalburator_mock_google_tasks_server)
 kalburator_add_todo_vendor_mock_test(tst_mockgraph_todo_server
     kalburator_mock_graph_todo_server)
+
+# B2C P3.c — GoogleTasksBackend against the P3.b mock Tasks server.
+# Links the real library (whole-archive) so the backend under test is the
+# production one, mirroring tests/contacts/tst_google_people_backend.
+add_executable(tst_google_tasks_backend tst_google_tasks_backend.cpp)
+target_link_libraries(tst_google_tasks_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        kalburator_mock_google_tasks_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_google_tasks_backend COMMAND tst_google_tasks_backend)
+set_tests_properties(tst_google_tasks_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

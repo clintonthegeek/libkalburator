@@ -112,7 +112,12 @@ backends are its W1/W2 Google/MSToDo test legs.
       todoTask double w/ expand-on/off, inline-create wire-lie (echoed,
       not stored), nav-POST UPSERT, PATCH-with-extensions ⇒ 500; 10+12
       slots green)
-- [ ] P3.c: `GoogleTasksBackend` + suite
+- [x] P3.c: `GoogleTasksBackend` (landed 2026-08-25 — tasklist discovery
+      w/ supportsVTodo DTO surfacing; full paged listings every fetch
+      w/ showCompleted+showHidden pinned; deleted:true tombstones; O68
+      strip seam (id/created/updated); alias bridging; PATCH-in-place;
+      404-delete-as-success (no re-list — Tasks not flaky); atomic cache
+      persistence, no token (API has none). 9 slots green)
 - [ ] P3.d: `GraphTodoTaskBackend` + suite
 - [ ] P3.e: kind-demux multi-spec split + suites (incl. raw-bytes filter)
 - [ ] P3.f: live checkpoints both vendors (invariant 1) + fixture corpora

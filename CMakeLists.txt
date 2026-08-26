@@ -413,6 +413,9 @@ set(KALBURATOR_TODO_HEADERS
     src/todo/tododomaindefinition.h
     src/todo/todostockshapes.h
     src/todo/todoplugin.h
+    # B2C P3.c: Google Tasks backend (full-listing reads — Tasks has NO sync
+    # tokens; O68 strip-at-create; idempotent deletes)
+    src/todo/googletasksbackend.h
 )
 set(KALBURATOR_TODO_SOURCES
     src/todo/icalvtodoproperties.cpp
@@ -430,6 +433,8 @@ set(KALBURATOR_TODO_SOURCES
     src/todo/tododomaindefinition.cpp
     src/todo/todostockshapes.cpp
     src/todo/todoplugin.cpp
+    # B2C P3.c: Google Tasks backend
+    src/todo/googletasksbackend.cpp
 )
 
 set(KALBURATOR_CONTACTS_HEADERS

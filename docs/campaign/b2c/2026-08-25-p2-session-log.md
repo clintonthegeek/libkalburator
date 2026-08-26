@@ -100,4 +100,12 @@ this file records per-step progress, decisions, and deviations.
   RemoteCalendarBackend with FilteredCollectionBackend views — RAW-BYTES
   filter gap flagged (RecordFilter speaks canon-JSON, CalDAV records are
   iCal bytes).
+- **P3.b LANDED** (subagent): both todo mock servers + transport suites
+  (10+12 slots). Commit 08ed8fc.
+- **P3.c LANDED** (subagent): `GoogleTasksBackend` +
+  `tst_google_tasks_backend` (9 slots). Note: backends on the neutral
+  SyncBackendBase carry vendor JSON verbatim — the canon stage demote is
+  NOT invoked in-backend (legacy Incidence seam only existed for
+  calendar-typed ops); strip seam implemented directly. Suite baseline
+  now ~206 slots.
 - (progress appended as work lands)
