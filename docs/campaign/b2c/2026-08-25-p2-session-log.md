@@ -108,4 +108,9 @@ this file records per-step progress, decisions, and deviations.
   NOT invoked in-backend (legacy Incidence seam only existed for
   calendar-typed ops); strip seam implemented directly. Suite baseline
   now ~206 slots.
+- **P3.d LANDED** (subagent): `GraphTodoTaskBackend` +
+  `tst_graph_todo_backend` (11 slots, first-run green). O66(b) gate
+  fires pre-network on create AND update; terminal error message now
+  prefers recorded per-record validation messages so the rule is
+  nameable. Full suite 205/205 excluding known Radicale set.
 - (progress appended as work lands)

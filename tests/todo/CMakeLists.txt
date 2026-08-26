@@ -86,3 +86,20 @@ add_test(NAME tst_google_tasks_backend COMMAND tst_google_tasks_backend)
 set_tests_properties(tst_google_tasks_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# B2C P3.d — GraphTodoTaskBackend against the P3.b mock Graph todo server,
+# mirroring tests/contacts/tst_graph_contacts_backend (expanded listings +
+# nav-POST carriers + re-list delete confirmation, pointed at todoTask).
+add_executable(tst_graph_todo_backend tst_graph_todo_backend.cpp)
+target_link_libraries(tst_graph_todo_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        kalburator_mock_graph_todo_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_graph_todo_backend COMMAND tst_graph_todo_backend)
+set_tests_properties(tst_graph_todo_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

@@ -118,7 +118,13 @@ backends are its W1/W2 Google/MSToDo test legs.
       strip seam (id/created/updated); alias bridging; PATCH-in-place;
       404-delete-as-success (no re-list — Tasks not flaky); atomic cache
       persistence, no token (API has none). 9 slots green)
-- [ ] P3.d: `GraphTodoTaskBackend` + suite
+- [x] P3.d: `GraphTodoTaskBackend` (landed 2026-08-25 — expanded full
+      listings never delta; union-merge enrichment; wire-lie-safe create
+      (extensions stripped, nav-POST carriers, alias bridged to '=' ids);
+      O66(b) gate fails LOUD pre-network on recurrence-without-due for
+      create AND update; PATCH-in-place; 404-then-relist deletes;
+      wellknownListName discovery; atomic cache persistence. 11 slots
+      green)
 - [ ] P3.e: kind-demux multi-spec split + suites (incl. raw-bytes filter)
 - [ ] P3.f: live checkpoints both vendors (invariant 1) + fixture corpora
       replay through real backends
