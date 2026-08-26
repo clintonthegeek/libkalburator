@@ -56,6 +56,42 @@ the live execution tracker; the response doc holds decisions + receipts.
   W1 in the receipt note; the receipt for W2 will state the dependency
   explicitly. No consumer impact (they consume receipts, not our internal
   order).
+- **W1 step-1 LANDED (2026-08-26)** — composite exception identity:
+  - step-1a (`6a166ac`): `src/sync/recordidentity.h` (compose/decompose/
+    isException, `uid\x01UTC-ISO`); vtodo canon gains `recurrenceId`/
+    `recurrenceRange` (mirrors event path); scanner role selector
+    (master-preference default intact). 15 slots.
+  - step-1b (`c5592e0`): RemoteCalendarBackend composites minting at
+    all parse loops + decompose-at-seam; maps keyed by composite;
+    `loadRecord` accepts bare+composite. 5 slots.
+  - step-1c (`9fe2be5`): SubscriptionBackend compounded; LocalBackend
+    decision = NO compounding (id↔filename bijection), full-file-bytes
+    pin instead. 4 slots.
+- **VP.b / W2 LANDED (2026-08-26)** — per-instance completion:
+  - W2 engine fixes (`7403509`): exception-create href distinct from
+    master (`<uid>-<stamp>.ics`, was clobbering master); BaselineStore
+    `transaction(fn)` API + engine persist loop wraps atomically. 12
+    slots. (Subagent stalled ~1h before verify; orchestrator finished
+    verification + fixed QVERIFY-in-lambda compile errors in tests.)
+  - Receipt: `2026-08-26-w2-return-receipt.md`. **Correction** to the
+    response doc: Google Tasks has NO extension point (O66(c)) — its
+    leg CANNOT carry the master EXDATE; MS To-Do carries it via
+    nav-POST x-canon-recurrence (already Reversible).
+  - Consumer note delivered to PlanStan (`e1856650` in their repo):
+    ConflictInfo ids may now be composite; decompose before display.
+- **NEXT:** W1 written contract doc + full matrices (CalDAV/org/Google/MS)
+  → W4 completion-anchored recurrence.
+- **SEQUENCING CORRECTION (2026-08-26):** VP.b (W2) and VP.c (W1) are
+  SWAPPED relative to the response doc — W2's detached-instance
+  representation CANNOT round-trip until composite record identity
+  exists (the blob pipeline still keys by UID alone; master+exception
+  collide — see recon finding above). New order: VP.c-step-1 (composite
+  identity `uid\x01recurrenceId` in the blob pipeline) FIRST, then
+  VP.b (W2 rep + BaselineStore transactions + producer mappings), then
+  the rest of W1 (contract doc + matrices). PlanStan was told W8 → W2 →
+  W1 in the receipt note; the receipt for W2 will state the dependency
+  explicitly. No consumer impact (they consume receipts, not our internal
+  order).
 - 2026-08-26: **VP.a (W8) landed.** Files: `src/sync/calendarcapabilities.{h,cpp}`
   (+ CMake registration), `backendconfiguration.{h,cpp}` (additive
   producerId/supportsSyncCollection + JSON), `caldavcapabilitydiscovery.{h,cpp}`,
