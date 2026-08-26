@@ -72,13 +72,19 @@ checkpoint). Live state + phase table: `docs/campaign/b2c/STATUS.md`.
 CLIs re-pointed onto the library); P1 calendar backends —
 `GoogleApiClient`, `MockGoogleServer` (tests/google/),
 `GoogleCalendarBackend`, MSGraph hardening (deltaStep retries, O69
-skeleton union-merge); **BOTH live checkpoints PASSED** vs real accounts
+skeleton union-merge); BOTH live checkpoints PASSED vs real accounts
 (`tst_{google,ms}_calendar_backend_live` in-repo, QSKIP without creds via
 KALBURATOR_{GOOGLE,MSGRAPH}_DIR). Findings O68/O69 caught+fixed same-session.
+P2 contacts CLOSED 2026-08-25 — `GraphContactsBackend` +
+`GooglePeopleBackend`, mocks + crossing gates (P2.e), BOTH live
+checkpoints PASSED (`tst_{graph_contacts,google_people}_backend_live`).
+Live findings O71–O73 (People createContact is COLLECTION-level
+`/v1/people:createContact`; :updateContact REQUIRES etag which listings
+always deliver, displayName server-derived; Graph carrier nav POST is
+UPSERT — Q4 settled). NOTE: vendor base URLs must be VERSION-LESS —
+backends author `/v1…` paths verbatim.
 
-**Next (P2):** contacts backends — Graph contacts via listings/delta ONLY
-(O66(f)) with nav-POST extension carriers; Google People via
-people.connections with clientData carriers. Then P3 todo, P4 providers/
+**Next (P3):** todo backends + kind-demux deliverable, then P4 providers/
 UX, P5 identity wiring, P6 consumer handoff.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,

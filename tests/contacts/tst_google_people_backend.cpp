@@ -318,9 +318,11 @@ private slots:
         QCOMPARE(records.last().id, QStringLiteral("people/c3"));
     }
 
-    // Create flow pins: POST to :createContact carries clientData rows
-    // INLINE (no strip-to-nav channel here), no etag/metadata; minted
-    // resourceName settled + aliased; Bearer header pinned.
+    // Create flow pins: POST to the COLLECTION-level :createContact verb
+    // (O71, live-verified: /me:createContact 404s on the real service)
+    // carrying clientData rows INLINE (no strip-to-nav channel here), no
+    // etag/metadata; minted resourceNames bridged via id aliases (O55);
+    // Bearer header pinned.
     void createPostsInlineCarriersMintsResourceNameAndAliases()
     {
         QJsonObject authored{
@@ -357,7 +359,7 @@ private slots:
         QCOMPARE(reqs.size(), 1);
         QCOMPARE(reqs.at(0).method, QByteArrayLiteral("POST"));
         QCOMPARE(reqs.at(0).path,
-                 QStringLiteral("/v1/people/me:createContact"));
+                 QStringLiteral("/v1/people:createContact"));
 
         const QJsonObject postedBody =
             QJsonDocument::fromJson(reqs.at(0).body).object();
@@ -380,7 +382,9 @@ private slots:
     }
 
     // Update: PATCH :updateContact with updatePersonFields derived from the
-    // patch body's own top-level keys; merge keeps unmasked fields intact.
+    // patch body's own top-level keys (etag excluded from the mask but
+    // RIDING the body — O72, live-verified: People rejects etag-less
+    // patches); merge keeps unmasked fields intact.
     void updateDerivesMaskFromBodyKeysAndMergesInPlace()
     {
         QJsonObject seeded = wirePerson(QStringLiteral("people/c9"),
@@ -394,6 +398,7 @@ private slots:
         m_server->setConnections(people);
 
         QJsonObject patch{
+            { QStringLiteral("etag"), QStringLiteral("%EgUtest") },
             { QStringLiteral("names"),
               QJsonArray{ QJsonObject{
                   { QStringLiteral("displayName"),
@@ -427,13 +432,19 @@ private slots:
                                     "?updatePersonFields=")),
                  qPrintable(reqs.at(0).path));
 
-        // Mask derived from the body keys (order-free comparison).
+        // Mask derived from the body keys (order-free comparison); etag
+        // rides the body but is NEVER a mask field (O72).
         const int eq = reqs.at(0).path.indexOf(QLatin1Char('='));
         const QStringList maskFields =
             reqs.at(0).path.mid(eq + 1).split(QLatin1Char(','));
         QCOMPARE(maskFields.size(), 2);
         QVERIFY(maskFields.contains(QStringLiteral("names")));
         QVERIFY(maskFields.contains(QStringLiteral("emailAddresses")));
+        QVERIFY(!maskFields.contains(QStringLiteral("etag")));
+        const QJsonObject sentBody =
+            QJsonDocument::fromJson(reqs.at(0).body).object();
+        QCOMPARE(sentBody.value(QStringLiteral("etag")).toString(),
+                 QStringLiteral("%EgUtest"));
 
         // Merge-in-place: a later fetch shows patched fields alongside the
         // untouched phoneNumbers row.

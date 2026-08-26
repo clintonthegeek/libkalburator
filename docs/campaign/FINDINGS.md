@@ -3197,3 +3197,64 @@ expanded listing walk per folder, every time (correctness over
 incrementality). Initial delta walk DID return full projections (not
 skeletons), so delta remains a v2 option if a carrier-less incremental
 pre-pass ever becomes worth its merge complexity.
+
+### O71 — OPEN — B2C P2.f live checkpoint, 2026-08-25: People createContact is COLLECTION-level (`/v1/people:createContact`); resource-level form 404s
+
+Live probe against the real consumer Google account during
+`tst_google_people_backend_live`: `POST /v1/people/me:createContact` ⇒
+HTTP 404 with an HTML Google-front-end error page ("The requested URL
+`/v1/people/me:createContact` was not found") — the create verb lives on
+the `people` COLLECTION, not on a person resource. The correct form,
+verified live end-to-end: `POST /v1/people:createContact` ⇒ 200 with a
+minted `people/c<N>` resourceName. The P2.b mock had pinned the wrong
+(resource-level) shape; mock-green could never see this.
+
+Related transport-seam bug caught in the same run: `GooglePeopleBackend`'s
+constructor defaulted its client base URL to `people.googleapis.com/v1`
+while EVERY authored path carries `/v1` verbatim (client joins base+path)
+⇒ doubled `/v1/v1/…` on any live caller that did not override the base
+(mocks always override). Default corrected to the version-less base.
+
+Backend consequence (fixed same commit): create seam =
+`/v1/people:createContact`; constructor base = `https://people.googleapis.com`;
+mock re-pinned to the collection route.
+
+### O72 — OPEN — B2C P2.f live checkpoint, 2026-08-25: People :updateContact REQUIRES an etag; listings always deliver one; displayName is server-derived
+
+Live probes against the real consumer Google account:
+1. `PATCH /v1/people/{bareId}:updateContact?updatePersonFields=names`
+   with an etag-less body ⇒ HTTP 400 INVALID_ARGUMENT "Request must set
+   person.etag or person.metadata.sources.etag for the source that is
+   being updated." The defensive strip of `etag` in
+   `GooglePeopleBackend::stripNonCreatableFields`/update prep therefore
+   broke every live update (mock-green blind spot: the mock never
+   enforced the token).
+2. Connections listings ALWAYS carry the top-level `etag` even though
+   `etag` is not a projectable `personFields` value (observed with the
+   exact shared projection constant) — so records already hold what the
+   update needs; no extra GET required.
+3. With `etag` riding the body: PATCH ⇒ 200. The server DERIVES
+   `displayName` from given+family on update — a client-supplied
+   `displayName` was ignored/overwritten ("CORPUS p2f EDITED" came back
+   as "CORPUS p2f"). Assert renames on component name fields, never on
+   displayName.
+
+Backend consequence (fixed same commit): update keeps `etag` IN the body
+but excludes it from the `updatePersonFields` mask; mock now rejects
+etag-less patches with the live error shape.
+
+### O73 — OPEN — B2C P2.f live checkpoint, 2026-08-25: Graph consumer open-extension nav POST is UPSERT (settles design question Q4)
+
+Design question 4 asked whether a carrier UPDATE needs a nav PATCH of the
+existing extension instance (`/contacts/{id}/extensions/{extId}`) instead
+of another create. Live answer against the real Outlook.com account:
+posting a second open-extension row with the SAME `extensionName` to
+`/v1.0/me/contacts/{id}/extensions` succeeds (no 409) and UPSERTS — the
+deterministic id `Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon`
+is kept, the custom key's value is replaced, and the filtered `$expand`
+read-back serves exactly ONE extension row with the NEW value. Confirmed
+end-to-end through `GraphContactsBackend::applyRecords` update path
+(plain-field PATCH + extensions[] stripped → one nav POST): op succeeded,
+refetch served `x-canon-gender=female`, one row. NO backend change needed
+— the existing strip-then-nav-POST channel handles carrier updates
+correctly; a nav-PATCH variant would be redundant complexity.

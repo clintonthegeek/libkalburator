@@ -61,6 +61,16 @@ by contrast (O61(e)).
 - List ids may contain colons (`MTYw…NjU6MDox`) — sanitize/id-mint rules
   must accept colon-suffixed base64ish forms.
 
+## 2b. Google People API v1 — contacts (consumer)
+
+| Behavior | Detail | Finding |
+|---|---|---|
+| **createContact is COLLECTION-level** | `POST /v1/people:createContact` — the resource-level `/v1/people/me:createContact` 404s with an HTML front-end page. Mints `people/c<N>` resourceName. | O71 |
+| **:updateContact REQUIRES etag** | etag-less patch ⇒ 400 INVALID_ARGUMENT ("Request must set person.etag or person.metadata.sources.etag…"). Listings ALWAYS deliver the top-level `etag` even though it is not a projectable personFields value — records already hold the token. | O72 |
+| displayName server-derived | On :updateContact the server derives `displayName` from given+family; a client-supplied displayName is ignored/overwritten. Assert/compare on component name fields. | O72 |
+| Base-URL/versioning seam | All People paths carry `/v1` verbatim; client base must be version-less (`https://people.googleapis.com`). The backend ctor default previously embedded `/v1` ⇒ doubled prefix on live callers. | O71 |
+| clientData carriers ride inline | At create AND on listings verbatim (live-Reversible channel, O66 verdict table); no nav channel exists or is needed. | P2.f live |
+
 ---
 
 ## 3. Microsoft Graph v1.0 — consumer Outlook.com mailbox
@@ -109,6 +119,11 @@ by contrast (O61(e)).
   `extensions[]` rows with full-prefix ids
   (`Microsoft.OutlookServices.OpenTypeExtension.kalburator.canon`) and
   `@odata.type: "#microsoft.graph.openTypeExtension"`. O70.
+- **Carrier UPDATE = nav POST is UPSERT** (settles P2 design question 4):
+  a second nav `POST …/contacts/{id}/extensions` with the SAME
+  `extensionName` succeeds (no conflict) and replaces the custom keys in
+  place — same deterministic full id, exactly ONE row on `$expand`
+  read-back. No nav-PATCH variant needed. O73.
 
 ### Todo (todoTask)
 

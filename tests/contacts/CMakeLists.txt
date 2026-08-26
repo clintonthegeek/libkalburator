@@ -129,6 +129,37 @@ set_tests_properties(tst_google_people_backend PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+# B2C P2.f — LIVE checkpoints (skip without KALBURATOR_MSGRAPH_DIR /
+# KALBURATOR_GOOGLE_DIR); wiring mirrors tests/graph + tests/google live
+# suites: no mock lib, production whole-archive, offscreen.
+add_executable(tst_graph_contacts_backend_live tst_graph_contacts_backend_live.cpp)
+target_link_libraries(tst_graph_contacts_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_graph_contacts_backend_live
+    COMMAND tst_graph_contacts_backend_live)
+set_tests_properties(tst_graph_contacts_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(tst_google_people_backend_live tst_google_people_backend_live.cpp)
+target_link_libraries(tst_google_people_backend_live
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_google_people_backend_live
+    COMMAND tst_google_people_backend_live)
+set_tests_properties(tst_google_people_backend_live PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadicontactsbackend tst_akonadicontactsbackend.cpp)
     target_link_libraries(tst_akonadicontactsbackend

@@ -12,7 +12,7 @@
 //     nextSyncToken ("sync_N"); presenting a valid sync_token replays
 //     queued changed people + fresh token; unknown/expired token ⇒ 410
 //     {error:{code:410,...}}
-//   - POST /v1/people/me:createContact mints resourceName "people/c<N>"
+//   - POST /v1/people:createContact mints resourceName "people/c<N>"
 //     and echoes the body (clientData rows verbatim — live-Reversible);
 //   - PATCH /v1/people/{rn}:updateContact?updatePersonFields= merges only
 //     the masked top-level fields; DELETE :deleteContact → 200 empty.

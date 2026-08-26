@@ -16,12 +16,16 @@
 //     fresh initial walk (O42 pattern). Every completed walk commits and
 //     reports the FULL merged set — engine diffs expect whole views.
 //   - Record id = `resourceName` verbatim ("people/c123").
-//   - WRITES: create = POST /v1/people/me:createContact with etag/
-//     metadata/nextSyncToken stripped (clientData carriers RIDE INLINE —
-//     live-Reversible channel per the O66 verdict table; unlike Graph
-//     contacts there is no nav-POST channel here); update = PATCH
+//   - WRITES: create = POST /v1/people:createContact — COLLECTION-level
+//     custom method (O71, live-verified 2026-08-25: the resource-level
+//     /me:createContact 404s) with etag/metadata/nextSyncToken stripped
+//     (clientData carriers RIDE INLINE — live-Reversible channel per the
+//     O66 verdict table; unlike Graph contacts there is no nav-POST
+//     channel here); update = PATCH
 //     /v1/people/{id}:updateContact?updatePersonFields=<top-level keys of
-//     the body> (merge-in-place); delete accepts 200/204 and treats 404
+//     the body minus etag> (merge-in-place) with the top-level etag RIDING
+//     the body — People REQUIRES a concurrency token on updates (O72,
+//     live-verified: listings always deliver the etag even unprojected); delete accepts 200/204 and treats 404
 //     as already-gone ⇒ success (idempotent; People deletes are not
 //     flaky, so no confirming re-list — deliberate deviation from the
 //     Graph pin).

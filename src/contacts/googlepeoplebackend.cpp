@@ -96,7 +96,9 @@ GooglePeopleBackend::GooglePeopleBackend(QObject *parent)
     : SyncBackendBase(parent)
     , m_client(new GoogleApiClient(this))
 {
-    m_client->setBaseUrl(QStringLiteral("https://people.googleapis.com/v1"));
+    // Paths authored by this backend carry the /v1 prefix verbatim
+    // (client joins base+path), so the default base is version-less.
+    m_client->setBaseUrl(QStringLiteral("https://people.googleapis.com"));
 }
 
 GooglePeopleBackend::~GooglePeopleBackend() = default;
@@ -528,7 +530,11 @@ void GooglePeopleBackend::applyStep(std::shared_ptr<ApplyState> st)
         const BackendRecord r = st->creates.takeFirst();
         m_client->rawRequest(
             QByteArrayLiteral("POST"),
-            QStringLiteral("/v1/people/me:createContact"),
+            // O71 (live 2026-08-25): people.createContact is a
+            // COLLECTION-level custom method — /v1/people:createContact.
+            // The resource-level form /v1/people/me:createContact 404s at
+            // Google's front-end (the P2.b mock pinned the wrong shape).
+            QStringLiteral("/v1/people:createContact"),
             stripNonCreatableFields(r.data),
             [this, st, r, settleOne](int status, const QByteArray &body,
                           bool networkError) {
@@ -557,19 +563,28 @@ void GooglePeopleBackend::applyStep(std::shared_ptr<ApplyState> st)
         // PATCH merge-in-place; updatePersonFields derives from the patch
         // body's own top-level keys minus metadata/etag (defensively also
         // resourceName/nextSyncToken — never valid masks).
+        //
+        // O72 (live 2026-08-25): :updateContact REQUIRES a concurrency
+        // token — "Request must set person.etag or
+        // person.metadata.sources.etag". The top-level etag therefore RIDES
+        // the patch body (listings always deliver it, even unprojected) but
+        // is excluded from the mask. metadata/nextSyncToken/resourceName
+        // are still stripped.
         const BackendRecord r = st->updates.takeFirst();
 
         const QJsonObject fullBody =
             QJsonDocument::fromJson(r.data).object();
         QJsonObject body = fullBody;
-        body.remove(QStringLiteral("etag"));
         body.remove(QStringLiteral("metadata"));
         body.remove(QStringLiteral("nextSyncToken"));
         body.remove(QStringLiteral("resourceName"));
 
         QStringList mask;
-        for (auto it = body.constBegin(); it != body.constEnd(); ++it)
+        for (auto it = body.constBegin(); it != body.constEnd(); ++it) {
+            if (it.key() == QLatin1String("etag"))
+                continue;
             mask.append(it.key());
+        }
 
         if (mask.isEmpty()) {
             settleOne(true, r.id);

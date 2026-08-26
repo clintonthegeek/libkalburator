@@ -56,4 +56,25 @@ this file records per-step progress, decisions, and deviations.
   observations recorded in the status doc: Google primary-invention on
   unpinned name rows; MS photos profile row mislabeled Dropped vs actual
   carrier-Reversible (conservative direction).
+- **P2.f LANDED — LIVE CHECKPOINTS PASSED BOTH DIRECTIONS** (subagent
+  wrote suites; orchestrator re-ran with creds env to confirm genuine
+  non-skipped passes):
+  - `tst_graph_contacts_backend_live` vs real Outlook.com (6.3s):
+    folder discovery → expanded listing (36 records) → probe create w/
+    carrier ('='-id minted) → expand read-back → PATCH rename → **Q4
+    verdict: nav POST is UPSERT** → delete+verify.
+  - `tst_google_people_backend_live` vs real Google account (5.4s):
+    connections walk (72 records) → create w/ clientData → refetch
+    carrier intact → etag-bearing :updateContact rename → delete+verify.
+  - Findings caught & fixed same-session: **O71** (People createContact
+    is COLLECTION-level `/v1/people:createContact`; resource-level form
+    404s; plus GooglePeopleBackend ctor base was version-full ⇒ doubled
+    `/v1/v1/` on live callers — house rule now: vendor base URLs are
+    VERSION-LESS), **O72** (:updateContact REQUIRES etag; listings
+    always deliver it; displayName server-derived from given+family),
+    **O73** (Graph carrier nav POST = UPSERT — open Q4 settled, no nav-
+    PATCH needed). Mocks re-pinned to corrected shapes; accounts swept.
+- **P2 CLOSED.** Suite baseline 205 slots (203 mock + 2 live); only the
+  4 known Radicale-environmental failures remain. Next phase: P3 todo
+  backends + kind-demux deliverable.
 - (progress appended as work lands)

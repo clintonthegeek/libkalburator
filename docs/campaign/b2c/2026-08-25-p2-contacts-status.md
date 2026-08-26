@@ -1,7 +1,7 @@
 # P2 — Contacts backends: status
 
-**Status:** IN PROGRESS (design pass pinned 2026-08-25; implementation
-next). See `2026-08-25-p2-session-log.md` for the running log.
+**Status:** CLOSED 2026-08-25 — both contacts backends live-checkpointed
+(P2.f PASSED both directions); see checklist + FINDINGS O71/O72/O73.
 
 Goal (proposal §4 P2): `GraphContactsBackend` + `GooglePeopleBackend`,
 crossing-gated both directions, live-checkpointed per invariant 1.
@@ -142,7 +142,22 @@ crossing-gated both directions, live-checkpointed per invariant 1.
       unhandled-set routing actually makes it carrier-Reversible —
       declared ⊇ actual, conservative, mislabel to fix next time the
       profile is touched)
-- [ ] P2.f: Live checkpoints vs real accounts (invariant 1)
+- [x] P2.f: Live checkpoints vs real accounts (invariant 1) — LANDED
+      2026-08-25, BOTH PASSED. `tests/contacts/tst_graph_contacts_backend_live.cpp`
+      (folder discovery → expanded full listing 36 records → CORPUS probe
+      create w/ carrier nav POST ('=' id minted, alias bridged) → expand
+      read-back → PATCH rename → Q4 carrier update → delete+verify;
+      unconditional cleanup guard) and
+      `tests/contacts/tst_google_people_backend_live.cpp` (connections walk
+      72 records → CORPUS person create w/ inline clientData → carrier
+      intact on refetch → etag-bearing :updateContact rename → delete+
+      verify). Live findings caught & fixed same-session: **O71**
+      (`people.createContact` is collection-level; base-url/versioning
+      doubling in GooglePeopleBackend ctor default), **O72**
+      (:updateContact REQUIRES etag — listings always deliver it;
+      displayName server-derived), **O73** (Graph nav POST = UPSERT —
+      settles open question 4: NO backend change needed). Mocks re-pinned
+      to the corrected shapes; sweep-clean run after passes.
 
 ## Open questions to settle in the design pass
 
@@ -152,6 +167,8 @@ crossing-gated both directions, live-checkpointed per invariant 1.
    already emit what the resolver needs.
 3. ~~Photo/binary fields~~ — SETTLED: declared per existing loss profiles
    (MS Dropped, Google Simplified URL-only); no binary fetch in P2.
-4. NEW (live-checkpoint probe): carrier UPDATE path on Graph — nav PATCH
-   of the existing extension instance (`/contacts/{id}/extensions/{extId}`)
-   is the only unproven seam; probe at P2.f, declare loss if it breaks.
+4. ~~Carrier UPDATE path on Graph~~ — SETTLED at P2.f (**O73**, live):
+   nav POST with the same `extensionName` is UPSERT on consumer Graph
+   (deterministic id kept, values replaced, one row on read-back); the
+   backend's strip-then-nav-POST update channel is correct as-is; a nav-
+   PATCH variant would be redundant.

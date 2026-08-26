@@ -354,7 +354,9 @@ QByteArray MockPeopleServer::respond(const RecordedRequest &req)
 
     // 3. createContact: mint resourceName, store, echo body verbatim +
     //    resourceName (clientData rows pass through untouched).
-    if (req.method == "POST" && p == QLatin1String("/v1/people/me:createContact")) {
+    //    O71 (live 2026-08-25): COLLECTION-level custom method — the old
+    //    /v1/people/me:createContact route 404s on the real service.
+    if (req.method == "POST" && p == QLatin1String("/v1/people:createContact")) {
         QJsonObject created = QJsonDocument::fromJson(req.body).object();
         created.insert(QStringLiteral("resourceName"),
                        QStringLiteral("people/c%1").arg(++m_personCounter));
@@ -378,8 +380,25 @@ QByteArray MockPeopleServer::respond(const RecordedRequest &req)
                                  QStringLiteral("Person not found")))
                                  .toJson(QJsonDocument::Compact));
 
+        // O72 (live 2026-08-25): :updateContact REQUIRES a concurrency
+        // token — a patch without etag is INVALID_ARGUMENT.
         const QJsonObject patch =
             QJsonDocument::fromJson(req.body).object();
+        if (!patch.contains(QStringLiteral("etag"))) {
+            QJsonObject err{
+                { QStringLiteral("error"),
+                  QJsonObject{
+                      { QStringLiteral("code"), 400 },
+                      { QStringLiteral("status"),
+                        QStringLiteral("INVALID_ARGUMENT") },
+                      { QStringLiteral("message"),
+                        QStringLiteral("Request must set person.etag or "
+                                       "person.metadata.sources.etag for "
+                                       "the source that is being "
+                                       "updated.") } } } };
+            return makeReply(400, QJsonDocument(err)
+                                      .toJson(QJsonDocument::Compact));
+        }
         QJsonObject merged = m_connections.at(idx).toObject();
         const QString mask =
             queryValue(req.path, QStringLiteral("updatePersonFields"));

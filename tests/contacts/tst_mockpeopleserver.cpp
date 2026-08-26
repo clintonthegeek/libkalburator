@@ -171,7 +171,7 @@ private Q_SLOTS:
         };
         auto resp = httpRequest(
             m_server->baseUrl()
-                + QStringLiteral("/v1/people/me:createContact"),
+                + QStringLiteral("/v1/people:createContact"),
             "POST", {}, QJsonDocument(body).toJson(QJsonDocument::Compact));
         QVERIFY(resp.ok());
         const QJsonObject created =
@@ -201,7 +201,7 @@ private Q_SLOTS:
     {
         auto resp = httpRequest(
             m_server->baseUrl()
-                + QStringLiteral("/v1/people/me:createContact"),
+                + QStringLiteral("/v1/people:createContact"),
             "POST", {},
             QJsonDocument(makePerson(0)).toJson(QJsonDocument::Compact));
         QVERIFY(resp.ok());
@@ -209,8 +209,10 @@ private Q_SLOTS:
                                .value(QStringLiteral("resourceName")).toString();
 
         // Mask lists only emailAddresses; a names change in the body must
-        // NOT be merged.
+        // NOT be merged. The etag MUST ride the body (O72) — the mock
+        // rejects etag-less patches just like the live service.
         const QJsonObject patch{
+            { QStringLiteral("etag"), QStringLiteral("0") },
             { QStringLiteral("emailAddresses"),
               QJsonArray{ QJsonObject{
                   { QStringLiteral("value"),
@@ -241,7 +243,7 @@ private Q_SLOTS:
     {
         auto resp = httpRequest(
             m_server->baseUrl()
-                + QStringLiteral("/v1/people/me:createContact"),
+                + QStringLiteral("/v1/people:createContact"),
             "POST", {},
             QJsonDocument(makePerson(0)).toJson(QJsonDocument::Compact));
         QVERIFY(resp.ok());
