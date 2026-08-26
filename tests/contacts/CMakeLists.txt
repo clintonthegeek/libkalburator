@@ -95,6 +95,23 @@ kalburator_add_vendor_mock_test(tst_mockgraphcontactsserver
 kalburator_add_vendor_mock_test(tst_mockpeopleserver
     kalburator_mock_people_server)
 
+# B2C P2.c — GraphContactsBackend against the P2.b mock contacts server.
+# Links the real library (whole-archive) so the backend under test is the
+# production one, mirroring tests/graph/tst_ms_graph_calendar_backend.
+add_executable(tst_graph_contacts_backend tst_graph_contacts_backend.cpp)
+target_link_libraries(tst_graph_contacts_backend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        kalburator_mock_graph_contacts_server
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_graph_contacts_backend COMMAND tst_graph_contacts_backend)
+set_tests_properties(tst_graph_contacts_backend PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 if(KALBURATOR_HAVE_AKONADI)
     add_executable(tst_akonadicontactsbackend tst_akonadicontactsbackend.cpp)
     target_link_libraries(tst_akonadicontactsbackend

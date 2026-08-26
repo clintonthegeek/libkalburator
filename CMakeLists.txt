@@ -445,6 +445,9 @@ set(KALBURATOR_CONTACTS_HEADERS
     src/contacts/contactsplugin.h
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.h
+    # B2C P2.c: Microsoft Graph contacts backend (expanded-listing reads,
+    # nav-POST carrier writes; O66/O70 wire truths)
+    src/contacts/graphcontactsbackend.h
     # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
     src/contacts/akonadicontactsbackend.h
 )
@@ -466,6 +469,8 @@ set(KALBURATOR_CONTACTS_SOURCES
     src/contacts/contactsplugin.cpp
     # Phase Ib Task 5: CardDAV contacts backend
     src/contacts/remotecontactsbackend.cpp
+    # B2C P2.c: Microsoft Graph contacts backend
+    src/contacts/graphcontactsbackend.cpp
     # Phase L.6: Akonadi contacts backend (gated on HAVE_AKONADI)
     src/contacts/akonadicontactsbackend.cpp
 )

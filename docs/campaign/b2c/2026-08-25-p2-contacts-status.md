@@ -118,8 +118,12 @@ crossing-gated both directions, live-checkpointed per invariant 1.
       `MockPeopleServer` (pageSize/pageToken, personFields projection,
       requestSyncToken + queued changes + expired-token 410,
       createContact clientData echo); 11+9 slots green)
-- [ ] P2.c: `GraphContactsBackend`: expanded-listing reads, nav-POST
-      carrier writes, folder discovery
+- [x] P2.c: `GraphContactsBackend` (landed 2026-08-25 — expanded-listing
+      reads over `/me/contacts` + per-folder paths, never delta (O70);
+      listing authoritative w/ union-merge enrichment; create strips
+      extensions[] → POST → nav POST carriers → alias bridge;
+      PATCH-in-place plain-fields; delete 204/200 with 404-then-relist
+      confirmation; atomic state resume. 10 slots green)
 - [ ] P2.d: `GooglePeopleBackend`: connections paging, clientData carriers
 - [ ] P2.e: Crossing gates both directions (O64 rule)
 - [ ] P2.f: Live checkpoints vs real accounts (invariant 1)

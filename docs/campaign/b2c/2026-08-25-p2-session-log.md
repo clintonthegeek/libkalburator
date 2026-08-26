@@ -36,4 +36,11 @@ this file records per-step progress, decisions, and deviations.
   QUrlQuery PrettyDecoded does not match `%24expand`-style encoded keys —
   the Graph double resolves query items FullyDecoded (O60-family; pin
   candidate for an O-entry if it bites again).
+- **P2.c LANDED** (subagent): `GraphContactsBackend` +
+  `tst_graph_contacts_backend` (10 slots green). Read-path semantics
+  pinned during implementation: complete listing is AUTHORITATIVE
+  (absent ids ⇒ dropped, deletes propagate); cached rich copies serve as
+  merge-enrichment only. Carrier-POST failure settles the record failed
+  (fail-loud over silent carrier loss). Suite baseline now 202 slots;
+  only the 4 known Radicale-environmental failures remain.
 - (progress appended as work lands)
