@@ -88,17 +88,20 @@ backends author `/v1…` paths verbatim.
 UX, P5 identity wiring, P6 consumer handoff. P3 now GATES the vtodo-parity
 campaign (vendor todo backends are its W1/W2 test legs).
 
-## VTODO-parity campaign (OPENED 2026-08-25)
+## VTODO-parity campaign (OPENED 2026-08-25; ACTIVE)
 
 PlanStan's W1–W8 semantic-parity handoff ACCEPTED with scoping edits —
 decisions + Q1–Q4 answers: `docs/2026-08-25-vtodo-parity-handoff-response.md`;
-live tracker: `docs/campaign/vtodo-parity/STATUS.md`. Order: B2C P3 →
-W8 capabilities API → W2 per-instance completion → W1 composite exception
-identity → W4 completion-anchored recurrence → W3 series-split →
-W5/W6.2/W7. Recon findings pinned there: blob pipeline keys by UID alone
-(master+exception collide), providerExtras invisible to the canonical
-differ (**O74**), VALARM already first-class in todo canon, org backend
-drops unknown X-props, BaselineStore lacks multi-record transactions.
+live tracker: `docs/campaign/vtodo-parity/STATUS.md`. **Progress to date:
+W8 (capabilities) DONE; W2 (per-instance completion) DONE; W1 (composite
+exception identity + contract doc + full test matrix) DONE 2026-08-26
+(commit `7585152`).** Remaining order: W4 completion-anchored recurrence
+(RECON DONE — `docs/campaign/vtodo-parity/2026-08-26-w4-recon-handoff.md`,
+impl next) → W3 series-split → W5/W6.2/W7. Recon findings pinned in
+STATUS: blob pipeline keys by UID alone (master+exception collide,
+fixed by W1), providerExtras invisible to the canonical differ (**O74**),
+VALARM already first-class in todo canon, org backend drops unknown
+X-props, BaselineStore transaction API added in W2.
 Return receipts owed to PlanStan per delivered item.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
