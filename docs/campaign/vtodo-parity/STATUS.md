@@ -188,3 +188,11 @@ the live execution tracker; the response doc holds decisions + receipts.
   org-io-enabled build. Return receipt: `2026-08-27-w4-return-receipt.md`.
   Full suite green except the 4 known environmental Radicale slots
   (213 total tests, 209 passing + the 4 known failures).
+- 2026-08-27: **VP.e (W3) recon done**, persisted in
+  `2026-08-27-w3-recon-handoff.md` (code map + open decisions; no code
+  written yet). Headline finding: a W1-era pinned test
+  (`vtodoRoundTripPreservesThisAndFutureRange`,
+  `tests/todo/tst_todo_canon_roundtrip.cpp`) currently asserts the
+  OPPOSITE of the binding W3 spec (demote must never emit
+  RANGE=THISANDFUTURE) — rewriting it is part of the fix, not incidental
+  cleanup. W3 implementation is the next task.
