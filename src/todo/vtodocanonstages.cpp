@@ -77,6 +77,11 @@ Kalburator::Shape::LossProfile canonToVtodoLoss()
     p.affected.insert(PropertyId{QStringLiteral("checklistItems")},   LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("sortOrder")},        LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("parentUid")},        LossKind::Reversible);
+    // completionAnchor (W4): the verbatim org repeater marker rides
+    // providerExtras["x-vtodo"] (generic custom-prop channel) and the
+    // derived standard form additionally re-emits as a real RRULE —
+    // round-trippable, not lost.
+    p.affected.insert(PropertyId{QStringLiteral("completionAnchor")}, LossKind::Reversible);
 
     // Degraded: vendor-specific status values not representable; mapped to
     // NEEDS-ACTION with original stashed in providerExtras

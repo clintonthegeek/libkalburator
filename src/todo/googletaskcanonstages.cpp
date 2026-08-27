@@ -260,8 +260,12 @@ Kalburator::Shape::LossProfile canonToGoogleTaskLoss()
     p.affected.insert(PropertyId{QStringLiteral("status")}, LossKind::Simplified);
 
     // Dropped: no Task home and NO carrier channel (declared profile §Carrier)
+    // completionAnchor (W4) joins recurrence here: Google Tasks has no
+    // recurrence field of any kind, so the derived standard form is
+    // equally unrepresentable.
     for (const char* prop : { "percentComplete", "priority", "categories",
-                              "start", "recurrence", "alarms", "location",
+                              "start", "recurrence", "completionAnchor",
+                              "alarms", "location",
                               "geo", "checklistItems", "relatedTo",
                               "descriptionHtml" }) {
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},

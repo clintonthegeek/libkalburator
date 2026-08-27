@@ -38,6 +38,13 @@ Kalburator::Shape::PropertyCatalogue makeTodoCanonCatalogue()
     // Detached-exception identity (mirrors the event canon catalogue)
     cat.addProperty({ PropertyId{"recurrenceId"},     PropertyKind::Json,       QStringLiteral("Recurrence ID") });
     cat.addProperty({ PropertyId{"recurrenceRange"},  PropertyKind::String,     QStringLiteral("Recurrence Range") });
+    // Completion-anchored recurrence (W4): derived standard form of an
+    // org-mode completion-anchor repeater (".+1w" Restart / "++2d"
+    // CatchUp) — {type: "catchUp"|"restart", interval, unit}. Catalogued
+    // so the differ sees an anchor advance as an ordinary field change
+    // (never a conflict); the verbatim org string rides
+    // providerExtras["x-vtodo"] via the generic custom-prop channel.
+    cat.addProperty({ PropertyId{"completionAnchor"}, PropertyKind::Json,       QStringLiteral("Completion Anchor") });
 
     // Alarms and extra data
     cat.addProperty({ PropertyId{"alarms"},           PropertyKind::Json,       QStringLiteral("Alarms") });

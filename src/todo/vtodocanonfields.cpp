@@ -9,6 +9,7 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QTimeZone>
 
 namespace {
@@ -102,6 +103,54 @@ KCalendarCore::Incidence::Status statusFromString(const QString &s)
     if (s == QStringLiteral("completed"))    return KCalendarCore::Incidence::StatusCompleted;
     if (s == QStringLiteral("cancelled"))    return KCalendarCore::Incidence::StatusCanceled;
     return KCalendarCore::Incidence::StatusNone;
+}
+
+/// W4 — parse an org-mode completion-anchored repeater marker (the value
+/// of a generic X-ORG-REPEATER custom property, e.g. ".+1w" / "++2d")
+/// into a `completionAnchor` canon JSON object. Mirrors org-io's regex
+/// (`(\.\+|\+\+|\+)(\d+)([hdwmy])`; longest sigil first so `.+`/`++` are
+/// not shadowed by the bare `+` alternative) but only CatchUp (`++`) and
+/// Restart (`.+`) are in W4 scope — a bare `+` is a plain
+/// RFC5545-representable recurrence (Cumulative), not a completion
+/// anchor, and returns an empty (invalid) object, same as anything
+/// unparseable.
+QJsonObject parseOrgRepeaterToCompletionAnchor(const QString& marker)
+{
+    static const QRegularExpression re(
+        QStringLiteral(R"(^(\.\+|\+\+|\+)(\d+)([hdwmy])$)"));
+    const QRegularExpressionMatch m = re.match(marker.trimmed());
+    if (!m.hasMatch())
+        return {};
+    const QString sigil = m.captured(1);
+    QString type;
+    if (sigil == QStringLiteral(".+"))
+        type = QStringLiteral("restart");
+    else if (sigil == QStringLiteral("++"))
+        type = QStringLiteral("catchUp");
+    else
+        return {};  // bare '+' == Cumulative — out of W4 scope
+    const int interval = m.captured(2).toInt();
+    const QString unit = m.captured(3);
+    if (interval <= 0)
+        return {};
+    QJsonObject obj;
+    obj.insert(QStringLiteral("type"), type);
+    obj.insert(QStringLiteral("interval"), interval);
+    obj.insert(QStringLiteral("unit"), unit);
+    return obj;
+}
+
+/// W4 — unit alphabet ([hdwmy], mirrors org-io) → RFC5545 RRULE FREQ,
+/// for the derived-recurrence demote. Mirrors the mapping style of
+/// recurrencepatternconverter.cpp's vocabulary tables.
+QString completionAnchorFreqForUnit(const QString& unit)
+{
+    if (unit == QStringLiteral("h")) return QStringLiteral("HOURLY");
+    if (unit == QStringLiteral("d")) return QStringLiteral("DAILY");
+    if (unit == QStringLiteral("w")) return QStringLiteral("WEEKLY");
+    if (unit == QStringLiteral("m")) return QStringLiteral("MONTHLY");
+    if (unit == QStringLiteral("y")) return QStringLiteral("YEARLY");
+    return {};
 }
 
 } // namespace
@@ -227,6 +276,38 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
             // RANGE=THISANDFUTURE → recurrenceRange
             if (todo->thisAndFuture())
                 obj.insert(QStringLiteral("recurrenceRange"), QStringLiteral("thisAndFuture"));
+        }
+    }
+
+    // ---- completionAnchor (W4) — generic X-ORG-REPEATER promote seam ------
+    // Recognizes a custom X-ORG-REPEATER property carrying an org-mode
+    // completion-anchored repeater marker (".+1w" Restart / "++2d"
+    // CatchUp) and derives the catalogued completionAnchor key so the
+    // differ treats an anchor advance as an ordinary field change (never
+    // a conflict — see tests/shape/tst_canonjson_diff_merge.cpp).
+    //
+    // NOTE (W4 open decision 1, org-leg wiring): org-io stores the
+    // repeater ONLY in OrgRoundtripData.repeaterString, off-incidence,
+    // and deliberately does NOT put X-ORG-REPEATER on the incidence
+    // itself (incidence-purity invariant pinned by
+    // tst_orgbackend_external.cpp:611-615,631-634). This generic seam is
+    // vendor-agnostic and fully testable without org-io. Wiring
+    // OrgBackend to inject X-ORG-REPEATER from m_roundtripData at fetch
+    // time (respecting incidence purity — injected at the canon-promote
+    // boundary, never by mutating the incidence) is DEFERRED: this repo's
+    // standalone build cannot link `planstan-org-io`
+    // (KALBURATOR_HAVE_ORG_IO=ON requires a host project to supply that
+    // target; a standalone `cmake -DKALBURATOR_HAVE_ORG_IO=ON` here fails
+    // at moc time with "orgfilemanager.h: No such file or directory" —
+    // verified 2026-08-27, see the W4 return receipt). TODO: wire
+    // OrgBackend once an org-io-enabled build is available to verify
+    // against the purity pins above.
+    {
+        const QString repeaterMarker = todo->nonKDECustomProperty("X-ORG-REPEATER");
+        if (!repeaterMarker.isEmpty()) {
+            const QJsonObject anchor = parseOrgRepeaterToCompletionAnchor(repeaterMarker);
+            if (!anchor.isEmpty())
+                obj.insert(QStringLiteral("completionAnchor"), anchor);
         }
     }
 
@@ -398,12 +479,15 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     }
 
     // ---- start / due -------------------------------------------------------
+    bool hadExplicitStart = false;
     {
         const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
         if (!startObj.isEmpty()) {
             const QDateTime dt = jsonToDateTime(startObj);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 todo->setDtStart(dt);
+                hadExplicitStart = true;
+            }
         }
     }
     {
@@ -430,6 +514,59 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     // construction; we inject them via the serialised iCal text below.
     // For now, store them for post-serialization injection.
     const QJsonArray recurrenceArr = obj.value(QStringLiteral("recurrence")).toArray();
+
+    // ---- completionAnchor → derived RRULE (W4) ------------------------------
+    // Builds a standard RFC5545 RRULE from {interval, unit} so non-org
+    // consumers see an ordinary recurring task; the verbatim org repeater
+    // marker (if any) already rides providerExtras["x-vtodo"] via the
+    // generic custom-prop re-emit below — no extra X-prop here (binding
+    // spec: "no X-prop duplication").
+    //
+    // Only derives when canon carries no verbatim recurrence lines of its
+    // own (invariant 3: a verbatim RRULE always wins). In practice this
+    // never collides: completionAnchor is only promoted from an
+    // X-ORG-REPEATER marker, and a VTODO carrying that marker does not
+    // also carry a native RRULE — the guard is defensive.
+    //
+    // "Anchored at last completion" (binding spec) is encoded literally:
+    // when canon has no explicit `start` of its own, an explicit DTSTART
+    // matching `completed` is emitted alongside the derived RRULE so the
+    // rule's RFC5545 anchor IS the completion timestamp. If canon already
+    // carries an explicit `start`, that DTSTART is left untouched (must
+    // not clobber a real scheduled start) and the derived RRULE rides on
+    // it instead — a declared, narrow corner case (see the W4 return
+    // receipt) since a completionAnchor-bearing org task ordinarily has
+    // no DTSTART of its own.
+    QByteArray derivedRecurrenceBytes;
+    {
+        const QJsonObject anchorObj = obj.value(QStringLiteral("completionAnchor")).toObject();
+        if (recurrenceArr.isEmpty() && !anchorObj.isEmpty()) {
+            const QString unit = anchorObj.value(QStringLiteral("unit")).toString();
+            const int interval = anchorObj.value(QStringLiteral("interval")).toInt();
+            const QString freq = completionAnchorFreqForUnit(unit);
+            if (!freq.isEmpty() && interval > 0) {
+                QString rrule = QStringLiteral("RRULE:FREQ=%1").arg(freq);
+                if (interval != 1)
+                    rrule += QStringLiteral(";INTERVAL=%1").arg(interval);
+                derivedRecurrenceBytes = rrule.toUtf8();
+                derivedRecurrenceBytes += '\n';
+
+                if (!hadExplicitStart) {
+                    const QString compStr = obj.value(QStringLiteral("completed")).toString();
+                    if (!compStr.isEmpty()) {
+                        const QDateTime dt = QDateTime::fromString(compStr, Qt::ISODate);
+                        if (dt.isValid()) {
+                            derivedRecurrenceBytes +=
+                                (QStringLiteral("DTSTART:")
+                                 + dt.toUTC().toString(QStringLiteral("yyyyMMdd'T'HHmmss'Z'")))
+                                    .toUtf8();
+                            derivedRecurrenceBytes += '\n';
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // ---- recurrenceId / recurrenceRange ------------------------------------
     // Mirrors the event path (eventcanonfields.cpp): the canon object carries
@@ -545,10 +682,11 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     if (!hadLastModified)
         icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
 
-    // ---- Inject verbatim recurrence lines ----------------------------------
+    // ---- Inject verbatim recurrence lines / derived completion-anchor RRULE ---
     // KCalendarCore's serialiser may not preserve recurrence lines verbatim.
-    // Insert them into the VTODO block before END:VTODO.
-    if (!recurrenceArr.isEmpty() && !icalBytes.isEmpty()) {
+    // Insert them into the VTODO block before END:VTODO. At most one of
+    // recurrenceArr / derivedRecurrenceBytes is non-empty (guarded above).
+    if ((!recurrenceArr.isEmpty() || !derivedRecurrenceBytes.isEmpty()) && !icalBytes.isEmpty()) {
         const QByteArray marker = "END:VTODO";
         const int pos = icalBytes.indexOf(marker);
         if (pos >= 0) {
@@ -557,6 +695,7 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
                 recBytes += rv.toString().toUtf8();
                 recBytes += '\n';
             }
+            recBytes += derivedRecurrenceBytes;
             icalBytes.insert(pos, recBytes);
         }
     }

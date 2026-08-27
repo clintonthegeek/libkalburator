@@ -473,6 +473,293 @@ private slots:
         QVERIFY2(!obj.contains(QStringLiteral("recurrenceId")),
                  "master todo must not carry a recurrenceId key");
     }
+
+    // ---- W4: completion-anchored recurrence --------------------------------
+
+    // Promote: a generic X-ORG-REPEATER custom prop carrying a Restart
+    // marker (".+1w") derives the catalogued completionAnchor key.
+    void vtodoPromotesRestartCompletionAnchorFromOrgRepeaterMarker()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:org-repeater-restart-1\r\n"
+            "SUMMARY:Water plants\r\n"
+            "COMPLETED:20260608T090000Z\r\n"
+            "X-ORG-REPEATER:.+1w\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonObject anchor = obj.value(QStringLiteral("completionAnchor")).toObject();
+        QVERIFY2(!anchor.isEmpty(), "completionAnchor must be derived from X-ORG-REPEATER");
+        QCOMPARE(anchor.value(QStringLiteral("type")).toString(), QStringLiteral("restart"));
+        QCOMPARE(anchor.value(QStringLiteral("interval")).toInt(), 1);
+        QCOMPARE(anchor.value(QStringLiteral("unit")).toString(), QStringLiteral("w"));
+
+        // The verbatim marker itself rides providerExtras["x-vtodo"] via the
+        // generic custom-prop channel (no extra machinery needed for it).
+        const QJsonObject extras = obj.value(QStringLiteral("providerExtras")).toObject();
+        const QJsonObject xvtodo = extras.value(QStringLiteral("x-vtodo")).toObject();
+        QCOMPARE(xvtodo.value(QStringLiteral("X-ORG-REPEATER")).toString(),
+                 QStringLiteral(".+1w"));
+    }
+
+    // Promote: a CatchUp marker ("++2d") maps to type "catchUp".
+    void vtodoPromotesCatchUpCompletionAnchorFromOrgRepeaterMarker()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:org-repeater-catchup-1\r\n"
+            "SUMMARY:Check backups\r\n"
+            "COMPLETED:20260610T080000Z\r\n"
+            "X-ORG-REPEATER:++2d\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        const QJsonObject anchor = obj.value(QStringLiteral("completionAnchor")).toObject();
+        QVERIFY2(!anchor.isEmpty(), "completionAnchor must be derived from X-ORG-REPEATER");
+        QCOMPARE(anchor.value(QStringLiteral("type")).toString(), QStringLiteral("catchUp"));
+        QCOMPARE(anchor.value(QStringLiteral("interval")).toInt(), 2);
+        QCOMPARE(anchor.value(QStringLiteral("unit")).toString(), QStringLiteral("d"));
+    }
+
+    // A bare '+' marker is Cumulative (out of W4 scope) — must NOT derive a
+    // completionAnchor.
+    void vtodoBareCumulativeRepeaterDoesNotDeriveCompletionAnchor()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:org-repeater-cumulative-1\r\n"
+            "SUMMARY:Cumulative task\r\n"
+            "X-ORG-REPEATER:+1w\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.contains(QStringLiteral("completionAnchor")),
+                 "a bare '+' (Cumulative) marker must not derive completionAnchor (W4 scope)");
+    }
+
+    // Promote: no X-ORG-REPEATER at all → no completionAnchor key.
+    void vtodoPromoteWithoutRepeaterMarkerHasNoCompletionAnchor()
+    {
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(kTestVTodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.contains(QStringLiteral("completionAnchor")),
+                 "a VTODO without X-ORG-REPEATER must not carry completionAnchor");
+    }
+
+    // Demote: completionAnchor (no explicit `start`) derives a standard
+    // RRULE anchored at `completed` — an explicit DTSTART matching
+    // `completed` is emitted alongside FREQ=WEEKLY (interval 1 omitted).
+    void vtodoDemoteDerivesRruleAnchoredAtCompletedForRestartAnchor()
+    {
+        const QByteArray canon = R"({
+            "uid": "derive-restart-1",
+            "summary": "Water plants",
+            "completed": "2026-06-08T09:00:00Z",
+            "completionAnchor": {"type":"restart","interval":1,"unit":"w"}
+        })";
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("RRULE:FREQ=WEEKLY"),
+                 qPrintable(QStringLiteral("expected derived RRULE:FREQ=WEEKLY; got:\n")
+                     + QString::fromUtf8(output)));
+        QVERIFY2(!output.contains("INTERVAL="),
+                 "interval 1 must be omitted from the derived RRULE");
+        QVERIFY2(output.contains("DTSTART:20260608T090000Z"),
+                 qPrintable(QStringLiteral(
+                     "derived RRULE must be anchored via an explicit DTSTART "
+                     "matching `completed`; got:\n") + QString::fromUtf8(output)));
+
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QVERIFY2(outTodo->recurs(), "output todo must recur");
+        // dtStart() (no-arg) returns the RECURRENCE-RELATIVE "current
+        // occurrence" for a recurring todo (KCalendarCore::Todo::dtStart(),
+        // reimp of Incidence::dtStart(), defaults to first=false) — use
+        // dtStart(true) to read back the literal DTSTART property we wrote.
+        QCOMPARE(outTodo->dtStart(true).toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-06-08T09:00:00Z"), Qt::ISODate));
+    }
+
+    // Demote: interval != 1 and a non-week unit emit INTERVAL= and the
+    // correct FREQ mapping (unit alphabet h/d/w/m/y → HOURLY/DAILY/WEEKLY/
+    // MONTHLY/YEARLY).
+    void vtodoDemoteCatchUpAnchorEmitsIntervalAndUnitMapping()
+    {
+        const QByteArray canon = R"({
+            "uid": "derive-catchup-1",
+            "completed": "2026-06-10T08:00:00Z",
+            "completionAnchor": {"type":"catchUp","interval":2,"unit":"d"}
+        })";
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("RRULE:FREQ=DAILY;INTERVAL=2"),
+                 qPrintable(QStringLiteral("expected RRULE:FREQ=DAILY;INTERVAL=2; got:\n")
+                     + QString::fromUtf8(output)));
+        QVERIFY2(output.contains("DTSTART:20260610T080000Z"),
+                 qPrintable(QStringLiteral("expected DTSTART:20260610T080000Z; got:\n")
+                     + QString::fromUtf8(output)));
+    }
+
+    // Demote: when canon already carries an explicit `start`, the derived
+    // RRULE must NOT clobber it with a second DTSTART line — the real
+    // start is left untouched (declared corner case, see the W4 return
+    // receipt: the RRULE's RFC5545 anchor is then the explicit start, not
+    // `completed`).
+    void vtodoCompletionAnchorDoesNotOverrideExplicitStart()
+    {
+        const QByteArray canon = R"({
+            "uid": "derive-explicit-start-1",
+            "completed": "2026-06-08T09:00:00Z",
+            "start": {"dateTime": "2026-05-01T12:00:00Z", "floating": false},
+            "completionAnchor": {"type":"restart","interval":1,"unit":"m"}
+        })";
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("RRULE:FREQ=MONTHLY"),
+                 qPrintable(QStringLiteral("expected derived RRULE:FREQ=MONTHLY; got:\n")
+                     + QString::fromUtf8(output)));
+
+        // Exactly one DTSTART line, matching the explicit start (not completed).
+        const auto outputLines = QString::fromUtf8(output).split(QLatin1Char('\n'));
+        int dtstartCount = 0;
+        for (const QString& raw : outputLines) {
+            const QString line = raw.trimmed();
+            if (line.startsWith(QStringLiteral("DTSTART")))
+                ++dtstartCount;
+        }
+        QCOMPARE(dtstartCount, 1);
+        QVERIFY2(!output.contains("DTSTART:20260608T090000Z"),
+                 "must not gain a second DTSTART matching `completed`");
+
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        // dtStart(true) reads the literal DTSTART property (see the sibling
+        // restart-anchor test for why the no-arg getter is unsuitable for a
+        // recurring todo).
+        QCOMPARE(outTodo->dtStart(true).toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-05-01T12:00:00Z"), Qt::ISODate));
+    }
+
+    // Demote: when canon already carries verbatim `recurrence` lines, the
+    // derived RRULE must NOT be injected too (invariant 3: verbatim always
+    // wins) — defensive guard, since this combination should not arise from
+    // a real promote (completionAnchor only comes from X-ORG-REPEATER,
+    // which does not co-occur with a native RRULE in practice).
+    void vtodoVerbatimRecurrenceTakesPrecedenceOverCompletionAnchor()
+    {
+        const QByteArray canon = R"({
+            "uid": "derive-precedence-1",
+            "completed": "2026-06-08T09:00:00Z",
+            "recurrence": ["RRULE:FREQ=DAILY"],
+            "completionAnchor": {"type":"restart","interval":1,"unit":"w"}
+        })";
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("RRULE:FREQ=DAILY"),
+                 "verbatim recurrence must be emitted");
+        QVERIFY2(!output.contains("RRULE:FREQ=WEEKLY"),
+                 "the derived completionAnchor RRULE must not also be injected");
+    }
+
+    // Round trip: promote → demote → promote again reproduces the same
+    // completionAnchor (derived from the X-ORG-REPEATER marker, which
+    // itself survives the round trip via the generic extras channel — NOT
+    // from the derived RRULE, which promote does not read back).
+    void vtodoCompletionAnchorRoundTripStable()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:org-repeater-roundtrip-1\r\n"
+            "SUMMARY:Water plants\r\n"
+            "COMPLETED:20260608T090000Z\r\n"
+            "X-ORG-REPEATER:.+1w\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon1 = fwd.transform(vtodo);
+        QVERIFY2(!canon1.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj1 = parse(canon1);
+        const QJsonObject anchor1 = obj1.value(QStringLiteral("completionAnchor")).toObject();
+        QVERIFY2(!anchor1.isEmpty(), "completionAnchor must be derived");
+
+        const QByteArray demoted = rev.transform(canon1);
+        QVERIFY2(!demoted.isEmpty(), "reverse stage returned empty");
+        {
+            // KCalendarCore re-serializes a nonKDECustomProperty with an
+            // explicit ";VALUE=TEXT" parameter, so check via the parsed
+            // property rather than a literal byte match.
+            const auto demotedTodo = parseTodoFromICal(demoted);
+            QVERIFY2(demotedTodo, "could not parse demoted VTODO");
+            QCOMPARE(demotedTodo->nonKDECustomProperty("X-ORG-REPEATER"),
+                     QStringLiteral(".+1w"));
+        }
+
+        const QByteArray canon2 = fwd.transform(demoted);
+        QVERIFY2(!canon2.isEmpty(), "second forward pass returned empty");
+        const QJsonObject obj2 = parse(canon2);
+        const QJsonObject anchor2 = obj2.value(QStringLiteral("completionAnchor")).toObject();
+        QVERIFY2(!anchor2.isEmpty(), "completionAnchor must be re-derived on the second pass");
+
+        QCOMPARE(anchor2.value(QStringLiteral("type")).toString(),
+                 anchor1.value(QStringLiteral("type")).toString());
+        QCOMPARE(anchor2.value(QStringLiteral("interval")).toInt(),
+                 anchor1.value(QStringLiteral("interval")).toInt());
+        QCOMPARE(anchor2.value(QStringLiteral("unit")).toString(),
+                 anchor1.value(QStringLiteral("unit")).toString());
+    }
+
+    // Loss-profile pin: completionAnchor is Reversible on canon → vtodo
+    // (rides providerExtras/x-vtodo + the derived RRULE).
+    void canonToVtodoLossProfileChargesCompletionAnchorReversible()
+    {
+        const auto regs = makeTodoRegistries();
+        const Shape canon{ DomainId{QStringLiteral("todo")}, EncodingId{QStringLiteral("canon")} };
+        const Shape vtodo{ DomainId{QStringLiteral("todo")}, EncodingId{QStringLiteral("ical-vtodo")} };
+
+        const auto loss = regs.transformation.inspect(canon, vtodo);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
+                 LossKind::Reversible);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestTodoCanonRoundtrip)

@@ -201,6 +201,30 @@ private slots:
             QVERIFY2(found,
                      "percentComplete must ride a kalburator.canon carrier");
         }
+
+        // W4: completionAnchor has no todoTask home → auto-carries as an
+        // open-extension carrier (x-canon-completion-anchor), same
+        // mechanism as percentComplete above (decision 2: auto-carry, not
+        // added to the demote's `handled` set).
+        {
+            QJsonObject c = makeCanon();
+            c.insert(QStringLiteral("completionAnchor"),
+                     QJsonObject{ { QStringLiteral("type"), QStringLiteral("restart") },
+                                  { QStringLiteral("interval"), 1 },
+                                  { QStringLiteral("unit"), QStringLiteral("w") } });
+            const QJsonObject out = parse(stage.transform(serialize(c)));
+            bool found = false;
+            for (const auto& ev :
+                 out.value(QStringLiteral("extensions")).toArray()) {
+                const QJsonObject ext = ev.toObject();
+                if (ext.value(QStringLiteral("extensionName")).toString()
+                    == QLatin1String("kalburator.canon")
+                    && ext.contains(QLatin1String("x-canon-completion-anchor")))
+                    found = true;
+            }
+            QVERIFY2(found,
+                     "completionAnchor must ride a kalburator.canon carrier");
+        }
     }
 
     // Unrepresentable RRULE rulings ride the carrier and re-promote
@@ -286,6 +310,8 @@ private slots:
                  LossKind::Reversible);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("checklistItems")}),
                  LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
+                 LossKind::Reversible);
 
         const auto promoteLoss = regs.transformation.inspect(mt, canon);
         QVERIFY2(promoteLoss.isLossless(), "promote must be lossless");

@@ -252,6 +252,7 @@ reads through listings/delta/$expand.
 | Property | LossKind |
 |---|---|
 | checklistItems | Reversible |
+| completionAnchor | Reversible |
 | descriptionHtml | Reversible |
 | linkedResources | Dropped |
 | parentUid | Reversible |
@@ -276,6 +277,7 @@ reads through listings/delta/$expand.
 | alarms | Dropped |
 | categories | Dropped |
 | checklistItems | Dropped |
+| completionAnchor | Dropped |
 | descriptionHtml | Dropped |
 | due | Degraded |
 | geo | Dropped |
@@ -294,6 +296,7 @@ reads through listings/delta/$expand.
 | alarms | Simplified |
 | checklistItems | Dropped |
 | completed | Simplified |
+| completionAnchor | Reversible |
 | description | Simplified |
 | descriptionHtml | Simplified |
 | due | Simplified |

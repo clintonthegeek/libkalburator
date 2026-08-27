@@ -67,6 +67,51 @@ private slots:
         QVERIFY(d.diff(src, base).contains(PropertyId{QStringLiteral("attendees")}));
     }
 
+    // W4 — completion-anchored recurrence: an anchor advance (e.g. after a
+    // completion event, PlanStan/org-io stages a later `completed` and
+    // caller-derived `completionAnchor`) is an ordinary field change, never
+    // a conflict — this falls out for free once completionAnchor is a
+    // catalogued todo canon property (CanonJsonDiffer iterates catalogued
+    // ids only; it has no separate "conflict" notion — reporting the key
+    // as changed IS the non-conflict treatment the differ contributes).
+    void differMarksCompletionAnchorAdvanceAsOrdinaryChange()
+    {
+        CanonJsonDiffer d({ PropertyId{QStringLiteral("completionAnchor")},
+                            PropertyId{QStringLiteral("completed")} });
+        CanonicalRecord src;
+        src.data = R"({"completionAnchor":{"type":"restart","interval":1,"unit":"w"},)"
+                   R"("completed":"2026-06-08T09:00:00Z"})";
+        CanonicalRecord base;
+        base.data = R"({"completionAnchor":{"type":"restart","interval":1,"unit":"w"},)"
+                    R"("completed":"2026-06-01T09:00:00Z"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("completed")}));
+        // completionAnchor's own JSON is byte-identical here (both sides
+        // converge on the same derived {type,interval,unit}) — only
+        // `completed` differs, exactly as the binding spec predicts: both
+        // sides converge on the same derived value, so the advance shows up
+        // as an ordinary `completed` change, not a conflict on the anchor
+        // itself.
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("completionAnchor")}));
+    }
+
+    // completionAnchor variant of differMarksChangedPropertyOnly: a direct
+    // change to the anchor itself (e.g. interval bumped by a later org
+    // edit) is reported like any other catalogued property — the differ
+    // applies no special conflict machinery to it.
+    void differMarksCompletionAnchorContentChangeOnly()
+    {
+        CanonJsonDiffer d({ PropertyId{QStringLiteral("completionAnchor")},
+                            PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;
+        src.data = R"({"completionAnchor":{"type":"catchUp","interval":2,"unit":"d"},"summary":"x"})";
+        CanonicalRecord base;
+        base.data = R"({"completionAnchor":{"type":"catchUp","interval":1,"unit":"d"},"summary":"x"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("completionAnchor")}));
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
+    }
+
     void mergerTakesSourceWhenTargetUnchanged()
     {
         CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });

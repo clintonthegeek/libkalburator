@@ -182,6 +182,19 @@ private slots:
             QVERIFY(!out.contains(QStringLiteral("priority")));
             QVERIFY(!out.contains(QStringLiteral("recurrence")));
         }
+
+        // W4: completionAnchor has no home and NO carrier channel on Google
+        // Tasks (no recurrence field at all) → silently dropped, same as
+        // recurrence.
+        {
+            QJsonObject c = makeCanon();
+            c.insert(QStringLiteral("completionAnchor"),
+                     QJsonObject{ { QStringLiteral("type"), QStringLiteral("restart") },
+                                  { QStringLiteral("interval"), 1 },
+                                  { QStringLiteral("unit"), QStringLiteral("w") } });
+            const QJsonObject out = parse(stage.transform(serialize(c)));
+            QVERIFY(!out.contains(QStringLiteral("completionAnchor")));
+        }
     }
 
     // C→G→C byte-equal identity for the representable set.
@@ -232,6 +245,8 @@ private slots:
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrence")}),
                  LossKind::Dropped);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("priority")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
                  LossKind::Dropped);
 
         const auto promoteLoss = regs.transformation.inspect(gt, canon);

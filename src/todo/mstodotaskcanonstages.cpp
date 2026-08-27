@@ -483,7 +483,11 @@ QByteArray CanonToMsTodoTaskStage::transform(const QByteArray& canonBytes) const
             // percentComplete / relatedTo / parentUid / sortOrder / location /
             // geo are deliberately NOT handled — no todoTask home (declared
             // Dropped); checklistItems/linkedResources are separate-endpoint
-            // nav collections (transport).
+            // nav collections (transport). completionAnchor (W4) is ALSO
+            // deliberately NOT handled — it auto-carries via this very loop
+            // as an open-extension carrier (x-canon-completion-anchor),
+            // declared Reversible below, matching the existing `recurrence`
+            // ruling (W4 decision 2).
         };
         bool any = false;
         QJsonObject carrierRow;
@@ -554,7 +558,8 @@ Kalburator::Shape::LossProfile canonToMsTodoTaskLoss()
     p.affected.insert(PropertyId{QStringLiteral("recurrence")},
                       LossKind::Reversible);
     for (const char* prop : { "percentComplete", "relatedTo", "parentUid",
-                              "sortOrder", "location", "geo" }) {
+                              "sortOrder", "location", "geo",
+                              "completionAnchor" }) {
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Reversible);
     }
