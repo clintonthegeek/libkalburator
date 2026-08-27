@@ -1,17 +1,32 @@
-# libkalburator — extraction progress overview
+# libkalburator — extraction progress overview (HISTORICAL — SUPERSEDED)
 
 **Last updated:** 2026-04-21 (after Phase B4 — engine ↔ conflict wiring landed).
+**Superseded:** 2026-08-27. This file stopped being updated after Phase B4;
+everything from Phase C onward (through Phase P, and the EEE / B2C /
+vtodo-parity campaigns that followed the extraction work entirely) landed
+without a corresponding edit here. The repo-layout snapshot below (6 `src/`
+subdirs) is stale — `src/` now has 22 top-level subdirs. **Do not treat this
+file as current or as the entry point.**
+
+**The live entry point is the repo-root `CLAUDE.md`** (`~/dev/libkalburator/CLAUDE.md`),
+which points to the active campaign STATUS docs
+(`docs/campaign/{eee,b2c,vtodo-parity}/STATUS.md`) and to the individual
+`docs/phase0/04*-status.md` files for later phases (C.7 through P) that *do*
+each carry an accurate status line for the phase they cover — only this
+index/README was left behind. Kept here for the Phase 0–B4 history, which is
+still accurate as written below.
+
 **Maintainer:** Clinton (solo).
 **Branch:** `main` (libkalburator) / `master` (PlanStan) — no upstream
 remote; static, single-developer branches.
 
-This document is the **first thing a new agent should read** when
+~~This document is the **first thing a new agent should read** when
 landing in either `~/dev/libkalburator/` or `~/dev/PlanStan/` with
-work that touches the extraction.
+work that touches the extraction.~~ Superseded — see above.
 
 ---
 
-## 🛑 READ THIS FIRST — keeping this document current is mandatory
+## 🛑 (SUPERSEDED — see banner above) keeping this document current was mandatory
 
 **This file is the single source of truth for extraction status.**
 Every future agent starts here. If it lies about progress, work gets
@@ -44,7 +59,9 @@ file, you have failed the task.** The PlanStan CLAUDE.md rule applies:
 commit must also update whatever doc describes that effort's status."
 For libkalburator extraction work, that doc is this one.
 
-Do not create a parallel status doc elsewhere. Update this one.
+(This "update this one" rule was superseded 2026-08-27 — see banner at
+top. Live status now lives in the per-campaign `docs/campaign/*/STATUS.md`
+files; that is not a violation of this rule, it's the rule's replacement.)
 
 ---
 
