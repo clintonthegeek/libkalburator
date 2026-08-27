@@ -6,7 +6,7 @@ PlanStan's W1–W8 handoff,
 audit in `PlanStan/docs/audits/2026-08-25-vtodo-parity/`). This file is
 the live execution tracker; the response doc holds decisions + receipts.
 
-**Last updated:** 2026-08-26 (VP.c W1 COMPLETE — composite identity + written contract + full test matrix; W4 recon done, implementation next)
+**Last updated:** 2026-08-27 (commit `43d74b1`; VP.d W4 DONE — completion-anchor canon key + derived-RRULE write-out + differ non-conflict; org-io wiring deferred, not buildable standalone here; W3 series-split next)
 
 ## Where we stand
 
@@ -16,7 +16,7 @@ the live execution tracker; the response doc holds decisions + receipts.
 | VP.a | **W8** capabilities API (`CalendarCapabilities`, discovery extensions, static per-backend reports, DiscoveredCalendar exposure) | **DONE 2026-08-26** — public header `src/sync/calendarcapabilities.h`; static reports in `CapabilityReports` + `capabilitiesFromDiscovery()`; discovery gains `<prodid>` extraction (recursive local-name match; falls back to known-product sniff over body + HTTP Server header), `producerId` + `supportsSyncCollection` on `PerCalendarCapabilities` (additive JSON, round-trip pinned); supported-report-set requested+parsed from the depth-1 multistat; DiscoveredCalendar exposure = metadata-backed typed pair (`capabilities()`/`setCapabilities()`, key `"capabilities"`, non-breaking) populated in the 4 vendor backends + RemoteCalendarBackend derivation; suite `tst_calendar_capabilities` (19 slots). Value corrections vs first-pass spec: googleCalendar recurrenceExceptions TRUE + unknown XOnly; msGraphCalendar recurrenceExceptions FALSE (v1 writes flat events+masters only, O61(e)); localBlob/calDAV alarms Full. Legacy dead `struct CalendarCapabilities` removed from backendcapabilities.{h,cpp} (name now owned by the W8 contract). |
 | VP.b | **W2** per-instance completion rep + BaselineStore transactions + Google/MSToDo producer mappings | **DONE 2026-08-26** (`7403509`) — exception-create href distinct from master (`<uid>-<stamp>.ics`, was clobbering master); `BaselineStore::transaction(fn)` API + engine persist loop wraps atomically. 12 slots. Return receipt `2026-08-26-w2-return-receipt.md`. **Correction** vs the response doc: Google Tasks has NO extension point (O66(c)) — cannot carry the master EXDATE; MS To-Do carries it via nav-POST x-canon-recurrence (already Reversible). Consumer note delivered to PlanStan (`e1856650`): ConflictInfo ids may now be composite; decompose before display. |
 | VP.c | **W1** composite record identity (`uid\x01recurrenceId`) for blob pipeline + contract doc + matrices (needs P3) | **DONE 2026-08-26** — step-1a library foundation (recordidentity.h, vtodo canon recurrenceId/recurrenceRange, scanner recurrenceIdUtc selector); **step-1b RemoteCalendarBackend blob-view wiring** (records minted via `composeRecordIdentity(uid, recurrenceId)` at every incidence-parse site, composite-keyed `m_lastRawIcsByUid`/`m_uidToUrl`, decompose-at-seam for resolveItemUrl/findOwningCalendar/applyRecords+createRecord URL guesses/loadRecord with graceful bare fallback; FakeCalDavServer store refactored from UID-keyed to RESOURCE-FILE-NAME-keyed; tst_remotecalendarbackend_blob_view +5 slots); **step-1c SubscriptionBackend + LocalBackend**. SubscriptionBackend: `subscriptionBlobRecord` now mints via `composeRecordIdentity(uid, hasRecurrenceId() ? recurrenceId() : invalid)` — a feed with a master + detached exception block (separate VTODO/VEVENT sharing one UID) yields TWO records (bare uid + composite, both bytes preserved); `loadRecord` decomposes (composite id → the exception, bare uid → the master, graceful master fallback when a composite id's block was dropped from the feed); write/delete seams stay rejected no-ops (read-only — a composite id never becomes a path). LocalBackend DECISION: do NOT compound record ids at the file level (record id == filename minus `.ics` is a bijection to ONE file path; compounding would break id→filename). Audit found NO truncation — `recordFromBytes` already stores the FULL file bytes (`rec.data = bytes`), so a single `.ics` parsing to master + co-located exception already keeps the RECURRENCE-ID block verbatim. No code change; pin test added. Follow-ups (recon): DecSyncBackend / AkonadiBackend / OrgBackend / GenericSqliteBackend not compounded at this stage. **STEP-2/3 (written contract + matrices) DONE same day** — binding contract `docs/campaign/vtodo-parity/2026-08-26-w1-detached-exceptions-contract.md` (§1 keying, §2 differ treatment of master+exception pairs, §3 delete semantics, §4 non-supporting-peer flatten strategy, §7 full matrix create/edit/delete/reabsorb × caldav/subscription/local/org/google/ms); return receipt `2026-08-26-w1-return-receipt.md`. Two new CalDAV pins: `detachedException_reabsorb_surfacesMasterOnly` + `detachedException_masterDelete_removesOnlyMasterHref` (+ `FakeCalDavServer::removeEventAt`). Engine-level uid-family propagation/cascade remain SPECIFIED-not-executed (§5 of contract doc; per-record engine behavior unchanged). |
-| VP.d | **W4** completion-anchor canon key (catalogued) + CalDAV derived-RRULE write-out + differ non-conflict treatment | **RECON DONE 2026-08-26, impl not started** — full code map + open decisions in `2026-08-26-w4-recon-handoff.md` (canon catalogue seam `todocanonproperties.cpp:36-40`; promote/demote seams `vtodocanonfields.cpp:204-214/:548-562`; org-io repeater parser is EXTERNAL gated `KALBURATOR_HAVE_ORG_IO=ON`, `OrgRoundtripData.repeaterString` off-incidence; MS demote auto-carries unhandled canon props `mstodotaskcanonstages.cpp:474-507`). Deliverables per response doc §W4: catalogued `completionAnchor` key + derived RRULE write-out anchored at `completed` ONLY + differ non-conflict (automatic via `todoCanonPropertyIds()`, pin it). Loss rows for the new key require matrix regeneration in the same commit (O63). |
+| VP.d | **W4** completion-anchor canon key (catalogued) + CalDAV derived-RRULE write-out + differ non-conflict treatment | **DONE 2026-08-27** — catalogued `completionAnchor` key (`todocanonproperties.cpp:47`); generic `X-ORG-REPEATER` custom-prop promote seam (`vtodocanonfields.cpp`, new block after recurrenceId/recurrenceRange) + derived-RRULE demote seam anchored at `completed` (explicit DTSTART emitted only when canon carries no competing explicit `start` — declared corner case, tested); loss profiles declared on all three todo edges (vtodo Reversible, google-task Dropped, ms-todotask auto-carry Reversible); differ non-conflict pinned (2 new slots in `tst_canonjson_diff_merge`); matrix regenerated + byte-pin green same commit (O63). **org-io wiring DEFERRED, not landed**: `KALBURATOR_HAVE_ORG_IO=ON` verified NOT buildable standalone in this repo (actually attempted — fails at moc time, `orgfilemanager.h: No such file`, since no host project supplies the `planstan-org-io` target here); TODO left at the promote seam for whoever next has an org-io-enabled build (e.g. inside PlanStan). Return receipt: `2026-08-27-w4-return-receipt.md`. Full suite green except the 4 known environmental Radicale slots. |
 | VP.e | **W3** series-split mechanics + split-association carrier | not started |
 | VP.f | **W5** alarm shape extension (abs trigger/RELATED/REPEAT/DURATION) + **W6.2** malformed-date coercion + **W7** passthrough round-trip tests | not started |
 
@@ -160,3 +160,31 @@ the live execution tracker; the response doc holds decisions + receipts.
   persisted in `2026-08-26-w4-recon-handoff.md` (code map + open decisions:
   org-leg promote seam, MS carrier ruling, unit alphabet, anchor source).
   W4 implementation is the next task; nothing coded yet for W4.
+- 2026-08-27: **VP.d (W4) LANDED** — catalogued `completionAnchor`
+  canon key (Json, `todocanonproperties.cpp:47`); generic `X-ORG-REPEATER`
+  custom-prop promote seam in `vtodocanonfields.cpp` (org-io regex mirror,
+  `.+`/`++` → Restart/CatchUp, bare `+` out of scope); derived-RRULE
+  demote seam appended to the pre-existing recurrence-injection point,
+  anchored at `completed` via an explicit DTSTART only when canon has no
+  competing explicit `start` (declared corner case when it does, pinned
+  by test); loss profiles on all three todo edges (canon→vtodo
+  Reversible, canon→google-task Dropped — no recurrence field at all,
+  canon→ms-todotask auto-carry Reversible via the existing
+  unhandled-canon-prop open-extension loop, `x-canon-completion-anchor`);
+  differ non-conflict pinned directly (2 new `tst_canonjson_diff_merge`
+  slots) — falls out for free once the key is catalogued, no differ code
+  changed. Matrix regenerated + `tst_gm_pipeline_convergence` byte-pin
+  green in the same commit (O63). 14 new test slots total across
+  `tst_todo_canon_roundtrip` (+10), `tst_canonjson_diff_merge` (+2),
+  `tst_google_task_canon_edge` (+1), `tst_ms_todotask_canon_edge` (+1).
+  **Org-leg (OrgBackend) wiring DEFERRED**: actually attempted
+  `cmake -DKALBURATOR_HAVE_ORG_IO=ON` standalone in this repo and
+  confirmed it does NOT build (fails at moc time — no host project
+  supplies the `planstan-org-io` target outside a build like PlanStan's);
+  a TODO is left at the promote seam naming exactly what remains
+  (inject `X-ORG-REPEATER` from `OrgBackend::m_roundtripData` at fetch
+  time, respecting the incidence-purity invariant pinned by
+  `tst_orgbackend_external.cpp:611-615,631-634`) for whoever next has an
+  org-io-enabled build. Return receipt: `2026-08-27-w4-return-receipt.md`.
+  Full suite green except the 4 known environmental Radicale slots
+  (213 total tests, 209 passing + the 4 known failures).
