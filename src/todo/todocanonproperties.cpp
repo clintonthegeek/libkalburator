@@ -51,6 +51,13 @@ Kalburator::Shape::PropertyCatalogue makeTodoCanonCatalogue()
     // (never a conflict); the verbatim org string rides
     // providerExtras["x-vtodo"] via the generic custom-prop channel.
     cat.addProperty({ PropertyId{"completionAnchor"}, PropertyKind::Json,       QStringLiteral("Completion Anchor") });
+    // O74 — fingerprint of providerExtras content, computed fresh at promote
+    // time on each leg (filtered to exclude known-volatile vendor
+    // bookkeeping on MS/Google — see the respective promote stages). Makes
+    // an X-prop/extras-only edit differ-visible: CanonJsonDiffer only ever
+    // compares catalogued keys, and providerExtras itself is deliberately
+    // never catalogued (see FINDINGS.md O74).
+    cat.addProperty({ PropertyId{"providerExtrasDigest"}, PropertyKind::String, QStringLiteral("Provider Extras Digest") });
 
     // Alarms and extra data
     cat.addProperty({ PropertyId{"alarms"},           PropertyKind::Json,       QStringLiteral("Alarms") });

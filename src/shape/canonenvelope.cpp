@@ -1,5 +1,7 @@
 #include "canonenvelope.h"
 
+#include <QCryptographicHash>
+#include <QJsonArray>
 #include <QJsonDocument>
 
 namespace Kalburator::Shape::CanonEnvelope {
@@ -44,6 +46,22 @@ QString kind(const QJsonObject& obj)
 bool valuesEqual(const QJsonValue& a, const QJsonValue& b)
 {
     return a == b;  // QJsonValue::operator== is recursive, key-order-independent
+}
+
+QString canonicalDigest(const QJsonValue& value)
+{
+    QByteArray bytes;
+    if (value.isObject())
+        bytes = QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact);
+    else if (value.isArray())
+        bytes = QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact);
+    else
+        // Bare scalar: wrap in a single-element array so QJsonDocument can
+        // serialize it deterministically (QJsonDocument itself only wraps
+        // objects/arrays at the top level).
+        bytes = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+    return QString::fromLatin1(
+        QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
 }  // namespace Kalburator::Shape::CanonEnvelope

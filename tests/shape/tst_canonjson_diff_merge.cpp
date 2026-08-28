@@ -129,6 +129,28 @@ private slots:
         QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
     }
 
+    // O74 — providerExtrasDigest is an ordinary catalogued property as far
+    // as the differ is concerned: once catalogued, a change to its value
+    // (computed upstream from providerExtras content the differ itself
+    // never sees) is reported like any other property change. This is the
+    // whole O74 fix: providerExtras itself stays permanently invisible to
+    // the differ (differIgnoresProviderExtrasAndCanon above still holds,
+    // unmodified — it tests a different, narrower catalogue that never
+    // includes providerExtrasDigest), but a change confined to it is no
+    // longer silently swallowed once a domain catalogues the digest.
+    void differMarksProviderExtrasDigestChangeOnly()
+    {
+        CanonJsonDiffer d({ PropertyId{QStringLiteral("providerExtrasDigest")},
+                            PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;
+        src.data = R"({"providerExtrasDigest":"abc123","summary":"x"})";
+        CanonicalRecord base;
+        base.data = R"({"providerExtrasDigest":"def456","summary":"x"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("providerExtrasDigest")}));
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
+    }
+
     void mergerTakesSourceWhenTargetUnchanged()
     {
         CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });

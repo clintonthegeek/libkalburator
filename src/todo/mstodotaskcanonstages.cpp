@@ -2,11 +2,15 @@
 
 #include "canonenvelope.h"
 #include "recurrencepatternconverter.h"
+#include "windowszonesmap.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QRegularExpression>
+#include <QTimeZone>
 
 namespace {
 
@@ -14,8 +18,14 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::canonicalDigest;
 using Kalburator::Calendar::RecurrencePattern::patternedRecurrenceToRruleLines;
 using Kalburator::Calendar::RecurrencePattern::rruleLinesToPatternedRecurrence;
+
+// KCalendarCore::Alarm::Type::Display == 1 (Invalid=0, Display=1, ...). Not
+// pulling in a KCalendarCore header here — this file deliberately stays a
+// pure wire-JSON transform with no vendor/library coupling beyond Qt.
+constexpr int kAlarmTypeDisplay = 1;
 
 constexpr auto kCarrierPrefix = "x-canon-";
 constexpr auto kExtensionName = "kalburator.canon";
@@ -141,6 +151,73 @@ QJsonObject jsonToMsDateTime(const QJsonObject& obj)
     return out;
 }
 
+/// W5 — Graph reminderDateTime (wall time in `zone`) → absolute UTC ISO
+/// string, for the unified alarm row's "at" key (RFC5545 VALARM
+/// TRIGGER;VALUE=DATE-TIME is always UTC, so a plain ISO string is
+/// sufficient — no {dateTime,tz} sidecar the way due/start need one).
+/// Mirrors mseventcanonstages.cpp's msTimeToCanon wall-time interpretation
+/// (Windows-vocabulary zone ids resolve through the vendored CLDR map;
+/// offset-less wall time is interpreted IN the target zone, never the
+/// process-local zone) but intentionally does not carry a `tzOriginal`
+/// split-brain sidecar the way the event leg does — MS To-Do's single
+/// reminder is inherently a plain absolute instant once canonicalized.
+QString msReminderToUtcIso(const QJsonObject& reminder)
+{
+    const QString raw = strValue(reminder, QStringLiteral("dateTime"));
+    const QString tzRaw = strValue(reminder, QStringLiteral("timeZone"));
+    if (raw.isEmpty())
+        return {};
+
+    QString iana = tzRaw;
+    if (!tzRaw.isEmpty() && !QTimeZone(tzRaw.toLatin1()).isValid()) {
+        const QString resolved =
+            Kalburator::Calendar::WindowsZones::windowsZoneToIana(tzRaw);
+        if (!resolved.isEmpty())
+            iana = resolved;
+    }
+
+    QDateTime dt = QDateTime::fromString(raw, Qt::ISODate);
+    if (dt.isValid() && dt.timeSpec() == Qt::LocalTime) {
+        // Offset-less wall time (the common wire form) — interpret IN the
+        // target zone, never the process-local zone.
+        dt = {};
+        static const QRegularExpression frac(
+            QStringLiteral("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?$"));
+        const auto m = frac.match(raw);
+        if (m.hasMatch()) {
+            const QDateTime wall = QDateTime::fromString(
+                m.captured(1), QStringLiteral("yyyy-MM-ddTHH:mm:ss"));
+            if (wall.isValid()) {
+                const QTimeZone zone(iana.isEmpty()
+                                          ? QByteArrayLiteral("UTC")
+                                          : iana.toLatin1());
+                dt = zone.isValid() ? QDateTime(wall.date(), wall.time(), zone)
+                                    : QDateTime(wall.date(), wall.time(), Qt::UTC);
+            }
+        }
+    }
+    if (!dt.isValid())
+        return {};
+    return dt.toUTC().toString(Qt::ISODate);
+}
+
+/// Reverse of msReminderToUtcIso: absolute UTC ISO string → Graph
+/// reminderDateTime. Always emits timeZone "UTC" — there is no original
+/// vendor zone to reconstruct once an alarm has been canonicalized to the
+/// unified "at" shape (consistent with the already-declared Simplified
+/// loss kind for alarms on this leg).
+QJsonObject utcIsoToMsReminder(const QString& atIso)
+{
+    const QDateTime dt = QDateTime::fromString(atIso, Qt::ISODate);
+    if (!dt.isValid())
+        return {};
+    QJsonObject out;
+    out.insert(QStringLiteral("dateTime"),
+              dt.toUTC().toString(QStringLiteral("yyyy-MM-ddTHH:mm:ss")));
+    out.insert(QStringLiteral("timeZone"), QStringLiteral("UTC"));
+    return out;
+}
+
 int importanceToPriority(const QString& importance)
 {
     if (importance == QLatin1String("low"))   return 9;
@@ -233,16 +310,29 @@ QByteArray MsTodoTaskToCanonStage::transform(const QByteArray& msBytes) const
         }
     }
 
-    // ---- single reminder → alarms[0] ----------------------------------------------------
+    // ---- single reminder → alarms[0] (W5 — unified {type, at} shape) --------
+    // Graph's reminderDateTime is inherently an absolute trigger (an
+    // absolute {dateTime, timeZone}, never an offset) — this now promotes
+    // into the SAME row shape the vtodo/CalDAV leg uses (W5's new "at" key),
+    // instead of the old vendor-specific `{"reminder": {...}}` sub-shape.
+    // Real bug fixed by this shape unification (found during VP.f recon):
+    // the old shape did not match vtodo's {type, offset, text} shape at
+    // all, so demoting an MS-sourced alarm through canonObjectToVtodoBytes
+    // silently produced a bogus zero-offset Invalid-type VALARM on any
+    // cross-vendor sync to CalDAV/local. See the VP.f return receipt.
     {
         const QJsonObject reminder =
             task.value(QStringLiteral("reminderDateTime")).toObject();
         if (!reminder.isEmpty()) {
-            QJsonArray alarms;
-            QJsonObject row;
-            row.insert(QStringLiteral("reminder"), reminder);
-            alarms.append(row);
-            obj.insert(QStringLiteral("alarms"), alarms);
+            const QString atIso = msReminderToUtcIso(reminder);
+            if (!atIso.isEmpty()) {
+                QJsonArray alarms;
+                QJsonObject row;
+                row.insert(QStringLiteral("type"), kAlarmTypeDisplay);
+                row.insert(QStringLiteral("at"), atIso);
+                alarms.append(row);
+                obj.insert(QStringLiteral("alarms"), alarms);
+            }
         }
     }
 
@@ -312,6 +402,34 @@ QByteArray MsTodoTaskToCanonStage::transform(const QByteArray& msBytes) const
         QJsonObject wrap;
         wrap.insert(QStringLiteral("msgraph"), extras);
         obj.insert(providerExtrasKey(), wrap);
+
+        // ---- providerExtrasDigest (O74) — FILTERED, excludes bookkeeping ---
+        // Confirmed against a real captured /me/todo/…/tasks/{id} sample
+        // (msgraph/captured/20260824-145017-773-…json): a genuine Graph
+        // todoTask carries "@odata.etag", "createdDateTime", and
+        // "lastModifiedDateTime" — none of which are in the `consumed` set
+        // above, so all three land in this verbatim stash. `@odata.etag`
+        // and `lastModifiedDateTime` both bump on every server-side write
+        // regardless of whether the edit touched anything otherwise
+        // uncatalogued — hashing them unfiltered would make this digest
+        // spuriously "always dirty" on every MS-side edit. `@odata.context`
+        // is ALSO excluded: it is a request-URL artifact (differs between
+        // v1.0/beta and $expand variants of the SAME unedited record — see
+        // the captured corpus), not per-record content, so including it
+        // risks a false diff between two different fetch paths with zero
+        // real edit. `createdDateTime` is deliberately KEPT — it is set
+        // once at creation and does not change on subsequent edits, so it
+        // carries no false-dirty risk.
+        static const QSet<QString> kVolatileMsExtras = {
+            QStringLiteral("@odata.etag"),
+            QStringLiteral("lastModifiedDateTime"),
+            QStringLiteral("@odata.context"),
+        };
+        QJsonObject filtered = extras;
+        for (const QString& k : kVolatileMsExtras)
+            filtered.remove(k);
+        if (!filtered.isEmpty())
+            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(filtered));
     }
     stampEnvelope(obj, QStringLiteral("todo"), id);
     return serialize(obj);
@@ -415,13 +533,26 @@ QByteArray CanonToMsTodoTaskStage::transform(const QByteArray& canonBytes) const
         }
     }
 
-    // ---- alarms[0] → single reminder --------------------------------------------------------
+    // ---- alarms[0] → single reminder (W5 — unified {type, at} shape) --------
+    // MS To-Do supports exactly one reminder, always an absolute trigger, so
+    // only alarms[0] matters and only its "at" key is consumed (the unified
+    // vtodo-leg shape, W5). The legacy `{"reminder": {...}}` sub-shape is
+    // read as a fallback so a canon record written by a pre-W5 build still
+    // demotes correctly. An offset-form alarm arriving from a non-MS leg
+    // (e.g. a CalDAV-sourced VTODO alarm) has no absolute "at" and is not
+    // synthesized here — dropping it is within the already-declared
+    // Simplified loss kind for alarms on this leg (MS structurally supports
+    // only one absolute reminder; this is not a new regression).
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
         if (!alarms.isEmpty()) {
-            const QJsonObject reminder = alarms.at(0).toObject()
-                                             .value(QStringLiteral("reminder"))
-                                             .toObject();
+            const QJsonObject row = alarms.at(0).toObject();
+            const QString at = strValue(row, QStringLiteral("at"));
+            QJsonObject reminder;
+            if (!at.isEmpty())
+                reminder = utcIsoToMsReminder(at);
+            else
+                reminder = row.value(QStringLiteral("reminder")).toObject();
             if (!reminder.isEmpty())
                 out.insert(QStringLiteral("reminderDateTime"), reminder);
         }
@@ -479,7 +610,14 @@ QByteArray CanonToMsTodoTaskStage::transform(const QByteArray& canonBytes) const
             QStringLiteral("status"), QStringLiteral("priority"),
             QStringLiteral("categories"), QStringLiteral("due"),
             QStringLiteral("start"), QStringLiteral("completed"),
-            QStringLiteral("alarms"), QStringLiteral("recurrence")
+            QStringLiteral("alarms"), QStringLiteral("recurrence"),
+            // providerExtrasDigest (O74) IS "handled" here in the sense that
+            // means "deliberately excluded from the auto-carry loop" — it is
+            // purely derived/meta with no wire representation by design
+            // (Dropped below), unlike percentComplete/completionAnchor/
+            // seriesSplitOf which are real content that DOES want to
+            // auto-carry (see the comment on those below).
+            QStringLiteral("providerExtrasDigest")
             // percentComplete / relatedTo / parentUid / sortOrder / location /
             // geo are deliberately NOT handled — no todoTask home (declared
             // Dropped); checklistItems/linkedResources are separate-endpoint
@@ -569,6 +707,10 @@ Kalburator::Shape::LossProfile canonToMsTodoTaskLoss()
     p.affected.insert(PropertyId{QStringLiteral("checklistItems")},
                       LossKind::Dropped);
     p.affected.insert(PropertyId{QStringLiteral("linkedResources")},
+                      LossKind::Dropped);
+    // providerExtrasDigest (O74): purely derived/meta, no wire representation
+    // by design on any leg — not a traditional information loss.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")},
                       LossKind::Dropped);
     return p;
 }

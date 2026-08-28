@@ -43,5 +43,24 @@ QString kind(const QJsonObject& obj);
 /// (QJsonValue::operator== already provides exactly this.)
 bool valuesEqual(const QJsonValue& a, const QJsonValue& b);
 
+/// Domain-neutral canonicalizing fingerprint of a JSON value (O74): a
+/// stable SHA256 hex digest, House convention (see e.g.
+/// src/blob/localblobbackend.cpp's sha256Hex, src/calendar/
+/// subscriptionbackend.cpp's contentHash) applied to a JSON tree instead of
+/// flat bytes. QJsonDocument::toJson() already serializes QJsonObject keys
+/// in sorted order at every nesting level regardless of insertion order
+/// (verified against this Qt6 build), so no separate recursive key-sort
+/// pass is needed — the value is simply wrapped in a QJsonDocument (via a
+/// single-element array for a bare scalar) and hashed. Exists so a
+/// catalogue-scoped differ (CanonJsonDiffer) can detect a change confined
+/// to an uncatalogued sub-tree (e.g. providerExtras) by comparing a
+/// catalogued digest property instead of the sub-tree itself. Callers on a
+/// leg whose extras stash mixes real content with vendor bookkeeping that
+/// churns on every write (etags, lastModified timestamps) MUST filter
+/// those keys out before hashing, or the digest becomes spuriously
+/// "always dirty" — see the todo domain's MS/Google call sites for the
+/// worked examples.
+QString canonicalDigest(const QJsonValue& value);
+
 }  // namespace CanonEnvelope
 }  // namespace Kalburator::Shape

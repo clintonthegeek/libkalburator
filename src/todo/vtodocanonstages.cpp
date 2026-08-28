@@ -98,6 +98,13 @@ Kalburator::Shape::LossProfile canonToVtodoLoss()
     // losslessly, catalogued separately).
     p.affected.insert(PropertyId{QStringLiteral("recurrenceRange")},  LossKind::Degraded);
 
+    // Dropped (O74): providerExtrasDigest is purely derived/meta — it has no
+    // wire representation on any leg by design (recomputed fresh from the
+    // real extras content on the next promote of whatever gets written), so
+    // demote correctly never re-emits it. Not a traditional information
+    // loss: nothing the user authored is lost, only a bookkeeping fingerprint.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
+
     return p;
 }
 

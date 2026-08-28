@@ -46,6 +46,7 @@ private slots:
     void updateRecord_concurrentServerEdit_surfaces412_noSilentOverwrite();
     void updateRecord_after412_nextFetch_detectsConcurrentChange();
     void loadRecords_surfacesAuthoritativeLastModified_notNow();
+    void loadRecords_vtodoFetch_prefersServerRawBytesOverReserialization();
     void loadRecords_chunksMultigetAcrossBatches();
     void loadRecords_failsWholeOpWhenABatchFails_noPartialResults();
     void ctagMatchServingZeroCachedItems_distrustsMatchAndRelists();
@@ -424,6 +425,71 @@ void TestRemoteCalendarBackendBlobView::loadRecords_surfacesAuthoritativeLastMod
              "lastModified must be a valid, parsed timestamp");
     QCOMPARE(records.first().lastModified,
              QDateTime(QDate(2020, 6, 1), QTime(9, 30, 0), QTimeZone::utc()));
+}
+
+// W7 — the passthrough truth table claims CalDAV fetch "prefers server raw
+// bytes over re-serialization" for VTODO the same way it does for VEVENT
+// (both go through the same m_lastRawIcsByUid seam — see
+// serveCachedItems()/fetchItems() in remotecalendarbackend.cpp). No test in
+// this file previously asserted byte content specifically (the existing
+// tests check href/record-count shape or use .contains() for a narrower
+// substring check) — this proves it directly for VTODO with a construct
+// KCalendarCore's OWN serializer would never reproduce: a custom X-prop
+// placed BEFORE SUMMARY in source-line order. KCalendarCore's serializer
+// always emits its own well-known properties (UID/SUMMARY/DUE/...) before
+// any custom X- property, regardless of the original file's property
+// order — so if the backend re-serialized via KCalendarCore instead of
+// preferring the server's raw bytes, X-CUSTOM-MARKER-PROP would end up
+// AFTER SUMMARY in the returned record's data. Preserving the original
+// (non-canonical) order end-to-end is only possible if the raw bytes won.
+void TestRemoteCalendarBackendBlobView::loadRecords_vtodoFetch_prefersServerRawBytesOverReserialization()
+{
+    const QString calHref = QStringLiteral("/calendars/testuser/personal/");
+    const QString uid = QStringLiteral("raw-bytes-vtodo-1");
+    const QByteArray seededIcs =
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"
+        "BEGIN:VTODO\r\nUID:raw-bytes-vtodo-1\r\n"
+        "X-CUSTOM-MARKER-PROP:zzz\r\n"
+        "SUMMARY:Raw bytes todo\r\nDUE:20260601T170000Z\r\n"
+        "END:VTODO\r\nEND:VCALENDAR\r\n";
+
+    FakeCalDavServer server;
+    server.setCalendars({{QStringLiteral("personal"), calHref}});
+    server.setSeedEvents(calHref, {seededIcs});
+    QVERIFY(server.startListening());
+
+    QTemporaryDir cacheDir;
+    QVERIFY(cacheDir.isValid());
+
+    const QString calDavUrl = server.baseUrl().toString()
+                              + calHref.mid(1); // strip leading '/'
+    RemoteCalendarBackend backend(server.baseUrl(),
+                                  QStringLiteral("testuser"),
+                                  QStringLiteral("testpass"));
+    backend.setCacheDir(cacheDir.path());
+    backend.registerCalendarUrl(QStringLiteral("personal"), calDavUrl);
+
+    QSignalSpy loadSpy(&backend,
+                       SIGNAL(loadCalendarsFinished(QString, bool, QString)));
+    backend.loadCalendars(QStringLiteral("personal"));
+    QTRY_VERIFY_WITH_TIMEOUT(loadSpy.count() > 0, 5000);
+    QVERIFY2(loadSpy.first().at(1).toBool(),
+             "loadCalendars must succeed before we can loadRecords");
+
+    auto *blob = static_cast<IBlobBackend *>(&backend);
+    const QList<BackendRecord> records = blob->loadRecords(QStringLiteral("personal"));
+    QCOMPARE(records.size(), 1);
+
+    const int markerPos = records.first().data.indexOf("X-CUSTOM-MARKER-PROP");
+    const int summaryPos = records.first().data.indexOf("SUMMARY:");
+    QVERIFY2(markerPos >= 0 && summaryPos >= 0,
+             "both the custom prop and SUMMARY must be present in the fetched bytes");
+    QVERIFY2(markerPos < summaryPos,
+             qPrintable(QStringLiteral(
+                 "X-CUSTOM-MARKER-PROP must appear BEFORE SUMMARY (the original, "
+                 "non-canonical order) — a KCalendarCore re-serialization would "
+                 "always place custom X- properties AFTER well-known ones. Got:\n")
+                 + QString::fromUtf8(records.first().data)));
 }
 
 // N4: split a large multiget into chunked, sequential batches.

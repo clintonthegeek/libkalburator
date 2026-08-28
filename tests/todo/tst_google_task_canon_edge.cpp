@@ -125,6 +125,41 @@ private slots:
         QVERIFY(!extras.value(QStringLiteral("etag")).toString().isEmpty());
         QCOMPARE(extras.value(QStringLiteral("webViewLink")).toString(),
                  QStringLiteral("https://tasks.google.com/task/1"));
+
+        // O74: providerExtrasDigest is present (kRichTask has extras).
+        QVERIFY2(!canon.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
+                 "providerExtrasDigest must be computed when extras are non-empty");
+    }
+
+    // O74 — the digest must be STABLE across a change confined purely to
+    // `etag` (the one field the promote comment explicitly names as
+    // volatile — it bumps on every server-side write), and must CHANGE when
+    // real (non-volatile) extras content changes (e.g. `hidden`).
+    void providerExtrasDigestIgnoresEtag()
+    {
+        GoogleTaskToCanonStage stage;
+
+        auto makeTask = [](const QString& etag, const QString& hidden) {
+            return QStringLiteral(
+                "{\"kind\": \"tasks#task\", \"id\": \"dGVzdERJR0VTVA\", "
+                "\"title\": \"x\", \"etag\": \"%1\", \"hidden\": %2}")
+                .arg(etag, hidden).toUtf8();
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makeTask(QStringLiteral("\\\"one\\\""), QStringLiteral("false"))));
+        const QJsonObject onlyEtagChanged = parse(stage.transform(
+            makeTask(QStringLiteral("\\\"two\\\""), QStringLiteral("false"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makeTask(QStringLiteral("\\\"one\\\""), QStringLiteral("true"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyEtagChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
     }
 
     // Declared-loss walk: demote honors each Simplified/Degraded/Dropped
@@ -260,6 +295,8 @@ private slots:
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
                  LossKind::Dropped);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("seriesSplitOf")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("providerExtrasDigest")}),
                  LossKind::Dropped);
 
         const auto promoteLoss = regs.transformation.inspect(gt, canon);

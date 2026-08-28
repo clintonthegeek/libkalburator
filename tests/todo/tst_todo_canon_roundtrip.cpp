@@ -15,6 +15,7 @@
 #include <KCalendarCore/Todo>
 
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Todo::VTodoToCanonStage;
 using Kalburator::Todo::CanonToVTodoStage;
 using Kalburator::Shape::DomainId;
@@ -346,6 +347,10 @@ private slots:
         // checklistItems: Reversible
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("checklistItems")}),
                  LossKind::Reversible);
+
+        // providerExtrasDigest (O74): Dropped — derived/meta, no wire form.
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("providerExtrasDigest")}),
+                 LossKind::Dropped);
     }
 
     // N1: a non-recurring VTODO with a TZID DUE must not gain the
@@ -820,6 +825,441 @@ private slots:
         const auto loss = regs.transformation.inspect(canon, vtodo);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
                  LossKind::Reversible);
+    }
+
+    // -----------------------------------------------------------------
+    // W6.2 — malformed DTSTART/DUE coercion
+    // -----------------------------------------------------------------
+
+    // Rule (a): DTSTART DATE-only + DUE DATE-TIME ⇒ START coerced UP to a
+    // DATE-TIME value matching DUE's zone (binding response-doc wording).
+    void vtodoCoercesDateOnlyStartToDueDateTimeType()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:coerce-a-1\r\n"
+            "SUMMARY:Mismatched a\r\n"
+            "DTSTART;VALUE=DATE:20260601\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        QVERIFY2(!startObj.contains(QStringLiteral("date")),
+                 "start must be coerced away from DATE-only");
+        QCOMPARE(startObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-01T00:00:00Z"));
+
+        const QJsonObject dueObj = obj.value(QStringLiteral("due")).toObject();
+        QCOMPARE(dueObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-01T17:00:00Z"));
+    }
+
+    // Rule (a), reverse direction: DTSTART DATE-TIME + DUE DATE-only ⇒
+    // START is truncated DOWN to DATE-only to match DUE. This is the
+    // response doc's literal "DUE's type always wins" wording, NOT
+    // tasks.org's actual (symmetric) behavior, which would instead promote
+    // DUE up to DATE-TIME in this direction — see Open Decision 4 in the
+    // VP.f return receipt for the explicit, deliberate divergence note.
+    void vtodoCoercesDateTimeStartToDueDateOnlyType()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:coerce-a-2\r\n"
+            "SUMMARY:Mismatched a reverse\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DUE;VALUE=DATE:20260602\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        QVERIFY2(startObj.contains(QStringLiteral("date")),
+                 "start must be coerced to DATE-only to match DUE");
+        QCOMPARE(startObj.value(QStringLiteral("date")).toString(),
+                 QStringLiteral("2026-06-01"));
+
+        const QJsonObject dueObj = obj.value(QStringLiteral("due")).toObject();
+        QVERIFY(dueObj.contains(QStringLiteral("date")));
+        QCOMPARE(dueObj.value(QStringLiteral("date")).toString(),
+                 QStringLiteral("2026-06-02"));
+    }
+
+    // Rule (b): DUE <= DTSTART ⇒ DTSTART is dropped from canon entirely.
+    void vtodoDropsStartWhenDueNotAfterDtstart()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:coerce-b-1\r\n"
+            "SUMMARY:Backwards dates\r\n"
+            "DTSTART:20260605T090000Z\r\n"
+            "DUE:20260601T090000Z\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        QVERIFY2(!obj.contains(QStringLiteral("start")),
+                 "DUE <= DTSTART must drop start from canon entirely");
+        QVERIFY(obj.contains(QStringLiteral("due")));
+    }
+
+    // Rule (c): DURATION without DTSTART/DUE. Probe-confirmed (2026-08-28):
+    // KCalendarCore's parser resolves DURATION into dtDue() at parse time;
+    // with no DTSTART to add the duration to, dtDue() comes back invalid —
+    // the "drop" already happens by construction, zero promote-side code
+    // needed. This pins that already-correct behavior.
+    void vtodoPromoteDropsDurationWithoutDtstart()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:coerce-c-1\r\n"
+            "SUMMARY:Duration only\r\n"
+            "DURATION:PT1H\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        QVERIFY2(!obj.contains(QStringLiteral("due")),
+                 "DURATION without DTSTART must not surface as a due value");
+        QVERIFY2(!obj.contains(QStringLiteral("start")),
+                 "no DTSTART was present in the source");
+    }
+
+    // Bonus fix: a plain all-day DTSTART/DUE round-trips through BOTH
+    // promote AND demote as a real VALUE=DATE, not a UTC-midnight
+    // DATE-TIME (…T000000Z) — the W6.2 bonus fix pin.
+    void vtodoAllDayRoundTripPreservesDateValueForm()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:allday-roundtrip-1\r\n"
+            "SUMMARY:All day task\r\n"
+            "DTSTART;VALUE=DATE:20260601\r\n"
+            "DUE;VALUE=DATE:20260602\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        QVERIFY(obj.value(QStringLiteral("start")).toObject().contains(QStringLiteral("date")));
+        QVERIFY(obj.value(QStringLiteral("due")).toObject().contains(QStringLiteral("date")));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        QVERIFY2(output.contains("DTSTART;VALUE=DATE:20260601"),
+                 qPrintable(QStringLiteral("expected DTSTART;VALUE=DATE:20260601 in output:\n")
+                     + QString::fromUtf8(output)));
+        QVERIFY2(output.contains("DUE;VALUE=DATE:20260602"),
+                 qPrintable(QStringLiteral("expected DUE;VALUE=DATE:20260602 in output:\n")
+                     + QString::fromUtf8(output)));
+        QVERIFY2(!output.contains("T000000Z"),
+                 "must not regress to a UTC-midnight DATE-TIME form");
+    }
+
+    // -----------------------------------------------------------------
+    // W5 — VALARM shape extension
+    // -----------------------------------------------------------------
+
+    // Regression pin: the pre-existing offset-form shape (default
+    // start-relative) is unchanged by the W5 additive keys.
+    void vtodoAlarmOffsetFormRoundTrips()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:alarm-offset-1\r\n"
+            "SUMMARY:Offset alarm\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "END:VALARM\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("offset")).toInt(), -900);
+        QVERIFY2(!a.contains(QStringLiteral("related")),
+                 "default start-relative offset omits related (back-compat)");
+        QVERIFY2(!a.contains(QStringLiteral("at")), "offset-form alarm must not carry 'at'");
+
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY(outAlarms.first()->hasStartOffset());
+        QCOMPARE(outAlarms.first()->startOffset().asSeconds(), -900);
+    }
+
+    // New "at" absolute-trigger form. Also pins the W5 bug fix: pre-W5 code
+    // unconditionally read startOffset() (zero for an absolute-trigger
+    // alarm), so a bogus "offset: 0" must NOT appear alongside "at".
+    void vtodoAlarmAbsoluteAtFormRoundTrips()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:alarm-at-1\r\n"
+            "SUMMARY:Absolute alarm\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER;VALUE=DATE-TIME:20260601T163000Z\r\n"
+            "END:VALARM\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("at")).toString(), QStringLiteral("2026-06-01T16:30:00Z"));
+        QVERIFY2(!a.contains(QStringLiteral("offset")),
+                 "absolute-trigger alarm must not also carry a bogus offset (W5 bug fix)");
+
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY(outAlarms.first()->hasTime());
+        QCOMPARE(outAlarms.first()->time().toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-06-01T16:30:00Z"), Qt::ISODate));
+    }
+
+    // New "related":"end" offset form. Also pins the W5 bug fix: pre-W5
+    // code unconditionally read startOffset() (zero for an END-related
+    // alarm), silently corrupting it to a start-relative offset:0.
+    void vtodoAlarmEndRelatedOffsetRoundTrips()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:alarm-end-1\r\n"
+            "SUMMARY:End-related alarm\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER;RELATED=END:-PT15M\r\n"
+            "END:VALARM\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("offset")).toInt(), -900);
+        QCOMPARE(a.value(QStringLiteral("related")).toString(), QStringLiteral("end"));
+
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY2(outAlarms.first()->hasEndOffset(),
+                 "related:end must demote to an END-related offset, not START");
+        QCOMPARE(outAlarms.first()->endOffset().asSeconds(), -900);
+    }
+
+    // New REPEAT/DURATION pair.
+    void vtodoAlarmRepeatDurationPairRoundTrips()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:alarm-repeat-1\r\n"
+            "SUMMARY:Repeating alarm\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "REPEAT:3\r\n"
+            "DURATION:PT5M\r\n"
+            "END:VALARM\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("repeatCount")).toInt(), 3);
+        QCOMPARE(a.value(QStringLiteral("repeatIntervalSecs")).toInt(), 300);
+
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QCOMPARE(outAlarms.first()->repeatCount(), 3);
+        QCOMPARE(outAlarms.first()->snoozeTime().asSeconds(), 300);
+    }
+
+    // Demote must never synthesize an unpaired REPEAT/DURATION: only one of
+    // the two canon keys present ⇒ neither setter is called (RFC5545:
+    // REPEAT/DURATION MUST occur as a pair).
+    void vtodoAlarmUnpairedRepeatIsNotSynthesized()
+    {
+        QJsonObject canon;
+        canon.insert(QStringLiteral("uid"), QStringLiteral("alarm-unpaired-1"));
+        QJsonObject a;
+        a.insert(QStringLiteral("type"), 1);
+        a.insert(QStringLiteral("offset"), -900);
+        a.insert(QStringLiteral("repeatCount"), 3);
+        // repeatIntervalSecs deliberately absent — must not be synthesized.
+        canon.insert(QStringLiteral("alarms"), QJsonArray{ a });
+
+        CanonToVTodoStage rev;
+        const QByteArray canonBytes = QJsonDocument(canon).toJson(QJsonDocument::Compact);
+        const QByteArray output = rev.transform(canonBytes);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QCOMPARE(outAlarms.first()->repeatCount(), 0);
+    }
+
+    // -----------------------------------------------------------------
+    // W7 — generic X-prop passthrough + O74 providerExtrasDigest
+    // -----------------------------------------------------------------
+
+    // A genuinely arbitrary/unknown custom property (NOT one of the
+    // recognized/consumed ones like X-ORG-REPEATER/X-ALT-DESC/
+    // X-CANON-SERIES-SPLIT-OF) must survive promote → demote via
+    // providerExtras["x-vtodo"] alone — proving the *generic* passthrough
+    // mechanism, not just its special-cased consumers.
+    void vtodoGenericUnknownXPropSurvivesRoundTrip()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:xprop-generic-1\r\n"
+            "SUMMARY:Has an unknown x-prop\r\n"
+            "X-SOME-RANDOM-CLIENT-FIELD:hello world\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonObject xvtodo = obj.value(providerExtrasKey()).toObject()
+                                       .value(QStringLiteral("x-vtodo")).toObject();
+        QCOMPARE(xvtodo.value(QStringLiteral("X-SOME-RANDOM-CLIENT-FIELD")).toString(),
+                 QStringLiteral("hello world"));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QCOMPARE(outTodo->nonKDECustomProperty("X-SOME-RANDOM-CLIENT-FIELD"),
+                 QStringLiteral("hello world"));
+    }
+
+    // O74: providerExtrasDigest is present whenever extras are non-empty
+    // and absent when there are none, and it changes when the extras
+    // content actually changes (proving the fingerprint tracks its input,
+    // not just "present or not").
+    void vtodoProviderExtrasDigestTracksExtrasContent()
+    {
+        VTodoToCanonStage fwd;
+
+        auto vtodoWithXProp = [](const QString& value) {
+            return QStringLiteral(
+                "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+                "BEGIN:VTODO\r\nUID:digest-1\r\nSUMMARY:x\r\n"
+                "X-SOME-FIELD:%1\r\nEND:VTODO\r\nEND:VCALENDAR\r\n").arg(value).toUtf8();
+        };
+
+        const QJsonObject a = parse(fwd.transform(vtodoWithXProp(QStringLiteral("one"))));
+        const QJsonObject b = parse(fwd.transform(vtodoWithXProp(QStringLiteral("two"))));
+
+        const QString digestA = a.value(QStringLiteral("providerExtrasDigest")).toString();
+        const QString digestB = b.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!digestA.isEmpty(), "digest must be present when extras are non-empty");
+        QVERIFY2(digestA != digestB, "digest must change when extras content changes");
+
+        const QByteArray noXPropVtodo =
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\nUID:digest-2\r\nSUMMARY:x\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        const QJsonObject noXProp = parse(fwd.transform(noXPropVtodo));
+        QVERIFY2(!noXProp.contains(QStringLiteral("providerExtrasDigest")),
+                 "digest must be absent when there are no extras");
     }
 };
 

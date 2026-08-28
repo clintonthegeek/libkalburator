@@ -16,6 +16,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::canonicalDigest;
 
 QString strValue(const QJsonObject& o, const QString& key)
 {
@@ -145,6 +146,19 @@ QByteArray GoogleTaskToCanonStage::transform(const QByteArray& googleBytes) cons
         QJsonObject wrap;
         wrap.insert(QStringLiteral("google"), extras);
         obj.insert(providerExtrasKey(), wrap);
+
+        // ---- providerExtrasDigest (O74) — FILTERED, excludes `etag` --------
+        // `etag` bumps on every server-side write regardless of whether the
+        // edit touched anything otherwise uncatalogued — hashing it
+        // unfiltered would make this digest spuriously "always dirty" on
+        // every Google-side edit, defeating the whole point of the fix. The
+        // other stashed fields (kind/deleted/hidden/links/webViewLink/
+        // selfLink/assignmentInfo) are real content or stable transport
+        // metadata, not per-write bookkeeping, so they stay hashed.
+        QJsonObject filtered = extras;
+        filtered.remove(QStringLiteral("etag"));
+        if (!filtered.isEmpty())
+            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(filtered));
     }
     stampEnvelope(obj, QStringLiteral("todo"), id);
     return serialize(obj);
@@ -273,6 +287,10 @@ Kalburator::Shape::LossProfile canonToGoogleTaskLoss()
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Dropped);
     }
+    // providerExtrasDigest (O74): purely derived/meta, no wire representation
+    // by design on any leg — not a traditional information loss.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")},
+                      LossKind::Dropped);
     return p;
 }
 

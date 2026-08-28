@@ -18,6 +18,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::canonicalDigest;
 
 KCalendarCore::Todo::Ptr parseTodo(const QByteArray &data)
 {
@@ -225,22 +226,76 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
-    // ---- start / due -------------------------------------------------------
+    // ---- start / due (W6.2 malformed-input coercion) -----------------------
+    // Probe-confirmed (2026-08-28, KCalendarCore::ICalFormat): a DTSTART/DUE
+    // DATE-vs-DATE-TIME mismatch survives independent parsing — dtStart()/
+    // dtDue() come back as two ordinary QDateTimes, each still individually
+    // detectable as date-only via the same heuristic dateTimeToJson already
+    // uses (time()==00:00 && timeSpec()==LocalTime); KCalendarCore's single
+    // incidence-level allDay() flag reflects only DUE's date-only-ness, not
+    // a fused/collapsed view, so it is NOT used for detection here — this is
+    // the "branch 1" path from the W6.2 recon's Open decision 5, resolved by
+    // probe rather than assumed.
     {
-        const QDateTime start = todo->dtStart();
-        if (start.isValid()) {
+        QDateTime start = todo->dtStart();
+        QDateTime due = todo->dtDue();
+
+        // Rule (a): DTSTART/DUE DATE-vs-DATE-TIME mismatch ⇒ coerce START to
+        // DUE's type (binding response-doc wording: 2026-08-25-vtodo-parity-
+        // handoff-response.md §W6 point 2). This is DELIBERATELY not tasks.org's
+        // own (symmetric) rule — tasks.org rewrites whichever side is
+        // DATE-only up to match the DATE-TIME side, regardless of which
+        // property that is; the binding text instead always defers to DUE's
+        // type, even when that means truncating a DATE-TIME DTSTART down to
+        // DATE-only. See the VP.f return receipt for the explicit divergence
+        // note (Open Decision 4).
+        if (start.isValid() && due.isValid()) {
+            const auto isDateOnly = [](const QDateTime& dt) {
+                return dt.time() == QTime(0, 0) && dt.timeSpec() == Qt::LocalTime;
+            };
+            const bool startDateOnly = isDateOnly(start);
+            const bool dueDateOnly = isDateOnly(due);
+            if (startDateOnly != dueDateOnly) {
+                if (dueDateOnly) {
+                    // START is DATE-TIME, DUE is DATE-only ⇒ truncate START to
+                    // a DATE-only value at the same calendar date.
+                    start = QDateTime(start.date(), QTime(0, 0), Qt::LocalTime);
+                } else {
+                    // START is DATE-only, DUE is DATE-TIME ⇒ promote START to a
+                    // DATE-TIME value: midnight, in DUE's zone (falls back to
+                    // UTC when DUE itself carries no explicit zone — e.g. a
+                    // floating DUE — since a DATE-only value has no zone of
+                    // its own to inherit).
+                    QTimeZone tz = due.timeZone();
+                    if (!tz.isValid())
+                        tz = QTimeZone::utc();
+                    start = QDateTime(start.date(), QTime(0, 0), tz);
+                }
+            }
+        }
+
+        // Rule (b): DUE <= DTSTART ⇒ drop DTSTART from canon (evaluated AFTER
+        // rule (a)'s reconciliation, so the comparison uses already-coerced
+        // values per the recon's design sketch step 3).
+        const bool dropStart = start.isValid() && due.isValid() && due <= start;
+
+        if (start.isValid() && !dropStart) {
             const QJsonObject startObj = dateTimeToJson(start);
             if (!startObj.isEmpty())
                 obj.insert(QStringLiteral("start"), startObj);
         }
-    }
-    {
-        const QDateTime due = todo->dtDue();
         if (due.isValid()) {
             const QJsonObject dueObj = dateTimeToJson(due);
             if (!dueObj.isEmpty())
                 obj.insert(QStringLiteral("due"), dueObj);
         }
+        // Rule (c): DURATION-without-DTSTART ⇒ drop DURATION. Probe-confirmed
+        // (2026-08-28) zero-code no-op: KCalendarCore::Todo exposes no direct
+        // DURATION accessor, and ICalFormat's parser resolves a DURATION
+        // property into dtDue() at parse time — with no DTSTART to add the
+        // duration to, dtDue() simply comes back invalid, so there is nothing
+        // for this promote code to do. Pinned by
+        // vtodoPromoteDropsDurationWithoutDtstart in tst_todo_canon_roundtrip.cpp.
     }
 
     // ---- completed ---------------------------------------------------------
@@ -323,17 +378,55 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
-    // ---- alarms (VALARM) ---------------------------------------------------
+    // ---- alarms (VALARM, W5 shape extension) --------------------------------
+    // Additive JSON keys on top of the pre-existing {type, offset, text} row
+    // shape (old rows stay valid: absent "at"/"related"/"repeatCount"/
+    // "repeatIntervalSecs" means exactly what the pre-W5 shape meant).
+    // hasTime()/hasEndOffset()/hasStartOffset() are mutually exclusive at the
+    // KCalendarCore::Alarm level (probe-confirmed 2026-08-28) — promote just
+    // preserves that exclusivity, checked in that priority order.
+    //
+    // W5 bug fix bundled in: pre-W5 code unconditionally read
+    // alarm->startOffset() regardless of trigger form, so an absolute-
+    // trigger or END-related alarm silently corrupted to a bogus
+    // "offset: 0" on promote. This block now branches on the alarm's actual
+    // trigger form instead.
     {
         const auto alarms = todo->alarms();
         if (!alarms.isEmpty()) {
             QJsonArray arr;
             for (const auto& alarm : alarms) {
                 QJsonObject a;
-                a.insert(QStringLiteral("type"),   int(alarm->type()));
-                a.insert(QStringLiteral("offset"), alarm->startOffset().asSeconds());
+                a.insert(QStringLiteral("type"), int(alarm->type()));
+                if (alarm->hasTime()) {
+                    a.insert(QStringLiteral("at"), alarm->time().toUTC().toString(Qt::ISODate));
+                } else if (alarm->hasEndOffset()) {
+                    a.insert(QStringLiteral("offset"), alarm->endOffset().asSeconds());
+                    a.insert(QStringLiteral("related"), QStringLiteral("end"));
+                } else {
+                    // default / hasStartOffset() — unchanged pre-W5 shape.
+                    a.insert(QStringLiteral("offset"), alarm->startOffset().asSeconds());
+                }
                 if (!alarm->text().isEmpty())
                     a.insert(QStringLiteral("text"), alarm->text());
+                // REPEAT/DURATION pairing (Open decision 3, probe-confirmed
+                // 2026-08-28): KCalendarCore::Alarm::snoozeTime() has a
+                // nonzero CLASS DEFAULT (5 seconds) even when no DURATION
+                // property was present in the source at all — it is NOT zero,
+                // so "snoozeTime() != 0" cannot distinguish "explicit
+                // DURATION" from "never set". There is no public API to
+                // detect literal DURATION presence short of a raw-bytes
+                // VALARM scanner (out of this item's scope). Promote
+                // therefore emits the pair whenever repeatCount() > 0,
+                // trusting whatever snoozeTime() KCalendarCore parsed
+                // (falling back to its 5s class default for an
+                // already-malformed REPEAT-without-DURATION source) — the
+                // same "trust the parsed accessor" posture this file already
+                // takes for the offset field, with no raw-bytes cross-check.
+                if (alarm->repeatCount() > 0) {
+                    a.insert(QStringLiteral("repeatCount"), alarm->repeatCount());
+                    a.insert(QStringLiteral("repeatIntervalSecs"), alarm->snoozeTime().asSeconds());
+                }
                 arr.append(a);
             }
             obj.insert(QStringLiteral("alarms"), arr);
@@ -380,6 +473,16 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
                 QJsonObject extras;
                 extras.insert(QStringLiteral("x-vtodo"), xvtodo);
                 obj.insert(providerExtrasKey(), extras);
+
+                // ---- providerExtrasDigest (O74) --------------------------
+                // Fingerprint of the extras this promote captured, so the
+                // catalogue-scoped differ (which never sees providerExtras
+                // itself, by design) can still detect an X-prop-only edit.
+                // No filtering needed on this leg: the vtodo/CalDAV extras
+                // stash is genuine X- custom properties only — no vendor
+                // bookkeeping (etag-equivalents, server timestamps) rides
+                // this channel the way it does on the MS/Google legs.
+                obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(xvtodo));
             }
         }
     }
@@ -497,8 +600,19 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- start / due -------------------------------------------------------
+    // ---- start / due (W6.2 bonus fix: DATE-value round-trip) ---------------
+    // Probe-confirmed (2026-08-28): KCalendarCore's iCal writer decides
+    // VALUE=DATE vs a full DATE-TIME purely from the incidence-level
+    // allDay() flag — NOT from the QDateTime's own time-of-day/timeSpec
+    // shape (a LocalTime-midnight QDateTime with allDay() left false still
+    // serializes as a full DATE-TIME). Call order relative to setDtStart/
+    // setDtDue does not matter (probe-verified both orders produce
+    // identical output). Previously this block never called setAllDay(true)
+    // at all, so a demoted {"date": ...} canon value silently re-emitted as
+    // DTSTART/DUE:...T000000Z instead of DTSTART/DUE;VALUE=DATE:... — the
+    // W6.2 bonus fix.
     bool hadExplicitStart = false;
+    bool anyDateOnly = false;
     {
         const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
         if (!startObj.isEmpty()) {
@@ -506,6 +620,8 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             if (dt.isValid()) {
                 todo->setDtStart(dt);
                 hadExplicitStart = true;
+                if (startObj.contains(QStringLiteral("date")))
+                    anyDateOnly = true;
             }
         }
     }
@@ -513,10 +629,19 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         const QJsonObject dueObj = obj.value(QStringLiteral("due")).toObject();
         if (!dueObj.isEmpty()) {
             const QDateTime dt = jsonToDateTime(dueObj);
-            if (dt.isValid())
+            if (dt.isValid()) {
                 todo->setDtDue(dt);
+                if (dueObj.contains(QStringLiteral("date")))
+                    anyDateOnly = true;
+            }
         }
     }
+    // Single incidence-level flag: promote's rule (a) coercion guarantees
+    // start/due already agree on date-only-ness by the time they reach
+    // canon, so setting this once for "either side is date-only" is safe —
+    // there is no case where only one of a present pair is date-only.
+    if (anyDateOnly)
+        todo->setAllDay(true);
 
     // ---- completed ---------------------------------------------------------
     {
@@ -618,7 +743,7 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- alarms (VALARM) ---------------------------------------------------
+    // ---- alarms (VALARM, W5 shape extension) --------------------------------
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
         for (const auto& av : alarms) {
@@ -626,11 +751,34 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             KCalendarCore::Alarm::Ptr alarm(new KCalendarCore::Alarm(todo.data()));
             const int typeInt = a.value(QStringLiteral("type")).toInt();
             alarm->setType(static_cast<KCalendarCore::Alarm::Type>(typeInt));
-            const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
-            alarm->setStartOffset(KCalendarCore::Duration(offsetSecs));
+
+            if (a.contains(QStringLiteral("at"))) {
+                const QDateTime dt = QDateTime::fromString(
+                    a.value(QStringLiteral("at")).toString(), Qt::ISODate);
+                if (dt.isValid())
+                    alarm->setTime(dt);
+            } else {
+                const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
+                if (a.value(QStringLiteral("related")).toString() == QStringLiteral("end"))
+                    alarm->setEndOffset(KCalendarCore::Duration(offsetSecs));
+                else
+                    alarm->setStartOffset(KCalendarCore::Duration(offsetSecs));
+            }
+
             const QString text = a.value(QStringLiteral("text")).toString();
             if (!text.isEmpty())
                 alarm->setText(text);
+
+            // REPEAT/DURATION: only ever synthesize the pair when BOTH canon
+            // keys are present — an unpaired REPEAT or DURATION is itself
+            // malformed per RFC5545 and must never be manufactured here.
+            if (a.contains(QStringLiteral("repeatCount"))
+                && a.contains(QStringLiteral("repeatIntervalSecs"))) {
+                alarm->setRepeatCount(a.value(QStringLiteral("repeatCount")).toInt());
+                alarm->setSnoozeTime(KCalendarCore::Duration(
+                    a.value(QStringLiteral("repeatIntervalSecs")).toInt()));
+            }
+
             todo->addAlarm(alarm);
         }
     }

@@ -10,10 +10,12 @@
 // captures under tests/fixtures/vendor/microsoft/.
 
 #include <QTest>
+#include <QDateTime>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTimeZone>
 
 #include "canonenvelope.h"
 #include "mstodotaskcanonstages.h"
@@ -115,12 +117,25 @@ private slots:
                      .value(QStringLiteral("dateTime")).toString(),
                  QStringLiteral("2026-09-01T17:00:00.0000000"));
 
-        // single reminder → alarms[0]
-        QCOMPARE(canon.value(QStringLiteral("alarms")).toArray()
-                     .at(0).toObject()
-                     .value(QStringLiteral("reminder")).toObject()
-                     .value(QStringLiteral("dateTime")).toString(),
-                 QStringLiteral("2026-09-01T16:45:00.0000000"));
+        // single reminder → alarms[0] (W5 — unified {type, at} shape, NOT
+        // the old vendor-specific {"reminder": {...}} sub-shape). "Pacific
+        // Standard Time" (Windows vocabulary) resolves via the vendored
+        // CLDR map to America/Los_Angeles; expected value computed the same
+        // way the implementation does, rather than hand-computing DST math.
+        {
+            const QJsonObject alarm0 = canon.value(QStringLiteral("alarms")).toArray()
+                                            .at(0).toObject();
+            QCOMPARE(alarm0.value(QStringLiteral("type")).toInt(), 1); // Display
+            QVERIFY2(!alarm0.contains(QStringLiteral("reminder")),
+                     "alarms[0] must not carry the legacy 'reminder' sub-shape");
+            const QTimeZone pacific("America/Los_Angeles");
+            QVERIFY(pacific.isValid());
+            const QDateTime wall = QDateTime::fromString(
+                QStringLiteral("2026-09-01T16:45:00"), QStringLiteral("yyyy-MM-ddTHH:mm:ss"));
+            const QDateTime expectedUtc = QDateTime(wall.date(), wall.time(), pacific).toUTC();
+            QCOMPARE(QDateTime::fromString(alarm0.value(QStringLiteral("at")).toString(), Qt::ISODate),
+                     expectedUtc);
+        }
 
         // patternedRecurrence → RFC5545 line
         QVERIFY(canon.value(QStringLiteral("recurrence")).toArray()
@@ -134,6 +149,83 @@ private slots:
                                        .toObject();
         QVERIFY(!extras.value(QStringLiteral("@odata.etag")).toString().isEmpty());
         QVERIFY(!extras.value(QStringLiteral("createdDateTime")).toString().isEmpty());
+
+        // O74: providerExtrasDigest is present (kRichTask has extras).
+        QVERIFY2(!canon.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
+                 "providerExtrasDigest must be computed when extras are non-empty");
+    }
+
+    // O74 — the digest must be STABLE across a change confined purely to a
+    // volatile bookkeeping field (@odata.etag / lastModifiedDateTime /
+    // @odata.context), and must CHANGE when real (non-volatile) extras
+    // content changes. This is the load-bearing property the filtering
+    // exists for: an unfiltered digest would flip on every server write.
+    void providerExtrasDigestIgnoresVolatileMsBookkeeping()
+    {
+        MsTodoTaskToCanonStage stage;
+
+        auto makeTask = [](const QString& etag, const QString& lastMod,
+                            const QString& context, const QString& hasAttachments) {
+            return QStringLiteral(
+                "{\"id\": \"AAMkDIGEST1\", \"title\": \"x\", "
+                "\"@odata.etag\": \"%1\", \"lastModifiedDateTime\": \"%2\", "
+                "\"@odata.context\": \"%3\", \"hasAttachments\": %4}")
+                .arg(etag, lastMod, context, hasAttachments).toUtf8();
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makeTask(QStringLiteral("W/\\\"one\\\""), QStringLiteral("2026-08-23T06:06:07Z"),
+                     QStringLiteral("https://graph.microsoft.com/v1.0/$metadata#x"),
+                     QStringLiteral("true"))));
+        const QJsonObject onlyBookkeepingChanged = parse(stage.transform(
+            makeTask(QStringLiteral("W/\\\"two\\\""), QStringLiteral("2026-08-24T09:00:00Z"),
+                     QStringLiteral("https://graph.microsoft.com/beta/$metadata#x(extensions())"),
+                     QStringLiteral("true"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makeTask(QStringLiteral("W/\\\"one\\\""), QStringLiteral("2026-08-23T06:06:07Z"),
+                     QStringLiteral("https://graph.microsoft.com/v1.0/$metadata#x"),
+                     QStringLiteral("false"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyBookkeepingChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
+    }
+
+    // W5 MS-leg shape unification round trip: C→MS→C is identity on the
+    // unified {type, at} alarm shape (the fix folded into W5 — see the
+    // promote block's comment).
+    void msTodoTaskAlarmRoundTripUnifiesShape()
+    {
+        MsTodoTaskToCanonStage promote;
+        CanonToMsTodoTaskStage demote;
+
+        const QByteArray wire =
+            "{\"id\": \"AAMkALARM1\", \"title\": \"Water plants\", "
+            "\"reminderDateTime\": {\"dateTime\": \"2026-09-01T16:45:00.0000000\", "
+            "\"timeZone\": \"Pacific Standard Time\"}}";
+
+        const QByteArray canon1 = promote.transform(wire);
+        QVERIFY2(!canon1.isEmpty(), "promote returned empty canon");
+        const QJsonObject obj1 = parse(canon1);
+        const QString at1 = obj1.value(QStringLiteral("alarms")).toArray()
+                                 .at(0).toObject().value(QStringLiteral("at")).toString();
+        QVERIFY2(!at1.isEmpty(), "alarms[0].at must be populated");
+
+        const QByteArray wireBack = demote.transform(canon1);
+        const QJsonObject demoted = parse(wireBack);
+        const QJsonObject reminder = demoted.value(QStringLiteral("reminderDateTime")).toObject();
+        QCOMPARE(reminder.value(QStringLiteral("timeZone")).toString(), QStringLiteral("UTC"));
+
+        const QByteArray canon2 = promote.transform(wireBack);
+        const QJsonObject obj2 = parse(canon2);
+        const QString at2 = obj2.value(QStringLiteral("alarms")).toArray()
+                                 .at(0).toObject().value(QStringLiteral("at")).toString();
+        QCOMPARE(QDateTime::fromString(at2, Qt::ISODate),
+                 QDateTime::fromString(at1, Qt::ISODate));
     }
 
     // Declared-loss walk: demote honors each Simplified/Degraded ruling.
@@ -336,6 +428,8 @@ private slots:
                  LossKind::Reversible);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("seriesSplitOf")}),
                  LossKind::Reversible);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("providerExtrasDigest")}),
+                 LossKind::Dropped);
 
         const auto promoteLoss = regs.transformation.inspect(mt, canon);
         QVERIFY2(promoteLoss.isLossless(), "promote must be lossless");
