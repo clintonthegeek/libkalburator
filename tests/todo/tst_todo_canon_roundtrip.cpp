@@ -425,9 +425,16 @@ private slots:
         QVERIFY(!outTodo->thisAndFuture());
     }
 
-    // RANGE=THISANDFUTURE rides along as the recurrenceRange canon string
-    // (mirrors the event path) and re-emits as RANGE=THISANDFUTURE.
-    void vtodoRoundTripPreservesThisAndFutureRange()
+    // W3 (VP.e): RANGE=THISANDFUTURE is write-hostile on real CalDAV
+    // servers — the library NEVER re-emits it, unconditionally, even
+    // though canon still losslessly CAPTURES an incoming
+    // RANGE=THISANDFUTURE on promote (a foreign producer's existing write,
+    // read-side only — see vtodocanonfields.cpp's recurrenceId/
+    // recurrenceRange demote block). This replaces
+    // vtodoRoundTripPreservesThisAndFutureRange, which pinned the OPPOSITE
+    // (pre-W3) behavior — see the W3 recon handoff "headline finding" and
+    // the series-split contract doc.
+    void vtodoDemoteNeverEmitsThisAndFutureRange()
     {
         const QByteArray vtodo =
             "BEGIN:VCALENDAR\r\n"
@@ -445,6 +452,7 @@ private slots:
         const QByteArray canon = fwd.transform(vtodo);
         QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
 
+        // Promote is unchanged: canon still captures the incoming RANGE.
         const QJsonObject obj = parse(canon);
         QCOMPARE(obj.value(QStringLiteral("recurrenceRange")).toString(),
                  QStringLiteral("thisAndFuture"));
@@ -452,15 +460,68 @@ private slots:
         CanonToVTodoStage rev;
         const QByteArray output = rev.transform(canon);
         QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
-        QVERIFY2(output.contains("RANGE=THISANDFUTURE"),
+        QVERIFY2(!output.contains("RANGE=THISANDFUTURE"),
                  qPrintable(QStringLiteral(
-                     "demoted bytes must carry RANGE=THISANDFUTURE; got:\n")
+                     "demoted bytes must NEVER carry RANGE=THISANDFUTURE "
+                     "(write-hostile on real servers); got:\n")
                      + QString::fromUtf8(output)));
 
         const auto outTodo = parseTodoFromICal(output);
         QVERIFY2(outTodo, "could not parse output VTODO");
-        QVERIFY(outTodo->hasRecurrenceId());
-        QVERIFY(outTodo->thisAndFuture());
+        // The bare exception identity survives — only the RANGE modifier
+        // is stripped (the new Degraded loss-profile entry for
+        // recurrenceRange; recurrenceId itself stays Reversible).
+        QVERIFY2(outTodo->hasRecurrenceId(),
+                 "the bare RECURRENCE-ID exception identity must survive");
+        QVERIFY2(!outTodo->thisAndFuture(),
+                 "thisAndFuture() must be false on the demoted todo");
+    }
+
+    // W3: seriesSplitOf rides X-CANON-SERIES-SPLIT-OF (Reversible carrier)
+    // — mirrors the completionAnchor/X-ORG-REPEATER pattern (W4).
+    void vtodoRoundTripPreservesSeriesSplitOf()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:weekly-series-1-split-20260601T090000Z\r\n"
+            "SUMMARY:Weekly review\r\n"
+            "X-CANON-SERIES-SPLIT-OF:weekly-series-1\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = parse(canon);
+        QCOMPARE(obj.value(QStringLiteral("seriesSplitOf")).toString(),
+                 QStringLiteral("weekly-series-1"));
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QCOMPARE(outTodo->nonKDECustomProperty("X-CANON-SERIES-SPLIT-OF"),
+                 QStringLiteral("weekly-series-1"));
+    }
+
+    // Loss-profile pin: seriesSplitOf is Reversible on canon → vtodo.
+    void canonToVtodoLossProfileChargesSeriesSplitOfReversible()
+    {
+        const auto regs = makeTodoRegistries();
+        const Shape canon{ DomainId{QStringLiteral("todo")}, EncodingId{QStringLiteral("canon")} };
+        const Shape vtodo{ DomainId{QStringLiteral("todo")}, EncodingId{QStringLiteral("ical-vtodo")} };
+
+        const auto loss = regs.transformation.inspect(canon, vtodo);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("seriesSplitOf")}),
+                 LossKind::Reversible);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrenceRange")}),
+                 LossKind::Degraded);
     }
 
     // A master VTODO (no RECURRENCE-ID) must NOT gain a recurrenceId key.

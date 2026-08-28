@@ -256,6 +256,8 @@ reads through listings/delta/$expand.
 | descriptionHtml | Reversible |
 | linkedResources | Dropped |
 | parentUid | Reversible |
+| recurrenceRange | Degraded |
+| seriesSplitOf | Reversible |
 | sortOrder | Reversible |
 | status | Degraded |
 
@@ -286,6 +288,7 @@ reads through listings/delta/$expand.
 | priority | Dropped |
 | recurrence | Dropped |
 | relatedTo | Dropped |
+| seriesSplitOf | Dropped |
 | start | Dropped |
 | status | Simplified |
 
@@ -308,6 +311,7 @@ reads through listings/delta/$expand.
 | priority | Degraded |
 | recurrence | Reversible |
 | relatedTo | Reversible |
+| seriesSplitOf | Reversible |
 | sortOrder | Reversible |
 | start | Simplified |
 

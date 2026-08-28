@@ -279,6 +279,18 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
+    // ---- seriesSplitOf (W3) — X-CANON-SERIES-SPLIT-OF carrier -------------
+    // Canon-only key (no pre-existing X-prop this rides "for free" the way
+    // providerExtras["x-vtodo"] round-trips props already on an incidence)
+    // linking a series-split new master back to its old master's uid —
+    // Reversible carrier, mirrors the X-ALT-DESC precedent above. See
+    // docs/campaign/vtodo-parity/2026-08-27-w3-series-split-contract.md.
+    {
+        const QString splitOf = todo->nonKDECustomProperty("X-CANON-SERIES-SPLIT-OF");
+        if (!splitOf.isEmpty())
+            obj.insert(QStringLiteral("seriesSplitOf"), splitOf);
+    }
+
     // ---- completionAnchor (W4) — generic X-ORG-REPEATER promote seam ------
     // Recognizes a custom X-ORG-REPEATER property carrying an org-mode
     // completion-anchored repeater marker (".+1w" Restart / "++2d"
@@ -435,6 +447,13 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             todo->setNonKDECustomProperty("X-ALT-DESC", html);
     }
 
+    // ---- seriesSplitOf → X-CANON-SERIES-SPLIT-OF (Reversible, W3) ---------
+    {
+        const QString splitOf = obj.value(QStringLiteral("seriesSplitOf")).toString();
+        if (!splitOf.isEmpty())
+            todo->setNonKDECustomProperty("X-CANON-SERIES-SPLIT-OF", splitOf);
+    }
+
     // ---- status ------------------------------------------------------------
     {
         const QString statusStr = obj.value(QStringLiteral("status")).toString();
@@ -571,7 +590,20 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     // ---- recurrenceId / recurrenceRange ------------------------------------
     // Mirrors the event path (eventcanonfields.cpp): the canon object carries
     // the exception identity as {dateTime: <UTC ISO>}; KCalendarCore re-emits
-    // RECURRENCE-ID (with RANGE=THISANDFUTURE when set) at serialization.
+    // RECURRENCE-ID at serialization.
+    //
+    // W3 (open decision 1) — RANGE=THISANDFUTURE is NEVER re-emitted on
+    // write, unconditionally, regardless of what canon's `recurrenceRange`
+    // carries. RANGE=THISANDFUTURE is write-hostile on real CalDAV servers;
+    // the library's strategy is series-split (see
+    // src/todo/todoseriessplitter.h and
+    // docs/campaign/vtodo-parity/2026-08-27-w3-series-split-contract.md),
+    // never this-and-future re-emission. `recurrenceRange` in canon is
+    // therefore purely a READ-SIDE fact (an already-existing foreign
+    // producer's write, captured losslessly by promote above) — this is a
+    // hard safety backstop, independent of whether a split was ever
+    // invoked. The bare exception identity (RECURRENCE-ID with no RANGE)
+    // is unaffected and still fully Reversible.
     {
         const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
         if (!recIdObj.isEmpty()) {
@@ -579,9 +611,8 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             if (!dtStr.isEmpty()) {
                 const QDateTime dt = QDateTime::fromString(dtStr, Qt::ISODate);
                 if (dt.isValid()) {
-                    const QString range = obj.value(QStringLiteral("recurrenceRange")).toString();
                     todo->setRecurrenceId(dt);
-                    todo->setThisAndFuture(range == QStringLiteral("thisAndFuture"));
+                    todo->setThisAndFuture(false);
                 }
             }
         }

@@ -262,9 +262,11 @@ Kalburator::Shape::LossProfile canonToGoogleTaskLoss()
     // Dropped: no Task home and NO carrier channel (declared profile §Carrier)
     // completionAnchor (W4) joins recurrence here: Google Tasks has no
     // recurrence field of any kind, so the derived standard form is
-    // equally unrepresentable.
+    // equally unrepresentable. seriesSplitOf (W3) joins the same list —
+    // Google Tasks has no extension point of any kind (O66(c)).
     for (const char* prop : { "percentComplete", "priority", "categories",
                               "start", "recurrence", "completionAnchor",
+                              "seriesSplitOf",
                               "alarms", "location",
                               "geo", "checklistItems", "relatedTo",
                               "descriptionHtml" }) {

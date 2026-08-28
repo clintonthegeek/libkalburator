@@ -28,6 +28,9 @@ kalburator_add_todo_test(tst_ms_todotask_canon_edge)
 target_compile_definitions(tst_ms_todotask_canon_edge PRIVATE
     KALBURATOR_VENDOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../fixtures/vendor")
 
+# W3 (VP.e) — pure splitSeriesAtInstant() unit tests.
+kalburator_add_todo_test(tst_todo_series_split)
+
 # B2C P3.b — tasks-flavored vendor doubles (Google Tasks + Graph todoTask)
 # mirroring the P1/P2 mock mechanics; transport-level suites pin pagination,
 # visibility flags / expand carriers, create truths, and delete semantics.

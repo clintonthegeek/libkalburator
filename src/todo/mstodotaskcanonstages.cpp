@@ -487,7 +487,9 @@ QByteArray CanonToMsTodoTaskStage::transform(const QByteArray& canonBytes) const
             // deliberately NOT handled — it auto-carries via this very loop
             // as an open-extension carrier (x-canon-completion-anchor),
             // declared Reversible below, matching the existing `recurrence`
-            // ruling (W4 decision 2).
+            // ruling (W4 decision 2). seriesSplitOf (W3) is ALSO
+            // deliberately NOT handled, same reasoning — auto-carries as
+            // x-canon-series-split-of, declared Reversible below.
         };
         bool any = false;
         QJsonObject carrierRow;
@@ -559,7 +561,7 @@ Kalburator::Shape::LossProfile canonToMsTodoTaskLoss()
                       LossKind::Reversible);
     for (const char* prop : { "percentComplete", "relatedTo", "parentUid",
                               "sortOrder", "location", "geo",
-                              "completionAnchor" }) {
+                              "completionAnchor", "seriesSplitOf" }) {
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Reversible);
     }

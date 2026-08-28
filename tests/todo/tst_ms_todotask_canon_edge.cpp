@@ -225,6 +225,28 @@ private slots:
             QVERIFY2(found,
                      "completionAnchor must ride a kalburator.canon carrier");
         }
+
+        // W3: seriesSplitOf has no todoTask home → auto-carries as an
+        // open-extension carrier, literally x-canon-series-split-of (same
+        // mechanism as completionAnchor above: decision 2, auto-carry, not
+        // added to the demote's `handled` set).
+        {
+            QJsonObject c = makeCanon();
+            c.insert(QStringLiteral("seriesSplitOf"),
+                     QStringLiteral("weekly-series-1"));
+            const QJsonObject out = parse(stage.transform(serialize(c)));
+            QString carriedValue;
+            for (const auto& ev :
+                 out.value(QStringLiteral("extensions")).toArray()) {
+                const QJsonObject ext = ev.toObject();
+                if (ext.value(QStringLiteral("extensionName")).toString()
+                    == QLatin1String("kalburator.canon")
+                    && ext.contains(QLatin1String("x-canon-series-split-of")))
+                    carriedValue =
+                        ext.value(QLatin1String("x-canon-series-split-of")).toString();
+            }
+            QCOMPARE(carriedValue, QStringLiteral("weekly-series-1"));
+        }
     }
 
     // Unrepresentable RRULE rulings ride the carrier and re-promote
@@ -311,6 +333,8 @@ private slots:
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("checklistItems")}),
                  LossKind::Dropped);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
+                 LossKind::Reversible);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("seriesSplitOf")}),
                  LossKind::Reversible);
 
         const auto promoteLoss = regs.transformation.inspect(mt, canon);

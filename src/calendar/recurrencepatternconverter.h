@@ -1,10 +1,19 @@
 #pragma once
 
+#include <QHash>
 #include <QJsonObject>
+#include <QString>
 #include <QStringList>
 
 namespace Kalburator::Calendar {
 namespace RecurrencePattern {
+
+/// RRULE line "RRULE:FREQ=DAILY;INTERVAL=2" → {{"FREQ","DAILY"},{"INTERVAL","2"}}.
+/// Exported (W3) so other modules needing verbatim RRULE KEY=VALUE parts
+/// (e.g. todoseriessplitter's text-level UNTIL rewrite) reuse this parser
+/// rather than duplicating it — avoids parser drift between two copies.
+/// Empty hash when `line` is not an "RRULE:..." line.
+QHash<QString, QString> parseRruleParts(const QString& line);
 
 /// Result of demoting canon RFC5545 lines to a Graph patternedRecurrence.
 struct DemoteResult {

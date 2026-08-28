@@ -82,10 +82,21 @@ Kalburator::Shape::LossProfile canonToVtodoLoss()
     // derived standard form additionally re-emits as a real RRULE —
     // round-trippable, not lost.
     p.affected.insert(PropertyId{QStringLiteral("completionAnchor")}, LossKind::Reversible);
+    // seriesSplitOf (W3): explicit X-CANON-SERIES-SPLIT-OF custom-prop
+    // carrier — round-trippable.
+    p.affected.insert(PropertyId{QStringLiteral("seriesSplitOf")},    LossKind::Reversible);
 
     // Degraded: vendor-specific status values not representable; mapped to
     // NEEDS-ACTION with original stashed in providerExtras
     p.affected.insert(PropertyId{QStringLiteral("status")},           LossKind::Degraded);
+    // recurrenceRange (W3): the demote seam UNCONDITIONALLY refuses to
+    // re-emit RANGE=THISANDFUTURE (write-hostile on real servers; see
+    // vtodocanonfields.cpp's recurrenceId/recurrenceRange demote block and
+    // the W3 series-split contract doc) — the RANGE modifier itself is
+    // therefore dropped on write. The bare recurrenceId exception identity
+    // is unaffected and needs no profile row of its own (round-trips
+    // losslessly, catalogued separately).
+    p.affected.insert(PropertyId{QStringLiteral("recurrenceRange")},  LossKind::Degraded);
 
     return p;
 }

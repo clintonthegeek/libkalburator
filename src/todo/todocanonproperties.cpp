@@ -38,6 +38,12 @@ Kalburator::Shape::PropertyCatalogue makeTodoCanonCatalogue()
     // Detached-exception identity (mirrors the event canon catalogue)
     cat.addProperty({ PropertyId{"recurrenceId"},     PropertyKind::Json,       QStringLiteral("Recurrence ID") });
     cat.addProperty({ PropertyId{"recurrenceRange"},  PropertyKind::String,     QStringLiteral("Recurrence Range") });
+    // Series-split re-association (W3): links a series-split new master
+    // back to its old master's uid (String = old master's uid). Read/write
+    // on the vtodo/CalDAV leg via X-CANON-SERIES-SPLIT-OF; auto-carries on
+    // MS To-Do (Reversible); Dropped on Google Tasks (no extension point).
+    // See docs/campaign/vtodo-parity/2026-08-27-w3-series-split-contract.md.
+    cat.addProperty({ PropertyId{"seriesSplitOf"},    PropertyKind::String,     QStringLiteral("Series Split Of") });
     // Completion-anchored recurrence (W4): derived standard form of an
     // org-mode completion-anchor repeater (".+1w" Restart / "++2d"
     // CatchUp) — {type: "catchUp"|"restart", interval, unit}. Catalogued

@@ -112,6 +112,23 @@ private slots:
         QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
     }
 
+    // W3 — seriesSplitOf: a trivial non-conflict pin, same as
+    // completionAnchor above. Falls out for free once the key is
+    // catalogued (todoCanonPropertyIds()); the differ has no separate
+    // "conflict" concept — reporting a changed key IS the whole mechanism.
+    void differMarksSeriesSplitOfChangeOnly()
+    {
+        CanonJsonDiffer d({ PropertyId{QStringLiteral("seriesSplitOf")},
+                            PropertyId{QStringLiteral("summary")} });
+        CanonicalRecord src;
+        src.data = R"({"seriesSplitOf":"weekly-series-1","summary":"x"})";
+        CanonicalRecord base;
+        base.data = R"({"summary":"x"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("seriesSplitOf")}));
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
+    }
+
     void mergerTakesSourceWhenTargetUnchanged()
     {
         CanonJsonMerger m(QStringLiteral("calendar"), { PropertyId{QStringLiteral("summary")} });

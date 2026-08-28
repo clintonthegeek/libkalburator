@@ -63,23 +63,6 @@ QString bysetposToGraphIndex(const QString& pos)
     return {};
 }
 
-/// RRULE line "RRULE:FREQ=DAILY;INTERVAL=2" → {{"FREQ","DAILY"},{"INTERVAL","2"}}.
-QHash<QString, QString> parseRruleParts(const QString& line)
-{
-    QHash<QString, QString> parts;
-    const int colon = line.indexOf(QLatin1Char(':'));
-    if (colon < 0 || !line.startsWith(QLatin1String("RRULE"), Qt::CaseInsensitive))
-        return parts;
-    const QString body = line.mid(colon + 1);
-    const QStringList segs = body.split(QLatin1Char(';'), Qt::SkipEmptyParts);
-    for (const QString& seg : segs) {
-        const int eq = seg.indexOf(QLatin1Char('='));
-        if (eq > 0)
-            parts.insert(seg.left(eq).toUpper(), seg.mid(eq + 1));
-    }
-    return parts;
-}
-
 QJsonObject makePattern()
 {
     QJsonObject pattern;
@@ -97,6 +80,25 @@ QString datePortionOf(const QString& iso)
 
 namespace Kalburator::Calendar {
 namespace RecurrencePattern {
+
+/// RRULE line "RRULE:FREQ=DAILY;INTERVAL=2" → {{"FREQ","DAILY"},{"INTERVAL","2"}}.
+/// (Exported via the header — W3; moved out of the anonymous namespace
+/// above so other modules can reuse it without duplicating the parser.)
+QHash<QString, QString> parseRruleParts(const QString& line)
+{
+    QHash<QString, QString> parts;
+    const int colon = line.indexOf(QLatin1Char(':'));
+    if (colon < 0 || !line.startsWith(QLatin1String("RRULE"), Qt::CaseInsensitive))
+        return parts;
+    const QString body = line.mid(colon + 1);
+    const QStringList segs = body.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    for (const QString& seg : segs) {
+        const int eq = seg.indexOf(QLatin1Char('='));
+        if (eq > 0)
+            parts.insert(seg.left(eq).toUpper(), seg.mid(eq + 1));
+    }
+    return parts;
+}
 
 // ---------------------------------------------------------------------------
 // Promote: Graph patternedRecurrence → RFC5545 lines (lossless, §1.3)

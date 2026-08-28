@@ -410,6 +410,8 @@ set(KALBURATOR_TODO_HEADERS
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.h
     src/todo/vtodocanonfields.h
+    # W3 (VP.e) — pure series-split computation (todo-only)
+    src/todo/todoseriessplitter.h
     src/todo/tododomaindefinition.h
     src/todo/todostockshapes.h
     src/todo/todoplugin.h
@@ -433,6 +435,8 @@ set(KALBURATOR_TODO_SOURCES
     # Plan 3 Task B2/B3 — vtodo ↔ canon JSON stages
     src/todo/vtodocanonstages.cpp
     src/todo/vtodocanonfields.cpp
+    # W3 (VP.e) — pure series-split computation (todo-only)
+    src/todo/todoseriessplitter.cpp
     src/todo/tododomaindefinition.cpp
     src/todo/todostockshapes.cpp
     src/todo/todoplugin.cpp

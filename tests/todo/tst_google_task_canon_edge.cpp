@@ -195,6 +195,17 @@ private slots:
             const QJsonObject out = parse(stage.transform(serialize(c)));
             QVERIFY(!out.contains(QStringLiteral("completionAnchor")));
         }
+
+        // W3: seriesSplitOf has no home and NO carrier channel on Google
+        // Tasks (no extension point of any kind, O66(c)) → silently
+        // dropped, same ruling as completionAnchor above.
+        {
+            QJsonObject c = makeCanon();
+            c.insert(QStringLiteral("seriesSplitOf"),
+                     QStringLiteral("weekly-series-1"));
+            const QJsonObject out = parse(stage.transform(serialize(c)));
+            QVERIFY(!out.contains(QStringLiteral("seriesSplitOf")));
+        }
     }
 
     // C→G→C byte-equal identity for the representable set.
@@ -247,6 +258,8 @@ private slots:
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("priority")}),
                  LossKind::Dropped);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("completionAnchor")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("seriesSplitOf")}),
                  LossKind::Dropped);
 
         const auto promoteLoss = regs.transformation.inspect(gt, canon);
