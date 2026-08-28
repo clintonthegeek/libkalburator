@@ -6,7 +6,7 @@ PlanStan's W1–W8 handoff,
 audit in `PlanStan/docs/audits/2026-08-25-vtodo-parity/`). This file is
 the live execution tracker; the response doc holds decisions + receipts.
 
-**Last updated:** 2026-08-27 (commit `43d74b1`; VP.d W4 DONE — completion-anchor canon key + derived-RRULE write-out + differ non-conflict; org-io wiring deferred, not buildable standalone here; W3 series-split next)
+**Last updated:** 2026-08-28 (VP.e W3 DONE — RANGE=THISANDFUTURE write-hostility fixed + series-split helper + seriesSplitOf carrier; VEVENT-side twin bug flagged, not fixed; W5/W6.2/W7 next)
 
 ## Where we stand
 
@@ -17,7 +17,7 @@ the live execution tracker; the response doc holds decisions + receipts.
 | VP.b | **W2** per-instance completion rep + BaselineStore transactions + Google/MSToDo producer mappings | **DONE 2026-08-26** (`7403509`) — exception-create href distinct from master (`<uid>-<stamp>.ics`, was clobbering master); `BaselineStore::transaction(fn)` API + engine persist loop wraps atomically. 12 slots. Return receipt `2026-08-26-w2-return-receipt.md`. **Correction** vs the response doc: Google Tasks has NO extension point (O66(c)) — cannot carry the master EXDATE; MS To-Do carries it via nav-POST x-canon-recurrence (already Reversible). Consumer note delivered to PlanStan (`e1856650`): ConflictInfo ids may now be composite; decompose before display. |
 | VP.c | **W1** composite record identity (`uid\x01recurrenceId`) for blob pipeline + contract doc + matrices (needs P3) | **DONE 2026-08-26** — step-1a library foundation (recordidentity.h, vtodo canon recurrenceId/recurrenceRange, scanner recurrenceIdUtc selector); **step-1b RemoteCalendarBackend blob-view wiring** (records minted via `composeRecordIdentity(uid, recurrenceId)` at every incidence-parse site, composite-keyed `m_lastRawIcsByUid`/`m_uidToUrl`, decompose-at-seam for resolveItemUrl/findOwningCalendar/applyRecords+createRecord URL guesses/loadRecord with graceful bare fallback; FakeCalDavServer store refactored from UID-keyed to RESOURCE-FILE-NAME-keyed; tst_remotecalendarbackend_blob_view +5 slots); **step-1c SubscriptionBackend + LocalBackend**. SubscriptionBackend: `subscriptionBlobRecord` now mints via `composeRecordIdentity(uid, hasRecurrenceId() ? recurrenceId() : invalid)` — a feed with a master + detached exception block (separate VTODO/VEVENT sharing one UID) yields TWO records (bare uid + composite, both bytes preserved); `loadRecord` decomposes (composite id → the exception, bare uid → the master, graceful master fallback when a composite id's block was dropped from the feed); write/delete seams stay rejected no-ops (read-only — a composite id never becomes a path). LocalBackend DECISION: do NOT compound record ids at the file level (record id == filename minus `.ics` is a bijection to ONE file path; compounding would break id→filename). Audit found NO truncation — `recordFromBytes` already stores the FULL file bytes (`rec.data = bytes`), so a single `.ics` parsing to master + co-located exception already keeps the RECURRENCE-ID block verbatim. No code change; pin test added. Follow-ups (recon): DecSyncBackend / AkonadiBackend / OrgBackend / GenericSqliteBackend not compounded at this stage. **STEP-2/3 (written contract + matrices) DONE same day** — binding contract `docs/campaign/vtodo-parity/2026-08-26-w1-detached-exceptions-contract.md` (§1 keying, §2 differ treatment of master+exception pairs, §3 delete semantics, §4 non-supporting-peer flatten strategy, §7 full matrix create/edit/delete/reabsorb × caldav/subscription/local/org/google/ms); return receipt `2026-08-26-w1-return-receipt.md`. Two new CalDAV pins: `detachedException_reabsorb_surfacesMasterOnly` + `detachedException_masterDelete_removesOnlyMasterHref` (+ `FakeCalDavServer::removeEventAt`). Engine-level uid-family propagation/cascade remain SPECIFIED-not-executed (§5 of contract doc; per-record engine behavior unchanged). |
 | VP.d | **W4** completion-anchor canon key (catalogued) + CalDAV derived-RRULE write-out + differ non-conflict treatment | **DONE 2026-08-27** — catalogued `completionAnchor` key (`todocanonproperties.cpp:47`); generic `X-ORG-REPEATER` custom-prop promote seam (`vtodocanonfields.cpp`, new block after recurrenceId/recurrenceRange) + derived-RRULE demote seam anchored at `completed` (explicit DTSTART emitted only when canon carries no competing explicit `start` — declared corner case, tested); loss profiles declared on all three todo edges (vtodo Reversible, google-task Dropped, ms-todotask auto-carry Reversible); differ non-conflict pinned (2 new slots in `tst_canonjson_diff_merge`); matrix regenerated + byte-pin green same commit (O63). **org-io wiring DEFERRED, not landed**: `KALBURATOR_HAVE_ORG_IO=ON` verified NOT buildable standalone in this repo (actually attempted — fails at moc time, `orgfilemanager.h: No such file`, since no host project supplies the `planstan-org-io` target here); TODO left at the promote seam for whoever next has an org-io-enabled build (e.g. inside PlanStan). Return receipt: `2026-08-27-w4-return-receipt.md`. Full suite green except the 4 known environmental Radicale slots. |
-| VP.e | **W3** series-split mechanics + split-association carrier | not started |
+| VP.e | **W3** series-split mechanics + split-association carrier | **DONE 2026-08-28** — correctness fix: `canonObjectToVtodoBytes` demote (`vtodocanonfields.cpp`) now unconditionally refuses to re-emit RANGE=THISANDFUTURE (write-hostile on real servers); the W1-era pinned test that asserted the opposite (`vtodoRoundTripPreservesThisAndFutureRange`) rewritten to `vtodoDemoteNeverEmitsThisAndFutureRange`; `recurrenceRange` → Degraded loss row. New catalogued key `seriesSplitOf` (old-master uid) rides `X-CANON-SERIES-SPLIT-OF` on vtodo/CalDAV (Reversible), auto-carries as `x-canon-series-split-of` on MS To-Do (Reversible, zero handler code), Dropped on Google Tasks (no extension point). New pure host-invoked helper `Kalburator::Todo::splitSeriesAtInstant()` (`src/todo/todoseriessplitter.{h,cpp}`) computes {tightened old master, fresh new master, rebased exceptions} from canon JSON only — text-level RRULE UNTIL rewrite (never loosens past the original bound), deterministic new-master uid (idempotent retry), COUNT-bounded RRULE fails loud (v1 doesn't recompute COUNT), exception rebase is new-identity-not-rename per the W1 contract. NOT wired into SyncEngine/differ/any backend — host-invoked only, per Open decisions 1/9. `parseRruleParts()` exported via `recurrencepatternconverter.h` (was file-local). Contract doc `2026-08-27-w3-series-split-contract.md` (carrier + demote guarantee + helper contract + host realization sequence + engine/transport atomicity gap declared SPECIFIED-not-executed). **VEVENT-side twin bug flagged, NOT fixed** (out of vtodo-parity's todo-only scope): `eventcanonfields.cpp:594-596` still unconditionally re-emits RANGE=THISANDFUTURE. Matrix regenerated + byte-pin green same commit (O63). Return receipt: `2026-08-27-w3-return-receipt.md`. Full suite green (214 tests) except the 4 known environmental Radicale slots. |
 | VP.f | **W5** alarm shape extension (abs trigger/RELATED/REPEAT/DURATION) + **W6.2** malformed-date coercion + **W7** passthrough round-trip tests | not started |
 
 ## Key recon findings pinned 2026-08-25 (evidence for the response doc)
@@ -196,3 +196,40 @@ the live execution tracker; the response doc holds decisions + receipts.
   OPPOSITE of the binding W3 spec (demote must never emit
   RANGE=THISANDFUTURE) — rewriting it is part of the fix, not incidental
   cleanup. W3 implementation is the next task.
+- 2026-08-28: **VP.e (W3) LANDED** — all nine recon open decisions
+  implemented as-given. Correctness fix: `vtodocanonfields.cpp` demote
+  unconditionally refuses RANGE=THISANDFUTURE re-emission;
+  `vtodoRoundTripPreservesThisAndFutureRange` rewritten to
+  `vtodoDemoteNeverEmitsThisAndFutureRange` (recon's exact recommended
+  assertions); `recurrenceRange` → Degraded loss row added. New
+  catalogued `seriesSplitOf` key + carriers: explicit
+  `X-CANON-SERIES-SPLIT-OF` custom-prop on vtodo/CalDAV (Reversible),
+  zero-code auto-carry as `x-canon-series-split-of` on MS To-Do
+  (Reversible), Dropped on Google Tasks. New pure library helper
+  `Kalburator::Todo::splitSeriesAtInstant()`
+  (`src/todo/todoseriessplitter.{h,cpp}`) — text-level RRULE UNTIL
+  tightening (never loosens past the original bound), deterministic
+  idempotent new-master uid, COUNT-bounded RRULE fails loud, exception
+  rebase treated as new-identity-not-rename (no `composeRecordIdentity()`
+  call inside the helper, consistent with the W1 contract). NOT wired
+  into SyncEngine/differ/any backend (host-invoked pure function only).
+  `parseRruleParts()` exported from `recurrencepatternconverter.cpp` via
+  its header (was anonymous-namespace-local) to avoid a second RRULE
+  KEY=VALUE parser. Contract doc
+  `2026-08-27-w3-series-split-contract.md` written (mirrors the W1
+  contract §5 framing for the declared engine/transport atomicity gap).
+  **VEVENT-side twin bug flagged, not fixed**: `eventcanonfields.cpp:594-596`
+  has the identical write-hostility bug, unfixed, out of vtodo-parity's
+  todo-only scope — flagged in the contract doc §2 and the return receipt
+  for a future event-focused pass. 18 new test slots across
+  `tst_todo_canon_roundtrip` (+2), new `tst_todo_series_split` (9, new
+  binary), `tst_ms_todotask_canon_edge` (extended existing slots, no
+  count change), `tst_google_task_canon_edge` (same), `tst_canonjson_diff_merge`
+  (+1). Matrix regenerated + `tst_gm_pipeline_convergence` byte-pin green
+  same commit (O63). Return receipt: `2026-08-27-w3-return-receipt.md`.
+  Full suite: 214 tests total (213 pre-W3 + 1 new binary), 210 passing +
+  the 4 known environmental Radicale slots (no regressions; grepped for
+  other test dependents on the old RANGE=THISANDFUTURE-emitting behavior
+  before rewriting — none found). vtodo-parity campaign remaining order:
+  W5 (alarm extension) + W6.2 (date coercion) + W7 (passthrough tests)
+  (VP.f) — all that's left.
