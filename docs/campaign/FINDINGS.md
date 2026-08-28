@@ -3259,7 +3259,7 @@ refetch served `x-canon-gender=female`, one row. NO backend change needed
 — the existing strip-then-nav-POST channel handles carrier updates
 correctly; a nav-PATCH variant would be redundant complexity.
 
-### O74 — OPEN — VTODO-parity recon, 2026-08-25: providerExtras is invisible to the canonical todo differ
+### O74 — RESOLVED 2026-08-28 — VTODO-parity recon, 2026-08-25: providerExtras is invisible to the canonical todo differ
 
 The todo domain's canonical differ is `CanonJsonDiffer(todoCanonPropertyIds())`
 (`src/todo/tododomaindefinition.cpp:27`) — it diffs catalogued canon
@@ -3276,6 +3276,24 @@ Discovered during W7/W6 recon for the PlanStan VTODO-parity handoff
 derived extras digest or add an explicit extras key to the compared set.
 Until fixed, X-prop-only edits rely on byte-level paths (raw-bytes
 backends) to propagate.
+
+**Resolution (VP.f, 2026-08-28):** new catalogued `providerExtrasDigest`
+(String) todo canon key, computed at promote time on each of the three
+todo legs from a domain-neutral
+`Kalburator::Shape::CanonEnvelope::canonicalDigest(const QJsonValue&)`
+helper (`src/shape/canonenvelope.{h,cpp}`; SHA256 hex of the
+`QJsonDocument`-serialized value — Qt6's `QJsonObject` serialization
+already sorts keys at every nesting level, so no separate canonicalizing
+pass was needed). Google/MS call sites filter known-volatile bookkeeping
+before hashing (Google: `etag`; MS: `@odata.etag`, `lastModifiedDateTime`,
+`@odata.context` — confirmed against a real captured Graph todoTask
+sample) so the digest doesn't become spuriously "always dirty" on every
+vendor-side write. `providerExtrasDigest` → `Dropped` on all three loss
+profiles (derived/meta, no wire form). Differ pin:
+`differMarksProviderExtrasDigestChangeOnly`
+(`tests/shape/tst_canonjson_diff_merge.cpp`). Full writeup:
+`docs/campaign/vtodo-parity/2026-08-28-vpf-return-receipt.md` §3,
+`docs/campaign/vtodo-parity/2026-08-28-w7-passthrough-contract.md` §4.
 
 ### O75 — OPEN — B2C P3.f live checkpoint, 2026-08-26: Google Tasks discovery now REQUIRES /users/@me (plain /users/me 404s with an HTML page)
 

@@ -88,21 +88,23 @@ backends author `/v1…` paths verbatim.
 UX, P5 identity wiring, P6 consumer handoff. P3 now GATES the vtodo-parity
 campaign (vendor todo backends are its W1/W2 test legs).
 
-## VTODO-parity campaign (OPENED 2026-08-25; ACTIVE)
+## VTODO-parity campaign (OPENED 2026-08-25; CLOSED 2026-08-28)
 
 PlanStan's W1–W8 semantic-parity handoff ACCEPTED with scoping edits —
 decisions + Q1–Q4 answers: `docs/2026-08-25-vtodo-parity-handoff-response.md`;
-live tracker: `docs/campaign/vtodo-parity/STATUS.md`. **Progress to date:
-W8 (capabilities) DONE; W2 (per-instance completion) DONE; W1 (composite
-exception identity + contract doc + full test matrix) DONE 2026-08-26
-(commit `7585152`).** Remaining order: W4 completion-anchored recurrence
-(RECON DONE — `docs/campaign/vtodo-parity/2026-08-26-w4-recon-handoff.md`,
-impl next) → W3 series-split → W5/W6.2/W7. Recon findings pinned in
-STATUS: blob pipeline keys by UID alone (master+exception collide,
-fixed by W1), providerExtras invisible to the canonical differ (**O74**),
-VALARM already first-class in todo canon, org backend drops unknown
-X-props, BaselineStore transaction API added in W2.
-Return receipts owed to PlanStan per delivered item.
+live tracker: `docs/campaign/vtodo-parity/STATUS.md`. **All items DONE:**
+W8 (capabilities), W2 (per-instance completion), W1 (composite exception
+identity + contract + matrices), W4 (completion-anchored recurrence), W3
+(series-split mechanics + carrier), and finally **VP.f — W5 (VALARM shape
+extension) + W6.2 (malformed DTSTART/DUE coercion) + W7 (passthrough
+verification) + O74 (differ blind spot) DONE 2026-08-28** (contract:
+`docs/campaign/vtodo-parity/2026-08-28-w7-passthrough-contract.md`;
+receipt: `docs/campaign/vtodo-parity/2026-08-28-vpf-return-receipt.md`).
+**O74 RESOLVED** (was: providerExtras invisible to the canonical differ —
+fixed via a new catalogued `providerExtrasDigest` + domain-neutral
+`CanonEnvelope::canonicalDigest()` helper, filtered per-vendor to exclude
+volatile bookkeeping before hashing). Return receipts delivered to
+PlanStan per item throughout.
 
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();
