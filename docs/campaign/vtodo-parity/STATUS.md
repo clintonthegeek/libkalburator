@@ -6,7 +6,7 @@ PlanStan's W1–W8 handoff,
 audit in `PlanStan/docs/audits/2026-08-25-vtodo-parity/`). This file is
 the live execution tracker; the response doc holds decisions + receipts.
 
-**Last updated:** 2026-08-28 (VP.e W3 DONE — RANGE=THISANDFUTURE write-hostility fixed + series-split helper + seriesSplitOf carrier; VEVENT-side twin bug flagged, not fixed; W5/W6.2/W7 next)
+**Last updated:** 2026-08-28 (VP.f W5+W6.2+W7+O74 recon DONE — code map + open decisions persisted; implementation next)
 
 ## Where we stand
 
@@ -233,3 +233,19 @@ the live execution tracker; the response doc holds decisions + receipts.
   before rewriting — none found). vtodo-parity campaign remaining order:
   W5 (alarm extension) + W6.2 (date coercion) + W7 (passthrough tests)
   (VP.f) — all that's left.
+- 2026-08-28: **VP.f (W5+W6.2+W7+O74) recon done**, persisted in
+  `2026-08-28-vpf-recon-handoff.md` (code map + open decisions per
+  sub-item; no code written yet). Headline findings: W6.2 rules (a)/(b)
+  may need a raw-bytes VALUE=DATE probe depending on whether KCalendarCore
+  collapses DTSTART/DUE date-only-ness via its single `allDay()` flag
+  (unresolved — verify before implementing); O74's extras digest must be
+  filtered on the MS/Google legs (Google's `etag` and MS's
+  `lastModifiedDateTime`-equivalent bump on every edit and would make the
+  new differ signal spuriously always-dirty if hashed unfiltered — Google
+  leg evidenced directly by an existing code comment naming `etag` in the
+  unfiltered stash); the MS-leg alarm shape (`{reminder:{...}}`) does not
+  match the vtodo-leg shape (`{type,offset,text}`) and demoting an
+  MS-sourced alarm to VTODO today silently produces a zero-offset
+  Invalid-type VALARM — flagged as a real bug, recommended (not
+  mandatory) to fold into W5. VP.f implementation is the next task;
+  nothing coded yet.
