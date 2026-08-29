@@ -7,8 +7,8 @@ and the scope boundary). This file is the **live execution tracker**.
 **Opened:** 2026-08-29. **Baseline:** `main` @ `fc1ae61`, 214 slots
 (210 green + the 4 known environmental Radicale/KDAV slots).
 
-**Last updated:** 2026-08-29 (campaign OPENED; recon landed, no code yet —
-IP.1 is next and lands a deliberately RED gate).
+**Last updated:** 2026-08-29 (IP.1 DONE — coverage gate landed RED as
+designed, pinning O78; IP.2 is next).
 
 > Living document. Update the item row **and** the session log in the same
 > commit that changes the item's state (invariant 7). Never leave a row
@@ -18,8 +18,8 @@ IP.1 is next and lands a deliberately RED gate).
 
 | Item | Work | Closes | State |
 |---|---|---|---|
-| IP.1 | Catalogue/emitter coverage gate — replaces the hand-listed `catalogueIncludesTodoAndJournalFields()` slot with a computed subset gate over every `(domain, kind)` pair | *proves* O78 | **NEXT** — lands RED with `QEXPECT_FAIL("IP.2")`; tests only, no `src/` change |
-| IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | NOT STARTED — gated on IP.1 |
+| IP.1 | Catalogue/emitter coverage gate — replaces the hand-listed `catalogueIncludesTodoAndJournalFields()` slot with a computed subset gate over every `(domain, kind)` pair | *proves* O78 | **DONE 2026-08-29** — lands RED on `(calendar, vtodo)` naming `providerExtrasDigest`/`seriesSplitOf`/`completionAnchor`, `QEXPECT_FAIL("IP.2 / O78: ...")`; green on all other pairs incl. both contacts legs with generic carrier round-trips; tests only, no `src/` change. Receipt: `2026-08-29-ip1-return-receipt.md`. |
+| IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **NEXT** — gated on IP.1 (now satisfied) |
 | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits; catalogues become unions | O78 *class* | NOT STARTED — gates IP.4–IP.7 |
 | IP.4 | Shared VALARM shape module (`alarmToJson`/`alarmFromJson`/`describeAlarmRow`) + VEVENT promote **and** demote **and** both vendor event legs, one commit | **O79** | NOT STARTED |
 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` + catalogue + declare, across calendar/journal/contacts; retrofit the 3 todo sites onto it | **O80** | NOT STARTED |
@@ -109,6 +109,32 @@ produced this state; three copies drift faster than two.
   **O78–O83** filed. Successor pointer added to
   `docs/campaign/vtodo-parity/STATUS.md`; `CLAUDE.md` campaign section
   added.
-- **NEXT:** IP.1 — land the coverage gate RED. Do not fix anything in the
-  same commit; the point is a red slot that pins O78 before IP.2 removes
-  it.
+- **2026-08-29 — IP.1 DONE.** `tests/calendar/tst_calendar_kind_dispatch.cpp`'s
+  hand-listed `catalogueIncludesTodoAndJournalFields()` (four hardcoded
+  keys, the drift's own tombstone) replaced with seven computed-subset
+  slots, one per `(domain, kind)` pair (`(calendar,vevent)`,
+  `(calendar,vtodo)`, `(calendar,vjournal)`, `(todo,vtodo)`, and the three
+  contacts legs `vcard4`/`google-person`/`ms-contact`), each promoting a
+  newly-built maximal fixture and checking its emitted top-level key set
+  (minus the envelope keys, read from `CanonEnvelope`) against the real
+  catalogue at runtime via a new shared helper,
+  `tests/shape/canonkeycoverage.h`. `(calendar, vtodo)` comes up RED
+  exactly as PLAN.md predicted, naming `providerExtrasDigest`,
+  `seriesSplitOf`, `completionAnchor` by name in the failure message —
+  verified by temporarily removing the `QEXPECT_FAIL` and re-running before
+  landing it. All six other pairs are GREEN, including both contacts legs
+  that round-trip catalogued keys generically through an
+  `x-canon-*`/`clientData` string carrier (the closest thing in the
+  codebase to a second O78-shaped risk) — no second live drift found. Hit
+  and worked around the already-documented O59 moc/raw-string-literal trap
+  while building the two JSON vendor fixtures (switched to concatenated
+  quoted literals). No `src/` change. Full suite: 214 tests, 210 passed, 4
+  failed (the same 4 known environmental Radicale/KDAV slots as baseline;
+  `tst_calendar_kind_dispatch` itself is among the 210 passed — its one red
+  assertion is a QTest-level XFAIL, not a ctest-level failure). Receipt:
+  `2026-08-29-ip1-return-receipt.md`.
+- **NEXT:** IP.2 — catalogue the three drifted keys in
+  `calendarcanonproperties.cpp` (matching `todocanonproperties.cpp`'s
+  declarations exactly) and remove IP.1's `QEXPECT_FAIL`; add the merger
+  regression slot named in PLAN.md's IP.2 acceptance criteria; regenerate
+  the convergence matrix.
