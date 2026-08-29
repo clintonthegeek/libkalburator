@@ -6,7 +6,31 @@ PlanStan's W1–W8 handoff,
 audit in `PlanStan/docs/audits/2026-08-25-vtodo-parity/`). This file is
 the live execution tracker; the response doc holds decisions + receipts.
 
-**Last updated:** 2026-08-28 (VP.f W5+W6.2+W7+O74 LANDED — campaign's currently-scoped W-item list (VP.a–VP.f) now fully DONE)
+**Last updated:** 2026-08-29 (CLOSED 2026-08-28 with VP.a–VP.f all DONE; successor campaign opened — see below)
+
+> **SUCCESSOR: the incidence-parity campaign** —
+> `docs/campaign/incidence-parity/PLAN.md` + `STATUS.md`, opened
+> 2026-08-29. This campaign was correctly scoped to todo, but two of its
+> facts only became visible from outside it:
+>
+> 1. **The calendar domain shares this campaign's VTODO emitter**
+>    (`src/calendar/icalcanonstages.cpp:56,:83` call
+>    `Kalburator::Todo::todoFieldsToCanon()` /
+>    `canonObjectToVtodoBytes()`). So W3/W4/O74's new keys are already
+>    emitted into `{calendar,canon}`, where the catalogue declares none of
+>    them — differ blind, and `CanonJsonMerger` silently takes the
+>    target's value. Filed as **O78**; the successor's IP.1–IP.3 close it.
+> 2. **VTODO is still the poorest-covered incidence kind**, poorer than
+>    VJOURNAL: no SEQUENCE/CLASS/URL/ORGANIZER/ATTENDEE/ATTACH/COLOR, none
+>    of it declared in a loss profile (**O83**). The forward direction —
+>    what VEVENT has that VTODO lacks — was never in this campaign's
+>    charter.
+>
+> The VEVENT twins this campaign flagged but did not fix are now numbered:
+> **O79** (alarm trigger-form corruption, the W5 twin — plus three more
+> call sites), **O81** (W6.2 twin), **O82** (the RANGE=THISANDFUTURE twin
+> flagged in VP.e below). **O80** is O74's own predicted follow-through
+> into calendar/contacts.
 
 ## Where we stand
 

@@ -3343,3 +3343,204 @@ the row (create echo remains a wire-lie).
 Backend consequence (fixed same commit): `kCanonExtensionId` and the
 expanded-listing filter switched to the microsoft.graph prefix; mock +
 suites re-pinned.
+
+### O78 — OPEN — incidence-parity recon, 2026-08-29: the calendar canon catalogue drifted from the shared VTODO emitter — three keys are emitted into `{calendar,canon}` that the calendar catalogue never declares
+
+`src/calendar/icalcanonstages.cpp:56` promotes VTODO through
+`Kalburator::Todo::todoFieldsToCanon()` and `:83` demotes through
+`Kalburator::Todo::canonObjectToVtodoBytes()`. The calendar domain
+**shares** the todo emitter; it does not have its own. The vtodo-parity
+campaign added `providerExtrasDigest` (O74), `seriesSplitOf` (W3), and
+`completionAnchor` (W4) to that shared emitter and catalogued them only in
+`todocanonproperties.cpp`. `makeCalendarCanonCatalogue()`
+(`calendarcanonproperties.cpp`) declares none of the three — verified: zero
+occurrences of `providerExtrasDigest`, `seriesSplitOf`, or
+`completionAnchor` under `src/calendar/`.
+
+Two consequences, both live on `fc1ae61`:
+
+1. `CanonJsonDiffer` compares catalogued ids only, so a change confined to
+   any of the three on a `{calendar,canon}` vtodo-kind record never dirties
+   the diff.
+2. **The merger silently discards them.**
+   `src/shape/canonjsonmerger.cpp:29` starts `QJsonObject out = t` and
+   overrides only ids in `m_properties`. An uncatalogued key therefore
+   takes the **target's** value unconditionally on every merge, and the
+   differ never surfaced the change that would have exposed it.
+
+**Live blast radius, stated honestly (verified 2026-08-29).** Only one of
+the three keys costs anything today:
+
+- `completionAnchor` — **live**, narrowly. `vtodocanonfields.cpp:373`
+  gates it on `X-ORG-REPEATER` being present on the source, so it bites an
+  org-repeater VTODO arriving through a CalDAV *calendar*.
+- `seriesSplitOf` — **latent**. Only `todoseriessplitter.cpp:203`
+  (`splitSeriesAtInstant()`) writes it, and W3 landed that host-invoked and
+  unwired by decision — its only callers are in
+  `tests/todo/tst_todo_series_split.cpp`. Becomes live when W3 is wired to
+  the engine.
+- `providerExtrasDigest` — **benign now**. Calendar ignoring it leaves that
+  leg exactly where it was pre-O74, which is O80's gap rather than a new
+  regression; a stale merged digest is derived and recomputed at the next
+  promote.
+
+So this is a small fix with a large lesson. It IS a regression introduced
+by the vtodo-parity campaign — which correctly scoped itself to todo but
+edited an emitter the calendar domain also uses — and it is NOT an
+emergency. Do not let the second fact excuse the first: the value of
+fixing it is that the instance stops masking the class.
+
+Root cause is the class, not the instance: a canon catalogue and its
+emitters are two independent sources of truth about the same key set with
+nothing enforcing agreement. `tests/calendar/tst_calendar_kind_dispatch.cpp:176-186`
+is the drift's own tombstone — it hand-lists exactly four union keys
+(`due`, `completed`, `percentComplete`, `relatedTo`), was never updated,
+and passed green throughout.
+
+Owned by the incidence-parity campaign: **IP.1** pins it red, **IP.2**
+closes the instance, **IP.3** closes the class (contributed catalogues).
+See `docs/campaign/incidence-parity/PLAN.md`.
+
+### O79 — OPEN — incidence-parity recon, 2026-08-29: VEVENT alarm promote corrupts absolute-trigger and END-related VALARMs to a bogus `offset: 0` — and three more call sites read the same row shape
+
+`src/calendar/eventcanonfields.cpp:374` reads
+`alarm->startOffset().asSeconds()` unconditionally.
+`KCalendarCore::Alarm`'s `hasTime()` / `hasEndOffset()` /
+`hasStartOffset()` are mutually exclusive (probe-confirmed 2026-08-28 under
+W5), so `startOffset()` on an absolute-trigger (`TRIGGER;VALUE=DATE-TIME:`)
+or END-related (`TRIGGER;RELATED=END:`) alarm returns a meaningless
+default that promote writes into canon as `offset: 0`. The alarm silently
+becomes a zero-offset start-relative alarm.
+
+This is the exact bug W5 fixed on the todo leg
+(`vtodocanonfields.cpp:394-409` branches on trigger form; the comment at
+`:389-392` names it "a real bug fix bundled in"). It is
+**Reversible→silently-wrong**, not a declared loss — nothing in the
+calendar loss profile declares it, because the VEVENT side was outside
+vtodo-parity's charter and nobody compared until now.
+
+**Fixing promote alone would make VEVENT round-tripping worse.** Four sites
+read the row shape and all must move in one commit:
+
+| Site | Defect |
+|---|---|
+| `eventcanonfields.cpp:366-379` promote | unconditional `startOffset()` (above) |
+| `eventcanonfields.cpp:662-675` demote | unconditional `setStartOffset()`; ignores `at`/`related`/`repeatCount` — an `at`-carrying row would demote to an alarm with no trigger at all |
+| `mseventcanonstages.cpp:1211-1232` | `a.value("offset").toInt()` ⇒ **0** on an `at`-shaped row, which then passes `offsetSecs <= 0 && offsetSecs % 60 == 0` and maps to `reminderMinutesBeforeStart: 0` — an absolute alarm silently becomes "remind at start" instead of falling to the carrier |
+| `googlecanonstages.cpp:345-367` | same reader shape |
+
+The last two are latent today and go live the moment promote is fixed.
+
+VEVENT's canon `alarms` shape also never received W5's REPEAT/DURATION
+pairing (`repeatCount`/`repeatIntervalSecs`) or the unified `related` key —
+it is still exactly the pre-W5 todo shape. VJOURNAL takes no VALARM per
+RFC 5545 and is correctly unaffected.
+
+Owned by incidence-parity **IP.4** (shared `alarmshape` module +
+`describeAlarmRow()` so a vendor leg asks rather than inferring from a
+defaulted zero).
+
+### O80 — OPEN — incidence-parity recon, 2026-08-29: calendar and contacts differs are still blind to provider-extras-only edits (the O74 follow-through O74 itself predicted)
+
+`calendardomaindefinition.cpp:33` and `contactsdomaindefinition.cpp:29`
+construct `CanonJsonDiffer` over their catalogued ids only, and neither
+catalogue declares `providerExtrasDigest` — verified: zero occurrences
+under `src/calendar/` or `src/contacts/`. O74's own text predicted this
+("Same shape presumably holds for any domain whose differ is
+catalogue-scoped"); the prediction was never turned into a tracked item.
+
+Consequence: a sync whose only change is a vendor X-property or
+provider-extras edit on an **event, journal, or contact** does not dirty
+the differ and does not propagate. Byte-level/raw-bytes backends (CalDAV
+blob view) are unaffected — the gap is specific to canon-diff-mediated
+sync. VJOURNAL is included: `journalcanonfields.cpp:102-111` stashes
+`providerExtras["x-ical"]` with no digest.
+
+**Scope is exactly three domains.** `note` (`TextDiffer`), `outline`
+(`OutlineDiffer`) and `blob` (`RecordDifferBlob`) do not use
+`CanonJsonDiffer` and are structurally immune.
+
+The fix must NOT be a fourth/fifth/sixth copy of the todo call sites.
+`CanonEnvelope::canonicalDigest()` is already domain-neutral; the lift is
+an envelope-level `stampProviderExtrasDigest(obj, volatileKeys)` used
+everywhere, with the three todo sites retrofitted onto it. The
+volatile-key filter is per-vendor and mandatory — an unfiltered digest is
+spuriously always-dirty and worse than none (todo's lists: Google `etag`;
+MS `@odata.etag`/`lastModifiedDateTime`/`@odata.context`; calendar and
+contacts lists must be derived from real captured payloads, not assumed to
+transfer).
+
+Owned by incidence-parity **IP.5**.
+
+### O81 — OPEN — incidence-parity recon, 2026-08-29: VEVENT promote has no malformed DTSTART/DTEND coercion (the W6.2 twin)
+
+`src/calendar/eventcanonfields.cpp` contains no DATE-vs-DATE-TIME
+reconciliation — zero hits for `coerc`/`malformed`, against rules (a)/(b)
+at `vtodocanonfields.cpp:229-278`. A VEVENT with `DTSTART;VALUE=DATE` and
+a DATE-TIME `DTEND` (or the reverse) promotes today with a type-mismatched
+pair.
+
+**W6.2's rule (a) must not be mirrored blindly.** It resolves the mismatch
+by letting DUE's type win — recorded in the VP.f return receipt as a
+*deliberate divergence* from tasks.org's symmetric rule, adopted because
+the vtodo-parity response doc was binding on that point. No such document
+constrains VEVENT, and DTSTART/DTEND is a different relationship from
+DTSTART/DUE: DTEND is a bound derived from DTSTART, so the symmetric
+argument is weaker and DTSTART-wins is likely correct. Probe
+KCalendarCore, decide on evidence, and write the rule into a contract doc
+before implementing.
+
+Owned by incidence-parity **IP.7b**.
+
+### O82 — OPEN — incidence-parity recon, 2026-08-29: VEVENT demote still unconditionally re-emits RANGE=THISANDFUTURE (the W3 twin)
+
+`src/calendar/eventcanonfields.cpp:594-596` executes
+`event->setThisAndFuture(range == QStringLiteral("thisAndFuture"))`
+unconditionally on demote. Re-emitting `RANGE=THISANDFUTURE` is
+write-hostile on real servers; `vtodocanonfields.cpp:740` now refuses to
+(VP.e), and `recurrenceRange` became a `Degraded` loss row on the todo
+edges.
+
+Flagged in `docs/campaign/vtodo-parity/STATUS.md`'s VP.e row as "VEVENT-side
+twin bug flagged, NOT fixed" — correctly out of that campaign's todo-only
+scope. Promoted to its own numbered finding here because it is the fifth
+instance of one pattern (todo fixed, calendar's known-identical bug left
+open) and a STATUS-doc note has outgrown the load.
+
+Confirmed still true on `fc1ae61`. Note that VP.e had to rewrite a pinned
+test that asserted the old behaviour
+(`vtodoRoundTripPreservesThisAndFutureRange` →
+`vtodoDemoteNeverEmitsThisAndFutureRange`) — grep for the event-side twin
+before assuming none exists.
+
+Owned by incidence-parity **IP.7a**.
+
+### O83 — OPEN — incidence-parity recon, 2026-08-29: VTODO is the poorest-covered incidence kind in the library — poorer than VJOURNAL — and every drop is undeclared
+
+`src/todo/vtodocanonfields.cpp` has **zero** references to `revision()`,
+`secrecy()`, `url()`, `organizer()`, `attendees()`, `attachments()`, or
+`color()`. All seven are valid on a VTODO per RFC 5545. All seven are
+promoted for VEVENT (`eventcanonfields.cpp:163,226,303,321,328,339,385`).
+Four of the seven — SEQUENCE, CLASS, COLOR, URL — are promoted even for
+VJOURNAL (`journalcanonfields.cpp:64,91,92,94`), the least-attended kind.
+
+So a VTODO loses SEQUENCE, CLASS, URL, ORGANIZER, ATTENDEE, ATTACH and
+COLOR on **both** its canon paths (`{todo,canon}` and `{calendar,canon}` —
+they share one emitter, see O78), while a VJOURNAL carrying the same
+properties keeps four of them.
+
+**None of these drops is declared in any loss profile.** They cannot be:
+`LossProfile::affected` is keyed by `PropertyId`, and an uncatalogued key
+has no id to key on. A consumer therefore has no way to learn about them —
+which violates the EEE doctrine's "loud about limits" clause
+(`docs/campaign/eee/2026-08-24-reconnaissance-assessment-and-roadmap.md`
+Part IV). Undeclared loss is the defect here, as much as the loss itself.
+
+Related: O41's literal-presence CREATED/LAST-MODIFIED guard exists in
+three independent copies and was fixed late in one — `journalcanonfields.cpp:53`
+records that journal "never got the same guard." Same root cause, same fix.
+
+Owned by incidence-parity **IP.6** (`incidencecommonfields` extraction
+first as a pure no-behaviour-change commit, then the missing VTODO fields
+as a separate commit, then honest loss declarations on the Google Tasks
+and MS To-Do legs).

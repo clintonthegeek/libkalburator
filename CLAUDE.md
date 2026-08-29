@@ -106,6 +106,54 @@ fixed via a new catalogued `providerExtrasDigest` + domain-neutral
 volatile bookkeeping before hashing). Return receipts delivered to
 PlanStan per item throughout.
 
+**Superseded by the incidence-parity campaign (below)** for everything it
+left open on the VEVENT/VJOURNAL side.
+
+## Incidence-parity campaign — OPENED & ACTIVE 2026-08-29
+
+**Read `docs/campaign/incidence-parity/PLAN.md` before touching any canon
+catalogue, canon-fields module, or alarm code.** Live tracker + recon
+evidence: `docs/campaign/incidence-parity/STATUS.md`. Items **IP.1–IP.7
+run strictly in order, one agent each**; every item writes a return
+receipt in that directory and updates STATUS in its landing commit.
+Corrections to the plan go in receipts — never in a new analysis doc.
+
+**The three facts that define the work** (all verified @ `fc1ae61`):
+
+1. **The calendar domain shares the todo emitter** —
+   `src/calendar/icalcanonstages.cpp:56,:83` call
+   `Kalburator::Todo::todoFieldsToCanon()` / `canonObjectToVtodoBytes()`.
+   VEVENT/VTODO/VJOURNAL all ride `{calendar,canon}`, kind-dispatched;
+   VTODO *additionally* rides `{todo,canon}` from Google Tasks / MS To-Do.
+   Never reason about calendar and todo as independent files for VTODO.
+2. **A canon catalogue and its emitters are two independent sources of
+   truth with nothing enforcing agreement** — W3/W4/O74's keys are emitted
+   into `{calendar,canon}` and declared only in `todocanonproperties.cpp`
+   (**O78**). `CanonJsonDiffer` can't see them and `CanonJsonMerger`
+   (`canonjsonmerger.cpp:29`, `out = t`) silently takes the target's value.
+3. **VTODO is the poorest-covered incidence kind, poorer than VJOURNAL** —
+   no SEQUENCE/CLASS/URL/ORGANIZER/ATTENDEE/ATTACH/COLOR, and none of it
+   declared in a loss profile (**O83**).
+
+**Findings owned:** O78 (catalogue drift + merger drop), O79 (VEVENT alarm
+trigger-form corruption — **four** call sites, incl. two vendor legs that
+coerce an absolute alarm to `reminderMinutesBeforeStart: 0`), O80
+(providerExtrasDigest absent on calendar/contacts — O74's own predicted
+follow-through), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE twin), O83
+(undeclared VTODO field drops).
+
+**Two prohibitions, binding:** never "fix while passing through" (log to
+FINDINGS, let the owning item take it); never hand-maintain a key list —
+IP.1/IP.3 exist to delete them, and
+`tests/calendar/tst_calendar_kind_dispatch.cpp:176-186` is the tombstone
+showing why (four hardcoded keys, never updated, green through the whole
+drift).
+
+**Scope:** the catalogue-integrity work covers exactly the three
+`CanonJsonDiffer` domains — calendar, todo, contacts. `note`
+(`TextDiffer`), `outline` (`OutlineDiffer`) and `blob`
+(`RecordDifferBlob`) are structurally immune and out of scope.
+
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();
 offset-less wall time must be constructed directly IN the target zone),
@@ -115,7 +163,8 @@ O65 (events never index participant emails), O59 tooling notes (moc ×
 terminated raw string literals = silent no-output; AUTOMOC timestamp
 staleness).
 
-Suite baseline: 195 tests. As of 2026-08-25 evening, 4 Radicale/backend
+Suite baseline: **214 tests** as of `fc1ae61` (the "195" figure here was
+stale from 2026-08-25 and predates VP.b–VP.f's ~50 new slots). 4 Radicale/backend
 slots fail (`tst_backend_signals`, `tst_backend_thread_relocation`,
 `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — verified
 PRE-EXISTING environmental (reproduce at pre-session `e1846a3`; KDAV
