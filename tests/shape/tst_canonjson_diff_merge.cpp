@@ -1,10 +1,13 @@
 #include <QtTest>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
 
 #include "canonenvelope.h"
 #include "canonjsondiffer.h"
 #include "canonjsonmerger.h"
+#include "calendarcanonproperties.h"
+#include "icalcanonstages.h"
 
 using namespace Kalburator::Shape;
 
@@ -182,6 +185,129 @@ private slots:
         const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
         QJsonObject o = QJsonDocument::fromJson(out.data).object();
         QCOMPARE(o.value("summary").toString(), QString("srcEdit"));  // default → source wins
+    }
+
+    // IP.2 / O78 — the regression that was LIVE, pinned against the REAL
+    // calendar catalogue (calendarCanonPropertyIds()), not a hand-listed
+    // set: a hand-listed set would pass even with the catalogue drifted,
+    // which is precisely how this bug survived. {calendar,canon} carries
+    // VTODOs through the shared emitter (icalcanonstages.cpp:56), so a
+    // source-side seriesSplitOf edit must survive a merge. Before IP.2 the
+    // key was uncatalogued, so CanonJsonMerger's `QJsonObject out = t`
+    // (canonjsonmerger.cpp:29) handed back the TARGET's value — here, no
+    // value at all — silently, on every merge.
+    void mergerKeepsCalendarVtodoSeriesSplitOfFromSource()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"),
+                          Kalburator::Calendar::calendarCanonPropertyIds());
+        QJsonObject so{{"summary", "task"}, {"seriesSplitOf", "old-master-uid"}};
+        QJsonObject to{{"summary", "task"}};
+        QJsonObject bo{{"summary", "task"}};
+        for (QJsonObject* o : { &so, &to, &bo })
+            CanonEnvelope::stampEnvelope(*o, QStringLiteral("calendar"),
+                                         QStringLiteral("t-1"), QStringLiteral("vtodo"));
+        CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so); src.recordId  = QStringLiteral("t-1");
+        CanonicalRecord tgt;  tgt.data  = CanonEnvelope::serialize(to); tgt.recordId  = QStringLiteral("t-1");
+        CanonicalRecord base; base.data = CanonEnvelope::serialize(bo); base.recordId = QStringLiteral("t-1");
+
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
+        const QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(o.value("seriesSplitOf").toString(), QString("old-master-uid"));
+    }
+
+    // IP.2 discovery, logged NOT fixed (PLAN.md §1 "no fix while passing
+    // through") — FINDINGS.md O84. CanonJsonMerger::merge() re-stamps the
+    // envelope with the 3-arg stampEnvelope (canonjsonmerger.cpp:60), which
+    // builds a FRESH _canon object (canonenvelope.cpp:27-32) and therefore
+    // ERASES _canon.kind. CanonToICalStage treats an absent kind as vevent
+    // (icalcanonstages.cpp:85, back-compat), so a merged {calendar,canon}
+    // VTODO or VJOURNAL demotes to a VEVENT. Pinned XFAIL so the fix
+    // XPASSes here and forces this slot's removal.
+    void mergerPreservesIncidenceKind()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"),
+                          Kalburator::Calendar::calendarCanonPropertyIds());
+        QJsonObject so{{"summary", "edited"}};
+        QJsonObject to{{"summary", "task"}};
+        QJsonObject bo{{"summary", "task"}};
+        for (QJsonObject* o : { &so, &to, &bo })
+            CanonEnvelope::stampEnvelope(*o, QStringLiteral("calendar"),
+                                         QStringLiteral("t-4"), QStringLiteral("vtodo"));
+        CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so); src.recordId  = QStringLiteral("t-4");
+        CanonicalRecord tgt;  tgt.data  = CanonEnvelope::serialize(to); tgt.recordId  = QStringLiteral("t-4");
+        CanonicalRecord base; base.data = CanonEnvelope::serialize(bo); base.recordId = QStringLiteral("t-4");
+
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
+        const QJsonObject o = QJsonDocument::fromJson(out.data).object();
+
+        // The consequence, not just the symptom: demote the merged record.
+        const QByteArray ical = Kalburator::Calendar::CanonToICalStage().transform(out.data);
+        QEXPECT_FAIL("", "O84: CanonJsonMerger erases _canon.kind, so a merged "
+                          "calendar VTODO/VJOURNAL demotes as a VEVENT. Out of IP.2's "
+                          "scope (calendarcanonproperties.cpp only) — logged, not fixed.",
+                     Continue);
+        QVERIFY2(ical.contains("BEGIN:VTODO"),
+                 qPrintable(QStringLiteral("merged vtodo demoted as: %1")
+                                .arg(QString::fromUtf8(ical.left(200)))));
+        QEXPECT_FAIL("", "O84 (same defect, symptom form).", Continue);
+        QCOMPARE(CanonEnvelope::kind(o), QString("vtodo"));
+    }
+
+    // IP.2 — same shape for the other two drifted keys, kept in one slot
+    // since they share the mechanism (uncatalogued ⇒ target's value wins).
+    // completionAnchor was the one live-but-narrow loss (an org-repeater
+    // VTODO arriving over CalDAV); providerExtrasDigest was benign-now but
+    // becomes load-bearing under IP.5.
+    void mergerKeepsCalendarVtodoAnchorAndDigestFromSource()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"),
+                          Kalburator::Calendar::calendarCanonPropertyIds());
+        const QJsonObject srcAnchor{{"type", "restart"}, {"interval", 1}, {"unit", "w"}};
+        const QJsonObject tgtAnchor{{"type", "catchUp"}, {"interval", 2}, {"unit", "d"}};
+        QJsonObject so{{"summary", "task"}, {"completionAnchor", srcAnchor},
+                       {"providerExtrasDigest", "srcdigest"}};
+        QJsonObject to{{"summary", "task"}, {"completionAnchor", tgtAnchor},
+                       {"providerExtrasDigest", "basedigest"}};
+        QJsonObject bo{{"summary", "task"}, {"completionAnchor", tgtAnchor},
+                       {"providerExtrasDigest", "basedigest"}};
+        for (QJsonObject* o : { &so, &to, &bo })
+            CanonEnvelope::stampEnvelope(*o, QStringLiteral("calendar"),
+                                         QStringLiteral("t-2"), QStringLiteral("vtodo"));
+        CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so); src.recordId  = QStringLiteral("t-2");
+        CanonicalRecord tgt;  tgt.data  = CanonEnvelope::serialize(to); tgt.recordId  = QStringLiteral("t-2");
+        CanonicalRecord base; base.data = CanonEnvelope::serialize(bo); base.recordId = QStringLiteral("t-2");
+
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
+        const QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QVERIFY(CanonEnvelope::valuesEqual(o.value("completionAnchor"), srcAnchor));
+        QCOMPARE(o.value("providerExtrasDigest").toString(), QString("srcdigest"));
+    }
+
+    // IP.2 — the differ half of the same regression, against the real
+    // catalogue: an edit confined to any of the three keys must dirty a
+    // {calendar,canon} vtodo record. Complements the narrow hand-catalogue
+    // differ slots above (which pin the mechanism, not the calendar
+    // catalogue's contents).
+    void differSeesCalendarVtodoDriftedKeys()
+    {
+        CanonJsonDiffer d(Kalburator::Calendar::calendarCanonPropertyIds());
+        for (const QString& key : { QStringLiteral("seriesSplitOf"),
+                                    QStringLiteral("completionAnchor"),
+                                    QStringLiteral("providerExtrasDigest") }) {
+            QJsonObject so{{"summary", "task"}};
+            QJsonObject bo{{"summary", "task"}};
+            so.insert(key, key == QStringLiteral("completionAnchor")
+                               ? QJsonValue(QJsonObject{{"type", "restart"}, {"interval", 1}, {"unit", "w"}})
+                               : QJsonValue(QStringLiteral("changed")));
+            CanonEnvelope::stampEnvelope(so, QStringLiteral("calendar"),
+                                         QStringLiteral("t-3"), QStringLiteral("vtodo"));
+            CanonEnvelope::stampEnvelope(bo, QStringLiteral("calendar"),
+                                         QStringLiteral("t-3"), QStringLiteral("vtodo"));
+            CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so);
+            CanonicalRecord base; base.data = CanonEnvelope::serialize(bo);
+            QVERIFY2(d.diff(src, base).contains(PropertyId{key}),
+                     qPrintable(QStringLiteral("calendar catalogue must make %1 differ-visible").arg(key)));
+        }
     }
 
     void mergerKeepsProviderExtrasFromChosenOrigin()

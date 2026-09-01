@@ -7,8 +7,9 @@ and the scope boundary). This file is the **live execution tracker**.
 **Opened:** 2026-08-29. **Baseline:** `main` @ `fc1ae61`, 214 slots
 (210 green + the 4 known environmental Radicale/KDAV slots).
 
-**Last updated:** 2026-08-29 (IP.1 DONE — coverage gate landed RED as
-designed, pinning O78; IP.2 is next).
+**Last updated:** 2026-09-01 (IP.2 DONE — O78 RESOLVED; **O84 filed**, a
+worse bug found in passing and deliberately not fixed; IP.3 is next and
+inherits it).
 
 > Living document. Update the item row **and** the session log in the same
 > commit that changes the item's state (invariant 7). Never leave a row
@@ -19,8 +20,8 @@ designed, pinning O78; IP.2 is next).
 | Item | Work | Closes | State |
 |---|---|---|---|
 | IP.1 | Catalogue/emitter coverage gate — replaces the hand-listed `catalogueIncludesTodoAndJournalFields()` slot with a computed subset gate over every `(domain, kind)` pair | *proves* O78 | **DONE 2026-08-29** — lands RED on `(calendar, vtodo)` naming `providerExtrasDigest`/`seriesSplitOf`/`completionAnchor`, `QEXPECT_FAIL("IP.2 / O78: ...")`; green on all other pairs incl. both contacts legs with generic carrier round-trips; tests only, no `src/` change. Receipt: `2026-08-29-ip1-return-receipt.md`. |
-| IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **NEXT** — gated on IP.1 (now satisfied) |
-| IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits; catalogues become unions | O78 *class* | NOT STARTED — gates IP.4–IP.7 |
+| IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **DONE 2026-09-01** — 3 entries added matching `todocanonproperties.cpp` exactly; IP.1's `QEXPECT_FAIL` removed (gate now 14/14 PASS, 0 XFAIL); 3 new slots in `tests/shape/tst_canonjson_diff_merge.cpp` built on the **real** `calendarCanonPropertyIds()`, verified red with the fix reverted. Matrix byte-identical. Receipt: `2026-09-01-ip2-return-receipt.md`. |
+| IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits; catalogues become unions | O78 *class*, **+O84** | **NEXT** — gated on IP.2 (now satisfied). Gates IP.4–IP.7. **Inherits two items from the IP.2 receipt:** the O84 fix (with the whose-kind-wins decision written down) and the `allDay` orphan check that IP.1 and IP.2 both deferred here. |
 | IP.4 | Shared VALARM shape module (`alarmToJson`/`alarmFromJson`/`describeAlarmRow`) + VEVENT promote **and** demote **and** both vendor event legs, one commit | **O79** | NOT STARTED |
 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` + catalogue + declare, across calendar/journal/contacts; retrofit the 3 todo sites onto it | **O80** | NOT STARTED |
 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit | **O83** | NOT STARTED |
@@ -133,8 +134,41 @@ produced this state; three copies drift faster than two.
   `tst_calendar_kind_dispatch` itself is among the 210 passed — its one red
   assertion is a QTest-level XFAIL, not a ctest-level failure). Receipt:
   `2026-08-29-ip1-return-receipt.md`.
-- **NEXT:** IP.2 — catalogue the three drifted keys in
-  `calendarcanonproperties.cpp` (matching `todocanonproperties.cpp`'s
-  declarations exactly) and remove IP.1's `QEXPECT_FAIL`; add the merger
-  regression slot named in PLAN.md's IP.2 acceptance criteria; regenerate
-  the convergence matrix.
+- **2026-09-01 — IP.2 DONE. O78 RESOLVED.**
+  `src/calendar/calendarcanonproperties.cpp` now declares `seriesSplitOf`
+  (String), `completionAnchor` (Json) and `providerExtrasDigest` (String)
+  in its union block, matching `todocanonproperties.cpp:47-60` character
+  for character. IP.1's `QEXPECT_FAIL` is gone and
+  `calendarCatalogueDeclaresVtodoKeys()` is green — the gate now reports
+  14/14 PASS, 0 XFAIL. Four new slots in
+  `tests/shape/tst_canonjson_diff_merge.cpp`, all built from the **real**
+  `calendarCanonPropertyIds()` rather than the file's existing
+  hand-listed-`PropertyId` convention — written the conventional way they
+  would have passed *before* the fix too, i.e. reproduced the tombstone
+  IP.1 deleted; non-vacuity verified by reverting the `src/` change,
+  rebuilding, and confirming all three regression slots go red. Matrix
+  regenerated: **byte-identical** (no loss profile or edge changed), pin
+  green. Full suite: 214 tests, 210 passed, 4 failed — the same 4
+  environmental Radicale/KDAV slots.
+- **2026-09-01 — O84 FILED, not fixed.** Building the merger slot revealed
+  that `CanonJsonMerger::merge()` re-stamps via the 3-arg
+  `CanonEnvelope::stampEnvelope` (`canonjsonmerger.cpp:60`), which builds a
+  fresh `_canon` and therefore **erases** `_canon.kind` — so a merged
+  `{calendar,canon}` VTODO or VJOURNAL demotes as a **VEVENT**
+  (`icalcanonstages.cpp:85` treats absent kind as vevent). Verified
+  end-to-end, not inferred: the merged record demoted to `BEGIN:VEVENT`.
+  Strictly worse than O78 (component type, not three field values), and
+  confined to the calendar domain — every other domain is single-kind and
+  does not dispatch on kind. Per PLAN.md §1's "no fix while passing
+  through" it is **pinned, not fixed**: `mergerPreservesIncidenceKind()`
+  carries two `QEXPECT_FAIL` assertions (consequence, then symptom) so
+  ctest stays green and the fix will XPASS. The open question the fix must
+  answer — whose kind wins when source and target disagree — is why this
+  did not belong to IP.2.
+- **NEXT:** IP.3 — contributed catalogues (each canon-fields module exports
+  the `PropertyId` set it emits; `makeCalendarCanonCatalogue()` /
+  `makeTodoCanonCatalogue()` become unions of contributors + vendor-only
+  keys). Plus the two inherited items above: **O84** and the `allDay`
+  orphan check. Demonstrate structural non-drift as PLAN.md IP.3 requires
+  (add a throwaway key to `vtodocanonfields`, confirm both catalogues grow,
+  revert) and report it in the receipt.

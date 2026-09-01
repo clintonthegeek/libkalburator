@@ -135,12 +135,23 @@ Corrections to the plan go in receipts — never in a new analysis doc.
    no SEQUENCE/CLASS/URL/ORGANIZER/ATTENDEE/ATTACH/COLOR, and none of it
    declared in a loss profile (**O83**).
 
-**Findings owned:** O78 (catalogue drift + merger drop), O79 (VEVENT alarm
-trigger-form corruption — **four** call sites, incl. two vendor legs that
-coerce an absolute alarm to `reminderMinutesBeforeStart: 0`), O80
-(providerExtrasDigest absent on calendar/contacts — O74's own predicted
-follow-through), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE twin), O83
-(undeclared VTODO field drops).
+**Progress:** IP.1 DONE 2026-08-29 (coverage gate, landed RED by design).
+IP.2 DONE 2026-09-01 — **O78 RESOLVED** (the three keys catalogued in
+`calendarcanonproperties.cpp`; the gate is green with no XFAIL) and
+**O84 FILED**: `CanonJsonMerger::merge()` re-stamps with the 3-arg
+`stampEnvelope`, which builds a fresh `_canon` and therefore **erases**
+`_canon.kind` — so a merged `{calendar,canon}` VTODO/VJOURNAL demotes as a
+**VEVENT** (verified end-to-end, calendar domain only). Pinned XFAIL, not
+fixed, per the "fix while passing through" prohibition; **IP.3 inherits
+it**, along with the `allDay` catalogue-orphan check. **IP.3 is next.**
+
+**Findings owned:** O78 (catalogue drift + merger drop — **RESOLVED** by
+IP.2), O79 (VEVENT alarm trigger-form corruption — **four** call sites,
+incl. two vendor legs that coerce an absolute alarm to
+`reminderMinutesBeforeStart: 0`), O80 (providerExtrasDigest absent on
+calendar/contacts — O74's own predicted follow-through), O81 (W6.2 twin),
+O82 (RANGE=THISANDFUTURE twin), O83 (undeclared VTODO field drops), O84
+(merger erases the incidence kind).
 
 **Two prohibitions, binding:** never "fix while passing through" (log to
 FINDINGS, let the owning item take it); never hand-maintain a key list —

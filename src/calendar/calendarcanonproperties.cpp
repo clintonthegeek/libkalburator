@@ -85,6 +85,16 @@ Kalburator::Shape::PropertyCatalogue makeCalendarCanonCatalogue()
     cat.addProperty({ PropertyId{"percentComplete"}, PropertyKind::Integer, QStringLiteral("Percent Complete") });
     cat.addProperty({ PropertyId{"relatedTo"},       PropertyKind::Json,    QStringLiteral("Related To") });
     cat.addProperty({ PropertyId{"geo"},             PropertyKind::Json,    QStringLiteral("Geo") });
+    // IP.2 / O78 — the {calendar,canon} VTODO leg runs the SAME emitter as
+    // {todo,canon} (icalcanonstages.cpp:56 calls Todo::todoFieldsToCanon),
+    // so these three vtodo-parity keys arrive here too. Declarations must
+    // match todocanonproperties.cpp exactly (kind + display name); see
+    // docs/campaign/incidence-parity/PLAN.md IP.2. Uncatalogued, they were
+    // invisible to CanonJsonDiffer AND silently dropped by CanonJsonMerger
+    // (canonjsonmerger.cpp:29, `out = t` keeps the target's value).
+    cat.addProperty({ PropertyId{"seriesSplitOf"},    PropertyKind::String,  QStringLiteral("Series Split Of") });
+    cat.addProperty({ PropertyId{"completionAnchor"}, PropertyKind::Json,    QStringLiteral("Completion Anchor") });
+    cat.addProperty({ PropertyId{"providerExtrasDigest"}, PropertyKind::String, QStringLiteral("Provider Extras Digest") });
 
     return cat;
 }

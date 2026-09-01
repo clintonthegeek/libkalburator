@@ -3344,7 +3344,7 @@ Backend consequence (fixed same commit): `kCanonExtensionId` and the
 expanded-listing filter switched to the microsoft.graph prefix; mock +
 suites re-pinned.
 
-### O78 — OPEN — incidence-parity recon, 2026-08-29: the calendar canon catalogue drifted from the shared VTODO emitter — three keys are emitted into `{calendar,canon}` that the calendar catalogue never declares
+### O78 — RESOLVED (IP.2, 2026-09-01) — incidence-parity recon, 2026-08-29: the calendar canon catalogue drifted from the shared VTODO emitter — three keys are emitted into `{calendar,canon}` that the calendar catalogue never declares
 
 `src/calendar/icalcanonstages.cpp:56` promotes VTODO through
 `Kalburator::Todo::todoFieldsToCanon()` and `:83` demotes through
@@ -3400,6 +3400,17 @@ and passed green throughout.
 Owned by the incidence-parity campaign: **IP.1** pins it red, **IP.2**
 closes the instance, **IP.3** closes the class (contributed catalogues).
 See `docs/campaign/incidence-parity/PLAN.md`.
+
+**RESOLVED 2026-09-01 by IP.2** — `calendarcanonproperties.cpp` now
+declares all three keys in its "Union across iCalendar component kinds"
+block, matching `todocanonproperties.cpp`'s kind and display name exactly.
+IP.1's `QEXPECT_FAIL` is removed and
+`calendarCatalogueDeclaresVtodoKeys()` is green. Three new slots in
+`tests/shape/tst_canonjson_diff_merge.cpp` pin the merger and differ
+halves against the **real** `calendarCanonPropertyIds()` (not a hand-listed
+set — a hand list is what let the drift survive). The *class* remains open
+until **IP.3**: nothing yet forces a catalogue to track its emitter. See
+`docs/campaign/incidence-parity/2026-09-01-ip2-return-receipt.md`.
 
 ### O79 — OPEN — incidence-parity recon, 2026-08-29: VEVENT alarm promote corrupts absolute-trigger and END-related VALARMs to a bogus `offset: 0` — and three more call sites read the same row shape
 
@@ -3544,3 +3555,67 @@ Owned by incidence-parity **IP.6** (`incidencecommonfields` extraction
 first as a pure no-behaviour-change commit, then the missing VTODO fields
 as a separate commit, then honest loss declarations on the Google Tasks
 and MS To-Do legs).
+
+### O84 — OPEN — IP.2, 2026-09-01: `CanonJsonMerger` erases `_canon.kind`, so a merged calendar VTODO or VJOURNAL demotes as a **VEVENT**
+
+Found while building IP.2's merger regression slot; logged and **not
+fixed**, per PLAN.md §1's "no fix while passing through" prohibition.
+
+`CanonJsonMerger::merge()` finishes with
+`CanonEnvelope::stampEnvelope(out, m_domain, mergedUid)`
+(`src/shape/canonjsonmerger.cpp:60`) — the **3-arg** overload, no `kind`.
+`stampEnvelope` builds a *fresh* `_canon` object
+(`src/shape/canonenvelope.cpp:27-32`) and inserts `kind` only when the
+argument is non-empty, so it does not merely fail to set the kind — it
+**erases** the one the record arrived with.
+
+`CanonToICalStage::transform()` then reads `CanonEnvelope::kind(obj)` and
+treats an absent kind as `vevent` for v1 back-compat
+(`src/calendar/icalcanonstages.cpp:85`). A merged `{calendar,canon}` VTODO
+therefore demotes to a VEVENT.
+
+**Verified empirically, not inferred** (2026-09-01): merging a
+kind-tagged `vtodo` record through the live calendar merger
+(`calendardomaindefinition.cpp:38` builds it with
+`calendarCanonPropertyIds()`) and feeding the result to
+`CanonToICalStage` produced:
+
+```
+BEGIN:VCALENDAR
+...
+BEGIN:VEVENT
+DTSTAMP:20260901T184859Z
+UID:t-4
+SUMMARY:edited
+TRANSP:O...
+```
+
+**Blast radius.** Strictly the `calendar` domain, and only on paths that
+merge — i.e. conflict resolution with a baseline. `todo`, `contacts`,
+`note`, `outline` and `blob` are single-kind domains whose demote stages do
+not kind-dispatch, so the erased key has nothing to change there. Within
+`calendar` it hits **both** VTODO and VJOURNAL; VEVENT is unaffected
+because absent-kind already means vevent. This is strictly worse than O78:
+O78 dropped three field values, O84 changes the component type of the
+whole record.
+
+The other `stampEnvelope` callers are correct: the vendor event legs
+(`googlecanonstages.cpp:529`, `mseventcanonstages.cpp:801`) deliberately
+omit the kind because they only ever carry VEVENTs, and
+`icalcanonstages.cpp:65` omits it for vevent on purpose to keep v1
+baselines byte-stable.
+
+Pinned by `mergerPreservesIncidenceKind()` in
+`tests/shape/tst_canonjson_diff_merge.cpp` — landed as a two-assertion
+`QEXPECT_FAIL` (consequence first: the demoted bytes are not `BEGIN:VTODO`;
+then the symptom: `kind(o)` is empty). When the fix lands, both XPASS and
+the slot must lose its `QEXPECT_FAIL`s rather than be deleted.
+
+**Not yet owned by an item.** The natural home is **IP.3**, which already
+touches the catalogue/envelope seam and gates IP.4–IP.7; the fix itself is
+likely one line (thread `CanonEnvelope::kind(t)`, falling back to
+`kind(s)`, into the stamp) plus a decision about whose kind wins when
+source and target disagree — which is a real question, not a formality,
+since a kind mismatch on one uid means something upstream is already
+wrong. Whoever takes it should decide that explicitly and write it down.
+

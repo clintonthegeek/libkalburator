@@ -478,16 +478,11 @@ private slots:
                  "fixture must exercise completionAnchor (X-ORG-REPEATER present)");
 
         const auto ids = Kalburator::Calendar::calendarCanonPropertyIds();
-        // Expected RED (PLAN.md IP.1): the calendar catalogue has never
-        // declared providerExtrasDigest/seriesSplitOf/completionAnchor,
-        // even though {calendar,canon} carries a VTODO through the SAME
-        // shared emitter as {todo,canon} (icalcanonstages.cpp:56). O78.
-        // IP.2 catalogues the three keys and removes this QEXPECT_FAIL.
-        QEXPECT_FAIL("", "IP.2 / O78: calendarcanonproperties.cpp does not yet declare "
-                          "providerExtrasDigest/seriesSplitOf/completionAnchor, which the "
-                          "shared VTODO emitter (vtodocanonfields.cpp) emits into "
-                          "{calendar,canon} — see docs/campaign/incidence-parity/PLAN.md IP.2.",
-                     Continue);
+        // Was RED under IP.1 (O78): the calendar catalogue had never declared
+        // providerExtrasDigest/seriesSplitOf/completionAnchor even though
+        // {calendar,canon} carries a VTODO through the SAME shared emitter as
+        // {todo,canon} (icalcanonstages.cpp:56). IP.2 catalogued the three
+        // keys in calendarcanonproperties.cpp and removed the QEXPECT_FAIL.
         Kalburator::TestSupport::verifyCanonKeysDeclared(obj, ids, QStringLiteral("(calendar, vtodo)"));
     }
 
