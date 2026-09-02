@@ -48,7 +48,7 @@ reads through listings/delta/$expand.
 
 - `canon → canon`
 - `ical → canon`
-- `canon → ical` (declared lossy)
+- `canon → ical` (declared lossy) (kind-scoped: default, vjournal, vtodo)
 - `org-ical → canon`
 - `canon → org-ical` (declared lossy)
 - `google-event → canon`
@@ -56,7 +56,7 @@ reads through listings/delta/$expand.
 - `ms-event → canon`
 - `canon → ms-event` (declared lossy)
 
-### canon → ical
+### canon → ical (default)
 
 | Property | LossKind |
 |---|---|
@@ -75,6 +75,37 @@ reads through listings/delta/$expand.
 | privateCopy | Reversible |
 | responseRequested | Reversible |
 | typedProperties | Dropped |
+
+### canon → ical (vjournal)
+
+| Property | LossKind |
+|---|---|
+| attachments | Dropped |
+| attendees | Dropped |
+| comments | Dropped |
+| contacts | Dropped |
+| organizer | Dropped |
+| recurrence | Dropped |
+| recurrenceId | Dropped |
+| relatedTo | Dropped |
+| requestStatus | Dropped |
+
+### canon → ical (vtodo)
+
+| Property | LossKind |
+|---|---|
+| attachments | Dropped |
+| attendees | Dropped |
+| classification | Dropped |
+| color | Dropped |
+| comments | Dropped |
+| contacts | Dropped |
+| geo | Degraded |
+| organizer | Dropped |
+| requestStatus | Dropped |
+| resources | Dropped |
+| sequence | Dropped |
+| url | Dropped |
 
 ### canon → org-ical
 

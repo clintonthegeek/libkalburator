@@ -213,8 +213,56 @@ QByteArray canonObjectToJournalBytes(const QJsonObject& obj)
 
 Kalburator::Shape::LossProfile canonToVjournalLoss()
 {
-    // VJOURNAL maps its full field-set; no non-reversible loss to declare.
-    return Kalburator::Shape::LossProfile{};
+    // IP.9 / O88 — this was dead code (declared, zero call sites) carrying
+    // a false "no loss" comment; the calendar domain's canon→ical edge ran
+    // the event-shaped canonToIcalLoss() over every VJOURNAL instead. Now
+    // wired via CalendarStockShapes::edges()'s lossByKind (see
+    // calendarstockshapes.cpp) and populated honestly with TODAY's actual
+    // drops — O87/O91, cross-checked against journalCanonContributedIds()
+    // above (journalFieldsToCanon() never touches attachments, attendees,
+    // organizer, relatedTo, recurrence, recurrenceId at all). This declares
+    // the loss; it does NOT fix it — that is IP.10's job (O87).
+    using Kalburator::Shape::LossProfile;
+    using Kalburator::Shape::LossKind;
+    using Kalburator::Shape::PropertyId;
+
+    LossProfile p;
+
+    // Dropped: no representation at all — journalFieldsToCanon() has zero
+    // references to any of these KCalendarCore accessors (grep-confirmed).
+    p.affected.insert(PropertyId{QStringLiteral("attachments")}, LossKind::Dropped);   // ATTACH
+    p.affected.insert(PropertyId{QStringLiteral("attendees")},   LossKind::Dropped);   // ATTENDEE
+    p.affected.insert(PropertyId{QStringLiteral("organizer")},   LossKind::Dropped);   // ORGANIZER
+    p.affected.insert(PropertyId{QStringLiteral("relatedTo")},   LossKind::Dropped);   // RELATED-TO
+    // recurrenceId: O87's identity-corruption finding — a detached VJOURNAL
+    // instance and its master are indistinguishable in canon (they collapse
+    // onto one uid). LossKind has no "identity corruption" verdict; Dropped
+    // is the closest honest fit (the property is, in fact, entirely absent
+    // from the demoted output) — the identity-corruption severity itself is
+    // recorded in FINDINGS O87, not expressible here.
+    p.affected.insert(PropertyId{QStringLiteral("recurrenceId")}, LossKind::Dropped);  // RECURRENCE-ID
+    // recurrence: journalFieldsToCanon() has NO recurrence handling of any
+    // kind (zero RRULE/RDATE/EXDATE support), so this single canon
+    // PropertyId — the verbatim-RFC5545-lines carrier shared with VEVENT/
+    // VTODO (invariant 3) — covers all three RFC properties at once.
+    p.affected.insert(PropertyId{QStringLiteral("recurrence")}, LossKind::Dropped);    // RRULE, RDATE, EXDATE
+
+    // Dropped (O91 — new, filed by IP.9): valid on VJOURNAL per RFC 5545
+    // jourprop, modeled natively by KCalendarCore::IncidenceBase, but no
+    // emitter (any kind) calls the accessor. RESOURCES is excluded here —
+    // RFC 5545 jourprop does not permit it on VJOURNAL at all, so its
+    // absence is RFC-correct, not a drop. No canon PropertyId exists yet
+    // for these three (nothing ever promotes them, so none reached the
+    // catalogue's contributed-id union) — declared here anyway using
+    // catalogue-style camelCase ids, matching the accessor's own
+    // plurality (comments()/contacts()), since LossProfile.affected does
+    // not require its keys to be catalogued (see IP.9 return receipt for
+    // the fuller argument).
+    p.affected.insert(PropertyId{QStringLiteral("comments")},     LossKind::Dropped);  // COMMENT
+    p.affected.insert(PropertyId{QStringLiteral("contacts")},     LossKind::Dropped);  // CONTACT
+    p.affected.insert(PropertyId{QStringLiteral("requestStatus")}, LossKind::Dropped); // REQUEST-STATUS (upstream: no KCalendarCore accessor exists at all)
+
+    return p;
 }
 
 QList<Kalburator::Shape::PropertyId> journalCanonContributedIds()

@@ -1,6 +1,7 @@
 #include "calendarstockshapes.h"
 #include "icalproperties.h"
 #include "icalcanonstages.h"
+#include "journalcanonfields.h"
 #include "orgicalcanonstages.h"
 #include "googleeventproperties.h"
 #include "googlecanonstages.h"
@@ -75,7 +76,24 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
     const Kalburator::Shape::Shape googleEvent{
         DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("google-event")} };
     const Kalburator::Shape::Shape msEvent{
-        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ms-event")} };    return {
+        DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ms-event")} };
+
+    // Demote: canon → ical (lossy — drops/simplifies vendor-only fields).
+    // IP.9 / O88: this ONE edge is kind-polymorphic — CanonToICalStage::
+    // transform() dispatches on _canon.kind to three different emitters
+    // (VEVENT/VTODO/VJOURNAL) — so it carries a kind-scoped loss override
+    // per non-default kind rather than a single profile. `loss` (set below
+    // to canonToIcalLoss()) remains the profile for the default/untagged
+    // kind (vevent).
+    TransformationEdge canonToIcalEdge{
+        canon, ical,
+        canonToIcalLoss(),
+        std::make_shared<CanonToICalStage>()
+    };
+    canonToIcalEdge.lossByKind.insert(QStringLiteral("vtodo"),    canonToVtodoIcalLoss());
+    canonToIcalEdge.lossByKind.insert(QStringLiteral("vjournal"), canonToVjournalLoss());
+
+    return {
         // Identity edge: canon → canon (hub)
         TransformationEdge{
             canon, canon,
@@ -88,12 +106,7 @@ QList<Kalburator::Shape::TransformationEdge> CalendarStockShapes::edges() const
             LossProfile{},
             std::make_shared<ICalToCanonStage>()
         },
-        // Demote: canon → ical (lossy — drops/simplifies vendor-only fields)
-        TransformationEdge{
-            canon, ical,
-            canonToIcalLoss(),
-            std::make_shared<CanonToICalStage>()
-        },
+        canonToIcalEdge,
         // Promote: org-ical → canon (lossless un-simplify)
         TransformationEdge{
             orgIcal, canon,

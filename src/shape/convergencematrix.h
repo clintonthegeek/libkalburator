@@ -19,6 +19,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QPair>
 #include <QString>
 #include <algorithm>
 
@@ -86,36 +87,74 @@ public:
             const auto edges = c->edges();
             out += QLatin1String("### Edge inventory\n\n");
             for (const TransformationEdge& e : edges) {
+                QString extra = e.loss.isLossless()
+                                     ? QString()
+                                     : QStringLiteral(" (declared lossy)");
+                // IP.9 / O88: an edge whose SHAPE PAIR carries more than one
+                // record kind (e.g. calendar's {calendar,canon}→
+                // {calendar,ical}, which is VEVENT/VTODO/VJOURNAL discriminated
+                // by _canon.kind) declares a loss profile PER KIND rather than
+                // one for the whole edge — flag it here so a reader knows to
+                // look at the per-kind sections below, not just this line.
+                if (!e.lossByKind.isEmpty()) {
+                    QStringList kinds;
+                    for (auto it = e.lossByKind.constBegin(); it != e.lossByKind.constEnd(); ++it)
+                        kinds << it.key();
+                    std::sort(kinds.begin(), kinds.end());
+                    extra += QStringLiteral(" (kind-scoped: default, %1)")
+                                 .arg(kinds.join(QStringLiteral(", ")));
+                }
                 out += QStringLiteral("- `%1 → %2`%3\n")
-                           .arg(e.from.encoding.toString(),
-                                e.to.encoding.toString(),
-                                e.loss.isLossless()
-                                    ? QString()
-                                    : QStringLiteral(" (declared lossy)"));
+                           .arg(e.from.encoding.toString(), e.to.encoding.toString(), extra);
             }
             out += QLatin1Char('\n');
 
-            // Then the per-property loss rows.
+            // Then the per-property loss rows. A kind-scoped edge (IP.9)
+            // renders one subsection per kind instead of one for the whole
+            // edge: `loss` is the profile for the domain's default/untagged
+            // kind, `lossByKind` an override per named kind — the two are
+            // never merged, since materializedLoss() picks exactly one of
+            // them per record (Pipeline::composedLoss(kind)).
             bool anyLoss = false;
             for (const TransformationEdge& e : edges) {
-                if (e.loss.isLossless() || e.loss.affected.isEmpty())
-                    continue;
-                anyLoss = true;
-                out += QStringLiteral("### %1 → %2\n\n")
-                           .arg(e.from.encoding.toString(), e.to.encoding.toString());
-                out += QLatin1String("| Property | LossKind |\n|---|---|\n");
-                QList<QString> props;
-                for (auto it = e.loss.affected.constBegin();
-                     it != e.loss.affected.constEnd(); ++it)
-                    props << it.key().toString();
-                std::sort(props.begin(), props.end());
-                for (const QString& prop : props) {
-                    out += QStringLiteral("| %1 | %2 |\n")
-                               .arg(prop,
-                                    lossKindName(
-                                        e.loss.affected.value(PropertyId{prop})));
+                QList<QPair<QString, LossProfile>> variants;
+                if (e.lossByKind.isEmpty()) {
+                    variants << qMakePair(QString(), e.loss);
+                } else {
+                    variants << qMakePair(QStringLiteral("default"), e.loss);
+                    QStringList kinds;
+                    for (auto it = e.lossByKind.constBegin(); it != e.lossByKind.constEnd(); ++it)
+                        kinds << it.key();
+                    std::sort(kinds.begin(), kinds.end());
+                    for (const QString& k : kinds)
+                        variants << qMakePair(k, e.lossByKind.value(k));
                 }
-                out += QLatin1Char('\n');
+
+                for (const auto& variant : variants) {
+                    const QString& label = variant.first;
+                    const LossProfile& profile = variant.second;
+                    if (profile.isLossless() || profile.affected.isEmpty())
+                        continue;
+                    anyLoss = true;
+                    out += label.isEmpty()
+                               ? QStringLiteral("### %1 → %2\n\n")
+                                     .arg(e.from.encoding.toString(), e.to.encoding.toString())
+                               : QStringLiteral("### %1 → %2 (%3)\n\n")
+                                     .arg(e.from.encoding.toString(), e.to.encoding.toString(), label);
+                    out += QLatin1String("| Property | LossKind |\n|---|---|\n");
+                    QList<QString> props;
+                    for (auto it = profile.affected.constBegin();
+                         it != profile.affected.constEnd(); ++it)
+                        props << it.key().toString();
+                    std::sort(props.begin(), props.end());
+                    for (const QString& prop : props) {
+                        out += QStringLiteral("| %1 | %2 |\n")
+                                   .arg(prop,
+                                        lossKindName(
+                                            profile.affected.value(PropertyId{prop})));
+                    }
+                    out += QLatin1Char('\n');
+                }
             }
             if (!anyLoss)
                 out += QLatin1String("_No declared losses._\n\n");

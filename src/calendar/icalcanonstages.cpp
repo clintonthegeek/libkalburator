@@ -131,4 +131,69 @@ Kalburator::Shape::LossProfile canonToIcalLoss()
     return p;
 }
 
+// ---------------------------------------------------------------------------
+// canonToVtodoIcalLoss — LossProfile for canon → ical when kind == "vtodo"
+// ---------------------------------------------------------------------------
+
+Kalburator::Shape::LossProfile canonToVtodoIcalLoss()
+{
+    // IP.9 / O88 — before this item, a VTODO demoted through this edge was
+    // warned with canonToIcalLoss() above (entirely event-shaped: onlineMeeting,
+    // guestsCan*, ...), none of which a VTODO ever carries, so the warning
+    // mechanism was silently vacuous for VTODOs even though real properties
+    // were (and, per O83/O91, still are — this declares, it does not fix)
+    // being dropped. Populated with TODAY's actual drops, cross-checked
+    // against Kalburator::Todo::vtodoCanonContributedIds()
+    // (vtodocanonfields.cpp never touches these accessors on ANY kind's
+    // demote path — same emitter as {todo,canon}, see O78/O83).
+    using Kalburator::Shape::LossProfile;
+    using Kalburator::Shape::LossKind;
+    using Kalburator::Shape::PropertyId;
+
+    LossProfile p;
+
+    // Dropped (O83): the seven properties vtodocanonfields.cpp never reads
+    // on ANY kind's demote path, despite all seven being catalogued canon
+    // properties (contributed by eventcanonfields.cpp and/or
+    // journalcanonfields.cpp for the other two kinds).
+    p.affected.insert(PropertyId{QStringLiteral("attachments")},   LossKind::Dropped); // ATTACH
+    p.affected.insert(PropertyId{QStringLiteral("attendees")},     LossKind::Dropped); // ATTENDEE
+    p.affected.insert(PropertyId{QStringLiteral("classification")}, LossKind::Dropped); // CLASS — total drop for
+                                                                                          // VTODO, unlike VEVENT's
+                                                                                          // value-dependent Degraded above.
+    p.affected.insert(PropertyId{QStringLiteral("color")},         LossKind::Dropped); // COLOR
+    p.affected.insert(PropertyId{QStringLiteral("organizer")},     LossKind::Dropped); // ORGANIZER
+    p.affected.insert(PropertyId{QStringLiteral("sequence")},      LossKind::Dropped); // SEQUENCE
+    p.affected.insert(PropertyId{QStringLiteral("url")},           LossKind::Dropped); // URL
+
+    // Dropped (O91 — new, filed by IP.8, declared by IP.9): no canon
+    // PropertyId exists for these — no emitter of any kind ever produces
+    // them, so none reached the contributed-id union. Declared anyway;
+    // LossProfile.affected does not require its keys to be catalogued
+    // (see IP.9 return receipt).
+    p.affected.insert(PropertyId{QStringLiteral("comments")},      LossKind::Dropped); // COMMENT
+    p.affected.insert(PropertyId{QStringLiteral("contacts")},      LossKind::Dropped); // CONTACT
+    p.affected.insert(PropertyId{QStringLiteral("resources")},     LossKind::Dropped); // RESOURCES
+    p.affected.insert(PropertyId{QStringLiteral("requestStatus")}, LossKind::Dropped); // REQUEST-STATUS (upstream)
+
+    // Degraded (O86): GEO's NAME survives the round trip (vtodocanonfields.cpp
+    // DOES promote/demote it — see :443-447/:793-798) but its VALUE is
+    // corrupted by kcalendarcore's GEO serializer, so promote→demote→promote
+    // is not a fixpoint. None of the four LossKind values describes "name
+    // survives, value corrupted" precisely: Dropped is wrong (the property
+    // is not absent), Simplified/Reversible both imply the original is
+    // recoverable (it is not — the corruption happens on the library's own
+    // round trip, there is nothing to reverse to). Degraded — "mapped
+    // through a lossy path; original kept verbatim" — is the closest
+    // available fit, even though the mechanism is a serializer bug rather
+    // than a many-to-one vocabulary mapping; see the IP.9 return receipt.
+    // NOT in IP.8's expectedLossTable()["vtodo"] (property-NAME loss list)
+    // by design — its damage shows up there as the fixpoint failure
+    // instead. IP.6 owns the actual fix (O86: drop geo entirely, per
+    // PlanStan's ratified answer).
+    p.affected.insert(PropertyId{QStringLiteral("geo")}, LossKind::Degraded);
+
+    return p;
+}
+
 }  // namespace Kalburator::Calendar

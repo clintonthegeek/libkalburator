@@ -389,6 +389,127 @@ private slots:
         QVERIFY2(rt.contains("UID:journal-1"), "VJOURNAL uid must survive");
     }
 
+    // -------------------------------------------------------------------
+    // IP.9 / O88 — kind-scoped loss profiles. Before this item, EVERY
+    // record demoted through {calendar,canon}->{calendar,ical} (VEVENT,
+    // VTODO or VJOURNAL alike) was warned with the single event-shaped
+    // canonToIcalLoss() profile, because CalendarStockShapes::edges()
+    // registered exactly one LossProfile for this shape pair even though
+    // CanonToICalStage::transform() dispatches to three different
+    // emitters by kind. Pins that the record's own kind now selects the
+    // right profile (TransformationEdge::lossByKind, Pipeline::
+    // composedLoss(kind)) — and, just as important, that neither VTODO
+    // nor VJOURNAL is warned about a field only an event could carry.
+    // -------------------------------------------------------------------
+
+    void vtodoDemoteLossProfileIsVtodoShapedNotEventShaped()
+    {
+        using Kalburator::Shape::DomainId;
+        using Kalburator::Shape::EncodingId;
+        using Kalburator::Shape::Shape;
+        using Kalburator::Shape::PropertyId;
+        using Kalburator::Shape::LossKind;
+        const auto regs = makeCalendarRegistries();
+        const Shape ical { DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ical")} };
+        const Shape canon{ DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("canon")} };
+        const auto toIcal = regs.transformation.compile(canon, ical);
+        QVERIFY(toIcal.has_value());
+
+        const auto loss = toIcal->composedLoss(QStringLiteral("vtodo"));
+        QVERIFY2(!loss.isLossless(), "vtodo profile must not be empty");
+
+        // O83/O91: the eleven VTODO-shaped drops must be present, Dropped.
+        static const char* kVtodoDropped[] = {
+            "attachments", "attendees", "classification", "color", "organizer",
+            "sequence", "url", "comments", "contacts", "resources", "requestStatus",
+        };
+        for (const char* id : kVtodoDropped) {
+            QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vtodo profile missing '%1'").arg(QString::fromLatin1(id))));
+            QCOMPARE(loss.affected.value(PropertyId{QString::fromLatin1(id)}), LossKind::Dropped);
+        }
+        // O86: geo's NAME survives but its VALUE is corrupted — Degraded,
+        // not Dropped (see canonToVtodoIcalLoss()'s own comment on the fit).
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("geo")}), LossKind::Degraded);
+
+        // The O88 bug, pinned directly: none of canonToIcalLoss()'s
+        // event-only vendor keys may leak into the vtodo profile.
+        static const char* kEventOnly[] = {
+            "onlineMeeting", "eventType", "typedProperties", "locations",
+            "guestsCanModify", "guestsCanInviteOthers", "guestsCanSeeOtherGuests",
+            "allowNewTimeProposals", "hideAttendees", "locked", "privateCopy",
+            "responseRequested", "descriptionHtml", "freeBusyStatus",
+        };
+        for (const char* id : kEventOnly) {
+            QVERIFY2(!loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vtodo profile wrongly carries event-only '%1'")
+                                    .arg(QString::fromLatin1(id))));
+        }
+    }
+
+    void vjournalDemoteLossProfileIsVjournalShapedNotEventShaped()
+    {
+        using Kalburator::Shape::DomainId;
+        using Kalburator::Shape::EncodingId;
+        using Kalburator::Shape::Shape;
+        using Kalburator::Shape::PropertyId;
+        using Kalburator::Shape::LossKind;
+        const auto regs = makeCalendarRegistries();
+        const Shape ical { DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ical")} };
+        const Shape canon{ DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("canon")} };
+        const auto toIcal = regs.transformation.compile(canon, ical);
+        QVERIFY(toIcal.has_value());
+
+        const auto loss = toIcal->composedLoss(QStringLiteral("vjournal"));
+        QVERIFY2(!loss.isLossless(), "vjournal profile must not be empty");
+
+        // O87/O91: the nine VJOURNAL-shaped drops must be present, Dropped
+        // ("recurrence" alone covers RRULE/RDATE/EXDATE — invariant 3).
+        static const char* kVjournalDropped[] = {
+            "attachments", "attendees", "organizer", "relatedTo", "recurrenceId",
+            "recurrence", "comments", "contacts", "requestStatus",
+        };
+        for (const char* id : kVjournalDropped) {
+            QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vjournal profile missing '%1'").arg(QString::fromLatin1(id))));
+            QCOMPARE(loss.affected.value(PropertyId{QString::fromLatin1(id)}), LossKind::Dropped);
+        }
+
+        // The O88 bug, pinned directly: none of canonToIcalLoss()'s
+        // event-only vendor keys may leak into the vjournal profile.
+        static const char* kEventOnly[] = {
+            "onlineMeeting", "eventType", "typedProperties", "locations",
+            "guestsCanModify", "guestsCanInviteOthers", "guestsCanSeeOtherGuests",
+            "allowNewTimeProposals", "hideAttendees", "locked", "privateCopy",
+            "responseRequested", "descriptionHtml", "freeBusyStatus", "classification",
+        };
+        for (const char* id : kEventOnly) {
+            QVERIFY2(!loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vjournal profile wrongly carries event-only '%1'")
+                                    .arg(QString::fromLatin1(id))));
+        }
+    }
+
+    void veventDemoteLossProfileUnchangedByIp9()
+    {
+        // Regression guard: the default/untagged kind (vevent) must still
+        // resolve to canonToIcalLoss() exactly as before IP.9 — lossByKind
+        // is an override map, never merged with `loss`.
+        using Kalburator::Shape::DomainId;
+        using Kalburator::Shape::EncodingId;
+        using Kalburator::Shape::Shape;
+        const auto regs = makeCalendarRegistries();
+        const Shape ical { DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("ical")} };
+        const Shape canon{ DomainId{QStringLiteral("calendar")}, EncodingId{QStringLiteral("canon")} };
+        const auto toIcal = regs.transformation.compile(canon, ical);
+        QVERIFY(toIcal.has_value());
+
+        const auto defaultLoss = toIcal->composedLoss();
+        const auto veventLoss  = toIcal->composedLoss(QStringLiteral("vevent"));
+        QCOMPARE(defaultLoss.affected, Kalburator::Calendar::canonToIcalLoss().affected);
+        QCOMPARE(veventLoss.affected, Kalburator::Calendar::canonToIcalLoss().affected);
+    }
+
     void veventStillRoundTrips()   // regression guard inside the dispatch test
     {
         using Kalburator::Calendar::ICalToCanonStage;

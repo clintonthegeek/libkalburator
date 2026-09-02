@@ -8,7 +8,25 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.3 DONE. O84 RESOLVED.** Contributed
+**Last updated:** 2026-09-02 — **IP.9 DONE. O88 RESOLVED.** One
+`{calendar,canon}→{calendar,ical}` edge is kind-polymorphic (VEVENT/VTODO/
+VJOURNAL); `TransformationEdge` now carries a `lossByKind` override map
+(design (b), PLAN's recommendation — verified (a) is not expressible,
+`TransformationRegistry` keys edges strictly on `(from,to)` and asserts on
+a second registration of the same pair) so ONE edge can carry three
+profiles, selected by `Pipeline::composedLoss(kind)` /
+`SyncEngine::materializedLoss()`. `canonToVjournalLoss()` (was dead code)
+and a new `canonToVtodoIcalLoss()` are populated with TODAY's actual O83/
+O91/O86 drops (declared, not fixed — that stays IP.6/IP.10's job).
+Matrix regenerated (substantial, expected diff — three new `canon → ical
+(kind)` sections). IP.8's `expectedLossTable()` TODO(IP.9) closed for
+vtodo/vjournal (now derived from the real profiles via a canon-id→RFC-name
+translation); vevent stays a literal list on purpose (its own profile
+content is IP.6's scope, not O88's). New FINDINGS: **O93** (the sibling
+`{todo,canon}` edge shares the exact same undeclared VTODO drops — out of
+scope, logged not fixed). Receipt: `2026-09-02-ip9-return-receipt.md`.
+
+**Previously — 2026-09-02 — IP.3 DONE. O84 RESOLVED.** Contributed
 catalogues landed: `eventCanonContributedIds()`, `journalCanonContributedIds()`,
 `vtodoCanonContributedIds()` declared next to their emitters;
 `makeCalendarCanonCatalogue()`/`makeTodoCanonCatalogue()` now build from the
@@ -19,7 +37,8 @@ emitter output, not vendor-only; see the receipt). O84 fixed:
 disagreement case gets a deliberate, logged precedence rule, not a silent
 pick (follow-up filed as **O92**). No catalogue orphans found; `allDay`
 turned out NOT to be one (event/journal both emit it top-level; only VTODO
-embeds it in start/due). **IP.9 runs next.**
+embeds it in start/due). **IP.9 landed the same day, see above; IP.6 runs
+next.**
 
 Earlier the same day: PlanStan answered; PLAN.md Amendment 2 adopted.
 Q1 → **(a) converge** (ratified, and (b) is *blocked* on their data model,
@@ -52,14 +71,14 @@ Earlier still the same day: pre-flight audit landed, six findings
 | — | — | **Pre-flight audit** — deliberate code-first sweep of the whole incidence surface | *files* O85–O90 | **DONE 2026-09-02** — evidence: `2026-09-02-preflight-audit.md`; re-runnable probes: `probes/run.sh`. PLAN.md **Amendment 1** adopted. No `src/` change. |
 | — | IP.8 | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83; *files* **O91** | **DONE 2026-09-02** — landed RED exactly as predicted, plus four newly-discovered undeclared drops (O91). Tests only. Receipt: `2026-09-02-ip8-return-receipt.md`. |
 | — | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | **DONE 2026-09-02** — catalogues now built structurally from contributor unions; O84 fixed (kind threaded through merge); no orphans; matrix byte-identical. Receipt: `2026-09-02-ip3-return-receipt.md`. |
-| **2** | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
-| 3 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
-| 4 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
-| 5 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
-| 6 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
-| 7 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
-| 8 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
-| 9 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
+| — | IP.9 | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | **DONE 2026-09-02** — `TransformationEdge::lossByKind` (design (b)); `canonToVjournalLoss()` repopulated, new `canonToVtodoIcalLoss()`; matrix now kind-aware (substantial, expected diff); IP.8's TODO(IP.9) closed for vtodo/vjournal. New finding **O93** (sibling `{todo,canon}` edge shares the same undeclared drops — logged, not fixed). Receipt: `2026-09-02-ip9-return-receipt.md`. |
+| 2 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
+| 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
+| 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
+| 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
+| 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
+| 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
+| 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
 
 **Consumer dependency: NONE — both questions answered 2026-09-02.**
 Report: `docs/2026-09-02-incidence-parity-planstan-report.md`. Response:
@@ -510,6 +529,105 @@ produced this state; three copies drift faster than two.
 
   Receipt: `2026-09-02-ip3-return-receipt.md`.
 
-- **NEXT:** **IP.9** — kind-scoped loss profiles (closes O88). Gates
-  IP.4/IP.6/IP.10. Read `PLAN.md`'s IP.9 section plus Amendment 1/2 for
-  the current binding order.
+- **2026-09-02 — IP.9 DONE. O88 RESOLVED.** Design (b) chosen —
+  `TransformationEdge::lossByKind` (a `QHash<QString, LossProfile>`
+  override map; `.loss` stays the default/untagged-kind profile) — after
+  verifying (a) is genuinely not expressible: `TransformationRegistry`
+  keys `m_edgesFrom`/`findEdge`/`registerEdge` strictly on `(from, to)`
+  `Shape` pairs, and `registerEdge` asserts on a conflicting second
+  registration of the same pair, so three kind-discriminated edges for
+  the same shape pair cannot be registered without a real interface
+  change. `Pipeline::composedLoss(kind = QString())` selects per-edge via
+  the new `TransformationEdge::lossFor(kind)`, defaulting to exact
+  pre-IP.9 behaviour for every edge outside the calendar domain.
+  `SyncEngine::materializedLoss()` now extracts `_canon.kind` from the
+  already-parsed `canonData` and passes it through.
+
+  Two per-kind profiles landed: `Kalburator::Calendar::canonToVtodoIcalLoss()`
+  (new, `icalcanonstages.{h,cpp}` — deliberately NOT alongside
+  `Kalburator::Todo::canonToVtodoLoss()`, a different function for a
+  different edge, `{todo,canon}→{todo,vtodo}`) and `canonToVjournalLoss()`
+  (repopulated in place, `journalcanonfields.{h,cpp}` — was dead code with
+  a false "no loss" comment). Both declare TODAY's actual O83/O91 drops
+  (11 rows for vtodo incl. `geo` as `Degraded` for O86's value-corruption-
+  not-name-loss; 9 `PropertyId`s / 11 RFC names for vjournal, `recurrence`
+  covering RRULE+RDATE+EXDATE at once) — declared, not fixed, per PLAN.md
+  §1. Four properties (`comments`/`contacts`/`resources`/`requestStatus`,
+  O91) have no existing catalogued `PropertyId` at all (no emitter
+  produces them) — declared as new uncatalogued `PropertyId` literals
+  anyway, verified safe by reading `LossProfile`'s own contract (no
+  catalogue cross-check anywhere in its use); deliberately NOT added to
+  `calendarcanonproperties.cpp`, which would misrepresent them as
+  emitter-producible. vevent's `canonToIcalLoss()` was left untouched —
+  its own RFC-name drops (`GEO`/`RELATED-TO`/`COMMENT`/`CONTACT`/
+  `RESOURCES`/`REQUEST-STATUS`) are explicitly IP.6's scope per Amendment
+  1 §A.3.2, not O88's.
+
+  `ConvergenceMatrix` now renders one subsection per kind for a
+  `lossByKind`-carrying edge, plus a `(kind-scoped: ...)` inventory
+  annotation. Matrix diff (expected substantial, per PLAN.md): the
+  calendar domain's `### canon → ical` section relabeled `(default)`
+  (byte-identical content — still `canonToIcalLoss()`), two new sections
+  `(vjournal)` (9 rows) and `(vtodo)` (12 rows) appended; every other
+  domain/edge section (contacts, todo, calendar's org-ical/google-event/
+  ms-event) byte-identical, confirmed by full diff not assumed.
+  `tst_gm_pipeline_convergence` green.
+
+  IP.8's `expectedLossTable()` `TODO(IP.9)` closed for vtodo/vjournal — a
+  new `droppedRfcNames()` helper translates each profile's `Dropped`
+  `PropertyId`s to RFC 5545 property names via a small, necessarily
+  hand-declared canon-id→RFC-name table (one-to-many for `recurrence`),
+  with a `Q_ASSERT_X` guarding against a future untranslated id silently
+  under-reporting. vevent's table stays a hand-typed literal, deliberately
+  — its real profile is a different vocabulary of loss (canon-JSON vendor
+  keys, no RFC-name counterpart) from what this gate measures, and wiring
+  it now would mean fabricating entries IP.6 hasn't ratified.
+
+  New test coverage: three slots in `tests/calendar/tst_calendar_kind_dispatch.cpp`
+  (`vtodoDemoteLossProfileIsVtodoShapedNotEventShaped`,
+  `vjournalDemoteLossProfileIsVjournalShapedNotEventShaped`,
+  `veventDemoteLossProfileUnchangedByIp9`) pin the FULL declared content
+  of both new profiles against the REAL registered `CalendarStockShapes`
+  graph — 14→17 QTest slots in that binary (non-vacuity verified: removed
+  one profile entry, confirmed a real `FAIL!`, reverted). A full
+  `SyncEngine`-level `transcodingWarning` demonstration was attempted
+  (using `geo`, the one VTODO-profile property that actually round-trips
+  into canon today) and abandoned: `MockBackend::addIncidence()`
+  round-trips through `KCalendarCore::ICalFormat` immediately at insert
+  time, so O86's GEO corruption strikes before the sync engine ever runs,
+  making `geo` never "present" in canon by the time `materializedLoss()`
+  would check — no property currently exists that is both actually
+  materializable in canon AND one of this item's new drops. See the
+  receipt §10. Consequence: the ctest-level EXECUTABLE count does not
+  move (215→215, same as IP.3's own precedent for slots added to an
+  existing binary) even though QTest-slot count grew (+3).
+
+  Dead-code grep proof (`grep -rn "canonToVjournalLoss" src/ tests/`):
+  now three real call sites (edge registration + two IP.8-gate wiring
+  references), zero-caller state gone. Spot-checked all 12
+  `LossProfile`-returning functions declared under `src/` for the same
+  "declared, zero callers" pattern — none found.
+
+  New finding: **O93** — `{todo,canon}`'s own `canonToVtodoLoss()`
+  (`src/todo/vtodocanonstages.cpp`) demotes through the IDENTICAL emitter
+  code as the calendar-domain leg IP.9 just fixed, so it carries the exact
+  same undeclared O83/O91 drops — PLAN.md's IP.9 body called this leg
+  "already good," verified false. Logged, not fixed (out of IP.9's
+  scope — O88 is the calendar domain's kind-polymorphism specifically);
+  not owned by any item yet.
+
+  Full suite: `cmake --build build -j$(nproc)` (clean, no errors) +
+  `ctest --output-on-failure` (full, unfiltered): **215 tests, 211
+  passed, 4 failed** — same known-environmental set as the IP.3 baseline,
+  verified by failure TEXT (three of four carry the documented KDAV
+  30s-transfer-timeout signature; the other two show the local Radicale
+  server at `127.0.0.1:5232` returning 412/409 on calendar/item creation
+  — a different transient symptom of the same local-Radicale-dependency
+  class, not by name alone).
+
+  Receipt: `2026-09-02-ip9-return-receipt.md`.
+
+- **NEXT:** **IP.6** — `incidencecommonfields` extraction (3 kinds), then
+  the missing VTODO fields, then the O86 GEO decision (ratified: drop it).
+  Read `PLAN.md`'s IP.6 section plus Amendment 1 §A.3.2 and Amendment 2
+  §B.5 first.

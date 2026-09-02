@@ -4024,3 +4024,64 @@ Pinned by `mergerKindDisagreementKeepsTargetKindDeliberately()` in
 `tests/shape/tst_canonjson_diff_merge.cpp`, which asserts the current
 deliberate precedence rule (not a placeholder) so it cannot silently drift
 to source-wins or an unannounced default.
+
+### O93 — OPEN — incidence-parity IP.9, 2026-09-02: `{todo,canon}`'s own `canonToVtodoLoss()` shares O83/O91's undeclared drops, but only the calendar-domain leg got them declared
+
+Found while building IP.9's `canonToVtodoIcalLoss()` (the new
+`{calendar,canon}→{calendar,ical}` per-kind profile for VTODO). Logged,
+not fixed — out of IP.9's scope (O88 is specifically about the calendar
+domain's edge being kind-polymorphic; this is a *different* edge's own
+profile completeness).
+
+**The mechanism.** `Kalburator::Todo::CanonToVTodoStage::transform()`
+(`src/todo/vtodocanonstages.cpp:53-58`) calls the exact same
+`canonObjectToVtodoBytes()` as `icalcanonstages.cpp`'s
+`CanonToICalStage::transform()` does for a `vtodo`-kind calendar record
+(both ultimately `vtodocanonfields.cpp`'s shared emitter — the same fact
+O78/O83 already established for the promote direction). So the
+`{todo,canon}→{todo,vtodo}` edge (registered in
+`src/todo/todostockshapes.cpp:58` with `canonToVtodoLoss()`) demotes a
+VTODO through **literally the same code** as IP.9's new
+`canonToVtodoIcalLoss()` covers for the calendar domain — meaning
+`{todo,canon}` VTODOs lose exactly the same eleven properties (O83's
+seven: `ATTACH`/`ATTENDEE`/`CLASS`/`COLOR`/`ORGANIZER`/`SEQUENCE`/`URL`,
+plus O91's four: `COMMENT`/`CONTACT`/`RESOURCES`/`REQUEST-STATUS`) and the
+same `GEO` corruption (O86) — but `src/todo/vtodocanonstages.cpp`'s
+`canonToVtodoLoss()` (:65-109) declares none of them. It was described to
+IP.9 as "already good" (PLAN.md's IP.9 body: "VTODO-via-`{todo,canon}` is
+not your problem (it's already good)") — verified false by direct grep:
+`vtodocanonfields.cpp` has zero references to `attendees()`, `organizer()`,
+`attachments()`, `color()`, `classification`/`secrecy()`, `sequence()`,
+`url()`, `comments()`, `contacts()`, `resources()`, matching O83/O91's
+finding for the calendar leg exactly, because it is the exact same emitter.
+
+**Why this slipped through every prior audit.** IP.8's RFC-5545 fidelity
+gate (`tests/calendar/tst_incidence_rfc5545_fidelity.cpp`) only exercises
+the three `(calendar, X)` triples via `ICalToCanonStage`/`CanonToICalStage`
+— it never promotes/demotes through `{todo,canon}`/`{todo,vtodo}` at all,
+so this leg's loss was never measured against RFC 5545 the way the
+calendar leg was. `tests/todo/tst_todo_canon_roundtrip.cpp` pins
+`canonToVtodoLoss()`'s *declared* content (three slots at :340-352,
+:526-528, :826) but never round-trips a maximal RFC-5545 VTODO through it
+to check for *undeclared* loss — the same blind spot IP.8 was built to
+close for the calendar domain, just not yet built for the todo domain.
+
+**Severity.** Same class as O83, arguably *more* live: PlanStan's response
+(`docs/2026-09-02-incidence-parity-planstan-response.md` §Q1) says
+`{calendar,canon}` is their primary/default path, but did not rule out
+`{todo,canon}` usage elsewhere (their own `todo-parity` work targeted it
+directly). Any consumer routing a VTODO through `{todo,canon}` instead of
+`{calendar,canon}` gets the identical undeclared loss with no warning at
+all today (`canonToVtodoLoss()`'s profile has none of these eleven rows).
+
+**Not owned by any item as of this filing.** Candidates: fold into
+whichever item eventually fixes the underlying VTODO drops (IP.6 targets
+the calendar leg specifically per PLAN.md's text — check whether its
+`incidencecommonfields` extraction naturally reaches
+`vtodocanonfields.cpp` for both legs, since both call the same functions),
+or a small standalone follow-up that only touches
+`src/todo/vtodocanonstages.cpp`'s `canonToVtodoLoss()` declaration (same
+shape as IP.9's calendar-leg fix, no emitter change) once IP.9's pattern
+exists to copy. Whoever picks it up should also add the missing
+`(todo, vtodo)` RFC-5545 fidelity coverage IP.8 did not build, per the
+gap noted above — otherwise the same defect can silently reappear.

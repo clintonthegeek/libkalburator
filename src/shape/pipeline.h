@@ -28,8 +28,14 @@ public:
     Shape inputShape() const { return m_inputShape; }
     Shape outputShape() const { return m_outputShape; }
 
-    /// Composition of all edge LossProfiles, folded left-to-right.
-    LossProfile composedLoss() const;
+    /// Composition of all edge LossProfiles, folded left-to-right. IP.9:
+    /// `kind` selects, per edge, the kind-scoped override from
+    /// TransformationEdge::lossByKind when present (TransformationEdge::
+    /// lossFor()), falling back to the edge's default `loss` otherwise.
+    /// Passing the default empty `kind` reproduces pre-IP.9 behaviour
+    /// exactly for every edge that never populates `lossByKind` (i.e.
+    /// every edge outside the calendar domain's kind-polymorphic leg).
+    LossProfile composedLoss(const QString& kind = QString()) const;
 
     /// Apply each stage's transform in order. Throws std::logic_error
     /// if a stage is null (defensive — TransformationRegistry never

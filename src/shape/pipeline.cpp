@@ -24,10 +24,10 @@ Pipeline::Pipeline(QList<TransformationEdge> edges)
     m_outputShape = m_edges.back().to;
 }
 
-LossProfile Pipeline::composedLoss() const {
+LossProfile Pipeline::composedLoss(const QString& kind) const {
     LossProfile out;
     for (const auto& e : m_edges) {
-        out = out.compose(e.loss);
+        out = out.compose(e.lossFor(kind));
     }
     return out;
 }

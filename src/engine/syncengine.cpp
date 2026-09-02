@@ -64,12 +64,22 @@ namespace {
 /// for properties that are actually present (non-empty) in the record.
 /// Returns an empty list if the pipeline is lossless or no affected
 /// properties are present in this record.
+///
+/// IP.9 / O88: the record's own `_canon.kind` (empty ⇒ vevent, by
+/// icalcanonstages.cpp's convention) selects which of an edge's
+/// kind-scoped loss profiles applies (TransformationEdge::lossByKind,
+/// Pipeline::composedLoss(kind)) — a VTODO or VJOURNAL demoted through
+/// the calendar domain's {calendar,canon}→{calendar,ical} edge no longer
+/// gets warned about event-only properties it never carried. `canonData`
+/// must be parsed for the presence check regardless, so extracting the
+/// kind first costs nothing extra.
 static QStringList materializedLoss(const Kalburator::Shape::Pipeline &pipe,
                                     const QByteArray &canonData)
 {
-    const Kalburator::Shape::LossProfile loss = pipe.composedLoss();
-    if (loss.isLossless()) return {};
     const QJsonObject o = Kalburator::Shape::CanonEnvelope::parse(canonData);
+    const QString kind = Kalburator::Shape::CanonEnvelope::kind(o);
+    const Kalburator::Shape::LossProfile loss = pipe.composedLoss(kind);
+    if (loss.isLossless()) return {};
     QStringList lost;
     for (auto it = loss.affected.constBegin(); it != loss.affected.constEnd(); ++it) {
         if (it.value() == Kalburator::Shape::LossKind::Reversible) continue;

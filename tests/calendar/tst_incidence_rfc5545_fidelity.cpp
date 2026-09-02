@@ -42,6 +42,8 @@
 #include <QTimeZone>
 
 #include "icalcanonstages.h"
+#include "journalcanonfields.h"
+#include "lossprofile.h"
 
 #include <KCalendarCore/Alarm>
 #include <KCalendarCore/Event>
@@ -109,14 +111,97 @@ QStringList sortedList(const QSet<QString>& s)
 
 // ---------------------------------------------------------------------------
 // Declared allow-list (PLAN.md IP.8: "declared data, not scattered
-// literals"). TODO(IP.9): once kind-scoped loss profiles land, this table
-// must be wired to the real per-kind LossProfile instead of a literal list
-// — this structure is deliberately shaped (kind -> lost-property-name set)
-// to make that swap mechanical.
+// literals"). IP.9 CLOSES the TODO(IP.9) that stood here for vtodo/vjournal:
+// their `expectedLost` lists below are now DERIVED from the real per-kind
+// LossProfile (Kalburator::Calendar::canonToVtodoIcalLoss() /
+// canonToVjournalLoss(), both new/repopulated by IP.9 — see
+// icalcanonstages.{h,cpp} and journalcanonfields.{h,cpp}), via
+// droppedRfcNames() below, rather than hand-typed literals.
+//
+// vevent's list STAYS a literal — deliberately not wired. Its real profile
+// (canonToIcalLoss()) is a DIFFERENT vocabulary of loss (canon-JSON vendor
+// keys — onlineMeeting, guestsCan*, ... — with no RFC-name counterpart at
+// all) from the RFC-property-name drops this gate measures (GEO,
+// RELATED-TO, COMMENT, CONTACT, RESOURCES, REQUEST-STATUS). Declaring
+// those RFC drops on canonToIcalLoss() is explicitly IP.6's scope (PLAN.md
+// Amendment 1 §A.3.2: "IP.6 also owns the O86 GEO decision" + "VEVENT
+// drops RELATED-TO ... belongs in the [IP.6] extraction") — IP.9 owns only
+// the calendar domain's KIND-POLYMORPHISM defect (O88), not the content of
+// vevent's own already-kind-correct profile. Wiring vevent here now would
+// mean either fabricating entries IP.6 has not ratified, or silently
+// leaving the derived list empty (a false "nothing lost" signal) — both
+// worse than the honest literal + this note. Revisit when IP.6 lands.
 struct KindFidelityExpectation {
     QStringList expectedLost;   // RFC 5545 property NAMES, uppercase, sorted
     bool expectFixpoint = true; // promote->demote->promote canon bytes equal
 };
+
+// Canon PropertyId -> RFC 5545 property NAME(s). Necessarily hand-declared
+// here: canon ids (LossProfile::affected's key space) and RFC property
+// names (this gate's measurement space) are two different vocabularies
+// with no shared catalogue to derive the mapping from — a canon id can
+// expand to MORE than one RFC name (e.g. the single verbatim-RFC5545-lines
+// carrier "recurrence" covers RRULE/RDATE/EXDATE at once, invariant 3).
+// Scoped to exactly the ids IP.9's two new/repopulated Dropped profiles
+// use; extend it if a future item adds another kind-scoped Dropped id.
+const QHash<QString, QStringList>& propertyIdToRfcNames()
+{
+    static const QHash<QString, QStringList> table = {
+        { QStringLiteral("attachments"),    { QStringLiteral("ATTACH") } },
+        { QStringLiteral("attendees"),      { QStringLiteral("ATTENDEE") } },
+        { QStringLiteral("classification"), { QStringLiteral("CLASS") } },
+        { QStringLiteral("color"),          { QStringLiteral("COLOR") } },
+        { QStringLiteral("comments"),       { QStringLiteral("COMMENT") } },
+        { QStringLiteral("contacts"),       { QStringLiteral("CONTACT") } },
+        { QStringLiteral("organizer"),      { QStringLiteral("ORGANIZER") } },
+        { QStringLiteral("requestStatus"),  { QStringLiteral("REQUEST-STATUS") } },
+        { QStringLiteral("resources"),      { QStringLiteral("RESOURCES") } },
+        { QStringLiteral("sequence"),       { QStringLiteral("SEQUENCE") } },
+        { QStringLiteral("url"),            { QStringLiteral("URL") } },
+        { QStringLiteral("relatedTo"),      { QStringLiteral("RELATED-TO") } },
+        { QStringLiteral("recurrenceId"),   { QStringLiteral("RECURRENCE-ID") } },
+        { QStringLiteral("recurrence"),     { QStringLiteral("RRULE"), QStringLiteral("RDATE"),
+                                               QStringLiteral("EXDATE") } },
+    };
+    return table;
+}
+
+// Translates a LossProfile's Dropped entries to their RFC 5545 property
+// NAME(s), sorted. Only `Dropped` is translated here — this gate measures
+// property-NAME loss (a name either survives the round trip or it does
+// not), which is exactly what `LossKind::Dropped` means. The other three
+// kinds do NOT fit this gate's axis: `Reversible`/`Simplified` both keep
+// the property's NAME present in the output (recoverable/reduced form —
+// nothing for a before/after NAME-SET diff to see), and `Degraded` in
+// IP.9's two profiles is used for exactly one entry — VTODO's `geo`
+// (O86) — whose NAME also survives; its damage is a corrupted VALUE,
+// measured by this gate's SEPARATE fixpoint check (expectFixpoint below),
+// not by the lost-name list. So Dropped-only translation is a complete
+// mapping onto this gate's axis for both profiles as currently declared,
+// not a gap.
+QStringList droppedRfcNames(const Kalburator::Shape::LossProfile& profile)
+{
+    QSet<QString> names;
+    const auto& xlate = propertyIdToRfcNames();
+    QStringList untranslated;
+    for (const auto& id : profile.droppedProperties()) {
+        const auto it = xlate.constFind(id.toString());
+        if (it != xlate.constEnd())
+            names.unite(QSet<QString>(it->begin(), it->end()));
+        else
+            untranslated << id.toString();   // would silently under-report — surfaced below
+    }
+    // Every id either of IP.9's two profiles currently declares as Dropped
+    // is in propertyIdToRfcNames() (checked by hand against both profiles
+    // when they were written; see the IP.9 return receipt). This assertion
+    // is the forcing function for the NEXT edit that adds one and forgets
+    // the translation entry — silent under-reporting here would otherwise
+    // make this gate pass for the wrong reason.
+    Q_ASSERT_X(untranslated.isEmpty(), "droppedRfcNames",
+               qPrintable(QStringLiteral("no RFC-name translation for: %1")
+                              .arg(untranslated.join(QStringLiteral(", ")))));
+    return sortedList(names);
+}
 
 const QHash<QString, KindFidelityExpectation>& expectedLossTable()
 {
@@ -124,38 +209,30 @@ const QHash<QString, KindFidelityExpectation>& expectedLossTable()
         // GEO/RELATED-TO: PLAN.md Amendment 1 §A.3.2 (IP.6 scope) + O86
         // (2026-09-02 decision: drop GEO, do not hand-serialize around the
         // upstream kcalendarcore corruption). COMMENT/CONTACT/RESOURCES/
-        // REQUEST-STATUS: O91 (new, filed by this item).
+        // REQUEST-STATUS: O91. Deliberately literal, not derived — see the
+        // note above expectedLossTable().
         { QStringLiteral("vevent"), {
             { QStringLiteral("COMMENT"), QStringLiteral("CONTACT"), QStringLiteral("GEO"),
               QStringLiteral("RELATED-TO"), QStringLiteral("REQUEST-STATUS"),
               QStringLiteral("RESOURCES") },
             true
         } },
-        // ATTACH/ATTENDEE/CLASS/COLOR/ORGANIZER/SEQUENCE/URL: O83 (IP.6).
-        // COMMENT/CONTACT/RESOURCES/REQUEST-STATUS: O91 (new, IP.6/IP.9).
-        // GEO is NOT in this list — it round-trips its NAME (corrupted
-        // value, not dropped name); its damage shows up as the fixpoint
-        // failure below, per the pre-flight audit's own table (O86).
+        // O83 (IP.6) + O91 (IP.9), now DERIVED from
+        // Kalburator::Calendar::canonToVtodoIcalLoss(). GEO is correctly
+        // absent from the derived list (LossKind::Degraded, not Dropped —
+        // its NAME round-trips; O86's damage is the fixpoint failure below).
         { QStringLiteral("vtodo"), {
-            { QStringLiteral("ATTACH"), QStringLiteral("ATTENDEE"), QStringLiteral("CLASS"),
-              QStringLiteral("COLOR"), QStringLiteral("COMMENT"), QStringLiteral("CONTACT"),
-              QStringLiteral("ORGANIZER"), QStringLiteral("REQUEST-STATUS"),
-              QStringLiteral("RESOURCES"), QStringLiteral("SEQUENCE"), QStringLiteral("URL") },
+            droppedRfcNames(Kalburator::Calendar::canonToVtodoIcalLoss()),
             false   // O86: GEO corruption breaks the promote->demote->promote fixpoint
         } },
-        // ATTACH/ATTENDEE/EXDATE/ORGANIZER/RECURRENCE-ID/RELATED-TO/RRULE:
-        // O87 (IP.10). RDATE folded into the same O87/IP.10 umbrella per
-        // O91's clarification (same root cause: journalcanonfields.cpp has
-        // ZERO recurrence handling of any kind, so RRULE/RDATE/EXDATE are
-        // all silently flattened together, not three independent defects).
-        // COMMENT/CONTACT/REQUEST-STATUS: O91 (new, IP.10). No RESOURCES —
-        // RFC 5545 jourprop does not permit it on VJOURNAL at all.
+        // O87 (IP.10) + O91 (IP.9), now DERIVED from
+        // Kalburator::Calendar::canonToVjournalLoss(). RDATE/RRULE/EXDATE
+        // all come from the single "recurrence" PropertyId (see
+        // propertyIdToRfcNames() above) — journalcanonfields.cpp has ZERO
+        // recurrence handling of any kind, so all three are the same
+        // underlying defect, not three independent ones.
         { QStringLiteral("vjournal"), {
-            { QStringLiteral("ATTACH"), QStringLiteral("ATTENDEE"), QStringLiteral("COMMENT"),
-              QStringLiteral("CONTACT"), QStringLiteral("EXDATE"), QStringLiteral("ORGANIZER"),
-              QStringLiteral("RDATE"), QStringLiteral("RECURRENCE-ID"),
-              QStringLiteral("RELATED-TO"), QStringLiteral("REQUEST-STATUS"),
-              QStringLiteral("RRULE") },
+            droppedRfcNames(Kalburator::Calendar::canonToVjournalLoss()),
             true
         } },
     };
