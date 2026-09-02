@@ -3900,3 +3900,79 @@ across runs, servers accumulate meaningless per-process identifiers, and
 any future byte-pin or content-addressed optimisation over demoted bytes is
 impossible. The likely fix is a post-serialization parameter strip in the
 style of the existing `stripICalPropertyLine` calls.
+
+### O91 — OPEN — incidence-parity IP.8, 2026-09-02: a genuinely maximal RFC 5545 fixture drops four MORE properties than the pre-flight audit's fixture found
+
+Found building IP.8's round-trip fidelity gate. The pre-flight audit's
+probe (`probes/incidence-audit-probe.cpp`) — itself explicitly documented
+as "a starting point, not a finish line" (PLAN.md §A.4 IP.8) — omitted
+`COMMENT`, `CONTACT`, `RESOURCES` and `REQUEST-STATUS`, all valid on
+VEVENT/VTODO/VJOURNAL per RFC 5545 §3.6.1–3.6.3. IP.8's fixtures include
+them, per its own charter ("every property RFC 5545 permits ... not every
+property our emitter happens to handle"), and all four are lost on demote,
+on every kind that permits them. This is exactly the failure mode IP.8
+exists to catch, so it is logged rather than silently pinned or fixed —
+per PLAN.md §1's "no fix while passing through" prohibition, since it
+surfaced while building IP.8, not while working an item scoped to fix it.
+
+**Two different mechanisms, verified by direct probing of the real
+pipeline (`ICalToCanonStage`/`CanonToICalStage`) plus a
+`KCalendarCore`-only check of `REQUEST-STATUS` support:**
+
+- **`COMMENT`, `CONTACT`, `RESOURCES` — ours.** `KCalendarCore::IncidenceBase`
+  models all three natively (`comments()`, `contacts()`, `resources()` —
+  `incidencebase.h:706,737`, `incidence.h:845`) and a parsed `Incidence`
+  retains them fine; verified they round-trip through KCalendarCore's own
+  `ICalFormat` with no libkalburator involved. `eventcanonfields.cpp`,
+  `vtodocanonfields.cpp` and `journalcanonfields.cpp` simply never call any
+  of the three accessors — zero references, confirmed by grep — so they
+  are silently dropped at promote, not even landing in `providerExtras`
+  (which only captures `customProperties()`, the X-/IANA-unrecognized
+  bucket; these three are registered core properties, not customProperties
+  material). Measured: lost on VEVENT, VTODO **and** VJOURNAL (`RESOURCES`
+  is not valid on VJOURNAL per RFC 5545 jourprop and is correctly excluded
+  from its fixture).
+- **`REQUEST-STATUS` — upstream, not ours.** `KCalendarCore` exposes **no
+  public accessor** for it anywhere in its iCal-facing API (grep across
+  `/usr/include/KF6/KCalendarCore/`: the only hit is
+  `vcalformat.h`'s legacy `X-REQUEST-STATUS` macro for the old vCalendar
+  format, unrelated). Measured directly: a `REQUEST-STATUS:2.0;Success`
+  line survives libical's parse (it is a registered core property, not
+  unknown to the grammar) but never reaches the `KCalendarCore::Incidence`
+  object in any accessible form — not a modeled field, not
+  `customProperties()`, nothing. It cannot be promoted by any emitter
+  because there is nothing in the object model to read. Same
+  toolkit-boundary class as O86 (upstream, needs a deliberate keep/hand-
+  serialize/declare-Dropped decision, not an emitter fix) but a stronger
+  case for "declare it Dropped": unlike `GEO`, there is no accessor to
+  hand-serialize *from* at all.
+
+**Measured, by kind** (property NAME lost on a full promote→demote,
+in addition to each kind's already-documented drops):
+
+| Kind | New drops found |
+|---|---|
+| VEVENT | `COMMENT`, `CONTACT`, `RESOURCES`, `REQUEST-STATUS` |
+| VTODO | `COMMENT`, `CONTACT`, `RESOURCES`, `REQUEST-STATUS` |
+| VJOURNAL | `COMMENT`, `CONTACT`, `REQUEST-STATUS` (no `RESOURCES` — not RFC-valid on VJOURNAL) |
+
+**Also measured, a clarification rather than a new drop:** VJOURNAL's
+`RDATE` is lost alongside the already-filed O87 `RRULE`/`EXDATE` — same
+root cause (`journalcanonfields.cpp` has zero recurrence handling of any
+kind), not a fourth independent defect. O87's text already describes this
+mechanism ("a recurring journal is silently flattened"); this note just
+confirms `RDATE` falls under the same umbrella and should be closed
+alongside `RRULE`/`EXDATE` at IP.10, not tracked separately.
+
+**Ownership.** `COMMENT`/`CONTACT`/`RESOURCES` fold naturally into the
+`incidencecommonfields` extraction already scoped to **IP.6** (VEVENT/
+VTODO) and **IP.10** (VJOURNAL, which inherits IP.6's extraction per
+PLAN.md's stated intent) — they are exactly the kind of common,
+RFC-standard, KCalendarCore-modeled field that extraction is for.
+`REQUEST-STATUS` is not owned by any implementation item: there is nothing
+to extract or fix, only a declare-`Dropped` decision for **IP.9** to make
+when it builds the kind-scoped loss profiles, in the same spirit as O86's
+"don't hand-serialize around an upstream bug" resolution.
+
+Pinned by `tst_incidence_rfc5545_fidelity.cpp` (IP.8) with `QEXPECT_FAIL`
+citing this finding.

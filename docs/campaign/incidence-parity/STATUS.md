@@ -8,16 +8,24 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **PlanStan answered; PLAN.md Amendment 2
-adopted.** Q1 → **(a) converge** (ratified, and (b) is *blocked* on their
-data model, not scheduled); Q2 → **DTSTART-wins** with a unifying
-principle. **Nothing is blocked on a consumer any more.** Order revised
-again: **IP.6 and IP.10 advance ahead of IP.4/IP.5** — PlanStan disclosed
-that `{calendar,canon}` VTODO is their *primary and default* task path, so
+**Last updated:** 2026-09-02 — **IP.8 DONE.** The RFC-5545 round-trip
+fidelity gate landed, tests only, RED exactly as PLAN.md predicted on
+`(calendar, vevent)`/`(calendar, vtodo)`/`(calendar, vjournal)` plus the
+VEVENT/VTODO VALARM sub-gate — **and** found four MORE undeclared drops
+(`COMMENT`, `CONTACT`, `RESOURCES`, `REQUEST-STATUS`) that the pre-flight
+audit's own fixture had not been maximal enough to catch, filed as
+**O91**. **IP.3 runs next.**
+
+Earlier the same day: PlanStan answered; PLAN.md Amendment 2 adopted.
+Q1 → **(a) converge** (ratified, and (b) is *blocked* on their data model,
+not scheduled); Q2 → **DTSTART-wins** with a unifying principle.
+**Nothing is blocked on a consumer any more.** Order revised again:
+**IP.6 and IP.10 advance ahead of IP.4/IP.5** — PlanStan disclosed that
+`{calendar,canon}` VTODO is their *primary and default* task path, so
 O83's seven undeclared drops are live on it.
 
-Earlier the same day: pre-flight audit landed, six findings (**O85–O90**),
-five new items (**IP.8–IP.12**). **IP.8 still runs next.**
+Earlier still the same day: pre-flight audit landed, six findings
+(**O85–O90**), five new items (**IP.8–IP.12**).
 
 > **New agent, start here.** Read in this order: (1) this file's *Where we
 > stand* table for your item, (2) `PLAN.md` **§Amendment 1 first**, then the
@@ -37,16 +45,16 @@ five new items (**IP.8–IP.12**). **IP.8 still runs next.**
 | — | IP.1 | Catalogue/emitter coverage gate — computed subset gate over every `(domain, kind)` pair | *proves* O78 | **DONE 2026-08-29** — landed RED on `(calendar, vtodo)` with `QEXPECT_FAIL`; tests only. Receipt: `2026-08-29-ip1-return-receipt.md`. |
 | — | IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **DONE 2026-09-01** — gate green, 0 XFAIL; 4 new merger slots; matrix byte-identical. Receipt: `2026-09-01-ip2-return-receipt.md`. |
 | — | — | **Pre-flight audit** — deliberate code-first sweep of the whole incidence surface | *files* O85–O90 | **DONE 2026-09-02** — evidence: `2026-09-02-preflight-audit.md`; re-runnable probes: `probes/run.sh`. PLAN.md **Amendment 1** adopted. No `src/` change. |
-| **1** | **IP.8** | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83 | **NEXT** — tests only, lands RED. The measurement nothing in the suite makes today. |
-| 2 | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | NOT STARTED — inherits the **O84 fix** (with the whose-kind-wins decision written down) and the `allDay` orphan check. |
-| 3 | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
-| 4 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
-| 5 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
-| 6 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
-| 7 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
-| 8 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
-| 9 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
-| 10 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
+| — | IP.8 | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83; *files* **O91** | **DONE 2026-09-02** — landed RED exactly as predicted, plus four newly-discovered undeclared drops (O91). Tests only. Receipt: `2026-09-02-ip8-return-receipt.md`. |
+| **1** | **IP.3** | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | NOT STARTED — inherits the **O84 fix** (with the whose-kind-wins decision written down) and the `allDay` orphan check. |
+| 2 | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
+| 3 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
+| 4 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
+| 5 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
+| 6 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
+| 7 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
+| 8 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
+| 9 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
 
 **Consumer dependency: NONE — both questions answered 2026-09-02.**
 Report: `docs/2026-09-02-incidence-parity-planstan-report.md`. Response:
@@ -330,10 +338,59 @@ produced this state; three copies drift faster than two.
   mid-campaign tag.** Suite at the tag: 214 slots, 210 green, the 4 known
   environmental reds.
 
-- **NEXT:** **IP.8** — the RFC-5545 round-trip fidelity gate. Tests only;
-  lands RED, one `QEXPECT_FAIL` per known defect, each naming the item that
-  will close it. Read `PLAN.md` §A.4 IP.8 for the acceptance criteria, and
-  `2026-09-02-preflight-audit.md` §2.1 for the expected red list. Build the
-  fixtures from **RFC 5545**, not from what the emitters happen to handle —
-  a fixture derived from our own capabilities makes the gate vacuous, which
-  is the exact failure mode IP.8 exists to end.
+- **2026-09-02 — IP.8 DONE.** New file
+  `tests/calendar/tst_incidence_rfc5545_fidelity.cpp` (13 slots, registered
+  in `tests/calendar/CMakeLists.txt` next to `tst_calendar_kind_dispatch`)
+  — landed RED for exactly the reasons PLAN.md predicted, **plus** four
+  properties the pre-flight audit's own fixture had not been maximal
+  enough to catch. Fixtures were built directly from RFC 5545 §3.6.1/
+  §3.6.2/§3.6.3/§3.6.6's ABNF grammar (every property each component
+  PERMITS, not what `eventcanonfields.cpp`/`vtodocanonfields.cpp`/
+  `journalcanonfields.cpp` happen to read) — verified against the WebFetch
+  of the RFC text plus this session's own knowledge of the grammar,
+  cross-checked empirically against the real pipeline via scratch probes
+  before being committed to the QTest file (see the return receipt for the
+  exact probe transcripts).
+
+  **Red list observed, by kind** (property NAME lost on promote→demote,
+  computed on RFC 5545 §3.1-unfolded text, master+exception fixtures
+  unioned):
+  - `(calendar, vevent)`: `COMMENT`, `CONTACT`, `GEO`, `RELATED-TO`,
+    `REQUEST-STATUS`, `RESOURCES` (6). Fixpoint: stable (as predicted).
+  - `(calendar, vtodo)`: `ATTACH`, `ATTENDEE`, `CLASS`, `COLOR`, `COMMENT`,
+    `CONTACT`, `ORGANIZER`, `REQUEST-STATUS`, `RESOURCES`, `SEQUENCE`,
+    `URL` (11). Fixpoint: **NOT** stable (O86 GEO corruption, as
+    predicted).
+  - `(calendar, vjournal)`: `ATTACH`, `ATTENDEE`, `COMMENT`, `CONTACT`,
+    `EXDATE`, `ORGANIZER`, `RDATE`, `RECURRENCE-ID`, `RELATED-TO`,
+    `REQUEST-STATUS`, `RRULE` (11). Fixpoint: stable (as predicted).
+  - VALARM sub-gate (VEVENT + VTODO × 4 trigger forms): VEVENT's
+    end-relative/absolute/repeat-duration forms corrupted (O79, as
+    predicted; start-relative survives); **every** alarm on **both** kinds
+    comes back disabled (O85, as predicted).
+
+  **Deviation from the predicted list — filed as O91, not fixed, not
+  silently pinned**, per PLAN.md §1's prohibition: `COMMENT`, `CONTACT`,
+  `RESOURCES` (all three kinds where RFC-valid) and `REQUEST-STATUS` (all
+  three kinds) are ALSO lost, beyond the pre-flight audit's declared list.
+  `COMMENT`/`CONTACT`/`RESOURCES` are ours — `KCalendarCore` models all
+  three natively and no emitter reads any of them. `REQUEST-STATUS` is
+  upstream — `KCalendarCore` has no public accessor for it at all (grep
+  across `/usr/include/KF6/KCalendarCore/` confirms), so no emitter can
+  promote what the toolkit never exposes. Full detail, evidence and
+  ownership: FINDINGS.md O91; receipt `2026-09-02-ip8-return-receipt.md`.
+
+  Non-vacuity verified the IP.1/IP.2 way: temporarily disabled one
+  `QEXPECT_FAIL` (VEVENT's GEO check), rebuilt, confirmed a real `FAIL!`
+  with the exact expected message, restored, rebuilt clean (13 passed, 0
+  failed). No `src/` change. Matrix untouched (confirmed, not assumed —
+  no loss profile or edge changed). Full suite: 214 → **227** slots (+13),
+  223 passed, 4 failed — the same 4 known environmental Radicale/KDAV
+  slots, verified by failure text not name.
+
+- **NEXT:** **IP.3** — contributed catalogues (+ the O84 fix + the
+  `allDay` orphan check). Read `PLAN.md`'s IP.3 section plus Amendment 1
+  §A.2's note that it now inherits O84. `tst_incidence_rfc5545_fidelity.cpp`
+  is not IP.3's gate to touch — its job is IP.1's catalogue/emitter
+  coverage gate (`tst_calendar_kind_dispatch.cpp`), a different axis from
+  this item's RFC-vs-emitter measurement.

@@ -303,6 +303,10 @@ kalburator_add_calendar_test(tst_icaltimestamp)
 # Plan 4 Task 1 — calendar per-kind canon dispatch (VTODO/VJOURNAL)
 kalburator_add_calendar_test(tst_calendar_kind_dispatch)
 
+# IP.8 (incidence-parity campaign) — RFC 5545 round-trip fidelity gate:
+# does each emitter honour the STANDARD, not just our own catalogue.
+kalburator_add_calendar_test(tst_incidence_rfc5545_fidelity)
+
 # Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
 kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 
