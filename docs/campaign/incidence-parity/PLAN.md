@@ -1,5 +1,19 @@
 # Incidence-parity campaign — binding execution PLAN
 
+> **READ THE AMENDMENTS FIRST.** This body was written 2026-08-29 and two
+> amendments at the end of this file modify it:
+> **Amendment 1** (2026-09-02, pre-flight audit) adds items IP.8–IP.12 and
+> supersedes §1's ordering rule and §3's success condition.
+> **Amendment 2** (2026-09-02, PlanStan's ratified answers) supersedes
+> Amendment 1 §A.2's order, settles the O86 `geo` question, and rescopes
+> IP.11.
+> **The authoritative execution order is the Order column in `STATUS.md`.**
+> Two stale sentences in the body are kept for diff readability rather than
+> edited: §0's "findings this campaign owns" list stops at O83 (it now runs
+> to O90), and §1's "IP.3 gates IP.4–IP.7" predates the reordering. Each
+> item's *work statement and acceptance criteria* below are still correct
+> except where an amendment says otherwise.
+
 **Opened:** 2026-08-29. **Baseline:** `main` @ `fc1ae61`, suite 214 slots
 (210 green; the 4 red are the known environmental Radicale/KDAV slots —
 `tst_backend_signals`, `tst_backend_thread_relocation`,
@@ -560,7 +574,13 @@ Every defect the audit found is a disagreement between our emitter and
 **RFC 5545**. Nothing measures that axis. IP.8 is that measurement, and it
 is now the campaign's highest-leverage item.
 
-## A.2 Revised execution order — binding
+## A.2 Revised execution order — ~~binding~~ SUPERSEDED
+
+> **STOP — this table is stale.** **Amendment 2 §B.3** supersedes the order
+> below (IP.6 and IP.10 advanced ahead of IP.4/IP.5 on evidence PlanStan
+> supplied 2026-09-02). The authoritative order is the **Order column in
+> `STATUS.md`**. The table here is kept only so Amendment 2's diff is
+> readable — **do not pick your item from it.**
 
 Items still run **strictly in order, one agent each**, but the order is now
 the one below rather than numeric. New items are numbered IP.8+ so existing
