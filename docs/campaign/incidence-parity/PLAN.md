@@ -1105,13 +1105,19 @@ decomposition before display, named the three places it bites them
 where it is used as a *lookup key*), and are tracking it on their side.
 **No action here — do not re-issue the warning.**
 
-## B.7 One thing this repo owes them
+## B.7 One thing this repo owed them — DONE
 
-PlanStan is pinned at **`v1.01`**. Everything from the vtodo-parity
-campaign (W1–W7) is landed on `main` and **untagged**, so they cannot
-consume any of it. They state plainly that their adoption pass does not
-gate this plan and they will pick it up "when you next cut a tag."
+**`v1.04` cut and pushed 2026-09-02** (annotated, at `76bbcf3`). PlanStan
+was pinned at `v1.01` with all of B2C P0–P3 and vtodo-parity W1–W8 landed
+on `main` and untagged, so they could not consume the work they asked for.
+They can now adopt at their own pace; they confirmed their adoption pass
+does not gate this plan.
 
-Not an item in this campaign, and not a blocker — but a tag is cheap and
-they are currently one release behind their own delivered requirements.
-Worth raising with the maintainer at the next natural stopping point.
+**The tag message carries a `KNOWN DEFECTS AT THIS TAG` section** naming
+O79, O83, O84, O85, O86 and O87 with their owning items, so a consumer
+adopting `v1.04` learns what it is buying rather than discovering it. Any
+future tag cut mid-campaign should do the same — an adopter must not have
+to read this plan to find out that the default VTODO path drops seven
+properties.
+
+**No action for any item.** Do not re-raise this.

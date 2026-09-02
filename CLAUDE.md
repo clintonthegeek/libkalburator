@@ -210,8 +210,14 @@ IP.6, IP.7b or IP.11):
 - **Do not deprioritise IP.4** on the grounds that they have no alarm UI —
   they raised that themselves and asked us not to; they passthrough alarms
   other clients authored.
-- **This repo owes them a tag:** they are pinned at `v1.01` and all of
-  vtodo-parity W1–W7 is on `main` untagged, so they cannot consume it.
+- **Tag CUT — `v1.04`, 2026-09-02** at `76bbcf3` (B2C P0–P3 +
+  vtodo-parity W1–W8 + IP.1/IP.2). PlanStan was pinned at `v1.01` and could
+  not consume the work they asked for; they can now adopt at their own
+  pace. The tag message carries a **`KNOWN DEFECTS AT THIS TAG`** section
+  naming O79/O83/O84/O85/O86/O87 and their owning items — **carry that
+  forward on any future mid-campaign tag**, so an adopter is not left to
+  read the plan to discover that the default VTODO path drops seven
+  properties. Nothing owed; do not re-raise.
 
 **Scope:** the catalogue-integrity work covers exactly the three
 `CanonJsonDiffer` domains — calendar, todo, contacts. `note`

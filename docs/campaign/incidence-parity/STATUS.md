@@ -55,10 +55,11 @@ Q2 → DTSTART-wins). Both ratified, neither provisional. Read the response
 before IP.6, IP.7b or IP.11 — it settles the GEO question and rescopes
 IP.11 entirely.
 
-**This repo owes PlanStan a tag.** They are pinned at `v1.01`; all of
-vtodo-parity W1–W7 is on `main` and untagged, so they cannot consume the
-work they asked for. Not a campaign item and not a blocker (they said so) —
-raise it with the maintainer at a natural stopping point (PLAN §B.7).
+**Tag owed to PlanStan: CUT.** `v1.04` pushed 2026-09-02 at `76bbcf3`
+(B2C P0–P3 + vtodo-parity W1–W8 + IP.1/IP.2), with a `KNOWN DEFECTS AT THIS
+TAG` section naming O79/O83/O84/O85/O86/O87 and their owning items.
+**Nothing owed; do not re-raise.** If you cut another tag mid-campaign,
+carry the same defect section forward.
 
 ## Why this campaign exists
 
@@ -316,6 +317,17 @@ produced this state; three copies drift faster than two.
   **We owe them a tag (§B.7):** they are pinned at `v1.01` and all of
   vtodo-parity W1–W7 is on `main` untagged, so they cannot consume the work
   they asked for. Not gating anything, by their own statement.
+
+- **2026-09-02 — `v1.04` CUT AND PUSHED** (annotated, at `76bbcf3`).
+  Closes the one thing this repo owed PlanStan (PLAN §B.7): they were
+  pinned at `v1.01` with all of B2C P0–P3 and vtodo-parity W1–W8 landed on
+  `main` and untagged, unable to consume the work they asked for. The tag
+  message deliberately carries a **`KNOWN DEFECTS AT THIS TAG`** section
+  naming O79, O83, O84, O85, O86 and O87 with their owning items — an
+  adopter should not have to read this plan to learn that the default VTODO
+  path drops seven properties. **Carry that section forward on any future
+  mid-campaign tag.** Suite at the tag: 214 slots, 210 green, the 4 known
+  environmental reds.
 
 - **NEXT:** **IP.8** — the RFC-5545 round-trip fidelity gate. Tests only;
   lands RED, one `QEXPECT_FAIL` per known defect, each naming the item that
