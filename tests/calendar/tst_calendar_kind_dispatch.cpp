@@ -178,6 +178,51 @@ const QByteArray kMaximalVtodoException =
     "DUE:20260615T170000Z\r\n"
     "END:VTODO\r\nEND:VCALENDAR\r\n";
 
+// Maximal VJOURNAL (IP.10 / O87): every top-level key journalFieldsToCanon()
+// can emit except recurrenceId/recurrenceRange, exercised by
+// kMaximalVjournalException below — same reasoning as kMaximalVeventException
+// (a real exception instance does not also carry its own RRULE). RFC 5545
+// §3.6.3's jourprop grammar has no GEO, LOCATION, PRIORITY, RESOURCES,
+// TRANSP, DTEND/DUE/DURATION, PERCENT-COMPLETE, COMPLETED, or VALARM, so
+// those are correctly absent here, unlike kMaximalVevent/kMaximalVtodo.
+const QByteArray kMaximalVjournal =
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n"
+    "BEGIN:VJOURNAL\r\n"
+    "UID:journal-maximal-1\r\n"
+    "SEQUENCE:2\r\n"
+    "CREATED:20260101T000000Z\r\n"
+    "LAST-MODIFIED:20260102T000000Z\r\n"
+    "SUMMARY:Trip notes\r\n"
+    "DESCRIPTION:Saw the sea\r\n"
+    "X-ALT-DESC;FMTTYPE=text/html:<p>Saw the sea</p>\r\n"
+    "DTSTART:20260601T090000Z\r\n"
+    "STATUS:FINAL\r\n"
+    "CLASS:CONFIDENTIAL\r\n"
+    "COLOR:teal\r\n"
+    "URL:https://example.com/journal\r\n"
+    "CATEGORIES:Travel,Personal\r\n"
+    "RRULE:FREQ=WEEKLY;BYDAY=MO\r\n"
+    "RDATE:20260302T090000Z\r\n"
+    "EXDATE:20260615T090000Z\r\n"
+    "ORGANIZER;CN=Alice:mailto:alice@example.com\r\n"
+    "ATTENDEE;CN=Bob;PARTSTAT=ACCEPTED;RSVP=TRUE:mailto:bob@example.com\r\n"
+    "ATTACH:https://example.com/photo.jpg\r\n"
+    "RELATED-TO:parent-uid-1\r\n"
+    "COMMENT:a comment\r\nCONTACT:Jane Doe\\, +1-555-0100\r\n"
+    "X-CANON-CUSTOM:extra-value\r\n"
+    "END:VJOURNAL\r\nEND:VCALENDAR\r\n";
+
+// Detached VJOURNAL exception occurrence — exercises recurrenceId/
+// recurrenceRange (IP.10 / O87, the identity fix — see the return receipt).
+const QByteArray kMaximalVjournalException =
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n"
+    "BEGIN:VJOURNAL\r\n"
+    "UID:journal-maximal-1\r\n"
+    "RECURRENCE-ID;RANGE=THISANDFUTURE:20260608T090000Z\r\n"
+    "SUMMARY:Trip notes (moved)\r\n"
+    "DTSTART:20260609T090000Z\r\n"
+    "END:VJOURNAL\r\nEND:VCALENDAR\r\n";
+
 // Maximal vCard4: every top-level key VCard4ToCanonStage can emit.
 const QByteArray kMaximalVcard =
     "BEGIN:VCARD\r\nVERSION:4.0\r\n"
@@ -480,30 +525,43 @@ private slots:
         const auto loss = toIcal->composedLoss(QStringLiteral("vjournal"));
         QVERIFY2(!loss.isLossless(), "vjournal profile must not be empty");
 
-        // O87 (still open, IP.10's job) + O91: the seven VJOURNAL-shaped
-        // drops must be present, Dropped ("recurrence" alone covers RRULE/
-        // RDATE/EXDATE — invariant 3). IP.6 commit 2 FIXED O91's comments/
-        // contacts for VJOURNAL too (judgment call — see the IP.6 return
-        // receipt), so they are no longer in this list.
-        static const char* kVjournalDropped[] = {
-            "attachments", "attendees", "organizer", "relatedTo", "recurrenceId",
-            "recurrence", "requestStatus",
-        };
-        for (const char* id : kVjournalDropped) {
-            QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
-                     qPrintable(QStringLiteral("vjournal profile missing '%1'").arg(QString::fromLatin1(id))));
-            QCOMPARE(loss.affected.value(PropertyId{QString::fromLatin1(id)}), LossKind::Dropped);
-        }
+        // O87 CLOSED by IP.10: what remains, permanently — requestStatus
+        // (Dropped, upstream: no KCalendarCore accessor exists at all) and
+        // recurrenceRange (Degraded, not Dropped: the bare RECURRENCE-ID
+        // identity survives losslessly, only the RANGE=THISANDFUTURE
+        // modifier is never re-emitted, mirroring VTODO's W3 safety rule).
+        QVERIFY2(loss.affected.contains(PropertyId{QStringLiteral("requestStatus")}),
+                 "vjournal profile missing 'requestStatus'");
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("requestStatus")}), LossKind::Dropped);
+        QVERIFY2(loss.affected.contains(PropertyId{QStringLiteral("recurrenceRange")}),
+                 "vjournal profile missing 'recurrenceRange'");
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrenceRange")}), LossKind::Degraded);
 
+        // attachments/attendees/organizer/relatedTo/recurrenceId/recurrence/
         // comments/contacts must NOT appear as Dropped any more — a
-        // regression guard for IP.6 commit 2's own fix.
-        QVERIFY2(!loss.affected.contains(PropertyId{QStringLiteral("comments")}),
-                 "vjournal profile still wrongly drops fixed 'comments'");
-        QVERIFY2(!loss.affected.contains(PropertyId{QStringLiteral("contacts")}),
-                 "vjournal profile still wrongly drops fixed 'contacts'");
+        // regression guard for IP.6's (comments/contacts) and IP.10's (the
+        // rest) own fixes.
+        static const char* kFixedByIp6OrIp10[] = {
+            "attachments", "attendees", "organizer", "relatedTo", "recurrenceId",
+            "recurrence", "comments", "contacts",
+        };
+        for (const char* id : kFixedByIp6OrIp10) {
+            QVERIFY2(!loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vjournal profile still wrongly drops fixed '%1'")
+                                    .arg(QString::fromLatin1(id))));
+        }
 
         // The O88 bug, pinned directly: none of canonToIcalLoss()'s
         // event-only vendor keys may leak into the vjournal profile.
+        // `descriptionHtml`/`classification` stay in this list even after
+        // IP.10 wired both for VJOURNAL: descriptionHtml is a Reversible
+        // carrier (X-ALT-DESC) not declared in ANY kind's calendar-domain
+        // per-kind profile (VEVENT's canonToIcalLoss() is the one
+        // exception, its own separate profile object); classification is
+        // guarded now (no phantom key) but VJOURNAL never produces the MS
+        // "personal" value that would make it Degraded, so it correctly
+        // never appears here either — same precedent as VTODO's identical
+        // exclusion in vtodoDemoteLossProfileIsVtodoShapedNotEventShaped().
         static const char* kEventOnly[] = {
             "onlineMeeting", "eventType", "typedProperties", "locations",
             "guestsCanModify", "guestsCanInviteOthers", "guestsCanSeeOtherGuests",
@@ -636,34 +694,233 @@ private slots:
 
     void calendarCatalogueDeclaresVjournalKeys()
     {
-        const auto journal = parseJournal(kJournal);
-        QVERIFY(journal);
-        // kJournal (module-level fixture) plus every remaining optional
-        // journal field journalFieldsToCanon() can emit.
-        const QByteArray maximalJournal =
-            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Test//EN\r\n"
-            "BEGIN:VJOURNAL\r\n"
-            "UID:journal-maximal-1\r\n"
-            "SEQUENCE:2\r\n"
-            "CREATED:20260101T000000Z\r\n"
-            "LAST-MODIFIED:20260102T000000Z\r\n"
-            "SUMMARY:Trip notes\r\n"
-            "DESCRIPTION:Saw the sea\r\n"
-            "DTSTART:20260601T090000Z\r\n"
-            "STATUS:FINAL\r\n"
-            "CLASS:CONFIDENTIAL\r\n"
-            "COLOR:teal\r\n"
-            "URL:https://example.com/journal\r\n"
-            "CATEGORIES:Travel,Personal\r\n"
-            "X-CANON-CUSTOM:extra-value\r\n"
-            "END:VJOURNAL\r\nEND:VCALENDAR\r\n";
-        const auto jr = parseJournal(maximalJournal);
-        QVERIFY(jr);
-        const QJsonObject obj = journalFieldsToCanon(jr, maximalJournal);
+        // IP.10: extended from a summary/description/status-only fixture to
+        // a genuinely maximal one (organizer/attendees/attachments/
+        // relatedTo/recurrence/comments/contacts/descriptionHtml, plus the
+        // detached-exception recurrenceId/recurrenceRange pair) now that
+        // journalFieldsToCanon() actually emits all of them — mirrors
+        // calendarCatalogueDeclaresVeventKeys()'s master+exception union
+        // pattern exactly.
+        using Kalburator::Calendar::ICalToCanonStage;
+        ICalToCanonStage fwd;
+        QJsonObject obj = Kalburator::Shape::CanonEnvelope::parse(fwd.transform(kMaximalVjournal));
+        const QJsonObject exception =
+            Kalburator::Shape::CanonEnvelope::parse(fwd.transform(kMaximalVjournalException));
+        for (auto it = exception.constBegin(); it != exception.constEnd(); ++it)
+            obj.insert(it.key(), it.value());
         QVERIFY2(!obj.isEmpty(), "VJOURNAL must promote to non-empty canon");
+
+        // The whole point of this fixture: the newly-wired fields must
+        // actually have been produced, or this slot would pass for the
+        // wrong reason (same discipline as calendarCatalogueDeclaresVtodoKeys()).
+        // NOTE: `relatedTo` deliberately NOT in this list even though the
+        // fixture carries a RELATED-TO line and journalFieldsToCanon() DOES
+        // call promoteRelatedTo() — FINDINGS O95: KCalendarCore::ICalFormat's
+        // VJOURNAL parser never populates relatedTo() from a source
+        // RELATED-TO line (an upstream gap, promote-direction only; the
+        // write/demote direction works correctly). Asserting its presence
+        // here would fail for a real, upstream-documented reason.
+        static const char* kMustBePresent[] = {
+            "organizer", "attendees", "attachments", "recurrence",
+            "comments", "contacts", "descriptionHtml", "recurrenceId", "recurrenceRange",
+        };
+        for (const char* key : kMustBePresent) {
+            QVERIFY2(obj.contains(QString::fromLatin1(key)),
+                     qPrintable(QStringLiteral("fixture must exercise '%1'").arg(QString::fromLatin1(key))));
+        }
 
         const auto ids = Kalburator::Calendar::calendarCanonPropertyIds();
         Kalburator::TestSupport::verifyCanonKeysDeclared(obj, ids, QStringLiteral("(calendar, vjournal)"));
+    }
+
+    // -------------------------------------------------------------------
+    // IP.10 / O87 — VJOURNAL RECURRENCE-ID identity + verbatim recurrence.
+    // Modeled on VTODO's W1 composite-exception-identity shape
+    // (tst_todo_canon_roundtrip.cpp's vtodoRoundTripPreservesRecurrenceId /
+    // vtodoMasterHasNoRecurrenceId / vtodoDemoteNeverEmitsThisAndFutureRange)
+    // — same shape, same reasoning, reused rather than reinvented, per
+    // PLAN.md's own instruction for this item.
+    // -------------------------------------------------------------------
+
+    void vjournalMasterHasNoRecurrenceId()
+    {
+        using Kalburator::Calendar::ICalToCanonStage;
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(kMaximalVjournal);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = Kalburator::Shape::CanonEnvelope::parse(canon);
+        QVERIFY2(!obj.contains(QStringLiteral("recurrenceId")),
+                 "master journal must not carry a recurrenceId key");
+    }
+
+    void vjournalRoundTripPreservesRecurrenceId()
+    {
+        const QByteArray vjournal =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VJOURNAL\r\n"
+            "UID:series-journal-1\r\n"
+            "SUMMARY:Moved instance\r\n"
+            "RECURRENCE-ID:20260602T090000Z\r\n"
+            "DTSTART:20260602T090000Z\r\n"
+            "END:VJOURNAL\r\n"
+            "END:VCALENDAR\r\n";
+
+        using Kalburator::Calendar::ICalToCanonStage;
+        using Kalburator::Calendar::CanonToICalStage;
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vjournal);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        const QJsonObject obj = Kalburator::Shape::CanonEnvelope::parse(canon);
+        const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
+        QCOMPARE(recIdObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-02T09:00:00Z"));
+
+        CanonToICalStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        // Byte-equivalent RECURRENCE-ID line in the output.
+        QVERIFY2(output.contains("RECURRENCE-ID:20260602T090000Z"),
+                 qPrintable(QStringLiteral(
+                     "demoted bytes must carry RECURRENCE-ID:20260602T090000Z; got:\n")
+                     + QString::fromUtf8(output)));
+
+        // And it re-parses as a real exception identity.
+        const auto outJournal = parseJournal(output);
+        QVERIFY2(outJournal, "could not parse output VJOURNAL");
+        QVERIFY(outJournal->hasRecurrenceId());
+        QCOMPARE(outJournal->recurrenceId().toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-06-02T09:00:00Z"), Qt::ISODate));
+        QVERIFY(!outJournal->thisAndFuture());
+    }
+
+    // W3-shaped safety rule (VTODO's, reused verbatim): RANGE=THISANDFUTURE
+    // is NEVER re-emitted on write, unconditionally, even though canon
+    // still losslessly CAPTURES an incoming RANGE=THISANDFUTURE on promote
+    // (a foreign producer's existing write, read-side only).
+    void vjournalDemoteNeverEmitsThisAndFutureRange()
+    {
+        const QByteArray vjournal =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VJOURNAL\r\n"
+            "UID:series-journal-2\r\n"
+            "SUMMARY:this-and-future instance\r\n"
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260602T090000Z\r\n"
+            "DTSTART:20260602T090000Z\r\n"
+            "END:VJOURNAL\r\n"
+            "END:VCALENDAR\r\n";
+
+        using Kalburator::Calendar::ICalToCanonStage;
+        using Kalburator::Calendar::CanonToICalStage;
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vjournal);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+
+        // Promote is unchanged: canon still captures the incoming RANGE.
+        const QJsonObject obj = Kalburator::Shape::CanonEnvelope::parse(canon);
+        QCOMPARE(obj.value(QStringLiteral("recurrenceRange")).toString(),
+                 QStringLiteral("thisAndFuture"));
+
+        CanonToICalStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(!output.contains("RANGE=THISANDFUTURE"),
+                 qPrintable(QStringLiteral(
+                     "demoted bytes must NEVER carry RANGE=THISANDFUTURE "
+                     "(write-hostile on real servers); got:\n")
+                     + QString::fromUtf8(output)));
+
+        const auto outJournal = parseJournal(output);
+        QVERIFY2(outJournal, "could not parse output VJOURNAL");
+        QVERIFY2(outJournal->hasRecurrenceId(),
+                 "the bare RECURRENCE-ID exception identity must survive");
+        QVERIFY2(!outJournal->thisAndFuture(),
+                 "thisAndFuture() must be false on the demoted journal");
+    }
+
+    // The single most important slot in this item (PLAN.md's own emphasis):
+    // a detached VJOURNAL instance and its master must remain DISTINCT
+    // through a full promote -> demote -> promote round trip. Before IP.10,
+    // RECURRENCE-ID was dropped entirely, so both promoted to canon objects
+    // sharing the same uid with no distinguishing field at all — identity
+    // corruption (O87), not mere field loss.
+    void vjournalMasterAndExceptionRemainDistinctThroughRoundTrip()
+    {
+        using Kalburator::Calendar::ICalToCanonStage;
+        using Kalburator::Calendar::CanonToICalStage;
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray masterCanon    = fwd.transform(kMaximalVjournal);
+        const QByteArray exceptionCanon = fwd.transform(kMaximalVjournalException);
+        QVERIFY2(!masterCanon.isEmpty(),    "master must promote to non-empty canon");
+        QVERIFY2(!exceptionCanon.isEmpty(), "exception must promote to non-empty canon");
+
+        // Round-trip both through demote -> promote.
+        const QByteArray masterCanon2    = fwd.transform(rev.transform(masterCanon));
+        const QByteArray exceptionCanon2 = fwd.transform(rev.transform(exceptionCanon));
+        QVERIFY2(!masterCanon2.isEmpty(),    "master round trip must not go empty");
+        QVERIFY2(!exceptionCanon2.isEmpty(), "exception round trip must not go empty");
+
+        const QJsonObject masterObj    = Kalburator::Shape::CanonEnvelope::parse(masterCanon2);
+        const QJsonObject exceptionObj = Kalburator::Shape::CanonEnvelope::parse(exceptionCanon2);
+
+        // Same uid (same series) ...
+        QCOMPARE(masterObj.value(QStringLiteral("uid")).toString(),
+                 exceptionObj.value(QStringLiteral("uid")).toString());
+
+        // ... but the master must NOT carry a recurrenceId, and the
+        // exception MUST — this is what makes them distinguishable.
+        QVERIFY2(!masterObj.contains(QStringLiteral("recurrenceId")),
+                 "master must not carry a recurrenceId key after round trip");
+        QVERIFY2(exceptionObj.contains(QStringLiteral("recurrenceId")),
+                 "exception must carry a recurrenceId key after round trip");
+
+        const QJsonObject recIdObj = exceptionObj.value(QStringLiteral("recurrenceId")).toObject();
+        QCOMPARE(recIdObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-08T09:00:00Z"));
+
+        // The two canon objects, as a whole, must not be identical — the
+        // non-vacuity check for "distinct" (a passing recurrenceId check
+        // alone would not catch a hypothetical future bug that made every
+        // OTHER field collapse to the same value too).
+        QVERIFY2(masterObj != exceptionObj,
+                 "master and exception canon objects must remain distinct");
+    }
+
+    // Recurrence round-trip slot (RRULE/RDATE/EXDATE surviving verbatim) —
+    // mirrors tst_calendar_canon_roundtrip.cpp's VEVENT equivalent.
+    void vjournalRoundTripPreservesRecurrenceVerbatim()
+    {
+        using Kalburator::Calendar::ICalToCanonStage;
+        using Kalburator::Calendar::CanonToICalStage;
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(kMaximalVjournal);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+
+        const QByteArray journalBlock = output.mid(output.indexOf("BEGIN:VJOURNAL"));
+        QVERIFY2(journalBlock.contains("RRULE:FREQ=WEEKLY;BYDAY=MO"),
+                 qPrintable(QStringLiteral("RRULE must survive byte-identical; got:\n%1")
+                                .arg(QString::fromUtf8(output))));
+        QVERIFY2(journalBlock.contains("RDATE:20260302T090000Z"),
+                 qPrintable(QStringLiteral("RDATE must survive byte-identical; got:\n%1")
+                                .arg(QString::fromUtf8(output))));
+        QVERIFY2(journalBlock.contains("EXDATE:20260615T090000Z"),
+                 qPrintable(QStringLiteral("EXDATE must survive byte-identical; got:\n%1")
+                                .arg(QString::fromUtf8(output))));
+
+        const auto outJournal = parseJournal(output);
+        QVERIFY2(outJournal, "could not parse output VJOURNAL");
+        QVERIFY2(outJournal->recurs(), "output journal must recur");
     }
 
     void todoCatalogueDeclaresVtodoKeys()

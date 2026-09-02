@@ -8,9 +8,11 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.6 DONE. O83, O86, O91 (partially —
-comment/contact) and O93 RESOLVED.** New finding **O94** (upstream). Full
-session log entry below; IP.10 is next.
+**Last updated:** 2026-09-02 — **IP.10 DONE. O87 RESOLVED** (RELATED-TO
+excepted — see O95). Full session log entry below; IP.4 is next.
+
+**Previously — 2026-09-02 — IP.6 DONE. O83, O86, O91 (partially —
+comment/contact) and O93 RESOLVED.** New finding **O94** (upstream).
 
 **Previously — 2026-09-02 — IP.9 DONE. O88 RESOLVED.** One
 `{calendar,canon}→{calendar,ical}` edge is kind-polymorphic (VEVENT/VTODO/
@@ -77,7 +79,7 @@ Earlier still the same day: pre-flight audit landed, six findings
 | — | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | **DONE 2026-09-02** — catalogues now built structurally from contributor unions; O84 fixed (kind threaded through merge); no orphans; matrix byte-identical. Receipt: `2026-09-02-ip3-return-receipt.md`. |
 | — | IP.9 | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | **DONE 2026-09-02** — `TransformationEdge::lossByKind` (design (b)); `canonToVjournalLoss()` repopulated, new `canonToVtodoIcalLoss()`; matrix now kind-aware (substantial, expected diff); IP.8's TODO(IP.9) closed for vtodo/vjournal. New finding **O93** (sibling `{todo,canon}` edge shares the same undeclared drops — logged, not fixed). Receipt: `2026-09-02-ip9-return-receipt.md`. |
 | 2 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | **DONE 2026-09-02** — two commits (structural extraction, zero behaviour change; then the field fixes). **O83, O86, O91 (VEVENT/VTODO/VJOURNAL comment/contact only) and O93 RESOLVED.** New finding **O94** (upstream: KCalendarCore's `ICalFormat` never reads/writes RESOURCES at all — corrects part of O91). Receipt: `2026-09-02-ip6-return-receipt.md`. |
-| 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction (now landed). VJOURNAL's `COMMENT`/`CONTACT` (O91) are ALREADY fixed by IP.6 (judgment call, see its receipt) — **do not re-do them**; IP.10's remaining scope is RECURRENCE-ID identity, RRULE/RDATE/EXDATE, and the `descriptionHtml`/phantom-`classification`-key items PLAN.md's IP.10 body names. Closes the second-highest severity item (identity corruption). |
+| 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | **DONE 2026-09-02** — RECURRENCE-ID identity (VTODO's W1 shape, W3 safety fix included), RRULE/RDATE/EXDATE (verbatim-lines convention), organizer/attendees/attachments/comments/contacts, descriptionHtml (X-ALT-DESC, newly wired) and the phantom `classification` key all fixed. **RELATED-TO is the one exception** — wired identically but blocked upstream on the promote side only; new finding **O95**. New finding **O96** (a sibling declaration gap, logged not fixed). Receipt: `2026-09-02-ip10-return-receipt.md`. |
 | 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
 | 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
 | 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
@@ -761,15 +763,117 @@ produced this state; three copies drift faster than two.
 
   Receipt: `2026-09-02-ip6-return-receipt.md`.
 
-- **NEXT:** **IP.10** — VJOURNAL parity. `RECURRENCE-ID` identity first
-  (model it on VTODO's W1 composite exception identity), then `RRULE`/
-  `RDATE`/`EXDATE` (verbatim-lines convention, invariant 3), then
-  `descriptionHtml` (check whether the X-ALT-DESC carrier applies) and the
-  phantom unconditional-`classification`-insert bug
-  (`journalcanonfields.cpp`). **`comments`/`contacts` are ALREADY DONE by
-  IP.6** — verify and say so rather than re-adding them; PLAN.md's own
-  IP.10 body text attributing them to IP.10 is stale (see the IP.6 entry
-  above). `organizer`/`attendees`/`attachments`/`relatedTo` should now
-  fall out "for free" by wiring `journalcanonfields.cpp` to the
-  `incidencecommonfields` functions IP.6 already built — verify that
-  rather than writing new field-specific code.
+- **2026-09-02 — IP.10 DONE. O87 RESOLVED** (with one honestly-declared
+  exception — see O95). VJOURNAL was the worst-attended kind
+  (`journalcanonfields.{h,cpp}`) and is now at parity with VEVENT/VTODO on
+  everything RFC 5545 §3.6.3's jourprop grammar permits.
+
+  **Wired "for free" via IP.6's `incidencecommonfields.cpp`, exactly as
+  PLAN.md predicted — genuinely wiring-only, no new field-specific logic
+  needed:** `organizer`/`attendees`/`attachments` (`promoteOrganizer`/
+  `demoteOrganizer` etc.) and `classification` (switched from the old
+  hand-written, unconditional-insert block to the shared, guarded
+  `promoteClassification`/`demoteClassification` — closes the phantom-key
+  bug: a VJOURNAL with no CLASS no longer gains `classification: "public"`
+  in canon). `comments`/`contacts` were confirmed ALREADY wired by IP.6
+  (verified by reading `journalcanonfields.cpp` before touching it) — not
+  re-done.
+
+  **New journal-specific code, modeled on existing shapes rather than
+  invented:**
+  1. **RECURRENCE-ID identity (the most important part of this item)** —
+     modeled on VTODO's W1 composite-exception-identity shape
+     (`vtodocanonfields.cpp` ~340/~706), NOT VEVENT's (which still carries
+     the O82 bug, IP.7's to fix, deliberately not copied here). Promote
+     captures `recurrenceId`/`recurrenceRange`; demote sets the identity
+     back and calls `journal->setThisAndFuture(false)`
+     **unconditionally**, regardless of what canon's `recurrenceRange`
+     says (the W3 safety rule — `RANGE=THISANDFUTURE` is never re-emitted,
+     write-hostile on real CalDAV servers). A new slot,
+     `vjournalMasterAndExceptionRemainDistinctThroughRoundTrip`
+     (`tests/calendar/tst_calendar_kind_dispatch.cpp`), promotes a master
+     and a detached-exception fixture sharing one uid, round-trips both
+     through demote→promote, and asserts they remain distinguishable (the
+     master carries no `recurrenceId` key, the exception does, and the two
+     canon objects as a whole are not equal) — this is the identity-
+     corruption fix PLAN.md called the single most important slot in this
+     item.
+  2. **RRULE/RDATE/EXDATE** — wired via
+     `extractComponentRecurrenceLines(originalBytes, "VJOURNAL", uid)`,
+     the exact same "recurrence" canon key VEVENT/VTODO already use
+     (invariant 3, verbatim capture, never re-derived); demote re-injects
+     the lines before `END:VJOURNAL`. New slot:
+     `vjournalRoundTripPreservesRecurrenceVerbatim`.
+  3. **`descriptionHtml`** — wired (X-ALT-DESC), mirroring VEVENT/VTODO's
+     identical inline three-line pattern (not extracted into
+     `incidencecommonfields.cpp` — IP.6 deliberately left that
+     un-extracted too, three near-identical one-liners not being worth a
+     shared function). Judgment call, decided in favour of wiring: RFC
+     5545 gives VJOURNAL a real DESCRIPTION property, and X-ALT-DESC is a
+     KOrganizer-family convention already generic across component kinds
+     — there was no RFC or object-model reason to leave VJOURNAL out.
+
+  **One exception, honestly declared rather than silently absorbed:**
+  `relatedTo` is wired identically to VEVENT/VTODO (same
+  `promoteRelatedTo`/`demoteRelatedTo` calls) and the WRITE/demote
+  direction works correctly (probe-verified: a programmatically-set
+  `relatedTo()` serializes to a correct `RELATED-TO` line on a `Journal`).
+  But `KCalendarCore::ICalFormat`'s VJOURNAL **parser** never populates
+  `relatedTo()` from a source `RELATED-TO` line — an upstream gap, verified
+  against `ICalFormat` alone with VEVENT parsing the identical line
+  correctly for comparison. New finding **O95** (full probe transcript in
+  `docs/campaign/FINDINGS.md`). `canonToVjournalLoss()` correctly does NOT
+  declare `relatedTo` (that function is scoped to the demote direction,
+  which is not lossy here); the RFC 5545 fidelity gate
+  (`tst_incidence_rfc5545_fidelity.cpp`) instead adds `RELATED-TO` to
+  vjournal's expected-lost list by hand via a new `vjournalExpectedLostList()`
+  helper, since the shape graph has no promote-direction loss-profile
+  mechanism to derive it from (a structural gap, not this item's to build).
+
+  **Also declared honestly:** `recurrenceRange` is `Degraded` (not
+  Dropped) in `canonToVjournalLoss()` — the bare RECURRENCE-ID identity
+  survives losslessly, only the RANGE modifier is never re-emitted (the
+  W3 safety rule). New finding **O96**: the sibling `canonToVtodoIcalLoss()`
+  demotes through the identical code but doesn't declare this same
+  degradation — a pre-existing, low-severity declaration gap, logged not
+  fixed (out of VJOURNAL's scope).
+
+  **Catalogue**: `journalCanonContributedIds()` gained `organizer`,
+  `attendees`, `attachments`, `relatedTo`, `recurrence`, `recurrenceId`,
+  `recurrenceRange`, `descriptionHtml` — all already had `PropertyKind`/
+  display-name metadata in `calendarPropertyMetadata()` (VEVENT/VTODO
+  already declare them), so no new metadata entries were needed, only
+  contributor-list membership, confirming PLAN.md's prediction.
+
+  **Loss profile** (`canonToVjournalLoss()`): six entries removed
+  (`attachments`, `attendees`, `organizer`, `relatedTo`, `recurrence`,
+  `recurrenceId`), `recurrenceRange: Degraded` added, `requestStatus:
+  Dropped` (permanent, upstream) kept. Matrix diff: exactly this — six
+  `Dropped` rows removed from the `canon → ical (vjournal)` section, one
+  `recurrenceRange | Degraded` row added. `tst_gm_pipeline_convergence`
+  green, including `committedMatrixMatchesGenerated`.
+
+  **IP.8's gate**: `vjournalRfc5545RoundTrip()`'s `QEXPECT_FAIL` block
+  removed entirely — the real (non-XFAIL) gate now passes for real, with
+  `vjournalExpectedLostList()` correctly listing only `RELATED-TO` (O95)
+  and `REQUEST-STATUS` (permanent, upstream, unchanged) as lost.
+
+  VEVENT/VTODO suites re-run before and after this item's changes — both
+  unaffected (this item never edits `incidencecommonfields.{h,cpp}`,
+  `eventcanonfields.cpp` or `vtodocanonfields.cpp`, confirmed by `git
+  status` scope discipline; only calls functions already built there).
+
+  Full suite: 215 tests (unchanged — new slots landed inside existing
+  binaries, per IP.3/IP.6/IP.9's own precedent), 211 passed, 4 known-
+  environmental failed, verified by failure TEXT not name.
+
+  New findings **O95** (upstream, VJOURNAL RELATED-TO promote gap) and
+  **O96** (recurrenceRange declaration gap on the sibling VTODO profile),
+  neither owned by any item yet. Receipt:
+  `2026-09-02-ip10-return-receipt.md`.
+
+- **NEXT:** **IP.4** — shared VALARM module + VEVENT promote/demote + both
+  vendor event legs, one commit. Closes O79 + O85. See PLAN.md Amendment 1
+  §A.3.1. Moved ahead of IP.5/IP.7/IP.11/IP.12 per the table order — not
+  because PlanStan lacks alarm UI (they explicitly asked not to
+  deprioritise it; they passthrough other clients' alarms).

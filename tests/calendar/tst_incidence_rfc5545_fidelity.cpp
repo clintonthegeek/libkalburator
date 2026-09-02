@@ -202,6 +202,29 @@ QStringList droppedRfcNames(const Kalburator::Shape::LossProfile& profile)
     return sortedList(names);
 }
 
+// vjournal's expected-lost list, DERIVED from canonToVjournalLoss() (the
+// canon->vjournal DEMOTE direction's own declared drops) PLUS one hand-added
+// entry, RELATED-TO, that profile structurally cannot express — see
+// FINDINGS O95. journalcanonfields.cpp's promoteRelatedTo()/demoteRelatedTo()
+// are correctly wired (IP.10), and canonObjectToJournalBytes()'s WRITE side
+// genuinely serializes RELATED-TO losslessly (probe-verified) — the defect
+// is upstream, in the OPPOSITE direction: KCalendarCore::ICalFormat's
+// VJOURNAL parser never populates relatedTo() from a source RELATED-TO line
+// (VEVENT/VTODO's parsers do; verified by direct probe against ICalFormat
+// alone, no libkalburator code involved). canonToVjournalLoss() cannot
+// declare this: its own doc comment scopes it to the demote direction, and
+// the shape graph has NO promote-direction loss-profile mechanism at all
+// (calendarstockshapes.cpp's ical->canon edge is hard-coded LossProfile{}
+// for every kind, for every incidence kind — a structural gap, not this
+// item's to build). Building that mechanism is out of IP.10's scope.
+QStringList vjournalExpectedLostList()
+{
+    QStringList names = droppedRfcNames(Kalburator::Calendar::canonToVjournalLoss());
+    names << QStringLiteral("RELATED-TO");
+    names.sort();
+    return names;
+}
+
 const QHash<QString, KindFidelityExpectation>& expectedLossTable()
 {
     static const QHash<QString, KindFidelityExpectation> table = {
@@ -237,21 +260,17 @@ const QHash<QString, KindFidelityExpectation>& expectedLossTable()
             droppedRfcNames(Kalburator::Calendar::canonToVtodoIcalLoss()),
             true    // O86 RESOLVED: GEO removed entirely, no more fixpoint break
         } },
-        // O87 (IP.10, still open) + O91, DERIVED from
-        // Kalburator::Calendar::canonToVjournalLoss(). RDATE/RRULE/EXDATE
-        // all come from the single "recurrence" PropertyId (see
-        // propertyIdToRfcNames() above) — journalcanonfields.cpp has ZERO
-        // recurrence handling of any kind, so all three are the same
-        // underlying defect, not three independent ones. O91's
-        // COMMENT/CONTACT are CLOSED by IP.6 commit 2 (judgment call: wired
-        // into the shared common module alongside VEVENT/VTODO, since RFC
-        // 5545 permits both on VJOURNAL and the fix was the same one-line
-        // call — see the IP.6 return receipt; PLAN.md's IP.10 text
-        // attributing them to IP.10 is now stale, corrected here and in
-        // STATUS.md). REQUEST-STATUS stays permanently Dropped (upstream,
-        // no KCalendarCore accessor exists at all).
+        // O87 CLOSED by IP.10 (2026-09-02) — RECURRENCE-ID identity, RRULE/
+        // RDATE/EXDATE (the single "recurrence" PropertyId covers all
+        // three), ORGANIZER, ATTENDEE and ATTACH all round-trip now via
+        // IP.6's incidencecommonfields.cpp plus new journal-specific
+        // recurrence/recurrenceId code. RELATED-TO is the one exception:
+        // wired identically (promoteRelatedTo/demoteRelatedTo) but blocked
+        // upstream on the PROMOTE side only — see vjournalExpectedLostList()
+        // above and FINDINGS O95. What remains, permanently: REQUEST-STATUS
+        // (upstream, no KCalendarCore accessor exists at all).
         { QStringLiteral("vjournal"), {
-            droppedRfcNames(Kalburator::Calendar::canonToVjournalLoss()),
+            vjournalExpectedLostList(),
             true
         } },
     };
@@ -504,22 +523,15 @@ private:
         // QCOMPARE below, via expectedLossTable()'s permanent entries —
         // exactly the same treatment onlineMeeting/eventType/etc already
         // get in canonToIcalLoss() with no dedicated named assertion.
-        if (kindName == QStringLiteral("vjournal")) {
-            QEXPECT_FAIL("", "IP.10 / O87 — VJOURNAL's undeclared drops, including "
-                              "RECURRENCE-ID identity aliasing (a detached instance and "
-                              "its master become indistinguishable in canon) and RRULE/"
-                              "RDATE/EXDATE (VJOURNAL has zero recurrence handling)", Continue);
-            QVERIFY2((lost & QSet<QString>{QStringLiteral("ATTACH"), QStringLiteral("ATTENDEE"),
-                                            QStringLiteral("EXDATE"), QStringLiteral("ORGANIZER"),
-                                            QStringLiteral("RECURRENCE-ID"), QStringLiteral("RELATED-TO"),
-                                            QStringLiteral("RRULE"), QStringLiteral("RDATE")}).isEmpty(),
-                     "O87's properties (+RDATE, folded in per O91) must not be lost (until IP.10 lands)");
-
-            // COMMENT/CONTACT: CLOSED by IP.6 commit 2 (judgment call — see
-            // expectedLossTable()'s vjournal comment above). No QEXPECT_FAIL
-            // needed for them any more; REQUEST-STATUS is a permanent drop
-            // (upstream) covered by the real gate below like VEVENT/VTODO's.
-        }
+        //
+        // IP.10 (2026-09-02): VJOURNAL's QEXPECT_FAIL block REMOVED — O87's
+        // seven properties (ATTACH, ATTENDEE, EXDATE, ORGANIZER,
+        // RECURRENCE-ID, RELATED-TO, RRULE, +RDATE per O91) all round-trip
+        // now (organizer/attendees/attachments/relatedTo via IP.6's
+        // incidencecommonfields, recurrence/recurrenceId via new
+        // journal-specific code modeled on VTODO's W1 shape). What remains
+        // for VJOURNAL — REQUEST-STATUS (upstream, permanent) — is covered
+        // by the real gate below, same treatment as VEVENT/VTODO's.
 
         // --- the real gate: lost must equal EXACTLY the declared allow-list -
         // Not wrapped in QEXPECT_FAIL: this is the non-vacuity check. If a
@@ -533,10 +545,10 @@ private:
         // Sanity net: no phantom property should ever appear that was not
         // in the source. Not one of PLAN.md's named acceptance items, but
         // cheap and it would catch a real regression class (see
-        // journalcanonfields.cpp's unconditional `classification` insert,
-        // flagged under IP.10 as a phantom-key bug of the same shape,
-        // though harmless here since CLASS is always present in these
-        // fixtures).
+        // journalcanonfields.cpp's former unconditional `classification`
+        // insert — a phantom-key bug fixed by IP.10, switching to
+        // incidencecommonfields.cpp's guarded promoteClassification()/
+        // demoteClassification()).
         QVERIFY2(gained.isEmpty(),
                  qPrintable(QStringLiteral("%1: unexpected GAINED propert(y/ies) not in source: %2")
                                 .arg(kindName, sortedList(gained).join(QStringLiteral(", ")))));

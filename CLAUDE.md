@@ -155,16 +155,25 @@ DONE 2026-09-02 — **O85–O90 filed**, PLAN Amendment 1 adopted. PlanStan
 answered 2026-09-02 — **Amendment 2 adopted; nothing is blocked on a
 consumer.** IP.8 DONE (RFC-5545 fidelity gate, landed RED as predicted,
 **O91 filed**). IP.3 DONE (**O84 RESOLVED**, contributed catalogues). IP.9
-DONE (**O88 RESOLVED**, kind-scoped loss profiles, **O93 filed**). **IP.6
-DONE 2026-09-02** — `incidencecommonfields` extraction (two commits:
+DONE (**O88 RESOLVED**, kind-scoped loss profiles, **O93 filed**). IP.6
+DONE 2026-09-02 — `incidencecommonfields` extraction (two commits:
 structural, then the field fixes) — **O83, O86, O91 and O93 RESOLVED**;
 **O94 filed** (KCalendarCore's `ICalFormat` never reads/writes RESOURCES
-at all, upstream — corrects a claim inside O91). IP.8's gate now GREEN for
-VEVENT and VTODO; still RED (correctly) for VJOURNAL's O87 remainder.
-**IP.10 is next** (VJOURNAL parity: RECURRENCE-ID identity + RRULE/EXDATE
-— note VJOURNAL's `COMMENT`/`CONTACT` are ALREADY fixed by IP.6, don't
-re-do them), then IP.4 → IP.5 → IP.7 → IP.11 → IP.12 (order lives in
-STATUS's table, not in the numbering).
+at all, upstream — corrects a claim inside O91). **IP.10 DONE 2026-09-02**
+— VJOURNAL now at parity with VEVENT/VTODO on everything RFC 5545
+§3.6.3's jourprop grammar permits: RECURRENCE-ID identity (VTODO's W1
+shape + W3 safety fix), RRULE/RDATE/EXDATE (verbatim-lines convention),
+organizer/attendees/attachments (free via IP.6's incidencecommonfields),
+descriptionHtml (newly wired), and the phantom `classification` key, all
+fixed. **O87 RESOLVED**, with one honest exception: `relatedTo` is wired
+identically but blocked upstream on the promote side only — **O95 filed**
+(KCalendarCore's `ICalFormat` VJOURNAL parser never reads RELATED-TO,
+though it writes it fine; VEVENT's parser reads it correctly for
+comparison). **O96 filed** (a sibling, lower-severity loss-declaration gap
+on VTODO's own calendar-domain profile, logged not fixed). IP.8's gate now
+fully GREEN for all three kinds. **IP.4 is next** (shared VALARM module),
+then IP.5 → IP.7 → IP.11 → IP.12 (order lives in STATUS's table, not in
+the numbering).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (VEVENT alarm trigger-form
 corruption, four call sites), O80 (providerExtrasDigest absent on
@@ -173,17 +182,23 @@ calendar/contacts), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE twin), O83
 merger erases the incidence kind), O85 (every alarm round-trips back
 DISABLED — all four sites, VTODO included), O86 (RESOLVED by IP.6 —
 kcalendarcore 6.29.0 serializes `GEO` corrupt, **upstream** — dropped
-entirely, not hand-serialized), O87 (VJOURNAL undeclared drops incl.
-RECURRENCE-ID aliasing — VJOURNAL's `COMMENT`/`CONTACT` closed early by
-IP.6, the rest still IP.10's), O88 (RESOLVED by IP.9 — one edge-level loss
-profile serves three kinds), O89 (VTODO's dual representation), O90
-(demote not a pure function of canon — heap-derived attendee `X-UID`),
-O91 (RESOLVED by IP.6 — undeclared COMMENT/CONTACT/RESOURCES/REQUEST-
-STATUS drops), O92 (`CanonJsonMerger` has no error channel for a kind-
-mismatch fail-loud), O93 (RESOLVED by IP.6 — `{todo,canon}`'s sibling loss
-profile shared the same undeclared drops), O94 (new, **upstream** —
-KCalendarCore's `ICalFormat` never reads or writes RESOURCES at all,
-despite the object model supporting it fully; corrects part of O91).
+entirely, not hand-serialized), O87 (RESOLVED by IP.10 — VJOURNAL
+undeclared drops incl. RECURRENCE-ID aliasing; RELATED-TO carved out as
+O95), O88 (RESOLVED by IP.9 — one edge-level loss profile serves three
+kinds), O89 (VTODO's dual representation), O90 (demote not a pure function
+of canon — heap-derived attendee `X-UID`), O91 (RESOLVED by IP.6 —
+undeclared COMMENT/CONTACT/RESOURCES/REQUEST-STATUS drops), O92
+(`CanonJsonMerger` has no error channel for a kind-mismatch fail-loud),
+O93 (RESOLVED by IP.6 — `{todo,canon}`'s sibling loss profile shared the
+same undeclared drops), O94 (**upstream** — KCalendarCore's `ICalFormat`
+never reads or writes RESOURCES at all, despite the object model
+supporting it fully; corrects part of O91), O95 (new, **upstream** —
+KCalendarCore's `ICalFormat` VJOURNAL parser never populates `relatedTo()`
+from a source RELATED-TO line, though the writer/demote direction is
+correct; VEVENT's parser handles the identical line fine), O96 (new —
+`recurrenceRange`'s W3-shaped Degraded loss is declared for VJOURNAL but
+not yet for the sibling VTODO calendar-domain profile; low severity,
+logged not fixed).
 
 **Three prohibitions, binding:** never "fix while passing through" (log to
 FINDINGS, let the owning item take it); never hand-maintain a key list —
@@ -251,7 +266,7 @@ coverage mandatory for every new vendor pair/domain edge), O65 (events
 never index participant emails), O59 tooling notes (moc × terminated raw
 string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **215 tests**, 211 green, re-confirmed after IP.6 lands
+Suite baseline: **215 tests**, 211 green, re-confirmed after IP.10 lands
 (2026-09-02). The 4 reds (`tst_backend_signals`,
 `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
 `tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by

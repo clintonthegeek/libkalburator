@@ -14,17 +14,23 @@
 // accessor — so the same code is genuinely reusable, not merely relocated.
 //
 // Ownership rule per function (see docs/campaign/incidence-parity/PLAN.md
-// IP.6 + Amendment 1 §A.3.2 + the IP.6 return receipt for the full
-// per-field argument): a function documented "VEVENT + VTODO" is
-// deliberately NOT called from journalcanonfields.cpp yet — VJOURNAL's
-// wiring for organizer/attendees/attachments/relatedTo is IP.10's job
-// (PLAN.md's IP.10 body: "VJOURNAL should get [these] essentially for
-// free" once this module exists) so it lands together with IP.10's
-// RECURRENCE-ID identity fix rather than piecemeal. comments/contacts are
-// the one deliberate exception — see the IP.6 receipt's judgment-call
-// section — wired to all three kinds here because RFC 5545 §3.6.3's
-// jourprop permits both on VJOURNAL and the fix is a mechanical one-line
-// call, not new field-specific code.
+// IP.6/IP.10 + Amendment 1 §A.3.2 + the IP.6/IP.10 return receipts for the
+// full per-field argument): a function documented below as "VEVENT + VTODO"
+// records that history — journalcanonfields.cpp did NOT call it before
+// IP.10 landed (2026-09-02) — but IP.10 verified the wiring was genuinely
+// free (no new field-specific logic needed) and now calls
+// promoteOrganizer/demoteOrganizer, promoteAttendees/demoteAttendees,
+// promoteAttachments/demoteAttachments, promoteRelatedTo/demoteRelatedTo and
+// promoteClassification/demoteClassification too, alongside IP.10's own new
+// journal-specific RECURRENCE-ID identity + verbatim-recurrence-lines code.
+// The per-function doc comments below are left as written (accurate
+// history, not stale — they describe why the function was built, not who
+// calls it today); journalcanonfields.cpp is the place to check for
+// current call sites. comments/contacts were the one exception landed
+// early, by IP.6 itself — see its receipt's judgment-call section — wired
+// to all three kinds because RFC 5545 §3.6.3's jourprop permits both on
+// VJOURNAL and the fix was a mechanical one-line call, not new
+// field-specific code.
 namespace Kalburator::Calendar {
 
 // ---------------------------------------------------------------------
@@ -58,9 +64,11 @@ QByteArray stripInjectedTimestamps(QByteArray icalBytes, const TimestampPresence
 
 // ---------------------------------------------------------------------
 // summary / description (commit 1: already identical across all three).
-// descriptionHtml is DELIBERATELY NOT here — VJOURNAL does not carry it
-// today and PLAN.md's IP.10 section explicitly owns that decision; see the
-// IP.6 receipt.
+// descriptionHtml is DELIBERATELY NOT here — it rides an inline three-line
+// X-ALT-DESC read/write in each of eventcanonfields.cpp/vtodocanonfields.cpp/
+// journalcanonfields.cpp (not extracted, per the IP.6 receipt's judgment
+// call: three near-identical one-liners were not worth a shared function).
+// IP.10 wired VJOURNAL's copy 2026-09-02.
 // ---------------------------------------------------------------------
 
 void promoteSummaryDescription(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);
@@ -104,13 +112,10 @@ void promoteSequence(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc)
 void demoteSequence(const QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);
 
 // ---------------------------------------------------------------------
-// classification (commit 2 — VTODO gains it per O83). VEVENT + VTODO
-// ONLY: VJOURNAL keeps its own separate, untouched implementation, whose
-// unconditional-insert "phantom key" bug (journalcanonfields.cpp) is
-// explicitly IP.10's to fix (PLAN.md's IP.10 body) — routing VJOURNAL
-// through this guarded implementation now would silently fix that bug as
-// a byproduct of this item, which is exactly the kind of undeclared scope
-// creep PLAN.md §1 prohibits.
+// classification (commit 2 — VTODO gains it per O83; IP.10 wired VJOURNAL
+// too, 2026-09-02, closing its unconditional-insert "phantom key" bug —
+// journalcanonfields.cpp used to insert `classification: "public"` even
+// when no CLASS property was present at all).
 // ---------------------------------------------------------------------
 
 void promoteClassification(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);
@@ -129,8 +134,8 @@ void demoteUrl(const QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc)
 
 // ---------------------------------------------------------------------
 // organizer / attendees / attachments (commit 2 — VTODO gains all three
-// per O83). VEVENT + VTODO ONLY — see the file-level comment on VJOURNAL's
-// deferred wiring (IP.10).
+// per O83; IP.10 wired VJOURNAL too, 2026-09-02 — see the file-level
+// comment).
 // ---------------------------------------------------------------------
 
 void promoteOrganizer(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);
@@ -144,8 +149,8 @@ void demoteAttachments(const QJsonObject& obj, const KCalendarCore::Incidence::P
 
 // ---------------------------------------------------------------------
 // relatedTo (commit 2 — VEVENT gains it per Amendment 1 §A.3.2; VTODO
-// already has it, extracted verbatim). VEVENT + VTODO ONLY — VJOURNAL's
-// wiring is IP.10's (see the file-level comment).
+// already has it, extracted verbatim; IP.10 wired VJOURNAL too, 2026-09-02
+// — see the file-level comment).
 // ---------------------------------------------------------------------
 
 void promoteRelatedTo(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);

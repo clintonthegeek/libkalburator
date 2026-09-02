@@ -83,12 +83,7 @@ reads through listings/delta/$expand.
 
 | Property | LossKind |
 |---|---|
-| attachments | Dropped |
-| attendees | Dropped |
-| organizer | Dropped |
-| recurrence | Dropped |
-| recurrenceId | Dropped |
-| relatedTo | Dropped |
+| recurrenceRange | Degraded |
 | requestStatus | Dropped |
 
 ### canon → ical (vtodo)

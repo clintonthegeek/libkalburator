@@ -4198,3 +4198,106 @@ possible short of hand-serializing a RESOURCES line the same way O86
 explicitly forbids for GEO. If a future kcalendarcore release fixes this,
 re-verify and consider removing the `Dropped` declarations, mirroring
 O86's own "re-verify against the installed kcalendarcore version" note.
+
+### O95 — OPEN — incidence-parity IP.10, 2026-09-02: KCalendarCore's `ICalFormat` VJOURNAL parser never populates `relatedTo()` from a source `RELATED-TO` line — upstream, promote-direction only
+
+Found while building IP.10's VJOURNAL wiring: `journalcanonfields.cpp` now
+calls the same `incidencecommonfields.cpp` `promoteRelatedTo()`/
+`demoteRelatedTo()` VEVENT/VTODO already use (guarded, correct against the
+object model — verified directly), but a source VJOURNAL carrying
+`RELATED-TO:parent-uid-1` never produces a `relatedTo` key in canon. The
+RFC 5545 fidelity gate (IP.8) caught it immediately: `RELATED-TO` still
+shows up in the "lost" property-name set for `vjournal` even after every
+other O87 property (ATTACH, ATTENDEE, EXDATE, ORGANIZER, RECURRENCE-ID,
+RRULE, +RDATE) stopped being lost.
+
+**Isolated with a probe against `KCalendarCore::ICalFormat` 6.29.0 alone,
+no libkalburator code involved** (three cases, one binary):
+
+1. Parse a source VJOURNAL carrying `RELATED-TO:parent-uid-1` and read
+   `incidence->relatedTo(RelTypeParent)` immediately after — **empty**,
+   even though the line is present and RFC-conformant.
+2. Parse the IDENTICAL `RELATED-TO:parent-uid-1` line on a VEVENT instead
+   — `relatedTo(RelTypeParent)` reads back `"parent-uid-1"` correctly. Same
+   parser entry point, same property name, different incidence subclass,
+   different outcome — VJOURNAL specifically is not wired into whatever
+   internal dispatch `ICalFormat`'s parser uses for RELATED-TO.
+3. Construct a fresh `Journal`, call
+   `setRelatedTo("parent-uid-2", RelTypeParent)`, then
+   `ICalFormat::toICalString()` — the output correctly contains
+   `RELATED-TO:parent-uid-2`. **The WRITE/demote direction works.** This is
+   why `canonToVjournalLoss()` (`src/calendar/journalcanonfields.cpp`,
+   scoped by its own doc comment to the canon→vjournal DEMOTE direction)
+   correctly does NOT declare `relatedTo` as a drop — declaring it there
+   would misdescribe which direction is actually broken.
+
+**Shape of the defect, for comparison with this campaign's other two
+upstream findings:** O86 (GEO) is corrupt-on-write with a correct parser;
+O94 (RESOURCES) is silently no-op in BOTH directions; this one is
+**asymmetric the other way** — read/promote broken, write/demote correct
+— a shape not seen elsewhere in the campaign so far.
+
+**Structural gap this exposes, not fixed here:** the shape graph has no
+promote-direction (`{calendar,ical}→{calendar,canon}`) loss-profile
+mechanism at all — `calendarstockshapes.cpp`'s `edges()` registers that
+edge with a hard-coded `LossProfile{}` (lossless) for every kind, not
+kind-scoped, unlike the demote direction IP.9 made kind-aware. This
+finding is the first concrete case where that assumption is false. Building
+a promote-direction loss-profile mechanism is out of IP.10's scope (a
+structural item, not a VJOURNAL-field item) — logged here, not designed.
+
+**Handled the same way O94 handled RESOURCES:** `promoteRelatedTo()`/
+`demoteRelatedTo()` stay wired in `journalcanonfields.cpp` (correct against
+the object model, exercises the WRITE direction losslessly for any
+canon-sourced `relatedTo` — e.g. from a non-ICalFormat-parse producer —
+and forward-compatible with a future kcalendarcore fix). The RFC 5545
+fidelity gate (`tests/calendar/tst_incidence_rfc5545_fidelity.cpp`)
+declares `RELATED-TO` in `vjournal`'s expected-lost set by hand, via a new
+`vjournalExpectedLostList()` helper documented inline with this finding —
+not derived from `canonToVjournalLoss()`, because that function structurally
+cannot express a promote-direction loss.
+
+**Not owned by any item yet.** A fix would need either (a) a kcalendarcore
+upstream patch, or (b) a promote-direction loss-profile mechanism in the
+shape graph plus a hand-parse fallback reading `RELATED-TO` out of
+`originalBytes` directly (the verbatim-recurrence-lines convention already
+does something structurally similar for RRULE/RDATE/EXDATE, so precedent
+exists) — a design decision bigger than one property, deliberately not
+made here per PLAN.md §1's "no fix while passing through" rule.
+
+### O96 — OPEN — incidence-parity IP.10, 2026-09-02: `recurrenceRange`'s W3-shaped Degraded loss is declared inconsistently across the three calendar-domain per-kind profiles
+
+Found while writing IP.10's `canonToVjournalLoss()`: VJOURNAL's demote now
+carries the exact same W3 safety rule VTODO uses (RECURRENCE-ID identity
+survives; `RANGE=THISANDFUTURE` is never re-emitted, unconditionally), so
+IP.10 declared `recurrenceRange: Degraded` in `canonToVjournalLoss()`
+honestly. Checking the two sibling profiles for the same declaration
+found neither has it:
+
+- `canonToVtodoIcalLoss()` (`src/calendar/icalcanonstages.cpp`, the
+  `{calendar,canon}→{calendar,ical}` VTODO leg) demotes through the exact
+  same `vtodocanonfields.cpp` code as the `{todo,canon}→{todo,ical-vtodo}`
+  leg, whose OWN profile (`vtodocanonstages.cpp`'s `canonToVtodoLoss()`)
+  DOES declare `recurrenceRange: Degraded` (`vtodocanonstages.cpp:118`).
+  `canonToVtodoIcalLoss()` declares only `geo`/`requestStatus`/`resources`
+  — the identical W3 degradation on the identical demote code is
+  undeclared on this one leg.
+- `canonToIcalLoss()` (VEVENT) has no `recurrenceRange` entry either, but
+  for a different, already-tracked reason: VEVENT's demote still carries
+  the O82 bug (unconditional `RANGE=THISANDFUTURE` re-emission, not yet a
+  safe degradation at all) — IP.7's to fix, not a declaration gap.
+
+So today, `recurrenceRange` is declared `Degraded` in exactly one of three
+kind-scoped calendar-domain profiles (vjournal, new this item) despite two
+of the three kinds (vtodo, vjournal) sharing the identical W3 safety
+behavior on their demote path. Low severity — `recurrenceRange` is a
+read-side-only canon fact (never re-derived, never round-tripped back out
+per W3), so an under-declared profile here does not cause data loss, only
+an incomplete warning to a caller inspecting `composedLoss()`.
+
+**Not owned by any item yet.** Straightforward one-line fix
+(`canonToVtodoIcalLoss()` gains the same `p.affected.insert(...)` line
+`canonToVjournalLoss()` now has) whenever an item is next touching that
+function — logged rather than fixed here per PLAN.md §1 (IP.10 was not
+touching `icalcanonstages.cpp`'s VTODO profile for any other reason, and
+fixing it "while passing through" is exactly what that rule prohibits).
