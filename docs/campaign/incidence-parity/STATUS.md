@@ -5,11 +5,20 @@ item — it carries the execution rules, the per-item acceptance criteria,
 and the scope boundary). This file is the **live execution tracker**.
 
 **Opened:** 2026-08-29. **Baseline:** `main` @ `fc1ae61`, 214 slots
-(210 green + the 4 known environmental Radicale/KDAV slots).
+(210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
+at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-01 (IP.2 DONE — O78 RESOLVED; **O84 filed**, a
-worse bug found in passing and deliberately not fixed; IP.3 is next and
-inherits it).
+**Last updated:** 2026-09-02 — **pre-flight audit landed; PLAN.md
+Amendment 1 adopted.** Six new findings (**O85–O90**), five new items
+(**IP.8–IP.12**), and a **revised execution order**: IP.8 runs next, not
+IP.3.
+
+> **New agent, start here.** Read in this order: (1) this file's *Where we
+> stand* table for your item, (2) `PLAN.md` **§Amendment 1 first**, then the
+> body item it points to, (3) `2026-09-02-preflight-audit.md` for the
+> evidence, (4) `probes/run.sh` if you need to see it yourself. Then your
+> predecessor's receipt. Do not start an item that is not the next
+> un-done row.
 
 > Living document. Update the item row **and** the session log in the same
 > commit that changes the item's state (invariant 7). Never leave a row
@@ -17,15 +26,25 @@ inherits it).
 
 ## Where we stand
 
-| Item | Work | Closes | State |
-|---|---|---|---|
-| IP.1 | Catalogue/emitter coverage gate — replaces the hand-listed `catalogueIncludesTodoAndJournalFields()` slot with a computed subset gate over every `(domain, kind)` pair | *proves* O78 | **DONE 2026-08-29** — lands RED on `(calendar, vtodo)` naming `providerExtrasDigest`/`seriesSplitOf`/`completionAnchor`, `QEXPECT_FAIL("IP.2 / O78: ...")`; green on all other pairs incl. both contacts legs with generic carrier round-trips; tests only, no `src/` change. Receipt: `2026-08-29-ip1-return-receipt.md`. |
-| IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **DONE 2026-09-01** — 3 entries added matching `todocanonproperties.cpp` exactly; IP.1's `QEXPECT_FAIL` removed (gate now 14/14 PASS, 0 XFAIL); 3 new slots in `tests/shape/tst_canonjson_diff_merge.cpp` built on the **real** `calendarCanonPropertyIds()`, verified red with the fix reverted. Matrix byte-identical. Receipt: `2026-09-01-ip2-return-receipt.md`. |
-| IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits; catalogues become unions | O78 *class*, **+O84** | **NEXT** — gated on IP.2 (now satisfied). Gates IP.4–IP.7. **Inherits two items from the IP.2 receipt:** the O84 fix (with the whose-kind-wins decision written down) and the `allDay` orphan check that IP.1 and IP.2 both deferred here. |
-| IP.4 | Shared VALARM shape module (`alarmToJson`/`alarmFromJson`/`describeAlarmRow`) + VEVENT promote **and** demote **and** both vendor event legs, one commit | **O79** | NOT STARTED |
-| IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` + catalogue + declare, across calendar/journal/contacts; retrofit the 3 todo sites onto it | **O80** | NOT STARTED |
-| IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit | **O83** | NOT STARTED |
-| IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | **O81, O82** | NOT STARTED |
+| Order | Item | Work | Closes | State |
+|---|---|---|---|---|
+| — | IP.1 | Catalogue/emitter coverage gate — computed subset gate over every `(domain, kind)` pair | *proves* O78 | **DONE 2026-08-29** — landed RED on `(calendar, vtodo)` with `QEXPECT_FAIL`; tests only. Receipt: `2026-08-29-ip1-return-receipt.md`. |
+| — | IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **DONE 2026-09-01** — gate green, 0 XFAIL; 4 new merger slots; matrix byte-identical. Receipt: `2026-09-01-ip2-return-receipt.md`. |
+| — | — | **Pre-flight audit** — deliberate code-first sweep of the whole incidence surface | *files* O85–O90 | **DONE 2026-09-02** — evidence: `2026-09-02-preflight-audit.md`; re-runnable probes: `probes/run.sh`. PLAN.md **Amendment 1** adopted. No `src/` change. |
+| **1** | **IP.8** | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83 | **NEXT** — tests only, lands RED. The measurement nothing in the suite makes today. |
+| 2 | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | NOT STARTED — inherits the **O84 fix** (with the whose-kind-wins decision written down) and the `allDay` orphan check. |
+| 3 | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
+| 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1 (the `enabled` flag). |
+| 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
+| 6 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit | **O83**, **+O86** | NOT STARTED — see Amendment §A.3.2 (the GEO decision, and VEVENT's `RELATED-TO` drop). |
+| 7 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED |
+| 8 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b blocked** on PlanStan Q2; IP.7a may land alone. |
+| 9 | **IP.11** | **VTODO representation unification** — converge or route | **O89** | NOT STARTED — **blocked on PlanStan Q1.** |
+| 10 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
+
+**Consumer dependency:** `docs/2026-09-02-incidence-parity-planstan-report.md`
+carries two blocking questions (Q1 → IP.11, Q2 → IP.7b). Everything else
+proceeds without PlanStan. Check for an answer before reaching item 8.
 
 ## Why this campaign exists
 
@@ -165,10 +184,64 @@ produced this state; three copies drift faster than two.
   ctest stays green and the fix will XPASS. The open question the fix must
   answer — whose kind wins when source and target disagree — is why this
   did not belong to IP.2.
-- **NEXT:** IP.3 — contributed catalogues (each canon-fields module exports
-  the `PropertyId` set it emits; `makeCalendarCanonCatalogue()` /
-  `makeTodoCanonCatalogue()` become unions of contributors + vendor-only
-  keys). Plus the two inherited items above: **O84** and the `allDay`
-  orphan check. Demonstrate structural non-drift as PLAN.md IP.3 requires
-  (add a throwaway key to `vtodocanonfields`, confirm both catalogues grow,
-  revert) and report it in the receipt.
+- **2026-09-02 — PRE-FLIGHT AUDIT. No `src/` change. O85–O90 filed;
+  PLAN.md Amendment 1 adopted; execution order revised.** Commissioned
+  because the campaign kept finding defects sideways (O84 surfaced while
+  building IP.2's test, not by looking for it). A deliberate code-first
+  sweep of the whole incidence surface, measured with two probe programs
+  now kept in `probes/` and re-runnable via `probes/run.sh`.
+
+  **The finding that reframes the campaign:** `_canon.kind` is written in
+  exactly one place (`icalcanonstages.cpp:65`) and read in exactly one
+  place (`:81`). Grep-confirmed — nothing else in the library knows it
+  exists, yet it alone decides which component a canon record demotes as.
+  O78, O83, O84, O87 and O88 are all symptoms of that single fact.
+
+  **Measured round-trip loss** (maximal RFC 5545 component → canon → iCal),
+  none of it declared in any loss profile:
+  VEVENT loses `GEO`, `RELATED-TO`; VTODO loses `ATTACH`, `ATTENDEE`,
+  `CLASS`, `COLOR`, `ORGANIZER`, `SEQUENCE`, `URL` **and corrupts `GEO`**
+  (so VTODO promote→demote→promote is **not a fixpoint**); VJOURNAL loses
+  `ATTACH`, `ATTENDEE`, `EXDATE`, `ORGANIZER`, `RECURRENCE-ID`,
+  `RELATED-TO`, `RRULE` — the `RECURRENCE-ID` drop collapsing a detached
+  instance onto its master, which is identity corruption, not field loss.
+
+  **Six findings filed:** O85 (every alarm round-trips back *disabled*, all
+  four sites, VTODO included — so W5 fixed the trigger form and left the
+  symptom), O86 (kcalendarcore 6.29.0 serializes `GEO` corrupt — upstream,
+  reproduces with no libkalburator in the picture), O87 (VJOURNAL's
+  undeclared drops), O88 (one edge-level loss profile serves three kinds;
+  `canonToVjournalLoss()` is dead code with a false comment), O89 (VTODO's
+  canonical representation depends on transport metadata — the non-DAV
+  backends never demux), O90 (demote is not a pure function of canon:
+  heap-derived attendee `X-UID`).
+
+  **Why they kept surfacing sideways, and the fix:** IP.1's gate asserts
+  *emitted ⊆ catalogued* — agreement between two of **our own** artifacts.
+  Every defect above is a disagreement between our emitter and **RFC
+  5545**, and nothing measures that axis. Hence **IP.8**, which now runs
+  next, before IP.3.
+
+  **Two false positives recorded, not filed** (both cost time; both are
+  pinned in `probes/README.md` so they cost nobody else any): libical drops
+  the whole `ATTENDEE` property when the mail domain is single-label
+  (`a@x`), and a per-line iCal parse misreports `ATTENDEE` as lost because
+  KCalendarCore folds that line before its colon. Attendees round-trip
+  correctly.
+
+  Suite re-confirmed at `40854f3`: 214 slots, 210 green, the same 4
+  environmental Radicale/KDAV reds — diagnosis re-verified from their
+  failure text (*"the requested timeout (15000 ms) was too short, 29700 ms
+  would have been sufficient"*), not from their names.
+
+  Consumer report issued:
+  `docs/2026-09-02-incidence-parity-planstan-report.md`, carrying two
+  blocking questions (Q1 → IP.11, Q2 → IP.7b).
+
+- **NEXT:** **IP.8** — the RFC-5545 round-trip fidelity gate. Tests only;
+  lands RED, one `QEXPECT_FAIL` per known defect, each naming the item that
+  will close it. Read `PLAN.md` §A.4 IP.8 for the acceptance criteria, and
+  `2026-09-02-preflight-audit.md` §2.1 for the expected red list. Build the
+  fixtures from **RFC 5545**, not from what the emitters happen to handle —
+  a fixture derived from our own capabilities makes the gate vacuous, which
+  is the exact failure mode IP.8 exists to end.

@@ -111,54 +111,81 @@ left open on the VEVENT/VJOURNAL side.
 
 ## Incidence-parity campaign — OPENED & ACTIVE 2026-08-29
 
-**Read `docs/campaign/incidence-parity/PLAN.md` before touching any canon
-catalogue, canon-fields module, or alarm code.** Live tracker + recon
-evidence: `docs/campaign/incidence-parity/STATUS.md`. Items **IP.1–IP.7
-run strictly in order, one agent each**; every item writes a return
-receipt in that directory and updates STATUS in its landing commit.
-Corrections to the plan go in receipts — never in a new analysis doc.
+**Read `docs/campaign/incidence-parity/STATUS.md` first, then `PLAN.md`
+§Amendment 1, then the body item it points at.** Items run strictly in the
+order STATUS's table gives (which is NOT numeric since 2026-09-02), one
+agent each; every item writes a return receipt in that directory and
+updates STATUS in its landing commit. Corrections to the plan go in
+receipts — never in a new analysis doc.
 
-**The three facts that define the work** (all verified @ `fc1ae61`):
+**Pre-flight audit landed 2026-09-02** — a deliberate code-first sweep,
+commissioned because the campaign kept finding defects sideways. Evidence:
+`docs/campaign/incidence-parity/2026-09-02-preflight-audit.md`. Re-runnable
+probes: `docs/campaign/incidence-parity/probes/run.sh` (two programs, one
+linking only KCalendarCore so upstream defects stay separable from ours).
+Consumer report: `docs/2026-09-02-incidence-parity-planstan-report.md`.
 
-1. **The calendar domain shares the todo emitter** —
-   `src/calendar/icalcanonstages.cpp:56,:83` call
-   `Kalburator::Todo::todoFieldsToCanon()` / `canonObjectToVtodoBytes()`.
-   VEVENT/VTODO/VJOURNAL all ride `{calendar,canon}`, kind-dispatched;
-   VTODO *additionally* rides `{todo,canon}` from Google Tasks / MS To-Do.
-   Never reason about calendar and todo as independent files for VTODO.
-2. **A canon catalogue and its emitters are two independent sources of
-   truth with nothing enforcing agreement** — W3/W4/O74's keys are emitted
-   into `{calendar,canon}` and declared only in `todocanonproperties.cpp`
-   (**O78**). `CanonJsonDiffer` can't see them and `CanonJsonMerger`
-   (`canonjsonmerger.cpp:29`, `out = t`) silently takes the target's value.
-3. **VTODO is the poorest-covered incidence kind, poorer than VJOURNAL** —
-   no SEQUENCE/CLASS/URL/ORGANIZER/ATTENDEE/ATTACH/COLOR, and none of it
-   declared in a loss profile (**O83**).
+**The one fact that explains most of the campaign:** `_canon.kind` is
+written in exactly one place (`src/calendar/icalcanonstages.cpp:65`) and
+read in exactly one place (`:81`). Nothing else in the library knows it
+exists — not the catalogue, differ, merger, loss profiles, engine or
+baseline store — yet it alone decides which component a canon record
+demotes as. O78, O83, O84, O87 and O88 are all symptoms of it.
+
+**Measured round-trip loss** (maximal RFC 5545 component → canon → iCal),
+none of it declared in any loss profile: VEVENT loses `GEO`, `RELATED-TO`;
+VTODO loses `ATTACH`, `ATTENDEE`, `CLASS`, `COLOR`, `ORGANIZER`,
+`SEQUENCE`, `URL` **and corrupts `GEO`** (VTODO promote→demote→promote is
+NOT a fixpoint); VJOURNAL loses `ATTACH`, `ATTENDEE`, `EXDATE`,
+`ORGANIZER`, `RECURRENCE-ID`, `RELATED-TO`, `RRULE` — the `RECURRENCE-ID`
+drop collapsing a detached instance onto its master (identity corruption,
+not field loss).
+
+**Also structural:** the calendar domain shares the todo emitter
+(`icalcanonstages.cpp:56,:83` call `Todo::todoFieldsToCanon()` /
+`canonObjectToVtodoBytes()`) — never reason about calendar and todo as
+independent files for VTODO. And a VTODO's canonical representation depends
+on **transport metadata**: the DAV provider demuxes to `{todo,canon}` only
+when the server advertises VTODO, and `LocalBackend`/`DecSyncBackend`/
+`OrgBackend`/`AkonadiBackend` never demux at all (O89).
 
 **Progress:** IP.1 DONE 2026-08-29 (coverage gate, landed RED by design).
-IP.2 DONE 2026-09-01 — **O78 RESOLVED** (the three keys catalogued in
-`calendarcanonproperties.cpp`; the gate is green with no XFAIL) and
-**O84 FILED**: `CanonJsonMerger::merge()` re-stamps with the 3-arg
-`stampEnvelope`, which builds a fresh `_canon` and therefore **erases**
-`_canon.kind` — so a merged `{calendar,canon}` VTODO/VJOURNAL demotes as a
-**VEVENT** (verified end-to-end, calendar domain only). Pinned XFAIL, not
-fixed, per the "fix while passing through" prohibition; **IP.3 inherits
-it**, along with the `allDay` catalogue-orphan check. **IP.3 is next.**
+IP.2 DONE 2026-09-01 — **O78 RESOLVED**, **O84 filed**. Pre-flight audit
+DONE 2026-09-02 — **O85–O90 filed**, PLAN Amendment 1 adopted, execution
+order revised. **IP.8 is next** (RFC-5545 round-trip fidelity gate, tests
+only, lands RED).
 
-**Findings owned:** O78 (catalogue drift + merger drop — **RESOLVED** by
-IP.2), O79 (VEVENT alarm trigger-form corruption — **four** call sites,
-incl. two vendor legs that coerce an absolute alarm to
-`reminderMinutesBeforeStart: 0`), O80 (providerExtrasDigest absent on
-calendar/contacts — O74's own predicted follow-through), O81 (W6.2 twin),
-O82 (RANGE=THISANDFUTURE twin), O83 (undeclared VTODO field drops), O84
-(merger erases the incidence kind).
+**Findings owned:** O78 (RESOLVED by IP.2), O79 (VEVENT alarm trigger-form
+corruption, four call sites), O80 (providerExtrasDigest absent on
+calendar/contacts), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE twin), O83
+(undeclared VTODO drops), O84 (merger erases the incidence kind), O85
+(every alarm round-trips back DISABLED — all four sites, VTODO included),
+O86 (kcalendarcore 6.29.0 serializes `GEO` corrupt — **upstream**), O87
+(VJOURNAL undeclared drops incl. RECURRENCE-ID aliasing), O88 (one
+edge-level loss profile serves three kinds; `canonToVjournalLoss()` is dead
+code), O89 (VTODO's dual representation), O90 (demote not a pure function
+of canon — heap-derived attendee `X-UID`).
 
-**Two prohibitions, binding:** never "fix while passing through" (log to
+**Three prohibitions, binding:** never "fix while passing through" (log to
 FINDINGS, let the owning item take it); never hand-maintain a key list —
 IP.1/IP.3 exist to delete them, and
-`tests/calendar/tst_calendar_kind_dispatch.cpp:176-186` is the tombstone
-showing why (four hardcoded keys, never updated, green through the whole
-drift).
+`tests/calendar/tst_calendar_kind_dispatch.cpp`'s removed
+`catalogueIncludesTodoAndJournalFields()` is the tombstone showing why
+(four hardcoded keys, never updated, green through the whole drift); never
+build a test fixture from what our emitters happen to handle — build it
+from **RFC 5545**, or the gate is vacuous in exactly the way that let all
+of this accumulate.
+
+**Two probe traps, both cost real time — see `probes/README.md`:** libical
+drops the entire `ATTENDEE` property when the mail domain is single-label
+(`a@x` — use `example.com`), and iCal must be **unfolded per RFC 5545 §3.1
+before parsing** or `ATTENDEE` is misreported as lost (KCalendarCore folds
+that line before its colon). Attendees round-trip correctly; two separate
+audit revisions said otherwise and both were wrong.
+
+**Blocked on PlanStan:** IP.11 (Q1 — converge vs route the two VTODO
+representations) and IP.7b (Q2 — the VEVENT DTSTART/DTEND coercion rule).
+Everything else proceeds without them.
 
 **Scope:** the catalogue-integrity work covers exactly the three
 `CanonJsonDiffer` domains — calendar, todo, contacts. `note`
@@ -168,20 +195,21 @@ drift).
 **Tooling traps made house rules:** O60 (QJsonValue default is Null-typed,
 not Undefined — never signal absence with `return {}` + isUndefined();
 offset-less wall time must be constructed directly IN the target zone),
-O62 (async continuations must own heap-held state), O63 (above), O64
-(crossing-gate coverage mandatory for every new vendor pair/domain edge),
-O65 (events never index participant emails), O59 tooling notes (moc ×
-terminated raw string literals = silent no-output; AUTOMOC timestamp
-staleness).
+O62 (async continuations must own heap-held state), O63 (grep edge-count
+pins in the same commit that grows an edges() list; Graph type is
+dateTimeTimeZone but zone key is plain timeZone), O64 (crossing-gate
+coverage mandatory for every new vendor pair/domain edge), O65 (events
+never index participant emails), O59 tooling notes (moc × terminated raw
+string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **214 tests** as of `fc1ae61` (the "195" figure here was
-stale from 2026-08-25 and predates VP.b–VP.f's ~50 new slots). 4 Radicale/backend
-slots fail (`tst_backend_signals`, `tst_backend_thread_relocation`,
-`tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — verified
-PRE-EXISTING environmental (reproduce at pre-session `e1846a3`; KDAV
-30s-transfer-timeout pattern vs the local Radicale). All other slots
-green including both fixture-promotion suites and the matrix byte pin.
-Re-check when local Radicale state is reset.
+Suite baseline: **214 tests**, 210 green, re-confirmed at `40854f3`
+(2026-09-02). The 4 reds (`tst_backend_signals`,
+`tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
+`tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by
+their failure TEXT (KDAV 30s-transfer-timeout vs the local Radicale), not
+by their names. Any other red blocks an item. Note the suite is green over
+every defect this campaign owns; test count is not the gap, the missing
+axis is.
 
 ## Closed campaigns & resolved followups (one-line index; details in docs/campaign/ + git tags)
 

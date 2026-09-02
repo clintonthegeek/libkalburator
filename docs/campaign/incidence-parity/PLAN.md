@@ -515,3 +515,376 @@ The campaign is done when:
 Condition 3 is the one that matters to consumers: after this campaign a
 consumer can read the matrix and know exactly what each incidence kind
 carries on each leg. Today it cannot, because the drops are undeclared.
+
+---
+---
+
+# Amendment 1 — 2026-09-02
+
+**Adopted after** the pre-flight audit
+(`2026-09-02-preflight-audit.md`), which was commissioned because this
+campaign kept discovering defects sideways: O84 was found while building
+IP.2's test, not by looking. The audit looked once, deliberately, before
+IP.3 starts, and found six more (**O85–O90**).
+
+**This amendment is binding and supersedes §1's ordering rule and §3's
+success condition.** Everything else in the body above stands unchanged —
+IP.3–IP.7's work statements, files and acceptance criteria are still
+correct as written, except where a §A.3 amendment says otherwise. Read the
+body first; read this second; do what this says when they differ.
+
+Evidence for every claim below is re-runnable: `probes/run.sh`.
+
+---
+
+## A.1 What the audit changed about the diagnosis
+
+The body's §0 named three structural facts. The audit adds a fourth that
+subsumes two of them:
+
+> **`_canon.kind` is written in one place and read in one place.**
+> `src/calendar/icalcanonstages.cpp:65` writes it; `:81` reads it. Nothing
+> else in the library knows it exists — not the catalogue, not
+> `CanonJsonDiffer`, not `CanonJsonMerger`, not the loss profiles, not the
+> engine, not the baseline store. Grep-confirmed: exactly two call sites
+> outside `canonenvelope.cpp`.
+
+Yet it alone decides whether a canon record demotes as a VEVENT, a VTODO or
+a VJOURNAL. O78, O83, O84, O87 and O88 are all symptoms of that one fact.
+The campaign's remedy — structural non-drift, not a copy pass — remains
+right; it simply was not yet aimed at `kind`.
+
+**And the reason these keep surfacing sideways:** IP.1's gate asserts
+*emitted ⊆ catalogued* — agreement between two of **our own** artifacts.
+Every defect the audit found is a disagreement between our emitter and
+**RFC 5545**. Nothing measures that axis. IP.8 is that measurement, and it
+is now the campaign's highest-leverage item.
+
+## A.2 Revised execution order — binding
+
+Items still run **strictly in order, one agent each**, but the order is now
+the one below rather than numeric. New items are numbered IP.8+ so existing
+receipts, FINDINGS entries and STATUS rows keep their references.
+
+| # | Item | Closes | Why here |
+|---|---|---|---|
+| 1 | **IP.8** — RFC-5545 round-trip fidelity gate | *proves* O85, O86, O87; re-pins O79, O83 | Tests only. Lands RED. Same doctrine as IP.1→IP.2: pin the bugs with red slots before fixing any. Gates everything. |
+| 2 | **IP.3** — contributed catalogues **+ O84 fix + `allDay` orphan** | O78 *class*, **O84** | Unchanged from the body. Now gated on IP.8. |
+| 3 | **IP.9** — kind-scoped loss profiles | **O88** | Must precede every item whose acceptance says "declare the loss honestly" — today there is nowhere truthful to put such a declaration. |
+| 4 | **IP.4** — shared VALARM module **+ O85** | **O79, O85** | Unchanged plus §A.3.1. |
+| 5 | **IP.5** — `providerExtrasDigest` as envelope service | **O80** | Unchanged. |
+| 6 | **IP.6** — `incidencecommonfields` **+ O86 decision** | **O83, O86** | Unchanged plus §A.3.2. |
+| 7 | **IP.10** — VJOURNAL parity | **O87** | After IP.6, so it inherits the extracted common module rather than growing a fourth copy. |
+| 8 | **IP.7** — VEVENT corrections | O81, O82 | Unchanged plus §A.3.3. |
+| 9 | **IP.11** — VTODO representation unification | **O89** | Last of the substantive items: the largest contract change, and the only one needing consumer ratification. |
+| 10 | **IP.12** — demote purity | **O90** | Trivial; last because it is trivial. |
+
+The two prohibitions in §1 (**no fixing while passing through**, **no
+hand-maintained key lists**) remain binding on every item, as do the
+per-item obligations (STATUS update, return receipt, matrix regeneration,
+edge-count grep, crossing-gate coverage, full-suite report).
+
+## A.3 Amendments to existing items
+
+### A.3.1 — IP.4 also closes O85
+
+Add to IP.4's work and acceptance: **promote must record
+`alarm->enabled()` and demote must honour it.** All four sites construct
+`new Alarm(...)`, whose `enabled()` defaults to false, and none calls
+`setEnabled(true)`, so *every* alarm round-tripped through canon comes back
+disabled and serializes `X-KDE-KCALCORE-ENABLED:FALSE` — on the VTODO leg
+too, which W5 otherwise corrected.
+
+Decide and record: whether `enabled` becomes a row key (`"enabled": bool`,
+absent ⇒ true, keeping pre-existing rows valid the way W5's additive keys
+did) or whether demote simply always calls `setEnabled(true)` because a
+disabled alarm has no iCal representation to begin with. The plan's
+recommendation is **the latter** — RFC 5545 has no "disabled alarm"; the
+KDE X-prop is a KCalendarCore-local concept — but the round trip must then
+be shown not to lose a deliberately-disabled KOrganizer alarm, or the
+receipt must state that it does and why that is acceptable.
+
+Acceptance gains: a slot proving an enabled alarm survives promote→demote
+enabled, on **both** the VEVENT and VTODO legs.
+
+### A.3.2 — IP.6 also owns the O86 GEO decision
+
+`GEO` is corrupt at the KCalendarCore layer (O86, upstream, reproduces with
+no libkalburator in the picture). The VTODO leg currently promotes and
+demotes it, so we write malformed `GEO` lines to real servers and VTODO
+promote→demote→promote is **not a fixpoint**. The VEVENT leg never promotes
+`geo` despite the catalogue declaring it.
+
+IP.6 must choose **one** and write the justification into its receipt:
+
+- **(a)** hand-serialize the `GEO` line after `toICalString`, in the style
+  of the existing `stripICalPropertyLine` post-processing, and promote it
+  on all three kinds; or
+- **(b)** stop emitting `geo` entirely and declare it `Dropped` on the
+  affected profiles.
+
+Do **not** "fix" it by round-tripping through the broken accessor pair, and
+re-verify against the installed kcalendarcore version first — an upgrade
+may have retired it. Whichever is chosen, the VEVENT/VTODO asymmetry must
+end: today one drops `geo` and the other corrupts it.
+
+Also add to IP.6's scope: **VEVENT drops `RELATED-TO`** (measured; the
+calendar catalogue declares `relatedTo`, `eventcanonfields.cpp` never emits
+it). It is a common incidence field and belongs in the extraction.
+
+### A.3.3 — IP.7b's contract needs consumer ratification
+
+The body already says to probe first and "stop and ask rather than
+guessing" on the VEVENT `DTSTART`/`DTEND` coercion rule. Amendment: the
+asking is **already in flight** —
+`docs/2026-09-02-incidence-parity-planstan-report.md` puts it to PlanStan
+as Question 2, since PlanStan set the W6.2 precedent for VTODO. IP.7b must
+not land before that answer arrives. If it has not arrived when IP.7 comes
+up, IP.7a lands alone and IP.7b waits.
+
+---
+
+## A.4 New items
+
+### IP.8 — RFC-5545 round-trip fidelity gate
+
+**Proves:** O85, O86, O87. **Re-pins:** O79, O83. **Gates:** everything.
+
+The campaign's central missing measurement. IP.1 asks "does the catalogue
+know what the emitter emits?" This asks **"does the emitter honour the
+standard?"** — and it is the question every defect in the audit answers
+badly.
+
+**Files:** `tests/calendar/` (new slot file, or extend
+`tst_calendar_kind_dispatch.cpp` — argue the placement in the receipt);
+fixtures under `tests/calendar/fixtures/`.
+
+**Work**
+
+For each of `vevent`, `vtodo`, `vjournal`:
+
+1. Take a **maximal RFC 5545-conformant** fixture for that component —
+   every property the RFC permits on it, not every property our emitter
+   happens to handle. This direction matters: a fixture built from the
+   emitter's capabilities makes the gate vacuous in exactly the way §A.1
+   describes. `probes/incidence-audit-probe.cpp`'s fixtures are a starting
+   point, **not** a finish line; they were built to demonstrate known
+   defects, not to be exhaustive.
+2. Promote → demote. Compute the property-name set of source and output,
+   **unfolding per RFC 5545 §3.1 first** (see `probes/README.md` trap 2 —
+   a per-line parse silently misreports `ATTENDEE`).
+3. Assert `lost == expectedLoss[kind]`, where `expectedLoss` is a declared
+   allow-list of intentional drops **that must equal the kind's loss
+   profile** once IP.9 lands. Until then, assert against a literal list and
+   leave a `TODO(IP.9)` naming the coupling.
+4. Assert promote→demote→promote is a **fixpoint** (canon bytes equal).
+   VTODO fails this today via O86.
+5. Report every unexpected drop **by name**.
+
+Add a VALARM sub-gate over the four trigger forms (start-relative,
+END-relative, absolute, REPEAT/DURATION) and the `enabled` flag, for both
+VEVENT and VTODO.
+
+**Expected result: RED** on `(calendar, vtodo)` — 7 drops + GEO + fixpoint,
+`(calendar, vjournal)` — 7 drops, `(calendar, vevent)` — GEO, `RELATED-TO`,
+and the VALARM sub-gate on both legs. Land each red assertion with a
+`QEXPECT_FAIL` naming the item that will close it (IP.4, IP.6, IP.9,
+IP.10). **If any comes up green, the fixture is not maximal — fix the
+fixture, not the assertion.**
+
+**Acceptance**
+
+- Red for exactly the reasons above, green everywhere else.
+- Each `QEXPECT_FAIL` names its closing item and its O-number.
+- The allow-list is **declared data, not scattered literals**, and is the
+  thing IP.9 later wires to the real loss profiles.
+- Nothing outside `tests/` changes. Suite green (XFAILs are not ctest
+  failures).
+
+### IP.9 — Kind-scoped loss profiles
+
+**Closes:** O88. **Gates:** IP.4, IP.6, IP.10 (every item that must declare
+a loss).
+
+**The problem.** The loss-profile system's unit is the **edge**; the
+calendar `ical` encoding is a **union of three schemas**. One
+`canon → ical` edge carries `canonToIcalLoss()`, which is entirely
+event-shaped, so `materializedLoss()` (`syncengine.cpp:4635`, `:4675`)
+warns a VTODO's user about `guestsCanModify` and says nothing about the
+`ATTENDEE` it just lost. Meanwhile `canonToVjournalLoss()` is **dead code**
+with a false comment.
+
+**Work**
+
+Pick one and justify it in the receipt:
+
+- **(a)** Split the edge per kind — three `canon → ical` edges discriminated
+  by `_canon.kind`. Cleanest conceptually; requires the transformation
+  registry to key on more than `(shape, shape)`, which is a real change to
+  `TransformationRegistry` and touches every domain. Check whether the
+  registry can express it at all before choosing this.
+- **(b)** Give `LossProfile` a kind dimension, so one edge carries three
+  profiles and `materializedLoss()` selects by the record's kind. Smaller
+  blast radius; keeps the graph shape. **The plan's recommendation.**
+- **(c)** Make the profile a function of the record rather than a constant
+  of the edge. Most flexible, least declarative, hardest to render into the
+  convergence matrix.
+
+Whichever wins: `canonToVjournalLoss()` is either wired or deleted — it
+must not survive this item as dead code. And `matrixgen` must render the
+per-kind profiles, because the matrix's whole purpose is letting a consumer
+read what each leg carries; today it reports the calendar `ical` leg as
+though every record on it were a VEVENT.
+
+**Acceptance**
+
+- A VTODO demote through `{calendar,ical}` warns about VTODO drops and not
+  about event-only fields. Pin it.
+- Same for VJOURNAL.
+- `canonToVjournalLoss()` wired or gone; grep proves no dead loss function
+  remains.
+- Matrix regenerated and now **kind-aware**; byte-pin updated deliberately,
+  with the diff explained in the receipt (this is the one item expected to
+  change the matrix substantially).
+- IP.8's allow-list is wired to the real profiles, closing its
+  `TODO(IP.9)`.
+
+### IP.10 — VJOURNAL parity
+
+**Closes:** O87.
+
+VJOURNAL is the least-attended kind and the audit found it the worst:
+seven undeclared drops, one of which is an identity defect.
+
+**Files:** `src/calendar/journalcanonfields.{h,cpp}`, plus the
+`incidencecommonfields` module IP.6 will have created.
+
+**Work**
+
+Once IP.6 has extracted the common incidence fields, VJOURNAL should get
+`organizer`, `attendees`, `attachments`, `relatedTo` essentially for free —
+verify that and say so rather than re-adding them by hand. Then close what
+remains, which is journal-specific:
+
+- **`RECURRENCE-ID` — do this first and separately.** Dropping it makes a
+  detached journal instance and its master indistinguishable in canon: two
+  records collapse onto one uid. This is identity corruption, not field
+  loss. Model the fix on VTODO's W1 composite exception identity
+  (`recurrenceId` + `recurrenceRange`), which already solved exactly this
+  problem for tasks — reuse its shape, do not invent a second one.
+- **`RRULE` / `EXDATE`** — VJOURNAL takes recurrence per RFC 5545 and the
+  emitter has no recurrence handling at all, so a recurring journal is
+  silently flattened. Reuse the verbatim-RFC5545-lines convention
+  (invariant 3) the other two kinds already use.
+- **`descriptionHtml`** — check whether the X-ALT-DESC carrier the other
+  kinds use applies; if not, say why in the receipt.
+
+**Also fix the phantom key:** `journalcanonfields.cpp:91` inserts
+`classification` unconditionally, so a VJOURNAL with no `CLASS` gains
+`classification: "public"` in canon. Harmless today, but it is a
+catalogue/emitter asymmetry of exactly the kind this campaign exists to
+remove; guard it like the sibling fields or justify the difference.
+
+**Acceptance**
+
+- IP.8's `(calendar, vjournal)` gate goes green, `QEXPECT_FAIL` removed.
+- A slot proving a detached VJOURNAL instance and its master remain
+  distinct through a full promote→demote→promote.
+- Recurrence round-trip slot.
+- Losses declared through IP.9's mechanism.
+- VEVENT and VTODO slots unchanged and green.
+
+### IP.11 — VTODO representation unification
+
+**Closes:** O89. **Blocked on:** PlanStan's answer to Question 1 of
+`docs/2026-09-02-incidence-parity-planstan-report.md`.
+
+**The problem.** A VTODO gets the rich `{todo,canon}` representation or the
+impoverished `{calendar,canon}` one depending on transport metadata:
+`MultiProtocolDavProvider` demuxes only when a collection advertises
+`VTODO` (`multiprotocoldavprovider.cpp:214-226`), and `LocalBackend`,
+`DecSyncBackend`, `OrgBackend` and `AkonadiBackend` never demux at all
+(`nativeShapes()` returns `{calendar, ical}` only). Same task, different
+catalogue, differ, merger and loss profile, decided by where it is stored.
+
+**This item does not choose the answer.** It implements the ratified one.
+The two candidates put to PlanStan:
+
+- **Converge** — bring `{calendar,canon}` VTODO to full parity, so the two
+  representations are equivalent and it stops mattering which you get.
+  IP.3/IP.6/IP.9 do most of this already; IP.11 would then be a *proof*
+  item (a crossing gate showing the two paths produce equivalent canon)
+  plus closing whatever residue remains, notably the four still-divergent
+  vendor keys (`checklistItems`, `linkedResources`, `parentUid`,
+  `sortOrder`).
+- **Route** — send every VTODO to `{todo,canon}` regardless of transport,
+  by giving the non-DAV backends a demux path. Eliminates the duplicate
+  representation outright, but changes which domain a consumer observes a
+  task in — hence the ratification requirement.
+
+**Whichever is chosen**, one thing is not optional: **the silent fallback
+must become loud.** A collection whose components are routed by absent
+server metadata should say so, at minimum in a log line, per the EEE
+doctrine's "loud about limits" clause.
+
+**Acceptance**
+
+- Depends on the ratified direction; write the acceptance criteria into the
+  receipt **before** implementing, and have them reviewed against the
+  PlanStan answer.
+- A crossing gate (house rule O64) covering the calendar-leg and todo-leg
+  VTODO paths, whichever survives.
+- The fallback is observable.
+
+### IP.12 — Demote purity
+
+**Closes:** O90.
+
+`KCalendarCore::ICalFormat` stamps a heap-address-derived `X-UID` parameter
+into every serialized `ATTENDEE`, so `demote(canon)` is not a function of
+`canon` alone — output differs across processes.
+
+**Do not dramatise this.** It causes no write storm today: the differ works
+on canon (no `X-UID`) and the skip cache compares each backend's own
+`contentHash` of *stored* bytes (`syncengine.cpp:3700-3712`). The costs are
+non-reproducible demoted output, server-side accumulation of meaningless
+identifiers, and the impossibility of any future byte-pin over demoted
+bytes.
+
+**Work.** Strip the `X-UID` attendee parameter post-serialization, in the
+style of the existing `stripICalPropertyLine` calls in
+`eventcanonfields.cpp` / `journalcanonfields.cpp`. Confirm first that
+nothing round-trips it deliberately (grep `X-UID`); if something does, stop
+and say so rather than removing it.
+
+**Acceptance**
+
+- A slot proving two demotes of the same canon in **different processes**
+  are byte-identical. A same-process assertion is vacuous — it already
+  passes. Achieve this by demoting a fixture, comparing against a committed
+  expected-bytes file, or by forking; argue the mechanism in the receipt.
+- Suite green.
+
+---
+
+## A.5 Revised success condition
+
+Supersedes §3. The campaign is done when:
+
+1. No canon catalogue in `calendar`, `todo` or `contacts` can drift from
+   its emitters without a red test. *(IP.3 + IP.8)*
+2. No incidence kind can lose an RFC 5545 property without a red test or a
+   declared, kind-scoped loss profile row. *(IP.8 + IP.9)*
+3. VALARM, provider-extras visibility, and the common incidence field set
+   have **one** implementation each, shared by all three kinds.
+   *(IP.4, IP.5, IP.6)*
+4. `_canon.kind` survives every operation the shape layer performs on a
+   canon record — promote, diff, merge, demote. *(IP.3)*
+5. All three kinds round-trip their own RFC 5545 field set, or declare what
+   they do not. *(IP.6, IP.7, IP.10)*
+6. A VTODO's canonical representation does not depend on where it is
+   stored — or, if it deliberately does, that is ratified, documented and
+   loud. *(IP.11)*
+
+Condition 2 is the one that would have prevented this audit from being
+necessary. Condition 6 is the one a consumer can feel.

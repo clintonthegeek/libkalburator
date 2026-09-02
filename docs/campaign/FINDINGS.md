@@ -3619,3 +3619,210 @@ source and target disagree — which is a real question, not a formality,
 since a kind mismatch on one uid means something upstream is already
 wrong. Whoever takes it should decide that explicitly and write it down.
 
+
+### O85 — OPEN — incidence-parity pre-flight audit, 2026-09-02: every VALARM round-tripped through canon comes back **disabled**
+
+Found by the 2026-09-02 pre-flight audit
+(`docs/campaign/incidence-parity/2026-09-02-preflight-audit.md` §2.3), not
+by an item passing through. Logged, not fixed — owned by **IP.4**.
+
+`KCalendarCore::Alarm::enabled()` defaults to **false** on a
+default-constructed alarm (probe-confirmed: `probes/kcalendarcore-probe.cpp`
+section C). All four alarm seams construct `new Alarm(...)` and never call
+`setEnabled(true)`, and no promote ever records `enabled()`:
+
+| Site | File |
+|---|---|
+| VEVENT promote / demote | `src/calendar/eventcanonfields.cpp:366-379`, `:662-675` |
+| VTODO promote / demote | `src/todo/vtodocanonfields.cpp` (W5 block) |
+
+Measured round trip, both kinds:
+
+```
+SOURCE enabled=1 → demoted carries X-KDE-KCALCORE-ENABLED:FALSE → reparsed enabled=0
+```
+
+**Blast radius, stated honestly.** `X-KDE-KCALCORE-ENABLED` is a KDE
+extension; non-KDE clients ignore it and the `TRIGGER` still stands, so a
+CalDAV server and a phone will still fire the reminder. For Akonadi /
+KOrganizer round trips the reminder silently stops firing. It also makes
+demoted bytes gratuitously differ from source bytes for every
+alarm-bearing incidence.
+
+Note this is **independent of O79**: VP.f's W5 corrected the VTODO trigger
+form and still leaves every VTODO alarm disabled. Fixing O79 without O85
+would leave the same user-visible symptom. IP.4 must close both.
+
+### O86 — OPEN — incidence-parity pre-flight audit, 2026-09-02: KCalendarCore 6.29.0 serializes `GEO` corrupt, so we emit malformed iCal
+
+**Upstream**, not ours — reproduces with no libkalburator in the picture
+(`probes/kcalendarcore-probe.cpp` section A). Owned by **IP.6**.
+
+```cpp
+todo->setGeoLatitude(1.5f); todo->setGeoLongitude(2.5f);
+// accessors read back 1.5 / 2.5 correctly
+ICalFormat().toICalString(todo)  →  GEO:2.5;<uninitialized bytes>
+```
+
+The latitude slot receives the **longitude**; the longitude slot receives
+uninitialized memory whose bytes are not valid UTF-8 and differ between
+runs. `Event` and `Todo` are affected identically. libical then refuses its
+own output on re-parse:
+
+```
+icalvalue_new_from_string cannot parse value string (GEO) for '2.5;...'
+```
+
+**What this costs us today.** `src/todo/vtodocanonfields.cpp:443-447`
+promotes `GEO` into canon and `:793-798` demotes it back, so the VTODO leg
+writes malformed `GEO` lines to real servers, and VTODO
+promote→demote→promote is **not a fixpoint** — the audit measured
+`canon-stable=NO` for VTODO, with `geo` present before and absent after.
+The VEVENT leg never promotes `geo` at all (the calendar catalogue declares
+it; `eventcanonfields.cpp` never emits it), so it merely drops it.
+
+**Not fixable in an emitter.** IP.6 must choose deliberately and record the
+choice: either hand-serialize the `GEO` line (bypassing
+`ICalFormat::toICalString`, in the style of the existing
+`stripICalPropertyLine` post-processing) or stop emitting `geo` and declare
+it `Dropped`. Do not "fix" it by round-tripping through the broken
+accessor pair. Re-verify against the installed kcalendarcore version first
+— this is a property of 6.29.0, and an upgrade may retire it.
+
+### O87 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VJOURNAL's undeclared drops, including `RECURRENCE-ID` identity aliasing
+
+The VJOURNAL twin of O83, and worse in one respect. Owned by **IP.10**.
+
+Measured (`probes/incidence-audit-probe.cpp` section 2): a maximal
+RFC 5545 VJOURNAL loses seven properties across
+`{calendar,canon}`, none of them declared in any loss profile:
+
+```
+ATTACH, ATTENDEE, EXDATE, ORGANIZER, RECURRENCE-ID, RELATED-TO, RRULE
+```
+
+`src/calendar/journalcanonfields.cpp` has no handling for any of them —
+zero references to `recurrence`, `recurrenceId`, `organizer`, `attendees`,
+`attachments`, or `relatedTo`.
+
+**`RECURRENCE-ID` is the serious one.** Dropping it means a detached
+journal instance and its master promote to canon objects that differ in no
+identifying way — two records collapse onto one uid. That is identity
+corruption, not field loss, and it puts VJOURNAL below VTODO on the very
+axis (composite exception identity) that vtodo-parity's W1 was built to
+fix. `RRULE`/`EXDATE` dropping means a recurring journal is silently
+flattened to a single entry.
+
+Note the interaction with **O88**: `canonToVjournalLoss()` returns an empty
+profile commented *"VJOURNAL maps its full field-set; no non-reversible
+loss to declare"*. That comment is false, and the function is dead code
+besides — so nothing warns the user. IP.9 (O88) must land before IP.10 can
+declare these honestly.
+
+PLAN.md's IP.6 acceptance says only "VJOURNAL keeps every field it has
+today". That was written before this measurement and is now insufficient:
+VJOURNAL needs gap-closing of its own, not just regression protection.
+
+### O88 — OPEN — incidence-parity pre-flight audit, 2026-09-02: one edge-level loss profile serves three incidence kinds; `canonToVjournalLoss()` is dead code
+
+Structural. Owned by **IP.9**, which gates IP.4/IP.6/IP.10.
+
+`CalendarStockShapes::edges()`
+(`src/calendar/calendarstockshapes.cpp:92-96`) registers **one**
+`{calendar,canon} → {calendar,ical}` edge, carrying `canonToIcalLoss()`.
+That profile is entirely event-shaped: `onlineMeeting`, `eventType`,
+`typedProperties`, `guestsCan*`, `allowNewTimeProposals`, `hideAttendees`,
+`locked`, `privateCopy`, `freeBusyStatus`, `responseRequested`.
+
+But the edge is **kind-polymorphic** — `CanonToICalStage::transform()`
+dispatches on `_canon.kind` to three different emitters
+(`icalcanonstages.cpp:81-88`). So:
+
+- `materializedLoss()` (`syncengine.cpp:4635`, `:4675`) runs the *event*
+  profile over VTODOs and VJOURNALs. A user demoting a VTODO is warned
+  about `guestsCanModify` and told nothing about losing `ATTENDEE`,
+  `ORGANIZER`, `SEQUENCE`, `CLASS`, `URL`, `COLOR`, `ATTACH`.
+- `canonToVjournalLoss()` (`journalcanonfields.cpp:214`) exists, is
+  declared in the header, returns an empty profile — and has **zero call
+  sites**. Grep-confirmed. It is dead code whose comment asserts something
+  false.
+- The convergence matrix inherits the same distortion: it reports the
+  calendar `ical` leg as though every record on it were a VEVENT.
+
+**The design mismatch, stated plainly:** the loss-profile system's unit is
+the *edge*, but the calendar `ical` encoding is a **union of three
+schemas**. Either the edge splits per kind, or `LossProfile` gains a kind
+dimension, or the profile becomes a function of the record rather than a
+constant of the edge. IP.9 must pick one and justify it — this is the
+decision that makes O83's and O87's "declare the drops honestly" acceptance
+criteria actually expressible. Until it lands, any item that "declares a
+loss" for VTODO or VJOURNAL has nowhere truthful to put it.
+
+### O89 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VTODO has two canonical representations, selected by transport metadata
+
+The consumer-visible one. Owned by **IP.11**; needs PlanStan ratification
+(`docs/2026-09-02-incidence-parity-planstan-report.md`).
+
+A VTODO reaches one of two canonical shapes depending on where it lives:
+
+| Path | Catalogue | Loss profile | Gets |
+|---|---|---|---|
+| `{todo,canon}` | 27 keys, `todocanonproperties.cpp` | `canonToVtodoLoss()` — thorough, 10 declared rows | all of vtodo-parity W1–W7 |
+| `{calendar,canon}` | 46 keys but event-shaped | `canonToIcalLoss()` — event-only (O88) | 7 undeclared drops (O83), O84, O86 |
+
+Which one is decided by transport metadata, not by the data:
+
+- `MultiProtocolDavProvider::backendSpecs()` demuxes into a `todo` spec
+  **only** when a collection advertises `VTODO` in its
+  `supported-calendar-component-set`
+  (`src/sync/multiprotocoldavprovider.cpp:214-226`). A server that does not
+  advertise `contentTypes` takes the "legacy shape" branch and every
+  component — VTODOs included — rides `{calendar,canon}`.
+- `LocalBackend`, `DecSyncBackend`, `OrgBackend` and `AkonadiBackend` each
+  return only `{calendar, ical}` from `nativeShapes()`. They never demux
+  under any configuration, so a VTODO in a local `.ics`, in Akonadi, in
+  DecSync or in an org file **always** takes the impoverished path.
+
+So the same task, synced from a well-advertising Radicale, gets W1's
+composite exception identity, W4's completion anchors and O74's extras
+digest; synced from a local file it gets none of them and loses its
+`ORGANIZER` silently.
+
+**The demux itself is sound** — the two filtered views are disjoint
+(`VEVENT`+`VJOURNAL` vs `VTODO`), so nothing is double-counted, and the
+"transport grouping never crosses a domain boundary" rectification rule
+holds. The defect is that the *fallback* is silent and the non-DAV backends
+have no route to the good representation at all.
+
+This is a contract question, not just a bug: closing it either promotes
+`{calendar,canon}` VTODO to full parity (making the two representations
+equivalent) or routes all VTODOs to `{todo,canon}` (making one of them
+disappear). The second changes which domain a consumer sees a task in.
+**libkalburator should not choose alone** — see IP.11.
+
+### O90 — OPEN — incidence-parity pre-flight audit, 2026-09-02: demote is not a pure function of canon (attendee `X-UID`)
+
+Low severity, cheap fix, recorded so it is not rediscovered. Owned by
+**IP.12**.
+
+`KCalendarCore::ICalFormat` stamps a heap-address-derived `X-UID` parameter
+into every serialized `ATTENDEE`:
+
+```
+process A:  ATTENDEE;CN=A;...;CUTYPE=INDIVIDUAL;X-UID=93826400444256:mailto:a@example.com
+process B:  ATTENDEE;CN=A;...;CUTYPE=INDIVIDUAL;X-UID=94004632973840:mailto:a@example.com
+```
+
+Stable within a process (two demotes of the same canon are byte-identical),
+different across processes. So `demote(canon)` is not a function of `canon`
+alone.
+
+**Do not dramatise this.** It does *not* cause a write storm today: the
+differ works on canon, which has no `X-UID`, and the engine's skip cache
+compares each backend's own `contentHash` of the bytes actually *stored*
+(`syncengine.cpp:3700-3712`), so an unchanged record is never rewritten.
+What it does cost is real but narrow — demoted output is not reproducible
+across runs, servers accumulate meaningless per-process identifiers, and
+any future byte-pin or content-addressed optimisation over demoted bytes is
+impossible. The likely fix is a post-serialization parameter strip in the
+style of the existing `stripICalPropertyLine` calls.
