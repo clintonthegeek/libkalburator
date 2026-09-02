@@ -72,6 +72,25 @@ Kalburator::Shape::LossProfile canonToVtodoLoss()
     // Dropped: no VTODO representation at all
     p.affected.insert(PropertyId{QStringLiteral("linkedResources")}, LossKind::Dropped);
 
+    // Dropped (IP.6 commit 2 — O93 RESOLVED as a byproduct). This edge
+    // demotes through the exact same shared emitter
+    // (canonObjectToVtodoBytes()) as the calendar domain's
+    // {calendar,canon}→{calendar,ical} vtodo leg, so O93's finding — that
+    // this profile carried none of O83/O91's drops while the calendar leg's
+    // canonToVtodoIcalLoss() did — is resolved by fixing the emitter
+    // itself: O83's seven properties and O91's comments/contacts/resources
+    // are no longer dropped on EITHER edge, so neither profile declares
+    // them. Only the two genuinely permanent drops remain, matching
+    // canonToVtodoIcalLoss() exactly:
+    p.affected.insert(PropertyId{QStringLiteral("geo")}, LossKind::Dropped);           // O86 — dropped entirely
+    p.affected.insert(PropertyId{QStringLiteral("requestStatus")}, LossKind::Dropped); // O91 — upstream, no accessor
+    // O94 (new, filed by IP.6): RESOURCES is correct on the object model
+    // but KCalendarCore::ICalFormat 6.29.0 never reads or writes it on the
+    // wire at all — see icalcanonstages.cpp's canonToIcalLoss() for the
+    // full explanation (same emitter, same upstream gap, both ical wire
+    // legs affected identically).
+    p.affected.insert(PropertyId{QStringLiteral("resources")}, LossKind::Dropped);
+
     // Reversible: stashed in providerExtras or mapped via X- (round-trippable)
     p.affected.insert(PropertyId{QStringLiteral("descriptionHtml")},  LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("checklistItems")},   LossKind::Reversible);

@@ -105,49 +105,9 @@ KCalendarCore::Incidence::Status statusFromString(const QString &s)
     return KCalendarCore::Incidence::StatusNone;
 }
 
-/// Convert Attendee::PartStat enum to string.
-QString partStatToString(KCalendarCore::Attendee::PartStat ps)
-{
-    switch (ps) {
-    case KCalendarCore::Attendee::Accepted:      return QStringLiteral("accepted");
-    case KCalendarCore::Attendee::Declined:      return QStringLiteral("declined");
-    case KCalendarCore::Attendee::Tentative:     return QStringLiteral("tentative");
-    case KCalendarCore::Attendee::Delegated:     return QStringLiteral("delegated");
-    case KCalendarCore::Attendee::NeedsAction:   return QStringLiteral("needsAction");
-    default:                                     return QStringLiteral("needsAction");
-    }
-}
-
-/// Reverse of partStatToString.
-KCalendarCore::Attendee::PartStat partStatFromString(const QString &s)
-{
-    if (s == QStringLiteral("accepted"))    return KCalendarCore::Attendee::Accepted;
-    if (s == QStringLiteral("declined"))    return KCalendarCore::Attendee::Declined;
-    if (s == QStringLiteral("tentative"))   return KCalendarCore::Attendee::Tentative;
-    if (s == QStringLiteral("delegated"))   return KCalendarCore::Attendee::Delegated;
-    return KCalendarCore::Attendee::NeedsAction;
-}
-
-/// Convert Attendee::Role enum to string.
-QString roleToString(KCalendarCore::Attendee::Role r)
-{
-    switch (r) {
-    case KCalendarCore::Attendee::Chair:           return QStringLiteral("chair");
-    case KCalendarCore::Attendee::ReqParticipant:  return QStringLiteral("required");
-    case KCalendarCore::Attendee::OptParticipant:  return QStringLiteral("optional");
-    case KCalendarCore::Attendee::NonParticipant:  return QStringLiteral("nonParticipant");
-    default:                                       return QStringLiteral("required");
-    }
-}
-
-/// Reverse of roleToString.
-KCalendarCore::Attendee::Role roleFromString(const QString &s)
-{
-    if (s == QStringLiteral("chair"))          return KCalendarCore::Attendee::Chair;
-    if (s == QStringLiteral("optional"))       return KCalendarCore::Attendee::OptParticipant;
-    if (s == QStringLiteral("nonParticipant")) return KCalendarCore::Attendee::NonParticipant;
-    return KCalendarCore::Attendee::ReqParticipant;
-}
+// IP.6 commit 2: attendee role/partstat string<->enum helpers relocated to
+// incidencecommonfields.cpp (promoteAttendees/demoteAttendees now live
+// there, shared with VTODO — see O83).
 
 } // namespace
 
@@ -158,12 +118,8 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
 {
     QJsonObject obj;
 
-    // ---- sequence ----------------------------------------------------------
-    {
-        const int seq = event->revision();
-        if (seq > 0)
-            obj.insert(QStringLiteral("sequence"), seq);
-    }
+    // ---- sequence (IP.6 commit 2: incidencecommonfields) --------------------
+    promoteSequence(obj, event);
 
     // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
     promoteTimestamps(obj, originalBytes);
@@ -192,19 +148,8 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             obj.insert(QStringLiteral("status"), status);
     }
 
-    // ---- classification ----------------------------------------------------
-    {
-        const auto cls = event->secrecy();
-        QString clsStr;
-        switch (cls) {
-        case KCalendarCore::Incidence::SecrecyPublic:      clsStr = QStringLiteral("public");       break;
-        case KCalendarCore::Incidence::SecrecyPrivate:     clsStr = QStringLiteral("private");      break;
-        case KCalendarCore::Incidence::SecrecyConfidential: clsStr = QStringLiteral("confidential"); break;
-        default: break;
-        }
-        if (!clsStr.isEmpty())
-            obj.insert(QStringLiteral("classification"), clsStr);
-    }
+    // ---- classification (IP.6 commit 2: incidencecommonfields) --------------
+    promoteClassification(obj, event);
 
     // ---- timeTransparency --------------------------------------------------
     {
@@ -269,55 +214,25 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
         }
     }
 
-    // ---- color -------------------------------------------------------------
-    {
-        const QString color = event->color();
-        if (!color.isEmpty())
-            obj.insert(QStringLiteral("color"), color);
-    }
+    // ---- color / url (IP.6 commit 2: incidencecommonfields) -----------------
+    promoteColor(obj, event);
 
     // ---- categories (IP.6: incidencecommonfields) --------------------------
     promoteCategories(obj, event);
 
-    // ---- url ---------------------------------------------------------------
-    {
-        const QUrl url = event->url();
-        if (url.isValid())
-            obj.insert(QStringLiteral("url"), url.toString());
-    }
+    promoteUrl(obj, event);
 
-    // ---- organizer ---------------------------------------------------------
-    {
-        const auto org = event->organizer();
-        if (!org.email().isEmpty() || !org.name().isEmpty()) {
-            QJsonObject orgObj;
-            if (!org.email().isEmpty()) orgObj.insert(QStringLiteral("email"), org.email());
-            if (!org.name().isEmpty())  orgObj.insert(QStringLiteral("name"),  org.name());
-            obj.insert(QStringLiteral("organizer"), orgObj);
-        }
-    }
+    // ---- organizer / attendees / attachments (IP.6 commit 2: O83) ----------
+    promoteOrganizer(obj, event);
+    promoteAttendees(obj, event);
 
-    // ---- attendees ---------------------------------------------------------
-    {
-        const auto attendees = event->attendees();
-        if (!attendees.isEmpty()) {
-            QJsonArray arr;
-            for (const auto& a : attendees) {
-                if (a.email().isEmpty())
-                    continue;
-                QJsonObject entry;
-                entry.insert(QStringLiteral("email"),   a.email());
-                if (!a.name().isEmpty())
-                    entry.insert(QStringLiteral("name"), a.name());
-                entry.insert(QStringLiteral("role"),    roleToString(a.role()));
-                entry.insert(QStringLiteral("partstat"), partStatToString(a.status()));
-                entry.insert(QStringLiteral("rsvp"),    a.RSVP());
-                arr.append(entry);
-            }
-            if (!arr.isEmpty())
-                obj.insert(QStringLiteral("attendees"), arr);
-        }
-    }
+    // ---- relatedTo (IP.6 commit 2: Amendment 1 §A.3.2) ----------------------
+    promoteRelatedTo(obj, event);
+
+    // ---- comments / contacts / resources (IP.6 commit 2: O91) ---------------
+    promoteComments(obj, event);
+    promoteContacts(obj, event);
+    promoteResources(obj, event);
 
     // ---- priority ----------------------------------------------------------
     {
@@ -343,24 +258,8 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
         }
     }
 
-    // ---- attachments -------------------------------------------------------
-    {
-        const auto attachments = event->attachments();
-        if (!attachments.isEmpty()) {
-            QJsonArray arr;
-            for (const auto& att : attachments) {
-                QJsonObject entry;
-                if (att.isUri())
-                    entry.insert(QStringLiteral("url"), att.uri());
-                if (!att.mimeType().isEmpty())
-                    entry.insert(QStringLiteral("mimeType"), att.mimeType());
-                if (!entry.isEmpty())
-                    arr.append(entry);
-            }
-            if (!arr.isEmpty())
-                obj.insert(QStringLiteral("attachments"), arr);
-        }
-    }
+    // ---- attachments (IP.6 commit 2: incidencecommonfields, O83) -----------
+    promoteAttachments(obj, event);
 
     // ---- providerExtras["x-ical"] — unmapped X- custom properties ----------
     // IP.6: incidencecommonfields, parameterized by the skip-list of keys
@@ -394,12 +293,8 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
             event->setUid(uid);
     }
 
-    // ---- sequence ----------------------------------------------------------
-    {
-        const QJsonValue seq = obj.value(QStringLiteral("sequence"));
-        if (!seq.isUndefined())
-            event->setRevision(seq.toInt());
-    }
+    // ---- sequence (IP.6 commit 2: incidencecommonfields) --------------------
+    demoteSequence(obj, event);
 
     // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
     // O41 write-side fix: KCalendarCore::Incidence always carries a valid
@@ -450,22 +345,7 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     }
 
     // ---- classification ----------------------------------------------------
-    {
-        const QString cls = obj.value(QStringLiteral("classification")).toString();
-        KCalendarCore::Incidence::Secrecy secrecy = KCalendarCore::Incidence::SecrecyPublic;
-        if (cls == QStringLiteral("private")) {
-            secrecy = KCalendarCore::Incidence::SecrecyPrivate;
-        } else if (cls == QStringLiteral("confidential")) {
-            secrecy = KCalendarCore::Incidence::SecrecyConfidential;
-        } else if (cls == QStringLiteral("personal")) {
-            // Degraded: MS "personal" has no iCal CLASS; map to PRIVATE but keep the
-            // original verbatim (invariant 4) so it is recoverable — emit as an X-
-            // property the forward stage round-trips into providerExtras["x-ical"].
-            secrecy = KCalendarCore::Incidence::SecrecyPrivate;
-            event->setNonKDECustomProperty("X-CANON-CLASSIFICATION", cls);
-        }
-        event->setSecrecy(secrecy);
-    }
+    demoteClassification(obj, event);
 
     // ---- timeTransparency --------------------------------------------------
     {
@@ -524,50 +404,25 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- color -------------------------------------------------------------
-    {
-        const QString color = obj.value(QStringLiteral("color")).toString();
-        if (!color.isEmpty())
-            event->setColor(color);
-    }
+    // ---- color / url (IP.6 commit 2: incidencecommonfields) -----------------
+    demoteColor(obj, event);
 
     // ---- categories (IP.6: incidencecommonfields) --------------------------
     demoteCategories(obj, event);
 
-    // ---- url ---------------------------------------------------------------
-    {
-        const QString url = obj.value(QStringLiteral("url")).toString();
-        if (!url.isEmpty())
-            event->setUrl(QUrl(url));
-    }
+    demoteUrl(obj, event);
 
-    // ---- organizer ---------------------------------------------------------
-    {
-        const QJsonObject orgObj = obj.value(QStringLiteral("organizer")).toObject();
-        if (!orgObj.isEmpty()) {
-            const QString email = orgObj.value(QStringLiteral("email")).toString();
-            const QString name  = orgObj.value(QStringLiteral("name")).toString();
-            if (!email.isEmpty())
-                event->setOrganizer(KCalendarCore::Person(name, email));
-        }
-    }
+    // ---- organizer / attendees (IP.6 commit 2: O83) -------------------------
+    demoteOrganizer(obj, event);
+    demoteAttendees(obj, event);
 
-    // ---- attendees ---------------------------------------------------------
-    {
-        const QJsonArray attendees = obj.value(QStringLiteral("attendees")).toArray();
-        for (const auto& av : attendees) {
-            const QJsonObject a = av.toObject();
-            const QString email = a.value(QStringLiteral("email")).toString();
-            if (email.isEmpty())
-                continue;
-            const QString name    = a.value(QStringLiteral("name")).toString();
-            const auto role       = roleFromString(a.value(QStringLiteral("role")).toString());
-            const auto partstat   = partStatFromString(a.value(QStringLiteral("partstat")).toString());
-            const bool rsvp       = a.value(QStringLiteral("rsvp")).toBool();
-            KCalendarCore::Attendee att(name, email, rsvp, partstat, role);
-            event->addAttendee(att);
-        }
-    }
+    // ---- relatedTo (IP.6 commit 2: Amendment 1 §A.3.2) -----------------------
+    demoteRelatedTo(obj, event);
+
+    // ---- comments / contacts / resources (IP.6 commit 2: O91) ---------------
+    demoteComments(obj, event);
+    demoteContacts(obj, event);
+    demoteResources(obj, event);
 
     // ---- priority ----------------------------------------------------------
     {
@@ -593,22 +448,8 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- attachments -------------------------------------------------------
-    {
-        const QJsonArray attachments = obj.value(QStringLiteral("attachments")).toArray();
-        for (const auto& av : attachments) {
-            const QJsonObject a = av.toObject();
-            const QString url = a.value(QStringLiteral("url")).toString();
-            if (!url.isEmpty()) {
-                KCalendarCore::Attachment att;
-                att.setUri(url);
-                const QString mime = a.value(QStringLiteral("mimeType")).toString();
-                if (!mime.isEmpty())
-                    att.setMimeType(mime);
-                event->addAttachment(att);
-            }
-        }
-    }
+    // ---- attachments (IP.6 commit 2: incidencecommonfields, O83) -----------
+    demoteAttachments(obj, event);
 
     // ---- providerExtras["x-ical"] — re-emit custom/X- properties ----------
     // IP.6: incidencecommonfields.
@@ -674,6 +515,11 @@ QList<Kalburator::Shape::PropertyId> eventCanonContributedIds()
         PropertyId{QStringLiteral("priority")},
         PropertyId{QStringLiteral("alarms")},
         PropertyId{QStringLiteral("attachments")},
+        // IP.6 commit 2 additions:
+        PropertyId{QStringLiteral("relatedTo")},     // Amendment 1 §A.3.2
+        PropertyId{QStringLiteral("comments")},      // O91
+        PropertyId{QStringLiteral("contacts")},      // O91
+        PropertyId{QStringLiteral("resources")},     // O91
     };
 }
 

@@ -166,6 +166,22 @@ void demoteContacts(const QJsonObject& obj, const KCalendarCore::Incidence::Ptr&
 // resources (commit 2 — O91). VEVENT + VTODO ONLY: RFC 5545 §3.6.3's
 // jourprop grammar does not permit RESOURCES on VJOURNAL at all, so its
 // absence there is RFC-correct, not a drop.
+//
+// O94 (new, filed this item): correct on the OBJECT MODEL (resources()/
+// setResources() work exactly as documented — verified directly), but
+// KCalendarCore::ICalFormat 6.29.0 never reads OR writes a RESOURCES
+// property on the wire — parsing a source RESOURCES line leaves
+// resources() empty, and setResources() followed by toICalString() never
+// emits a RESOURCES line either. This contradicts O91's claim that
+// resources() "round-trips fine through KCalendarCore's own ICalFormat" —
+// that claim is wrong for RESOURCES specifically (verified against
+// COMMENT/CONTACT, which DO round-trip correctly through the same
+// ICalFormat call). These functions are kept and called anyway: they are
+// correct against the object model, useful for any non-ICalFormat caller,
+// and forward-compatible with a future kcalendarcore fix. The {calendar,
+// ical}/{todo,ical-vtodo} wire edges declare `resources: Dropped` in their
+// loss profiles to be honest about today's actual behaviour — see the
+// IP.6 return receipt.
 // ---------------------------------------------------------------------
 
 void promoteResources(QJsonObject& obj, const KCalendarCore::Incidence::Ptr& inc);

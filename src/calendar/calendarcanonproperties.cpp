@@ -99,6 +99,20 @@ const QHash<PropertyId, PropertyMeta>& calendarPropertyMetadata()
         { PropertyId{QStringLiteral("seriesSplitOf")},        {PropertyKind::String, QStringLiteral("Series Split Of")} },
         { PropertyId{QStringLiteral("completionAnchor")},     {PropertyKind::Json,   QStringLiteral("Completion Anchor")} },
         { PropertyId{QStringLiteral("providerExtrasDigest")}, {PropertyKind::String, QStringLiteral("Provider Extras Digest")} },
+        // IP.6 commit 2 / O91 — RFC 5545 COMMENT/CONTACT/RESOURCES, newly
+        // contributed by eventCanonContributedIds() (VEVENT+VJOURNAL for
+        // comments/contacts; VEVENT only for resources — RFC 5545 §3.6.3's
+        // jourprop grammar excludes RESOURCES on VJOURNAL) and
+        // vtodoCanonContributedIds() (all three). Declarations must match
+        // todocanonproperties.cpp exactly (kind + display name).
+        // `requestStatus` is deliberately NOT catalogued here — no emitter
+        // will ever produce it (KCalendarCore has no accessor at all), so
+        // catalogueing it would misrepresent it as emitter-producible; it
+        // stays an uncatalogued PropertyId in the loss profiles that
+        // declare it Dropped, matching IP.9's precedent.
+        { PropertyId{QStringLiteral("comments")},  {PropertyKind::StringList, QStringLiteral("Comments")} },
+        { PropertyId{QStringLiteral("contacts")},  {PropertyKind::StringList, QStringLiteral("Contacts")} },
+        { PropertyId{QStringLiteral("resources")}, {PropertyKind::StringList, QStringLiteral("Resources")} },
     };
     return table;
 }

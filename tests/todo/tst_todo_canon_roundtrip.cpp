@@ -15,6 +15,7 @@
 #include <KCalendarCore/Todo>
 
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Todo::VTodoToCanonStage;
 using Kalburator::Todo::CanonToVTodoStage;
@@ -1260,6 +1261,148 @@ private slots:
         const QJsonObject noXProp = parse(fwd.transform(noXPropVtodo));
         QVERIFY2(!noXProp.contains(QStringLiteral("providerExtrasDigest")),
                  "digest must be absent when there are no extras");
+    }
+
+    // -------------------------------------------------------------------
+    // IP.6 commit 2 (O83) — VTODO gains SEQUENCE/CLASS/COLOR/URL/ORGANIZER/
+    // ATTENDEE/ATTACH on the {todo,canon}<->{todo,ical-vtodo} edge, the
+    // exact same shared emitter O83 named. Round-trip via VTodoToCanonStage
+    // / CanonToVTodoStage, mirroring vtodoRelatedToPreserved()'s pattern.
+    // -------------------------------------------------------------------
+    void vtodoRoundTripPreservesO83Fields()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:o83-uid\r\n"
+            "SUMMARY:O83 task\r\n"
+            "SEQUENCE:7\r\n"
+            "CLASS:CONFIDENTIAL\r\n"
+            "COLOR:teal\r\n"
+            "URL:http://example.com/t\r\n"
+            "ORGANIZER:mailto:o@example.com\r\n"
+            "ATTENDEE;CN=A:mailto:a@example.com\r\n"
+            "ATTACH:http://example.com/f.pdf\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY(!canon.isEmpty());
+
+        const QJsonObject obj = parse(canon);
+        QCOMPARE(obj.value(QStringLiteral("sequence")).toInt(), 7);
+        QCOMPARE(obj.value(QStringLiteral("classification")).toString(), QStringLiteral("confidential"));
+        QCOMPARE(obj.value(QStringLiteral("color")).toString(), QStringLiteral("teal"));
+        QCOMPARE(obj.value(QStringLiteral("url")).toString(), QStringLiteral("http://example.com/t"));
+        QVERIFY2(!obj.value(QStringLiteral("organizer")).toObject().isEmpty(), "organizer must be promoted");
+        QVERIFY2(!obj.value(QStringLiteral("attendees")).toArray().isEmpty(), "attendees must be promoted");
+        QVERIFY2(!obj.value(QStringLiteral("attachments")).toArray().isEmpty(), "attachments must be promoted");
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY2(outTodo, "could not parse output VTODO");
+        QCOMPARE(outTodo->revision(), 7);
+        QCOMPARE(outTodo->secrecy(), KCalendarCore::Incidence::SecrecyConfidential);
+        QCOMPARE(outTodo->color(), QStringLiteral("teal"));
+        QCOMPARE(outTodo->url().toString(), QStringLiteral("http://example.com/t"));
+        QCOMPARE(outTodo->organizer().email(), QStringLiteral("o@example.com"));
+        QCOMPARE(outTodo->attendees().size(), 1);
+        QCOMPARE(outTodo->attachments().size(), 1);
+    }
+
+    // IP.6 commit 2 (O91) — COMMENT/CONTACT round-trip on this edge too
+    // (same shared emitter). RESOURCES does NOT — O94, upstream:
+    // KCalendarCore::ICalFormat never reads or writes a RESOURCES line at
+    // all, on either ical wire edge (see canonToVtodoLoss()'s own comment
+    // and the IP.6 return receipt for the probe that found this).
+    void vtodoCommentsContactsRoundTripResourcesDoesNot()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:o91-uid\r\n"
+            "SUMMARY:O91 task\r\n"
+            "COMMENT:a comment\r\n"
+            "CONTACT:Jane Doe\\, +1-555-0100\r\n"
+            "RESOURCES:Projector,VCR\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.value(QStringLiteral("comments")).toArray().isEmpty(), "comments must be promoted");
+        QVERIFY2(!obj.value(QStringLiteral("contacts")).toArray().isEmpty(), "contacts must be promoted");
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(output.contains("COMMENT:"), "COMMENT must survive the round trip");
+        QVERIFY2(output.contains("CONTACT:"), "CONTACT must survive the round trip");
+        QVERIFY2(!output.contains("RESOURCES"), "RESOURCES must NOT survive — O94, upstream kcalendarcore gap");
+    }
+
+    // IP.6 commit 2 (O86, ratified Amendment 2 §B.5) — geo is dropped
+    // entirely: never promoted, never demoted, regardless of what a
+    // pre-existing canon record (from before this change) might still
+    // carry.
+    void vtodoNeverPromotesGeoAnyMore()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:geo-uid\r\n"
+            "SUMMARY:Geo task\r\n"
+            "GEO:1.5;2.5\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        const QByteArray canon = fwd.transform(vtodo);
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.contains(QStringLiteral("geo")), "geo must never be promoted any more (O86)");
+
+        // A pre-existing canon record with a stale "geo" key must demote
+        // without emitting a GEO line (Dropped means never re-emitted).
+        QJsonObject staleCanon = obj;
+        QJsonObject geoObj;
+        geoObj.insert(QStringLiteral("lat"), 1.5);
+        geoObj.insert(QStringLiteral("lon"), 2.5);
+        staleCanon.insert(QStringLiteral("geo"), geoObj);
+        staleCanon.insert(QStringLiteral("uid"), QStringLiteral("geo-uid"));
+
+        CanonToVTodoStage rev;
+        const QByteArray output = rev.transform(serialize(staleCanon));
+        QVERIFY2(!output.contains("GEO:"), "a stale canon geo key must not be re-emitted");
+    }
+
+    // IP.6 commit 2 (O93 RESOLVED) — canonToVtodoLoss() now declares only
+    // the two-then-three genuinely permanent drops (geo/requestStatus/
+    // resources), matching canonToVtodoIcalLoss() exactly; O83's seven and
+    // O91's comments/contacts are no longer declared Dropped because they
+    // are no longer dropped.
+    void canonToVtodoLossProfileMatchesFixedEmitter()
+    {
+        const auto loss = Kalburator::Todo::canonToVtodoLoss();
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("geo")}), LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("requestStatus")}), LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("resources")}), LossKind::Dropped);
+        static const char* kFixed[] = {
+            "attachments", "attendees", "classification", "color", "organizer",
+            "sequence", "url", "comments", "contacts",
+        };
+        for (const char* id : kFixed) {
+            QVERIFY2(!loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("canonToVtodoLoss() still wrongly drops fixed '%1'")
+                                    .arg(QString::fromLatin1(id))));
+        }
     }
 };
 

@@ -84,6 +84,13 @@ QJsonObject journalFieldsToCanon(const KCalendarCore::Journal::Ptr& journal,
         obj.insert(QStringLiteral("url"), journal->url().toString());
     // ---- categories (IP.6: incidencecommonfields) -------------------------
     promoteCategories(obj, journal);
+    // ---- comments / contacts (IP.6 commit 2: O91 — judgment call, see the
+    // return receipt: RFC 5545 §3.6.3's jourprop grammar permits both on
+    // VJOURNAL, and the fix is the same one-line common-module call VEVENT
+    // and VTODO use, so VJOURNAL is wired here too rather than left to
+    // IP.10) -----------------------------------------------------------
+    promoteComments(obj, journal);
+    promoteContacts(obj, journal);
     // providerExtras["x-ical"] — unmapped X- custom properties.
     // IP.6: incidencecommonfields (no skip list on this leg).
     {
@@ -152,6 +159,9 @@ QByteArray canonObjectToJournalBytes(const QJsonObject& obj)
         journal->setUrl(QUrl(u));
     // ---- categories (IP.6: incidencecommonfields) -------------------------
     demoteCategories(obj, journal);
+    // ---- comments / contacts (IP.6 commit 2: O91) --------------------------
+    demoteComments(obj, journal);
+    demoteContacts(obj, journal);
     // IP.6: incidencecommonfields.
     {
         const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
@@ -179,6 +189,13 @@ Kalburator::Shape::LossProfile canonToVjournalLoss()
     // above (journalFieldsToCanon() never touches attachments, attendees,
     // organizer, relatedTo, recurrence, recurrenceId at all). This declares
     // the loss; it does NOT fix it — that is IP.10's job (O87).
+    //
+    // IP.6 commit 2: `comments`/`contacts` REMOVED from this profile —
+    // journalFieldsToCanon() now calls promoteComments()/promoteContacts()
+    // (O91's judgment call: RFC 5545 permits both on VJOURNAL and the fix
+    // was a one-line common-module call, so it landed here instead of
+    // waiting for IP.10). `requestStatus` stays declared Dropped —
+    // permanently unfixable, no KCalendarCore accessor exists at all.
     using Kalburator::Shape::LossProfile;
     using Kalburator::Shape::LossKind;
     using Kalburator::Shape::PropertyId;
@@ -204,19 +221,13 @@ Kalburator::Shape::LossProfile canonToVjournalLoss()
     // VTODO (invariant 3) — covers all three RFC properties at once.
     p.affected.insert(PropertyId{QStringLiteral("recurrence")}, LossKind::Dropped);    // RRULE, RDATE, EXDATE
 
-    // Dropped (O91 — new, filed by IP.9): valid on VJOURNAL per RFC 5545
-    // jourprop, modeled natively by KCalendarCore::IncidenceBase, but no
-    // emitter (any kind) calls the accessor. RESOURCES is excluded here —
-    // RFC 5545 jourprop does not permit it on VJOURNAL at all, so its
-    // absence is RFC-correct, not a drop. No canon PropertyId exists yet
-    // for these three (nothing ever promotes them, so none reached the
-    // catalogue's contributed-id union) — declared here anyway using
-    // catalogue-style camelCase ids, matching the accessor's own
-    // plurality (comments()/contacts()), since LossProfile.affected does
-    // not require its keys to be catalogued (see IP.9 return receipt for
-    // the fuller argument).
-    p.affected.insert(PropertyId{QStringLiteral("comments")},     LossKind::Dropped);  // COMMENT
-    p.affected.insert(PropertyId{QStringLiteral("contacts")},     LossKind::Dropped);  // CONTACT
+    // Dropped, permanently — O91, upstream: RFC 5545 jourprop permits
+    // REQUEST-STATUS on VJOURNAL but KCalendarCore exposes no accessor for
+    // it anywhere in its public API, so no emitter can ever promote it.
+    // RESOURCES is correctly absent from this profile — RFC 5545 jourprop
+    // does not permit it on VJOURNAL at all, so its absence is RFC-correct,
+    // not a drop. `comments`/`contacts` — fixed, see the comment above;
+    // removed from here.
     p.affected.insert(PropertyId{QStringLiteral("requestStatus")}, LossKind::Dropped); // REQUEST-STATUS (upstream: no KCalendarCore accessor exists at all)
 
     return p;
@@ -227,6 +238,8 @@ QList<Kalburator::Shape::PropertyId> journalCanonContributedIds()
     using Kalburator::Shape::PropertyId;
     // Order mirrors journalFieldsToCanon's own field-by-field body above.
     // Envelope keys (_canon/uid/providerExtras) are deliberately excluded.
+    // IP.6 commit 2: `comments`/`contacts` ADDED (O91 — judgment call, see
+    // the return receipt).
     return {
         PropertyId{QStringLiteral("created")},
         PropertyId{QStringLiteral("lastModified")},
@@ -240,6 +253,8 @@ QList<Kalburator::Shape::PropertyId> journalCanonContributedIds()
         PropertyId{QStringLiteral("color")},
         PropertyId{QStringLiteral("url")},
         PropertyId{QStringLiteral("categories")},
+        PropertyId{QStringLiteral("comments")},
+        PropertyId{QStringLiteral("contacts")},
     };
 }
 

@@ -3526,7 +3526,7 @@ before assuming none exists.
 
 Owned by incidence-parity **IP.7a**.
 
-### O83 — OPEN — incidence-parity recon, 2026-08-29: VTODO is the poorest-covered incidence kind in the library — poorer than VJOURNAL — and every drop is undeclared
+### O83 — RESOLVED (IP.6, 2026-09-02) — incidence-parity recon, 2026-08-29: VTODO is the poorest-covered incidence kind in the library — poorer than VJOURNAL — and every drop is undeclared
 
 `src/todo/vtodocanonfields.cpp` has **zero** references to `revision()`,
 `secrecy()`, `url()`, `organizer()`, `attendees()`, `attachments()`, or
@@ -3574,6 +3574,21 @@ which PlanStan asked for and this library delivered — **is not reaching the
 vault their todo work is tested against.** This is the highest-impact
 user-data loss in the campaign. IP.6 was reordered ahead of IP.4/IP.5 on
 this evidence (PLAN.md Amendment 2 §B.3).
+
+**RESOLVED 2026-09-02 (IP.6 commit 2).** New `src/calendar/
+incidencecommonfields.{h,cpp}` extracts every genuinely shared incidence
+field; `vtodocanonfields.cpp` now calls its `promote/demote{Sequence,
+Classification,Color,Url,Organizer,Attendees,Attachments}()` on both
+`{todo,canon}` and `{calendar,canon}` VTODO paths (one shared emitter, see
+O78). All seven properties round-trip; verified via
+`tst_incidence_rfc5545_fidelity.cpp` (IP.8's gate, now GREEN for these
+seven on both `vevent` and `vtodo`) and new slots in
+`tests/todo/tst_todo_canon_roundtrip.cpp`
+(`vtodoRoundTripPreservesO83Fields()`). Loss profiles
+(`canonToVtodoIcalLoss()`, `canonToVtodoLoss()`) no longer declare any of
+the seven as `Dropped`. O93 (the `{todo,canon}` sibling edge sharing the
+same undeclared drops) is resolved as a direct byproduct, since both edges
+demote through the identical fixed emitter.
 
 ### O84 — OPEN — IP.2, 2026-09-01: `CanonJsonMerger` erases `_canon.kind`, so a merged calendar VTODO or VJOURNAL demotes as a **VEVENT**
 
@@ -3672,7 +3687,7 @@ Note this is **independent of O79**: VP.f's W5 corrected the VTODO trigger
 form and still leaves every VTODO alarm disabled. Fixing O79 without O85
 would leave the same user-visible symptom. IP.4 must close both.
 
-### O86 — OPEN — incidence-parity pre-flight audit, 2026-09-02: KCalendarCore 6.29.0 serializes `GEO` corrupt, so we emit malformed iCal
+### O86 — RESOLVED (IP.6, 2026-09-02) — incidence-parity pre-flight audit, 2026-09-02: KCalendarCore 6.29.0 serializes `GEO` corrupt, so we emit malformed iCal
 
 **Upstream**, not ours — reproduces with no libkalburator in the picture
 (`probes/kcalendarcore-probe.cpp` section A). Owned by **IP.6**.
@@ -3723,6 +3738,15 @@ ends the VEVENT/VTODO asymmetry in the honest direction — both kinds drop it,
 neither corrupts it. Re-verify against the installed kcalendarcore version
 first: if an upgrade has fixed the serializer, re-open this decision rather
 than inheriting it.
+
+**Landed 2026-09-02 (IP.6 commit 2).** `geo` promote/demote code removed
+entirely from `vtodocanonfields.cpp` (the only place it lived); removed
+from `vtodoCanonContributedIds()` (metadata entries left in both
+catalogues for documentation, per the receipt's argument). Declared
+`Dropped` (not `Degraded`) in `canonToIcalLoss()`, `canonToVtodoIcalLoss()`
+and `canonToVtodoLoss()`. VTODO's promote→demote→promote fixpoint
+confirmed restored — `tst_incidence_rfc5545_fidelity.cpp`'s vtodo case
+flipped `expectFixpoint` from `false` to `true` and stays green.
 
 ### O87 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VJOURNAL's undeclared drops, including `RECURRENCE-ID` identity aliasing
 
@@ -3901,7 +3925,7 @@ any future byte-pin or content-addressed optimisation over demoted bytes is
 impossible. The likely fix is a post-serialization parameter strip in the
 style of the existing `stripICalPropertyLine` calls.
 
-### O91 — OPEN — incidence-parity IP.8, 2026-09-02: a genuinely maximal RFC 5545 fixture drops four MORE properties than the pre-flight audit's fixture found
+### O91 — RESOLVED (IP.6, 2026-09-02) — incidence-parity IP.8, 2026-09-02: a genuinely maximal RFC 5545 fixture drops four MORE properties than the pre-flight audit's fixture found
 
 Found building IP.8's round-trip fidelity gate. The pre-flight audit's
 probe (`probes/incidence-audit-probe.cpp`) — itself explicitly documented
@@ -3977,6 +4001,24 @@ when it builds the kind-scoped loss profiles, in the same spirit as O86's
 Pinned by `tst_incidence_rfc5545_fidelity.cpp` (IP.8) with `QEXPECT_FAIL`
 citing this finding.
 
+**RESOLVED 2026-09-02 (IP.6 commit 2), with one correction filed as O94.**
+`COMMENT`/`CONTACT` now round-trip on VEVENT, VTODO **and VJOURNAL** — IP.6
+wired all three kinds (a judgment call beyond this finding's own
+attribution of VJOURNAL to IP.10; see the IP.6 return receipt and O87's
+text, corrected there). `REQUEST-STATUS` stays permanently `Dropped`
+everywhere, exactly as predicted — no accessor exists, nothing to fix,
+now honestly declared instead of silently absent.
+
+**`RESOURCES` — this finding's own claim was wrong, corrected by O94.**
+"Verified they round-trip through KCalendarCore's own `ICalFormat`" is
+true for `COMMENT`/`CONTACT` but **false for `RESOURCES`**: direct probing
+(promote from a real `RESOURCES:` line, and independently `setResources()`
+followed by `toICalString()`) shows `KCalendarCore::ICalFormat` 6.29.0
+never reads or writes a RESOURCES line at all, even though the object
+model (`resources()`/`setResources()`) works exactly as documented. See
+O94 for the full probe and the resulting `Dropped` declaration on both
+ical wire edges.
+
 ### O92 — OPEN — incidence-parity IP.3, 2026-09-02: `CanonJsonMerger` has no error channel, so a genuine kind-mismatch identity conflict cannot fail loud at the engine level
 
 Filed while resolving O84 (IP.3): fixing `CanonJsonMerger::merge()` to
@@ -4025,7 +4067,7 @@ Pinned by `mergerKindDisagreementKeepsTargetKindDeliberately()` in
 deliberate precedence rule (not a placeholder) so it cannot silently drift
 to source-wins or an unannounced default.
 
-### O93 — OPEN — incidence-parity IP.9, 2026-09-02: `{todo,canon}`'s own `canonToVtodoLoss()` shares O83/O91's undeclared drops, but only the calendar-domain leg got them declared
+### O93 — RESOLVED (IP.6, 2026-09-02) — incidence-parity IP.9, 2026-09-02: `{todo,canon}`'s own `canonToVtodoLoss()` shares O83/O91's undeclared drops, but only the calendar-domain leg got them declared
 
 Found while building IP.9's `canonToVtodoIcalLoss()` (the new
 `{calendar,canon}→{calendar,ical}` per-kind profile for VTODO). Logged,
@@ -4085,3 +4127,74 @@ shape as IP.9's calendar-leg fix, no emitter change) once IP.9's pattern
 exists to copy. Whoever picks it up should also add the missing
 `(todo, vtodo)` RFC-5545 fidelity coverage IP.8 did not build, per the
 gap noted above — otherwise the same defect can silently reappear.
+
+**RESOLVED 2026-09-02 (IP.6 commit 2), exactly as predicted.** IP.6 fixed
+`vtodocanonfields.cpp` (the shared emitter both `{todo,canon}` and
+`{calendar,canon}` VTODO legs demote through), so this leg's undeclared
+drops disappeared as a byproduct without any edit to
+`canonToVtodoLoss()`'s content being *required* for correctness — it was
+already vacuously honest the moment the emitter stopped dropping the
+properties. `canonToVtodoLoss()` was still edited, to add the two-then-
+three genuinely permanent drops (`geo`, `requestStatus`, and O94's
+`resources`) it had never declared at all. New pin:
+`canonToVtodoLossProfileMatchesFixedEmitter()` in
+`tests/todo/tst_todo_canon_roundtrip.cpp`. The `(todo, vtodo)` RFC-5545
+fidelity coverage gap this finding flagged is still open — not built by
+IP.6 (out of scope: IP.8's gate architecture, not this item's).
+
+### O94 — OPEN — incidence-parity IP.6, 2026-09-02: KCalendarCore's `ICalFormat` never reads or writes `RESOURCES` at all — upstream, corrects O91's claim
+
+Found while adding IP.6's O91 round-trip coverage: a `RESOURCES:
+Projector,VCR` source line survived promote (canon correctly carried
+`resources: ["Projector","VCR"]`) but the property never appeared in the
+demoted output, for both VEVENT and VTODO. O91 had explicitly claimed
+`resources()` "round-trips fine through KCalendarCore's own ICalFormat,
+with no libkalburator involved" — that claim is **wrong specifically for
+RESOURCES** (verified correct for `COMMENT`/`CONTACT`, which do
+round-trip through the identical `ICalFormat` call in the same fixture).
+
+**Two-part probe, both run directly against `KCalendarCore::ICalFormat`
+6.29.0 with no libkalburator code involved:**
+
+1. Parse a source VEVENT/VTODO carrying `RESOURCES:Projector,VCR` and read
+   `incidence->resources()` immediately after — **empty**, even though the
+   line is present and RFC-conformant. The parser never populates it.
+2. Construct a fresh `Event`, call
+   `setResources({"Projector","VCR"})`, confirm `resources()` reads the
+   value back correctly (the object-model accessor pair is genuinely
+   correct — this is not an O86-style corruption), then call
+   `ICalFormat::toICalString()` — the output has **no RESOURCES line at
+   all**. The writer silently discards it.
+
+So unlike O86 (GEO: object model correct, wire serialization corrupts the
+value) and REQUEST-STATUS (O91: no object-model accessor exists at all),
+RESOURCES is a *third* distinct upstream-gap shape: object model fully
+correct, wire reader AND writer both silently no-op. Same toolkit-boundary
+class as O86/REQUEST-STATUS — not fixable in an emitter, needs a
+deliberate keep/hand-serialize/declare-Dropped decision, not a code fix.
+
+**Decided the same session, by the same reasoning as O86 (drop it, don't
+hand-serialize around an upstream gap).** `promoteResources()`/
+`demoteResources()` (`src/calendar/incidencecommonfields.{h,cpp}`) are
+kept — they are correct against the object model, useful for any caller
+that does not go through `ICalFormat`, and forward-compatible with a
+future kcalendarcore fix. The three affected ical wire edges declare
+`resources: Dropped` honestly instead: `canonToIcalLoss()` (VEVENT),
+`canonToVtodoIcalLoss()` (VTODO via `{calendar,canon}`), `canonToVtodoLoss()`
+(VTODO via `{todo,canon}`) — all in the same commit, all cross-checked
+against the same probe. VJOURNAL is unaffected (RFC 5545 §3.6.3's jourprop
+grammar does not permit RESOURCES on VJOURNAL at all).
+
+**Vendor legs unaffected — different wire format entirely.** Google
+Tasks / MS To-Do canon edges are pure JSON transforms with no
+`KCalendarCore::ICalFormat` involvement; `resources` is declared `Dropped`
+(Google Tasks — no wire home) / `Reversible` (MS To-Do — auto-carries via
+the generic `kalburator.canon` open-extension mechanism, verified
+type-generic by reading `valueToCarrierString()`/`carrierStringToValue()`)
+on those legs, unrelated to this finding.
+
+**Not owned by any item yet for a code-level fix** — there is no code fix
+possible short of hand-serializing a RESOURCES line the same way O86
+explicitly forbids for GEO. If a future kcalendarcore release fixes this,
+re-verify and consider removing the `Dropped` declarations, mirroring
+O86's own "re-verify against the installed kcalendarcore version" note.

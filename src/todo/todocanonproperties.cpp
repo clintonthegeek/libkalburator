@@ -81,6 +81,23 @@ const QHash<PropertyId, PropertyMeta>& todoPropertyMetadata()
         { PropertyId{QStringLiteral("parentUid")},        {PropertyKind::String,     QStringLiteral("Parent UID")} },
         { PropertyId{QStringLiteral("checklistItems")},   {PropertyKind::Json,       QStringLiteral("Checklist Items")} },
         { PropertyId{QStringLiteral("linkedResources")},  {PropertyKind::Json,       QStringLiteral("Linked Resources")} },
+        // IP.6 commit 2 / O83 — vtodoCanonContributedIds() now produces
+        // these seven; declarations must match calendarcanonproperties.cpp
+        // exactly (kind + display name), same convention as
+        // seriesSplitOf/completionAnchor/providerExtrasDigest above.
+        { PropertyId{QStringLiteral("sequence")},         {PropertyKind::Integer,    QStringLiteral("Sequence")} },
+        { PropertyId{QStringLiteral("classification")},   {PropertyKind::String,     QStringLiteral("Classification")} },
+        { PropertyId{QStringLiteral("color")},            {PropertyKind::String,     QStringLiteral("Color")} },
+        { PropertyId{QStringLiteral("url")},              {PropertyKind::String,     QStringLiteral("URL")} },
+        { PropertyId{QStringLiteral("organizer")},        {PropertyKind::Json,       QStringLiteral("Organizer")} },
+        { PropertyId{QStringLiteral("attendees")},        {PropertyKind::Json,       QStringLiteral("Attendees")} },
+        { PropertyId{QStringLiteral("attachments")},      {PropertyKind::Json,       QStringLiteral("Attachments")} },
+        // IP.6 commit 2 / O91 — same three new RFC 5545 properties as
+        // calendarcanonproperties.cpp; `requestStatus` deliberately left
+        // uncatalogued, same reasoning as there.
+        { PropertyId{QStringLiteral("comments")},         {PropertyKind::StringList, QStringLiteral("Comments")} },
+        { PropertyId{QStringLiteral("contacts")},         {PropertyKind::StringList, QStringLiteral("Contacts")} },
+        { PropertyId{QStringLiteral("resources")},        {PropertyKind::StringList, QStringLiteral("Resources")} },
     };
     return table;
 }

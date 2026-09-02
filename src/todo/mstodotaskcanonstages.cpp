@@ -699,7 +699,23 @@ Kalburator::Shape::LossProfile canonToMsTodoTaskLoss()
                       LossKind::Reversible);
     for (const char* prop : { "percentComplete", "relatedTo", "parentUid",
                               "sortOrder", "location", "geo",
-                              "completionAnchor", "seriesSplitOf" }) {
+                              "completionAnchor", "seriesSplitOf",
+                              // IP.6 commit 2 / O83, O91 — the shared VTODO
+                              // emitter now produces these ten. None of them
+                              // is in this file's `handled` set (see the
+                              // canon→msTodoTask promote stage above), so
+                              // each auto-carries verbatim as an
+                              // x-canon-* open-extension property, the
+                              // exact same mechanism percentComplete/
+                              // relatedTo/geo/etc already ride — genuinely
+                              // Reversible, not Dropped, confirmed by
+                              // reading the auto-carry loop (it stringifies
+                              // JSON objects/arrays via valueToCarrierString
+                              // and reconstructs them via
+                              // carrierStringToValue, both type-generic).
+                              "sequence", "classification", "color", "url",
+                              "organizer", "attendees", "attachments",
+                              "comments", "contacts", "resources" }) {
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Reversible);
     }

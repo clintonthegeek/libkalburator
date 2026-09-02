@@ -33,6 +33,28 @@ using Kalburator::Calendar::promoteCategories;
 using Kalburator::Calendar::demoteCategories;
 using Kalburator::Calendar::promoteCustomPropertyPassthrough;
 using Kalburator::Calendar::demoteCustomPropertyPassthrough;
+using Kalburator::Calendar::promoteSequence;
+using Kalburator::Calendar::demoteSequence;
+using Kalburator::Calendar::promoteClassification;
+using Kalburator::Calendar::demoteClassification;
+using Kalburator::Calendar::promoteColor;
+using Kalburator::Calendar::demoteColor;
+using Kalburator::Calendar::promoteUrl;
+using Kalburator::Calendar::demoteUrl;
+using Kalburator::Calendar::promoteOrganizer;
+using Kalburator::Calendar::demoteOrganizer;
+using Kalburator::Calendar::promoteAttendees;
+using Kalburator::Calendar::demoteAttendees;
+using Kalburator::Calendar::promoteAttachments;
+using Kalburator::Calendar::demoteAttachments;
+using Kalburator::Calendar::promoteRelatedTo;
+using Kalburator::Calendar::demoteRelatedTo;
+using Kalburator::Calendar::promoteComments;
+using Kalburator::Calendar::demoteComments;
+using Kalburator::Calendar::promoteContacts;
+using Kalburator::Calendar::demoteContacts;
+using Kalburator::Calendar::promoteResources;
+using Kalburator::Calendar::demoteResources;
 
 KCalendarCore::Todo::Ptr parseTodo(const QByteArray &data)
 {
@@ -189,6 +211,25 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         if (!altDesc.isEmpty())
             obj.insert(QStringLiteral("descriptionHtml"), altDesc);
     }
+
+    // ---- sequence / classification / color / url (IP.6 commit 2: O83) ------
+    // VTODO never promoted these four despite the catalogue declaring all
+    // four and VEVENT (and, for sequence/color/url, VJOURNAL) promoting
+    // them identically — the undeclared drop O83 named.
+    promoteSequence(obj, todo);
+    promoteClassification(obj, todo);
+    promoteColor(obj, todo);
+    promoteUrl(obj, todo);
+
+    // ---- organizer / attendees / attachments (IP.6 commit 2: O83) ----------
+    promoteOrganizer(obj, todo);
+    promoteAttendees(obj, todo);
+    promoteAttachments(obj, todo);
+
+    // ---- comments / contacts / resources (IP.6 commit 2: O91) --------------
+    promoteComments(obj, todo);
+    promoteContacts(obj, todo);
+    promoteResources(obj, todo);
 
     // ---- status ------------------------------------------------------------
     {
@@ -421,34 +462,22 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
-    // ---- location / geo ----------------------------------------------------
+    // ---- location ------------------------------------------------------------
     {
         const QString location = todo->location();
         if (!location.isEmpty())
             obj.insert(QStringLiteral("location"), location);
     }
-    {
-        if (todo->hasGeo()) {
-            QJsonObject geoObj;
-            geoObj.insert(QStringLiteral("lat"), todo->geoLatitude());
-            geoObj.insert(QStringLiteral("lon"), todo->geoLongitude());
-            obj.insert(QStringLiteral("geo"), geoObj);
-        }
-    }
+    // ---- geo: DROPPED (O86/Amendment 1 §A.3.2, ratified Amendment 2 §B.5) --
+    // kcalendarcore 6.29.0 serializes GEO corrupt (upstream — swapped
+    // latitude/longitude, uninitialized-memory bytes in the longitude
+    // slot; see FINDINGS O86). PlanStan does not consume geo and asked us
+    // not to hand-serialize around the upstream bug on their account.
+    // Deliberately no promote/demote code for it anywhere any more — this
+    // was the ONLY place in the library that emitted it at all.
 
-    // ---- relatedTo (RELATED-TO hierarchy) ----------------------------------
-    {
-        // KCalendarCore only exposes RelTypeParent (single RELATED-TO per type).
-        const QString parentUid = todo->relatedTo(KCalendarCore::Incidence::RelTypeParent);
-        if (!parentUid.isEmpty()) {
-            QJsonArray arr;
-            QJsonObject rel;
-            rel.insert(QStringLiteral("uid"),     parentUid);
-            rel.insert(QStringLiteral("reltype"), QStringLiteral("PARENT"));
-            arr.append(rel);
-            obj.insert(QStringLiteral("relatedTo"), arr);
-        }
-    }
+    // ---- relatedTo (RELATED-TO hierarchy, IP.6 commit 2: now shared) -------
+    promoteRelatedTo(obj, todo);
 
     // ---- providerExtras["x-vtodo"] — unmapped X- properties ---------------
     // IP.6: incidencecommonfields (no skip list on this leg — matches
@@ -510,6 +539,22 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         if (!splitOf.isEmpty())
             todo->setNonKDECustomProperty("X-CANON-SERIES-SPLIT-OF", splitOf);
     }
+
+    // ---- sequence / classification / color / url (IP.6 commit 2: O83) ------
+    demoteSequence(obj, todo);
+    demoteClassification(obj, todo);
+    demoteColor(obj, todo);
+    demoteUrl(obj, todo);
+
+    // ---- organizer / attendees / attachments (IP.6 commit 2: O83) ----------
+    demoteOrganizer(obj, todo);
+    demoteAttendees(obj, todo);
+    demoteAttachments(obj, todo);
+
+    // ---- comments / contacts / resources (IP.6 commit 2: O91) --------------
+    demoteComments(obj, todo);
+    demoteContacts(obj, todo);
+    demoteResources(obj, todo);
 
     // ---- status ------------------------------------------------------------
     {
@@ -729,36 +774,18 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- location / geo ----------------------------------------------------
+    // ---- location ------------------------------------------------------------
     {
         const QString location = obj.value(QStringLiteral("location")).toString();
         if (!location.isEmpty())
             todo->setLocation(location);
     }
-    {
-        const QJsonObject geoObj = obj.value(QStringLiteral("geo")).toObject();
-        if (!geoObj.isEmpty()) {
-            const float lat = static_cast<float>(geoObj.value(QStringLiteral("lat")).toDouble());
-            const float lon = static_cast<float>(geoObj.value(QStringLiteral("lon")).toDouble());
-            todo->setGeoLatitude(lat);
-            todo->setGeoLongitude(lon);
-        }
-    }
+    // ---- geo: DROPPED — see the promote-side comment above. A pre-existing
+    // canon record from before this change may still carry a "geo" key;
+    // demote correctly ignores it (Dropped means never re-emitted).
 
-    // ---- relatedTo (RELATED-TO) --------------------------------------------
-    {
-        const QJsonArray rels = obj.value(QStringLiteral("relatedTo")).toArray();
-        for (const auto& rv : rels) {
-            const QJsonObject r = rv.toObject();
-            const QString relUid    = r.value(QStringLiteral("uid")).toString();
-            const QString reltype   = r.value(QStringLiteral("reltype")).toString();
-            if (relUid.isEmpty())
-                continue;
-            // KCalendarCore only supports RelTypeParent; other reltypes are ignored.
-            if (reltype.isEmpty() || reltype == QStringLiteral("PARENT"))
-                todo->setRelatedTo(relUid, KCalendarCore::Incidence::RelTypeParent);
-        }
-    }
+    // ---- relatedTo (RELATED-TO, IP.6 commit 2: now shared) -----------------
+    demoteRelatedTo(obj, todo);
 
     // ---- parentUid → RELATED-TO;RELTYPE=PARENT (Reversible) ----------------
     // Only emit if not already covered by relatedTo above.
@@ -837,12 +864,28 @@ QList<Kalburator::Shape::PropertyId> vtodoCanonContributedIds()
     // and are only ever *consumed*, not produced, by
     // canonObjectToVtodoBytes on demote). They stay vendor-only keys in
     // todocanonproperties.cpp — verified 2026-09-02, IP.3 receipt.
+    //
+    // IP.6 commit 2: `geo` REMOVED (O86 — dropped entirely, not merely
+    // corrupted; see the promote-side comment). `sequence`,
+    // `classification`, `color`, `url`, `organizer`, `attendees`,
+    // `attachments` ADDED (O83). `comments`, `contacts`, `resources` ADDED
+    // (O91).
     return {
         PropertyId{QStringLiteral("created")},
         PropertyId{QStringLiteral("lastModified")},
         PropertyId{QStringLiteral("summary")},
         PropertyId{QStringLiteral("description")},
         PropertyId{QStringLiteral("descriptionHtml")},
+        PropertyId{QStringLiteral("sequence")},
+        PropertyId{QStringLiteral("classification")},
+        PropertyId{QStringLiteral("color")},
+        PropertyId{QStringLiteral("url")},
+        PropertyId{QStringLiteral("organizer")},
+        PropertyId{QStringLiteral("attendees")},
+        PropertyId{QStringLiteral("attachments")},
+        PropertyId{QStringLiteral("comments")},
+        PropertyId{QStringLiteral("contacts")},
+        PropertyId{QStringLiteral("resources")},
         PropertyId{QStringLiteral("status")},
         PropertyId{QStringLiteral("percentComplete")},
         PropertyId{QStringLiteral("priority")},
@@ -857,7 +900,6 @@ QList<Kalburator::Shape::PropertyId> vtodoCanonContributedIds()
         PropertyId{QStringLiteral("completionAnchor")},
         PropertyId{QStringLiteral("alarms")},
         PropertyId{QStringLiteral("location")},
-        PropertyId{QStringLiteral("geo")},
         PropertyId{QStringLiteral("relatedTo")},
         PropertyId{QStringLiteral("providerExtrasDigest")},
     };

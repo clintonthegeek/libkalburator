@@ -418,19 +418,36 @@ private slots:
         const auto loss = toIcal->composedLoss(QStringLiteral("vtodo"));
         QVERIFY2(!loss.isLossless(), "vtodo profile must not be empty");
 
-        // O83/O91: the eleven VTODO-shaped drops must be present, Dropped.
+        // IP.6 commit 2 FIXED O83's seven properties (attachments/
+        // attendees/classification/color/organizer/sequence/url) and O91's
+        // comments/contacts — none of them may appear as Dropped any more.
+        // What remains, permanently: geo (O86 — now a clean Dropped, not
+        // Degraded, since it is no longer emitted at all), requestStatus
+        // (O91 — upstream, no KCalendarCore accessor exists), and resources
+        // (O94, new — upstream, KCalendarCore::ICalFormat never reads or
+        // writes RESOURCES despite the object model supporting it; see
+        // incidencecommonfields.h's promoteResources() doc comment).
         static const char* kVtodoDropped[] = {
-            "attachments", "attendees", "classification", "color", "organizer",
-            "sequence", "url", "comments", "contacts", "resources", "requestStatus",
+            "geo", "requestStatus", "resources",
         };
         for (const char* id : kVtodoDropped) {
             QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
                      qPrintable(QStringLiteral("vtodo profile missing '%1'").arg(QString::fromLatin1(id))));
             QCOMPARE(loss.affected.value(PropertyId{QString::fromLatin1(id)}), LossKind::Dropped);
         }
-        // O86: geo's NAME survives but its VALUE is corrupted — Degraded,
-        // not Dropped (see canonToVtodoIcalLoss()'s own comment on the fit).
-        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("geo")}), LossKind::Degraded);
+
+        // The fixed properties must NOT appear in the profile at all any
+        // more — a regression guard for IP.6 commit 2's own fix, mirroring
+        // the O88 event-only-leak check below.
+        static const char* kFixedByIp6[] = {
+            "attachments", "attendees", "classification", "color", "organizer",
+            "sequence", "url", "comments", "contacts",
+        };
+        for (const char* id : kFixedByIp6) {
+            QVERIFY2(!loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
+                     qPrintable(QStringLiteral("vtodo profile still wrongly drops fixed '%1'")
+                                    .arg(QString::fromLatin1(id))));
+        }
 
         // The O88 bug, pinned directly: none of canonToIcalLoss()'s
         // event-only vendor keys may leak into the vtodo profile.
@@ -463,17 +480,27 @@ private slots:
         const auto loss = toIcal->composedLoss(QStringLiteral("vjournal"));
         QVERIFY2(!loss.isLossless(), "vjournal profile must not be empty");
 
-        // O87/O91: the nine VJOURNAL-shaped drops must be present, Dropped
-        // ("recurrence" alone covers RRULE/RDATE/EXDATE — invariant 3).
+        // O87 (still open, IP.10's job) + O91: the seven VJOURNAL-shaped
+        // drops must be present, Dropped ("recurrence" alone covers RRULE/
+        // RDATE/EXDATE — invariant 3). IP.6 commit 2 FIXED O91's comments/
+        // contacts for VJOURNAL too (judgment call — see the IP.6 return
+        // receipt), so they are no longer in this list.
         static const char* kVjournalDropped[] = {
             "attachments", "attendees", "organizer", "relatedTo", "recurrenceId",
-            "recurrence", "comments", "contacts", "requestStatus",
+            "recurrence", "requestStatus",
         };
         for (const char* id : kVjournalDropped) {
             QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
                      qPrintable(QStringLiteral("vjournal profile missing '%1'").arg(QString::fromLatin1(id))));
             QCOMPARE(loss.affected.value(PropertyId{QString::fromLatin1(id)}), LossKind::Dropped);
         }
+
+        // comments/contacts must NOT appear as Dropped any more — a
+        // regression guard for IP.6 commit 2's own fix.
+        QVERIFY2(!loss.affected.contains(PropertyId{QStringLiteral("comments")}),
+                 "vjournal profile still wrongly drops fixed 'comments'");
+        QVERIFY2(!loss.affected.contains(PropertyId{QStringLiteral("contacts")}),
+                 "vjournal profile still wrongly drops fixed 'contacts'");
 
         // The O88 bug, pinned directly: none of canonToIcalLoss()'s
         // event-only vendor keys may leak into the vjournal profile.

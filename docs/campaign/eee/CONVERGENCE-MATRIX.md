@@ -65,6 +65,7 @@ reads through listings/delta/$expand.
 | descriptionHtml | Reversible |
 | eventType | Dropped |
 | freeBusyStatus | Reversible |
+| geo | Dropped |
 | guestsCanInviteOthers | Reversible |
 | guestsCanModify | Reversible |
 | guestsCanSeeOtherGuests | Reversible |
@@ -73,6 +74,8 @@ reads through listings/delta/$expand.
 | locked | Reversible |
 | onlineMeeting | Dropped |
 | privateCopy | Reversible |
+| requestStatus | Dropped |
+| resources | Dropped |
 | responseRequested | Reversible |
 | typedProperties | Dropped |
 
@@ -82,8 +85,6 @@ reads through listings/delta/$expand.
 |---|---|
 | attachments | Dropped |
 | attendees | Dropped |
-| comments | Dropped |
-| contacts | Dropped |
 | organizer | Dropped |
 | recurrence | Dropped |
 | recurrenceId | Dropped |
@@ -94,18 +95,9 @@ reads through listings/delta/$expand.
 
 | Property | LossKind |
 |---|---|
-| attachments | Dropped |
-| attendees | Dropped |
-| classification | Dropped |
-| color | Dropped |
-| comments | Dropped |
-| contacts | Dropped |
-| geo | Degraded |
-| organizer | Dropped |
+| geo | Dropped |
 | requestStatus | Dropped |
 | resources | Dropped |
-| sequence | Dropped |
-| url | Dropped |
 
 ### canon → org-ical
 
@@ -285,10 +277,13 @@ reads through listings/delta/$expand.
 | checklistItems | Reversible |
 | completionAnchor | Reversible |
 | descriptionHtml | Reversible |
+| geo | Dropped |
 | linkedResources | Dropped |
 | parentUid | Reversible |
 | providerExtrasDigest | Dropped |
 | recurrenceRange | Degraded |
+| requestStatus | Dropped |
+| resources | Dropped |
 | seriesSplitOf | Reversible |
 | sortOrder | Reversible |
 | status | Degraded |
@@ -309,43 +304,63 @@ reads through listings/delta/$expand.
 | Property | LossKind |
 |---|---|
 | alarms | Dropped |
+| attachments | Dropped |
+| attendees | Dropped |
 | categories | Dropped |
 | checklistItems | Dropped |
+| classification | Dropped |
+| color | Dropped |
+| comments | Dropped |
 | completionAnchor | Dropped |
+| contacts | Dropped |
 | descriptionHtml | Dropped |
 | due | Degraded |
 | geo | Dropped |
 | location | Dropped |
+| organizer | Dropped |
 | percentComplete | Dropped |
 | priority | Dropped |
 | providerExtrasDigest | Dropped |
 | recurrence | Dropped |
 | relatedTo | Dropped |
+| resources | Dropped |
+| sequence | Dropped |
 | seriesSplitOf | Dropped |
 | start | Dropped |
 | status | Simplified |
+| url | Dropped |
 
 ### canon → ms-todotask
 
 | Property | LossKind |
 |---|---|
 | alarms | Simplified |
+| attachments | Reversible |
+| attendees | Reversible |
 | checklistItems | Dropped |
+| classification | Reversible |
+| color | Reversible |
+| comments | Reversible |
 | completed | Simplified |
 | completionAnchor | Reversible |
+| contacts | Reversible |
 | description | Simplified |
 | descriptionHtml | Simplified |
 | due | Simplified |
 | geo | Reversible |
 | linkedResources | Dropped |
 | location | Reversible |
+| organizer | Reversible |
 | parentUid | Reversible |
 | percentComplete | Reversible |
 | priority | Degraded |
 | providerExtrasDigest | Dropped |
 | recurrence | Reversible |
 | relatedTo | Reversible |
+| resources | Reversible |
+| sequence | Reversible |
 | seriesSplitOf | Reversible |
 | sortOrder | Reversible |
 | start | Simplified |
+| url | Reversible |
 

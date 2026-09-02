@@ -359,6 +359,58 @@ private slots:
         // locations: Simplified
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("locations")}),
                  LossKind::Simplified);
+
+        // IP.6 commit 2: the three permanent, ratified VEVENT drops —
+        // geo (O86), requestStatus (O91, upstream), resources (O94,
+        // upstream — see incidencecommonfields.h's promoteResources()
+        // doc comment).
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("geo")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("requestStatus")}),
+                 LossKind::Dropped);
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("resources")}),
+                 LossKind::Dropped);
+    }
+
+    // IP.6 commit 2 (Amendment 1 §A.3.2 + O91) — VEVENT gains RELATED-TO,
+    // COMMENT, CONTACT on this edge (the same shared incidencecommonfields
+    // code VTODO now uses too — see tst_todo_canon_roundtrip.cpp's
+    // vtodoRoundTripPreservesO83Fields()/vtodoCommentsContactsRoundTripResourcesDoesNot()
+    // for the VTODO-side twin of this slot).
+    void icalRoundTripPreservesRelatedToCommentsContacts()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:related-uid\r\n"
+            "SUMMARY:Related event\r\n"
+            "DTSTART:20260601T100000Z\r\n"
+            "DTEND:20260601T110000Z\r\n"
+            "RELATED-TO:parent-uid\r\n"
+            "COMMENT:a comment\r\n"
+            "CONTACT:Jane Doe\\, +1-555-0100\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY(!canon.isEmpty());
+        const QJsonObject obj = parse(canon);
+        QVERIFY2(!obj.value(QStringLiteral("relatedTo")).toArray().isEmpty(),
+                 "relatedTo must be promoted for VEVENT (Amendment 1 §A.3.2)");
+        QVERIFY2(!obj.value(QStringLiteral("comments")).toArray().isEmpty(),
+                 "comments must be promoted (O91)");
+        QVERIFY2(!obj.value(QStringLiteral("contacts")).toArray().isEmpty(),
+                 "contacts must be promoted (O91)");
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(output.contains("RELATED-TO:"), "RELATED-TO must survive the round trip");
+        QVERIFY2(output.contains("COMMENT:"), "COMMENT must survive the round trip");
+        QVERIFY2(output.contains("CONTACT:"), "CONTACT must survive the round trip");
     }
 
     // Task 1: canon envelope kind discriminator

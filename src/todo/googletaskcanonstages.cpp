@@ -283,7 +283,15 @@ Kalburator::Shape::LossProfile canonToGoogleTaskLoss()
                               "seriesSplitOf",
                               "alarms", "location",
                               "geo", "checklistItems", "relatedTo",
-                              "descriptionHtml" }) {
+                              "descriptionHtml",
+                              // IP.6 commit 2 / O83, O91 — the shared VTODO
+                              // emitter now produces these ten; the Google
+                              // Tasks API has no wire form (no carrier
+                              // channel of any kind, same as the block
+                              // above) for any of them.
+                              "sequence", "classification", "color", "url",
+                              "organizer", "attendees", "attachments",
+                              "comments", "contacts", "resources" }) {
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Dropped);
     }

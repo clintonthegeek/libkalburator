@@ -118,19 +118,17 @@ QStringList sortedList(const QSet<QString>& s)
 // icalcanonstages.{h,cpp} and journalcanonfields.{h,cpp}), via
 // droppedRfcNames() below, rather than hand-typed literals.
 //
-// vevent's list STAYS a literal — deliberately not wired. Its real profile
-// (canonToIcalLoss()) is a DIFFERENT vocabulary of loss (canon-JSON vendor
-// keys — onlineMeeting, guestsCan*, ... — with no RFC-name counterpart at
-// all) from the RFC-property-name drops this gate measures (GEO,
-// RELATED-TO, COMMENT, CONTACT, RESOURCES, REQUEST-STATUS). Declaring
-// those RFC drops on canonToIcalLoss() is explicitly IP.6's scope (PLAN.md
-// Amendment 1 §A.3.2: "IP.6 also owns the O86 GEO decision" + "VEVENT
-// drops RELATED-TO ... belongs in the [IP.6] extraction") — IP.9 owns only
-// the calendar domain's KIND-POLYMORPHISM defect (O88), not the content of
-// vevent's own already-kind-correct profile. Wiring vevent here now would
-// mean either fabricating entries IP.6 has not ratified, or silently
-// leaving the derived list empty (a false "nothing lost" signal) — both
-// worse than the honest literal + this note. Revisit when IP.6 lands.
+// vevent's list STAYS a literal — deliberately not wired, even after IP.6.
+// Its real profile (canonToIcalLoss()) is a DIFFERENT vocabulary of loss
+// (canon-JSON vendor keys — onlineMeeting, guestsCan*, ... — with no
+// RFC-name counterpart at all) from the RFC-property-name drops this gate
+// measures. IP.6 added two RFC-named Dropped entries to canonToIcalLoss()
+// (geo, requestStatus) specifically so this literal has something honest
+// to check against, but wiring the whole profile through droppedRfcNames()
+// the way vtodo/vjournal are would require the translation table to also
+// cover the vendor-only vocabulary, which has no RFC-name counterpart at
+// all — not worth building for two entries. Revisit if a future item finds
+// reason to.
 struct KindFidelityExpectation {
     QStringList expectedLost;   // RFC 5545 property NAMES, uppercase, sorted
     bool expectFixpoint = true; // promote->demote->promote canon bytes equal
@@ -153,6 +151,7 @@ const QHash<QString, QStringList>& propertyIdToRfcNames()
         { QStringLiteral("color"),          { QStringLiteral("COLOR") } },
         { QStringLiteral("comments"),       { QStringLiteral("COMMENT") } },
         { QStringLiteral("contacts"),       { QStringLiteral("CONTACT") } },
+        { QStringLiteral("geo"),            { QStringLiteral("GEO") } },
         { QStringLiteral("organizer"),      { QStringLiteral("ORGANIZER") } },
         { QStringLiteral("requestStatus"),  { QStringLiteral("REQUEST-STATUS") } },
         { QStringLiteral("resources"),      { QStringLiteral("RESOURCES") } },
@@ -169,16 +168,16 @@ const QHash<QString, QStringList>& propertyIdToRfcNames()
 // Translates a LossProfile's Dropped entries to their RFC 5545 property
 // NAME(s), sorted. Only `Dropped` is translated here — this gate measures
 // property-NAME loss (a name either survives the round trip or it does
-// not), which is exactly what `LossKind::Dropped` means. The other three
-// kinds do NOT fit this gate's axis: `Reversible`/`Simplified` both keep
-// the property's NAME present in the output (recoverable/reduced form —
-// nothing for a before/after NAME-SET diff to see), and `Degraded` in
-// IP.9's two profiles is used for exactly one entry — VTODO's `geo`
-// (O86) — whose NAME also survives; its damage is a corrupted VALUE,
-// measured by this gate's SEPARATE fixpoint check (expectFixpoint below),
-// not by the lost-name list. So Dropped-only translation is a complete
-// mapping onto this gate's axis for both profiles as currently declared,
-// not a gap.
+// not), which is exactly what `LossKind::Dropped` means. `Reversible`/
+// `Simplified` both keep the property's NAME present in the output
+// (recoverable/reduced form — nothing for a before/after NAME-SET diff to
+// see), so Dropped-only translation is a complete mapping onto this gate's
+// axis. (IP.6 note: before this item, VTODO's `geo` was `Degraded` here —
+// NAME survives, VALUE corrupted by O86, caught only by the fixpoint check
+// below, not this list. IP.6 removed GEO from vtodocanonfields.cpp
+// entirely, so it is now cleanly `Dropped` like every other kind — the
+// Degraded case this comment used to describe no longer exists in either
+// profile.)
 QStringList droppedRfcNames(const Kalburator::Shape::LossProfile& profile)
 {
     QSet<QString> names;
@@ -206,31 +205,51 @@ QStringList droppedRfcNames(const Kalburator::Shape::LossProfile& profile)
 const QHash<QString, KindFidelityExpectation>& expectedLossTable()
 {
     static const QHash<QString, KindFidelityExpectation> table = {
-        // GEO/RELATED-TO: PLAN.md Amendment 1 §A.3.2 (IP.6 scope) + O86
-        // (2026-09-02 decision: drop GEO, do not hand-serialize around the
-        // upstream kcalendarcore corruption). COMMENT/CONTACT/RESOURCES/
-        // REQUEST-STATUS: O91. Deliberately literal, not derived — see the
-        // note above expectedLossTable().
+        // IP.6 (2026-09-02) landed: RELATED-TO now round-trips (Amendment 1
+        // §A.3.2), and COMMENT/CONTACT now round-trip (O91, common-field
+        // extraction). What remains is exactly three permanent, ratified
+        // drops — GEO (O86: dropped entirely rather than hand-serialize
+        // around the upstream kcalendarcore corruption), REQUEST-STATUS
+        // (O91: upstream, KCalendarCore has no accessor for it at all, not
+        // fixable in any emitter), and RESOURCES (O94, new, filed by this
+        // item: KCalendarCore::ICalFormat 6.29.0 never reads or writes a
+        // RESOURCES line at all, even though the object model's
+        // resources()/setResources() work correctly — this CORRECTS O91's
+        // claim that resources() "round-trips fine through KCalendarCore's
+        // own ICalFormat", which was verified wrong specifically for
+        // RESOURCES; see incidencecommonfields.h's promoteResources() doc
+        // comment and the IP.6 return receipt for the full probe).
+        // Deliberately literal, not derived — see the note above
+        // expectedLossTable().
         { QStringLiteral("vevent"), {
-            { QStringLiteral("COMMENT"), QStringLiteral("CONTACT"), QStringLiteral("GEO"),
-              QStringLiteral("RELATED-TO"), QStringLiteral("REQUEST-STATUS"),
+            { QStringLiteral("GEO"), QStringLiteral("REQUEST-STATUS"),
               QStringLiteral("RESOURCES") },
             true
         } },
-        // O83 (IP.6) + O91 (IP.9), now DERIVED from
-        // Kalburator::Calendar::canonToVtodoIcalLoss(). GEO is correctly
-        // absent from the derived list (LossKind::Degraded, not Dropped —
-        // its NAME round-trips; O86's damage is the fixpoint failure below).
+        // O83 CLOSED by IP.6 commit 2 (all seven properties now round-trip
+        // via incidencecommonfields.cpp), DERIVED from
+        // Kalburator::Calendar::canonToVtodoIcalLoss(). GEO is now cleanly
+        // Dropped (removed from vtodocanonfields.cpp entirely, O86) rather
+        // than Degraded — its NAME no longer survives either, so
+        // promote->demote->promote is a fixpoint again (expectFixpoint
+        // flipped to true below).
         { QStringLiteral("vtodo"), {
             droppedRfcNames(Kalburator::Calendar::canonToVtodoIcalLoss()),
-            false   // O86: GEO corruption breaks the promote->demote->promote fixpoint
+            true    // O86 RESOLVED: GEO removed entirely, no more fixpoint break
         } },
-        // O87 (IP.10) + O91 (IP.9), now DERIVED from
+        // O87 (IP.10, still open) + O91, DERIVED from
         // Kalburator::Calendar::canonToVjournalLoss(). RDATE/RRULE/EXDATE
         // all come from the single "recurrence" PropertyId (see
         // propertyIdToRfcNames() above) — journalcanonfields.cpp has ZERO
         // recurrence handling of any kind, so all three are the same
-        // underlying defect, not three independent ones.
+        // underlying defect, not three independent ones. O91's
+        // COMMENT/CONTACT are CLOSED by IP.6 commit 2 (judgment call: wired
+        // into the shared common module alongside VEVENT/VTODO, since RFC
+        // 5545 permits both on VJOURNAL and the fix was the same one-line
+        // call — see the IP.6 return receipt; PLAN.md's IP.10 text
+        // attributing them to IP.10 is now stale, corrected here and in
+        // STATUS.md). REQUEST-STATUS stays permanently Dropped (upstream,
+        // no KCalendarCore accessor exists at all).
         { QStringLiteral("vjournal"), {
             droppedRfcNames(Kalburator::Calendar::canonToVjournalLoss()),
             true
@@ -474,40 +493,18 @@ private:
         const auto& expectation = expectedLossTable().value(kindName);
 
         // --- named, per-defect QEXPECT_FAIL breakdown -----------------------
-        if (kindName == QStringLiteral("vevent")) {
-            QEXPECT_FAIL("", "IP.6 / O86 (2026-09-02 decision: drop GEO rather than "
-                              "hand-serialize around the upstream kcalendarcore GEO "
-                              "corruption) — VEVENT drops GEO on demote", Continue);
-            QVERIFY2(!lost.contains(QStringLiteral("GEO")), "GEO must not be lost (until IP.6 lands)");
-
-            QEXPECT_FAIL("", "IP.6 / PLAN.md Amendment 1 §A.3.2 (measured, no dedicated "
-                              "O-number) — VEVENT drops RELATED-TO on demote", Continue);
-            QVERIFY2(!lost.contains(QStringLiteral("RELATED-TO")), "RELATED-TO must not be lost (until IP.6 lands)");
-
-            QEXPECT_FAIL("", "IP.6 + IP.9 / O91 (new, filed by this item) — VEVENT drops "
-                              "COMMENT/CONTACT/RESOURCES (ours, common-field extraction) "
-                              "and REQUEST-STATUS (upstream: KCalendarCore has no "
-                              "accessor for it at all)", Continue);
-            QVERIFY2((lost & QSet<QString>{QStringLiteral("COMMENT"), QStringLiteral("CONTACT"),
-                                            QStringLiteral("RESOURCES"), QStringLiteral("REQUEST-STATUS")}).isEmpty(),
-                     "COMMENT/CONTACT/RESOURCES/REQUEST-STATUS must not be lost (O91)");
-        } else if (kindName == QStringLiteral("vtodo")) {
-            QEXPECT_FAIL("", "IP.6 / O83 — VTODO is the poorest-covered incidence kind: "
-                              "ATTACH/ATTENDEE/CLASS/COLOR/ORGANIZER/SEQUENCE/URL all "
-                              "undeclared drops", Continue);
-            QVERIFY2((lost & QSet<QString>{QStringLiteral("ATTACH"), QStringLiteral("ATTENDEE"),
-                                            QStringLiteral("CLASS"), QStringLiteral("COLOR"),
-                                            QStringLiteral("ORGANIZER"), QStringLiteral("SEQUENCE"),
-                                            QStringLiteral("URL")}).isEmpty(),
-                     "O83's seven properties must not be lost (until IP.6 lands)");
-
-            QEXPECT_FAIL("", "IP.6 + IP.9 / O91 (new, filed by this item) — VTODO drops "
-                              "COMMENT/CONTACT/RESOURCES (ours) and REQUEST-STATUS "
-                              "(upstream)", Continue);
-            QVERIFY2((lost & QSet<QString>{QStringLiteral("COMMENT"), QStringLiteral("CONTACT"),
-                                            QStringLiteral("RESOURCES"), QStringLiteral("REQUEST-STATUS")}).isEmpty(),
-                     "COMMENT/CONTACT/RESOURCES/REQUEST-STATUS must not be lost (O91)");
-        } else if (kindName == QStringLiteral("vjournal")) {
+        // IP.6 (2026-09-02): VEVENT's GEO/RELATED-TO/COMMENT/CONTACT/
+        // RESOURCES/REQUEST-STATUS breakdown and VTODO's O83/O91 breakdown
+        // are REMOVED from here — every property either round-trips now
+        // (RELATED-TO, COMMENT, CONTACT, RESOURCES, and O83's seven) or is
+        // a permanent, ratified drop with no future item to attribute a
+        // QEXPECT_FAIL to (GEO — dropped by design, O86; REQUEST-STATUS —
+        // upstream, no KCalendarCore accessor exists at all). Both are
+        // still covered, honestly, by the non-QEXPECT_FAIL "real gate"
+        // QCOMPARE below, via expectedLossTable()'s permanent entries —
+        // exactly the same treatment onlineMeeting/eventType/etc already
+        // get in canonToIcalLoss() with no dedicated named assertion.
+        if (kindName == QStringLiteral("vjournal")) {
             QEXPECT_FAIL("", "IP.10 / O87 — VJOURNAL's undeclared drops, including "
                               "RECURRENCE-ID identity aliasing (a detached instance and "
                               "its master become indistinguishable in canon) and RRULE/"
@@ -518,11 +515,10 @@ private:
                                             QStringLiteral("RRULE"), QStringLiteral("RDATE")}).isEmpty(),
                      "O87's properties (+RDATE, folded in per O91) must not be lost (until IP.10 lands)");
 
-            QEXPECT_FAIL("", "IP.10 / O91 (new, filed by this item) — VJOURNAL drops "
-                              "COMMENT/CONTACT (ours) and REQUEST-STATUS (upstream)", Continue);
-            QVERIFY2((lost & QSet<QString>{QStringLiteral("COMMENT"), QStringLiteral("CONTACT"),
-                                            QStringLiteral("REQUEST-STATUS")}).isEmpty(),
-                     "COMMENT/CONTACT/REQUEST-STATUS must not be lost (O91)");
+            // COMMENT/CONTACT: CLOSED by IP.6 commit 2 (judgment call — see
+            // expectedLossTable()'s vjournal comment above). No QEXPECT_FAIL
+            // needed for them any more; REQUEST-STATUS is a permanent drop
+            // (upstream) covered by the real gate below like VEVENT/VTODO's.
         }
 
         // --- the real gate: lost must equal EXACTLY the declared allow-list -
