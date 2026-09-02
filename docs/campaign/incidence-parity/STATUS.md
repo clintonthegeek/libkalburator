@@ -317,6 +317,7 @@ produced this state; three copies drift faster than two.
   **We owe them a tag (§B.7):** they are pinned at `v1.01` and all of
   vtodo-parity W1–W7 is on `main` untagged, so they cannot consume the work
   they asked for. Not gating anything, by their own statement.
+  — **RESOLVED same day: `v1.04` cut and pushed, see the next entry.**
 
 - **2026-09-02 — `v1.04` CUT AND PUSHED** (annotated, at `76bbcf3`).
   Closes the one thing this repo owed PlanStan (PLAN §B.7): they were
