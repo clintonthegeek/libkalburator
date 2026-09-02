@@ -888,3 +888,210 @@ Supersedes §3. The campaign is done when:
 
 Condition 2 is the one that would have prevented this audit from being
 necessary. Condition 6 is the one a consumer can feel.
+
+---
+---
+
+# Amendment 2 — 2026-09-02 (ratified answers)
+
+**Source:** `docs/2026-09-02-incidence-parity-planstan-response.md` —
+PlanStan @ `master` `e1856650`, pinned `v1.01`.
+
+**Both questions are answered and ratified. Nothing in this campaign is
+blocked on a consumer any more.**
+
+- **Q1 → (a) converge.** Not the "no strong view" default the report
+  offered — an evidenced answer, with a structural reason (b) cannot land.
+- **Q2 → DTSTART-wins for VEVENT**, with a better unifying principle than
+  the plan had, and a precise three-part rule.
+
+This amendment records both, settles the O86 open question, and **reorders
+the remaining items** on the strength of one disclosure in the answer.
+Amendment 1 otherwise stands.
+
+---
+
+## B.1 The disclosure that changes priorities
+
+PlanStan reads `{calendar,canon}` VTODOs as their **primary and default**
+task path — not an edge case:
+
+- `todo_work.kalb`, the fixture their entire todo-UX campaign was built
+  against, binds its one list to the `local` backend, which never demuxes.
+- `Test6.kalb`, a real GTD vault, has seven task lists, each **mirrored**
+  across a `local` and a `multiproto-dav` binding — so every task is a
+  `{calendar,canon}` VTODO on *both* legs simultaneously.
+- Their org backend is a task-first surface and is likewise never demuxed.
+
+**So O83's seven undeclared drops have been hitting the default task path
+of the consuming application**, and W1's composite exception identity —
+which PlanStan asked for and this library delivered — is not reaching the
+vault their todo work is tested against.
+
+That makes IP.6 the highest-impact user-data fix in the campaign, and it is
+currently sixth. See §B.3.
+
+## B.2 Q2 — the rule, and the principle behind it
+
+PlanStan confirmed **DTSTART-wins** and, more usefully, supplied the
+principle that makes W6.2 and this the *same* rule rather than two
+decisions:
+
+> **The mandatory temporal anchor wins; the optional derived bound is
+> coerced to match it.**
+
+- **VTODO** — `DTSTART` is optional, `DUE` is semantically primary (a task
+  is defined by its deadline; many carry `DUE` and no `DTSTART`). Anchor =
+  `DUE` ⇒ **DUE-wins**, which is exactly W6.2.
+- **VEVENT** — polarity reversed. `DTSTART` is mandatory; `DTEND` is
+  optional, may be replaced by `DURATION`, and is *defined relative to*
+  `DTSTART`. Anchor = `DTSTART` ⇒ **DTSTART-wins**.
+
+**Adopt this framing in the IP.7b contract doc.** Amendment 1 §A.3.3 and
+the body's IP.7b both describe W6.2 as a "deliberate divergence" this
+should not mirror. That was right about the *action* and wrong about the
+*reason*: it is one rule applied to components with opposite optionality.
+Stating it that way means **VJOURNAL falls out for free** — `DTSTART` only,
+no bound, nothing to coerce — instead of needing a third decision at IP.10.
+
+### The rule to implement
+
+1. Coerce **`DTEND` to `DTSTART`'s value type. Never the reverse.**
+   - `DTSTART` `DATE` + `DTEND` `DATE-TIME` ⇒ take `DTEND`'s date part.
+   - `DTSTART` `DATE-TIME` + `DTEND` `DATE` ⇒ `DTEND` at `00:00` in
+     `DTSTART`'s timezone. (House rule O60: construct the wall time
+     directly **in** the target zone; do not build it elsewhere and
+     convert.)
+2. If the coerced `DTEND <= DTSTART`, **drop `DTEND`** and let RFC 5545's
+   default stand — rather than synthesising a bound.
+3. `DURATION` present instead of `DTEND` ⇒ nothing to coerce. Leave it.
+
+PlanStan offered item 2 as a preference and invited a different call on an
+RFC read. **Take their preference — the RFC read agrees with it.** RFC 5545
+§3.6.1 requires `DTEND` to be strictly greater than `DTSTART`, so a
+non-conforming pair has no valid value to clamp *to*; and the same section
+already defines the absent-`DTEND` behaviour (one day for a `DATE`
+`DTSTART`, zero duration for a `DATE-TIME` one). Dropping therefore falls
+back to a **defined** default, while clamping to `DTSTART + 1 day` would
+invent a bound the author never wrote and make a malformed all-day event
+indistinguishable from a well-formed one. Record this reasoning in the
+contract doc — the invitation to differ was genuine, and so is the reason
+for not taking it.
+
+**Why it matters to them, worth keeping in the contract:** the common
+real-world malformed case is an all-day event from a sloppy producer —
+`VALUE=DATE` `DTSTART` with a stray `DATE-TIME` `DTEND`. Under DTEND-wins
+it promotes to *timed* and moves out of PlanStan's all-day banner into a
+00:00 slot. DTSTART-wins keeps it where the author meant it. And because
+`KCalendarCore::Incidence::allDay()` is one boolean for the whole
+incidence, a mismatched pair is unrepresentable downstream anyway —
+KCalendarCore collapses it by whichever setter ran last, "which is not a
+rule, it is an accident."
+
+**IP.7b is UNBLOCKED.** Contract doc first, in the shape of
+`docs/campaign/vtodo-parity/2026-08-28-w7-passthrough-contract.md`;
+PlanStan will read it.
+
+## B.3 Revised execution order (supersedes Amendment 1 §A.2)
+
+Only the tail moves. **IP.6 and IP.10 advance ahead of IP.4 and IP.5**,
+because §B.1 shows IP.6 fixes live data loss on the consumer's default task
+path, and IP.10 (which depends on IP.6's extraction) closes the
+`RECURRENCE-ID` identity corruption — the two highest-severity items in the
+audit. Nothing depends on IP.4 or IP.5, so moving them later is free.
+
+| # | Item | Closes | Change |
+|---|---|---|---|
+| 1 | **IP.8** — RFC-5545 round-trip fidelity gate | proves O85–O87 | — |
+| 2 | **IP.3** — contributed catalogues + O84 | O78 class, O84 | — |
+| 3 | **IP.9** — kind-scoped loss profiles | O88 | — |
+| 4 | **IP.6** — `incidencecommonfields` + drop `geo` | **O83, O86** | **was 6** — §B.1 |
+| 5 | **IP.10** — VJOURNAL parity | **O87** | **was 7** — follows IP.6 |
+| 6 | **IP.4** — shared VALARM module | O79, O85 | was 4 |
+| 7 | **IP.5** — providerExtrasDigest | O80 | was 5 |
+| 8 | **IP.7** — VEVENT corrections | O81, O82 | **7b unblocked** (§B.2) |
+| 9 | **IP.11** — convergence proof | O89 | **unblocked, rescoped** (§B.4) |
+| 10 | **IP.12** — demote purity | O90 | — |
+
+**IP.4 is not deprioritised on the grounds that PlanStan has no alarm UI.**
+They raised this themselves and asked us not to: they are a *passthrough*
+for alarms other clients authored, so "every alarm round-trips back
+disabled" corrupts third-party data flowing through them. Their words:
+*"treat our lack of UI as zero reason to deprioritise IP.4."* It moves
+because IP.6/IP.10 got more urgent, not because IP.4 got less.
+
+## B.4 IP.11 rescoped — convergence proof, not a choice
+
+**Closes:** O89. **No longer blocked.** Supersedes Amendment 1's IP.11.
+
+(a) is ratified, and PlanStan explicitly asked us **not** to keep the two
+representations distinguishable for their benefit: *"converging them until
+it stops mattering which one a task gets is exactly the outcome we want."*
+So IP.11 stops being a design decision and becomes a proof:
+
+**Work**
+
+1. A **crossing gate** (house rule O64) demonstrating that the same VTODO
+   promoted through `{calendar,canon}` and through `{todo,canon}` yields
+   **equivalent canon** — modulo the vendor-only keys that genuinely have
+   no iCal representation. This is the item's deliverable; everything else
+   is cleanup toward making it pass.
+2. Close the residual catalogue divergence: `checklistItems`,
+   `linkedResources`, `parentUid`, `sortOrder` are in the todo catalogue
+   and absent from calendar's. If IP.3's contributor mechanism has not
+   already unified them, that is a defect in IP.3 — say so rather than
+   hand-patching a catalogue.
+3. **Make the silent fallback loud.** A collection routed to
+   `{calendar,canon}` because a server advertised no component types should
+   say so in a log line, per the EEE doctrine's "loud about limits" clause.
+   This survives convergence: even when the two paths are equivalent, which
+   one you took should be observable.
+
+**Do NOT implement (b) routing**, and do not leave hooks for it. It is
+blocked on a PlanStan-side data-model change (a logical calendar holding
+membership in more than one domain) that they have not designed. The reason
+is recorded in FINDINGS O89 so it is not re-proposed as a rename; the short
+version is that `CalendarType::Hybrid` is their *default*, and under (b) a
+hybrid calendar would need two primary bindings in two domains — which
+their model cannot express, so half of every hybrid calendar would silently
+stop loading.
+
+**Acceptance**
+
+- The crossing gate passes, or names precisely which keys still diverge and
+  why each is legitimate.
+- The fallback is observable.
+- No `(b)`-shaped scaffolding anywhere in the diff.
+
+## B.5 Settled — stop flagging these
+
+Amendment 1 and the report flagged five things as "will change under you".
+PlanStan cleared all five; treat them as decided:
+
+| Flagged | Ratified |
+|---|---|
+| Matrix reshape (IP.9) | **No-op for them** — they parse and pin nothing (`grep ConvergenceMatrix` → zero hits). Reshape freely. |
+| New loss warnings | **Wanted, no spam risk** — they consume no loss profile programmatically. They agree the undeclared drops are the contract breach independent of the bugs. |
+| `geo` (O86) | **Drop it.** They don't consume it. Do not hand-serialize around the upstream bug. Amendment 1 §A.3.2's choice is closed: option **(b)**. |
+| VJOURNAL additive fields (IP.10) | Fine either way. |
+| Alarm `enabled` key (IP.4) | Fine either way — §A.3.1's recommendation (always enable on demote) stands unless the round-trip evidence says otherwise. |
+
+## B.6 Received, not ours
+
+PlanStan acknowledged the W1 receipt's warning that `ConflictInfo.sourceId`
+/ `targetId` may carry a composite id (`uid \x01 recurrenceId`) needing
+decomposition before display, named the three places it bites them
+(`conflictdiffwidget.cpp:76`, `conflictdockwidget.cpp:175`, and `:339-340`
+where it is used as a *lookup key*), and are tracking it on their side.
+**No action here — do not re-issue the warning.**
+
+## B.7 One thing this repo owes them
+
+PlanStan is pinned at **`v1.01`**. Everything from the vtodo-parity
+campaign (W1–W7) is landed on `main` and **untagged**, so they cannot
+consume any of it. They state plainly that their adoption pass does not
+gate this plan and they will pick it up "when you next cut a tag."
+
+Not an item in this campaign, and not a blocker — but a tag is cheap and
+they are currently one release behind their own delivered requirements.
+Worth raising with the maintainer at the next natural stopping point.

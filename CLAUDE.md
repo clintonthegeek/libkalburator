@@ -151,9 +151,11 @@ when the server advertises VTODO, and `LocalBackend`/`DecSyncBackend`/
 
 **Progress:** IP.1 DONE 2026-08-29 (coverage gate, landed RED by design).
 IP.2 DONE 2026-09-01 — **O78 RESOLVED**, **O84 filed**. Pre-flight audit
-DONE 2026-09-02 — **O85–O90 filed**, PLAN Amendment 1 adopted, execution
-order revised. **IP.8 is next** (RFC-5545 round-trip fidelity gate, tests
-only, lands RED).
+DONE 2026-09-02 — **O85–O90 filed**, PLAN Amendment 1 adopted. PlanStan
+answered 2026-09-02 — **Amendment 2 adopted; nothing is blocked on a
+consumer.** **IP.8 is next** (RFC-5545 round-trip fidelity gate, tests
+only, lands RED), then IP.3 → IP.9 → **IP.6 → IP.10** → IP.4 → IP.5 → IP.7
+→ IP.11 → IP.12 (order lives in STATUS's table, not in the numbering).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (VEVENT alarm trigger-form
 corruption, four call sites), O80 (providerExtrasDigest absent on
@@ -183,9 +185,33 @@ before parsing** or `ATTENDEE` is misreported as lost (KCalendarCore folds
 that line before its colon). Attendees round-trip correctly; two separate
 audit revisions said otherwise and both were wrong.
 
-**Blocked on PlanStan:** IP.11 (Q1 — converge vs route the two VTODO
-representations) and IP.7b (Q2 — the VEVENT DTSTART/DTEND coercion rule).
-Everything else proceeds without them.
+**PlanStan ratified both questions 2026-09-02**
+(`docs/2026-09-02-incidence-parity-planstan-response.md` — read it before
+IP.6, IP.7b or IP.11):
+
+- **Q1 → (a) converge.** And they disclosed the fact that reorders the
+  campaign: **`{calendar,canon}` VTODO is their PRIMARY and DEFAULT task
+  path** (local backend + org backend never demux; their GTD vault mirrors
+  every list across `local` + DAV). So O83's seven undeclared drops are live
+  on the consuming application's default task path — which is why IP.6 and
+  IP.10 advanced ahead of IP.4/IP.5. **(b) route is BLOCKED**, not
+  scheduled, on their `CalendarType::Hybrid` data model (a hybrid logical
+  calendar would need two primary bindings in two domains, which they cannot
+  express — half of every hybrid calendar would silently stop loading).
+  **Do not implement (b) or leave hooks for it**; reason recorded in
+  FINDINGS O89.
+- **Q2 → DTSTART-wins for VEVENT**, under a unifying principle worth
+  keeping: *the mandatory temporal anchor wins; the optional derived bound
+  is coerced to match it.* W6.2's DUE-wins and this are therefore the **same
+  rule** on components with opposite optionality — not a divergence — and
+  VJOURNAL falls out for free at IP.10.
+- **`geo`: DROP IT** (O86 settled). They don't consume it and asked us not
+  to hand-serialize around an upstream kcalendarcore bug on their account.
+- **Do not deprioritise IP.4** on the grounds that they have no alarm UI —
+  they raised that themselves and asked us not to; they passthrough alarms
+  other clients authored.
+- **This repo owes them a tag:** they are pinned at `v1.01` and all of
+  vtodo-parity W1–W7 is on `main` untagged, so they cannot consume it.
 
 **Scope:** the catalogue-integrity work covers exactly the three
 `CanonJsonDiffer` domains — calendar, todo, contacts. `note`

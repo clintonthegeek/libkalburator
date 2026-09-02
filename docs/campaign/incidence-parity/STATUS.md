@@ -8,10 +8,16 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **pre-flight audit landed; PLAN.md
-Amendment 1 adopted.** Six new findings (**O85–O90**), five new items
-(**IP.8–IP.12**), and a **revised execution order**: IP.8 runs next, not
-IP.3.
+**Last updated:** 2026-09-02 — **PlanStan answered; PLAN.md Amendment 2
+adopted.** Q1 → **(a) converge** (ratified, and (b) is *blocked* on their
+data model, not scheduled); Q2 → **DTSTART-wins** with a unifying
+principle. **Nothing is blocked on a consumer any more.** Order revised
+again: **IP.6 and IP.10 advance ahead of IP.4/IP.5** — PlanStan disclosed
+that `{calendar,canon}` VTODO is their *primary and default* task path, so
+O83's seven undeclared drops are live on it.
+
+Earlier the same day: pre-flight audit landed, six findings (**O85–O90**),
+five new items (**IP.8–IP.12**). **IP.8 still runs next.**
 
 > **New agent, start here.** Read in this order: (1) this file's *Where we
 > stand* table for your item, (2) `PLAN.md` **§Amendment 1 first**, then the
@@ -34,17 +40,25 @@ IP.3.
 | **1** | **IP.8** | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83 | **NEXT** — tests only, lands RED. The measurement nothing in the suite makes today. |
 | 2 | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | NOT STARTED — inherits the **O84 fix** (with the whose-kind-wins decision written down) and the `allDay` orphan check. |
 | 3 | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
-| 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1 (the `enabled` flag). |
-| 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
-| 6 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit | **O83**, **+O86** | NOT STARTED — see Amendment §A.3.2 (the GEO decision, and VEVENT's `RELATED-TO` drop). |
-| 7 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED |
-| 8 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b blocked** on PlanStan Q2; IP.7a may land alone. |
-| 9 | **IP.11** | **VTODO representation unification** — converge or route | **O89** | NOT STARTED — **blocked on PlanStan Q1.** |
+| 4 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
+| 5 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
+| 6 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
+| 7 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
+| 8 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
+| 9 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
 | 10 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
 
-**Consumer dependency:** `docs/2026-09-02-incidence-parity-planstan-report.md`
-carries two blocking questions (Q1 → IP.11, Q2 → IP.7b). Everything else
-proceeds without PlanStan. Check for an answer before reaching item 8.
+**Consumer dependency: NONE — both questions answered 2026-09-02.**
+Report: `docs/2026-09-02-incidence-parity-planstan-report.md`. Response:
+`docs/2026-09-02-incidence-parity-planstan-response.md` (Q1 → (a) converge;
+Q2 → DTSTART-wins). Both ratified, neither provisional. Read the response
+before IP.6, IP.7b or IP.11 — it settles the GEO question and rescopes
+IP.11 entirely.
+
+**This repo owes PlanStan a tag.** They are pinned at `v1.01`; all of
+vtodo-parity W1–W7 is on `main` and untagged, so they cannot consume the
+work they asked for. Not a campaign item and not a blocker (they said so) —
+raise it with the maintainer at a natural stopping point (PLAN §B.7).
 
 ## Why this campaign exists
 
@@ -237,6 +251,71 @@ produced this state; three copies drift faster than two.
   Consumer report issued:
   `docs/2026-09-02-incidence-parity-planstan-report.md`, carrying two
   blocking questions (Q1 → IP.11, Q2 → IP.7b).
+
+- **2026-09-02 — PLANSTAN ANSWERED. Amendment 2 adopted; nothing blocked on
+  a consumer.** Response filed at
+  `docs/2026-09-02-incidence-parity-planstan-response.md` (PlanStan @
+  `master` `e1856650`, pinned `v1.01`). Both answers evidenced against their
+  tree, neither provisional.
+
+  **Q1 → (a) converge**, and *not* as the "no strong view" default our
+  report offered. Two things came back that we could not have seen from
+  this side:
+
+  1. **`{calendar,canon}` VTODO is their PRIMARY and DEFAULT task path.**
+     `todo_work.kalb` — the fixture their whole todo-UX campaign was built
+     against — binds to the `local` backend, which never demuxes.
+     `Test6.kalb` is a real GTD vault whose seven task lists are each
+     *mirrored* across `local` + `multiproto-dav`, so every task is a
+     `{calendar,canon}` VTODO on both legs at once. Their org backend is
+     task-first and likewise never demuxed. **So O83's seven undeclared
+     drops are live on the default task path of the consuming application,
+     and W1's composite exception identity is not reaching the vault their
+     todo work is tested against.** O83 annotated accordingly.
+  2. **(b) route is BLOCKED, not scheduled.** Their domain axis is binary
+     and hardcoded; domain ids are persisted verbatim in every vault (and
+     the local backend's id is the bare string `local`, with no domain
+     segment to move); a mismatched binding fails *silently* by loading the
+     calendar unfiltered; and decisively, `CalendarType::Hybrid` is their
+     **default** — under (b) a hybrid LC would need two primary bindings in
+     two domains, which their model cannot express, so half of every hybrid
+     calendar would stop loading. Recorded in FINDINGS O89 so it is not
+     re-proposed as a rename.
+
+  **Q2 → DTSTART-wins, confirmed** — with a better principle than the plan
+  had: *the mandatory temporal anchor wins; the optional derived bound is
+  coerced to match it.* That makes W6.2 (DUE-wins for VTODO) and this **the
+  same rule** applied to components with opposite optionality, not a
+  divergence — and VJOURNAL then falls out for free at IP.10 instead of
+  needing a third decision. Amendment 1 §A.3.3's "deliberate divergence"
+  framing was right about the action and wrong about the reason; corrected
+  in §B.2. Their three-part rule adopted, including item 2 (drop a
+  degenerate `DTEND` rather than clamp) — we took their stated *preference*
+  after checking RFC 5545 §3.6.1, which agrees: a non-conforming pair has no
+  valid value to clamp to, and the absent-`DTEND` default is already
+  defined, so dropping falls back to a defined behaviour while clamping
+  would invent a bound the author never wrote.
+
+  **Order revised (§B.3):** IP.6 and IP.10 advance ahead of IP.4/IP.5 on
+  finding 1 above. IP.4 moved because the others got *more* urgent — **not**
+  because PlanStan lacks alarm UI; they raised that themselves and asked us
+  not to deprioritise it, since they passthrough alarms other clients
+  authored.
+
+  **Settled, stop flagging (§B.5):** matrix reshape is a no-op for them
+  (they parse and pin nothing); new loss warnings are wanted with no spam
+  risk; **`geo` — drop it**, they don't consume it and asked us not to
+  hand-serialize around an upstream bug on their account, closing Amendment
+  1 §A.3.2 as option (b); VJOURNAL additive fields and the alarm `enabled`
+  key are fine either way.
+
+  **Received, not ours (§B.6):** they acknowledged the W1 composite-id
+  decomposition warning and named the three places it bites them. Tracked on
+  their side. Do not re-issue it.
+
+  **We owe them a tag (§B.7):** they are pinned at `v1.01` and all of
+  vtodo-parity W1–W7 is on `main` untagged, so they cannot consume the work
+  they asked for. Not gating anything, by their own statement.
 
 - **NEXT:** **IP.8** — the RFC-5545 round-trip fidelity gate. Tests only;
   lands RED, one `QEXPECT_FAIL` per known defect, each naming the item that

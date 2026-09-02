@@ -3556,6 +3556,25 @@ first as a pure no-behaviour-change commit, then the missing VTODO fields
 as a separate commit, then honest loss declarations on the Google Tasks
 and MS To-Do legs).
 
+**Severity revised 2026-09-02 — this is the consumer's DEFAULT task path.**
+PlanStan's response to the pre-flight audit
+(`docs/2026-09-02-incidence-parity-planstan-response.md` §Q1) discloses that
+`{calendar,canon}` VTODO is their **primary and default** task
+representation, not a fallback:
+`~/Documents/todo_work.kalb` — the fixture their whole todo-UX campaign was
+built against — binds `MyList` to the `local` backend, which never demuxes;
+`~/Documents/Test6.kalb` is a real GTD vault whose seven task lists are each
+*mirrored* across a `local` and a `multiproto-dav` binding, so every task is
+a `{calendar,canon}` VTODO on both legs at once; and their org backend is a
+task-first surface that is likewise never demuxed.
+
+So the seven undeclared drops here have been hitting the default path for
+tasks in the consuming application, and W1's composite exception identity —
+which PlanStan asked for and this library delivered — **is not reaching the
+vault their todo work is tested against.** This is the highest-impact
+user-data loss in the campaign. IP.6 was reordered ahead of IP.4/IP.5 on
+this evidence (PLAN.md Amendment 2 §B.3).
+
 ### O84 — OPEN — IP.2, 2026-09-01: `CanonJsonMerger` erases `_canon.kind`, so a merged calendar VTODO or VJOURNAL demotes as a **VEVENT**
 
 Found while building IP.2's merger regression slot; logged and **not
@@ -3689,6 +3708,22 @@ it `Dropped`. Do not "fix" it by round-tripping through the broken
 accessor pair. Re-verify against the installed kcalendarcore version first
 — this is a property of 6.29.0, and an upgrade may retire it.
 
+**DECIDED 2026-09-02 — option (b), drop it.** PlanStan
+(`docs/2026-09-02-incidence-parity-planstan-response.md` §5) confirms they do
+not consume incidence `geo`: their only reference is a display label in the
+conflict diff table (`src/sync/conflictdiffwidget.cpp:325`), which degrades
+to never showing a `GEO` row. (`AppSettings::GeoCoordinate` /
+`effectiveLocation()` is the *user's own* location for locale purposes and is
+unrelated.) Their words: *"Don't hand-serialize around an upstream
+kcalendarcore bug on our account."*
+
+IP.6 therefore stops emitting `geo` and declares it `Dropped` on the affected
+profiles. This also restores the VTODO promote→demote→promote fixpoint, and
+ends the VEVENT/VTODO asymmetry in the honest direction — both kinds drop it,
+neither corrupts it. Re-verify against the installed kcalendarcore version
+first: if an upgrade has fixed the serializer, re-open this decision rather
+than inheriting it.
+
 ### O87 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VJOURNAL's undeclared drops, including `RECURRENCE-ID` identity aliasing
 
 The VJOURNAL twin of O83, and worse in one respect. Owned by **IP.10**.
@@ -3799,6 +3834,45 @@ This is a contract question, not just a bug: closing it either promotes
 equivalent) or routes all VTODOs to `{todo,canon}` (making one of them
 disappear). The second changes which domain a consumer sees a task in.
 **libkalburator should not choose alone** — see IP.11.
+
+**RATIFIED 2026-09-02 — (a) converge. And (b) is BLOCKED, not
+scheduled.** PlanStan's answer
+(`docs/2026-09-02-incidence-parity-planstan-response.md` §Q1) is evidenced,
+not a preference, and it closes the question harder than the audit expected.
+
+Record why **(b) route** cannot simply land, so nobody re-proposes it as a
+rename:
+
+1. PlanStan's domain axis is **binary and hardcoded** — two duplicated
+   helpers return `"contacts"` or `"cal"` and nothing else
+   (`collectioncontroller.cpp:1667`,
+   `kalbsynctopologydatasource.cpp:269`); downstream code parses a `":cal:"`
+   segment and branches on `endsWith(":cal")`.
+2. Domain ids are **persisted verbatim in every user vault**
+   (`logicalcalendarjson.cpp:49`) — and the local backend's id is the bare
+   string `local`, with **no domain segment at all** to move.
+3. A mismatched binding **fails silently, not loudly**:
+   `ItemLoadingCoordinator::shouldLoadCalendar()` returns `true` for an
+   unbound calendar (`itemloadingcoordinator.cpp:108-112`), so a stale
+   binding loads the calendar unfiltered, outside its logical calendar.
+4. **The decisive one — `CalendarType::Hybrid` breaks the data model, not
+   just the ids.** Hybrid is the *default*
+   (`collectioncontroller.cpp:1707`). Under (b) a single Hybrid logical
+   calendar's VEVENTs stay in `cal` while its VTODOs move to `todo`, so it
+   needs two primary bindings in two domains — which PlanStan's model cannot
+   express, because `shouldLoadCalendar()` returns `false` for every
+   non-primary binding. The outcome would be **half of every hybrid calendar
+   disappearing**, or a user-visible sidebar split.
+
+(b) is gated on a PlanStan-side change letting a logical calendar hold
+membership in more than one domain, which they have not designed and are not
+proposing. If this library ever wants (b), it opens as its own cross-repo
+item — it must not ride in on a bug fix, which both sides agree on.
+
+**Consequence for IP.11:** it is no longer a choice between two designs and
+no longer blocked. It becomes a *convergence-proof* item — see PLAN.md
+Amendment 2 §B.4. PlanStan explicitly asked us **not** to keep the two
+representations distinguishable for their benefit.
 
 ### O90 — OPEN — incidence-parity pre-flight audit, 2026-09-02: demote is not a pure function of canon (attendee `X-UID`)
 
