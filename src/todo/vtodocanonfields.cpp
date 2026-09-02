@@ -2,7 +2,7 @@
 
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
-#include "icaltimestamp.h"
+#include "incidencecommonfields.h"
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
@@ -19,6 +19,20 @@ using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::canonicalDigest;
+// IP.6: incidencecommonfields lives in Kalburator::Calendar (VTODO's shared
+// emitter rides the calendar domain too, per icalcanonstages.cpp) — pull
+// the functions this file uses into scope explicitly rather than `using
+// namespace`, so a reader sees exactly which are shared.
+using Kalburator::Calendar::promoteTimestamps;
+using Kalburator::Calendar::demoteTimestamps;
+using Kalburator::Calendar::stripInjectedTimestamps;
+using Kalburator::Calendar::TimestampPresence;
+using Kalburator::Calendar::promoteSummaryDescription;
+using Kalburator::Calendar::demoteSummaryDescription;
+using Kalburator::Calendar::promoteCategories;
+using Kalburator::Calendar::demoteCategories;
+using Kalburator::Calendar::promoteCustomPropertyPassthrough;
+using Kalburator::Calendar::demoteCustomPropertyPassthrough;
 
 KCalendarCore::Todo::Ptr parseTodo(const QByteArray &data)
 {
@@ -163,29 +177,11 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
 {
     QJsonObject obj;
 
-    // ---- created / lastModified --------------------------------------------
-    // Phase B5 finding (same fix as eventcanonfields.cpp — see its comment):
-    // KCalendarCore::Incidence::created()/lastModified() default to
-    // construction-time "now" when the source has no explicit CREATED/
-    // LAST-MODIFIED property, so trusting them directly re-derives a
-    // different "now" on every independent re-parse of the same bytes and
-    // permanently defeats change detection for such VTODOs.
-    const QDateTime created = Kalburator::Calendar::extractICalPropertyLiteral(
-        originalBytes, QStringLiteral("CREATED"));
-    const QDateTime lastMod = Kalburator::Calendar::extractICalPropertyLiteral(
-        originalBytes, QStringLiteral("LAST-MODIFIED"));
-    if (created.isValid())
-        obj.insert(QStringLiteral("created"),      created.toUTC().toString(Qt::ISODate));
-    if (lastMod.isValid())
-        obj.insert(QStringLiteral("lastModified"), lastMod.toUTC().toString(Qt::ISODate));
+    // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
+    promoteTimestamps(obj, originalBytes);
 
-    // ---- summary / description ---------------------------------------------
-    const QString summary = todo->summary();
-    const QString description = todo->description();
-    if (!summary.isEmpty())
-        obj.insert(QStringLiteral("summary"), summary);
-    if (!description.isEmpty())
-        obj.insert(QStringLiteral("description"), description);
+    // ---- summary / description (IP.6: incidencecommonfields) ---------------
+    promoteSummaryDescription(obj, todo);
 
     // ---- descriptionHtml (X-ALT-DESC) — Reversible carrier -----------------
     {
@@ -215,16 +211,8 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
             obj.insert(QStringLiteral("priority"), pri);
     }
 
-    // ---- categories --------------------------------------------------------
-    {
-        const QStringList cats = todo->categories();
-        if (!cats.isEmpty()) {
-            QJsonArray arr;
-            for (const auto& c : cats)
-                arr.append(c);
-            obj.insert(QStringLiteral("categories"), arr);
-        }
-    }
+    // ---- categories (IP.6: incidencecommonfields) --------------------------
+    promoteCategories(obj, todo);
 
     // ---- start / due (W6.2 malformed-input coercion) -----------------------
     // Probe-confirmed (2026-08-28, KCalendarCore::ICalFormat): a DTSTART/DUE
@@ -463,27 +451,26 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
     }
 
     // ---- providerExtras["x-vtodo"] — unmapped X- properties ---------------
+    // IP.6: incidencecommonfields (no skip list on this leg — matches
+    // pre-existing behaviour: VTODO never excluded its own already-promoted
+    // X-props, e.g. X-ALT-DESC/X-CANON-SERIES-SPLIT-OF double-ride both the
+    // named canon key and this passthrough today; not this item's to change).
     {
-        const auto customProps = todo->customProperties();
-        if (!customProps.isEmpty()) {
-            QJsonObject xvtodo;
-            for (auto it = customProps.constBegin(); it != customProps.constEnd(); ++it)
-                xvtodo.insert(QString::fromLatin1(it.key()), it.value());
-            if (!xvtodo.isEmpty()) {
-                QJsonObject extras;
-                extras.insert(QStringLiteral("x-vtodo"), xvtodo);
-                obj.insert(providerExtrasKey(), extras);
+        const QJsonObject xvtodo = promoteCustomPropertyPassthrough(todo);
+        if (!xvtodo.isEmpty()) {
+            QJsonObject extras;
+            extras.insert(QStringLiteral("x-vtodo"), xvtodo);
+            obj.insert(providerExtrasKey(), extras);
 
-                // ---- providerExtrasDigest (O74) --------------------------
-                // Fingerprint of the extras this promote captured, so the
-                // catalogue-scoped differ (which never sees providerExtras
-                // itself, by design) can still detect an X-prop-only edit.
-                // No filtering needed on this leg: the vtodo/CalDAV extras
-                // stash is genuine X- custom properties only — no vendor
-                // bookkeeping (etag-equivalents, server timestamps) rides
-                // this channel the way it does on the MS/Google legs.
-                obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(xvtodo));
-            }
+            // ---- providerExtrasDigest (O74) ------------------------------
+            // Fingerprint of the extras this promote captured, so the
+            // catalogue-scoped differ (which never sees providerExtras
+            // itself, by design) can still detect an X-prop-only edit.
+            // No filtering needed on this leg: the vtodo/CalDAV extras
+            // stash is genuine X- custom properties only — no vendor
+            // bookkeeping (etag-equivalents, server timestamps) rides
+            // this channel the way it does on the MS/Google legs.
+            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(xvtodo));
         }
     }
 
@@ -504,44 +491,11 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             todo->setUid(uid);
     }
 
-    // ---- created / lastModified --------------------------------------------
-    // O41 write-side fix (same as eventcanonfields.cpp — see its comment):
-    // strip the KCalendarCore-injected "now" default post-serialization
-    // when canon never had the corresponding key.
-    bool hadCreated = false;
-    bool hadLastModified = false;
-    {
-        const QString created = obj.value(QStringLiteral("created")).toString();
-        if (!created.isEmpty()) {
-            const QDateTime dt = QDateTime::fromString(created, Qt::ISODate);
-            if (dt.isValid()) {
-                todo->setCreated(dt);
-                hadCreated = true;
-            }
-        }
-    }
-    {
-        const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
-        if (!lastMod.isEmpty()) {
-            const QDateTime dt = QDateTime::fromString(lastMod, Qt::ISODate);
-            if (dt.isValid()) {
-                todo->setLastModified(dt);
-                hadLastModified = true;
-            }
-        }
-    }
+    // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
+    const auto timestampPresence = demoteTimestamps(obj, todo);
 
-    // ---- summary / description ---------------------------------------------
-    {
-        const QString summary = obj.value(QStringLiteral("summary")).toString();
-        if (!summary.isEmpty())
-            todo->setSummary(summary);
-    }
-    {
-        const QString description = obj.value(QStringLiteral("description")).toString();
-        if (!description.isEmpty())
-            todo->setDescription(description);
-    }
+    // ---- summary / description (IP.6: incidencecommonfields) ---------------
+    demoteSummaryDescription(obj, todo);
 
     // ---- descriptionHtml → X-ALT-DESC (Reversible) ------------------------
     {
@@ -589,16 +543,8 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
             todo->setPriority(pri.toInt());
     }
 
-    // ---- categories --------------------------------------------------------
-    {
-        const QJsonArray cats = obj.value(QStringLiteral("categories")).toArray();
-        if (!cats.isEmpty()) {
-            QStringList catList;
-            for (const auto& c : cats)
-                catList << c.toString();
-            todo->setCategories(catList);
-        }
-    }
+    // ---- categories (IP.6: incidencecommonfields) --------------------------
+    demoteCategories(obj, todo);
 
     // ---- start / due (W6.2 bonus fix: DATE-value round-trip) ---------------
     // Probe-confirmed (2026-08-28): KCalendarCore's iCal writer decides
@@ -826,11 +772,11 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     }
 
     // ---- providerExtras["x-vtodo"] — re-emit custom/X- properties ----------
+    // IP.6: incidencecommonfields.
     {
         const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
         const QJsonObject xvtodo = extras.value(QStringLiteral("x-vtodo")).toObject();
-        for (auto it = xvtodo.constBegin(); it != xvtodo.constEnd(); ++it)
-            todo->setNonKDECustomProperty(it.key().toLatin1(), it.value().toString());
+        demoteCustomPropertyPassthrough(xvtodo, todo);
     }
 
     // ---- linkedResources: Dropped (no VTODO representation) ----------------
@@ -856,10 +802,8 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     QByteArray icalBytes = serializeTodo(todo);
 
     // ---- Strip KCalendarCore-injected created/lastModified defaults -------
-    if (!hadCreated)
-        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("CREATED"));
-    if (!hadLastModified)
-        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
+    // IP.6: incidencecommonfields.
+    icalBytes = stripInjectedTimestamps(icalBytes, timestampPresence);
 
     // ---- Inject verbatim recurrence lines / derived completion-anchor RRULE ---
     // KCalendarCore's serialiser may not preserve recurrence lines verbatim.

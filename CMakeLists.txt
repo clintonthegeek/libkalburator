@@ -210,6 +210,10 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/icalrecorddiffer.cpp
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.cpp
+    # IP.6 (incidence-parity campaign) — fields shared across VEVENT/VTODO/
+    # VJOURNAL, extracted out of eventcanonfields/vtodocanonfields/
+    # journalcanonfields.
+    src/calendar/incidencecommonfields.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.cpp
     # Plan 4 Task 1 — VJOURNAL field mapping helpers

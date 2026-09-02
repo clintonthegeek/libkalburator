@@ -2,7 +2,7 @@
 
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
-#include "icaltimestamp.h"
+#include "incidencecommonfields.h"
 
 #include <KCalendarCore/Attendee>
 #include <KCalendarCore/ICalFormat>
@@ -165,40 +165,11 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             obj.insert(QStringLiteral("sequence"), seq);
     }
 
-    // ---- created / lastModified --------------------------------------------
-    // Phase B5 finding: KCalendarCore::Incidence::created()/lastModified()
-    // return a construction-time default (effectively "now") when the
-    // parsed source has no explicit CREATED/LAST-MODIFIED property — they
-    // don't distinguish "absent in the source" from "never set". Trusting
-    // those accessors directly here made this canon encoder re-derive a
-    // DIFFERENT "now" on every independent re-parse of byte-identical
-    // source iCal (e.g. every RemoteCalendarBackend::loadRecords() call for
-    // an event lacking those properties), which permanently defeated
-    // change detection for such events — the exact same "stamp now instead
-    // of leaving it absent" anti-pattern N3 already fixed one layer down
-    // (blobRecordFromIcal), just reached via the canon encode path instead.
-    // Only emit these fields when the property is LITERALLY present in the
-    // source bytes (see extractICalPropertyLiteral's doc comment).
-    {
-        const QDateTime created = Kalburator::Calendar::extractICalPropertyLiteral(
-            originalBytes, QStringLiteral("CREATED"));
-        const QDateTime lastMod = Kalburator::Calendar::extractICalPropertyLiteral(
-            originalBytes, QStringLiteral("LAST-MODIFIED"));
-        if (created.isValid())
-            obj.insert(QStringLiteral("created"),      created.toUTC().toString(Qt::ISODate));
-        if (lastMod.isValid())
-            obj.insert(QStringLiteral("lastModified"), lastMod.toUTC().toString(Qt::ISODate));
-    }
+    // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
+    promoteTimestamps(obj, originalBytes);
 
-    // ---- summary / description ---------------------------------------------
-    {
-        const QString summary = event->summary();
-        const QString description = event->description();
-        if (!summary.isEmpty())
-            obj.insert(QStringLiteral("summary"), summary);
-        if (!description.isEmpty())
-            obj.insert(QStringLiteral("description"), description);
-    }
+    // ---- summary / description (IP.6: incidencecommonfields) ---------------
+    promoteSummaryDescription(obj, event);
 
     // ---- descriptionHtml (X-ALT-DESC) — Reversible carrier -----------------
     {
@@ -305,16 +276,8 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             obj.insert(QStringLiteral("color"), color);
     }
 
-    // ---- categories --------------------------------------------------------
-    {
-        const QStringList cats = event->categories();
-        if (!cats.isEmpty()) {
-            QJsonArray arr;
-            for (const auto& c : cats)
-                arr.append(c);
-            obj.insert(QStringLiteral("categories"), arr);
-        }
-    }
+    // ---- categories (IP.6: incidencecommonfields) --------------------------
+    promoteCategories(obj, event);
 
     // ---- url ---------------------------------------------------------------
     {
@@ -400,23 +363,17 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
     }
 
     // ---- providerExtras["x-ical"] — unmapped X- custom properties ----------
+    // IP.6: incidencecommonfields, parameterized by the skip-list of keys
+    // already promoted above by name.
     {
-        const auto customProps = event->customProperties();
-        if (!customProps.isEmpty()) {
-            QJsonObject xical;
-            for (auto it = customProps.constBegin(); it != customProps.constEnd(); ++it) {
-                const QString key = QString::fromLatin1(it.key());
-                // Skip the ones we've already promoted above
-                if (key == QStringLiteral("X-ALT-DESC") ||
-                    key == QStringLiteral("X-MICROSOFT-CDO-BUSYSTATUS"))
-                    continue;
-                xical.insert(key, it.value());
-            }
-            if (!xical.isEmpty()) {
-                QJsonObject extras;
-                extras.insert(QStringLiteral("x-ical"), xical);
-                obj.insert(providerExtrasKey(), extras);
-            }
+        static const QSet<QByteArray> kSkip = {
+            "X-ALT-DESC", "X-MICROSOFT-CDO-BUSYSTATUS",
+        };
+        const QJsonObject xical = promoteCustomPropertyPassthrough(event, kSkip);
+        if (!xical.isEmpty()) {
+            QJsonObject extras;
+            extras.insert(QStringLiteral("x-ical"), xical);
+            obj.insert(providerExtrasKey(), extras);
         }
     }
 
@@ -444,49 +401,17 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
             event->setRevision(seq.toInt());
     }
 
-    // ---- created / lastModified --------------------------------------------
+    // ---- created / lastModified (IP.6: incidencecommonfields, O41 guard) ---
     // O41 write-side fix: KCalendarCore::Incidence always carries a valid
     // construction-time "now" for created()/lastModified() — there is no
     // API to leave them unset — so toICalString() below will stamp them
     // into the outbound bytes regardless of whether canon has these keys.
-    // Track absence here and strip the injected default post-serialization
-    // (see stripICalPropertyLine's doc comment) so the write side stays
-    // symmetric with the read side above, which only trusts literal
-    // presence in the source bytes.
-    bool hadCreated = false;
-    bool hadLastModified = false;
-    {
-        const QString created = obj.value(QStringLiteral("created")).toString();
-        if (!created.isEmpty()) {
-            const QDateTime dt = QDateTime::fromString(created, Qt::ISODate);
-            if (dt.isValid()) {
-                event->setCreated(dt);
-                hadCreated = true;
-            }
-        }
-    }
-    {
-        const QString lastMod = obj.value(QStringLiteral("lastModified")).toString();
-        if (!lastMod.isEmpty()) {
-            const QDateTime dt = QDateTime::fromString(lastMod, Qt::ISODate);
-            if (dt.isValid()) {
-                event->setLastModified(dt);
-                hadLastModified = true;
-            }
-        }
-    }
+    // demoteTimestamps() tracks absence so the injected default can be
+    // stripped post-serialization below.
+    const auto timestampPresence = demoteTimestamps(obj, event);
 
-    // ---- summary / description ---------------------------------------------
-    {
-        const QString summary = obj.value(QStringLiteral("summary")).toString();
-        if (!summary.isEmpty())
-            event->setSummary(summary);
-    }
-    {
-        const QString description = obj.value(QStringLiteral("description")).toString();
-        if (!description.isEmpty())
-            event->setDescription(description);
-    }
+    // ---- summary / description (IP.6: incidencecommonfields) ---------------
+    demoteSummaryDescription(obj, event);
 
     // ---- descriptionHtml → X-ALT-DESC (Reversible) ------------------------
     {
@@ -606,16 +531,8 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
             event->setColor(color);
     }
 
-    // ---- categories --------------------------------------------------------
-    {
-        const QJsonArray cats = obj.value(QStringLiteral("categories")).toArray();
-        if (!cats.isEmpty()) {
-            QStringList catList;
-            for (const auto& c : cats)
-                catList << c.toString();
-            event->setCategories(catList);
-        }
-    }
+    // ---- categories (IP.6: incidencecommonfields) --------------------------
+    demoteCategories(obj, event);
 
     // ---- url ---------------------------------------------------------------
     {
@@ -694,21 +611,19 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     }
 
     // ---- providerExtras["x-ical"] — re-emit custom/X- properties ----------
+    // IP.6: incidencecommonfields.
     {
         const QJsonObject extras = obj.value(providerExtrasKey()).toObject();
         const QJsonObject xical  = extras.value(QStringLiteral("x-ical")).toObject();
-        for (auto it = xical.constBegin(); it != xical.constEnd(); ++it)
-            event->setNonKDECustomProperty(it.key().toLatin1(), it.value().toString());
+        demoteCustomPropertyPassthrough(xical, event);
     }
 
     // ---- Serialize to iCal -------------------------------------------------
     QByteArray icalBytes = serializeEvent(event);
 
     // ---- Strip KCalendarCore-injected created/lastModified defaults -------
-    if (!hadCreated)
-        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("CREATED"));
-    if (!hadLastModified)
-        icalBytes = Kalburator::Calendar::stripICalPropertyLine(icalBytes, QStringLiteral("LAST-MODIFIED"));
+    // IP.6: incidencecommonfields.
+    icalBytes = stripInjectedTimestamps(icalBytes, timestampPresence);
 
     // ---- Inject verbatim recurrence lines ----------------------------------
     if (!recurrenceArr.isEmpty() && !icalBytes.isEmpty()) {
