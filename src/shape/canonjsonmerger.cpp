@@ -1,5 +1,6 @@
 #include "canonjsonmerger.h"
 
+#include <QDebug>
 #include <QJsonObject>
 
 #include "canonenvelope.h"
@@ -57,7 +58,51 @@ CanonicalRecord CanonJsonMerger::merge(const CanonicalRecord& source,
 
     const QString mergedUid = CanonEnvelope::uid(t).isEmpty()
                                   ? CanonEnvelope::uid(s) : CanonEnvelope::uid(t);
-    CanonEnvelope::stampEnvelope(out, m_domain, mergedUid);
+
+    // O84 fix: thread the component kind through the re-stamp instead of
+    // dropping it. The 3-arg stampEnvelope() this used to call builds a
+    // FRESH _canon object and inserts `kind` only when given one — calling
+    // it with no kind argument therefore ERASED whatever kind the record
+    // arrived with, so a merged {calendar,canon} VTODO/VJOURNAL demoted as
+    // a VEVENT (CanonToICalStage treats an absent kind as vevent for v1
+    // back-compat — icalcanonstages.cpp).
+    //
+    // Agreement (or only one side carrying a kind) is the easy case:
+    // target's kind wins when present, else source's — mirroring
+    // mergedUid's own target-preferred-with-source-fallback rule directly
+    // above.
+    //
+    // Disagreement — source and target both carry a NON-EMPTY kind and it
+    // differs — is not an ordinary merge choice: the same uid promoted to
+    // two different iCalendar component types (a VEVENT on one side, a
+    // VTODO on the other) means something upstream is already wrong, the
+    // same class of problem O55 named "identity conflicts" and treated as
+    // fail-loud rather than silently resolved. A genuine abort-the-sync
+    // fail-loud would need an error channel threaded through
+    // RecordMerger::merge()'s return type (CanonicalRecord, unconditional)
+    // and onward through the engine's merge stage — a RecordMerger
+    // interface change, out of IP.3's scope (this item touches the
+    // catalogue/envelope seam, not the merger interface or engine dispatch
+    // chain). So: loud, not silent, and not "fail" in the interface sense
+    // it correctly is for O55 — qWarning() making the corruption visible
+    // in logs, then a deliberate precedence rule (target's kind wins,
+    // consistent with this function's target-primary bias: `out = t`
+    // above) rather than an unannounced pick. See FINDINGS.md O84 and the
+    // IP.3 return receipt for the follow-up recommendation (a proper
+    // fail-loud engine-level guard, not built here).
+    const QString sourceKind = CanonEnvelope::kind(s);
+    const QString targetKind = CanonEnvelope::kind(t);
+    QString mergedKind;
+    if (!sourceKind.isEmpty() && !targetKind.isEmpty() && sourceKind != targetKind) {
+        qWarning() << "CanonJsonMerger::merge: kind mismatch for uid" << mergedUid
+                   << "in domain" << m_domain << "- source kind" << sourceKind
+                   << "target kind" << targetKind
+                   << "- an identity conflict (O84); keeping target's kind";
+        mergedKind = targetKind;
+    } else {
+        mergedKind = !targetKind.isEmpty() ? targetKind : sourceKind;
+    }
+    CanonEnvelope::stampEnvelope(out, m_domain, mergedUid, mergedKind);
 
     CanonicalRecord merged = target;
     merged.data = CanonEnvelope::serialize(out);

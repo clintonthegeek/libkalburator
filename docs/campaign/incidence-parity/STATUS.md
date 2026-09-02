@@ -8,13 +8,18 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.8 DONE.** The RFC-5545 round-trip
-fidelity gate landed, tests only, RED exactly as PLAN.md predicted on
-`(calendar, vevent)`/`(calendar, vtodo)`/`(calendar, vjournal)` plus the
-VEVENT/VTODO VALARM sub-gate — **and** found four MORE undeclared drops
-(`COMMENT`, `CONTACT`, `RESOURCES`, `REQUEST-STATUS`) that the pre-flight
-audit's own fixture had not been maximal enough to catch, filed as
-**O91**. **IP.3 runs next.**
+**Last updated:** 2026-09-02 — **IP.3 DONE. O84 RESOLVED.** Contributed
+catalogues landed: `eventCanonContributedIds()`, `journalCanonContributedIds()`,
+`vtodoCanonContributedIds()` declared next to their emitters;
+`makeCalendarCanonCatalogue()`/`makeTodoCanonCatalogue()` now build from the
+union of those exports plus a corrected vendor-only-key list (PLAN.md's own
+list had two wrong entries — `descriptionHtml`/`freeBusyStatus` are real
+emitter output, not vendor-only; see the receipt). O84 fixed:
+`CanonJsonMerger::merge()` threads `_canon.kind` through the re-stamp;
+disagreement case gets a deliberate, logged precedence rule, not a silent
+pick (follow-up filed as **O92**). No catalogue orphans found; `allDay`
+turned out NOT to be one (event/journal both emit it top-level; only VTODO
+embeds it in start/due). **IP.9 runs next.**
 
 Earlier the same day: PlanStan answered; PLAN.md Amendment 2 adopted.
 Q1 → **(a) converge** (ratified, and (b) is *blocked* on their data model,
@@ -46,8 +51,8 @@ Earlier still the same day: pre-flight audit landed, six findings
 | — | IP.2 | Catalogue the three drifted keys in `calendarcanonproperties.cpp` | **O78** | **DONE 2026-09-01** — gate green, 0 XFAIL; 4 new merger slots; matrix byte-identical. Receipt: `2026-09-01-ip2-return-receipt.md`. |
 | — | — | **Pre-flight audit** — deliberate code-first sweep of the whole incidence surface | *files* O85–O90 | **DONE 2026-09-02** — evidence: `2026-09-02-preflight-audit.md`; re-runnable probes: `probes/run.sh`. PLAN.md **Amendment 1** adopted. No `src/` change. |
 | — | IP.8 | **RFC-5545 round-trip fidelity gate** — maximal conformant fixture → promote → demote → diff property sets, per kind; + VALARM sub-gate | *proves* **O85, O86, O87**; re-pins O79, O83; *files* **O91** | **DONE 2026-09-02** — landed RED exactly as predicted, plus four newly-discovered undeclared drops (O91). Tests only. Receipt: `2026-09-02-ip8-return-receipt.md`. |
-| **1** | **IP.3** | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | NOT STARTED — inherits the **O84 fix** (with the whose-kind-wins decision written down) and the `allDay` orphan check. |
-| 2 | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
+| — | IP.3 | Contributed catalogues — each canon-fields module exports the ids it emits | O78 *class*, **O84** | **DONE 2026-09-02** — catalogues now built structurally from contributor unions; O84 fixed (kind threaded through merge); no orphans; matrix byte-identical. Receipt: `2026-09-02-ip3-return-receipt.md`. |
+| **2** | **IP.9** | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | NOT STARTED — **gates IP.4/IP.6/IP.10**: until it lands there is nowhere truthful to declare a VTODO or VJOURNAL loss. |
 | 3 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | NOT STARTED — **advanced from 6.** Highest-impact user-data fix: these drops are live on PlanStan's *default* task path. GEO question **settled — drop it** (Amendment §B.5). |
 | 4 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | NOT STARTED — **advanced from 7.** Depends on IP.6's extraction. Closes the second-highest severity item (identity corruption). |
 | 5 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
@@ -388,9 +393,123 @@ produced this state; three copies drift faster than two.
   223 passed, 4 failed — the same 4 known environmental Radicale/KDAV
   slots, verified by failure text not name.
 
-- **NEXT:** **IP.3** — contributed catalogues (+ the O84 fix + the
-  `allDay` orphan check). Read `PLAN.md`'s IP.3 section plus Amendment 1
-  §A.2's note that it now inherits O84. `tst_incidence_rfc5545_fidelity.cpp`
-  is not IP.3's gate to touch — its job is IP.1's catalogue/emitter
-  coverage gate (`tst_calendar_kind_dispatch.cpp`), a different axis from
-  this item's RFC-vs-emitter measurement.
+- **2026-09-02 — IP.3 DONE. O84 RESOLVED.** Each canon-fields module now
+  exports the top-level `PropertyId`s its emitter can produce, declared
+  next to the emitter: `eventCanonContributedIds()`
+  (`eventcanonfields.{h,cpp}`), `journalCanonContributedIds()`
+  (`journalcanonfields.{h,cpp}`), `vtodoCanonContributedIds()`
+  (`vtodocanonfields.{h,cpp}` — shared by both the `todo` and `calendar`
+  domains, matching `icalcanonstages.cpp` calling `todoFieldsToCanon`
+  directly). `makeCalendarCanonCatalogue()` and `makeTodoCanonCatalogue()`
+  no longer hand-list ids: each keeps a local `id → {kind, displayName}`
+  metadata table (unchanged content from before this item, just
+  reorganised into a lookup) and builds its catalogue from the UNION of
+  the relevant contributor exports plus a corrected vendor-only-key list,
+  looking up metadata per id (falling back to a safe `Json` default for an
+  id with no metadata entry yet, so a brand-new contributed id is never
+  silently dropped).
+
+  **PLAN.md's vendor-only list had two wrong entries — corrected, not
+  transcribed.** Grepping every top-level `obj.insert(...)` across
+  `eventcanonfields.cpp`/`journalcanonfields.cpp`/`vtodocanonfields.cpp`
+  against every id in both catalogues (43 calendar keys + 26 todo keys,
+  full sweep) showed `descriptionHtml` (X-ALT-DESC carrier) and
+  `freeBusyStatus` (X-MICROSOFT-CDO-BUSYSTATUS carrier) are produced
+  directly by `eventcanonfields.cpp` (both) and `vtodocanonfields.cpp`
+  (`descriptionHtml` only) — real emitter output, not vendor-JSON-only.
+  PLAN.md's IP.3 body listed both as vendor-only; corrected to 12
+  vendor-only event keys (`locations`, `onlineMeeting`, `eventType`,
+  `typedProperties`, three `guestsCan*`, `allowNewTimeProposals`,
+  `hideAttendees`, `locked`, `privateCopy`, `responseRequested`) instead
+  of 14. The catalogue's actual id SET is unchanged — this only moves
+  which list declares two ids, so no behavior change.
+
+  **`allDay` is NOT an orphan — the plan's suspicion was wrong, verified
+  by reading (not just grepping) all three emitters.** `eventcanonfields.cpp`
+  and `journalcanonfields.cpp` both `obj.insert("allDay", ...)` at the TOP
+  level (inside the start/end construction block) AND both demote paths
+  read it back (`obj.value("allDay").toBool()`) to call `setAllDay()`.
+  Only `vtodocanonfields.cpp` embeds `allDay` solely inside the
+  `start`/`due` sub-objects and never reads/writes it top-level — PLAN.md's
+  text was describing the VTODO leg correctly but generalising it
+  incorrectly to all three kinds. Left in place; noted as the surprise it
+  is.
+
+  **No other orphans** — full sweep confirmed: every one of
+  `calendarcanonproperties.cpp`'s 43 non-uid keys and
+  `todocanonproperties.cpp`'s 26 non-uid keys is accounted for by exactly
+  one of {event contributor, todo contributor, journal contributor,
+  vendor-only list for that domain}. Method: grepped every catalogue key
+  against `eventcanonfields.cpp`/`journalcanonfields.cpp`/
+  `vtodocanonfields.cpp`/`mseventcanonstages.cpp`/`googlecanonstages.cpp`/
+  `googletaskcanonstages.cpp`/`mstodotaskcanonstages.cpp`, then hand-read
+  every hit to reject false positives (e.g. a quoted `"end"` inside an
+  alarm's `related` VALUE, not a top-level key) before accepting a key as
+  produced.
+
+  **O84 fixed.** `CanonJsonMerger::merge()` now threads
+  `CanonEnvelope::kind(t)`/`kind(s)` into the 5-arg `stampEnvelope` instead
+  of calling the 3-arg overload that erased it. Decision on whose kind
+  wins recorded in FINDINGS.md O84's resolution and `canonjsonmerger.cpp`'s
+  own comment: agreement or only-one-side-has-a-kind is the easy case
+  (target-preferred, source-fallback, mirroring `mergedUid`'s own rule
+  immediately above); genuine disagreement (both sides non-empty and
+  different) is treated as an O55-class identity conflict — logged loudly
+  via `qWarning()` (uid, domain, both kinds) rather than picked silently,
+  then resolved by a deliberate precedence rule (target's kind wins,
+  matching the function's existing target-primary bias) rather than a true
+  abort-the-sync fail-loud, because `RecordMerger::merge()` has no error
+  channel to abort through — that gap is filed as **O92**, not built here
+  (out of IP.3's catalogue/envelope-seam scope). `mergerPreservesIncidenceKind()`
+  in `tests/shape/tst_canonjson_diff_merge.cpp` now passes for real — both
+  `QEXPECT_FAIL`s removed, no XPASS. Two new slots added:
+  `mergerPreservesIncidenceKindWhenOnlySourceHasOne()` (easy case, only one
+  side has a kind) and `mergerKindDisagreementKeepsTargetKindDeliberately()`
+  (pins the deliberate precedence rule so it cannot silently drift).
+
+  **Structural-coverage demonstration** (acceptance criterion): added a
+  throwaway `PropertyId{"ip3ThrowawayDemoKey"}` to `vtodoCanonContributedIds()`'s
+  returned list only, rebuilt `kalburator` + `tst_property_catalogue` +
+  `tst_calendar_kind_dispatch`, and ran a small scratch probe linking the
+  built static library that calls `Kalburator::Calendar::calendarCanonPropertyIds()`
+  and `Kalburator::Todo::todoCanonPropertyIds()` directly — both returned
+  lists contained the throwaway id with **zero edits** to
+  `calendarcanonproperties.cpp` or `todocanonproperties.cpp`. Confirmed
+  `tst_calendar_kind_dispatch` (IP.1's gate) still 14/14 green with the
+  throwaway key present (a superset addition can only help the
+  emitted-⊆-catalogued check, never break it). Reverted the throwaway key
+  (`diff` against the pre-edit backup confirmed byte-identical revert),
+  rebuilt clean.
+
+  Matrix regenerated (`matrixgen`): **byte-identical** to the committed
+  copy — confirmed by diff, not assumed, per house rule O63; no loss
+  profile or edge changed by this item. `tst_gm_pipeline_convergence`
+  green.
+
+  **Deferred, per PLAN.md's own recommendation** (not built, logged only):
+  whether vendor-only keys should become a fourth contributor exported
+  from the vendor canon stages (`mseventcanonstages`, `googlecanonstages`,
+  the todo vendor stages). PLAN.md's own text already recommends yes-but-
+  not-in-this-item; left as a follow-up for whichever future item touches
+  the vendor stages' catalogue surface.
+
+  Full suite: **215 tests, 211 passed, 4 known-environmental failed**
+  (`tst_backend_signals`, `tst_backend_thread_relocation`,
+  `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — unchanged
+  from the IP.8 baseline; IP.3 added test slots inside an existing ctest
+  binary (`tst_canonjson_diff_merge`), not a new ctest executable, so the
+  ctest-level count does not move. Verified by failure TEXT (KDAV
+  30s-transfer-timeout / "would have been sufficient" pattern), not by
+  name, per CLAUDE.md's standing instruction. One incidental build-
+  environment issue hit and fixed during this session, unrelated to the
+  code change: a corrupted/zero-length `tst_property_catalogue` binary
+  from an earlier interrupted parallel build attempt (`file` reported
+  `data`, no ELF header) — deleted and rebuilt clean, not a real defect.
+  New finding filed: **O92** (`CanonJsonMerger` has no error channel for a
+  genuine kind-disagreement fail-loud — see FINDINGS.md).
+
+  Receipt: `2026-09-02-ip3-return-receipt.md`.
+
+- **NEXT:** **IP.9** — kind-scoped loss profiles (closes O88). Gates
+  IP.4/IP.6/IP.10. Read `PLAN.md`'s IP.9 section plus Amendment 1/2 for
+  the current binding order.

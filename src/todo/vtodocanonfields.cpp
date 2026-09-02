@@ -882,4 +882,41 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     return icalBytes;
 }
 
+QList<Kalburator::Shape::PropertyId> vtodoCanonContributedIds()
+{
+    using Kalburator::Shape::PropertyId;
+    // Order mirrors todoFieldsToCanon's own field-by-field body above.
+    // Envelope keys (_canon/uid/providerExtras) are deliberately excluded.
+    // NOTE: `sortOrder`, `parentUid`, `checklistItems`, `linkedResources`
+    // are NOT here — todoFieldsToCanon never produces them at the top
+    // level (they arrive from the Google Tasks / MS To-Do vendor stages
+    // and are only ever *consumed*, not produced, by
+    // canonObjectToVtodoBytes on demote). They stay vendor-only keys in
+    // todocanonproperties.cpp — verified 2026-09-02, IP.3 receipt.
+    return {
+        PropertyId{QStringLiteral("created")},
+        PropertyId{QStringLiteral("lastModified")},
+        PropertyId{QStringLiteral("summary")},
+        PropertyId{QStringLiteral("description")},
+        PropertyId{QStringLiteral("descriptionHtml")},
+        PropertyId{QStringLiteral("status")},
+        PropertyId{QStringLiteral("percentComplete")},
+        PropertyId{QStringLiteral("priority")},
+        PropertyId{QStringLiteral("categories")},
+        PropertyId{QStringLiteral("start")},
+        PropertyId{QStringLiteral("due")},
+        PropertyId{QStringLiteral("completed")},
+        PropertyId{QStringLiteral("recurrence")},
+        PropertyId{QStringLiteral("recurrenceId")},
+        PropertyId{QStringLiteral("recurrenceRange")},
+        PropertyId{QStringLiteral("seriesSplitOf")},
+        PropertyId{QStringLiteral("completionAnchor")},
+        PropertyId{QStringLiteral("alarms")},
+        PropertyId{QStringLiteral("location")},
+        PropertyId{QStringLiteral("geo")},
+        PropertyId{QStringLiteral("relatedTo")},
+        PropertyId{QStringLiteral("providerExtrasDigest")},
+    };
+}
+
 }  // namespace Kalburator::Todo

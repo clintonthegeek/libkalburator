@@ -19,4 +19,10 @@ QByteArray canonObjectToJournalBytes(const QJsonObject& obj);
 /// LossProfile for the canon → vjournal demote direction.
 Kalburator::Shape::LossProfile canonToVjournalLoss();
 
+/// IP.3 — the top-level canon PropertyIds `journalFieldsToCanon` can
+/// produce (excludes envelope keys `_canon`/`uid`/`providerExtras`, per
+/// CanonEnvelope). Declared next to the emitter it describes — see
+/// docs/campaign/incidence-parity/PLAN.md IP.3.
+QList<Kalburator::Shape::PropertyId> journalCanonContributedIds();
+
 }  // namespace Kalburator::Calendar

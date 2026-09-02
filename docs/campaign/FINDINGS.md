@@ -3976,3 +3976,51 @@ when it builds the kind-scoped loss profiles, in the same spirit as O86's
 
 Pinned by `tst_incidence_rfc5545_fidelity.cpp` (IP.8) with `QEXPECT_FAIL`
 citing this finding.
+
+### O92 — OPEN — incidence-parity IP.3, 2026-09-02: `CanonJsonMerger` has no error channel, so a genuine kind-mismatch identity conflict cannot fail loud at the engine level
+
+Filed while resolving O84 (IP.3): fixing `CanonJsonMerger::merge()` to
+thread `_canon.kind` through the re-stamp (instead of erasing it) required
+deciding what happens when source and target disagree on kind for the same
+uid — a mismatch that means something upstream is already wrong (same
+class of problem O55 named "identity conflicts" and treated as fail-loud:
+`dispatchSync` fails the mapping outright rather than silently resolving).
+
+**Why a true fail-loud wasn't built here.** `RecordMerger::merge()`
+(`src/shape/recordmerger.h`) returns `CanonicalRecord` unconditionally —
+there is no error/Result channel for a merger implementation to report "I
+cannot safely produce a merged record" back through the engine's merge
+stage. Adding one is a `RecordMerger` interface change touching every
+implementation (`CanonJsonMerger`, `RecordMergerVCard`, the blob/text/
+outline mergers) and the engine's merge-stage caller — well outside IP.3's
+scope (catalogue/envelope seam only, per PLAN.md).
+
+**What landed instead (deliberate, not silent).** `CanonJsonMerger::merge()`
+now: (a) agreement or only-one-side-has-a-kind → the present/target-
+preferred kind wins (mirrors the function's existing `mergedUid`
+target-preferred-with-source-fallback rule immediately above); (b) genuine
+disagreement (both sides carry a non-empty, differing kind) →
+`qWarning()` logs the uid, domain, and both kinds, then the merged record
+keeps **target's** kind, consistent with the function's existing
+target-primary bias (`QJsonObject out = t`). This is loud (visible in
+logs) and documented, not an unannounced silent pick — but it is not an
+abort-the-sync fail-loud in the O55 sense: the sync mapping still
+"succeeds" with a merged record whose kind was a deliberate tie-break, not
+a refusal.
+
+**Follow-up, not built:** a `RecordMerger` interface change (e.g. a
+`Result<CanonicalRecord, MergeError>`-shaped return, or an
+`identityConflict` out-parameter the engine's merge stage checks the way
+`EngineDiff::identityConflicts` already does for O55) so a kind mismatch
+can fail the mapping the same way O55's churn signature does, instead of
+silently completing with a tie-broken kind. Not scheduled to any
+incidence-parity item as of this filing; whoever picks it up should also
+check whether the same interface gap allows OTHER silent tie-breaks inside
+`RecordMerger::merge()` implementations that should be identity conflicts
+(e.g. a uid collision across truly unrelated records — out of scope to
+audit here).
+
+Pinned by `mergerKindDisagreementKeepsTargetKindDeliberately()` in
+`tests/shape/tst_canonjson_diff_merge.cpp`, which asserts the current
+deliberate precedence rule (not a placeholder) so it cannot silently drift
+to source-wins or an unannounced default.

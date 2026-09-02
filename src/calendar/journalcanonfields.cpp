@@ -217,4 +217,25 @@ Kalburator::Shape::LossProfile canonToVjournalLoss()
     return Kalburator::Shape::LossProfile{};
 }
 
+QList<Kalburator::Shape::PropertyId> journalCanonContributedIds()
+{
+    using Kalburator::Shape::PropertyId;
+    // Order mirrors journalFieldsToCanon's own field-by-field body above.
+    // Envelope keys (_canon/uid/providerExtras) are deliberately excluded.
+    return {
+        PropertyId{QStringLiteral("created")},
+        PropertyId{QStringLiteral("lastModified")},
+        PropertyId{QStringLiteral("sequence")},
+        PropertyId{QStringLiteral("summary")},
+        PropertyId{QStringLiteral("description")},
+        PropertyId{QStringLiteral("start")},
+        PropertyId{QStringLiteral("allDay")},
+        PropertyId{QStringLiteral("status")},
+        PropertyId{QStringLiteral("classification")},
+        PropertyId{QStringLiteral("color")},
+        PropertyId{QStringLiteral("url")},
+        PropertyId{QStringLiteral("categories")},
+    };
+}
+
 }  // namespace Kalburator::Calendar

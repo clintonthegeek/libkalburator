@@ -727,4 +727,39 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     return icalBytes;
 }
 
+QList<Kalburator::Shape::PropertyId> eventCanonContributedIds()
+{
+    using Kalburator::Shape::PropertyId;
+    // Order mirrors eventFieldsToCanon's own field-by-field body above, for
+    // a reader diffing the two. Envelope keys (_canon/uid/providerExtras)
+    // are deliberately excluded — CanonEnvelope owns those.
+    return {
+        PropertyId{QStringLiteral("sequence")},
+        PropertyId{QStringLiteral("created")},
+        PropertyId{QStringLiteral("lastModified")},
+        PropertyId{QStringLiteral("summary")},
+        PropertyId{QStringLiteral("description")},
+        PropertyId{QStringLiteral("descriptionHtml")},
+        PropertyId{QStringLiteral("location")},
+        PropertyId{QStringLiteral("status")},
+        PropertyId{QStringLiteral("classification")},
+        PropertyId{QStringLiteral("timeTransparency")},
+        PropertyId{QStringLiteral("freeBusyStatus")},
+        PropertyId{QStringLiteral("start")},
+        PropertyId{QStringLiteral("allDay")},
+        PropertyId{QStringLiteral("end")},
+        PropertyId{QStringLiteral("recurrence")},
+        PropertyId{QStringLiteral("recurrenceId")},
+        PropertyId{QStringLiteral("recurrenceRange")},
+        PropertyId{QStringLiteral("color")},
+        PropertyId{QStringLiteral("categories")},
+        PropertyId{QStringLiteral("url")},
+        PropertyId{QStringLiteral("organizer")},
+        PropertyId{QStringLiteral("attendees")},
+        PropertyId{QStringLiteral("priority")},
+        PropertyId{QStringLiteral("alarms")},
+        PropertyId{QStringLiteral("attachments")},
+    };
+}
+
 }  // namespace Kalburator::Calendar

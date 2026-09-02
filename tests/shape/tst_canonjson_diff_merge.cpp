@@ -215,14 +215,15 @@ private slots:
         QCOMPARE(o.value("seriesSplitOf").toString(), QString("old-master-uid"));
     }
 
-    // IP.2 discovery, logged NOT fixed (PLAN.md §1 "no fix while passing
-    // through") — FINDINGS.md O84. CanonJsonMerger::merge() re-stamps the
-    // envelope with the 3-arg stampEnvelope (canonjsonmerger.cpp:60), which
-    // builds a FRESH _canon object (canonenvelope.cpp:27-32) and therefore
-    // ERASES _canon.kind. CanonToICalStage treats an absent kind as vevent
-    // (icalcanonstages.cpp:85, back-compat), so a merged {calendar,canon}
-    // VTODO or VJOURNAL demotes to a VEVENT. Pinned XFAIL so the fix
-    // XPASSes here and forces this slot's removal.
+    // IP.3 / O84 RESOLVED. CanonJsonMerger::merge() used to re-stamp the
+    // envelope with the 3-arg stampEnvelope (canonjsonmerger.cpp), which
+    // built a FRESH _canon object and therefore ERASED _canon.kind.
+    // CanonToICalStage treats an absent kind as vevent
+    // (icalcanonstages.cpp, back-compat), so a merged {calendar,canon}
+    // VTODO or VJOURNAL demoted to a VEVENT. Fixed by threading
+    // CanonEnvelope::kind(t) (falling back to kind(s)) into the 5-arg
+    // stampEnvelope call. Both assertions genuinely pass now — no
+    // QEXPECT_FAIL, no XPASS.
     void mergerPreservesIncidenceKind()
     {
         CanonJsonMerger m(QStringLiteral("calendar"),
@@ -242,14 +243,69 @@ private slots:
 
         // The consequence, not just the symptom: demote the merged record.
         const QByteArray ical = Kalburator::Calendar::CanonToICalStage().transform(out.data);
-        QEXPECT_FAIL("", "O84: CanonJsonMerger erases _canon.kind, so a merged "
-                          "calendar VTODO/VJOURNAL demotes as a VEVENT. Out of IP.2's "
-                          "scope (calendarcanonproperties.cpp only) — logged, not fixed.",
-                     Continue);
         QVERIFY2(ical.contains("BEGIN:VTODO"),
                  qPrintable(QStringLiteral("merged vtodo demoted as: %1")
                                 .arg(QString::fromUtf8(ical.left(200)))));
-        QEXPECT_FAIL("", "O84 (same defect, symptom form).", Continue);
+        QCOMPARE(CanonEnvelope::kind(o), QString("vtodo"));
+    }
+
+    // IP.3 / O84 — the easy case with only ONE side carrying a kind: the
+    // present side's kind must survive (this is the shape a genuinely new
+    // record takes mid-merge — e.g. a first-sync target with no envelope
+    // kind yet, merging against a source that already has one).
+    void mergerPreservesIncidenceKindWhenOnlySourceHasOne()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"),
+                          Kalburator::Calendar::calendarCanonPropertyIds());
+        QJsonObject so{{"summary", "edited"}};
+        QJsonObject to{{"summary", "task"}};
+        QJsonObject bo{{"summary", "task"}};
+        CanonEnvelope::stampEnvelope(so, QStringLiteral("calendar"),
+                                     QStringLiteral("t-5"), QStringLiteral("vjournal"));
+        CanonEnvelope::stampEnvelope(to, QStringLiteral("calendar"), QStringLiteral("t-5"));
+        CanonEnvelope::stampEnvelope(bo, QStringLiteral("calendar"), QStringLiteral("t-5"));
+        CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so); src.recordId  = QStringLiteral("t-5");
+        CanonicalRecord tgt;  tgt.data  = CanonEnvelope::serialize(to); tgt.recordId  = QStringLiteral("t-5");
+        CanonicalRecord base; base.data = CanonEnvelope::serialize(bo); base.recordId = QStringLiteral("t-5");
+
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
+        const QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        QCOMPARE(CanonEnvelope::kind(o), QString("vjournal"));
+    }
+
+    // IP.3 / O84 — the deliberate disagreement rule. Source and target
+    // both carry a NON-EMPTY kind and it differs for the same uid: this is
+    // an upstream identity conflict (same class O55 named and treated as
+    // fail-loud), not an ordinary field merge. CanonJsonMerger::merge()'s
+    // interface (RecordMerger::merge() returns CanonicalRecord
+    // unconditionally, no error channel) makes a genuine abort-the-sync
+    // fail-loud a RecordMerger/engine interface change, out of IP.3's
+    // scope. The deliberate, documented (not silent) precedence rule
+    // chosen instead: target's kind wins, consistent with this function's
+    // existing target-primary bias (`out = t`). Pinned here so the rule
+    // cannot silently drift to source-wins or an unannounced default.
+    void mergerKindDisagreementKeepsTargetKindDeliberately()
+    {
+        CanonJsonMerger m(QStringLiteral("calendar"),
+                          Kalburator::Calendar::calendarCanonPropertyIds());
+        QJsonObject so{{"summary", "edited"}};
+        QJsonObject to{{"summary", "task"}};
+        QJsonObject bo{{"summary", "task"}};
+        CanonEnvelope::stampEnvelope(so, QStringLiteral("calendar"),
+                                     QStringLiteral("t-6"), QStringLiteral("vevent"));
+        CanonEnvelope::stampEnvelope(to, QStringLiteral("calendar"),
+                                     QStringLiteral("t-6"), QStringLiteral("vtodo"));
+        CanonEnvelope::stampEnvelope(bo, QStringLiteral("calendar"),
+                                     QStringLiteral("t-6"), QStringLiteral("vtodo"));
+        CanonicalRecord src;  src.data  = CanonEnvelope::serialize(so); src.recordId  = QStringLiteral("t-6");
+        CanonicalRecord tgt;  tgt.data  = CanonEnvelope::serialize(to); tgt.recordId  = QStringLiteral("t-6");
+        CanonicalRecord base; base.data = CanonEnvelope::serialize(bo); base.recordId = QStringLiteral("t-6");
+
+        const CanonicalRecord out = m.merge(src, tgt, base, Kalburator::Shape::AutoResolveStrategy::None);
+        const QJsonObject o = QJsonDocument::fromJson(out.data).object();
+        // Deliberate, not silent: target's kind is kept even though the
+        // AutoResolveStrategy is None (source-preferred for ordinary
+        // fields) — kind disagreement is not an ordinary field.
         QCOMPARE(CanonEnvelope::kind(o), QString("vtodo"));
     }
 
