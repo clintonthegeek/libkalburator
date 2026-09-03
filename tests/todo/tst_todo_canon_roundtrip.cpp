@@ -1191,6 +1191,46 @@ private slots:
         QCOMPARE(outAlarms.first()->repeatCount(), 0);
     }
 
+    // IP.4 / O85: an enabled source alarm must survive promote->demote
+    // still enabled (see the twin VEVENT slot in
+    // tst_calendar_canon_roundtrip.cpp — the shared alarmshape module
+    // honours this on both incidence kinds).
+    void vtodoAlarmEnabledSurvivesRoundTrip()
+    {
+        const QByteArray vtodo =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VTODO\r\n"
+            "UID:alarm-enabled-1\r\n"
+            "SUMMARY:Enabled alarm\r\n"
+            "DUE:20260601T170000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "END:VALARM\r\n"
+            "END:VTODO\r\n"
+            "END:VCALENDAR\r\n";
+
+        VTodoToCanonStage fwd;
+        CanonToVTodoStage rev;
+
+        const auto srcTodo = parseTodoFromICal(vtodo);
+        QVERIFY(srcTodo);
+        QVERIFY2(srcTodo->alarms().first()->enabled(),
+                 "fixture alarm must be enabled=true in the source");
+
+        const QByteArray canon = fwd.transform(vtodo);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QByteArray output = rev.transform(canon);
+        const auto outTodo = parseTodoFromICal(output);
+        QVERIFY(outTodo);
+        const auto outAlarms = outTodo->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY2(outAlarms.first()->enabled(),
+                 "alarm must still be enabled after round trip (O85)");
+    }
+
     // -----------------------------------------------------------------
     // W7 — generic X-prop passthrough + O74 providerExtrasDigest
     // -----------------------------------------------------------------

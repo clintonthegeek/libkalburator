@@ -617,6 +617,185 @@ private slots:
         QVERIFY2(!obj2.contains(QStringLiteral("lastModified")),
                  "re-fetched canon must still lack lastModified");
     }
+
+    // -----------------------------------------------------------------
+    // IP.4 — shared VALARM shape module (O79 + O85). Modeled on the W5
+    // VTODO slots in tests/todo/tst_todo_canon_roundtrip.cpp — these are
+    // VEVENT's first-ever coverage for the non-start-relative trigger
+    // forms, since eventcanonfields.cpp never received W5's shape
+    // extension until IP.4 pointed it at the shared alarmshape module.
+    // -----------------------------------------------------------------
+
+    // Absolute (VALUE=DATE-TIME) trigger. Before IP.4, eventcanonfields.cpp
+    // read alarm->startOffset() unconditionally (O79), silently corrupting
+    // this to a bogus "offset: 0" start-relative row.
+    void veventAlarmAbsoluteFormRoundTrips()
+    {
+        const QByteArray vevent =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:vevent-alarm-at-1\r\n"
+            "SUMMARY:Absolute alarm\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER;VALUE=DATE-TIME:20260601T083000Z\r\n"
+            "END:VALARM\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(vevent);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("at")).toString(), QStringLiteral("2026-06-01T08:30:00Z"));
+        QVERIFY2(!a.contains(QStringLiteral("offset")),
+                 "absolute-trigger alarm must not also carry a bogus offset (O79)");
+
+        const QByteArray output = rev.transform(canon);
+        const auto outEvent = parseEvent(output);
+        QVERIFY(outEvent);
+        const auto outAlarms = outEvent->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY(outAlarms.first()->hasTime());
+        QCOMPARE(outAlarms.first()->time().toUTC(),
+                 QDateTime::fromString(QStringLiteral("2026-06-01T08:30:00Z"), Qt::ISODate));
+    }
+
+    // END-related trigger. Before IP.4, this silently corrupted to a
+    // start-relative offset:0 (O79) the same way the absolute case did.
+    void veventAlarmEndRelatedFormRoundTrips()
+    {
+        const QByteArray vevent =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:vevent-alarm-end-1\r\n"
+            "SUMMARY:End-related alarm\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER;RELATED=END:-PT15M\r\n"
+            "END:VALARM\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(vevent);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("offset")).toInt(), -900);
+        QCOMPARE(a.value(QStringLiteral("related")).toString(), QStringLiteral("end"));
+
+        const QByteArray output = rev.transform(canon);
+        const auto outEvent = parseEvent(output);
+        QVERIFY(outEvent);
+        const auto outAlarms = outEvent->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY2(outAlarms.first()->hasEndOffset(),
+                 "related:end must demote to an END-related offset, not START (O79)");
+        QCOMPARE(outAlarms.first()->endOffset().asSeconds(), -900);
+    }
+
+    // REPEAT/DURATION pair. VEVENT's canon alarms row never carried
+    // repeatCount/repeatIntervalSecs before IP.4 — it was still the
+    // pre-W5 {type, offset, text} shape.
+    void veventAlarmRepeatDurationPairRoundTrips()
+    {
+        const QByteArray vevent =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:vevent-alarm-repeat-1\r\n"
+            "SUMMARY:Repeating alarm\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "REPEAT:3\r\n"
+            "DURATION:PT5M\r\n"
+            "END:VALARM\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(vevent);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(alarms.size(), 1);
+        const QJsonObject a = alarms.at(0).toObject();
+        QCOMPARE(a.value(QStringLiteral("repeatCount")).toInt(), 3);
+        QCOMPARE(a.value(QStringLiteral("repeatIntervalSecs")).toInt(), 300);
+
+        const QByteArray output = rev.transform(canon);
+        const auto outEvent = parseEvent(output);
+        QVERIFY(outEvent);
+        const auto outAlarms = outEvent->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QCOMPARE(outAlarms.first()->repeatCount(), 3);
+        QCOMPARE(outAlarms.first()->snoozeTime().asSeconds(), 300);
+    }
+
+    // O85: an enabled source alarm must survive promote->demote still
+    // enabled, on the VEVENT leg (see the twin VTODO slot in
+    // tst_todo_canon_roundtrip.cpp — this proves the shared module honours
+    // it on both incidence kinds, not just the one W5 originally fixed).
+    void veventAlarmEnabledSurvivesRoundTrip()
+    {
+        const QByteArray vevent =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:vevent-alarm-enabled-1\r\n"
+            "SUMMARY:Enabled alarm\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "BEGIN:VALARM\r\n"
+            "ACTION:DISPLAY\r\n"
+            "TRIGGER:-PT15M\r\n"
+            "END:VALARM\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const auto srcEvent = parseEvent(vevent);
+        QVERIFY(srcEvent);
+        QVERIFY2(srcEvent->alarms().first()->enabled(),
+                 "fixture alarm must be enabled=true in the source");
+
+        const QByteArray canon = fwd.transform(vevent);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QByteArray output = rev.transform(canon);
+        const auto outEvent = parseEvent(output);
+        QVERIFY(outEvent);
+        const auto outAlarms = outEvent->alarms();
+        QCOMPARE(outAlarms.size(), 1);
+        QVERIFY2(outAlarms.first()->enabled(),
+                 "alarm must still be enabled after round trip (O85)");
+    }
 };
 
 QTEST_GUILESS_MAIN(TestCalendarCanonRoundtrip)

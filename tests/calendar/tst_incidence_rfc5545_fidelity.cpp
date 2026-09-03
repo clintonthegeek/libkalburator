@@ -477,15 +477,20 @@ private slots:
     // this is by design, not an oversight.
     // -------------------------------------------------------------------
 
-    void veventAlarmStartRelative() { runAlarmCase(false, 0, TriggerForm::StartRelative, false); }
-    void veventAlarmEndRelative()   { runAlarmCase(false, 1, TriggerForm::EndRelative,   true);  }
-    void veventAlarmAbsolute()      { runAlarmCase(false, 2, TriggerForm::Absolute,      true);  }
-    void veventAlarmRepeatDuration(){ runAlarmCase(false, 3, TriggerForm::RepeatDuration,true);  }
+    // IP.4: all eight slots' O79 QEXPECT_FAILs (VEVENT end-relative/
+    // absolute/repeat-duration corruption) and O85 QEXPECT_FAILs (every
+    // alarm coming back disabled) are REMOVED — both are fixed by the new
+    // shared alarmshape module. Real green, not vacuous: this file's
+    // runAlarmCase() would fail for real if either regressed.
+    void veventAlarmStartRelative() { runAlarmCase(false, 0, TriggerForm::StartRelative); }
+    void veventAlarmEndRelative()   { runAlarmCase(false, 1, TriggerForm::EndRelative);   }
+    void veventAlarmAbsolute()      { runAlarmCase(false, 2, TriggerForm::Absolute);      }
+    void veventAlarmRepeatDuration(){ runAlarmCase(false, 3, TriggerForm::RepeatDuration);}
 
-    void vtodoAlarmStartRelative()  { runAlarmCase(true,  0, TriggerForm::StartRelative, false); }
-    void vtodoAlarmEndRelative()    { runAlarmCase(true,  1, TriggerForm::EndRelative,   false); }
-    void vtodoAlarmAbsolute()       { runAlarmCase(true,  2, TriggerForm::Absolute,      false); }
-    void vtodoAlarmRepeatDuration() { runAlarmCase(true,  3, TriggerForm::RepeatDuration,false); }
+    void vtodoAlarmStartRelative()  { runAlarmCase(true,  0, TriggerForm::StartRelative); }
+    void vtodoAlarmEndRelative()    { runAlarmCase(true,  1, TriggerForm::EndRelative);   }
+    void vtodoAlarmAbsolute()       { runAlarmCase(true,  2, TriggerForm::Absolute);      }
+    void vtodoAlarmRepeatDuration() { runAlarmCase(true,  3, TriggerForm::RepeatDuration);}
 
 private:
     void runKindCase(const QString& kindName, const QByteArray& master, const QByteArray& exception)
@@ -564,7 +569,7 @@ private:
         QCOMPARE(c1m, c2m);
     }
 
-    void runAlarmCase(bool isTodo, int alarmIndex, TriggerForm form, bool expectFormCorrupted)
+    void runAlarmCase(bool isTodo, int alarmIndex, TriggerForm form)
     {
         using Kalburator::Calendar::ICalToCanonStage;
         using Kalburator::Calendar::CanonToICalStage;
@@ -587,19 +592,16 @@ private:
                                    .arg(isTodo ? QStringLiteral("VTODO") : QStringLiteral("VEVENT"),
                                         triggerFormLabel(form));
 
-        if (expectFormCorrupted) {
-            QEXPECT_FAIL("", qPrintable(QStringLiteral(
-                "IP.4 / O79 — %1 corrupted on round trip (eventcanonfields.cpp reads "
-                "startOffset() unconditionally regardless of the alarm's actual "
-                "trigger form)").arg(label)), Continue);
-        }
+        // IP.4 / O79: trigger form (and its exact value) must survive
+        // promote->demote for every form, on both kinds — the shared
+        // alarmshape module branches on the alarm's actual trigger form
+        // instead of reading startOffset() unconditionally.
         QVERIFY2(triggerFormMatches(rtAlarm, form),
                  qPrintable(label + QStringLiteral(" must survive promote->demote with its exact form and value")));
 
-        QEXPECT_FAIL("", qPrintable(QStringLiteral(
-            "IP.4 / O85 — %1: every alarm round-tripped through canon comes back "
-            "DISABLED (promote never records enabled(), demote never calls "
-            "setEnabled(true))").arg(label)), Continue);
+        // IP.4 / O85: alarmFromJson() always calls setEnabled(true) — RFC
+        // 5545 has no "disabled alarm" wire representation, so every
+        // demoted alarm must come back enabled.
         QVERIFY2(rtAlarm->enabled(), qPrintable(label + QStringLiteral(": alarm must still be enabled after round trip")));
     }
 };

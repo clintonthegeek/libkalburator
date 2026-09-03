@@ -8,8 +8,11 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.10 DONE. O87 RESOLVED** (RELATED-TO
-excepted — see O95). Full session log entry below; IP.4 is next.
+**Last updated:** 2026-09-02 — **IP.4 DONE. O79, O85 RESOLVED.** Full
+session log entry below; IP.5 is next.
+
+**Previously — 2026-09-02 — IP.10 DONE. O87 RESOLVED** (RELATED-TO
+excepted — see O95).
 
 **Previously — 2026-09-02 — IP.6 DONE. O83, O86, O91 (partially —
 comment/contact) and O93 RESOLVED.** New finding **O94** (upstream).
@@ -80,7 +83,7 @@ Earlier still the same day: pre-flight audit landed, six findings
 | — | IP.9 | **Kind-scoped loss profiles** — one edge currently carries an event-only profile for all three kinds; `canonToVjournalLoss()` is dead code | **O88** | **DONE 2026-09-02** — `TransformationEdge::lossByKind` (design (b)); `canonToVjournalLoss()` repopulated, new `canonToVtodoIcalLoss()`; matrix now kind-aware (substantial, expected diff); IP.8's TODO(IP.9) closed for vtodo/vjournal. New finding **O93** (sibling `{todo,canon}` edge shares the same undeclared drops — logged, not fixed). Receipt: `2026-09-02-ip9-return-receipt.md`. |
 | 2 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | **DONE 2026-09-02** — two commits (structural extraction, zero behaviour change; then the field fixes). **O83, O86, O91 (VEVENT/VTODO/VJOURNAL comment/contact only) and O93 RESOLVED.** New finding **O94** (upstream: KCalendarCore's `ICalFormat` never reads/writes RESOURCES at all — corrects part of O91). Receipt: `2026-09-02-ip6-return-receipt.md`. |
 | 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | **DONE 2026-09-02** — RECURRENCE-ID identity (VTODO's W1 shape, W3 safety fix included), RRULE/RDATE/EXDATE (verbatim-lines convention), organizer/attendees/attachments/comments/contacts, descriptionHtml (X-ALT-DESC, newly wired) and the phantom `classification` key all fixed. **RELATED-TO is the one exception** — wired identically but blocked upstream on the promote side only; new finding **O95**. New finding **O96** (a sibling declaration gap, logged not fixed). Receipt: `2026-09-02-ip10-return-receipt.md`. |
-| 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | NOT STARTED — see Amendment §A.3.1. Moved because IP.6/IP.10 got *more* urgent, **not** because PlanStan lacks alarm UI — they asked us explicitly not to deprioritise it (they passthrough other clients' alarms). |
+| 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | **DONE 2026-09-02** — new `src/calendar/alarmshape.{h,cpp}` (W5's VTODO logic moved verbatim; new `describeAlarmRow()`); `eventcanonfields.cpp` and `vtodocanonfields.cpp` both point at it; `mseventcanonstages.cpp` demote fixed (route non-start-relative rows to carrier instead of misreading offset=0); `googlecanonstages.cpp` investigated independently — its absolute-alarm case was ALREADY correct (guard is strictly `< 0`), only its END-related case was broken, fixed the same way. O85: demote always `setEnabled(true)` (PLAN's recommended option; RFC 5545 has no disabled-alarm wire form, argued in the receipt). Loss profiles re-verified, **unchanged** (`alarms: Simplified` stays correct on both legs — the native-mapped alarm still drops text/repeat, independent of O79). Matrix byte-identical. Receipt: `2026-09-02-ip4-return-receipt.md`. |
 | 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
 | 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
 | 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
@@ -872,8 +875,102 @@ produced this state; three copies drift faster than two.
   neither owned by any item yet. Receipt:
   `2026-09-02-ip10-return-receipt.md`.
 
-- **NEXT:** **IP.4** — shared VALARM module + VEVENT promote/demote + both
-  vendor event legs, one commit. Closes O79 + O85. See PLAN.md Amendment 1
-  §A.3.1. Moved ahead of IP.5/IP.7/IP.11/IP.12 per the table order — not
-  because PlanStan lacks alarm UI (they explicitly asked not to
-  deprioritise it; they passthrough other clients' alarms).
+- **2026-09-02 — IP.4 DONE. O79, O85 RESOLVED.**
+
+  New `src/calendar/alarmshape.{h,cpp}` — placement per PLAN.md's default
+  (`src/calendar/`, not `src/shape/`: `KCalendarCore::Alarm` is a
+  calendar-layer type and `src/shape/` is deliberately domain-neutral).
+  `alarmToJson()`/`alarmFromJson()` moved **verbatim** from
+  `vtodocanonfields.cpp`'s W5 block — the tested-correct implementation,
+  not reimplemented. New `describeAlarmRow()` (`enum class AlarmRowForm
+  { StartRelative, EndRelative, Absolute, Malformed }`) — a NEW helper, no
+  prior copy — lets a vendor leg ask a row's actual form instead of
+  inferring one from a possibly-defaulted key, which is precisely the O79
+  bug class.
+
+  **All four call sites moved in one commit** (fixing promote alone would
+  have made VEVENT round-tripping worse, per PLAN.md's own reasoning):
+  `eventcanonfields.cpp` promote/demote now call the shared module
+  (gaining W5's REPEAT/DURATION pairing and `related` key, which VEVENT's
+  own pre-IP.4 shape never had); `vtodocanonfields.cpp` now calls the same
+  module instead of keeping its own copy (proof: `tests/todo/` VALARM
+  slots re-run unchanged and green, before and after); `mseventcanonstages.cpp`'s
+  demote site (~line 1211) now requires `describeAlarmRow(a) ==
+  AlarmRowForm::StartRelative` before mapping to
+  `isReminderOn`/`reminderMinutesBeforeStart`, routing Absolute/
+  EndRelative/Malformed rows to the existing `x-canon-alarms` carrier
+  instead of misreading a defaulted `offset:0`.
+
+  **`googlecanonstages.cpp` investigated independently, per the task's
+  explicit instruction not to assume PLAN.md's "same reader shape" premise
+  — and it does NOT hold there.** Google's demote guard is `offsetSecs < 0`
+  (strictly negative), not MS's `<= 0`; an "at"-shaped absolute row
+  defaults `offsetSecs` to 0, `0 < 0` is false, so that case was **already
+  correctly routed to the carrier before this item touched the file**.
+  What WAS broken: an END-related row (`related:"end"`, still carrying a
+  negative numeric `offset`) was never distinguished from a start-relative
+  one and could be wrongly mapped to a Google `reminders.overrides[]`
+  entry measured from the start. Fixed the same way, via
+  `describeAlarmRow()`, requiring `StartRelative` before mapping.
+
+  **O85 decision** (PLAN.md's own recommended option, adopted as-is):
+  `alarmFromJson()` unconditionally calls `setEnabled(true)` for every
+  row, on both kinds — no `"enabled"` row key was added. Argument: RFC
+  5545 has no wire representation for a disabled alarm at all — demoting
+  a disabled KOrganizer alarm through *any* calendar client's serializer
+  (not just this library's) loses the same bit, since the format has no
+  slot for it; `X-KDE-KCALCORE-ENABLED` was the only thing making the
+  round trip inconsistently disabled, and it carries no cross-client
+  meaning. Proof: new `veventAlarmEnabledSurvivesRoundTrip` /
+  `vtodoAlarmEnabledSurvivesRoundTrip` slots pin an enabled source alarm
+  survives promote→demote enabled on both legs.
+
+  **New tests:** four VEVENT alarm round-trip slots in
+  `tst_calendar_canon_roundtrip.cpp` (absolute, end-relative, repeat/
+  duration, enabled — VEVENT's first-ever coverage of the non-start-
+  relative forms); one VTODO enabled-survival slot in
+  `tst_todo_canon_roundtrip.cpp`; two "carried not coerced" slots each in
+  `tst_ms_event_canon_edge.cpp` and `tst_google_event_canon_edge.cpp`
+  (absolute + end-related, both verifying the carrier round-trips the row
+  back intact via re-promote). `tst_incidence_rfc5545_fidelity.cpp`'s
+  VALARM sub-gate: all eight slots' `QEXPECT_FAIL`s (O79 form-corruption +
+  O85 disabled) removed — real green now, not vacuous.
+
+  **Loss profiles re-verified, left UNCHANGED.** `alarms: Simplified`
+  stays the correct verdict on both `mseventcanonstages.cpp` and
+  `googlecanonstages.cpp`: the one alarm that maps to the vendor's own
+  native reminder field (MS `isReminderOn`+minutes; Google
+  `reminders.overrides[]`) still loses its `text`/`repeatCount`/
+  `repeatIntervalSecs` on that leg, because neither vendor's native
+  reminder model carries them — that loss is independent of O79 (which was
+  about *misclassifying* a row's form, not about the native mapping's own
+  reduced fidelity) and was already the reason for the Simplified verdict
+  before this item. Confirmed by matrix regeneration:
+  `./build/tools/matrixgen/matrixgen` output byte-identical to the
+  committed matrix; `tst_gm_pipeline_convergence`'s
+  `committedMatrixMatchesGenerated` green.
+
+  O64 crossing-gate check: IP.4 does not add a new vendor pair/domain
+  edge (the `{calendar,canon}⇄{ms-event,google-event}` edges already
+  existed), so O64 does not mandate new crossing-gate coverage; the
+  dedicated per-vendor "carried not coerced" slots above give direct
+  coverage of the fixed behavior. `tst_gm_pipeline_convergence.cpp`'s
+  fixtures carry no alarms/reminders either before or after this item —
+  left untouched, noted in the receipt as a pre-existing gap, not one this
+  item's scope requires closing.
+
+  VJOURNAL confirmed untouched — takes no VALARM per RFC 5545 §3.6.3;
+  `journalcanonfields.cpp` was not touched.
+
+  Full suite: **215 tests (unchanged — new slots landed inside existing
+  binaries, per IP.3/IP.6/IP.9/IP.10's own precedent), 211 passed, 4
+  known-environmental failed** (`tst_backend_signals`,
+  `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
+  `tst_remotecalendarbackend` — verified by failure TEXT: CalDAV 412/
+  timeout against the local Radicale, not by name).
+
+  No new FINDINGS filed — no bug found outside O79/O85's scope. Receipt:
+  `2026-09-02-ip4-return-receipt.md`.
+
+- **NEXT:** **IP.5** — `CanonEnvelope::stampProviderExtrasDigest()` across
+  calendar/journal/contacts; retrofit the 3 todo sites. Closes O80.

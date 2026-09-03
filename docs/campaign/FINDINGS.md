@@ -3412,7 +3412,7 @@ set — a hand list is what let the drift survive). The *class* remains open
 until **IP.3**: nothing yet forces a catalogue to track its emitter. See
 `docs/campaign/incidence-parity/2026-09-01-ip2-return-receipt.md`.
 
-### O79 — OPEN — incidence-parity recon, 2026-08-29: VEVENT alarm promote corrupts absolute-trigger and END-related VALARMs to a bogus `offset: 0` — and three more call sites read the same row shape
+### O79 — RESOLVED (IP.4, 2026-09-02) — incidence-parity recon, 2026-08-29: VEVENT alarm promote corrupts absolute-trigger and END-related VALARMs to a bogus `offset: 0` — and three more call sites read the same row shape
 
 `src/calendar/eventcanonfields.cpp:374` reads
 `alarm->startOffset().asSeconds()` unconditionally.
@@ -3450,6 +3450,36 @@ RFC 5545 and is correctly unaffected.
 Owned by incidence-parity **IP.4** (shared `alarmshape` module +
 `describeAlarmRow()` so a vendor leg asks rather than inferring from a
 defaulted zero).
+
+**Landed 2026-09-02 (IP.4).** New `src/calendar/alarmshape.{h,cpp}` —
+`alarmToJson()`/`alarmFromJson()` moved verbatim from
+`vtodocanonfields.cpp`'s W5 block; new `describeAlarmRow()` classifies a
+row as StartRelative/EndRelative/Absolute/Malformed by its actual keys.
+All four sites moved together in one commit: `eventcanonfields.cpp`
+promote/demote now call the shared module (gaining the REPEAT/DURATION
+pairing and `related` key VEVENT never had); `vtodocanonfields.cpp` now
+calls the same module instead of its own copy;
+`mseventcanonstages.cpp`'s demote site uses `describeAlarmRow()` to
+require `AlarmRowForm::StartRelative` before mapping to
+`isReminderOn`/`reminderMinutesBeforeStart`, routing Absolute/EndRelative/
+Malformed rows to the carrier instead. **Google's site
+(`googlecanonstages.cpp`) turned out NOT to share MS's exact bug**: its
+`offsetSecs < 0` (strictly negative) guard already rejected the
+defaulted-zero absolute case; only the END-related case (negative offset,
+undistinguished from start-relative) was actually broken there — fixed the
+same way, via `describeAlarmRow()`. New coverage: VEVENT round-trip slots
+for all four trigger forms in `tst_calendar_canon_roundtrip.cpp`
+(previously VEVENT had none beyond plain start-relative); "carried not
+coerced" slots for both vendor legs in `tst_ms_event_canon_edge.cpp` /
+`tst_google_event_canon_edge.cpp`; `tst_incidence_rfc5545_fidelity.cpp`'s
+VALARM sub-gate QEXPECT_FAILs removed. `tests/todo/` VALARM slots
+unchanged and green (extraction was behaviour-preserving). Loss profile
+verdicts (`alarms: Simplified` on both vendor legs) re-verified and
+**left unchanged**: the alarm that maps to the vendor's native reminder
+field still drops its `text`/`repeatCount`/`repeatIntervalSecs` on that
+leg (native reminder models don't carry them), so full losslessness was
+never achieved — only the O79 misclassification was fixed. Matrix
+byte-identical. See the IP.4 return receipt for the full argument.
 
 ### O80 — OPEN — incidence-parity recon, 2026-08-29: calendar and contacts differs are still blind to provider-extras-only edits (the O74 follow-through O74 itself predicted)
 
@@ -3654,7 +3684,7 @@ since a kind mismatch on one uid means something upstream is already
 wrong. Whoever takes it should decide that explicitly and write it down.
 
 
-### O85 — OPEN — incidence-parity pre-flight audit, 2026-09-02: every VALARM round-tripped through canon comes back **disabled**
+### O85 — RESOLVED (IP.4, 2026-09-02) — incidence-parity pre-flight audit, 2026-09-02: every VALARM round-tripped through canon comes back **disabled**
 
 Found by the 2026-09-02 pre-flight audit
 (`docs/campaign/incidence-parity/2026-09-02-preflight-audit.md` §2.3), not
@@ -3686,6 +3716,25 @@ alarm-bearing incidence.
 Note this is **independent of O79**: VP.f's W5 corrected the VTODO trigger
 form and still leaves every VTODO alarm disabled. Fixing O79 without O85
 would leave the same user-visible symptom. IP.4 must close both.
+
+**DECIDED and landed 2026-09-02 (IP.4) — PLAN.md's recommended option:**
+`alarmFromJson()` in the new shared `alarmshape.cpp` unconditionally calls
+`setEnabled(true)`, on every row, for both VEVENT and VTODO. No row key
+was added. Argument: RFC 5545 has no "disabled alarm" wire representation
+at all — `X-KDE-KCALCORE-ENABLED` is a KCalendarCore-local concept with no
+counterpart in any VALARM property, so a demoted alarm serialized to iCal
+bytes and re-parsed by ANY other client (KDE or not) already comes back
+enabled regardless of what libkalburator does; only KCalendarCore's own
+X-prop was making it inconsistently disabled. Proof this doesn't silently
+eat a deliberately-disabled KOrganizer alarm: there is nothing on the
+RFC 5545 wire for such a disablement to survive as in the first place — a
+disabled alarm demoted through ANY calendar client's serializer (not just
+this library's) loses the same bit, since the wire format has no slot for
+it. New slots proving an enabled source alarm survives promote→demote
+enabled on both VEVENT and VTODO legs
+(`veventAlarmEnabledSurvivesRoundTrip`, `vtodoAlarmEnabledSurvivesRoundTrip`).
+`tst_incidence_rfc5545_fidelity.cpp`'s O85 QEXPECT_FAILs (all eight VALARM
+sub-gate slots) removed.
 
 ### O86 — RESOLVED (IP.6, 2026-09-02) — incidence-parity pre-flight audit, 2026-09-02: KCalendarCore 6.29.0 serializes `GEO` corrupt, so we emit malformed iCal
 

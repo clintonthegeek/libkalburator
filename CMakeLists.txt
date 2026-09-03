@@ -162,6 +162,8 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/icalrecorddiffer.h
     # Plan 3 Task C2/C3 — ical ↔ canon JSON stages
     src/calendar/icalcanonstages.h
+    # IP.4 (incidence-parity campaign) — shared VALARM ⇄ canon-JSON row shape
+    src/calendar/alarmshape.h
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.h
     # Plan 4 Task 1 — VJOURNAL field mapping helpers
@@ -214,6 +216,8 @@ set(KALBURATOR_CALENDAR_SOURCES
     # VJOURNAL, extracted out of eventcanonfields/vtodocanonfields/
     # journalcanonfields.
     src/calendar/incidencecommonfields.cpp
+    # IP.4 (incidence-parity campaign) — shared VALARM ⇄ canon-JSON row shape
+    src/calendar/alarmshape.cpp
     # Plan 6 Task 3 — VEVENT field mapping helpers
     src/calendar/eventcanonfields.cpp
     # Plan 4 Task 1 — VJOURNAL field mapping helpers

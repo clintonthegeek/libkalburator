@@ -171,16 +171,27 @@ identically but blocked upstream on the promote side only — **O95 filed**
 though it writes it fine; VEVENT's parser reads it correctly for
 comparison). **O96 filed** (a sibling, lower-severity loss-declaration gap
 on VTODO's own calendar-domain profile, logged not fixed). IP.8's gate now
-fully GREEN for all three kinds. **IP.4 is next** (shared VALARM module),
-then IP.5 → IP.7 → IP.11 → IP.12 (order lives in STATUS's table, not in
-the numbering).
+fully GREEN for all three kinds. **IP.4 DONE 2026-09-02** — new shared
+`src/calendar/alarmshape.{h,cpp}` (W5's VTODO VALARM logic moved verbatim
++ new `describeAlarmRow()` classifier); VEVENT promote/demote and VTODO
+promote/demote both point at it now (one implementation, not two);
+`mseventcanonstages.cpp`'s demote site fixed to route non-start-relative
+rows to the existing carrier instead of misreading a defaulted `offset:0`;
+`googlecanonstages.cpp` investigated independently — its absolute-alarm
+case was **already correct** (its guard is strictly `< 0`), only its
+END-related case shared the bug, fixed the same way. **O79, O85
+RESOLVED.** IP.8's VALARM sub-gate fully GREEN (no more QEXPECT_FAIL).
+**IP.5 is next**, then IP.7 → IP.11 → IP.12 (order lives in STATUS's
+table, not in the numbering).
 
-**Findings owned:** O78 (RESOLVED by IP.2), O79 (VEVENT alarm trigger-form
-corruption, four call sites), O80 (providerExtrasDigest absent on
-calendar/contacts), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE twin), O83
+**Findings owned:** O78 (RESOLVED by IP.2), O79 (RESOLVED by IP.4 — VEVENT
+alarm trigger-form corruption, four call sites), O80 (providerExtrasDigest
+absent on calendar/contacts), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE
+twin), O83
 (RESOLVED by IP.6 — undeclared VTODO drops), O84 (RESOLVED by IP.3 —
-merger erases the incidence kind), O85 (every alarm round-trips back
-DISABLED — all four sites, VTODO included), O86 (RESOLVED by IP.6 —
+merger erases the incidence kind), O85 (RESOLVED by IP.4 — every alarm
+round-tripped back DISABLED, all four sites; demote now always
+`setEnabled(true)`, no wire form to lose), O86 (RESOLVED by IP.6 —
 kcalendarcore 6.29.0 serializes `GEO` corrupt, **upstream** — dropped
 entirely, not hand-serialized), O87 (RESOLVED by IP.10 — VJOURNAL
 undeclared drops incl. RECURRENCE-ID aliasing; RELATED-TO carved out as
@@ -266,7 +277,7 @@ coverage mandatory for every new vendor pair/domain edge), O65 (events
 never index participant emails), O59 tooling notes (moc × terminated raw
 string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **215 tests**, 211 green, re-confirmed after IP.10 lands
+Suite baseline: **215 tests**, 211 green, re-confirmed after IP.4 lands
 (2026-09-02). The 4 reds (`tst_backend_signals`,
 `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
 `tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by

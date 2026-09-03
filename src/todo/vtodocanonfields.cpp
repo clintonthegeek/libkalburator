@@ -1,5 +1,6 @@
 #include "vtodocanonfields.h"
 
+#include "alarmshape.h"
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
 #include "incidencecommonfields.h"
@@ -55,6 +56,10 @@ using Kalburator::Calendar::promoteContacts;
 using Kalburator::Calendar::demoteContacts;
 using Kalburator::Calendar::promoteResources;
 using Kalburator::Calendar::demoteResources;
+// IP.4 — shared VALARM ⇄ canon-JSON row shape (moved from this file
+// verbatim; see alarmshape.h).
+using Kalburator::Calendar::alarmToJson;
+using Kalburator::Calendar::alarmFromJson;
 
 KCalendarCore::Todo::Ptr parseTodo(const QByteArray &data)
 {
@@ -407,57 +412,17 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
         }
     }
 
-    // ---- alarms (VALARM, W5 shape extension) --------------------------------
-    // Additive JSON keys on top of the pre-existing {type, offset, text} row
-    // shape (old rows stay valid: absent "at"/"related"/"repeatCount"/
-    // "repeatIntervalSecs" means exactly what the pre-W5 shape meant).
-    // hasTime()/hasEndOffset()/hasStartOffset() are mutually exclusive at the
-    // KCalendarCore::Alarm level (probe-confirmed 2026-08-28) — promote just
-    // preserves that exclusivity, checked in that priority order.
-    //
-    // W5 bug fix bundled in: pre-W5 code unconditionally read
-    // alarm->startOffset() regardless of trigger form, so an absolute-
-    // trigger or END-related alarm silently corrupted to a bogus
-    // "offset: 0" on promote. This block now branches on the alarm's actual
-    // trigger form instead.
+    // ---- alarms (VALARM, IP.4: shared alarmshape module) -------------------
+    // Row-shape logic moved to alarmshape.{h,cpp} verbatim (this was W5's
+    // tested-correct implementation) so VEVENT and VTODO share exactly one
+    // copy — see alarmshape.h for the shape and the mutual-exclusivity
+    // rationale.
     {
         const auto alarms = todo->alarms();
         if (!alarms.isEmpty()) {
             QJsonArray arr;
-            for (const auto& alarm : alarms) {
-                QJsonObject a;
-                a.insert(QStringLiteral("type"), int(alarm->type()));
-                if (alarm->hasTime()) {
-                    a.insert(QStringLiteral("at"), alarm->time().toUTC().toString(Qt::ISODate));
-                } else if (alarm->hasEndOffset()) {
-                    a.insert(QStringLiteral("offset"), alarm->endOffset().asSeconds());
-                    a.insert(QStringLiteral("related"), QStringLiteral("end"));
-                } else {
-                    // default / hasStartOffset() — unchanged pre-W5 shape.
-                    a.insert(QStringLiteral("offset"), alarm->startOffset().asSeconds());
-                }
-                if (!alarm->text().isEmpty())
-                    a.insert(QStringLiteral("text"), alarm->text());
-                // REPEAT/DURATION pairing (Open decision 3, probe-confirmed
-                // 2026-08-28): KCalendarCore::Alarm::snoozeTime() has a
-                // nonzero CLASS DEFAULT (5 seconds) even when no DURATION
-                // property was present in the source at all — it is NOT zero,
-                // so "snoozeTime() != 0" cannot distinguish "explicit
-                // DURATION" from "never set". There is no public API to
-                // detect literal DURATION presence short of a raw-bytes
-                // VALARM scanner (out of this item's scope). Promote
-                // therefore emits the pair whenever repeatCount() > 0,
-                // trusting whatever snoozeTime() KCalendarCore parsed
-                // (falling back to its 5s class default for an
-                // already-malformed REPEAT-without-DURATION source) — the
-                // same "trust the parsed accessor" posture this file already
-                // takes for the offset field, with no raw-bytes cross-check.
-                if (alarm->repeatCount() > 0) {
-                    a.insert(QStringLiteral("repeatCount"), alarm->repeatCount());
-                    a.insert(QStringLiteral("repeatIntervalSecs"), alarm->snoozeTime().asSeconds());
-                }
-                arr.append(a);
-            }
+            for (const auto& alarm : alarms)
+                arr.append(alarmToJson(alarm));
             obj.insert(QStringLiteral("alarms"), arr);
         }
     }
@@ -734,44 +699,11 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
         }
     }
 
-    // ---- alarms (VALARM, W5 shape extension) --------------------------------
+    // ---- alarms (VALARM, IP.4: shared alarmshape module) -------------------
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
-        for (const auto& av : alarms) {
-            const QJsonObject a = av.toObject();
-            KCalendarCore::Alarm::Ptr alarm(new KCalendarCore::Alarm(todo.data()));
-            const int typeInt = a.value(QStringLiteral("type")).toInt();
-            alarm->setType(static_cast<KCalendarCore::Alarm::Type>(typeInt));
-
-            if (a.contains(QStringLiteral("at"))) {
-                const QDateTime dt = QDateTime::fromString(
-                    a.value(QStringLiteral("at")).toString(), Qt::ISODate);
-                if (dt.isValid())
-                    alarm->setTime(dt);
-            } else {
-                const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
-                if (a.value(QStringLiteral("related")).toString() == QStringLiteral("end"))
-                    alarm->setEndOffset(KCalendarCore::Duration(offsetSecs));
-                else
-                    alarm->setStartOffset(KCalendarCore::Duration(offsetSecs));
-            }
-
-            const QString text = a.value(QStringLiteral("text")).toString();
-            if (!text.isEmpty())
-                alarm->setText(text);
-
-            // REPEAT/DURATION: only ever synthesize the pair when BOTH canon
-            // keys are present — an unpaired REPEAT or DURATION is itself
-            // malformed per RFC5545 and must never be manufactured here.
-            if (a.contains(QStringLiteral("repeatCount"))
-                && a.contains(QStringLiteral("repeatIntervalSecs"))) {
-                alarm->setRepeatCount(a.value(QStringLiteral("repeatCount")).toInt());
-                alarm->setSnoozeTime(KCalendarCore::Duration(
-                    a.value(QStringLiteral("repeatIntervalSecs")).toInt()));
-            }
-
-            todo->addAlarm(alarm);
-        }
+        for (const auto& av : alarms)
+            todo->addAlarm(alarmFromJson(av.toObject(), todo.data()));
     }
 
     // ---- location ------------------------------------------------------------

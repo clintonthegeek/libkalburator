@@ -435,6 +435,76 @@ private slots:
         QVERIFY(!cStart.contains(QStringLiteral("tz")));
     }
 
+    // IP.4 — a non-start-relative alarm row must be CARRIED (via
+    // extendedProperties.private.x-canon-alarms), never coerced into a
+    // native reminders.overrides[] entry. PLAN.md's premise that this site
+    // has "the same reader shape" as MS's does NOT hold for the absolute
+    // case — an "at"-shaped row has no "offset" key, defaults offsetSecs to
+    // 0, and the pre-existing `offsetSecs < 0` guard (strictly negative)
+    // already rejected it, so this half was already correct. What was
+    // broken: an END-related row with a negative offset was not
+    // distinguished from a start-relative one.
+    void absoluteAlarmIsCarriedNotCoerced()
+    {
+        QJsonObject canon = makeCanonObject();
+        QJsonObject alarm;
+        alarm.insert(QStringLiteral("type"), 1);
+        alarm.insert(QStringLiteral("at"), QStringLiteral("2026-06-01T08:30:00Z"));
+        canon.insert(QStringLiteral("alarms"), QJsonArray{alarm});
+
+        CanonToGoogleEventStage stage;
+        const QJsonObject out = parse(stage.transform(serialize(canon)));
+
+        const QJsonObject reminders = out.value(QStringLiteral("reminders")).toObject();
+        QVERIFY2(reminders.value(QStringLiteral("overrides")).toArray().isEmpty(),
+                 "an absolute-trigger alarm must not be coerced into a reminders override");
+        QVERIFY(out.value(QStringLiteral("extendedProperties")).toObject()
+                    .value(QStringLiteral("private")).toObject()
+                    .contains(QStringLiteral("x-canon-alarms")));
+
+        GoogleEventToCanonStage promote;
+        const QJsonObject repromoted = parse(promote.transform(
+            QJsonDocument(out).toJson(QJsonDocument::Compact)));
+        const QJsonArray rtAlarms = repromoted.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(rtAlarms.size(), 1);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("at")).toString(),
+                 QStringLiteral("2026-06-01T08:30:00Z"));
+    }
+
+    // Same defect class, END-related form: this is the site's actual O79
+    // bug (PLAN.md's premise held here, unlike the absolute case above) —
+    // a "related":"end" row's negative offset used to pass the same
+    // `offsetSecs < 0 && offsetSecs % 60 == 0` guard a start-relative row
+    // would, and got wrongly mapped to a start-relative reminder.
+    void endRelatedAlarmIsCarriedNotCoerced()
+    {
+        QJsonObject canon = makeCanonObject();
+        QJsonObject alarm;
+        alarm.insert(QStringLiteral("type"), 1);
+        alarm.insert(QStringLiteral("offset"), -300);
+        alarm.insert(QStringLiteral("related"), QStringLiteral("end"));
+        canon.insert(QStringLiteral("alarms"), QJsonArray{alarm});
+
+        CanonToGoogleEventStage stage;
+        const QJsonObject out = parse(stage.transform(serialize(canon)));
+
+        const QJsonObject reminders = out.value(QStringLiteral("reminders")).toObject();
+        QVERIFY2(reminders.value(QStringLiteral("overrides")).toArray().isEmpty(),
+                 "an end-relative alarm must not be coerced into a reminders override");
+        QVERIFY(out.value(QStringLiteral("extendedProperties")).toObject()
+                    .value(QStringLiteral("private")).toObject()
+                    .contains(QStringLiteral("x-canon-alarms")));
+
+        GoogleEventToCanonStage promote;
+        const QJsonObject repromoted = parse(promote.transform(
+            QJsonDocument(out).toJson(QJsonDocument::Compact)));
+        const QJsonArray rtAlarms = repromoted.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(rtAlarms.size(), 1);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("offset")).toInt(), -300);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("related")).toString(),
+                 QStringLiteral("end"));
+    }
+
     // Slot 6 — the committed live-capture fixture (tests/fixtures/vendor/
     // google/checkpoint-event.json, sanitized extract of the real account's
     // Phase-2 checkpoint event) promotes cleanly: recurrence verbatim,

@@ -1,5 +1,6 @@
 #include "mseventcanonstages.h"
 
+#include "alarmshape.h"
 #include "canonenvelope.h"
 #include "recurrencepatternconverter.h"
 #include "windowszonesmap.h"
@@ -13,6 +14,8 @@
 
 namespace {
 
+using Kalburator::Calendar::AlarmRowForm;
+using Kalburator::Calendar::describeAlarmRow;
 using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
@@ -589,6 +592,12 @@ QByteArray MsEventToCanonStage::transform(const QByteArray& msBytes) const
     }
 
     // ---- alarms (first display alarm ⇄ reminder pair) --------------------------------
+    // IP.4 verification note: MS Graph's wire model (isReminderOn +
+    // reminderMinutesBeforeStart) can only ever express "N minutes before
+    // start", so this promote direction only ever constructs a bare-"offset"
+    // (start-relative) row — never "at" or "related". describeAlarmRow()
+    // on this row is always StartRelative; no fix was needed here, only on
+    // the demote side below (O79).
     {
         const bool on = ev.value(QStringLiteral("isReminderOn")).toBool(false);
         const int mins =
@@ -1209,6 +1218,15 @@ QByteArray CanonToMsEventStage::transform(const QByteArray& canonBytes) const
     }
 
     // ---- alarms (first mappable VALARM ⇄ reminder pair) ------------------------------------------------------------
+    // O79 fix: MS Graph's reminder model only ever expresses "N minutes
+    // before start" — a start-relative trigger. This used to read
+    // a.value("offset").toInt() unconditionally, which silently defaults to
+    // 0 on an "at"-shaped (absolute) row, passing the offsetSecs<=0 guard
+    // below and misrepresenting an absolute alarm as "remind at start".
+    // describeAlarmRow() now asks the row its actual form instead of
+    // inferring one from a possibly-defaulted key, so only a genuinely
+    // start-relative row is ever mapped; anything else (Absolute,
+    // EndRelative, Malformed) falls through to the carrier.
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
         if (!alarms.isEmpty()) {
@@ -1218,7 +1236,8 @@ QByteArray CanonToMsEventStage::transform(const QByteArray& canonBytes) const
                 const QJsonObject a = av.toObject();
                 const int type = a.value(QStringLiteral("type")).toInt();
                 const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
-                if (!emitted && type == kAlarmTypeDisplay && offsetSecs <= 0
+                const bool startRelative = describeAlarmRow(a) == AlarmRowForm::StartRelative;
+                if (!emitted && type == kAlarmTypeDisplay && startRelative && offsetSecs <= 0
                     && offsetSecs % 60 == 0) {
                     out.insert(QStringLiteral("isReminderOn"), true);
                     out.insert(QStringLiteral("reminderMinutesBeforeStart"),

@@ -591,6 +591,66 @@ private slots:
         QVERIFY(!cStart.contains(QStringLiteral("tz")));
     }
 
+    // IP.4 / O79 site 3 — a non-start-relative alarm row must be CARRIED
+    // (via the x-canon-alarms extended-property carrier), never coerced
+    // into a native isReminderOn/reminderMinutesBeforeStart pair. Before
+    // the fix, a.value("offset").toInt() defaulted to 0 on this "at"-shaped
+    // row, passed the offsetSecs<=0 guard, and silently became
+    // "remind at start" (reminderMinutesBeforeStart: 0) instead.
+    void absoluteAlarmIsCarriedNotCoerced()
+    {
+        QJsonObject canon = makeCanonObject();
+        QJsonObject alarm;
+        alarm.insert(QStringLiteral("type"), 1);
+        alarm.insert(QStringLiteral("at"), QStringLiteral("2026-11-26T13:30:00Z"));
+        canon.insert(QStringLiteral("alarms"), QJsonArray{alarm});
+
+        CanonToMsEventStage demote;
+        const QJsonObject out = parse(demote.transform(serialize(canon)));
+
+        QVERIFY2(!out.contains(QStringLiteral("isReminderOn")),
+                 "an absolute-trigger alarm must not be coerced into isReminderOn");
+        QVERIFY2(hasCarrier(out, QStringLiteral("x-canon-alarms")),
+                 "an absolute-trigger alarm must be routed to the carrier");
+
+        MsEventToCanonStage promote;
+        const QJsonObject repromoted = parse(promote.transform(
+            QJsonDocument(out).toJson(QJsonDocument::Compact)));
+        const QJsonArray rtAlarms = repromoted.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(rtAlarms.size(), 1);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("at")).toString(),
+                 QStringLiteral("2026-11-26T13:30:00Z"));
+    }
+
+    // Same defect class, END-related form: a "related":"end" row's negative
+    // offset must not be misread as start-relative either.
+    void endRelatedAlarmIsCarriedNotCoerced()
+    {
+        QJsonObject canon = makeCanonObject();
+        QJsonObject alarm;
+        alarm.insert(QStringLiteral("type"), 1);
+        alarm.insert(QStringLiteral("offset"), -300);
+        alarm.insert(QStringLiteral("related"), QStringLiteral("end"));
+        canon.insert(QStringLiteral("alarms"), QJsonArray{alarm});
+
+        CanonToMsEventStage demote;
+        const QJsonObject out = parse(demote.transform(serialize(canon)));
+
+        QVERIFY2(!out.contains(QStringLiteral("isReminderOn")),
+                 "an end-relative alarm must not be coerced into isReminderOn");
+        QVERIFY2(hasCarrier(out, QStringLiteral("x-canon-alarms")),
+                 "an end-relative alarm must be routed to the carrier");
+
+        MsEventToCanonStage promote;
+        const QJsonObject repromoted = parse(promote.transform(
+            QJsonDocument(out).toJson(QJsonDocument::Compact)));
+        const QJsonArray rtAlarms = repromoted.value(QStringLiteral("alarms")).toArray();
+        QCOMPARE(rtAlarms.size(), 1);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("offset")).toInt(), -300);
+        QCOMPARE(rtAlarms.at(0).toObject().value(QStringLiteral("related")).toString(),
+                 QStringLiteral("end"));
+    }
+
     // Slot 7 — exception records: type:"exception" + originalStart promotes
     // to recurrenceId keyed by original start; demote reconstructs the
     // topology structurally (never stored).

@@ -1,5 +1,6 @@
 #include "eventcanonfields.h"
 
+#include "alarmshape.h"
 #include "canonenvelope.h"
 #include "icalcomponentscan.h"
 #include "incidencecommonfields.h"
@@ -241,19 +242,17 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             obj.insert(QStringLiteral("priority"), pri);
     }
 
-    // ---- alarms (VALARM) ---------------------------------------------------
+    // ---- alarms (VALARM, IP.4: shared alarmshape module) -------------------
+    // Was: unconditional startOffset() (O79 — corrupted absolute-trigger and
+    // END-related alarms to a bogus "offset: 0"). Now routes through the
+    // same alarmToJson() vtodocanonfields.cpp uses, which branches on the
+    // alarm's actual trigger form.
     {
         const auto alarms = event->alarms();
         if (!alarms.isEmpty()) {
             QJsonArray arr;
-            for (const auto& alarm : alarms) {
-                QJsonObject a;
-                a.insert(QStringLiteral("type"),   int(alarm->type()));
-                a.insert(QStringLiteral("offset"), alarm->startOffset().asSeconds());
-                if (!alarm->text().isEmpty())
-                    a.insert(QStringLiteral("text"), alarm->text());
-                arr.append(a);
-            }
+            for (const auto& alarm : alarms)
+                arr.append(alarmToJson(alarm));
             obj.insert(QStringLiteral("alarms"), arr);
         }
     }
@@ -431,21 +430,15 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
             event->setPriority(pri.toInt());
     }
 
-    // ---- alarms (VALARM) ---------------------------------------------------
+    // ---- alarms (VALARM, IP.4: shared alarmshape module) -------------------
+    // Was: unconditional setStartOffset() (O79 — ignored "at"/"related"/
+    // "repeatCount", so an "at"-carrying row demoted to an alarm with no
+    // trigger at all). Now routes through alarmFromJson(), which honours
+    // every row form and (O85) always enables the resulting alarm.
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
-        for (const auto& av : alarms) {
-            const QJsonObject a = av.toObject();
-            KCalendarCore::Alarm::Ptr alarm(new KCalendarCore::Alarm(event.data()));
-            const int typeInt = a.value(QStringLiteral("type")).toInt();
-            alarm->setType(static_cast<KCalendarCore::Alarm::Type>(typeInt));
-            const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
-            alarm->setStartOffset(KCalendarCore::Duration(offsetSecs));
-            const QString text = a.value(QStringLiteral("text")).toString();
-            if (!text.isEmpty())
-                alarm->setText(text);
-            event->addAlarm(alarm);
-        }
+        for (const auto& av : alarms)
+            event->addAlarm(alarmFromJson(av.toObject(), event.data()));
     }
 
     // ---- attachments (IP.6 commit 2: incidencecommonfields, O83) -----------

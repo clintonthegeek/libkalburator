@@ -1,5 +1,6 @@
 #include "googlecanonstages.h"
 
+#include "alarmshape.h"
 #include "canonenvelope.h"
 
 #include <QJsonArray>
@@ -11,6 +12,8 @@
 
 namespace {
 
+using Kalburator::Calendar::AlarmRowForm;
+using Kalburator::Calendar::describeAlarmRow;
 using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
@@ -343,6 +346,10 @@ QByteArray GoogleEventToCanonStage::transform(const QByteArray& googleBytes) con
     }
 
     // ---- reminders → alarms (+ verbatim stash for re-emission) --------------
+    // IP.4 verification note: Google's reminders.overrides[] wire model
+    // (method + minutes) can only ever express "N minutes before start",
+    // so this promote direction only ever constructs a bare-"offset"
+    // (start-relative) row — never "at" or "related". No fix needed here.
     if (ev.contains(QStringLiteral("reminders"))) {
         const QJsonObject rem = ev.value(QStringLiteral("reminders")).toObject();
         extrasGoogle.insert(QStringLiteral("reminders"), rem);
@@ -800,6 +807,16 @@ QByteArray CanonToGoogleEventStage::transform(const QByteArray& canonBytes) cons
     }
 
     // ---- alarms → reminders{useDefault,overrides[]} (+ carried remainder) --------
+    // IP.4 investigation (O79 site 4): PLAN.md's premise that this site has
+    // "the same reader shape" as MS's does NOT hold for the absolute-alarm
+    // case — an "at"-shaped row has no "offset" key, defaults offsetSecs to
+    // 0, and `0 < 0` is false, so it was already correctly routed to the
+    // carrier before this fix. What WAS wrong: an end-relative row
+    // ("related": "end", still carrying a numeric negative "offset") was
+    // not distinguished from a start-relative one — it would be wrongly
+    // mapped to a Google reminder measured from the start. describeAlarmRow()
+    // now makes that distinction explicit instead of relying on the sign of
+    // a key two different row forms both populate.
     {
         const QJsonArray alarms = obj.value(QStringLiteral("alarms")).toArray();
         if (!alarms.isEmpty()) {
@@ -809,9 +826,10 @@ QByteArray CanonToGoogleEventStage::transform(const QByteArray& canonBytes) cons
                 const QJsonObject a = av.toObject();
                 const int type = a.value(QStringLiteral("type")).toInt();
                 const int offsetSecs = a.value(QStringLiteral("offset")).toInt();
+                const bool startRelative = describeAlarmRow(a) == AlarmRowForm::StartRelative;
                 const bool mappable =
                     (type == kAlarmTypeDisplay || type == kAlarmTypeEmail)
-                    && offsetSecs < 0 && offsetSecs % 60 == 0;
+                    && startRelative && offsetSecs < 0 && offsetSecs % 60 == 0;
                 if (mappable) {
                     QJsonObject o;
                     o.insert(QStringLiteral("method"),
