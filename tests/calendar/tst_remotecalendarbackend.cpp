@@ -188,9 +188,19 @@ void RemoteCalendarBackendTest::init()
     m_testCalendar = new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone());
     m_testCalendar->setId(m_testCalendarName);
 
-    bool created = m_backend->createCalendar(QStringLiteral("test-collection"),
-                                              m_testCalendarName,
-                                              QStringLiteral("Test Calendar"));
+    // docs/bugs/remotecalendarbackend-sync-createcalendar-stubbed.md (was
+    // filed on the PlanStan side before this file's location was traced
+    // back here). The sync createCalendar()/deleteCalendar() virtuals have
+    // no real RemoteCalendarBackend override since the E11 Stage 1 async
+    // migration and always resolve to the SyncBackend base-class stub
+    // (always false) — use the async form + a signal wait instead, per the
+    // pattern already proven in
+    // testLoadCalendarsDiscoversByUrlSlugNotDisplayName() below.
+    QSignalSpy createdSpy(m_backend, &RemoteCalendarBackend::calendarCreated);
+    m_backend->createCalendarAsync(QStringLiteral("test-collection"), m_testCalendarName,
+                                   QStringLiteral("Test Calendar"), CalendarType::Hybrid,
+                                   [](bool) {});
+    const bool created = createdSpy.wait(10000);
     if (created) {
         m_createdCalendars.append(m_testCalendarName);
         qDebug() << "Created test calendar:" << m_testCalendarName;
@@ -209,9 +219,17 @@ void RemoteCalendarBackendTest::cleanup()
         QTest::qWait(500);
     }
 
-    // Delete the test calendar from the server
+    // Delete the test calendar from the server (async form — see init()'s
+    // comment on why the sync deleteCalendar() virtual can't be used here).
     if (m_backend && !m_testCalendarName.isEmpty()) {
-        bool deleted = m_backend->deleteCalendar(QStringLiteral("test-collection"), m_testCalendarName);
+        bool deleted = false;
+        m_backend->deleteCalendarAsync(QStringLiteral("test-collection"), m_testCalendarName,
+                                       [&deleted](bool ok) { deleted = ok; });
+        int waited = 0;
+        while (!deleted && waited < 10000) {
+            QTest::qWait(50);
+            waited += 50;
+        }
         if (deleted) {
             m_createdCalendars.removeAll(m_testCalendarName);
             qDebug() << "Deleted test calendar:" << m_testCalendarName;
@@ -336,13 +354,11 @@ void RemoteCalendarBackendTest::testLoadCalendarsDiscoversByUrlSlugNotDisplayNam
 {
     // docs/bugs/remotecalendarbackend-display-name-identification.md.
     //
-    // Seeds its own calendar via createCalendarAsync (NOT the sync
-    // createCalendar() wrapper init()/cleanup() use elsewhere in this
-    // file — that virtual has no real RemoteCalendarBackend override
-    // since the E11 Stage 1 async migration and silently resolves to the
-    // SyncBackend base-class stub, always returning false; a separate,
-    // pre-existing bug tracked on its own, not fixed here) with a slug
-    // distinct from its display name, so a discovery keyed by displayName
+    // Seeds its own calendar via createCalendarAsync (init()/cleanup() now
+    // use the same async form too, since the E11 Stage 1 async migration
+    // left no real RemoteCalendarBackend override of the sync
+    // createCalendar()/deleteCalendar() virtuals — see init()'s comment)
+    // with a slug distinct from its display name, so a discovery keyed by displayName
     // instead of slug is observable. A *second*, freshly-constructed
     // backend (nothing pre-seeded in its own m_calendars) exercises the
     // real bug: SyncBackend::createCalendar's calendarId contract says
