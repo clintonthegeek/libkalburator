@@ -3481,7 +3481,7 @@ leg (native reminder models don't carry them), so full losslessness was
 never achieved — only the O79 misclassification was fixed. Matrix
 byte-identical. See the IP.4 return receipt for the full argument.
 
-### O80 — OPEN — incidence-parity recon, 2026-08-29: calendar and contacts differs are still blind to provider-extras-only edits (the O74 follow-through O74 itself predicted)
+### O80 — RESOLVED (IP.5, 2026-09-02) — incidence-parity recon, 2026-08-29: calendar and contacts differs are still blind to provider-extras-only edits (the O74 follow-through O74 itself predicted)
 
 `calendardomaindefinition.cpp:33` and `contactsdomaindefinition.cpp:29`
 construct `CanonJsonDiffer` over their catalogued ids only, and neither
@@ -3635,7 +3635,7 @@ the seven as `Dropped`. O93 (the `{todo,canon}` sibling edge sharing the
 same undeclared drops) is resolved as a direct byproduct, since both edges
 demote through the identical fixed emitter.
 
-### O84 — OPEN — IP.2, 2026-09-01: `CanonJsonMerger` erases `_canon.kind`, so a merged calendar VTODO or VJOURNAL demotes as a **VEVENT**
+### O84 — RESOLVED (IP.3, 2026-09-02) — IP.2, 2026-09-01: `CanonJsonMerger` erases `_canon.kind`, so a merged calendar VTODO or VJOURNAL demotes as a **VEVENT**
 
 Found while building IP.2's merger regression slot; logged and **not
 fixed**, per PLAN.md §1's "no fix while passing through" prohibition.
@@ -3812,7 +3812,7 @@ and `canonToVtodoLoss()`. VTODO's promote→demote→promote fixpoint
 confirmed restored — `tst_incidence_rfc5545_fidelity.cpp`'s vtodo case
 flipped `expectFixpoint` from `false` to `true` and stays green.
 
-### O87 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VJOURNAL's undeclared drops, including `RECURRENCE-ID` identity aliasing
+### O87 — RESOLVED (IP.10, 2026-09-02) — incidence-parity pre-flight audit, 2026-09-02: VJOURNAL's undeclared drops, including `RECURRENCE-ID` identity aliasing
 
 The VJOURNAL twin of O83, and worse in one respect. Owned by **IP.10**.
 
@@ -3846,7 +3846,7 @@ PLAN.md's IP.6 acceptance says only "VJOURNAL keeps every field it has
 today". That was written before this measurement and is now insufficient:
 VJOURNAL needs gap-closing of its own, not just regression protection.
 
-### O88 — OPEN — incidence-parity pre-flight audit, 2026-09-02: one edge-level loss profile serves three incidence kinds; `canonToVjournalLoss()` is dead code
+### O88 — RESOLVED (IP.9, 2026-09-02) — incidence-parity pre-flight audit, 2026-09-02: one edge-level loss profile serves three incidence kinds; `canonToVjournalLoss()` is dead code
 
 Structural. Owned by **IP.9**, which gates IP.4/IP.6/IP.10.
 
