@@ -27,6 +27,7 @@ using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 using Kalburator::Calendar::promoteTimestamps;
 using Kalburator::Calendar::demoteTimestamps;
 using Kalburator::Calendar::stripInjectedTimestamps;
+using Kalburator::Calendar::stripAttendeeXUid;
 using Kalburator::Calendar::TimestampPresence;
 using Kalburator::Calendar::promoteSummaryDescription;
 using Kalburator::Calendar::demoteSummaryDescription;
@@ -764,6 +765,10 @@ QByteArray canonObjectToVtodoBytes(const QJsonObject& obj)
     // ---- Strip KCalendarCore-injected created/lastModified defaults -------
     // IP.6: incidencecommonfields.
     icalBytes = stripInjectedTimestamps(icalBytes, timestampPresence);
+
+    // ---- Strip KCalendarCore-injected heap-derived ATTENDEE X-UID (O90) ---
+    // IP.12: incidencecommonfields.
+    icalBytes = stripAttendeeXUid(icalBytes);
 
     // ---- Inject verbatim recurrence lines / derived completion-anchor RRULE ---
     // KCalendarCore's serialiser may not preserve recurrence lines verbatim.

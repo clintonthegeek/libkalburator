@@ -4021,10 +4021,10 @@ eliminate the duality. Both done:
 verified in the IP.11 diff: no new domain-routing branch, no
 `CalendarType::Hybrid`-adjacent code, no commented-out alternative.
 
-### O90 — OPEN — incidence-parity pre-flight audit, 2026-09-02: demote is not a pure function of canon (attendee `X-UID`)
+### O90 — RESOLVED (IP.12, 2026-09-03) — incidence-parity pre-flight audit, 2026-09-02: demote is not a pure function of canon (attendee `X-UID`)
 
 Low severity, cheap fix, recorded so it is not rediscovered. Owned by
-**IP.12**.
+**IP.12** — the last item of the incidence-parity campaign.
 
 `KCalendarCore::ICalFormat` stamps a heap-address-derived `X-UID` parameter
 into every serialized `ATTENDEE`:
@@ -4047,6 +4047,48 @@ across runs, servers accumulate meaningless per-process identifiers, and
 any future byte-pin or content-addressed optimisation over demoted bytes is
 impossible. The likely fix is a post-serialization parameter strip in the
 style of the existing `stripICalPropertyLine` calls.
+
+**Resolution.** New `Kalburator::Calendar::stripICalPropertyParameter()`
+(`src/calendar/icaltimestamp.{h,cpp}`, sibling to `stripICalPropertyLine`
+— a different granularity: removes just the `;X-UID=value` substring, not
+the whole `ATTENDEE` line, and is fold-tolerant per RFC 5545 §3.1 since
+`ATTENDEE` routinely folds across physical lines and the parameter can
+straddle the fold point). Thin domain-level wrapper
+`stripAttendeeXUid()` (`src/calendar/incidencecommonfields.{h,cpp}`,
+same shape as the existing `stripInjectedTimestamps()`) is called from
+all three ical-producing demote functions —
+`Calendar::canonObjectToEventBytes()`, `Todo::canonObjectToVtodoBytes()`,
+`Calendar::canonObjectToJournalBytes()` — right after the existing
+`stripInjectedTimestamps()` call. One shared call site per kind, not
+three copies; `{todo,canon}`'s own demote leg
+(`vtodocanonstages.cpp:58`) and the `org-ical` edge both call the same
+patched `canonObjectToVtodoBytes()`/`canonObjectToEventBytes()`, so they
+inherit the fix for free.
+
+**Scope verified, not assumed:** grepped `X-UID` across `src/` and
+`tests/` before touching anything — zero pre-existing call sites read or
+asserted on it, so nothing was relying on it round-tripping.
+`ORGANIZER` was investigated directly (both by reading
+`KCalendarCore::Person`'s header, which carries no `uid`-shaped property
+at all, and by an empirical probe serializing an `Event` with both an
+`ORGANIZER` and an `ATTENDEE`, twice, in two separate process
+invocations) and confirmed **unaffected** — only `KCalendarCore::Attendee`
+carries the `uid` property that becomes the heap-derived `X-UID`; `Person`
+(which backs `organizer()`) has no such property, so `ICalFormat` never
+has anything to stamp there.
+
+**Acceptance test:** `tests/calendar/tst_demote_purity.cpp` launches a new
+tool, `tools/demotepurityprobe` (unconditionally built, no vendor
+credentials involved), TWICE via `QProcess` — two genuinely separate OS
+processes, not a same-process comparison (which O90's own text already
+says trivially passes) — and diffs their stdout byte-for-byte. Verified
+non-vacuous by temporarily reverting the `eventcanonfields.cpp` call site
+and confirming a real, believable `FAIL!` (the "must not carry the
+heap-derived X-UID" guard, and the raw two-invocation diff showing two
+different `X-UID=<heap address>` values), then restoring and confirming
+green. `stripICalPropertyParameter()` itself also has direct in-process
+unit coverage in `tests/calendar/tst_icaltimestamp.cpp`, including the
+fold-across-parameter case.
 
 ### O91 — RESOLVED (IP.6, 2026-09-02) — incidence-parity IP.8, 2026-09-02: a genuinely maximal RFC 5545 fixture drops four MORE properties than the pre-flight audit's fixture found
 

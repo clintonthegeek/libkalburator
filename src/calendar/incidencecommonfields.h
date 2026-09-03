@@ -63,6 +63,21 @@ TimestampPresence demoteTimestamps(const QJsonObject& obj,
 QByteArray stripInjectedTimestamps(QByteArray icalBytes, const TimestampPresence& presence);
 
 // ---------------------------------------------------------------------
+// O90 / IP.12 — demote purity: strip the heap-address-derived ATTENDEE
+// X-UID parameter KCalendarCore::ICalFormat stamps into every serialized
+// ATTENDEE line, so demote(canon) is a pure function of canon again (two
+// demotes of the same canon in different PROCESSES are byte-identical, not
+// merely two demotes in the same process). ORGANIZER is unaffected —
+// verified: KCalendarCore::Person (which backs organizer()) carries no uid
+// property, so ICalFormat never has anything heap-derived to stamp there.
+// Thin wrapper around stripICalPropertyParameter, same shape as
+// stripInjectedTimestamps above, so every demote call site performs this
+// strip identically instead of three copies of the same regex call.
+// ---------------------------------------------------------------------
+
+QByteArray stripAttendeeXUid(QByteArray icalBytes);
+
+// ---------------------------------------------------------------------
 // summary / description (commit 1: already identical across all three).
 // descriptionHtml is DELIBERATELY NOT here — it rides an inline three-line
 // X-ALT-DESC read/write in each of eventcanonfields.cpp/vtodocanonfields.cpp/

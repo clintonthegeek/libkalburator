@@ -312,6 +312,16 @@ kalburator_add_calendar_test(tst_incidence_rfc5545_fidelity)
 # through {todo,canon} yield equivalent canon.
 kalburator_add_calendar_test(tst_vtodo_domain_convergence)
 
+# IP.12 (incidence-parity campaign) — O90: demote(canon) must not depend on
+# which OS process runs it (KCalendarCore's heap-derived ATTENDEE X-UID).
+# Launches tools/demotepurityprobe TWICE via QProcess and diffs stdout —
+# same TARGET_FILE-compile-definition pattern tst_pluginmanager_smoke uses
+# for tinyplugin (tests/plugin/CMakeLists.txt).
+kalburator_add_calendar_test(tst_demote_purity)
+add_dependencies(tst_demote_purity demotepurityprobe)
+target_compile_definitions(tst_demote_purity PRIVATE
+    DEMOTE_PURITY_PROBE_PATH="$<TARGET_FILE:demotepurityprobe>")
+
 # Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
 kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 

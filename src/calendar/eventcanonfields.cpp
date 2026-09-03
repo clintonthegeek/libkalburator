@@ -584,6 +584,10 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     // IP.6: incidencecommonfields.
     icalBytes = stripInjectedTimestamps(icalBytes, timestampPresence);
 
+    // ---- Strip KCalendarCore-injected heap-derived ATTENDEE X-UID (O90) ---
+    // IP.12: incidencecommonfields.
+    icalBytes = stripAttendeeXUid(icalBytes);
+
     // ---- Inject verbatim recurrence lines ----------------------------------
     if (!recurrenceArr.isEmpty() && !icalBytes.isEmpty()) {
         const QByteArray marker = "END:VEVENT";

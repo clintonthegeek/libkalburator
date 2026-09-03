@@ -10,6 +10,7 @@
 #include "icaltimestamp.h"
 
 using Kalburator::Calendar::extractICalTimestamp;
+using Kalburator::Calendar::stripICalPropertyParameter;
 
 class TestICalTimestamp : public QObject {
     Q_OBJECT
@@ -88,6 +89,70 @@ private slots:
         const QDateTime dt = extractICalTimestamp(ical);
         QVERIFY(dt.isValid());
         QCOMPARE(dt, QDateTime(QDate(2025, 6, 1), QTime(0, 0, 0), QTimeZone::utc()));
+    }
+
+    // ---- IP.12 / O90: stripICalPropertyParameter ---------------------------
+
+    void stripsParameterFromMiddleOfLine()
+    {
+        const QByteArray ical =
+            "BEGIN:VEVENT\r\n"
+            "ATTENDEE;CN=A;CUTYPE=INDIVIDUAL;X-UID=93826400444256:mailto:a@example.com\r\n"
+            "SUMMARY:Test\r\nEND:VEVENT\r\n";
+        const QByteArray out =
+            stripICalPropertyParameter(ical, QStringLiteral("ATTENDEE"), QStringLiteral("X-UID"));
+        QVERIFY2(!out.contains("X-UID"), "X-UID must be gone");
+        QVERIFY2(out.contains("ATTENDEE;CN=A;CUTYPE=INDIVIDUAL:mailto:a@example.com"),
+                 "the rest of the ATTENDEE line must survive verbatim");
+        QVERIFY2(out.contains("SUMMARY:Test"), "unrelated lines must be untouched");
+    }
+
+    void stripsParameterAcrossAFoldPoint()
+    {
+        // Reproduces the real shape KCalendarCore emits: the fold lands right
+        // after the ";" that precedes X-UID (RFC 5545 §3.1 folding — CRLF +
+        // a single SPACE introduces a continuation).
+        const QByteArray ical =
+            "BEGIN:VEVENT\r\n"
+            "ATTENDEE;CN=A;RSVP=FALSE;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;\r\n"
+            " CUTYPE=INDIVIDUAL;X-UID=94004632973840:mailto:a@example.com\r\n"
+            "SUMMARY:Test\r\nEND:VEVENT\r\n";
+        const QByteArray out =
+            stripICalPropertyParameter(ical, QStringLiteral("ATTENDEE"), QStringLiteral("X-UID"));
+        QVERIFY2(!out.contains("X-UID"), "X-UID must be gone even when folded onto it");
+        QVERIFY2(out.contains("CUTYPE=INDIVIDUAL:mailto:a@example.com"),
+                 "the rest of the folded ATTENDEE line must survive");
+    }
+
+    void leavesUnrelatedPropertyWithSameParameterNameAlone()
+    {
+        const QByteArray ical =
+            "BEGIN:VEVENT\r\n"
+            "ORGANIZER;X-UID=123;CN=Org:mailto:org@example.com\r\n"
+            "ATTENDEE;CN=A;X-UID=456:mailto:a@example.com\r\n"
+            "END:VEVENT\r\n";
+        const QByteArray out =
+            stripICalPropertyParameter(ical, QStringLiteral("ATTENDEE"), QStringLiteral("X-UID"));
+        QVERIFY2(out.contains("ORGANIZER;X-UID=123;CN=Org:mailto:org@example.com"),
+                 "ORGANIZER's own X-UID must survive — only ATTENDEE is targeted");
+        QVERIFY2(out.contains("ATTENDEE;CN=A:mailto:a@example.com"),
+                 "ATTENDEE's X-UID must be gone");
+    }
+
+    void noOpWhenParameterAbsent()
+    {
+        const QByteArray ical =
+            "BEGIN:VEVENT\r\nATTENDEE;CN=A:mailto:a@example.com\r\nEND:VEVENT\r\n";
+        QCOMPARE(stripICalPropertyParameter(ical, QStringLiteral("ATTENDEE"),
+                                             QStringLiteral("X-UID")),
+                 ical);
+    }
+
+    void noOpOnEmptyInput()
+    {
+        QVERIFY(stripICalPropertyParameter(QByteArray(), QStringLiteral("ATTENDEE"),
+                                            QStringLiteral("X-UID"))
+                    .isEmpty());
     }
 };
 

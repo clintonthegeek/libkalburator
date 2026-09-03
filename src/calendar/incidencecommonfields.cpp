@@ -107,6 +107,12 @@ QByteArray stripInjectedTimestamps(QByteArray icalBytes, const TimestampPresence
     return icalBytes;
 }
 
+QByteArray stripAttendeeXUid(QByteArray icalBytes)
+{
+    return stripICalPropertyParameter(icalBytes, QStringLiteral("ATTENDEE"),
+                                       QStringLiteral("X-UID"));
+}
+
 // ---------------------------------------------------------------------
 // summary / description
 // ---------------------------------------------------------------------

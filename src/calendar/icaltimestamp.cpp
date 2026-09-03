@@ -66,4 +66,46 @@ QByteArray stripICalPropertyLine(const QByteArray &icalBytes, const QString &pro
     return text.toUtf8();
 }
 
+QByteArray stripICalPropertyParameter(const QByteArray &icalBytes, const QString &propertyName,
+                                       const QString &parameterName)
+{
+    if (icalBytes.isEmpty())
+        return icalBytes;
+
+    const QString text = QString::fromUtf8(icalBytes);
+
+    // Capture PROPERTY's whole logical content line, folds included: any
+    // non-line-terminator character, or a fold sequence (CRLF/LF + a single
+    // SPACE/HTAB), repeated until a real (unfolded) line terminator. This is
+    // RFC 5545 §3.1's own definition of "unfolding" a content line, applied
+    // without discarding the fold bytes so everything outside PARAMETER
+    // round-trips byte-identical.
+    const QRegularExpression lineRe(
+        QStringLiteral("^%1(?:[^\\r\\n]|\\r?\\n[ \\t])*").arg(propertyName),
+        QRegularExpression::MultilineOption | QRegularExpression::CaseInsensitiveOption);
+
+    // Within one such captured line, remove ";PARAM=value" — tolerating an
+    // optional fold between the ";" and PARAM's name (the common case: a
+    // fold lands right after the preceding parameter's trailing ";") and
+    // within the value itself.
+    const QRegularExpression paramRe(
+        QStringLiteral(";(?:\\r?\\n[ \\t])?%1=(?:[^:;\\r\\n]|\\r?\\n[ \\t])*").arg(parameterName),
+        QRegularExpression::CaseInsensitiveOption);
+
+    QString out;
+    out.reserve(text.size());
+    int pos = 0;
+    auto it = lineRe.globalMatch(text);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        out += text.mid(pos, m.capturedStart() - pos);
+        QString line = m.captured();
+        line.remove(paramRe);
+        out += line;
+        pos = m.capturedEnd();
+    }
+    out += text.mid(pos);
+    return out.toUtf8();
+}
+
 }  // namespace Kalburator::Calendar

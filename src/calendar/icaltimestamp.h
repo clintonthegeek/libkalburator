@@ -48,4 +48,29 @@ QDateTime extractICalPropertyLiteral(const QByteArray &icalBytes,
 QByteArray stripICalPropertyLine(const QByteArray &icalBytes,
                                   const QString &propertyName);
 
+/// Remove a single named PARAMETER (e.g. "X-UID") from every occurrence of a
+/// named PROPERTY's line (e.g. "ATTENDEE"), leaving the rest of that line —
+/// its other parameters and its value — untouched. A different granularity
+/// from stripICalPropertyLine: that helper deletes an entire line, which
+/// would destroy an ATTENDEE's real content; this one deletes only the
+/// ";PARAM=value" substring.
+///
+/// Exists for O90 (incidence-parity IP.12): KCalendarCore::ICalFormat stamps
+/// a heap-address-derived "X-UID" parameter into every serialized ATTENDEE
+/// line, so two demotes of byte-identical canon in two different processes
+/// produce different bytes. Verified ATTENDEE-only (KCalendarCore::Attendee
+/// carries a uid() property that defaults to a heap-derived value when
+/// unset and is what gets serialized as X-UID; KCalendarCore::Person, which
+/// backs ORGANIZER, has no such property and never emits an X-UID).
+///
+/// RFC 5545 §3.1 line folding can place PROPERTY's parameters across several
+/// physical lines (CRLF followed by a single SPACE/HTAB introduces a
+/// continuation) — ATTENDEE lines routinely fold. The match tolerates a fold
+/// occurring anywhere inside the targeted PROPERTY's own logical line,
+/// including between the removed parameter's ";" and its name, or inside
+/// its value, without touching folds anywhere else in the document.
+QByteArray stripICalPropertyParameter(const QByteArray &icalBytes,
+                                       const QString &propertyName,
+                                       const QString &parameterName);
+
 }  // namespace Kalburator::Calendar

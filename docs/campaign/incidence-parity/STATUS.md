@@ -8,8 +8,12 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-03 — **IP.11 DONE. O89 RESOLVED.** Full session
-log entry below; IP.12 is next.
+**Last updated:** 2026-09-03 — **IP.12 DONE. O90 RESOLVED. CAMPAIGN
+CLOSED.** Every row in the "Where we stand" table below is DONE; no item
+remains queued. Full session log entry below.
+
+**Previously — 2026-09-03 — IP.11 DONE. O89 RESOLVED.** Full session
+log entry below.
 
 **Previously — 2026-09-02 — IP.7 DONE. O81, O82 RESOLVED.** Full
 session log entry below.
@@ -69,12 +73,17 @@ O83's seven undeclared drops are live on it.
 Earlier still the same day: pre-flight audit landed, six findings
 (**O85–O90**), five new items (**IP.8–IP.12**).
 
-> **New agent, start here.** Read in this order: (1) this file's *Where we
-> stand* table for your item, (2) `PLAN.md` **§Amendment 1 first**, then the
-> body item it points to, (3) `2026-09-02-preflight-audit.md` for the
-> evidence, (4) `probes/run.sh` if you need to see it yourself. Then your
-> predecessor's receipt. Do not start an item that is not the next
-> un-done row.
+> **CAMPAIGN CLOSED 2026-09-03 — no un-done row remains.** The banner below
+> is left in place as historical/reusable guidance for how this campaign
+> ran (and for anyone auditing it later), not as an invitation to start a
+> new item here — there isn't one.
+
+> **New agent, start here (historical).** Read in this order: (1) this
+> file's *Where we stand* table for your item, (2) `PLAN.md` **§Amendment
+> 1 first**, then the body item it points to, (3)
+> `2026-09-02-preflight-audit.md` for the evidence, (4) `probes/run.sh` if
+> you need to see it yourself. Then your predecessor's receipt. Do not
+> start an item that is not the next un-done row.
 
 > Living document. Update the item row **and** the session log in the same
 > commit that changes the item's state (invariant 7). Never leave a row
@@ -96,7 +105,13 @@ Earlier still the same day: pre-flight audit landed, six findings
 | 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | **DONE 2026-09-02** — new envelope-level helper takes the RAW pre-wrap extras object (a deliberate signature deviation from PLAN's literal proposal, argued in the receipt); wired at every calendar/contacts promote site plus the three todo sites retrofitted onto it; volatile-key lists derived from real captured payloads per vendor leg (MS event: `@odata.etag`+`changeKey`; Google event/person: `etag`; MS contact: `@odata.etag`+`changeKey`+`lastModifiedDateTime`; CalDAV/vcard legs: none). Catalogued (calendar via IP.3's contributor mechanism; contacts by hand — no contributor mechanism exists there, logged as a follow-up, not built). Loss profiles: `Dropped` on all 8 affected edges. New finding **O97** (org-ical's loss profile is stale/incomplete, pre-existing, not this item's to fix). Receipt: `2026-09-02-ip5-return-receipt.md`. |
 | 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | **DONE 2026-09-02** — IP.7a: demote unconditionally refuses to re-emit RANGE=THISANDFUTURE (VTODO's exact pattern), `recurrenceRange: Degraded` added to `canonToIcalLoss()`. IP.7b: DTSTART-wins coercion implemented per Amendment 2 §B.2, contract doc first. Detection mechanism probe-confirmed to mirror VTODO's exactly (no adaptation needed). New finding **O98** (VTODO's own rule (a) has a latent floating-zone bug, logged not fixed). Receipt: `2026-09-02-ip7-return-receipt.md`. |
 | 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | **DONE 2026-09-03** — crossing gate passes (equivalent modulo the envelope); four divergent keys confirmed legitimate, not an IP.3 gap; `MultiProtocolDavProvider`'s legacy-shape fallback now logs. **O89 RESOLVED.** No (b)-shaped scaffolding. Receipt: `2026-09-03-ip11-return-receipt.md`. |
-| 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
+| 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | **DONE 2026-09-03** — new `stripICalPropertyParameter()` (`icaltimestamp.{h,cpp}`) + shared `stripAttendeeXUid()` wrapper (`incidencecommonfields.{h,cpp}`), wired at all three ical-producing demote sites; `ORGANIZER` investigated and confirmed unaffected. Cross-process proof via new `tools/demotepurityprobe` launched twice by `tst_demote_purity.cpp`. **O90 RESOLVED. Campaign CLOSED — this was the last queued item.** Receipt: `2026-09-03-ip12-return-receipt.md`. |
+
+**CAMPAIGN CLOSED 2026-09-03.** All eight rows above are DONE. PLAN.md
+§A.5's six revised success conditions were closed by earlier items (see
+the IP.12 receipt §6 for the mapping); IP.12/O90 was the last item queued
+in this table. No further item follows — do not treat the absence of a
+"NEXT" pointer below as a gap.
 
 **Consumer dependency: NONE — both questions answered 2026-09-02.**
 Report: `docs/2026-09-02-incidence-parity-planstan-report.md`. Response:
@@ -1338,7 +1353,101 @@ produced this state; three copies drift faster than two.
   (the DAV provider's own dedicated suite, covering the branch the log
   line touches) independently reconfirmed green.
 
-  Receipt: `2026-09-03-ip11-return-receipt.md`. **IP.12 is next.**
+  Receipt: `2026-09-03-ip11-return-receipt.md`.
 
-- **NEXT:** **IP.11** — convergence proof for the two VTODO paths (§B.4,
-  rescoped). Closes O89.
+- **2026-09-03 — IP.12 DONE. O90 RESOLVED. CAMPAIGN CLOSED — this was the
+  last queued item.**
+
+  `KCalendarCore::ICalFormat` stamps a heap-address-derived `X-UID`
+  parameter into every serialized `ATTENDEE` line — stable within one
+  process, different across processes, so `demote(canon)` was not a pure
+  function of `canon`.
+
+  **Fix.** New `Kalburator::Calendar::stripICalPropertyParameter()`
+  (`src/calendar/icaltimestamp.{h,cpp}`, sibling to the existing
+  `stripICalPropertyLine` — a different granularity: strips just the
+  `;X-UID=value` substring, not the whole line, and is fold-tolerant per
+  RFC 5545 §3.1 since `ATTENDEE` routinely folds and the parameter can
+  straddle the fold point — reproduced and pinned in
+  `tests/calendar/tst_icaltimestamp.cpp`'s
+  `stripsParameterAcrossAFoldPoint`). Wired via one shared thin wrapper,
+  `stripAttendeeXUid()` (`src/calendar/incidencecommonfields.{h,cpp}`,
+  same shape as the existing `stripInjectedTimestamps()`), called from all
+  three ical-producing demote functions right after that existing call —
+  `Calendar::canonObjectToEventBytes()`, `Todo::canonObjectToVtodoBytes()`,
+  `Calendar::canonObjectToJournalBytes()`. `{todo,canon}`'s own demote leg
+  and the `org-ical` edge both route through the same patched functions,
+  so they inherit the fix with no separate wiring — one shared
+  implementation, not three copies.
+
+  **`ORGANIZER` investigated, confirmed unaffected** — not assumed from
+  PLAN.md's text. `KCalendarCore::Person` (backing `organizer()`) carries
+  no `uid`-shaped property at all; only `KCalendarCore::Attendee` does, and
+  that's the property whose unset default is heap-derived. Confirmed
+  empirically too: a probe serializing an `Event` with both an
+  `ORGANIZER` and an `ATTENDEE`, run twice in separate processes, showed
+  `ORGANIZER` byte-identical both times while `ATTENDEE`'s `X-UID` value
+  differed. `ATTENDEE`-only, as PLAN.md said; scope not expanded.
+
+  **Nothing round-trips `X-UID` deliberately** — grepped `src/`/`tests/`
+  before touching anything (PLAN.md's explicit stop-and-say-so
+  instruction): zero pre-existing hits.
+
+  **Acceptance test — cross-process, not same-process.** New tool
+  `tools/demotepurityprobe` (unconditionally built, no vendor credentials,
+  same as `tools/matrixgen`) demotes a small fixed canon fixture (two
+  `ATTENDEE`s) through all three kinds and prints the results.
+  `tests/calendar/tst_demote_purity.cpp` launches this binary TWICE via
+  `QProcess` — two genuinely separate OS processes — and diffs stdout
+  byte-for-byte. Chose this over PLAN.md's two named options (a committed
+  golden file, or a raw `fork()`) as a third option in the same spirit as
+  forking but more direct and more portable: grepped first for existing
+  fork-based test infrastructure (none — `grep -rln "fork("` empty), and a
+  raw `fork()` inside a QTest binary is the textbook multi-threaded-fork
+  hazard (only safe up to an immediate `exec()`); `QProcess` launching a
+  sibling binary proves the identical "different processes" claim using
+  the same `$<TARGET_FILE:...>`-compile-definition pattern
+  `tests/plugin/tst_pluginmanager_smoke.cpp` already established for
+  locating a built binary at test time.
+
+  **DTSTAMP — real but out-of-scope non-determinism, stumbled on while
+  designing the test, not chased.** `KCalendarCore::ICalFormat::
+  toICalString()` unconditionally regenerates `DTSTAMP` to wall-clock
+  "now" on every call — CORRECT RFC 5545 semantics, already documented in
+  `docs/campaign/FINDINGS.md` well before this campaign, not O90, not a
+  bug. The probe strips it via the EXISTING `stripICalPropertyLine` helper
+  (used exactly as any other caller would) before printing, so the test
+  is isolated to the one property this item owns. No new FINDINGS entry.
+
+  **Non-vacuity verified the house way**: temporarily reverted the one
+  `eventcanonfields.cpp` call site (surgical single-line revert, not a
+  broad stash), rebuilt, and got a real `FAIL!` naming the exact expected
+  reason (`X-UID` present); a raw two-invocation diff of the reverted
+  probe additionally showed two different heap-derived `X-UID` values
+  directly. Restored, rebuilt, reconfirmed green.
+
+  **Matrix**: regenerated and diffed anyway (not required by house rule
+  O63 — no `LossProfile`/`TransformationEdge` touched, X-UID never reaches
+  canon) — **byte-identical**, confirmed by execution
+  (`tst_gm_pipeline_convergence` green) as well as by `diff`.
+
+  Full suite: **217 tests, 213 passed, 4 known-environmental failed**
+  (`tst_backend_signals`, `tst_backend_thread_relocation`,
+  `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — same four
+  as baseline, verified by failure TEXT not name (Radicale 412/409 class
+  ×2, subprocess-abort crash-handler trace, KDAV 30s-timeout ×2). New
+  executable count: **216 → 217 (+1)**, `tst_demote_purity`.
+
+  Receipt: `2026-09-03-ip12-return-receipt.md`.
+
+  **Campaign closure.** PLAN.md §A.5's six revised success conditions were
+  all closed by earlier items (1: IP.3+IP.8; 2: IP.8+IP.9; 3: IP.4+IP.5+
+  IP.6; 4: IP.3; 5: IP.6+IP.7+IP.10; 6: IP.11). With IP.12/O90 landing,
+  every row in the "Where we stand" table above is DONE and no item
+  remains queued. `CLAUDE.md`'s campaign section updated in the same
+  commit to record closure, following the pattern of its existing "Closed
+  campaigns & resolved followups" index. No separate closing-summary
+  document was written — the accumulated session log above (fourteen
+  dated entries) already serves that purpose; a human may decide a
+  consumer-facing closing document is separately warranted, per this
+  item's own instructions not to build one unasked.

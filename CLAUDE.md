@@ -109,7 +109,7 @@ PlanStan per item throughout.
 **Superseded by the incidence-parity campaign (below)** for everything it
 left open on the VEVENT/VJOURNAL side.
 
-## Incidence-parity campaign — OPENED & ACTIVE 2026-08-29
+## Incidence-parity campaign — OPENED 2026-08-29; CLOSED 2026-09-03
 
 **Read `docs/campaign/incidence-parity/STATUS.md` first, then `PLAN.md`
 §Amendment 1, then the body item it points at.** Items run strictly in the
@@ -238,7 +238,37 @@ for lack of server-advertised VTODO support; `LocalBackend`/
 deliberately left unchanged (their single-domain shape is a fixed,
 compile-time property, not a runtime fallback — no discovery point to be
 loud at). No `(b)`-shaped routing scaffolding added. **O89 RESOLVED.**
-**IP.12 is next** (order lives in STATUS's table, not in the numbering).
+**IP.12 DONE 2026-09-03** — new
+`Kalburator::Calendar::stripICalPropertyParameter()`
+(`src/calendar/icaltimestamp.{h,cpp}`, a fold-tolerant sibling to
+`stripICalPropertyLine` that removes just a `;PARAM=value` substring
+rather than a whole line) plus a shared thin wrapper
+`stripAttendeeXUid()` (`src/calendar/incidencecommonfields.{h,cpp}`, same
+shape as the existing `stripInjectedTimestamps()`), wired at all three
+ical-producing demote sites (`Calendar::canonObjectToEventBytes`,
+`Todo::canonObjectToVtodoBytes`, `Calendar::canonObjectToJournalBytes`);
+`{todo,canon}`'s demote leg and the `org-ical` edge inherit the fix for
+free since they route through the same functions. `ORGANIZER` was
+investigated (header read + empirical two-process probe) and confirmed
+**unaffected** — only `KCalendarCore::Attendee` carries the heap-derived
+`uid` property; `Person`, which backs `organizer()`, has none. New tool
+`tools/demotepurityprobe` + `tests/calendar/tst_demote_purity.cpp` prove
+two demotes of the same canon in two SEPARATE OS PROCESSES (via
+`QProcess`, not a same-process comparison, which was already trivially
+true) are byte-identical; verified non-vacuous by a temporary single-line
+revert producing a real, believable failure. **O90 RESOLVED.**
+
+### Campaign CLOSED 2026-09-03
+
+IP.12 was the last queued item — every row in
+`docs/campaign/incidence-parity/STATUS.md`'s "Where we stand" table is
+now DONE, and PLAN.md §A.5's six revised success conditions are all
+closed (spread across IP.3/IP.4/IP.5/IP.6/IP.7/IP.8/IP.9/IP.10/IP.11, per
+STATUS's IP.12 session-log entry). No further item is queued in this
+campaign. See `docs/campaign/incidence-parity/2026-09-03-ip12-return-receipt.md`
+for the full closing item and STATUS.md's session log for the complete
+fourteen-entry history — no separate closing-summary document was
+written (judged unnecessary; a human may still commission one).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (RESOLVED by IP.4 — VEVENT
 alarm trigger-form corruption, four call sites), O80 (RESOLVED by IP.5 —
@@ -255,8 +285,9 @@ undeclared drops incl. RECURRENCE-ID aliasing; RELATED-TO carved out as
 O95), O88 (RESOLVED by IP.9 — one edge-level loss profile serves three
 kinds), O89 (RESOLVED by IP.11 — crossing gate proves `{calendar,canon}`/
 `{todo,canon}` VTODO are equivalent modulo the envelope; fallback now
-loud), O90 (demote not a pure function
-of canon — heap-derived attendee `X-UID`), O91 (RESOLVED by IP.6 —
+loud), O90 (RESOLVED by IP.12 — demote not a pure function
+of canon, heap-derived attendee `X-UID`; ORGANIZER confirmed unaffected),
+O91 (RESOLVED by IP.6 —
 undeclared COMMENT/CONTACT/RESOURCES/REQUEST-STATUS drops), O92
 (`CanonJsonMerger` has no error channel for a kind-mismatch fail-loud),
 O93 (RESOLVED by IP.6 — `{todo,canon}`'s sibling loss profile shared the
@@ -343,8 +374,8 @@ coverage mandatory for every new vendor pair/domain edge), O65 (events
 never index participant emails), O59 tooling notes (moc × terminated raw
 string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **216 tests**, 212 green, updated after IP.11 lands
-(2026-09-03 — `tst_vtodo_domain_convergence` added, +1 executable). The 4
+Suite baseline at campaign close: **217 tests**, 213 green, updated after
+IP.12 lands (2026-09-03 — `tst_demote_purity` added, +1 executable). The 4
 reds (`tst_backend_signals`,
 `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
 `tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by
