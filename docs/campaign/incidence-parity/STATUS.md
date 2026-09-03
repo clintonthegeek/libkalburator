@@ -8,8 +8,11 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.4 DONE. O79, O85 RESOLVED.** Full
-session log entry below; IP.5 is next.
+**Last updated:** 2026-09-02 — **IP.5 DONE. O80 RESOLVED.** Full session
+log entry below; IP.7 is next.
+
+**Previously — 2026-09-02 — IP.4 DONE. O79, O85 RESOLVED.** Full
+session log entry below.
 
 **Previously — 2026-09-02 — IP.10 DONE. O87 RESOLVED** (RELATED-TO
 excepted — see O95).
@@ -84,7 +87,7 @@ Earlier still the same day: pre-flight audit landed, six findings
 | 2 | IP.6 | `incidencecommonfields` extraction (3 kinds), then the missing VTODO fields as a separate commit; **drop `geo`** | **O83**, **O86** | **DONE 2026-09-02** — two commits (structural extraction, zero behaviour change; then the field fixes). **O83, O86, O91 (VEVENT/VTODO/VJOURNAL comment/contact only) and O93 RESOLVED.** New finding **O94** (upstream: KCalendarCore's `ICalFormat` never reads/writes RESOURCES at all — corrects part of O91). Receipt: `2026-09-02-ip6-return-receipt.md`. |
 | 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | **DONE 2026-09-02** — RECURRENCE-ID identity (VTODO's W1 shape, W3 safety fix included), RRULE/RDATE/EXDATE (verbatim-lines convention), organizer/attendees/attachments/comments/contacts, descriptionHtml (X-ALT-DESC, newly wired) and the phantom `classification` key all fixed. **RELATED-TO is the one exception** — wired identically but blocked upstream on the promote side only; new finding **O95**. New finding **O96** (a sibling declaration gap, logged not fixed). Receipt: `2026-09-02-ip10-return-receipt.md`. |
 | 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | **DONE 2026-09-02** — new `src/calendar/alarmshape.{h,cpp}` (W5's VTODO logic moved verbatim; new `describeAlarmRow()`); `eventcanonfields.cpp` and `vtodocanonfields.cpp` both point at it; `mseventcanonstages.cpp` demote fixed (route non-start-relative rows to carrier instead of misreading offset=0); `googlecanonstages.cpp` investigated independently — its absolute-alarm case was ALREADY correct (guard is strictly `< 0`), only its END-related case was broken, fixed the same way. O85: demote always `setEnabled(true)` (PLAN's recommended option; RFC 5545 has no disabled-alarm wire form, argued in the receipt). Loss profiles re-verified, **unchanged** (`alarms: Simplified` stays correct on both legs — the native-mapped alarm still drops text/repeat, independent of O79). Matrix byte-identical. Receipt: `2026-09-02-ip4-return-receipt.md`. |
-| 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | NOT STARTED |
+| 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | **DONE 2026-09-02** — new envelope-level helper takes the RAW pre-wrap extras object (a deliberate signature deviation from PLAN's literal proposal, argued in the receipt); wired at every calendar/contacts promote site plus the three todo sites retrofitted onto it; volatile-key lists derived from real captured payloads per vendor leg (MS event: `@odata.etag`+`changeKey`; Google event/person: `etag`; MS contact: `@odata.etag`+`changeKey`+`lastModifiedDateTime`; CalDAV/vcard legs: none). Catalogued (calendar via IP.3's contributor mechanism; contacts by hand — no contributor mechanism exists there, logged as a follow-up, not built). Loss profiles: `Dropped` on all 8 affected edges. New finding **O97** (org-ical's loss profile is stale/incomplete, pre-existing, not this item's to fix). Receipt: `2026-09-02-ip5-return-receipt.md`. |
 | 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
 | 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
 | 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
@@ -972,5 +975,162 @@ produced this state; three copies drift faster than two.
   No new FINDINGS filed — no bug found outside O79/O85's scope. Receipt:
   `2026-09-02-ip4-return-receipt.md`.
 
-- **NEXT:** **IP.5** — `CanonEnvelope::stampProviderExtrasDigest()` across
-  calendar/journal/contacts; retrofit the 3 todo sites. Closes O80.
+- **2026-09-02 — IP.5 DONE. O80 RESOLVED.**
+
+  New `Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest(QJsonObject&
+  obj, const QJsonObject& rawExtras, const QStringList& volatileKeys = {})`
+  (`src/shape/canonenvelope.{h,cpp}`, next to `canonicalDigest()`).
+  **Signature deviates from PLAN.md's literal proposal** (which took the
+  already-wrapped `providerExtras` object) — argued and verified before
+  writing any call site: all three existing todo sites
+  (`vtodocanonfields.cpp`, `googletaskcanonstages.cpp`,
+  `mstodotaskcanonstages.cpp`) compute the digest over the UNWRAPPED,
+  filtered extras object — the raw stash BEFORE it gets wrapped as bare
+  `providerExtras` (vtodo) or `{"google": …}`/`{"msgraph": …}`
+  (Google/MS) — never over the wrapped value. A signature that reads
+  `obj[providerExtrasKey()]` would either have to know/find the vendor
+  sub-key to unwrap (extra coupling to a convention this function has no
+  business knowing) or hash the WRAPPER key name too (`"google"`/
+  `"msgraph"`/`"x-vcard"`), which is stable and would just be dead weight
+  in every hash. Taking the raw pre-wrap object as a parameter is simpler,
+  matches every real call site's actual data flow exactly, and does not
+  touch `providerExtras` itself at all — wrapping stays the caller's job,
+  called however each site already does it (bare insert for the CalDAV/
+  vcard legs, sub-key wrap for MS/Google). Inserts `providerExtrasDigest`
+  only when the filtered extras are non-empty (matches every pre-existing
+  call site's behaviour).
+
+  **Retrofit (todo, 3 sites), verified behaviour-preserving:**
+  `vtodocanonfields.cpp`, `googletaskcanonstages.cpp` (volatile: `etag`),
+  `mstodotaskcanonstages.cpp` (volatile: `@odata.etag`/
+  `lastModifiedDateTime`/`@odata.context`) all now call the shared
+  helper instead of their own inline filter-and-hash block. All three
+  todo test suites (`tst_google_task_canon_edge`,
+  `tst_ms_todotask_canon_edge`, `tst_todo_canon_roundtrip` — 8+10+42 = 60
+  slots) re-run unchanged and green before landing, including the
+  pre-existing `providerExtrasDigest*` pin slots that predate this item.
+
+  **New wiring (calendar + contacts, 7 promote sites) — volatile-key lists
+  DERIVED from real captured payloads, not assumed to transfer from
+  todo's lists** (per PLAN.md's explicit prohibition and the O80 house
+  rule "an unfiltered digest is worse than no digest"). Evidence cited by
+  filename, mirroring `mstodotaskcanonstages.cpp`'s existing model:
+
+  | Leg | Volatile keys | Evidence |
+  |---|---|---|
+  | CalDAV VEVENT (`eventcanonfields.cpp`) | none | genuine X-props only, same reasoning as vtodo's own CalDAV leg |
+  | CalDAV VJOURNAL (`journalcanonfields.cpp`) | none | same as VEVENT |
+  | vcard4/CardDAV (`vcardcanonstages.cpp`) | none | genuine client X- customs only |
+  | MS event (`mseventcanonstages.cpp`) | `@odata.etag`, `changeKey` | `msgraph/captured/20260823-020116-…json` through `…-020401-…json` — SEVEN fetches of the SAME event ~4 min apart, no edit made: `changeKey`/`@odata.etag` (`@odata.etag`==`W/"<changeKey>"`) bumped on **every single fetch**, tracking 1:1 |
+  | Google event (`googlecanonstages.cpp`) | `etag` | `google/captured/20260823-123137-048-…json` + `…-123354-634-…json` — same event refetched 137s apart; extended defensively to match the todo/People precedent even though this narrow pair happened to be byte-identical |
+  | MS contact (`mscontactcanonstages.cpp`) | `@odata.etag`, `changeKey`, `lastModifiedDateTime` | `msgraph/captured/20260823-011727-…json` + `…-020405-…json` — same ten contacts refetched ~50 min apart; same OData change-tracking mechanism directly observed churning on the event leg |
+  | Google person (`googlepersoncanonstages.cpp`) | `etag` **only** | `google/captured/20260823-122804-276-…json` + `…-122838-232-…json` — connections list refetched 34s apart, **no edit made**: top-level `etag` changed for **every person** in the list (a per-request token, more volatile than the other legs), while `metadata` (incl. `sources[].updateTime`/`sources[].etag`) stayed **byte-identical** — SURPRISING FINDING, verified not assumed: `metadata` is genuinely edit-correlated content, not bookkeeping, and is deliberately left unfiltered/hashed |
+
+  Demote-side generic carrier loops (MS event's/Google event's `dropped`
+  set, MS contact's/Google person's `handled` set — the x-canon-*/
+  clientData/open-extension auto-carry mechanisms) all gained an explicit
+  `providerExtrasDigest` exclusion, matching MS To-Do's O74 precedent —
+  without it, the newly-produced key would auto-carry as a stale,
+  ever-changing extension row on every one of those four legs, silently
+  contradicting its own `Dropped` loss-profile ruling.
+
+  **Catalogue.** `calendarcanonproperties.cpp` already declared
+  `providerExtrasDigest`'s `PropertyKind`/display-name (IP.2); it was
+  reaching the calendar catalogue only via `vtodoCanonContributedIds()`'s
+  union contribution. `eventCanonContributedIds()` and
+  `journalCanonContributedIds()` now honestly contribute it themselves too
+  (IP.3's mechanism) — the catalogue's actual id set does not change, only
+  which contributor(s) honestly claim the key.
+  `contactscanonproperties.cpp` gained one hand-added
+  `cat.addProperty(...)` line: **this catalogue has no IP.3 contributor-
+  union mechanism at all yet** (unlike calendar/todo) — every one of its
+  ~24 other keys is already a hand-listed call in the exact same file, so
+  this is one more line in the SAME single source of truth, not a second,
+  drifting list; building a full three-site contributor mechanism for
+  contacts is a real structural improvement but larger scope than this
+  item's O80 fix. Logged as a deferred follow-up in the receipt (no
+  FINDINGS entry — not a bug, matches IP.3's own precedent of deferring
+  the vendor-stage-contributor idea without one).
+
+  **Loss profile:** `providerExtrasDigest: Dropped` added to all 8
+  affected profiles (`canonToIcalLoss()`, `canonToVtodoIcalLoss()`,
+  `canonToVjournalLoss()`, `canonToGoogleEventLoss()`,
+  `canonToMsEventLoss()`, `canonToVcard4Loss()`,
+  `canonToGooglePersonLoss()`, `canonToMsContactLoss()`) — matching
+  `canonToVtodoLoss()`'s existing ruling character for character (derived/
+  meta, no wire representation, demote correctly never re-emits it).
+  **New finding O97** (logged, not fixed): while checking whether the
+  ninth calendar-domain loss-profile function, `canonToOrgIcalLoss()`,
+  needed the same addition, found it is stale/incomplete far beyond just
+  this key — `CanonToOrgICalStage::transform()` internally calls
+  `CanonToICalStage{}.transform()` (the identical `ical` demote code), so
+  org-ical's TRUE wire loss is whatever `canonToIcalLoss()`/
+  `canonToVtodoIcalLoss()`/`canonToVjournalLoss()` declare plus the
+  recurrence simplification, yet `canonToOrgIcalLoss()` has declared only
+  `recurrence: Simplified` since it was introduced (verified via `git log
+  -p`). Pre-existing, not caused by this item; adding one honest row to an
+  otherwise stale profile would misrepresent it as more complete than it
+  is, so left untouched. Not owned by any item yet.
+
+  **Tests — new coverage:**
+  - Differ pins, REAL production catalogues (not the synthetic 2-id
+    catalogue the pre-existing O74 pin uses):
+    `calendarDifferDetectsProviderExtrasDigestChangeOnly()`,
+    `contactsDifferDetectsProviderExtrasDigestChangeOnly()`
+    (`tests/shape/tst_canonjson_diff_merge.cpp`).
+  - Volatile-filter pins, one per vendor leg, modeled directly on
+    `tst_google_task_canon_edge.cpp:138-160`:
+    `providerExtrasDigestIgnoresVolatileMsBookkeeping()` (MS event, MS
+    contact — same name, two files),
+    `providerExtrasDigestIgnoresVolatileGoogleBookkeeping()` (Google
+    event, Google person — same name, two files).
+  - VJOURNAL coverage (explicit acceptance criterion):
+    `journalPromoteStampsProviderExtrasDigest()` alongside a matching
+    `veventPromoteStampsProviderExtrasDigest()`
+    (`tests/calendar/tst_calendar_canon_roundtrip.cpp`); plus
+    `vcard4PromoteStampsProviderExtrasDigest()`
+    (`tests/contacts/tst_contacts_canon_roundtrip.cpp`) for the third
+    "no filtering needed" leg. One probe-and-fix along the way: KContacts'
+    `VCardConverter` strips the leading `"X-"` when parsing a raw
+    X-property line into `customs()` (`"X-CANON-TEST-PROP:hello"` →
+    `"CANON-TEST-PROP:hello"`) — verified directly by a throwaway
+    `qDebug()`, not assumed; the test asserts against the real key.
+  - `tst_calendar_kind_dispatch.cpp`'s existing IP.9/IP.6 loss-profile
+    pins (`vtodoDemoteLossProfileIsVtodoShapedNotEventShaped`,
+    `vjournalDemoteLossProfileIsVjournalShapedNotEventShaped`) extended
+    with a direct `providerExtrasDigest: Dropped` assertion each;
+    `veventDemoteLossProfileUnchangedByIp9` needed no edit (it compares
+    two LIVE calls to `canonToIcalLoss()`, so the new row flows through
+    automatically) — confirmed still green, not merely unedited.
+  - `canonToVcard4LossProfileChargesGoogleOnlyFields()`
+    (`tst_contacts_canon_roundtrip.cpp`) gained a `providerExtrasDigest:
+    Dropped` assertion.
+
+  **Matrix regenerated**: exactly 8 new `| providerExtrasDigest | Dropped
+  |` rows, one per affected edge/profile — diffed, not assumed.
+  `tst_gm_pipeline_convergence`'s `committedMatrixMatchesGenerated` green.
+
+  **IP.1's coverage gate** (`tst_calendar_kind_dispatch.cpp`'s
+  `calendarCatalogueDeclares{Vevent,Vtodo,Vjournal}Keys` +
+  `contactsCatalogueDeclares{Vcard,GooglePerson,MsContact}Keys`) and the
+  IP.8 RFC 5545 fidelity gate (`tst_incidence_rfc5545_fidelity.cpp`, 13
+  slots) both stayed green throughout — a positive control that the new
+  key landed in every catalogue it needed to.
+
+  Full suite: **215 tests, 211 passed, 4 known-environmental failed**
+  (`tst_backend_signals`, `tst_backend_thread_relocation`,
+  `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) on a clean
+  re-run — verified by failure TEXT, not name. One run mid-session also
+  showed `tst_engine_cancellation`'s `cancelDuringConflictPause` red;
+  isolated and re-run standalone, it passed cleanly — a timing-sensitive
+  threading test wholly unrelated to this item's calendar/contacts/todo
+  canon-JSON changes (confirmed: this item never touches
+  `src/engine/`), consistent with the documented memory-pressure-flake
+  risk, not a regression. Test count: same 215 ctest executables as
+  baseline — every new QTest slot landed inside an existing binary,
+  matching IP.3/IP.6/IP.9/IP.10's own precedent.
+
+  Receipt: `2026-09-02-ip5-return-receipt.md`.
+
+- **NEXT:** **IP.7** — VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/
+  DTEND coercion contract (b). Closes O81, O82.

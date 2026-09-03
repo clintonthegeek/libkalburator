@@ -19,7 +19,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
-using Kalburator::Shape::CanonEnvelope::canonicalDigest;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 // IP.6: incidencecommonfields lives in Kalburator::Calendar (VTODO's shared
 // emitter rides the calendar domain too, per icalcanonstages.cpp) — pull
 // the functions this file uses into scope explicitly rather than `using
@@ -456,7 +456,8 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
             extras.insert(QStringLiteral("x-vtodo"), xvtodo);
             obj.insert(providerExtrasKey(), extras);
 
-            // ---- providerExtrasDigest (O74) ------------------------------
+            // ---- providerExtrasDigest (O74; IP.5: retrofitted onto the
+            // shared CanonEnvelope::stampProviderExtrasDigest() helper) ----
             // Fingerprint of the extras this promote captured, so the
             // catalogue-scoped differ (which never sees providerExtras
             // itself, by design) can still detect an X-prop-only edit.
@@ -464,7 +465,7 @@ QJsonObject todoFieldsToCanon(const KCalendarCore::Todo::Ptr& todo,
             // stash is genuine X- custom properties only — no vendor
             // bookkeeping (etag-equivalents, server timestamps) rides
             // this channel the way it does on the MS/Google legs.
-            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(xvtodo));
+            stampProviderExtrasDigest(obj, xvtodo);
         }
     }
 

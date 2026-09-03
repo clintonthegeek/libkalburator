@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QString>
+#include <QStringList>
 
 namespace Kalburator::Shape {
 
@@ -61,6 +62,39 @@ bool valuesEqual(const QJsonValue& a, const QJsonValue& b);
 /// "always dirty" — see the todo domain's MS/Google call sites for the
 /// worked examples.
 QString canonicalDigest(const QJsonValue& value);
+
+/// IP.5 (O80) — envelope-level service so every promote site that stashes
+/// providerExtras gets a differ-visible fingerprint of that stash without
+/// copying the digest-and-filter idiom per call site. `rawExtras` is the
+/// RAW, UNWRAPPED sub-object a caller is about to fold into providerExtras
+/// — e.g. the object it is about to insert as providerExtras itself (the
+/// vtodo/CalDAV legs), or the object it is about to wrap one level deeper
+/// as providerExtras[vendorKey] (the MS/Google legs' "google"/"msgraph"
+/// sub-key; the vcard leg's "x-vcard" sub-key). This function does NOT
+/// read or write providerExtras itself — wrapping conventions differ per
+/// vendor and this stays agnostic to all of them; call it with the same
+/// raw object the caller is (or already has) folded in.
+///
+/// `volatileKeys` lists top-level keys of `rawExtras` to exclude before
+/// hashing: per-write bookkeeping (etags, change tokens, server-touched
+/// "last modified" timestamps) that churns on every vendor-side write
+/// regardless of whether the edit touched anything otherwise uncatalogued.
+/// Hashing them unfiltered makes the digest spuriously "always dirty",
+/// defeating the point of computing it — see the per-call-site comments
+/// for the evidence each vendor's list was derived from. Pass an empty
+/// list for a leg whose extras stash carries no vendor bookkeeping at all
+/// (verified case by case, not assumed) — e.g. the CalDAV/vtodo legs'
+/// generic X-property passthrough, which is genuine user/client content
+/// only.
+///
+/// Inserts "providerExtrasDigest" into `obj` (top-level, alongside
+/// providerExtras) only when the filtered extras are non-empty — matching
+/// every pre-existing call site's "nothing to fingerprint ⇒ stamp nothing"
+/// behaviour, and letting demote sides that iterate unhandled canon keys
+/// (the MS/Google generic carrier loops) treat its absence like any other
+/// absent optional key.
+void stampProviderExtrasDigest(QJsonObject& obj, const QJsonObject& rawExtras,
+                               const QStringList& volatileKeys = {});
 
 }  // namespace CanonEnvelope
 }  // namespace Kalburator::Shape

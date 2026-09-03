@@ -509,6 +509,40 @@ private slots:
     // google/checkpoint-event.json, sanitized extract of the real account's
     // Phase-2 checkpoint event) promotes cleanly: recurrence verbatim,
     // carriers re-promoted, providerExtras populated.
+    // IP.5/O80 — the digest must be STABLE across a change confined purely
+    // to `etag` (Google's universal per-write optimistic-concurrency
+    // token; see the promote-side comment for the captured-payload
+    // evidence this filter was derived from), and must CHANGE when real
+    // (non-volatile) extras content changes (e.g. `htmlLink`, which is not
+    // consumed by name and so lands in the same stash).
+    void providerExtrasDigestIgnoresVolatileGoogleBookkeeping()
+    {
+        GoogleEventToCanonStage stage;
+
+        auto makeEvent = [](const QString& etag, const QString& htmlLink) {
+            return QByteArray(
+                "{\"id\": \"abc123\", \"iCalUID\": \"abc123@google.com\", \"etag\": \"")
+                .append(etag.toUtf8())
+                .append("\", \"summary\": \"x\", \"htmlLink\": \"")
+                .append(htmlLink.toUtf8()).append("\"}");
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makeEvent(QStringLiteral("one"), QStringLiteral("https://a"))));
+        const QJsonObject onlyEtagChanged = parse(stage.transform(
+            makeEvent(QStringLiteral("two"), QStringLiteral("https://a"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makeEvent(QStringLiteral("one"), QStringLiteral("https://b"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyEtagChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
+    }
+
     void promoteCommittedLiveFixture()
     {
         QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)

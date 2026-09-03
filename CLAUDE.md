@@ -181,13 +181,32 @@ rows to the existing carrier instead of misreading a defaulted `offset:0`;
 case was **already correct** (its guard is strictly `< 0`), only its
 END-related case shared the bug, fixed the same way. **O79, O85
 RESOLVED.** IP.8's VALARM sub-gate fully GREEN (no more QEXPECT_FAIL).
-**IP.5 is next**, then IP.7 → IP.11 → IP.12 (order lives in STATUS's
-table, not in the numbering).
+**IP.5 DONE 2026-09-02** — new envelope-level
+`Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest(obj,
+rawExtras, volatileKeys)` (`src/shape/canonenvelope.{h,cpp}`) takes the
+RAW pre-wrap extras object (a deliberate signature deviation from
+PLAN.md's literal proposal, since that's what every real call site
+actually has in hand); the three existing todo call sites retrofitted
+onto it (verified behaviour-preserving — all three todo suites re-run
+unchanged and green); wired at all 7 remaining calendar/contacts promote
+sites (VEVENT, VJOURNAL, vcard4 need no volatile-key filter — genuine
+client content only; MS event/contact and Google event/person legs each
+got their volatile-key list DERIVED from real captured payloads, not
+assumed from todo's lists — MS: `@odata.etag`+`changeKey`[+
+`lastModifiedDateTime` for contacts]; Google: `etag` only, with a
+surprise finding that Google Person's `metadata` subtree is genuinely
+edit-correlated, NOT bookkeeping, verified by a no-edit two-fetch
+comparison). Catalogued in both domains (calendar via IP.3's contributor
+mechanism; contacts by hand — no contributor mechanism exists there yet,
+logged as a follow-up). **O80 RESOLVED.** New finding **O97** (the
+`org-ical` edge's loss profile is stale/incomplete, pre-existing, not
+this item's to fix). **IP.7 is next**, then IP.11 → IP.12 (order lives
+in STATUS's table, not in the numbering).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (RESOLVED by IP.4 — VEVENT
-alarm trigger-form corruption, four call sites), O80 (providerExtrasDigest
-absent on calendar/contacts), O81 (W6.2 twin), O82 (RANGE=THISANDFUTURE
-twin), O83
+alarm trigger-form corruption, four call sites), O80 (RESOLVED by IP.5 —
+providerExtrasDigest absent on calendar/contacts), O81 (W6.2 twin), O82
+(RANGE=THISANDFUTURE twin), O83
 (RESOLVED by IP.6 — undeclared VTODO drops), O84 (RESOLVED by IP.3 —
 merger erases the incidence kind), O85 (RESOLVED by IP.4 — every alarm
 round-tripped back DISABLED, all four sites; demote now always
@@ -209,7 +228,11 @@ from a source RELATED-TO line, though the writer/demote direction is
 correct; VEVENT's parser handles the identical line fine), O96 (new —
 `recurrenceRange`'s W3-shaped Degraded loss is declared for VJOURNAL but
 not yet for the sibling VTODO calendar-domain profile; low severity,
-logged not fixed).
+logged not fixed), O97 (new — the `org-ical` edge's own loss profile,
+`canonToOrgIcalLoss()`, is stale/incomplete: it demotes through the
+identical `{calendar,canon}→{calendar,ical}` code but declares only
+`recurrence: Simplified`, pre-existing since it was introduced, logged
+not fixed).
 
 **Three prohibitions, binding:** never "fix while passing through" (log to
 FINDINGS, let the owning item take it); never hand-maintain a key list —
@@ -277,7 +300,7 @@ coverage mandatory for every new vendor pair/domain edge), O65 (events
 never index participant emails), O59 tooling notes (moc × terminated raw
 string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **215 tests**, 211 green, re-confirmed after IP.4 lands
+Suite baseline: **215 tests**, 211 green, re-confirmed after IP.5 lands
 (2026-09-02). The 4 reds (`tst_backend_signals`,
 `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
 `tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by

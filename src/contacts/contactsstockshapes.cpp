@@ -33,6 +33,10 @@ Kalburator::Shape::LossProfile canonToVcard4Loss()
     p.affected.insert(PropertyId{QStringLiteral("sipAddresses")}, LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("calendarUrls")}, LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("externalIds")}, LossKind::Reversible);
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta, no
+    // vCard4 wire form by design — matches the calendar/todo domains'
+    // identical ruling.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
     return p;
 }
 

@@ -442,6 +442,44 @@ private slots:
 
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("sipAddresses")}),
                  LossKind::Reversible);
+
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("providerExtrasDigest")}),
+                 LossKind::Dropped);
+    }
+
+    // IP.5/O80 — vcard4's providerExtras["x-vcard"] stash (both the uid
+    // stash and the custom/X- property block) now gets the same digest
+    // treatment as the calendar/todo domains. No filtering needed on this
+    // leg (empty volatileKeys): the x-vcard stash is genuine client
+    // content, no vendor bookkeeping. Model on the calendar/todo domains'
+    // "digest present when extras non-empty" checks.
+    void vcard4PromoteStampsProviderExtrasDigest()
+    {
+        static const QByteArray kVCardWithCustomProp =
+            "BEGIN:VCARD\r\n"
+            "VERSION:4.0\r\n"
+            "UID:test-uid-xprop\r\n"
+            "FN:Bob Jones\r\n"
+            "N:Jones;Bob;;;\r\n"
+            "X-CANON-TEST-PROP:hello\r\n"
+            "END:VCARD\r\n";
+
+        VCard4ToCanonStage stage;
+        const QJsonObject obj = parse(stage.transform(kVCardWithCustomProp));
+        QVERIFY2(!obj.isEmpty(), "promote must not be empty");
+
+        using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+        const QJsonObject xvcard = obj.value(providerExtrasKey()).toObject()
+                                       .value(QStringLiteral("x-vcard")).toObject();
+        // KContacts::VCardConverter strips the leading "X-" when parsing a
+        // raw X-property line into Addressee::customs() (verified directly:
+        // "X-CANON-TEST-PROP:hello" lands as customs() entry
+        // "CANON-TEST-PROP:hello") — the "uid" entry alongside it is the
+        // separate stash this file writes at promote's very start.
+        QVERIFY2(xvcard.contains(QStringLiteral("CANON-TEST-PROP")),
+                 "fixture must exercise the x-vcard custom-property passthrough");
+        QVERIFY2(!obj.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
+                 "vcard4 promote must stamp providerExtrasDigest when extras are present");
     }
 };
 

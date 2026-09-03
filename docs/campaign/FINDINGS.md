@@ -4350,3 +4350,47 @@ an incomplete warning to a caller inspecting `composedLoss()`.
 function — logged rather than fixed here per PLAN.md §1 (IP.10 was not
 touching `icalcanonstages.cpp`'s VTODO profile for any other reason, and
 fixing it "while passing through" is exactly what that rule prohibits).
+
+### O97 — OPEN — incidence-parity IP.5, 2026-09-02: `canonToOrgIcalLoss()` is stale/incomplete — the `{calendar,canon}→{calendar,org-ical}` edge shares `{calendar,canon}→{calendar,ical}`'s actual wire behaviour but declares almost none of its loss
+
+Found while adding `providerExtrasDigest: Dropped` to every calendar-domain
+loss profile affected by IP.5's new digest stamp
+(`canonToIcalLoss()`/`canonToVtodoIcalLoss()`/`canonToVjournalLoss()`).
+`org-ical`'s own demote profile, `canonToOrgIcalLoss()`
+(`src/calendar/calendarstockshapes.cpp`), was a candidate for the same
+addition — checked, and found to already be missing far more than just
+this one key.
+
+`CanonToOrgICalStage::transform()` (`src/calendar/orgicalcanonstages.cpp:184`)
+is a thin wrapper: it calls `CanonToICalStage{}.transform(canonBytes)`
+internally (line 191) — the IDENTICAL code path the plain `{calendar,canon}
+→{calendar,ical}` edge uses — then post-processes only the RRULE text for
+org-mode's simplified-recurrence convention. So org-ical's actual wire
+loss is, property-for-property, whatever `canonToIcalLoss()` /
+`canonToVtodoIcalLoss()` / `canonToVjournalLoss()` declare (GEO,
+REQUEST-STATUS, RESOURCES, providerExtrasDigest, the vendor-only Dropped/
+Reversible sets, the classification Degraded mapping, etc.) PLUS the
+recurrence simplification org-ical adds on top. But `canonToOrgIcalLoss()`
+declares exactly one row (`recurrence: Simplified`) and is not even
+kind-scoped (`CalendarStockShapes::edges()` registers it as a single flat
+`LossProfile`, no `lossByKind` override the way the plain `ical` edge
+has since IP.9) — so a caller inspecting `regs.transformation.inspect(canon,
+orgIcal)` today under-reports org-ical's true loss by every property the
+sibling `ical` edge's (possibly kind-scoped) profile declares.
+
+Not new to this item — this gap predates IP.5 entirely (verified: `git
+log -p` shows `canonToOrgIcalLoss()` has held only the recurrence row
+since it was introduced). IP.5 did NOT add `providerExtrasDigest` to it:
+doing so alone would misrepresent the profile as more complete than it
+is (one more accurate row bolted onto an otherwise stale profile is not
+an improvement a reader can trust). The real fix is structural — either
+give `canonToOrgIcalLoss()` the same `lossByKind` treatment IP.9 gave the
+plain `ical` edge and compose it from `canonToIcalLoss()` et al. plus the
+recurrence row, or have `CalendarStockShapes::edges()` register org-ical's
+edge with a computed/merged profile — out of scope for IP.5 (org-ical
+handling is not named anywhere in this item's work order). Low current
+blast radius: nothing in the test suite or matrix generator currently
+asserts org-ical's loss profile is complete (`tst_orgical_canon_roundtrip.cpp`
+does not exercise `inspect()` on this edge), so this is a silent
+under-report, not a wrong answer a test currently relies on. **Not owned
+by any item yet.**

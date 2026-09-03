@@ -13,6 +13,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 constexpr auto kCarrierPrefix = "x-canon-";
 constexpr auto kExtensionName = "kalburator.canon";
@@ -410,6 +411,27 @@ QByteArray MsContactToCanonStage::transform(const QByteArray& msBytes) const
         QJsonObject wrap;
         wrap.insert(QStringLiteral("msgraph"), extras);
         obj.insert(providerExtrasKey(), wrap);
+
+        // ---- providerExtrasDigest (IP.5/O80) — FILTERED, excludes
+        // `@odata.etag`/`changeKey`/`lastModifiedDateTime` ------------------
+        // Confirmed against real captured /me/contacts samples
+        // (msgraph/captured/20260823-011727-…json and
+        // …-020405-…json — the SAME ten contacts fetched ~50 minutes apart,
+        // no edits made): `@odata.etag`/`changeKey`/`lastModifiedDateTime`
+        // stayed byte-identical across both fetches in this sample, but
+        // both fields are the identical OData change-tracking mechanism
+        // this file's event-leg sibling (mseventcanonstages.cpp) directly
+        // observed bumping on every write for the SAME resource family
+        // (Outlook items) — filtered defensively for consistency, not
+        // because this narrow no-edit sample happened to catch it churning.
+        // `createdDateTime` is deliberately KEPT (MS To-Do's own
+        // precedent: set once at creation, no false-dirty risk).
+        // `parentFolderId`/`initials`/`yomiCompanyName`/`id` stay hashed:
+        // stable identity/content.
+        stampProviderExtrasDigest(obj, extras,
+                                   { QStringLiteral("@odata.etag"),
+                                     QStringLiteral("changeKey"),
+                                     QStringLiteral("lastModifiedDateTime") });
     }
     stampEnvelope(obj, QStringLiteral("contacts"), id);
     return serialize(obj);
@@ -702,7 +724,12 @@ QByteArray CanonToMsContactStage::transform(const QByteArray& canonBytes) const
             QStringLiteral("organizations"), QStringLiteral("occupations"),
             QStringLiteral("urls"), QStringLiteral("imClients"),
             QStringLiteral("relations"), QStringLiteral("notes"),
-            QStringLiteral("birthday"), QStringLiteral("categories")
+            QStringLiteral("birthday"), QStringLiteral("categories"),
+            // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+            // representation by design — deliberately excluded from the
+            // open-extension carrier below (matching MS To-Do's O74
+            // precedent) rather than auto-carried as a stale extension row.
+            QStringLiteral("providerExtrasDigest")
             // gender / anniversary / significantDates / timeZone / languages /
             // interests / skills / calendarUrls / sipAddresses / memberships /
             // externalIds are deliberately NOT handled — no GA `contact`
@@ -780,6 +807,10 @@ Kalburator::Shape::LossProfile canonToMsContactLoss()
     }
     // Dropped: fetch-only nav resource, never inline payload
     p.affected.insert(PropertyId{QStringLiteral("photos")}, LossKind::Dropped);
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta, no
+    // Graph contact wire form by design, and deliberately excluded from
+    // the open-extension carrier loop (see the promote-side comment).
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
     return p;
 }
 

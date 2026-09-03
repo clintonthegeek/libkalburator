@@ -19,6 +19,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 KCalendarCore::Event::Ptr parseEvent(const QByteArray &data)
 {
@@ -272,6 +273,14 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             QJsonObject extras;
             extras.insert(QStringLiteral("x-ical"), xical);
             obj.insert(providerExtrasKey(), extras);
+
+            // ---- providerExtrasDigest (IP.5/O80) --------------------------
+            // No filtering needed on this leg: the CalDAV x-ical passthrough
+            // is genuine X- custom properties only — no vendor bookkeeping
+            // (etag-equivalents, server timestamps) rides this channel the
+            // way it does on the MS/Google legs. Matches the reasoning
+            // vtodocanonfields.cpp already used for its own CalDAV leg.
+            stampProviderExtrasDigest(obj, xical);
         }
     }
 
@@ -513,6 +522,13 @@ QList<Kalburator::Shape::PropertyId> eventCanonContributedIds()
         PropertyId{QStringLiteral("comments")},      // O91
         PropertyId{QStringLiteral("contacts")},      // O91
         PropertyId{QStringLiteral("resources")},     // O91
+        // IP.5 addition: VEVENT's x-ical passthrough now stamps
+        // providerExtrasDigest too (O80) — was previously contributed to
+        // this catalogue only via the shared VTODO emitter
+        // (vtodoCanonContributedIds()), which happened to cover it
+        // implicitly for the calendar domain's union; VEVENT now honestly
+        // declares its own production of the key.
+        PropertyId{QStringLiteral("providerExtrasDigest")},
     };
 }
 

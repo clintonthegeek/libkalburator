@@ -20,6 +20,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 // KCalendarCore::Alarm::Type values used in the canon `alarms` encoding
 // (eventcanonfields.cpp stores the raw enum int) — same discipline as the
@@ -806,6 +807,28 @@ QByteArray MsEventToCanonStage::transform(const QByteArray& msBytes) const
         QJsonObject extras;
         extras.insert(QStringLiteral("msgraph"), extrasMs);
         obj.insert(providerExtrasKey(), extras);
+
+        // ---- providerExtrasDigest (IP.5/O80) — FILTERED, excludes
+        // `@odata.etag`/`changeKey` --------------------------------------
+        // Confirmed against real captured /me/events/{id} samples
+        // (msgraph/captured/20260823-020116-…json through …-020401-…json —
+        // seven fetches of the SAME event, ~4 minutes apart, no explicit
+        // edit made by this session): `changeKey` and `@odata.etag`
+        // (`@odata.etag` is always `W/"<changeKey>"`) both bumped on EVERY
+        // single fetch, tracking each other 1:1 — a per-write change token,
+        // not per-write content. Hashing them unfiltered would make this
+        // digest spuriously "always dirty" on Graph's own internal
+        // bookkeeping churn, independent of any real edit. `lastModifiedDateTime`
+        // is NOT in this list because it never reaches extrasMs at all — it
+        // is `consumed` above straight into the catalogued top-level
+        // `lastModified` field, not this stash. `id`/`iCalUId`/
+        // `seriesMasterId`/`occurrenceId`/`bodyPreview`/`hasAttachments`/
+        // `isDraft`/`isOrganizer`/`onlineMeetingUrl`/`transactionId` stay
+        // hashed: stable identity or content, not bookkeeping (verified —
+        // none of them changed across the same seven-fetch sample).
+        stampProviderExtrasDigest(obj, extrasMs,
+                                   { QStringLiteral("@odata.etag"),
+                                     QStringLiteral("changeKey") });
     }
     stampEnvelope(obj, QStringLiteral("calendar"), uid);
     return serialize(obj);
@@ -1347,7 +1370,13 @@ QByteArray CanonToMsEventStage::transform(const QByteArray& canonBytes) const
             // geo + cross-kind fields: same ruling as the Google edge.
             QStringLiteral("color"), QStringLiteral("geo"), QStringLiteral("due"),
             QStringLiteral("completed"), QStringLiteral("percentComplete"),
-            QStringLiteral("relatedTo")
+            QStringLiteral("relatedTo"),
+            // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+            // representation by design — deliberately excluded from the
+            // generic x-canon-* carrier loop below (matching MS To-Do's O74
+            // precedent) rather than auto-carried as a stale, ever-changing
+            // extension row.
+            QStringLiteral("providerExtrasDigest")
         };
         for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
             if (handled.contains(it.key()) || dropped.contains(it.key()))
@@ -1441,6 +1470,12 @@ Kalburator::Shape::LossProfile canonToMsEventLoss()
     p.affected.insert(PropertyId{QStringLiteral("guestsCanSeeOtherGuests")}, LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("locked")},               LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("privateCopy")},          LossKind::Reversible);
+
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta, no
+    // wire form by design, and deliberately excluded from the x-canon-*
+    // carrier loop (see the promote-side comment) so it does not auto-carry
+    // as a stale, ever-changing extension row.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")},  LossKind::Dropped);
 
     return p;
 }

@@ -7,6 +7,7 @@
 #include "canonjsondiffer.h"
 #include "canonjsonmerger.h"
 #include "calendarcanonproperties.h"
+#include "contactscanonproperties.h"
 #include "icalcanonstages.h"
 
 using namespace Kalburator::Shape;
@@ -152,6 +153,39 @@ private slots:
         const QSet<PropertyId> changed = d.diff(src, base);
         QVERIFY(changed.contains(PropertyId{QStringLiteral("providerExtrasDigest")}));
         QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
+    }
+
+    // IP.5/O80 — the two REAL production catalogues this item modifies now
+    // both catalogue providerExtrasDigest (calendarcanonproperties.cpp /
+    // contactscanonproperties.cpp), so the differ each domain actually
+    // builds (CanonJsonDiffer over calendarCanonPropertyIds() /
+    // contactsCanonPropertyIds(), mirroring calendardomaindefinition.cpp /
+    // contactsdomaindefinition.cpp's own construction) must dirty on an
+    // extras-only change — the differMarksProviderExtrasDigestChangeOnly()
+    // slot above proves the MECHANISM with a synthetic 2-id catalogue; this
+    // proves the REAL catalogues actually carry the id.
+    void calendarDifferDetectsProviderExtrasDigestChangeOnly()
+    {
+        CanonJsonDiffer d(Kalburator::Calendar::calendarCanonPropertyIds());
+        CanonicalRecord src;
+        src.data = R"({"providerExtrasDigest":"abc123","summary":"x"})";
+        CanonicalRecord base;
+        base.data = R"({"providerExtrasDigest":"def456","summary":"x"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("providerExtrasDigest")}));
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("summary")}));
+    }
+
+    void contactsDifferDetectsProviderExtrasDigestChangeOnly()
+    {
+        CanonJsonDiffer d(Kalburator::Contacts::contactsCanonPropertyIds());
+        CanonicalRecord src;
+        src.data = R"({"providerExtrasDigest":"abc123","names":"x"})";
+        CanonicalRecord base;
+        base.data = R"({"providerExtrasDigest":"def456","names":"x"})";
+        const QSet<PropertyId> changed = d.diff(src, base);
+        QVERIFY(changed.contains(PropertyId{QStringLiteral("providerExtrasDigest")}));
+        QVERIFY(!changed.contains(PropertyId{QStringLiteral("names")}));
     }
 
     void mergerTakesSourceWhenTargetUnchanged()

@@ -154,6 +154,15 @@ Kalburator::Shape::LossProfile canonToIcalLoss()
                             {QStringLiteral("public"), QStringLiteral("private"),
                              QStringLiteral("confidential")});
 
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta — it
+    // has no iCal representation on any leg by design (recomputed fresh
+    // from the real extras content on the next promote of whatever gets
+    // written), so demote correctly never re-emits it. Not a traditional
+    // information loss: nothing the user authored is lost, only a
+    // bookkeeping fingerprint. Matches vtodocanonstages.cpp's identical
+    // ruling for the {todo,canon}→{todo,ical-vtodo} edge.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
+
     return p;
 }
 
@@ -199,6 +208,10 @@ Kalburator::Shape::LossProfile canonToVtodoIcalLoss()
     // Dropped (O94, new, upstream): same ICalFormat wire gap as
     // canonToIcalLoss() above — see its comment for the full explanation.
     p.affected.insert(PropertyId{QStringLiteral("resources")}, LossKind::Dropped);
+
+    // Dropped (IP.5/O80): same ruling as canonToIcalLoss() above —
+    // providerExtrasDigest is purely derived/meta, no wire form by design.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
 
     return p;
 }

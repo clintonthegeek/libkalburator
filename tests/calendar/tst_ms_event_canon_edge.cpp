@@ -691,6 +691,41 @@ private slots:
     // of the real account's masters-only listing, O57(g)) promotes cleanly:
     // every event in the page yields a uid, recurrence lines materialize for
     // series masters, and transport identity stashes under msgraph extras.
+    // IP.5/O80 — the digest must be STABLE across a change confined purely
+    // to `@odata.etag`/`changeKey` (both derived from real captured
+    // /me/events/{id} samples showing them bump on every fetch of the same
+    // unedited event — see the promote-side comment for the exact
+    // filenames), and must CHANGE when real (non-volatile) extras content
+    // changes (e.g. `bodyPreview`, which is not consumed by name and so
+    // lands in the same stash).
+    void providerExtrasDigestIgnoresVolatileMsBookkeeping()
+    {
+        MsEventToCanonStage stage;
+
+        auto makeEvent = [](const QString& changeKey, const QString& bodyPreview) {
+            return QByteArray(
+                "{\"id\": \"AQMkADAwATNiZmYA\", \"changeKey\": \"" ).append(changeKey.toUtf8())
+                .append("\", \"@odata.etag\": \"W/\\\"").append(changeKey.toUtf8())
+                .append("\\\"\", \"subject\": \"x\", \"bodyPreview\": \"")
+                .append(bodyPreview.toUtf8()).append("\"}");
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makeEvent(QStringLiteral("one"), QStringLiteral("hello"))));
+        const QJsonObject onlyChangeKeyEtagChanged = parse(stage.transform(
+            makeEvent(QStringLiteral("two"), QStringLiteral("hello"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makeEvent(QStringLiteral("one"), QStringLiteral("goodbye"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyChangeKeyEtagChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
+    }
+
     void promoteCommittedLiveFixture()
     {
         QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)

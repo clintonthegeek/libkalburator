@@ -33,6 +33,18 @@ Kalburator::Shape::PropertyCatalogue makeContactsCanonCatalogue()
     cat.addProperty({ PropertyId{"memberships"}, PropertyKind::Json, QStringLiteral("Memberships") });
     cat.addProperty({ PropertyId{"interests"}, PropertyKind::StringList, QStringLiteral("Interests") });
     cat.addProperty({ PropertyId{"skills"}, PropertyKind::StringList, QStringLiteral("Skills") });
+    // IP.5/O80: the vcard4/mscontact/googleperson promote sites now all
+    // stamp providerExtrasDigest so an extras-only edit dirties the differ
+    // (matching calendar/todo's identical key). Declared by hand here,
+    // NOT via IP.3's contributor-union mechanism — this catalogue has no
+    // such mechanism at all yet (unlike calendarcanonproperties.cpp /
+    // todocanonproperties.cpp): every id above is already hand-listed one
+    // call at a time, so this is one more line in the SAME single source
+    // of truth, not a second, drifting list. Building a full contributor
+    // mechanism for the three contacts promote sites is a real structural
+    // improvement but a larger scope than this item's O80 fix — logged as
+    // a follow-up, not built here (see the IP.5 return receipt).
+    cat.addProperty({ PropertyId{"providerExtrasDigest"}, PropertyKind::String, QStringLiteral("Provider Extras Digest") });
     return cat;
 }
 

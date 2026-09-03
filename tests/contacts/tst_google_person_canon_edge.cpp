@@ -307,6 +307,43 @@ private slots:
     }
 
     // Committed live-capture fixture: every sanitized connection promotes.
+    // IP.5/O80 — the digest must be STABLE across a change confined purely
+    // to `etag` (Google's universal per-write concurrency token — see the
+    // promote-side comment: real captured People API listings showed this
+    // top-level etag change on EVERY person even across two fetches 34s
+    // apart with NO edit made, while `metadata` stayed byte-identical), and
+    // must CHANGE when real (non-volatile) extras content changes (e.g. an
+    // unmapped field like `miscKeywords`, which is not consumed by name and
+    // so lands in the same stash). `metadata` itself is deliberately NOT
+    // varied here — the promote-side comment documents it as genuinely
+    // edit-correlated, i.e. content this digest is right to hash.
+    void providerExtrasDigestIgnoresVolatileGoogleBookkeeping()
+    {
+        GooglePersonToCanonStage stage;
+
+        auto makePerson = [](const QString& etag, const QString& keyword) {
+            return QByteArray(
+                "{\"resourceName\": \"people/c123\", \"etag\": \"").append(etag.toUtf8())
+                .append("\", \"names\": [{\"displayName\": \"x\"}], \"miscKeywords\": [{\"value\": \"")
+                .append(keyword.toUtf8()).append("\"}]}");
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makePerson(QStringLiteral("one"), QStringLiteral("hello"))));
+        const QJsonObject onlyEtagChanged = parse(stage.transform(
+            makePerson(QStringLiteral("two"), QStringLiteral("hello"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makePerson(QStringLiteral("one"), QStringLiteral("goodbye"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyEtagChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
+    }
+
     void promoteCommittedLiveFixture()
     {
         QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)

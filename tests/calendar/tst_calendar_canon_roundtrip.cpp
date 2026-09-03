@@ -796,6 +796,68 @@ private slots:
         QVERIFY2(outAlarms.first()->enabled(),
                  "alarm must still be enabled after round trip (O85)");
     }
+
+    // IP.5/O80 — VEVENT's x-ical providerExtras stash now gets a digest so
+    // an extras-only edit dirties the differ (calendar's catalogue-scoped
+    // CanonJsonDiffer never sees providerExtras itself).
+    void veventPromoteStampsProviderExtrasDigest()
+    {
+        static const QByteArray kEventWithXProp =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:test-event-uid-xprop\r\n"
+            "SUMMARY:Team Meeting\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND:20260601T100000Z\r\n"
+            "X-CANON-TEST-PROP:hello\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage stage;
+        const QJsonObject obj = parse(stage.transform(kEventWithXProp));
+        QVERIFY2(!obj.isEmpty(), "promote must not be empty");
+
+        using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+        const QJsonObject xical = obj.value(providerExtrasKey()).toObject()
+                                      .value(QStringLiteral("x-ical")).toObject();
+        QVERIFY2(xical.contains(QStringLiteral("X-CANON-TEST-PROP")),
+                 "fixture must exercise the x-ical passthrough");
+        QVERIFY2(!obj.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
+                 "VEVENT promote must stamp providerExtrasDigest when extras are present");
+    }
+
+    // IP.5/O80 — VJOURNAL's providerExtras["x-ical"] stash
+    // (journalcanonfields.cpp) gets the SAME digest treatment as VEVENT —
+    // same mechanism, same volatile-key list (empty: genuine X-props only,
+    // no vendor bookkeeping on this CalDAV leg).
+    void journalPromoteStampsProviderExtrasDigest()
+    {
+        static const QByteArray kJournalWithXProp =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VJOURNAL\r\n"
+            "UID:test-journal-uid-xprop\r\n"
+            "DTSTAMP:20260901T120000Z\r\n"
+            "SUMMARY:Journal Entry\r\n"
+            "X-CANON-TEST-PROP:hello\r\n"
+            "END:VJOURNAL\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage stage;
+        const QJsonObject obj = parse(stage.transform(kJournalWithXProp));
+        QVERIFY2(!obj.isEmpty(), "promote must not be empty");
+
+        using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+        const QJsonObject xical = obj.value(providerExtrasKey()).toObject()
+                                      .value(QStringLiteral("x-ical")).toObject();
+        QVERIFY2(xical.contains(QStringLiteral("X-CANON-TEST-PROP")),
+                 "fixture must exercise the x-ical passthrough");
+        QVERIFY2(!obj.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
+                 "VJOURNAL promote must stamp providerExtrasDigest when extras are present");
+    }
 };
 
 QTEST_GUILESS_MAIN(TestCalendarCanonRoundtrip)

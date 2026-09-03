@@ -472,8 +472,10 @@ private slots:
         // (O94, new — upstream, KCalendarCore::ICalFormat never reads or
         // writes RESOURCES despite the object model supporting it; see
         // incidencecommonfields.h's promoteResources() doc comment).
+        // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+        // form by design — declared Dropped alongside the permanent drops.
         static const char* kVtodoDropped[] = {
-            "geo", "requestStatus", "resources",
+            "geo", "requestStatus", "resources", "providerExtrasDigest",
         };
         for (const char* id : kVtodoDropped) {
             QVERIFY2(loss.affected.contains(PropertyId{QString::fromLatin1(id)}),
@@ -536,6 +538,11 @@ private slots:
         QVERIFY2(loss.affected.contains(PropertyId{QStringLiteral("recurrenceRange")}),
                  "vjournal profile missing 'recurrenceRange'");
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrenceRange")}), LossKind::Degraded);
+        // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+        // form by design.
+        QVERIFY2(loss.affected.contains(PropertyId{QStringLiteral("providerExtrasDigest")}),
+                 "vjournal profile missing 'providerExtrasDigest'");
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("providerExtrasDigest")}), LossKind::Dropped);
 
         // attachments/attendees/organizer/relatedTo/recurrenceId/recurrence/
         // comments/contacts must NOT appear as Dropped any more — a

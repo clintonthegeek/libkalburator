@@ -74,6 +74,7 @@ reads through listings/delta/$expand.
 | locked | Reversible |
 | onlineMeeting | Dropped |
 | privateCopy | Reversible |
+| providerExtrasDigest | Dropped |
 | requestStatus | Dropped |
 | resources | Dropped |
 | responseRequested | Reversible |
@@ -83,6 +84,7 @@ reads through listings/delta/$expand.
 
 | Property | LossKind |
 |---|---|
+| providerExtrasDigest | Dropped |
 | recurrenceRange | Degraded |
 | requestStatus | Dropped |
 
@@ -91,6 +93,7 @@ reads through listings/delta/$expand.
 | Property | LossKind |
 |---|---|
 | geo | Dropped |
+| providerExtrasDigest | Dropped |
 | requestStatus | Dropped |
 | resources | Dropped |
 
@@ -122,6 +125,7 @@ reads through listings/delta/$expand.
 | onlineMeeting | Degraded |
 | percentComplete | Dropped |
 | priority | Reversible |
+| providerExtrasDigest | Dropped |
 | relatedTo | Dropped |
 | responseRequested | Reversible |
 | start | Reversible |
@@ -155,6 +159,7 @@ reads through listings/delta/$expand.
 | percentComplete | Dropped |
 | priority | Simplified |
 | privateCopy | Reversible |
+| providerExtrasDigest | Dropped |
 | recurrence | Simplified |
 | recurrenceId | Degraded |
 | recurrenceRange | Degraded |
@@ -188,6 +193,7 @@ reads through listings/delta/$expand.
 | externalIds | Reversible |
 | interests | Dropped |
 | occupations | Dropped |
+| providerExtrasDigest | Dropped |
 | sipAddresses | Reversible |
 | skills | Dropped |
 
@@ -218,6 +224,7 @@ reads through listings/delta/$expand.
 | occupations | Simplified |
 | organizations | Simplified |
 | photos | Simplified |
+| providerExtrasDigest | Dropped |
 | significantDates | Reversible |
 | sipAddresses | Simplified |
 | skills | Simplified |
@@ -244,6 +251,7 @@ reads through listings/delta/$expand.
 | organizations | Simplified |
 | phones | Simplified |
 | photos | Dropped |
+| providerExtrasDigest | Dropped |
 | relations | Simplified |
 | significantDates | Reversible |
 | sipAddresses | Reversible |

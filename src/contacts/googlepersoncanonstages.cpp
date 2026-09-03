@@ -13,6 +13,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 constexpr auto kCarrierPrefix = "x-canon-";
 
@@ -485,6 +486,22 @@ QByteArray GooglePersonToCanonStage::transform(const QByteArray& googleBytes) co
         QJsonObject wrap;
         wrap.insert(QStringLiteral("google"), extras);
         obj.insert(providerExtrasKey(), wrap);
+
+        // ---- providerExtrasDigest (IP.5/O80) — FILTERED, excludes `etag` --
+        // Confirmed against real captured People API connections listings
+        // (google/captured/20260823-122804-276-…json and
+        // …-122838-232-…json — the SAME connections list fetched 34s
+        // apart, no edits made): the top-level `etag` field CHANGED for
+        // EVERY person in the list even though nothing was edited — it is
+        // a per-request opaque sync token, not a content-change indicator,
+        // making it even more volatile than the todo/event legs' etags.
+        // SURPRISING FINDING, verified not assumed: `metadata` (including
+        // its nested `sources[].updateTime`/`sources[].etag`) stayed
+        // BYTE-IDENTICAL across the same two fetches — it is genuinely
+        // edit-correlated, not per-request bookkeeping, so it stays hashed
+        // (NOT filtered), unlike a naive read of "metadata sounds like
+        // bookkeeping" would suggest.
+        stampProviderExtrasDigest(obj, extras, { QStringLiteral("etag") });
     }
     stampEnvelope(obj, QStringLiteral("contacts"), resourceName);
     return serialize(obj);
@@ -781,7 +798,12 @@ QByteArray CanonToGooglePersonStage::transform(const QByteArray& canonBytes) con
             QStringLiteral("photos"),
             QStringLiteral("languages"),
             QStringLiteral("externalIds"), QStringLiteral("memberships"),
-            QStringLiteral("interests"), QStringLiteral("skills")
+            QStringLiteral("interests"), QStringLiteral("skills"),
+            // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+            // representation by design — deliberately excluded from the
+            // clientData carrier below (matching MS To-Do's O74 precedent)
+            // rather than auto-carried as a stale clientData row.
+            QStringLiteral("providerExtrasDigest")
         };
         for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
             if (handled.contains(it.key()))
@@ -839,6 +861,11 @@ Kalburator::Shape::LossProfile canonToGooglePersonLoss()
         p.affected.insert(PropertyId{QString::fromLatin1(prop)},
                           LossKind::Reversible);
     }
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta, no
+    // Google Person wire form by design, and deliberately excluded from
+    // the clientData carrier loop (see the promote-side comment).
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")},
+                      LossKind::Dropped);
     return p;
 }
 

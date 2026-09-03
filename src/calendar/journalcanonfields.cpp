@@ -10,6 +10,7 @@
 #include <QTimeZone>
 
 using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 namespace {
 
@@ -161,6 +162,11 @@ QJsonObject journalFieldsToCanon(const KCalendarCore::Journal::Ptr& journal,
             QJsonObject extras;
             extras.insert(QStringLiteral("x-ical"), xical);
             obj.insert(providerExtrasKey(), extras);
+
+            // ---- providerExtrasDigest (IP.5/O80) --------------------------
+            // Same reasoning as eventcanonfields.cpp's identical stash: no
+            // filtering needed, genuine X-props only on this CalDAV leg.
+            stampProviderExtrasDigest(obj, xical);
         }
     }
     return obj;
@@ -342,6 +348,9 @@ Kalburator::Shape::LossProfile canonToVjournalLoss()
 
     p.affected.insert(PropertyId{QStringLiteral("recurrenceRange")}, LossKind::Degraded); // RANGE=THISANDFUTURE never re-emitted (W3-shaped safety rule)
     p.affected.insert(PropertyId{QStringLiteral("requestStatus")},   LossKind::Dropped);  // REQUEST-STATUS (upstream: no KCalendarCore accessor exists at all)
+    // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire form by
+    // design — same ruling as canonToIcalLoss()/canonToVtodoIcalLoss().
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")}, LossKind::Dropped);
 
     return p;
 }
@@ -378,6 +387,11 @@ QList<Kalburator::Shape::PropertyId> journalCanonContributedIds()
         PropertyId{QStringLiteral("relatedTo")},
         PropertyId{QStringLiteral("descriptionHtml")},
         PropertyId{QStringLiteral("attachments")},
+        // IP.5 addition: VJOURNAL's x-ical passthrough now stamps
+        // providerExtrasDigest too (O80) — see eventcanonfields.cpp's
+        // identical addition for the "was implicitly covered via the
+        // shared VTODO contributor" note.
+        PropertyId{QStringLiteral("providerExtrasDigest")},
     };
 }
 

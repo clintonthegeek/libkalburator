@@ -343,6 +343,41 @@ private slots:
     }
 
     // Committed live-capture fixture: every sanitized connection promotes.
+    // IP.5/O80 — the digest must be STABLE across a change confined purely
+    // to `@odata.etag`/`changeKey`/`lastModifiedDateTime` (derived from
+    // real captured /me/contacts samples — see the promote-side comment
+    // for the exact filenames), and must CHANGE when real (non-volatile)
+    // extras content changes (e.g. `initials`, which is not consumed by
+    // name and so lands in the same stash).
+    void providerExtrasDigestIgnoresVolatileMsBookkeeping()
+    {
+        MsContactToCanonStage stage;
+
+        auto makeContact = [](const QString& changeKey, const QString& initials) {
+            return QByteArray(
+                "{\"id\": \"contact-1\", \"changeKey\": \"").append(changeKey.toUtf8())
+                .append("\", \"@odata.etag\": \"W/\\\"").append(changeKey.toUtf8())
+                .append("\\\"\", \"lastModifiedDateTime\": \"2026-08-23T06:00:00Z\", "
+                        "\"displayName\": \"x\", \"initials\": \"")
+                .append(initials.toUtf8()).append("\"}");
+        };
+
+        const QJsonObject base = parse(stage.transform(
+            makeContact(QStringLiteral("one"), QStringLiteral("AB"))));
+        const QJsonObject onlyBookkeepingChanged = parse(stage.transform(
+            makeContact(QStringLiteral("two"), QStringLiteral("AB"))));
+        const QJsonObject realContentChanged = parse(stage.transform(
+            makeContact(QStringLiteral("one"), QStringLiteral("CD"))));
+
+        const QString baseDigest = base.value(QStringLiteral("providerExtrasDigest")).toString();
+        QVERIFY2(!baseDigest.isEmpty(), "digest must be present");
+        QCOMPARE(onlyBookkeepingChanged.value(QStringLiteral("providerExtrasDigest")).toString(),
+                 baseDigest);
+        QVERIFY2(realContentChanged.value(QStringLiteral("providerExtrasDigest")).toString()
+                     != baseDigest,
+                 "a real (non-volatile) extras content change must change the digest");
+    }
+
     void promoteCommittedLiveFixture()
     {
         QFile f(QLatin1String(KALBURATOR_VENDOR_FIXTURE_DIR)

@@ -18,6 +18,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 // KCalendarCore::Alarm::Type values used in the canon `alarms` encoding
 // (eventcanonfields.cpp stores the raw enum int).
@@ -532,6 +533,21 @@ QByteArray GoogleEventToCanonStage::transform(const QByteArray& googleBytes) con
         QJsonObject extras;
         extras.insert(QStringLiteral("google"), extrasGoogle);
         obj.insert(providerExtrasKey(), extras);
+
+        // ---- providerExtrasDigest (IP.5/O80) — FILTERED, excludes `etag` --
+        // Confirmed against real captured Calendar v3 event samples
+        // (google/captured/20260823-123137-048-…json,
+        // …-123354-634-…json — the SAME event id fetched twice 137s apart,
+        // no edit): `etag` was byte-identical both times in that pair, but
+        // the same rule applied to Google Tasks/People elsewhere in this
+        // codebase (see googletaskcanonstages.cpp, and O71-O73's
+        // `etag`-required-for-updateContact evidence) documents `etag` as
+        // Google's universal per-write optimistic-concurrency token across
+        // every resource type this library talks to — filtered defensively
+        // for the same reason as the other two legs, not because this
+        // narrow sample caught it churning. `id`/`htmlLink`/`kind`/
+        // `creator` stay hashed: stable identity/content.
+        stampProviderExtrasDigest(obj, extrasGoogle, { QStringLiteral("etag") });
     }
     stampEnvelope(obj, QStringLiteral("calendar"), uid);
     return serialize(obj);
@@ -956,7 +972,12 @@ QByteArray CanonToGoogleEventStage::transform(const QByteArray& canonBytes) cons
         };
         static const QSet<QString> dropped = {
             QStringLiteral("geo"), QStringLiteral("due"), QStringLiteral("completed"),
-            QStringLiteral("percentComplete"), QStringLiteral("relatedTo")
+            QStringLiteral("percentComplete"), QStringLiteral("relatedTo"),
+            // providerExtrasDigest (IP.5/O80): purely derived/meta, no wire
+            // representation by design — deliberately excluded from the
+            // generic x-canon-* carrier loop below (matching MS To-Do's O74
+            // precedent) rather than auto-carried as a stale extension row.
+            QStringLiteral("providerExtrasDigest")
         };
         for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
             if (handled.contains(it.key()) || dropped.contains(it.key()))
@@ -1041,6 +1062,12 @@ Kalburator::Shape::LossProfile canonToGoogleEventLoss()
     p.affected.insert(PropertyId{QStringLiteral("allowNewTimeProposals")},  LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("hideAttendees")},          LossKind::Reversible);
     p.affected.insert(PropertyId{QStringLiteral("typedProperties")},        LossKind::Reversible);
+
+    // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta, no
+    // wire form by design, and deliberately excluded from the x-canon-*
+    // carrier loop (see the promote-side comment) so it does not auto-carry
+    // as a stale, ever-changing extension row.
+    p.affected.insert(PropertyId{QStringLiteral("providerExtrasDigest")},   LossKind::Dropped);
 
     return p;
 }

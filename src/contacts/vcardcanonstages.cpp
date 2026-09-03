@@ -25,6 +25,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 /// Convert KContacts::PhoneNumber::Type flags to a human-readable string.
 /// We use the canonical vCard property names for portability.
@@ -454,6 +455,20 @@ QByteArray VCard4ToCanonStage::transform(const QByteArray& vcardBytes) const
             extras.insert(QStringLiteral("x-vcard"), xvcard);
             obj.insert(providerExtrasKey(), extras);
         }
+    }
+
+    // ---- providerExtrasDigest (IP.5/O80) ------------------------------------
+    // No filtering needed: the x-vcard stash (both the uid stash above and
+    // the custom/X- property block above it) is genuine client content —
+    // no vendor bookkeeping rides this local-file/CardDAV leg, same
+    // reasoning as the calendar domain's CalDAV legs. Read back the fully
+    // assembled sub-object (both contributing blocks above have already
+    // run) rather than re-deriving it, so nothing here can drift out of
+    // sync with what actually landed in providerExtras.
+    {
+        const QJsonObject xvcard = obj.value(providerExtrasKey()).toObject()
+                                       .value(QStringLiteral("x-vcard")).toObject();
+        stampProviderExtrasDigest(obj, xvcard);
     }
 
     // ---- Stamp the envelope last (writes _canon + uid) ---------------------

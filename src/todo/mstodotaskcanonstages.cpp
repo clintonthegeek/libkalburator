@@ -18,7 +18,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
-using Kalburator::Shape::CanonEnvelope::canonicalDigest;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 using Kalburator::Calendar::RecurrencePattern::patternedRecurrenceToRruleLines;
 using Kalburator::Calendar::RecurrencePattern::rruleLinesToPatternedRecurrence;
 
@@ -403,7 +403,9 @@ QByteArray MsTodoTaskToCanonStage::transform(const QByteArray& msBytes) const
         wrap.insert(QStringLiteral("msgraph"), extras);
         obj.insert(providerExtrasKey(), wrap);
 
-        // ---- providerExtrasDigest (O74) — FILTERED, excludes bookkeeping ---
+        // ---- providerExtrasDigest (O74; IP.5: retrofitted onto the shared
+        // CanonEnvelope::stampProviderExtrasDigest() helper) — FILTERED,
+        // excludes bookkeeping ---
         // Confirmed against a real captured /me/todo/…/tasks/{id} sample
         // (msgraph/captured/20260824-145017-773-…json): a genuine Graph
         // todoTask carries "@odata.etag", "createdDateTime", and
@@ -420,16 +422,12 @@ QByteArray MsTodoTaskToCanonStage::transform(const QByteArray& msBytes) const
         // real edit. `createdDateTime` is deliberately KEPT — it is set
         // once at creation and does not change on subsequent edits, so it
         // carries no false-dirty risk.
-        static const QSet<QString> kVolatileMsExtras = {
+        static const QStringList kVolatileMsExtras = {
             QStringLiteral("@odata.etag"),
             QStringLiteral("lastModifiedDateTime"),
             QStringLiteral("@odata.context"),
         };
-        QJsonObject filtered = extras;
-        for (const QString& k : kVolatileMsExtras)
-            filtered.remove(k);
-        if (!filtered.isEmpty())
-            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(filtered));
+        stampProviderExtrasDigest(obj, extras, kVolatileMsExtras);
     }
     stampEnvelope(obj, QStringLiteral("todo"), id);
     return serialize(obj);

@@ -16,7 +16,7 @@ using Kalburator::Shape::CanonEnvelope::providerExtrasKey;
 using Kalburator::Shape::CanonEnvelope::stampEnvelope;
 using Kalburator::Shape::CanonEnvelope::serialize;
 using Kalburator::Shape::CanonEnvelope::parse;
-using Kalburator::Shape::CanonEnvelope::canonicalDigest;
+using Kalburator::Shape::CanonEnvelope::stampProviderExtrasDigest;
 
 QString strValue(const QJsonObject& o, const QString& key)
 {
@@ -147,7 +147,9 @@ QByteArray GoogleTaskToCanonStage::transform(const QByteArray& googleBytes) cons
         wrap.insert(QStringLiteral("google"), extras);
         obj.insert(providerExtrasKey(), wrap);
 
-        // ---- providerExtrasDigest (O74) — FILTERED, excludes `etag` --------
+        // ---- providerExtrasDigest (O74; IP.5: retrofitted onto the shared
+        // CanonEnvelope::stampProviderExtrasDigest() helper) — FILTERED,
+        // excludes `etag` --------
         // `etag` bumps on every server-side write regardless of whether the
         // edit touched anything otherwise uncatalogued — hashing it
         // unfiltered would make this digest spuriously "always dirty" on
@@ -155,10 +157,7 @@ QByteArray GoogleTaskToCanonStage::transform(const QByteArray& googleBytes) cons
         // other stashed fields (kind/deleted/hidden/links/webViewLink/
         // selfLink/assignmentInfo) are real content or stable transport
         // metadata, not per-write bookkeeping, so they stay hashed.
-        QJsonObject filtered = extras;
-        filtered.remove(QStringLiteral("etag"));
-        if (!filtered.isEmpty())
-            obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(filtered));
+        stampProviderExtrasDigest(obj, extras, { QStringLiteral("etag") });
     }
     stampEnvelope(obj, QStringLiteral("todo"), id);
     return serialize(obj);

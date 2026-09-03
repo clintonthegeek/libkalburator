@@ -64,4 +64,14 @@ QString canonicalDigest(const QJsonValue& value)
         QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
 
+void stampProviderExtrasDigest(QJsonObject& obj, const QJsonObject& rawExtras,
+                               const QStringList& volatileKeys)
+{
+    QJsonObject filtered = rawExtras;
+    for (const QString& key : volatileKeys)
+        filtered.remove(key);
+    if (!filtered.isEmpty())
+        obj.insert(QStringLiteral("providerExtrasDigest"), canonicalDigest(filtered));
+}
+
 }  // namespace Kalburator::Shape::CanonEnvelope
