@@ -8,8 +8,11 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.5 DONE. O80 RESOLVED.** Full session
-log entry below; IP.7 is next.
+**Last updated:** 2026-09-02 — **IP.7 DONE. O81, O82 RESOLVED.** Full
+session log entry below; IP.11 is next.
+
+**Previously — 2026-09-02 — IP.5 DONE. O80 RESOLVED.** Full session
+log entry below.
 
 **Previously — 2026-09-02 — IP.4 DONE. O79, O85 RESOLVED.** Full
 session log entry below.
@@ -88,7 +91,7 @@ Earlier still the same day: pre-flight audit landed, six findings
 | 3 | **IP.10** | **VJOURNAL parity** — `RECURRENCE-ID` identity first, then `RRULE`/`EXDATE`, then the common fields from IP.6 | **O87** | **DONE 2026-09-02** — RECURRENCE-ID identity (VTODO's W1 shape, W3 safety fix included), RRULE/RDATE/EXDATE (verbatim-lines convention), organizer/attendees/attachments/comments/contacts, descriptionHtml (X-ALT-DESC, newly wired) and the phantom `classification` key all fixed. **RELATED-TO is the one exception** — wired identically but blocked upstream on the promote side only; new finding **O95**. New finding **O96** (a sibling declaration gap, logged not fixed). Receipt: `2026-09-02-ip10-return-receipt.md`. |
 | 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | **DONE 2026-09-02** — new `src/calendar/alarmshape.{h,cpp}` (W5's VTODO logic moved verbatim; new `describeAlarmRow()`); `eventcanonfields.cpp` and `vtodocanonfields.cpp` both point at it; `mseventcanonstages.cpp` demote fixed (route non-start-relative rows to carrier instead of misreading offset=0); `googlecanonstages.cpp` investigated independently — its absolute-alarm case was ALREADY correct (guard is strictly `< 0`), only its END-related case was broken, fixed the same way. O85: demote always `setEnabled(true)` (PLAN's recommended option; RFC 5545 has no disabled-alarm wire form, argued in the receipt). Loss profiles re-verified, **unchanged** (`alarms: Simplified` stays correct on both legs — the native-mapped alarm still drops text/repeat, independent of O79). Matrix byte-identical. Receipt: `2026-09-02-ip4-return-receipt.md`. |
 | 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | **DONE 2026-09-02** — new envelope-level helper takes the RAW pre-wrap extras object (a deliberate signature deviation from PLAN's literal proposal, argued in the receipt); wired at every calendar/contacts promote site plus the three todo sites retrofitted onto it; volatile-key lists derived from real captured payloads per vendor leg (MS event: `@odata.etag`+`changeKey`; Google event/person: `etag`; MS contact: `@odata.etag`+`changeKey`+`lastModifiedDateTime`; CalDAV/vcard legs: none). Catalogued (calendar via IP.3's contributor mechanism; contacts by hand — no contributor mechanism exists there, logged as a follow-up, not built). Loss profiles: `Dropped` on all 8 affected edges. New finding **O97** (org-ical's loss profile is stale/incomplete, pre-existing, not this item's to fix). Receipt: `2026-09-02-ip5-return-receipt.md`. |
-| 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | NOT STARTED — **IP.7b UNBLOCKED**: DTSTART-wins ratified, precise rule in Amendment §B.2. Contract doc first. |
+| 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | **DONE 2026-09-02** — IP.7a: demote unconditionally refuses to re-emit RANGE=THISANDFUTURE (VTODO's exact pattern), `recurrenceRange: Degraded` added to `canonToIcalLoss()`. IP.7b: DTSTART-wins coercion implemented per Amendment 2 §B.2, contract doc first. Detection mechanism probe-confirmed to mirror VTODO's exactly (no adaptation needed). New finding **O98** (VTODO's own rule (a) has a latent floating-zone bug, logged not fixed). Receipt: `2026-09-02-ip7-return-receipt.md`. |
 | 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
 | 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
 
@@ -1132,5 +1135,100 @@ produced this state; three copies drift faster than two.
 
   Receipt: `2026-09-02-ip5-return-receipt.md`.
 
-- **NEXT:** **IP.7** — VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/
-  DTEND coercion contract (b). Closes O81, O82.
+- **2026-09-02 — IP.7 DONE. O81, O82 RESOLVED.**
+
+  **IP.7a (O82):** `eventcanonfields.cpp`'s demote path unconditionally
+  re-emitted `RANGE=THISANDFUTURE` (`event->setThisAndFuture(range ==
+  "thisAndFuture")`) — write-hostile on real CalDAV servers. Now
+  `setThisAndFuture(false)` unconditionally, exactly mirroring VTODO's W3
+  safety rule (VP.e). Grepped for a stale VEVENT-side test asserting the
+  old behaviour before assuming none exists (VP.e's own precedent) — none
+  found; `kMaximalVeventException` in `tst_calendar_kind_dispatch.cpp` is
+  promote-only, never asserted anything about demoted `RANGE` output. New
+  slot `veventDemoteNeverEmitsThisAndFutureRange` added instead. New row
+  `recurrenceRange: Degraded` in `canonToIcalLoss()`. **O96 addendum**:
+  two of three kind-scoped calendar profiles now declare this row
+  (vevent, vjournal); `canonToVtodoIcalLoss()` remains the one gap, not
+  touched (different function, O96 stays open for it).
+
+  **IP.7b (O81):** Amendment 2 §B.2's ratified three-part rule
+  implemented in `eventcanonfields.cpp`'s promote path: DTSTART (the
+  mandatory anchor) wins; DTEND is coerced to DTSTART's value type, or
+  dropped entirely if the coerced DTEND is not after DTSTART; DURATION is
+  left alone. Contract doc written first:
+  `2026-09-02-ip7b-dtstart-dtend-coercion-contract.md`.
+
+  **Detection-mechanism probe: full parity with VTODO's W6.2 mechanism,
+  no adaptation needed.** `KCalendarCore::Event::dtStart()`/`dtEnd()`
+  come back as two independently-typed `QDateTime`s after a malformed
+  round-trip, each individually date-only-detectable via the established
+  heuristic; `allDay()` reflects only `DTEND`'s side (not fused), so it's
+  not used for detection — same conclusion as VTODO's `Todo`/`DUE`. Only
+  the coercion *polarity* differs (DTSTART wins here, not DTEND), plus one
+  deliberate deviation from VTODO's reference code: VTODO's rule (a)
+  constructs its target zone via `due.timeZone()` unconditionally, which
+  a probe showed silently returns the SYSTEM timezone for a floating
+  `due` rather than an invalid marker — `eventcanonfields.cpp` instead
+  branches on `start.timeSpec() == Qt::TimeZone` explicitly to avoid the
+  same latent bug. Filed as **new finding O98** (VTODO's file, not
+  fixed there).
+
+  **A second, load-bearing probe finding, caught by an existing
+  regression pin going red:** `KCalendarCore::Event::dtEnd()` (getter)
+  and `setDtEnd()`+serialize (writer) transparently implement RFC 5545
+  §3.6.1's DTEND-is-exclusive convention for an all-day range — the
+  getter returns the wire date MINUS one day, the writer adds it back on
+  serialize. Invisible for a native, uncoerced all-day pair (which is why
+  this was never noticed before), but this item's coercion crosses that
+  boundary in both directions and must compensate explicitly (two
+  `addDays()` calls) or the stored date silently drifts by a day. The
+  first implementation attempt (naive `end <= start` for the drop check)
+  made the PRE-EXISTING `veventAllDayRoundTripPreservesDateValueForm`
+  regression pin fail for real — a genuine (not staged) non-vacuity
+  signal, since a normal one-day all-day event's getter-space `end.date()
+  == start.date()` looks "degenerate" under naive `<=` but is actually
+  the correct representation of a valid event. Fixed: the drop
+  comparison is `end.date() < start.date()` (strict) once a date-only
+  value is involved. A related discovery: `Event::dtEnd()` appears to
+  internally clamp a genuinely malformed NATIVE all-day pair so the
+  getter reports `dtEnd()==dtStart()` rather than exposing a date before
+  DTSTART — the degenerate/drop branch is therefore reachable only
+  through this item's own coercion, never through native input; the test
+  (`veventDropsCoercedDateOnlyEndWhenWireDateNotAfterDtstart`) is built
+  accordingly. Full derivation: contract doc §3.5, receipt §3.3.
+
+  **New test coverage** (`tests/calendar/tst_calendar_canon_roundtrip.cpp`,
+  7 new slots + 1 extended): `veventDemoteNeverEmitsThisAndFutureRange`,
+  `veventCoercesDateTimeEndToDateOnlyType`,
+  `veventCoercesDateOnlyEndToDateTimeType`,
+  `veventDropsEndWhenCoercedEndNotAfterDtstart`,
+  `veventDropsCoercedDateOnlyEndWhenWireDateNotAfterDtstart`,
+  `veventPromoteLeavesDurationDerivedEndAlone`,
+  `veventAllDayRoundTripPreservesDateValueForm`;
+  `canonToIcalLossProfileChargesDroppedAndReversible` extended with a
+  `recurrenceRange: Degraded` assertion. `tst_incidence_rfc5545_fidelity.cpp`
+  checked and needs no edit — its `icalPropertyNames()` strips everything
+  from the first `;` before recording a property NAME, so
+  `RANGE=THISANDFUTURE` (a parameter, not a property) is structurally
+  invisible to that gate either way; confirmed by reading the mechanism,
+  not by assuming.
+
+  Matrix regenerated: exactly one `recurrenceRange | Degraded` row added
+  to the vevent section, confirmed by diff. `tst_gm_pipeline_convergence`
+  green including `committedMatrixMatchesGenerated`.
+
+  Full suite: **215 tests, 211 passed, 4 known-environmental failed**
+  (`tst_backend_signals`, `tst_backend_thread_relocation`,
+  `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — same as
+  baseline, verified by failure TEXT (local Radicale 412/409 class, per
+  IP.9's precedent) not name; none of the four touch anything this item
+  changed. `tst_calendar_canon_roundtrip` 28/28,
+  `tst_calendar_kind_dispatch` 22/22, `tst_incidence_rfc5545_fidelity`
+  13/13, `tst_gm_pipeline_convergence` 10/10, all independently
+  reconfirmed. Test executable count unchanged (215) — new slots landed
+  inside an existing binary, matching IP.3/IP.6/IP.9/IP.10's precedent.
+
+  Receipt: `2026-09-02-ip7-return-receipt.md`.
+
+- **NEXT:** **IP.11** — convergence proof for the two VTODO paths (§B.4,
+  rescoped). Closes O89.

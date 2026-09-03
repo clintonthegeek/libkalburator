@@ -200,13 +200,33 @@ comparison). Catalogued in both domains (calendar via IP.3's contributor
 mechanism; contacts by hand — no contributor mechanism exists there yet,
 logged as a follow-up). **O80 RESOLVED.** New finding **O97** (the
 `org-ical` edge's loss profile is stale/incomplete, pre-existing, not
-this item's to fix). **IP.7 is next**, then IP.11 → IP.12 (order lives
-in STATUS's table, not in the numbering).
+this item's to fix). **IP.7 DONE 2026-09-02** — IP.7a: VEVENT demote now
+unconditionally refuses to re-emit `RANGE=THISANDFUTURE`
+(`event->setThisAndFuture(false)`), mirroring VTODO's W3 pattern exactly;
+`recurrenceRange: Degraded` added to `canonToIcalLoss()`. IP.7b: DTSTART-
+wins malformed DTSTART/DTEND coercion implemented in
+`eventcanonfields.cpp`'s promote path per Amendment 2 §B.2's ratified
+rule; contract doc
+`docs/campaign/incidence-parity/2026-09-02-ip7b-dtstart-dtend-coercion-contract.md`.
+Detection-mechanism probe (`KCalendarCore::Event::dtStart()`/`dtEnd()`
+against a malformed source) confirmed to mirror VTODO's exactly — two
+independently-typed `QDateTime`s, each individually date-only-detectable,
+`allDay()` not fused (reflects only `DTEND`'s side) — no adaptation
+needed, only the coercion polarity differs. **O81, O82 RESOLVED.** New
+finding **O98** (VTODO's own W6.2 rule (a) has a latent bug: constructing
+a target zone via `due.timeZone()` unconditionally silently anchors a
+floating `DUE` to the executing machine's system zone, since
+`QDateTime::timeZone()` on a `Qt::LocalTime` datetime returns the system
+zone, not an invalid marker; VEVENT's own coercion avoids this by
+branching on `timeSpec()` explicitly; logged, not fixed on VTODO's side).
+**IP.11 is next**, then IP.12 (order lives in STATUS's table, not in the
+numbering).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (RESOLVED by IP.4 — VEVENT
 alarm trigger-form corruption, four call sites), O80 (RESOLVED by IP.5 —
-providerExtrasDigest absent on calendar/contacts), O81 (W6.2 twin), O82
-(RANGE=THISANDFUTURE twin), O83
+providerExtrasDigest absent on calendar/contacts), O81 (RESOLVED by IP.7b
+— VEVENT malformed DTSTART/DTEND coercion, DTSTART-wins), O82 (RESOLVED
+by IP.7a — VEVENT RANGE=THISANDFUTURE non-re-emission), O83
 (RESOLVED by IP.6 — undeclared VTODO drops), O84 (RESOLVED by IP.3 —
 merger erases the incidence kind), O85 (RESOLVED by IP.4 — every alarm
 round-tripped back DISABLED, all four sites; demote now always
@@ -232,7 +252,10 @@ logged not fixed), O97 (new — the `org-ical` edge's own loss profile,
 `canonToOrgIcalLoss()`, is stale/incomplete: it demotes through the
 identical `{calendar,canon}→{calendar,ical}` code but declares only
 `recurrence: Simplified`, pre-existing since it was introduced, logged
-not fixed).
+not fixed), O98 (new — VTODO's W6.2 rule (a) silently anchors a floating
+`DUE` to the executing machine's system timezone via an unconditional
+`due.timeZone()` call whose `!isValid()` fallback is dead code for this
+input shape; low blast radius, logged not fixed).
 
 **Three prohibitions, binding:** never "fix while passing through" (log to
 FINDINGS, let the owning item take it); never hand-maintain a key list —

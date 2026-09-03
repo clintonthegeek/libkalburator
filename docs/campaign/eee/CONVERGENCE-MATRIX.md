@@ -75,6 +75,7 @@ reads through listings/delta/$expand.
 | onlineMeeting | Dropped |
 | privateCopy | Reversible |
 | providerExtrasDigest | Dropped |
+| recurrenceRange | Degraded |
 | requestStatus | Dropped |
 | resources | Dropped |
 | responseRequested | Reversible |

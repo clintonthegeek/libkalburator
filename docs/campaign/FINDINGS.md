@@ -3513,7 +3513,16 @@ transfer).
 
 Owned by incidence-parity **IP.5**.
 
-### O81 — OPEN — incidence-parity recon, 2026-08-29: VEVENT promote has no malformed DTSTART/DTEND coercion (the W6.2 twin)
+### O81 — RESOLVED by IP.7b (2026-09-02) — incidence-parity recon, 2026-08-29: VEVENT promote has no malformed DTSTART/DTEND coercion (the W6.2 twin)
+
+**Resolution:** `eventcanonfields.cpp`'s promote path now reconciles a
+DATE-vs-DATE-TIME `DTSTART`/`DTEND` mismatch per Amendment 2 §B.2's
+ratified rule — DTSTART-wins (the mandatory anchor), DTEND coerced to
+match, dropped entirely if the coerced value is `<= DTSTART`. Contract:
+`docs/campaign/incidence-parity/2026-09-02-ip7b-dtstart-dtend-coercion-contract.md`.
+Detection mechanism probe-confirmed to mirror VTODO's exactly (independent
+per-property `isDateOnly` heuristic, `allDay()` not used) — see the IP.7
+return receipt. Original text below, unedited, for the historical record.
 
 `src/calendar/eventcanonfields.cpp` contains no DATE-vs-DATE-TIME
 reconciliation — zero hits for `coerc`/`malformed`, against rules (a)/(b)
@@ -3533,7 +3542,13 @@ before implementing.
 
 Owned by incidence-parity **IP.7b**.
 
-### O82 — OPEN — incidence-parity recon, 2026-08-29: VEVENT demote still unconditionally re-emits RANGE=THISANDFUTURE (the W3 twin)
+### O82 — RESOLVED by IP.7a (2026-09-02) — incidence-parity recon, 2026-08-29: VEVENT demote still unconditionally re-emits RANGE=THISANDFUTURE (the W3 twin)
+
+**Resolution:** `eventcanonfields.cpp`'s demote path now calls
+`event->setThisAndFuture(false)` unconditionally, mirroring VTODO's W3
+safety rule exactly. `recurrenceRange` moved to a `Degraded` loss row in
+`canonToIcalLoss()`. Original text below, unedited, for the historical
+record.
 
 `src/calendar/eventcanonfields.cpp:594-596` executes
 `event->setThisAndFuture(range == QStringLiteral("thisAndFuture"))`
@@ -4351,6 +4366,14 @@ function — logged rather than fixed here per PLAN.md §1 (IP.10 was not
 touching `icalcanonstages.cpp`'s VTODO profile for any other reason, and
 fixing it "while passing through" is exactly what that rule prohibits).
 
+**Partially addressed by IP.7a (2026-09-02):** VEVENT's own `canonToIcalLoss()`
+now declares `recurrenceRange: Degraded` too — O82 (the "not yet a safe
+degradation at all" reason above) is resolved, so two of the three
+kind-scoped profiles (vevent, vjournal) now declare it. `canonToVtodoIcalLoss()`
+is the ONE remaining gap; IP.7 did not touch it (not its file, per the
+same "fix while passing through" prohibition) — still **not owned by any
+item yet.**
+
 ### O97 — OPEN — incidence-parity IP.5, 2026-09-02: `canonToOrgIcalLoss()` is stale/incomplete — the `{calendar,canon}→{calendar,org-ical}` edge shares `{calendar,canon}→{calendar,ical}`'s actual wire behaviour but declares almost none of its loss
 
 Found while adding `providerExtrasDigest: Dropped` to every calendar-domain
@@ -4394,3 +4417,57 @@ asserts org-ical's loss profile is complete (`tst_orgical_canon_roundtrip.cpp`
 does not exercise `inspect()` on this edge), so this is a silent
 under-report, not a wrong answer a test currently relies on. **Not owned
 by any item yet.**
+
+### O98 — OPEN — incidence-parity IP.7, 2026-09-02: `QDateTime::timeZone()` on a floating (`Qt::LocalTime`) datetime returns the SYSTEM timezone, not a floating/invalid marker — VTODO's W6.2 rule (a) silently anchors a floating `DUE` to whichever machine runs the code
+
+Found while implementing IP.7b's DTSTART/DTEND coercion (O81) and
+independently probe-verifying the detection mechanism per the item's own
+work order. `vtodocanonfields.cpp`'s W6.2 rule (a), the "START is
+DATE-only, DUE is DATE-TIME" branch, constructs the promoted `start` value
+as:
+
+```cpp
+QTimeZone tz = due.timeZone();
+if (!tz.isValid())
+    tz = QTimeZone::utc();
+start = QDateTime(start.date(), QTime(0, 0), tz);
+```
+
+This reads as though a floating `due` (`Qt::LocalTime` timeSpec, this
+codebase's convention for "no zone") would make `tz.isValid()` false and
+fall back to UTC. It does not. Probe-confirmed (throwaway program, Qt
+6.11.1, no libkalburator involved):
+
+```
+floating.timeSpec=0
+floating.timeZone().isValid()=1 id=America/Toronto
+```
+
+`QDateTime::timeZone()` on a `Qt::LocalTime`-spec datetime returns
+`QTimeZone::systemTimeZone()` — always valid, never the codebase's
+"floating" marker. So when `due` is itself floating and DATE-TIME (has a
+non-midnight time, so `isDateOnly` is false, but its timeSpec is
+`Qt::LocalTime`), rule (a)'s DATE-only→DATE-TIME promotion of `start`
+silently anchors the result to the **executing machine's system timezone**
+— non-deterministic across machines, and not the "stay floating" behaviour
+a reader of the `!tz.isValid()` guard would expect. The guard's fallback
+branch is dead code for this input shape; it only fires when `due` itself
+somehow carries an actually-invalid `QTimeZone`, which does not arise from
+normal ICalFormat parsing.
+
+**Why this is filed, not fixed here:** it is VTODO's existing, already-
+shipped code (`vtodocanonfields.cpp`, W6.2/VP.f, closed campaign), not
+IP.7's file. IP.7b implements the same coercion mechanism for VEVENT's
+DTSTART/DTEND (opposite polarity, Amendment 2 §B.2) and deliberately does
+**not** reproduce this pattern: `eventcanonfields.cpp`'s equivalent branch
+checks `start.timeSpec() == Qt::TimeZone` explicitly before calling
+`.timeZone()`, falling back to an explicit `Qt::LocalTime` (floating)
+construction otherwise, so a floating `DTSTART` correctly keeps a coerced
+`DTEND` floating rather than picking up the host machine's zone. See the
+IP.7 return receipt for the full probe transcript.
+
+**Blast radius:** narrow but real — a VTODO with a floating (no explicit
+`TZID`, no trailing `Z`) `DUE` carrying a real time-of-day, paired with a
+DATE-only `DTSTART`, promotes today to a machine-dependent `start` value.
+Not exercised by any existing pinned test (VP.f's coercion fixtures all
+use explicit UTC `DUE` values). **Not owned by any item yet.**

@@ -168,23 +168,131 @@ QJsonObject eventFieldsToCanon(const KCalendarCore::Event::Ptr& event,
             obj.insert(QStringLiteral("freeBusyStatus"), fbs);
     }
 
-    // ---- start / end -------------------------------------------------------
+    // ---- start / end (IP.7b — malformed DTSTART/DTEND coercion, O81) -------
+    // Probe-confirmed (2026-09-02, KCalendarCore::Event, mirrors the
+    // vtodocanonfields.cpp W6.2 probe result for Todo): dtStart()/dtEnd()
+    // come back as two independently-typed QDateTimes after a malformed
+    // source round-trips through ICalFormat's parser, each individually
+    // detectable as date-only via the same heuristic
+    // (dt.time()==QTime(0,0) && dt.timeSpec()==Qt::LocalTime).
+    // event->allDay() reflects only ONE side's date-only-ness (empirically,
+    // DTEND's — see the probe transcript in the IP.7 return receipt), not a
+    // fused view of both, so it is NOT used for mismatch detection here —
+    // same mechanism as VTODO's, applied with OPPOSITE polarity: Amendment 2
+    // §B.2 (ratified by PlanStan 2026-09-02) makes DTSTART — the mandatory
+    // temporal anchor — win, coercing the optional, derived DTEND to match,
+    // rather than the reverse.
     {
-        const QDateTime start = event->dtStart();
-        const bool allDay     = event->allDay();
-        if (start.isValid()) {
-            const QJsonObject startObj = dateTimeToJson(start, allDay);
-            if (!startObj.isEmpty()) {
-                obj.insert(QStringLiteral("start"),  startObj);
-                obj.insert(QStringLiteral("allDay"), allDay);
+        QDateTime start = event->dtStart();
+        QDateTime end   = event->dtEnd();
+
+        const auto isDateOnly = [](const QDateTime &dt) {
+            return dt.time() == QTime(0, 0) && dt.timeSpec() == Qt::LocalTime;
+        };
+
+        // KCalendarCore quirk (probe-confirmed, IP.7 return receipt §3):
+        // for an all-day DTEND (wire VALUE=DATE), Event::dtEnd() does NOT
+        // return the literal wire date — RFC 5545's DTEND is EXCLUSIVE for
+        // a DATE range, and the getter returns the INCLUSIVE last day
+        // (wire date minus one), while setDtEnd()+serialize apply the
+        // exact inverse (+1 day) on write. This getter/setter pair is
+        // symmetric and transparent as long as a date-only value is
+        // always passed through unmodified between the two — canon's
+        // "end" date field therefore stores THIS inclusive/getter-space
+        // value (matching how a native, uncoerced all-day pair has always
+        // round-tripped through this code), and the two `addDays()` calls
+        // below exist ONLY to keep a coerced value in that same space when
+        // this item's coercion crosses the DATE/DATE-TIME boundary.
+        const bool startDateOnly = start.isValid() && isDateOnly(start);
+        const bool endDateOnlyOriginally = end.isValid() && isDateOnly(end);
+
+        // Rule 1: coerce DTEND to DTSTART's value type. Never the reverse.
+        if (start.isValid() && end.isValid()) {
+            if (startDateOnly != endDateOnlyOriginally) {
+                if (startDateOnly) {
+                    // DTSTART DATE + DTEND DATE-TIME ⇒ take DTEND's date
+                    // part. The raw dtEnd() here is NOT getter-adjusted
+                    // (the original wire DTEND was DATE-TIME, never
+                    // subject to the all-day inclusive/exclusive
+                    // convention), so end.date() IS the true wire date the
+                    // author wrote. Store it one day EARLY (getter/canon
+                    // space) so demote's automatic +1-day re-serialization
+                    // reproduces that same true date on the wire.
+                    end = QDateTime(end.date().addDays(-1), QTime(0, 0), Qt::LocalTime);
+                } else {
+                    // DTSTART DATE-TIME + DTEND DATE ⇒ DTEND at 00:00 in
+                    // DTSTART's timezone (house rule O60: construct the wall
+                    // time directly IN the target zone, never build
+                    // elsewhere and convert). The raw dtEnd() here IS
+                    // getter-adjusted (original wire DTEND was DATE, one
+                    // day less than the true wire value per the quirk
+                    // above) — add the day back first to reconstruct the
+                    // true calendar date before constructing the 00:00
+                    // moment on it. Branches explicitly on DTSTART's own
+                    // timeSpec rather than calling start.timeZone()
+                    // unconditionally the way vtodocanonfields.cpp's rule
+                    // (a) does for its DUE-wins case: QDateTime::timeZone()
+                    // on a floating (Qt::LocalTime) datetime returns the
+                    // SYSTEM timezone, not an invalid/floating marker
+                    // (probe-confirmed), so a blind call would silently
+                    // anchor a floating DTSTART to whichever machine runs
+                    // the code — filed as FINDINGS O98 (VTODO's rule (a)
+                    // shares this latent bug; out of this item's scope to
+                    // fix there).
+                    const QDate trueEndDate = end.date().addDays(1);
+                    if (start.timeSpec() == Qt::TimeZone)
+                        end = QDateTime(trueEndDate, QTime(0, 0), start.timeZone());
+                    else
+                        end = QDateTime(trueEndDate, QTime(0, 0), Qt::LocalTime);
+                }
             }
         }
-    }
-    {
-        const QDateTime end = event->dtEnd();
-        const bool allDay   = event->allDay();
-        if (end.isValid()) {
-            const QJsonObject endObj = dateTimeToJson(end, allDay);
+
+        // Rule 2: coerced DTEND <= DTSTART ⇒ drop DTEND entirely and let
+        // RFC 5545 §3.6.1's default stand (Amendment 2 §B.2: a non-
+        // conforming pair has no valid value to clamp to, and the absent-
+        // DTEND default is already defined — dropping falls back to a
+        // defined behaviour, clamping would invent a bound the author
+        // never wrote).
+        //
+        // For a DATE-only end (native, or Rule 1's bullet-1 coercion, both
+        // now consistently in getter/canon space per the comment above),
+        // `end.date() < start.date()` is the correctly-shifted equivalent
+        // of "true wire DTEND <= DTSTART" — algebraically, (trueEnd - 1) <
+        // start  ⇔  trueEnd <= start (see the IP.7 return receipt for the
+        // derivation). Critically this means an EQUAL date-only pair
+        // (end.date() == start.date()) is NOT dropped: that is the
+        // getter-space representation of a perfectly valid one-day all-day
+        // event, confirmed by direct probe of setDtEnd()+serialize.
+        // For a DATE-TIME end (both sides timed, no coercion), no
+        // inclusive/exclusive concept applies — compare directly.
+        bool dropEnd = false;
+        if (start.isValid() && end.isValid()) {
+            if (isDateOnly(end))
+                dropEnd = end.date() < start.date();
+            else
+                dropEnd = end <= start;
+        }
+
+        // Rule 3: DURATION present instead of DTEND ⇒ nothing to coerce,
+        // leave it. Probe-confirmed (2026-09-02): unlike Todo (no DURATION
+        // accessor at all), KCalendarCore::Event exposes hasDuration(), and
+        // a DURATION-derived dtEnd() is already type-consistent with
+        // dtStart() by construction (DTSTART DATE + DURATION in
+        // day/week units ⇒ dtEnd() date-only; DTSTART DATE-TIME + DURATION
+        // in any unit ⇒ dtEnd() timed) — so this rule needs no dedicated
+        // code, the same zero-code-no-op shape as VTODO's rule (c).
+
+        if (start.isValid()) {
+            const QJsonObject startObj = dateTimeToJson(start, startDateOnly);
+            if (!startObj.isEmpty()) {
+                obj.insert(QStringLiteral("start"),  startObj);
+                obj.insert(QStringLiteral("allDay"), startDateOnly);
+            }
+        }
+        if (end.isValid() && !dropEnd) {
+            const bool endAllDay = isDateOnly(end);
+            const QJsonObject endObj = dateTimeToJson(end, endAllDay);
             if (!endObj.isEmpty())
                 obj.insert(QStringLiteral("end"), endObj);
         }
@@ -396,7 +504,16 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
     // Store for post-serialization injection (same approach as vtodo stages).
     const QJsonArray recurrenceArr = obj.value(QStringLiteral("recurrence")).toArray();
 
-    // ---- recurrenceId / recurrenceRange ------------------------------------
+    // ---- recurrenceId / recurrenceRange (IP.7a — O82) -----------------------
+    // Mirrors vtodocanonfields.cpp's W3 safety rule (VP.e), applied to the
+    // event side: RANGE=THISANDFUTURE is NEVER re-emitted on write,
+    // unconditionally, regardless of what canon's `recurrenceRange` carries.
+    // Re-emitting RANGE=THISANDFUTURE is write-hostile on real CalDAV
+    // servers; `recurrenceRange` in canon is therefore purely a READ-SIDE
+    // fact (an already-existing foreign producer's write, captured
+    // losslessly by promote above), a hard safety backstop independent of
+    // any split mechanism. The bare exception identity (RECURRENCE-ID with
+    // no RANGE) is unaffected and still fully Reversible.
     {
         const QJsonObject recIdObj = obj.value(QStringLiteral("recurrenceId")).toObject();
         if (!recIdObj.isEmpty()) {
@@ -404,9 +521,8 @@ QByteArray canonObjectToEventBytes(const QJsonObject& obj)
             if (!dtStr.isEmpty()) {
                 const QDateTime dt = QDateTime::fromString(dtStr, Qt::ISODate);
                 if (dt.isValid()) {
-                    const QString range = obj.value(QStringLiteral("recurrenceRange")).toString();
                     event->setRecurrenceId(dt);
-                    event->setThisAndFuture(range == QStringLiteral("thisAndFuture"));
+                    event->setThisAndFuture(false);
                 }
             }
         }

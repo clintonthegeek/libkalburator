@@ -370,6 +370,12 @@ private slots:
                  LossKind::Dropped);
         QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("resources")}),
                  LossKind::Dropped);
+
+        // IP.7a / O82: recurrenceRange is now a Degraded row — demote
+        // unconditionally refuses to re-emit RANGE=THISANDFUTURE. The bare
+        // recurrenceId identity is unaffected and needs no row of its own.
+        QCOMPARE(loss.affected.value(PropertyId{QStringLiteral("recurrenceRange")}),
+                 LossKind::Degraded);
     }
 
     // IP.6 commit 2 (Amendment 1 §A.3.2 + O91) — VEVENT gains RELATED-TO,
@@ -857,6 +863,309 @@ private slots:
                  "fixture must exercise the x-ical passthrough");
         QVERIFY2(!obj.value(QStringLiteral("providerExtrasDigest")).toString().isEmpty(),
                  "VJOURNAL promote must stamp providerExtrasDigest when extras are present");
+    }
+
+    // -----------------------------------------------------------------
+    // IP.7a — RANGE=THISANDFUTURE non-re-emission (O82, the VEVENT twin of
+    // VTODO's W3 safety rule / VP.e's vtodoDemoteNeverEmitsThisAndFutureRange,
+    // VJOURNAL's own twin at IP.10 —
+    // tst_calendar_kind_dispatch.cpp::vjournalDemoteNeverEmitsThisAndFutureRange).
+    // -----------------------------------------------------------------
+    void veventDemoteNeverEmitsThisAndFutureRange()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:range-uid\r\n"
+            "RECURRENCE-ID;RANGE=THISANDFUTURE:20260602T090000Z\r\n"
+            "SUMMARY:Moved and all future\r\n"
+            "DTSTART:20260608T090000Z\r\n"
+            "DTEND:20260608T100000Z\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        // Promote losslessly captures the incoming RANGE=THISANDFUTURE.
+        QCOMPARE(obj.value(QStringLiteral("recurrenceRange")).toString(),
+                 QStringLiteral("thisAndFuture"));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(!output.contains("RANGE=THISANDFUTURE"),
+                 qPrintable(QStringLiteral(
+                     "demoted bytes must NEVER carry RANGE=THISANDFUTURE "
+                     "(O82, write-hostile on real servers):\n")
+                     + QString::fromUtf8(output)));
+
+        const auto outEvent = parseEvent(output);
+        QVERIFY(outEvent);
+        QVERIFY2(!outEvent->thisAndFuture(),
+                 "thisAndFuture() must be false on the demoted event");
+        // Bare exception identity is unaffected.
+        QVERIFY2(output.contains("RECURRENCE-ID"),
+                 "the exception identity itself must still round-trip");
+    }
+
+    // -----------------------------------------------------------------
+    // IP.7b — malformed DTSTART/DTEND coercion (O81). DTSTART-wins per
+    // Amendment 2 §B.2 (ratified by PlanStan 2026-09-02): "the mandatory
+    // temporal anchor wins; the optional derived bound is coerced to match
+    // it" — opposite polarity from VTODO's W6.2 DUE-wins rule, same
+    // underlying principle. Mirrors
+    // tests/todo/tst_todo_canon_roundtrip.cpp's W6.2 slots
+    // (vtodoCoercesDateOnlyStartToDueDateTimeType /
+    // vtodoCoercesDateTimeStartToDueDateOnlyType /
+    // vtodoDropsStartWhenDueNotAfterDtstart /
+    // vtodoPromoteDropsDurationWithoutDtstart).
+    // -----------------------------------------------------------------
+
+    // Rule 1, bullet 1: DTSTART DATE + DTEND DATE-TIME ⇒ DTEND coerced DOWN
+    // to DATE-only, taking DTEND's own date part (NOT clamped to DTSTART's
+    // date). Canon's stored "end" date is one day EARLY relative to the
+    // true wire date (getter/canon-space — see the eventcanonfields.cpp
+    // comment and the IP.7 return receipt §3): demote's automatic +1-day
+    // all-day re-serialization is what reconstructs the true date, so the
+    // round-trip assertion below (not just the intermediate canon value)
+    // is the one that actually pins the contract.
+    void veventCoercesDateTimeEndToDateOnlyType()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:coerce-vevent-a-1\r\n"
+            "SUMMARY:Mismatched a\r\n"
+            "DTSTART;VALUE=DATE:20260601\r\n"
+            "DTEND:20260602T170000Z\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        QVERIFY(startObj.contains(QStringLiteral("date")));
+        QCOMPARE(startObj.value(QStringLiteral("date")).toString(),
+                 QStringLiteral("2026-06-01"));
+        QCOMPARE(obj.value(QStringLiteral("allDay")).toBool(), true);
+
+        const QJsonObject endObj = obj.value(QStringLiteral("end")).toObject();
+        QVERIFY2(endObj.contains(QStringLiteral("date")),
+                 "end must be coerced away from DATE-TIME to match DTSTART's DATE-only type");
+        // Getter/canon-space value (true wire date 2026-06-02, minus one
+        // day to compensate for demote's automatic all-day +1).
+        QCOMPARE(endObj.value(QStringLiteral("date")).toString(),
+                 QStringLiteral("2026-06-01"));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("DTEND;VALUE=DATE:20260602"),
+                 qPrintable(QStringLiteral(
+                     "coerced DTEND must demote to DTEND's own true date part "
+                     "(2026-06-02), not DTSTART's date:\n")
+                     + QString::fromUtf8(output)));
+    }
+
+    // Rule 1, bullet 2: DTSTART DATE-TIME + DTEND DATE ⇒ DTEND coerced UP to
+    // DATE-TIME at 00:00 IN DTSTART's timezone (house rule O60). The raw
+    // dtEnd() KCalendarCore hands promote here is ALREADY one day short of
+    // the literal wire date (the same all-day getter quirk as above) — the
+    // implementation adds the day back before constructing the 00:00
+    // moment, so 2026-06-02 (the literal wire DTEND date) is what should
+    // come out, not 2026-06-01.
+    void veventCoercesDateOnlyEndToDateTimeType()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:coerce-vevent-a-2\r\n"
+            "SUMMARY:Mismatched a reverse\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DTEND;VALUE=DATE:20260602\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        QVERIFY2(!startObj.contains(QStringLiteral("date")),
+                 "start must stay DATE-TIME — DTSTART is the anchor, never coerced");
+        QCOMPARE(startObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-01T09:00:00Z"));
+        QCOMPARE(obj.value(QStringLiteral("allDay")).toBool(), false);
+
+        const QJsonObject endObj = obj.value(QStringLiteral("end")).toObject();
+        QVERIFY2(!endObj.contains(QStringLiteral("date")),
+                 "end must be coerced UP to DATE-TIME to match DTSTART's type");
+        QCOMPARE(endObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-02T00:00:00Z"));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("DTEND:20260602T000000Z"),
+                 qPrintable(QStringLiteral("expected DTEND:20260602T000000Z in output:\n")
+                     + QString::fromUtf8(output)));
+    }
+
+    // Rule 2: a coerced (or already-matching-type) DTEND <= DTSTART ⇒ DTEND
+    // is dropped from canon entirely — RFC 5545 §3.6.1's default stands,
+    // rather than clamping to an invented bound. DATE-TIME pair (no
+    // inclusive/exclusive all-day concept involved).
+    void veventDropsEndWhenCoercedEndNotAfterDtstart()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:coerce-vevent-b-1\r\n"
+            "SUMMARY:Backwards dates\r\n"
+            "DTSTART:20260605T090000Z\r\n"
+            "DTEND:20260601T090000Z\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        QVERIFY(obj.contains(QStringLiteral("start")));
+        QVERIFY2(!obj.contains(QStringLiteral("end")),
+                 "DTEND <= DTSTART must drop end from canon entirely");
+    }
+
+    // Rule 2, coerced-to-date-only variant: bullet 1's coercion (DTSTART
+    // DATE + DTEND DATE-TIME) can itself produce a degenerate date-only
+    // pair when DTEND's date part falls on or before DTSTART's date —
+    // pins that the inclusive/exclusive getter-space comparison (see the
+    // eventcanonfields.cpp comment) correctly identifies THIS case as
+    // degenerate, in contrast to veventAllDayRoundTripPreservesDateValueForm
+    // below (a native, uncoerced one-day event, where end.date()==
+    // start.date() in getter space and must NOT be dropped).
+    //
+    // A genuinely backwards NATIVE all-day pair (both sides already
+    // DATE-only on the wire, DTEND's date <= DTSTART's) is not
+    // separately pinned here: probed directly (IP.7 return receipt §3)
+    // and found that KCalendarCore::Event::dtEnd() itself silently clamps
+    // such a malformed pair so the getter reports end.date()==start.date()
+    // — i.e. the library never even hands promote a value from which a
+    // "before start" date-only end could be constructed natively. The
+    // coercion path below is the only route through which this promote
+    // code can ever see one.
+    void veventDropsCoercedDateOnlyEndWhenWireDateNotAfterDtstart()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:coerce-vevent-b-2\r\n"
+            "SUMMARY:Backwards after coercion\r\n"
+            "DTSTART;VALUE=DATE:20260605\r\n"
+            "DTEND:20260601T170000Z\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        QVERIFY(obj.contains(QStringLiteral("start")));
+        QVERIFY2(!obj.contains(QStringLiteral("end")),
+                 "DTEND's date part on/before DTSTART's date must drop end "
+                 "from canon entirely, even after bullet-1's coercion");
+    }
+
+    // Rule 3: DURATION present instead of DTEND ⇒ nothing to coerce, leave
+    // it. KCalendarCore::Event resolves DURATION into a computed dtEnd()
+    // that is already type-consistent with dtStart() (probe-confirmed,
+    // IP.7 return receipt) — this pins that already-correct behaviour, the
+    // zero-code-no-op shape mirroring VTODO's rule (c) pin.
+    void veventPromoteLeavesDurationDerivedEndAlone()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:coerce-vevent-c-1\r\n"
+            "SUMMARY:Duration only\r\n"
+            "DTSTART:20260601T090000Z\r\n"
+            "DURATION:PT1H\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+
+        const QJsonObject startObj = obj.value(QStringLiteral("start")).toObject();
+        QCOMPARE(startObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-01T09:00:00Z"));
+        const QJsonObject endObj = obj.value(QStringLiteral("end")).toObject();
+        QVERIFY2(!endObj.isEmpty(),
+                 "DURATION-derived dtEnd() is valid and already type-consistent — no drop");
+        QCOMPARE(endObj.value(QStringLiteral("dateTime")).toString(),
+                 QStringLiteral("2026-06-01T10:00:00Z"));
+    }
+
+    // Bonus regression pin (mirrors VTODO's vtodoAllDayRoundTripPreservesDateValueForm):
+    // a well-formed all-day DTSTART/DTEND (both DATE, no mismatch to coerce)
+    // round-trips through BOTH promote AND demote as a real VALUE=DATE, not
+    // a UTC-midnight DATE-TIME — confirming IP.7b's per-property isDateOnly
+    // detection didn't regress the already-correct well-formed case.
+    void veventAllDayRoundTripPreservesDateValueForm()
+    {
+        const QByteArray ical =
+            "BEGIN:VCALENDAR\r\n"
+            "VERSION:2.0\r\n"
+            "PRODID:-//Test//Test//EN\r\n"
+            "BEGIN:VEVENT\r\n"
+            "UID:allday-vevent-roundtrip-1\r\n"
+            "SUMMARY:All day event\r\n"
+            "DTSTART;VALUE=DATE:20260601\r\n"
+            "DTEND;VALUE=DATE:20260602\r\n"
+            "END:VEVENT\r\n"
+            "END:VCALENDAR\r\n";
+
+        ICalToCanonStage fwd;
+        CanonToICalStage rev;
+
+        const QByteArray canon = fwd.transform(ical);
+        QVERIFY2(!canon.isEmpty(), "forward stage returned empty");
+        const QJsonObject obj = parse(canon);
+        QVERIFY(obj.value(QStringLiteral("start")).toObject().contains(QStringLiteral("date")));
+        QVERIFY(obj.value(QStringLiteral("end")).toObject().contains(QStringLiteral("date")));
+
+        const QByteArray output = rev.transform(canon);
+        QVERIFY2(!output.isEmpty(), "reverse stage returned empty");
+        QVERIFY2(output.contains("DTSTART;VALUE=DATE:20260601"),
+                 qPrintable(QStringLiteral("expected DTSTART;VALUE=DATE:20260601 in output:\n")
+                     + QString::fromUtf8(output)));
+        QVERIFY2(output.contains("DTEND;VALUE=DATE:20260602"),
+                 qPrintable(QStringLiteral("expected DTEND;VALUE=DATE:20260602 in output:\n")
+                     + QString::fromUtf8(output)));
     }
 };
 

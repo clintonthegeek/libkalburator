@@ -154,6 +154,15 @@ Kalburator::Shape::LossProfile canonToIcalLoss()
                             {QStringLiteral("public"), QStringLiteral("private"),
                              QStringLiteral("confidential")});
 
+    // Degraded (IP.7a / O82): the demote seam UNCONDITIONALLY refuses to
+    // re-emit RANGE=THISANDFUTURE (write-hostile on real servers; see
+    // eventcanonfields.cpp's recurrenceId/recurrenceRange demote block) —
+    // mirrors vtodocanonstages.cpp's identical W3 safety-rule declaration
+    // and journalcanonfields.cpp's canonToVjournalLoss() (IP.10). The bare
+    // recurrenceId exception identity is unaffected and needs no profile
+    // row of its own (round-trips losslessly).
+    p.affected.insert(PropertyId{QStringLiteral("recurrenceRange")},  LossKind::Degraded);
+
     // Dropped (IP.5/O80): providerExtrasDigest is purely derived/meta — it
     // has no iCal representation on any leg by design (recomputed fresh
     // from the real extras content on the next promote of whatever gets
