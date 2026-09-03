@@ -219,8 +219,26 @@ floating `DUE` to the executing machine's system zone, since
 `QDateTime::timeZone()` on a `Qt::LocalTime` datetime returns the system
 zone, not an invalid marker; VEVENT's own coercion avoids this by
 branching on `timeSpec()` explicitly; logged, not fixed on VTODO's side).
-**IP.11 is next**, then IP.12 (order lives in STATUS's table, not in the
-numbering).
+**IP.11 DONE 2026-09-03** — Amendment 2 §B.4 rescoped it from "choose a
+route" to "prove convergence and make the fallback loud" (PlanStan
+ratified (a) — converge — on 2026-09-02). New crossing gate
+`tests/calendar/tst_vtodo_domain_convergence.cpp`: a maximal RFC 5545
+VTODO promoted through `{calendar,canon}` and through `{todo,canon}`
+produces canon that is byte-identical outside the `_canon` envelope
+(both stages call the same `todoFieldsToCanon()` on the same bytes) —
+proven, not assumed. The four still-divergent catalogue keys
+(`checklistItems`/`linkedResources`/`parentUid`/`sortOrder`) were
+investigated and confirmed legitimate, not an IP.3 gap: they arrive only
+from the Google Tasks/MS To-Do vendor JSON promote stages, which have no
+calendar-domain counterpart at all (no catalogue edit made).
+`MultiProtocolDavProvider`'s legacy-shape fallback now logs via the
+existing `lcMultiDav` category when a VTODO is riding `{calendar,canon}`
+for lack of server-advertised VTODO support; `LocalBackend`/
+`DecSyncBackend`/`OrgBackend`/`AkonadiBackend` were investigated and
+deliberately left unchanged (their single-domain shape is a fixed,
+compile-time property, not a runtime fallback — no discovery point to be
+loud at). No `(b)`-shaped routing scaffolding added. **O89 RESOLVED.**
+**IP.12 is next** (order lives in STATUS's table, not in the numbering).
 
 **Findings owned:** O78 (RESOLVED by IP.2), O79 (RESOLVED by IP.4 — VEVENT
 alarm trigger-form corruption, four call sites), O80 (RESOLVED by IP.5 —
@@ -235,7 +253,9 @@ kcalendarcore 6.29.0 serializes `GEO` corrupt, **upstream** — dropped
 entirely, not hand-serialized), O87 (RESOLVED by IP.10 — VJOURNAL
 undeclared drops incl. RECURRENCE-ID aliasing; RELATED-TO carved out as
 O95), O88 (RESOLVED by IP.9 — one edge-level loss profile serves three
-kinds), O89 (VTODO's dual representation), O90 (demote not a pure function
+kinds), O89 (RESOLVED by IP.11 — crossing gate proves `{calendar,canon}`/
+`{todo,canon}` VTODO are equivalent modulo the envelope; fallback now
+loud), O90 (demote not a pure function
 of canon — heap-derived attendee `X-UID`), O91 (RESOLVED by IP.6 —
 undeclared COMMENT/CONTACT/RESOURCES/REQUEST-STATUS drops), O92
 (`CanonJsonMerger` has no error channel for a kind-mismatch fail-loud),
@@ -323,8 +343,9 @@ coverage mandatory for every new vendor pair/domain edge), O65 (events
 never index participant emails), O59 tooling notes (moc × terminated raw
 string literals = silent no-output; AUTOMOC timestamp staleness).
 
-Suite baseline: **215 tests**, 211 green, re-confirmed after IP.5 lands
-(2026-09-02). The 4 reds (`tst_backend_signals`,
+Suite baseline: **216 tests**, 212 green, updated after IP.11 lands
+(2026-09-03 — `tst_vtodo_domain_convergence` added, +1 executable). The 4
+reds (`tst_backend_signals`,
 `tst_backend_thread_relocation`, `tst_backend_reentrancy_pin`,
 `tst_remotecalendarbackend`) are PRE-EXISTING environmental — verify by
 their failure TEXT (KDAV 30s-transfer-timeout vs the local Radicale), not

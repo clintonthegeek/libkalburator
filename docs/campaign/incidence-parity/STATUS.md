@@ -8,8 +8,11 @@ and the scope boundary). This file is the **live execution tracker**.
 (210 green + the 4 known environmental Radicale/KDAV slots). Re-confirmed
 at `40854f3` on 2026-09-02.
 
-**Last updated:** 2026-09-02 — **IP.7 DONE. O81, O82 RESOLVED.** Full
-session log entry below; IP.11 is next.
+**Last updated:** 2026-09-03 — **IP.11 DONE. O89 RESOLVED.** Full session
+log entry below; IP.12 is next.
+
+**Previously — 2026-09-02 — IP.7 DONE. O81, O82 RESOLVED.** Full
+session log entry below.
 
 **Previously — 2026-09-02 — IP.5 DONE. O80 RESOLVED.** Full session
 log entry below.
@@ -92,7 +95,7 @@ Earlier still the same day: pre-flight audit landed, six findings
 | 4 | IP.4 | Shared VALARM module + VEVENT promote/demote + both vendor event legs, one commit | **O79**, **+O85** | **DONE 2026-09-02** — new `src/calendar/alarmshape.{h,cpp}` (W5's VTODO logic moved verbatim; new `describeAlarmRow()`); `eventcanonfields.cpp` and `vtodocanonfields.cpp` both point at it; `mseventcanonstages.cpp` demote fixed (route non-start-relative rows to carrier instead of misreading offset=0); `googlecanonstages.cpp` investigated independently — its absolute-alarm case was ALREADY correct (guard is strictly `< 0`), only its END-related case was broken, fixed the same way. O85: demote always `setEnabled(true)` (PLAN's recommended option; RFC 5545 has no disabled-alarm wire form, argued in the receipt). Loss profiles re-verified, **unchanged** (`alarms: Simplified` stays correct on both legs — the native-mapped alarm still drops text/repeat, independent of O79). Matrix byte-identical. Receipt: `2026-09-02-ip4-return-receipt.md`. |
 | 5 | IP.5 | `CanonEnvelope::stampProviderExtrasDigest()` across calendar/journal/contacts; retrofit the 3 todo sites | **O80** | **DONE 2026-09-02** — new envelope-level helper takes the RAW pre-wrap extras object (a deliberate signature deviation from PLAN's literal proposal, argued in the receipt); wired at every calendar/contacts promote site plus the three todo sites retrofitted onto it; volatile-key lists derived from real captured payloads per vendor leg (MS event: `@odata.etag`+`changeKey`; Google event/person: `etag`; MS contact: `@odata.etag`+`changeKey`+`lastModifiedDateTime`; CalDAV/vcard legs: none). Catalogued (calendar via IP.3's contributor mechanism; contacts by hand — no contributor mechanism exists there, logged as a follow-up, not built). Loss profiles: `Dropped` on all 8 affected edges. New finding **O97** (org-ical's loss profile is stale/incomplete, pre-existing, not this item's to fix). Receipt: `2026-09-02-ip5-return-receipt.md`. |
 | 6 | IP.7 | VEVENT RANGE=THISANDFUTURE refusal (a) + DTSTART/DTEND coercion contract (b) | O81, O82 | **DONE 2026-09-02** — IP.7a: demote unconditionally refuses to re-emit RANGE=THISANDFUTURE (VTODO's exact pattern), `recurrenceRange: Degraded` added to `canonToIcalLoss()`. IP.7b: DTSTART-wins coercion implemented per Amendment 2 §B.2, contract doc first. Detection mechanism probe-confirmed to mirror VTODO's exactly (no adaptation needed). New finding **O98** (VTODO's own rule (a) has a latent floating-zone bug, logged not fixed). Receipt: `2026-09-02-ip7-return-receipt.md`. |
-| 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | NOT STARTED — **UNBLOCKED and rescoped** (§B.4). No longer a design choice. **Do not implement (b) routing or leave hooks for it.** |
+| 7 | **IP.11** | **Convergence proof** — crossing gate showing the two VTODO paths yield equivalent canon; make the silent fallback loud | **O89** | **DONE 2026-09-03** — crossing gate passes (equivalent modulo the envelope); four divergent keys confirmed legitimate, not an IP.3 gap; `MultiProtocolDavProvider`'s legacy-shape fallback now logs. **O89 RESOLVED.** No (b)-shaped scaffolding. Receipt: `2026-09-03-ip11-return-receipt.md`. |
 | 8 | **IP.12** | Demote purity — strip the heap-derived attendee `X-UID` | **O90** | NOT STARTED |
 
 **Consumer dependency: NONE — both questions answered 2026-09-02.**
@@ -1229,6 +1232,113 @@ produced this state; three copies drift faster than two.
   inside an existing binary, matching IP.3/IP.6/IP.9/IP.10's precedent.
 
   Receipt: `2026-09-02-ip7-return-receipt.md`.
+
+- **2026-09-03 — IP.11 DONE. O89 RESOLVED.** PLAN.md Amendment 2 §B.4
+  rescoped this item from "choose a route" to "prove the ratified route
+  (a — converge) actually landed, and make the surviving fallback loud."
+  IP.3/IP.6/IP.9 already did essentially all of the convergence work as a
+  side effect of closing O78/O83/O84/O88/O91; this item's job was the
+  proof plus two remaining loose ends, all three done.
+
+  **Crossing gate.** New file `tests/calendar/tst_vtodo_domain_convergence.cpp`
+  (registered in `tests/calendar/CMakeLists.txt`, next to IP.8's gate),
+  not a new slot in `tst_gm_pipeline_convergence.cpp` — that file's
+  `reportAndAssertWithin()` pattern compares a demote→re-promote round
+  trip through ONE vendor against THAT vendor's own declared loss profile;
+  this gate compares TWO INDEPENDENT PROMOTES of the SAME source against
+  EACH OTHER, with no single loss profile governing the comparison
+  (argued in full in the receipt §1.1). Reuses IP.8's maximal-RFC-5545-
+  VTODO fixture discipline. **Result: promoting the same maximal VTODO
+  through `{calendar,canon}` (`ICalToCanonStage`) and through
+  `{todo,canon}` (`VTodoToCanonStage`) produces ZERO diffs outside the
+  `_canon` envelope — including `uid` and `providerExtras`.** Not
+  coincidental: both stages call the identical
+  `Kalburator::Todo::todoFieldsToCanon()` on the identical iCal bytes
+  (`icalcanonstages.cpp:56` / `vtodocanonstages.cpp`'s
+  `VTodoToCanonStage`) — this gate is a machine-checked proof that
+  wrapping ONE implementation in two different envelope/domain contexts
+  adds no divergence, not a comparison of two independent
+  implementations. The expected envelope difference (`_canon.domain`:
+  calendar vs todo; `_canon.kind`: "vtodo" vs absent) is asserted
+  explicitly, both ways, so a future regression making them accidentally
+  EQUAL (e.g. a kind leaking across domains) is just as visible as one
+  making them diverge. Non-vacuity verified the house way: temporarily
+  inserted a throwaway key into the todo-domain leg only, confirmed a
+  real `FAIL!` naming it, reverted (diff-confirmed byte-identical).
+
+  **The four still-divergent keys — investigated, found legitimate, no
+  IP.3 gap, no catalogue edit.** `checklistItems`/`linkedResources`/
+  `parentUid`/`sortOrder` (catalogued in `todocanonproperties.cpp`, absent
+  from `calendarcanonproperties.cpp`). Grep across every calendar-domain
+  emitter (iCal AND both vendor JSON legs) confirms zero references to
+  any of the four — the calendar domain never touches task hierarchy/
+  checklist/sort-order concepts at all, because Google Calendar events and
+  MS Graph events carry no such wire fields. `vtodocanonfields.cpp`
+  already carries a dated IP.3 comment saying exactly this: the four keys
+  arrive exclusively via the Google Tasks / MS To-Do vendor JSON promote
+  stages (`{todo,google-task}` / `{todo,ms-todotask}` — peer shapes that
+  exist ONLY under the todo domain; `CalendarStockShapes::peerShapes()`
+  has no such peer), and are only ever *consumed*, never produced, on the
+  shared emitter's demote side. Since the crossing gate proves the two
+  iCal promote paths are byte-identical and neither produces these keys,
+  there is structurally no "cross both domains" scenario in which they
+  COULD diverge. The gate's second slot,
+  `vendorOnlyKeysHaveNoCalendarDomainCounterpart()`, pins all three legs
+  of this argument: (a) neither iCal-based promote path produces the four
+  keys for a maximal fixture, (b) a real Google Tasks JSON payload DOES
+  legitimately produce `parentUid`/`sortOrder` in `{todo,canon}` via its
+  `parent`/`position` fields, (c) `CalendarStockShapes::peerShapes()`
+  structurally carries no `google-task`/`ms-todotask` peer to compare
+  against.
+
+  **Silent fallback made loud — DAV provider only, by design.**
+  `MultiProtocolDavProvider`'s `!anyTodoBearing` "legacy shape" branch
+  (`src/sync/multiprotocoldavprovider.cpp`) now logs via the existing
+  `lcMultiDav` category (same convention as the file's other `qCInfo`/
+  `qCWarning` calls, no new category invented), naming that any VTODO
+  synced through it rides `{calendar,canon}` rather than `{todo,canon}`.
+  `LocalBackend`/`DecSyncBackend`/`OrgBackend`/`AkonadiBackend` were
+  investigated and DELIBERATELY left unchanged: all four `nativeShapes()`
+  implementations are fixed, unconditional, compile-time one-line returns
+  with no branch and no server-metadata check — there is no runtime
+  decision that could have gone the other way, so there is nothing for
+  "loud about limits" to surface at a discovery point that doesn't exist.
+  A log line in a frequently-queried identity accessor, for a fact already
+  documented and true of every instance unconditionally, would be noise
+  training readers to ignore the category — argued in full in the receipt
+  §3.2. This is a judgment call, not a mechanical application of the
+  doctrine clause; recorded so it can be revisited if a future item
+  disagrees.
+
+  **(b) route: verified absent, no hooks left.** Re-read the full diff
+  before finalizing — no new domain-routing branch, no
+  `CalendarType::Hybrid`-adjacent code, no commented-out alternative. The
+  changed/added files are exactly: one new self-contained test file, one
+  `CMakeLists.txt` registration line, one `qCInfo`+comment block in an
+  existing branch.
+
+  No `LossProfile`/`TransformationEdge` changed — matrix not regenerated
+  (house rule O63's trigger condition did not fire), confirmed both by
+  diff inspection and by `tst_gm_pipeline_convergence`'s
+  `committedMatrixMatchesGenerated` staying green in the full run.
+
+  New test executable: `tst_vtodo_domain_convergence` (2 QTest slots, both
+  green). **Ctest-level count: verified directly via `ctest -N` — 215 →
+  216 (+1), matching CLAUDE.md's standing "215 tests" baseline exactly**
+  (a genuinely new binary, unlike most recent items which added slots to
+  an existing one; the "227"/"228" figures appearing in a few earlier
+  session-log entries in this file, e.g. IP.8's and IP.9's, do not match
+  a direct `ctest -N` count taken at the start of this item and are not
+  reconciled here — out of this item's scope to audit retroactively).
+
+  Full suite: **216 tests, 212 passed, 4 known-environmental failed**
+  (`tst_backend_signals`, `tst_backend_thread_relocation`,
+  `tst_backend_reentrancy_pin`, `tst_remotecalendarbackend`) — same four
+  as baseline, verified by failure TEXT not name. `tst_multiprotocoldavprovider`
+  (the DAV provider's own dedicated suite, covering the branch the log
+  line touches) independently reconfirmed green.
+
+  Receipt: `2026-09-03-ip11-return-receipt.md`. **IP.12 is next.**
 
 - **NEXT:** **IP.11** — convergence proof for the two VTODO paths (§B.4,
   rescoped). Closes O89.

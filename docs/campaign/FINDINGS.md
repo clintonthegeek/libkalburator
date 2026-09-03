@@ -3881,7 +3881,7 @@ decision that makes O83's and O87's "declare the drops honestly" acceptance
 criteria actually expressible. Until it lands, any item that "declares a
 loss" for VTODO or VJOURNAL has nowhere truthful to put it.
 
-### O89 — OPEN — incidence-parity pre-flight audit, 2026-09-02: VTODO has two canonical representations, selected by transport metadata
+### O89 — RESOLVED (IP.11, 2026-09-03) — incidence-parity pre-flight audit, 2026-09-02: VTODO has two canonical representations, selected by transport metadata
 
 The consumer-visible one. Owned by **IP.11**; needs PlanStan ratification
 (`docs/2026-09-02-incidence-parity-planstan-report.md`).
@@ -3961,6 +3961,65 @@ item — it must not ride in on a bug fix, which both sides agree on.
 no longer blocked. It becomes a *convergence-proof* item — see PLAN.md
 Amendment 2 §B.4. PlanStan explicitly asked us **not** to keep the two
 representations distinguishable for their benefit.
+
+**RESOLVED 2026-09-03 (IP.11).** Both representations still exist — that
+was never in question, (b) is blocked as recorded above — but the item's
+actual, rescoped job (Amendment 2 §B.4) was to *prove* they are equivalent
+for the same VTODO source and to make the silent fallback loud, not to
+eliminate the duality. Both done:
+
+1. **Convergence proof.** New
+   `tests/calendar/tst_vtodo_domain_convergence.cpp`
+   (`maximalVtodoConvergesAcrossDomains()`): a maximal RFC 5545 §3.6.2 VTODO
+   promoted through `{calendar,canon}` (`ICalToCanonStage`, kind-dispatched)
+   and through `{todo,canon}` (`VTodoToCanonStage`) produces canon that is
+   **byte-identical outside the `_canon` envelope** — including `uid` and
+   `providerExtras`. Not a coincidence: both stages call the exact same
+   `Kalburator::Todo::todoFieldsToCanon()` on the exact same iCal bytes
+   (`icalcanonstages.cpp:56` / `vtodocanonstages.cpp`'s
+   `VTodoToCanonStage::transform`) — IP.3/IP.6/IP.9 already unified the
+   underlying emitter; this item's contribution is the machine-checked proof
+   that the wrapping (two different envelope domains/kind-tags) adds no
+   divergence. Non-vacuity verified the house way: temporarily inserted a
+   throwaway key into one path only, confirmed a real `FAIL!` naming it,
+   reverted (diff-confirmed byte-identical).
+2. **The four still-divergent catalogue keys are legitimate, not an IP.3
+   gap.** `checklistItems`/`linkedResources`/`parentUid`/`sortOrder` are
+   catalogued in `todocanonproperties.cpp` and correctly absent from
+   `calendarcanonproperties.cpp`'s `calendarVendorOnlyIds()`. Verified,
+   not assumed: grep across `src/calendar/` (event/journal/vendor-event
+   canon stages) finds zero references to any of the four; they are
+   produced exclusively by the Google Tasks / MS To-Do vendor JSON promote
+   stages (`googletaskcanonstages.cpp`, `mstodotaskcanonstages.cpp`), which
+   speak `{todo,google-task}` / `{todo,ms-todotask}` — peer shapes that
+   exist only under the todo domain (`CalendarStockShapes::peerShapes()`
+   has no such peer). Since point 1 proves the two iCal-based promote paths
+   are identical, and neither ever populates these keys, there is no
+   "cross both domains" scenario in which they could diverge — their
+   origin never touches iCal at all. Pinned by the second slot,
+   `vendorOnlyKeysHaveNoCalendarDomainCounterpart()`, which also positively
+   demonstrates a real Google Tasks payload populating `parentUid`/
+   `sortOrder` in `{todo,canon}` and structurally confirms the calendar
+   domain carries no `google-task`/`ms-todotask` peer to compare against.
+3. **The silent fallback is now loud.** `MultiProtocolDavProvider`'s
+   `!anyTodoBearing` "legacy shape" branch
+   (`src/sync/multiprotocoldavprovider.cpp`) now logs via the existing
+   `lcMultiDav` category (`qCInfo`) naming that no calendar advertised
+   VTODO support (or contentTypes were unknown) and that any VTODO synced
+   through it rides `{calendar,canon}`, not `{todo,canon}`.
+   `LocalBackend`/`DecSyncBackend`/`OrgBackend`/`AkonadiBackend` were
+   investigated and deliberately **not** given an equivalent log line: per
+   O89's own text above, these backends' `nativeShapes()` return a fixed
+   `{calendar,ical}` unconditionally — there is no runtime branch, no
+   server-metadata check, nothing that could have gone the other way. They
+   are single-domain by construction, not by a discovered absence of
+   richer routing, so there is no "fallback event" to make loud; a log
+   line in a frequently-called static accessor would be noise implying a
+   decision that never happens. Argued in full in the IP.11 return receipt.
+
+**(b) route remains not implemented and no hooks were left for it** —
+verified in the IP.11 diff: no new domain-routing branch, no
+`CalendarType::Hybrid`-adjacent code, no commented-out alternative.
 
 ### O90 — OPEN — incidence-parity pre-flight audit, 2026-09-02: demote is not a pure function of canon (attendee `X-UID`)
 

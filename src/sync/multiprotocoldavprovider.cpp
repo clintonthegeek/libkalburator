@@ -226,6 +226,25 @@ std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()
         if (!anyTodoBearing) {
             // Legacy shape: one unfiltered RemoteCalendarBackend for every
             // calendar (byte-for-byte today's behavior).
+            //
+            // O89 / IP.11 (Amendment 2 §B.4 point 3, "make the silent
+            // fallback loud"): this branch is taken either because no
+            // calendar in this account advertised VTODO support, or
+            // because the server never reported contentTypes at all (an
+            // absent-metadata server looks identical to a genuinely
+            // VTODO-less one from here). Either way, any VTODO synced
+            // through these calendars rides the impoverished
+            // {calendar,canon} representation rather than {todo,canon} —
+            // IP.3/IP.6/IP.9/IP.11 converged the two so this is no longer
+            // a functional gap (a crossing gate now proves the two
+            // representations are equivalent for the same VTODO source,
+            // see tst_vtodo_domain_convergence.cpp), but which one a given
+            // task took should stay observable for debugging/support.
+            qCInfo(lcMultiDav).nospace()
+                << "CalDAV: no calendar among " << calCols.size()
+                << " advertises VTODO support (or contentTypes are unknown) "
+                   "— using the legacy unfiltered path; any VTODO synced "
+                   "here rides {calendar,canon}, not {todo,canon}";
             ProviderBackendSpec spec;
             spec.domainId = QStringLiteral("cal");
             auto backend = std::make_unique<RemoteCalendarBackend>(m_serverUrl, m_username, m_password);

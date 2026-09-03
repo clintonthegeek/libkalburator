@@ -307,6 +307,11 @@ kalburator_add_calendar_test(tst_calendar_kind_dispatch)
 # does each emitter honour the STANDARD, not just our own catalogue.
 kalburator_add_calendar_test(tst_incidence_rfc5545_fidelity)
 
+# IP.11 (incidence-parity campaign) — VTODO domain-crossing convergence
+# proof (O89): does the SAME VTODO promoted through {calendar,canon} and
+# through {todo,canon} yield equivalent canon.
+kalburator_add_calendar_test(tst_vtodo_domain_convergence)
+
 # Plan 4 Task 2 — org-ical (de)serialization stages (RRULE simplification)
 kalburator_add_calendar_test(tst_orgical_canon_roundtrip)
 
