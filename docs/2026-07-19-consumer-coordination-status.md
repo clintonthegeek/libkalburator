@@ -10,16 +10,16 @@ at the authoritative doc.
 
 ---
 
-## 1. Release / pin state (as of 2026-08-25)
+## 1. Release / pin state (as of 2026-09-03)
 
 | Repo | Pins libkalburator at | Notes |
 |---|---|---|
-| **libkalburator** | — (self) | `main`, tags up to **v1.03** (EEE Tier A closed: all four vendor edges + fixture promotion, O66/O67 carrier verdicts, A4 live checkpoint both directions, `tools/groundtrip`; 2026-08-25 — §2e). Fully additive; consumers unaffected. |
-| **PlanStan** | **v0.97** | Not yet bumped to v0.98+ (all additive, no code change forced). Unaffected by O55/O56 (no sqlite-hub endpoints; engine-stable ids everywhere). Note O56's hold-gate changes Unmonitored AskUser semantics for it too: a run with an unresolved conflict now writes NOTHING (all-or-nothing per mapping). |
-| **WildPalms** | **v1.00 (bumped post-O55)** | Filed the O55 followup (2026-08-22); **RESOLVED same day in v1.01** (§2c) — pin bump only; v1.00-poisoned profiles self-heal. |
+| **libkalburator** | — (self) | `main`, tags up to **v1.05** (incidence-parity campaign CLOSED 2026-09-03 — §2g). Fully additive at the API level; several are real bug fixes on the VTODO/VJOURNAL/VEVENT canon paths, none forcing a consumer code change. |
+| **PlanStan** | **v1.01** (per `PLANSTAN_LIBKALBURATOR_GIT_TAG`) | Three tags behind (`v1.02`→`v1.05`). This page's §1 table went stale between 2026-08-25 and 2026-09-03 — the intervening bumps (`v1.02`–`v1.04`) were tracked in each tag's own message and in `docs/campaign/*/STATUS.md` rather than here; consult `git tag -l -n1` on this repo or `CLAUDE.md`'s "Closed campaigns" index for that gap rather than treating this row as a full history. `v1.05` specifically matters to PlanStan — see §2g and `docs/2026-09-03-incidence-parity-v1.05-consumer-notice.md`. |
+| **WildPalms** | **v1.01** (per `WILDPALMS_LIBKALBURATOR_GIT_TAG`) | Same three-tags-behind gap as PlanStan. Lower urgency at `v1.05` — see §2g. |
 
-**Both consumers pin a recent head tag; no forced bump from v0.98** — all
-conflict-resolution-repair changes are additive (§2b).
+**No pin bump is forced by `v1.02`–`v1.05`** — all additive/non-breaking at
+the API level. Bump when convenient.
 
 ---
 
@@ -138,6 +138,29 @@ todo backends are the W1/W2 test legs), then W8 → W2 → W1 → W4 → W3 →
 W5/W6/W7. New FINDINGS **O74** (providerExtras invisible to the canonical
 differ) recorded during recon. Consumers: nothing to do yet; receipts
 will list exact keys/headers per delivered item.
+
+## 2g. NEW (2026-09-03) — incidence-parity campaign CLOSED, tag v1.05
+
+Opened 2026-08-29 as the successor to vtodo-parity, to close what that
+campaign left open on the VEVENT/VJOURNAL side. Full plan:
+`docs/campaign/incidence-parity/PLAN.md`; live tracker (now fully DONE):
+`docs/campaign/incidence-parity/STATUS.md`.
+
+**Consumer-relevant outcome:** PlanStan disclosed mid-campaign that
+`{calendar,canon}` VTODO is their primary/default task path, which
+reprioritized the item order — the highest-impact fix (VTODO gaining
+`ATTACH`/`ATTENDEE`/`CLASS`/`COLOR`/`ORGANIZER`/`SEQUENCE`/`URL`, closing
+O83) is live on that exact path. Also closed: a VJOURNAL identity-
+corruption bug (O87 — a detached instance used to collapse onto its
+master), VALARM trigger-form corruption and the disabled-on-round-trip
+bug (O79/O85), extras-only edits not dirtying the differ on
+calendar/contacts (O80), malformed VEVENT `DTSTART`/`DTEND` coercion and
+`RANGE=THISANDFUTURE` re-emission (O81/O82), and a machine-checked proof
+that the two VTODO domain representations are byte-identical (O89).
+
+Full consumer notice, condensed and PlanStan/WildPalms-specific:
+**`docs/2026-09-03-incidence-parity-v1.05-consumer-notice.md`**. Tag:
+`v1.05`. Nothing required of either consumer; bump when convenient.
 
 ## 2e. Tier A CLOSED (2026-08-25, tag v1.03) — vendor edges complete; wire knowledge consolidated
 
