@@ -1,7 +1,8 @@
 # Architecture
 
-**Last verified:** 2026-09-05 against the current libkalburator and PlanStan working trees
-**Status:** current facts followed by the adopted target
+**Last verified:** 2026-09-07 baseline snapshot; production consumer cutover under revalidation
+**Status:** library/adapter facts followed by the adopted target; no completed
+task result certifies PlanStan production ownership before `AUD-003`
 
 ## Purpose
 
@@ -67,7 +68,7 @@ public-header work.
 | `ProviderManager` | Provider configuration, connection, and backend registration | Each consumer runtime |
 | `SyncEngine` | Mapping execution and record reconciliation | Library object assembled by consumer |
 | `SyncRunCoordinator` | Higher-level run tracking for some paths | PlanStan; not used for every run |
-| `CollectionRuntime` | Runtime ownership facade with provider/factory endpoints, typed provider/discovery snapshots, run intents, bounded convergence, resource leases, and canonical events | Library; connected WildPalms topology/run slice now adopts it, with remaining consumer cleanup tracked by PS-008/WP-009 |
+| `CollectionRuntime` | Runtime ownership facade with provider/factory endpoints, typed provider/discovery snapshots, run intents, bounded convergence, resource leases, and canonical events | Library contracts and preparatory consumers; production ownership is revalidated through AUD-003 and subsequent workflow tasks |
 | `BaselineStore` | Per-side hashes, aliases, tokens, collection metadata | Constructed and injected by `CollectionRuntime`; consumer migration pending |
 | `SyncConflictStore` / conflict manager | Deferred conflicts and resolutions | Runtime-owned store and deferred manager; presentation remains in consumer UI through facade events/commands |
 | Calendar manager, journals, guards | Calendar mutations, recovery, deletion safety | Individually assembled |

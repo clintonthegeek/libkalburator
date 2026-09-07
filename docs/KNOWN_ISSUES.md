@@ -1,11 +1,27 @@
 # Known issues
 
-**Last reviewed:** 2026-09-06
+**Last reviewed:** 2026-09-07
 This is the only active defect and risk list. Historical finding numbers are not reused.
 
 States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain only until the next release, then leave this file.
 
 ## Critical
+
+### KAL-032 — Production synchronization ownership is not certified
+
+- **State:** INVESTIGATING
+- **Affects:** PlanStan production collection load, edit, save, topology,
+  account/discovery, conflict, and close workflows; dependent library claims.
+- **Evidence:** historical `DONE` adapter and direct-runtime tests do not
+  exercise the real `CollectionController` host path. The 2026-09-07 baseline
+  review found unverified topology commits, policy/secret input wiring, save
+  acknowledgment boundaries, and legacy construction paths.
+- **Required outcome:** `AUD-003` supplies a controllable production host
+  fixture and reopens only the contradicted task IDs with repeatable acceptance
+  failures. No release or migration-completion claim is valid before the
+  workflow certification gate.
+- **Tasks:** AUD-003; then evidence-selected TOP-002/TOP-004/TOP-005,
+  RUN-008, PS-010 through PS-016, PS-008, TST-003, and FTR-001.
 
 ### KAL-001 — Backend relocation can hang and violate QObject affinity
 
@@ -70,7 +86,7 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 - **State:** OPEN
 - **Affects:** PlanStan setup/topology UI; WildPalms route setup
-- **Evidence:** TOP-002 made endpoint/mapping replacement atomic inside the
+- **Evidence:** historical TOP-002 made endpoint/mapping replacement atomic inside the
   runtime, TOP-004 adds a consumer-owned durable desired-state participant,
   and TOP-005 now routes capability-checked physical collection commands
   through the same transaction. `applyTopology()` still excludes some
@@ -87,8 +103,9 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 - **State:** OPEN
 - **Affects:** maintainability and behavioral drift in both consumers
-- **Evidence:** PlanStan run execution now uses one `CollectionRuntime` per
-  open collection, but the controller still constructs a transitional engine,
+- **Evidence:** the runtime run path and adapter tests exist, but AUD-003 must
+  establish whether PlanStan production has one operational `CollectionRuntime`
+  per open collection. The controller still constructs a transitional engine,
   stores, and mapping view for compatibility. WildPalms still owns
   `PalmRuntimeAssembly`, the engine, stores, plugins, mappings, and convergence
   state; `dispatchSyncPass_()` still re-dispatches passes.

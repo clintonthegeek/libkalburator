@@ -1,7 +1,12 @@
 # Task queue
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-07
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
+
+The `DONE` entries below are retained as historical implementation evidence.
+They do not certify the production consumer workflows until `AUD-003` records
+current, reproducible evidence. Reopen only the exact task contradicted by that
+evidence; retain its prior result and verification under a historical heading.
 
 States: `READY`, `IN PROGRESS`, `QUEUED`, `BLOCKED`, `DONE`, `REMOVED`.
 
@@ -11,7 +16,8 @@ Work top to bottom unless a task is blocked or the user chooses otherwise.
 
 | Order | Task | State | Depends on | Outcome |
 |---:|---|---|---|---|
-| 1 | AUD-001 | DONE 2026-09-04 | — | Revalidated completed gates and reordered remaining work |
+| 1 | AUD-003 | READY | — | Establish the tagged cross-repository baseline and real PlanStan host fixture |
+| 2 | AUD-001 | DONE 2026-09-04 | — | Revalidated completed gates and reordered remaining work |
 | 2 | SAF-005 | DONE 2026-09-04 | SAF-002, PS-002 | Restored a clean executor-owned default lifecycle baseline |
 | 3 | TST-001 | DONE 2026-09-04 | SAF-001 | Separate executed, skipped, optional, and live coverage |
 | 4 | TOP-001 | DONE 2026-09-04 | DES-001 | Define the operational factory and topology-materialization contract |
@@ -125,6 +131,38 @@ queue for this refactor. A fresh agent working from this repository must:
 Preparatory adapters must have tests and no production caller until `PS-016`.
 This makes each slice independently reviewable without allowing the old and new
 runtime graphs to execute side by side.
+
+### AUD-003 — Establish the stabilization baseline and reproduce production gaps
+
+- **State:** READY
+- **Repository:** `../libkalburator`, `../PlanStan`, and `../libkalcal`
+- **Scope:** baseline tags, configured build paths, current test accounting, and
+  a real PlanStan `CollectionController` host fixture. This task changes no
+  runtime ownership behavior.
+- **Acceptance:** record all three baseline revisions/tags, current status and
+  diff digest, resolved library source paths, enabled CMake options, and each
+  test result as executed, skipped, unavailable, or failed. Add a fixture that
+  opens a temporary collection through `CollectionController`, observes runtime
+  and backend construction, invokes production commands, and controls external
+  completion/failure. Run the narrow PlanStan runtime target and test. The
+  fixture must distinguish direct-runtime/adapter coverage from application
+  wiring and identify whether legacy construction occurs.
+- **Verification:** configure PlanStan with
+  `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR=/home/clinton/dev/libkalburator`; build
+  `tst_planstan_local_runtime_integration`; run its exact CTest name; build and
+  run the new host fixture; run `python3 tools/check_task_dag.py` after this
+  queue edit. Record commands and results here and in
+  `../PlanStan/docs/stabilization-baseline.md`.
+- **Outcome routing:** reopen `TOP-002` for a validated reproduction of
+  mutation-before-validation, unsafe run-time topology replacement, executor
+  affinity, reentrancy, or compensation failure. Reopen `RUN-008` for a held
+  save A/edit B/complete A case that loses B or its recovery record. Reopen the
+  applicable PS task only when a real application entry point bypasses its
+  claimed runtime contract. Create a new registered task for a Kalcal identity
+  or occurrence-query defect rather than assigning it a fabricated PS ID.
+- **Next:** once this task has an evidence-backed result, select exactly the
+  first reopened or newly registered `READY` task; do not start topology,
+  staging, identity, or cutover changes speculatively.
 
 ### AUD-002 — Revalidate the decomposed PlanStan cutover plan
 

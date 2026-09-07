@@ -7,6 +7,13 @@ This is the only roadmap. It orders outcomes rather than sessions or releases. D
 
 ## Current position
 
+The tagged `stabilization-baseline-2026-09-07` snapshot begins a production
+revalidation pass. The historical task results below prove useful library and
+adapter behavior, but they do not certify the PlanStan controller/settings/
+editor workflow or a single operational owner. `AUD-003` is the sole active
+entry point: it establishes a real host fixture and reopens only acceptance
+claims contradicted by repeatable evidence.
+
 The project has completed the two-consumer runtime proof and the first G3/G4
 library-side slices. A direct comparison with PlanStan's production account,
 topology, conflict, run-policy, journal, and model-projection paths found that
@@ -203,12 +210,12 @@ WildPalms exit conditions:
 - resource hooks preserve tickle pause/resume, DLP serialization, link-loss cancellation, and flush-before-finish;
 - backup/restore remain independent device operations.
 
-Primary tasks: PS-008 and WP-009. PlanStan's factory, definition compiler,
-event, run, conflict, provider, and topology adapters are now in production
-execution after PS-016's single ownership switch. PS-008 deletes the remaining
-transitionals and closes the gate. The PlanStan and WildPalms migrations may proceed in parallel,
-but G5 closes only when both pass. Their completion then unblocks API-006, the
-final removal of the transitional capability defaults.
+The historical PS-009 through PS-016 and PS-008 results are under revalidation.
+The PlanStan factory, definition compiler, event, run, conflict, provider, and
+topology adapters may remain as preparation, but no production ownership switch
+is certified until the `AUD-003` host fixture and its subsequent workflow gates
+prove it. G5 closes only after both consumer workflows pass; that then unblocks
+API-006 and final removal of transitional capability defaults.
 
 PlanStan preparation begins only after DOC-002 makes its authoritative current
 guidance distinguish today's controller-owned implementation from the adopted

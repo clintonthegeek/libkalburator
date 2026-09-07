@@ -12,10 +12,16 @@ This file is the operational entry point for humans and coding agents. Keep it s
 
 ## Choose and execute work
 
+- The required first task after `stabilization-baseline-2026-09-07` is
+  `AUD-003`. Do not treat an older `DONE` result as current production
+  certification before this baseline records its evidence.
 - Work on the first unblocked task in **Now** unless the user specifies another task.
 - Mark the task `IN PROGRESS` before code changes. Only one task may be in progress per worker.
 - Re-check cited symbols and assumptions against the current trees of libkalburator, `../PlanStan`, and `../WildPalms` when affected.
 - Add a failing or characterization test before changing risky behavior.
+- For a revalidated task, preserve prior `Result` and `Verification` as
+  historical evidence, then record the new reproducer, exact command output,
+  affected repository revisions, configuration, and remaining acceptance.
 - Prefer deleting duplicate consumer orchestration over adding adapters around it.
 - Backward compatibility is not required during the consolidation. Coordinate and change all three repositories when that yields a cleaner contract.
 - Do not add a new dated plan, handoff, response, session log, or return receipt. Put durable decisions in `docs/adr/`; put tasks in `docs/TASKS.md`; put defects in `docs/KNOWN_ISSUES.md`.
