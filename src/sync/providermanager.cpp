@@ -320,6 +320,15 @@ QStringList ProviderManager::backendIdsForProvider(const QString &providerId) co
     return out;
 }
 
+bool ProviderManager::invokeOwnedBackend(const QString &backendId,
+                                         const std::function<void()> &operation)
+{
+    const auto it = m_ownedBackends.find(backendId);
+    if (it == m_ownedBackends.end() || !it->second)
+        return false;
+    return it->second->invoke(operation);
+}
+
 void ProviderManager::unregisterProviderBackends(IProvider *provider)
 {
     const QString prefix = provider->id() + QLatin1Char(':');

@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QHash>
+#include <functional>
 #include <QList>
 #include <QString>
 #include <QFuture>
@@ -71,6 +72,11 @@ public:
     /// by this provider. Empty if the provider is unknown or has no
     /// registered backends.
     QStringList backendIdsForProvider(const QString &providerId) const;
+
+    /// Runs a provider-owned backend operation on that backend's executor.
+    /// The registry intentionally exposes no executor ownership.
+    bool invokeOwnedBackend(const QString &backendId,
+                            const std::function<void()> &operation);
 
 signals:
     void providersChanged();

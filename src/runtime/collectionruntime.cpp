@@ -440,7 +440,7 @@ public:
             errorMessage = QStringLiteral("runtime is unavailable after a store lifecycle failure");
             return false;
         }
-        if (m_running) {
+        if (m_running || m_topologyApplying) {
             errorMessage = QStringLiteral("cannot change run policy while a sync is active");
             return false;
         }
@@ -460,6 +460,10 @@ public:
     bool updateProvider(const Kalburator::Sync::BackendConfiguration &config,
                         QString &errorMessage) override
     {
+        if (m_topologyApplying) {
+            errorMessage = QStringLiteral("cannot mutate providers while topology is applying");
+            return false;
+        }
         if (!validateProviderMutation(config, errorMessage))
             return false;
         auto *provider = m_providerManager->providerById(config.id);
@@ -493,6 +497,10 @@ public:
     {
         if (!m_usable) {
             errorMessage = QStringLiteral("runtime is unavailable after a store lifecycle failure");
+            return false;
+        }
+        if (m_topologyApplying) {
+            errorMessage = QStringLiteral("cannot mutate providers while topology is applying");
             return false;
         }
         if (m_running) {
@@ -561,6 +569,24 @@ public:
                 "runtime is unavailable after a store lifecycle failure");
             return result;
         }
+        // Replacing topology tears down endpoint executors below.  A running
+        // engine may still be dispatching through them, so admission must be
+        // rejected before provider staging, endpoint materialization, or any
+        // durable/physical topology effect occurs.
+        if (m_running) {
+            result.errorMessage = QStringLiteral(
+                "cannot change topology while a sync is active");
+            return result;
+        }
+        if (m_topologyApplying) {
+            result.errorMessage = QStringLiteral("topology application is already in progress");
+            return result;
+        }
+        struct TopologyApplicationGuard {
+            bool &active;
+            explicit TopologyApplicationGuard(bool &value) : active(value) { active = true; }
+            ~TopologyApplicationGuard() { active = false; }
+        } applyingTopology{m_topologyApplying};
         const auto valid = [](const QStringList &ids) {
             QSet<QString> seen;
             return std::all_of(ids.cbegin(), ids.cend(),
@@ -827,6 +853,39 @@ public:
                 return result;
             }
         }
+        // Validate every mutation before preparing durable state or performing
+        // the first physical operation.  Runtime failures from a valid backend
+        // operation still need compensation below; malformed input and absent
+        // capabilities must not make an earlier mutation observable at all.
+        for (const auto &mutation : desired.collectionMutations) {
+            auto *backend = endpointBackends.value(mutation.endpointId);
+            if (!backend) {
+                result.errorMessage = QStringLiteral(
+                    "collection mutation references an unknown endpoint: ")
+                    + mutation.endpointId;
+                return result;
+            }
+            const QString collectionId = mutation.collectionId.isEmpty()
+                ? mutation.collection.id : mutation.collectionId;
+            if (collectionId.isEmpty()) {
+                result.errorMessage = QStringLiteral("collection mutation has no collection id");
+                return result;
+            }
+            const auto requiresMutator = mutation.kind == CollectionMutationKind::Update
+                || mutation.kind == CollectionMutationKind::Rename
+                || mutation.kind == CollectionMutationKind::Destroy;
+            if (requiresMutator
+                && !dynamic_cast<Kalburator::Sync::IBackendCollectionMutator *>(backend)) {
+                result.errorMessage = QStringLiteral(
+                    "collection mutation is unsupported by endpoint: ") + mutation.endpointId;
+                return result;
+            }
+            if (mutation.kind == CollectionMutationKind::Rename
+                && mutation.metadata.value(QStringLiteral("newCollectionId")).toString().isEmpty()) {
+                result.errorMessage = QStringLiteral("collection rename has no new collection id");
+                return result;
+            }
+        }
         bool persistencePrepared = false;
         if (m_definition.topologyPersistence) {
             QString persistenceError;
@@ -848,6 +907,13 @@ public:
         };
         QList<RuntimeEvent> collectionEvents;
         QList<CollectionMutation> appliedMutations;
+        auto invokeEndpoint = [&](const QString &endpointId, auto &&operation) {
+            const auto executor = endpointExecutors.find(endpointId);
+            if (executor != endpointExecutors.end())
+                return executor->second->invoke(std::forward<decltype(operation)>(operation));
+            return m_providerManager->invokeOwnedBackend(endpointId,
+                std::forward<decltype(operation)>(operation));
+        };
         auto compensateCollections = [&]() {
             bool complete = true;
             for (auto it = appliedMutations.crbegin(); it != appliedMutations.crend(); ++it) {
@@ -859,16 +925,24 @@ public:
                     complete = false;
                 switch (it->kind) {
                 case CollectionMutationKind::Create:
-                    if (!compensator || !compensator->deletePhysicalCollection(it->collection.id))
+                    {
+                    bool reverted = false;
+                    if (!compensator || !invokeEndpoint(it->endpointId, [&] {
+                            reverted = compensator->deletePhysicalCollection(it->collection.id);
+                        }) || !reverted)
                         complete = false;
                     break;
+                    }
                 case CollectionMutationKind::Rename: {
                     const QString oldId = it->collectionId.isEmpty()
                         ? it->collection.id : it->collectionId;
                     const QString newId = it->metadata.value(QStringLiteral("newCollectionId"))
                         .toString();
+                    bool reverted = false;
                     if (!compensator || newId.isEmpty()
-                        || !compensator->renamePhysicalCollection(newId, oldId))
+                        || !invokeEndpoint(it->endpointId, [&] {
+                            reverted = compensator->renamePhysicalCollection(newId, oldId);
+                        }) || !reverted)
                         complete = false;
                     break;
                 }
@@ -906,16 +980,20 @@ public:
             auto *mutator = dynamic_cast<Kalburator::Sync::IBackendCollectionMutator *>(backend);
             switch (mutation.kind) {
             case CollectionMutationKind::Create:
-                success = !backend->createCollection(mutation.collection).isEmpty();
+                success = invokeEndpoint(mutation.endpointId, [&] {
+                    success = !backend->createCollection(mutation.collection).isEmpty();
+                }) && success;
                 changeKind = CollectionChangeKind::Created;
                 break;
             case CollectionMutationKind::Adopt:
                 {
-                    const auto available = backend->availableCollections();
-                    success = std::any_of(available.cbegin(), available.cend(),
-                                      [&collectionId](const auto &item) {
-                                          return item.id == collectionId;
-                                      });
+                    success = invokeEndpoint(mutation.endpointId, [&] {
+                        const auto available = backend->availableCollections();
+                        success = std::any_of(available.cbegin(), available.cend(),
+                                              [&collectionId](const auto &item) {
+                                                  return item.id == collectionId;
+                                              });
+                    }) && success;
                 }
                 break;
             case CollectionMutationKind::Untrack:
@@ -925,18 +1003,24 @@ public:
                 success = true;
                 break;
             case CollectionMutationKind::Update: {
-                success = mutator && mutator->updateCollectionMetadata(collectionId, mutation.metadata);
+                success = mutator && invokeEndpoint(mutation.endpointId, [&] {
+                    success = mutator->updateCollectionMetadata(collectionId, mutation.metadata);
+                }) && success;
                 break;
             }
             case CollectionMutationKind::Rename: {
                 const QString newCollectionId = mutation.metadata.value(
                     QStringLiteral("newCollectionId")).toString();
                 success = mutator && !newCollectionId.isEmpty()
-                    && mutator->renamePhysicalCollection(collectionId, newCollectionId);
+                    && invokeEndpoint(mutation.endpointId, [&] {
+                        success = mutator->renamePhysicalCollection(collectionId, newCollectionId);
+                    }) && success;
                 break;
             }
             case CollectionMutationKind::Destroy: {
-                success = mutator && mutator->deletePhysicalCollection(collectionId);
+                success = mutator && invokeEndpoint(mutation.endpointId, [&] {
+                    success = mutator->deletePhysicalCollection(collectionId);
+                }) && success;
                 changeKind = CollectionChangeKind::Deleted;
                 break;
             }
@@ -1045,6 +1129,8 @@ public:
                 "runtime is unavailable after a store lifecycle failure");
         } else if (!request.validate(error)) {
             result.errorMessage = error;
+        } else if (m_topologyApplying) {
+            result.errorMessage = QStringLiteral("cannot start a run while topology is applying");
         } else if (m_running) {
             result.errorMessage = QStringLiteral("runtime is already running");
         } else {
@@ -1586,6 +1672,7 @@ private:
     QString m_constructionError;
     bool m_cancelled = false;
     bool m_running = false;
+    bool m_topologyApplying = false;
     bool m_resourcesFinished = true;
     QStringList m_activeMappingIds;
     QStringList m_activeResourceIds;

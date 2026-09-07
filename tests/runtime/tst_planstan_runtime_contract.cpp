@@ -2,6 +2,8 @@
 #include <QDir>
 #include <QFile>
 #include <QElapsedTimer>
+#include <QAtomicInt>
+#include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -15,6 +17,47 @@
 using namespace Kalburator::Runtime;
 
 namespace {
+struct MutationProbe
+{
+    QAtomicInt creates = 0;
+    QAtomicInt deletes = 0;
+    QAtomicInt executorThreadCalls = 0;
+    QAtomicInt failCreateAfter = -1;
+};
+
+class MutationProbeBackend final : public Kalburator::Sync::MockBackend
+{
+public:
+    MutationProbeBackend(const QString &id, std::shared_ptr<MutationProbe> probe)
+        : MockBackend(id), m_probe(std::move(probe)) {}
+
+    QString createCollection(const Kalburator::Sync::CollectionInfo &info) override
+    {
+        const int failAfter = m_probe->failCreateAfter.loadRelaxed();
+        if (failAfter >= 0 && m_probe->creates.loadRelaxed() >= failAfter)
+            return {};
+        const auto created = MockBackend::createCollection(info);
+        if (!created.isEmpty())
+            ++m_probe->creates;
+        if (QThread::currentThread() != QCoreApplication::instance()->thread())
+            ++m_probe->executorThreadCalls;
+        return created;
+    }
+
+    bool deletePhysicalCollection(const QString &collectionId) override
+    {
+        const bool deleted = MockBackend::deletePhysicalCollection(collectionId);
+        if (deleted)
+            ++m_probe->deletes;
+        if (QThread::currentThread() != QCoreApplication::instance()->thread())
+            ++m_probe->executorThreadCalls;
+        return deleted;
+    }
+
+private:
+    std::shared_ptr<MutationProbe> m_probe;
+};
+
 class ReadOnlyEndpointBackend final : public Kalburator::Sync::SyncBackendBase
 {
 public:
@@ -50,6 +93,11 @@ public:
             return std::make_unique<BackendEndpoint>(
                 std::make_unique<ReadOnlyEndpointBackend>(request.endpointId));
         }
+        if (request.factoryInput.value(QStringLiteral("kind")).toString()
+            == QStringLiteral("mutation-probe")) {
+            return std::make_unique<BackendEndpoint>(
+                std::make_unique<MutationProbeBackend>(request.endpointId, mutationProbe));
+        }
         auto backend = std::make_unique<Kalburator::Sync::MockBackend>(request.endpointId);
         if (request.factoryInput.value(QStringLiteral("kind")).toString()
             == QStringLiteral("local")) {
@@ -74,6 +122,7 @@ public:
     mutable int createCount = 0;
     mutable bool failCreation = false;
     mutable QHash<QString, Kalburator::Sync::MockBackend *> endpoints;
+    std::shared_ptr<MutationProbe> mutationProbe = std::make_shared<MutationProbe>();
 };
 
 class TopologyPersistenceFake final : public TopologyPersistenceParticipant
@@ -123,6 +172,11 @@ private slots:
     void collectionMutationVerbsAndCompensationAreExplicit();
     void unsupportedCollectionMutationIsTypedFailure();
     void failedCollectionMutationDoesNotPublishAndReportsRepair();
+    void invalidLaterCollectionMutationHasNoEarlierPhysicalEffect();
+    void failedLaterCollectionMutationCompensatesEarlierCreate();
+    void reentrantTopologyCommandIsRejectedDuringCommitNotification();
+    void reentrantRunAndProviderCommandsAreRejectedDuringTopologyCommit();
+    void topologyReplacementIsRejectedWhileRunIsActive();
     void conflictsArePersistedSurfacedAndResolvableThroughRuntime();
     void activeRunDestructionCancelsAndCompletesFuture();
 };
@@ -929,6 +983,172 @@ void TestPlanStanRuntimeContract::unsupportedCollectionMutationIsTypedFailure()
     QVERIFY(!result.committed);
     QVERIFY(result.errorMessage.contains(QStringLiteral("unsupported")));
     QVERIFY(!result.repairRequired);
+}
+
+void TestPlanStanRuntimeContract::topologyReplacementIsRejectedWhileRunIsActive()
+{
+    QTemporaryDir profile;
+    QVERIFY(profile.isValid());
+    RuntimeDefinition definition;
+    definition.storagePath = profile.filePath(QStringLiteral("sync.db"));
+    definition.backendFactories.append(QSharedPointer<PlanEndpointFactory>(new PlanEndpointFactory));
+    QString error;
+    auto runtime = CollectionRuntime::create(definition, error);
+    QVERIFY2(runtime != nullptr, qPrintable(error));
+
+    const Kalburator::Sync::SyncMapping mapping{
+        QStringLiteral("held-run"), QStringLiteral("source"),
+        QStringLiteral("local-calendar"), QStringLiteral("target"),
+        QStringLiteral("target-calendar")};
+    TopologyDefinition topology;
+    topology.endpoints = {
+        {QStringLiteral("source"), QStringLiteral("plan-endpoint"),
+         {{QStringLiteral("kind"), QStringLiteral("local")},
+          {QStringLiteral("delayMs"), 1500}}},
+        {QStringLiteral("target"), QStringLiteral("plan-endpoint"),
+         {{QStringLiteral("kind"), QStringLiteral("empty")},
+          {QStringLiteral("delayMs"), 1500}}}};
+    topology.mappings = {mapping};
+    QVERIFY2(runtime->applyTopology(topology).committed, qPrintable(error));
+    const auto before = runtime->snapshot();
+
+    const auto run = runtime->run({RunSelection::allEnabled(), RunIntent::Normal});
+    QVERIFY(run.isStarted());
+    QVERIFY2(QTest::qWaitFor([&] { return !run.isFinished(); }, 1000),
+             "the held backend run finished before topology rejection was exercised");
+
+    const auto replacement = runtime->applyTopology(topology);
+    QVERIFY(!replacement.committed);
+    QVERIFY(replacement.errorMessage.contains(QStringLiteral("active")));
+    QCOMPARE(runtime->snapshot().generation, before.generation);
+    QCOMPARE(runtime->snapshot().mappingIds, before.mappingIds);
+
+    QTRY_VERIFY_WITH_TIMEOUT(run.isFinished(), 10000);
+}
+
+void TestPlanStanRuntimeContract::invalidLaterCollectionMutationHasNoEarlierPhysicalEffect()
+{
+    QTemporaryDir profile;
+    QVERIFY(profile.isValid());
+    auto factory = QSharedPointer<PlanEndpointFactory>(new PlanEndpointFactory);
+    RuntimeDefinition definition;
+    definition.storagePath = profile.filePath(QStringLiteral("sync.db"));
+    definition.backendFactories.append(factory);
+    QString error;
+    auto runtime = CollectionRuntime::create(definition, error);
+    QVERIFY2(runtime != nullptr, qPrintable(error));
+
+    CollectionMutation create;
+    create.kind = CollectionMutationKind::Create;
+    create.endpointId = QStringLiteral("local");
+    create.collection = {QStringLiteral("created-first"), QStringLiteral("Created"),
+                         QStringLiteral("calendar")};
+    CollectionMutation malformedLater;
+    malformedLater.kind = CollectionMutationKind::Update;
+    malformedLater.endpointId = QStringLiteral("local");
+    // No collection id: this must be rejected before create reaches the backend.
+    TopologyDefinition topology;
+    topology.endpoints = {{QStringLiteral("local"), QStringLiteral("plan-endpoint"),
+                           {{QStringLiteral("kind"), QStringLiteral("mutation-probe")}},
+                           {}, {}, {}}};
+    topology.collectionMutations = {create, malformedLater};
+
+    const auto result = runtime->applyTopology(topology);
+    QVERIFY(!result.committed);
+    QVERIFY(result.errorMessage.contains(QStringLiteral("no collection id")));
+    QCOMPARE(factory->mutationProbe->creates.loadRelaxed(), 0);
+    QCOMPARE(factory->mutationProbe->deletes.loadRelaxed(), 0);
+}
+
+void TestPlanStanRuntimeContract::failedLaterCollectionMutationCompensatesEarlierCreate()
+{
+    QTemporaryDir profile;
+    QVERIFY(profile.isValid());
+    auto factory = QSharedPointer<PlanEndpointFactory>(new PlanEndpointFactory);
+    factory->mutationProbe->failCreateAfter.storeRelaxed(1);
+    RuntimeDefinition definition;
+    definition.storagePath = profile.filePath(QStringLiteral("sync.db"));
+    definition.backendFactories.append(factory);
+    QString error;
+    auto runtime = CollectionRuntime::create(definition, error);
+    QVERIFY2(runtime != nullptr, qPrintable(error));
+
+    auto create = [](const QString &id) {
+        CollectionMutation mutation;
+        mutation.kind = CollectionMutationKind::Create;
+        mutation.endpointId = QStringLiteral("local");
+        mutation.collection = {id, id, QStringLiteral("calendar")};
+        return mutation;
+    };
+    TopologyDefinition topology;
+    topology.endpoints = {{QStringLiteral("local"), QStringLiteral("plan-endpoint"),
+                           {{QStringLiteral("kind"), QStringLiteral("mutation-probe")}},
+                           {}, {}, {}}};
+    topology.collectionMutations = {create(QStringLiteral("first")),
+                                    create(QStringLiteral("second"))};
+
+    const auto result = runtime->applyTopology(topology);
+    QVERIFY(!result.committed);
+    QVERIFY(!result.repairRequired);
+    QCOMPARE(factory->mutationProbe->creates.loadRelaxed(), 1);
+    QCOMPARE(factory->mutationProbe->deletes.loadRelaxed(), 1);
+    QCOMPARE(factory->mutationProbe->executorThreadCalls.loadRelaxed(), 2);
+}
+
+void TestPlanStanRuntimeContract::reentrantTopologyCommandIsRejectedDuringCommitNotification()
+{
+    QTemporaryDir profile;
+    QVERIFY(profile.isValid());
+    RuntimeDefinition definition;
+    definition.storagePath = profile.filePath(QStringLiteral("sync.db"));
+    definition.backendFactories.append(QSharedPointer<PlanEndpointFactory>(new PlanEndpointFactory));
+    QString error;
+    auto runtime = CollectionRuntime::create(definition, error);
+    QVERIFY2(runtime != nullptr, qPrintable(error));
+
+    TopologyDefinition topology;
+    topology.endpoints = {{QStringLiteral("local"), QStringLiteral("plan-endpoint"), {}, {}, {}, {}}};
+    TopologyResult reentrant;
+    runtime->setEventSink([&](const RuntimeEvent &event) {
+        if (event.kind == RuntimeEvent::Kind::TopologyCommitted)
+            reentrant = runtime->applyTopology(topology);
+    });
+
+    const auto committed = runtime->applyTopology(topology);
+    QVERIFY2(committed.committed, qPrintable(committed.errorMessage));
+    QVERIFY(!reentrant.committed);
+    QVERIFY(reentrant.errorMessage.contains(QStringLiteral("already in progress")));
+}
+
+void TestPlanStanRuntimeContract::reentrantRunAndProviderCommandsAreRejectedDuringTopologyCommit()
+{
+    QTemporaryDir profile;
+    QVERIFY(profile.isValid());
+    RuntimeDefinition definition;
+    definition.storagePath = profile.filePath(QStringLiteral("sync.db"));
+    definition.backendFactories.append(QSharedPointer<PlanEndpointFactory>(new PlanEndpointFactory));
+    QString error;
+    auto runtime = CollectionRuntime::create(definition, error);
+    QVERIFY2(runtime != nullptr, qPrintable(error));
+
+    TopologyDefinition topology;
+    topology.endpoints = {{QStringLiteral("local"), QStringLiteral("plan-endpoint"), {}, {}, {}, {}}};
+    Kalburator::Runtime::RunResult reentrantRun;
+    QString providerError;
+    runtime->setEventSink([&](const RuntimeEvent &event) {
+        if (event.kind != RuntimeEvent::Kind::TopologyCommitted)
+            return;
+        reentrantRun = runtime->run({RunSelection::one(QStringLiteral("any-mapping")),
+                                     RunIntent::Normal}).result();
+        QVERIFY(!runtime->removeProvider(QStringLiteral("any-provider"), providerError));
+    });
+
+    const auto committed = runtime->applyTopology(topology);
+    QVERIFY2(committed.committed, qPrintable(committed.errorMessage));
+    QVERIFY(!reentrantRun.success);
+    QVERIFY2(reentrantRun.errorMessage.contains(QStringLiteral("topology")),
+             qPrintable(reentrantRun.errorMessage));
+    QVERIFY(providerError.contains(QStringLiteral("topology")));
 }
 
 void TestPlanStanRuntimeContract::failedCollectionMutationDoesNotPublishAndReportsRepair()
