@@ -104,6 +104,7 @@ private slots:
     // SyncConflictStore integration
     void testConflictRecordedInStore();
     void testConflictResolvedInStore();
+    void testCustomMergePayloadRoundTripsInStore();
     void testUnresolvedConflictCount();
     void testRepresentingSameConflictDoesNotDuplicateRow();
     void testRepresentingSameConflictPopulatesIcalColumns();
@@ -561,6 +562,20 @@ void TestConflictManager::testConflictResolvedInStore()
     QCOMPARE(m_syncStore->unresolvedConflictCount(), 0);
 }
 
+void TestConflictManager::testCustomMergePayloadRoundTripsInStore()
+{
+    const ConflictInfo conflict = createTestConflict();
+    const QString id = m_syncStore->recordConflict(conflict);
+    QVERIFY(!id.isEmpty());
+    const QString merged = QStringLiteral("BEGIN:VEVENT\nSUMMARY:User-Merged\nEND:VEVENT");
+
+    m_syncStore->resolveConflict(id, ConflictResolution::CustomMerge, merged);
+
+    const auto rows = m_syncStore->resolvedConflicts(conflict.mappingId);
+    QCOMPARE(rows.size(), 1);
+    QCOMPARE(rows.first().mergedNative, merged);
+}
+
 void TestConflictManager::testUnresolvedConflictCount()
 {
     m_conflictManager->setWorkflowMode(ConflictManager::WorkflowMode::Deferred);
@@ -656,4 +671,3 @@ void TestConflictManager::testDisplayNameFieldsFallbackToBackendId()
 
 QTEST_MAIN(TestConflictManager)
 #include "tst_conflictmanager.moc"
-

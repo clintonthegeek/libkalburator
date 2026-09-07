@@ -1,4 +1,4 @@
-#include "recordfilter.h"
+#include <kalburator/shape/recordfilter.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

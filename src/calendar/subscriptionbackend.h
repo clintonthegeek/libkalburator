@@ -9,10 +9,10 @@
 #include <QDate>
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Incidence>
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete FetchOperation/DeleteOperation for covariant overrides
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
 #include <QDateTime>
 
 namespace Kalburator::Sync {

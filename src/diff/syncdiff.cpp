@@ -1,4 +1,4 @@
-#include "syncdiff.h"
+#include <kalburator/diff/syncdiff.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>

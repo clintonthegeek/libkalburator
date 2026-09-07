@@ -1,12 +1,12 @@
-#include "calendarmanager.h"
-#include "isynchost.h"
-#include "isyncconfigstore.h"
-#include "synctypes.h"
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete PushOperation (calendar consumer; no longer transitive via syncengine.h)
-#include "icalendarcollection.h"
-#include "syncengine.h"
-#include "blockonasync.h"
+#include <kalburator/calendar/calendarmanager.h>
+#include <kalburator/calendar/isynchost.h>
+#include <kalburator/types/isyncconfigstore.h>
+#include <kalburator/types/synctypes.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete PushOperation (calendar consumer; no longer transitive via syncengine.h)
+#include <kalburator/types/icalendarcollection.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/sync/blockonasync.h>
 #include <QDebug>
 #include <QEventLoop>
 #include <QTimeZone>
@@ -18,7 +18,6 @@ static bool s_metatypesRegistered = []() {
     qRegisterMetaType<DeleteMode>("DeleteMode");
     qRegisterMetaType<CreationResult>("CreationResult");
     qRegisterMetaType<DeletionResult>("DeletionResult");
-    qRegisterMetaType<CalendarSnapshot>("CalendarSnapshot");
     qRegisterMetaType<OperationType>("OperationType");
     return true;
 }();
@@ -793,62 +792,6 @@ QStringList CalendarManager::validateOperation(const QString &logicalCalendarId,
     }
 
     return warnings;
-}
-
-// ========== Snapshot for Undo ==========
-
-CalendarSnapshot CalendarManager::captureSnapshot(const QString &logicalCalendarId) const
-{
-    CalendarSnapshot snapshot;
-
-    if (!m_configManager) {
-        return snapshot;
-    }
-
-    LogicalCalendar logCal = m_configManager->logicalCalendar(logicalCalendarId);
-    if (!logCal.isValid()) {
-        return snapshot;
-    }
-
-    snapshot.logicalCalendar = logCal;
-    snapshot.capturedAt = QDateTime::currentDateTime();
-
-    // Capture all incidences from the primary calendar
-    CalendarBackendBinding primary = logCal.primaryBinding();
-    if (primary.isValid() && m_collection) {
-        KCalendarCore::MemoryCalendar *cal =
-            m_collection->calendar(primary.calendarId);
-        if (cal) {
-            const auto incidences = cal->incidences();
-            for (const auto &inc : incidences) {
-                snapshot.incidences.append(KCalendarCore::Incidence::Ptr(inc->clone()));
-            }
-        }
-    }
-
-    qDebug() << "CalendarManager: Captured snapshot of" << logCal.displayName
-             << "with" << snapshot.incidences.size() << "incidences";
-
-    return snapshot;
-}
-
-bool CalendarManager::restoreFromSnapshot(const CalendarSnapshot &snapshot)
-{
-    if (!snapshot.isValid()) {
-        emit operationFailed(QStringLiteral("restoreFromSnapshot"), tr("Invalid snapshot"));
-        return false;
-    }
-
-    qDebug() << "CalendarManager: Restoring from snapshot of"
-             << snapshot.logicalCalendar.displayName;
-
-    // For now, this is a placeholder - full implementation would:
-    // 1. Delete current incidences
-    // 2. Restore snapshot incidences
-    // 3. Push to all backends
-
-    // TODO: Implement full restore logic
-    return false;
 }
 
 // ========== Internal Helpers ==========

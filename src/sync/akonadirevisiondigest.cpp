@@ -1,4 +1,4 @@
-#include "akonadirevisiondigest.h"
+#include <kalburator/sync/akonadirevisiondigest.h>
 #include <QCryptographicHash>
 #include <algorithm>
 namespace Kalburator::Sync {

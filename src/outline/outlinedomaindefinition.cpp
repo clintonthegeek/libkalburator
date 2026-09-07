@@ -1,7 +1,7 @@
-#include "outlinedomaindefinition.h"
-#include "outlinecanonproperties.h"
-#include "outlinediffer.h"
-#include "outlinemerger.h"
+#include <kalburator/outline/outlinedomaindefinition.h>
+#include <kalburator/outline/outlinecanonproperties.h>
+#include <kalburator/outline/outlinediffer.h>
+#include <kalburator/outline/outlinemerger.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

@@ -1,4 +1,4 @@
-#include "vcardmerger.h"
+#include <kalburator/contacts/vcardmerger.h>
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>

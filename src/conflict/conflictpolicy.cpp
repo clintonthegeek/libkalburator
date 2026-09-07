@@ -1,5 +1,5 @@
-#include "conflictpolicy.h"
-#include "conflictstore.h"
+#include <kalburator/conflict/conflictpolicy.h>
+#include <kalburator/conflict/conflictstore.h>
 
 namespace Kalburator::Conflict {
 

@@ -1,7 +1,7 @@
-#include "notestockshapes.h"
-#include "noteproperties.h"
-#include "markdowncanonstages.h"
-#include "lossprofile.h"
+#include <kalburator/note/notestockshapes.h>
+#include <kalburator/note/noteproperties.h>
+#include <kalburator/note/markdowncanonstages.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

@@ -7,7 +7,7 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "shape.h"
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Sync {
 

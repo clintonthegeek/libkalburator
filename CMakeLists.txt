@@ -3,7 +3,7 @@ project(Kalburator VERSION 0.2.4 LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # libkalburator — a reusable sync substrate for Qt6/KF6 calendar apps.
-# Three targets:
+# Core source-tree targets:
 #   Kalburator::Types — minimal type vocabulary (value types, enums, pure
 #     interfaces: LogicalCalendar, BackendRecord, ICalendarCollection, SyncMapping,
 #     etc.). Carries NO JSON, NO file I/O, NO QObject machinery (Plan 5 / AUDIT B2
@@ -12,6 +12,8 @@ project(Kalburator VERSION 0.2.4 LANGUAGES CXX)
 #     crash-journal I/O, incidence lock registry, LogicalCalendar JSON codec).
 #     Depends only on Kalburator::Types + Qt — NOT the Sync engine — so light
 #     downstream foundation libs can link it.
+#   Kalburator::Canon and Kalburator::Identity — headless canon-envelope and
+#     cross-domain identity services for consumers that cannot link Sync.
 #   Kalburator::Sync — sync backends + coordination. Depends on
 #     Kalburator::Types plus KF6::DAV/KIO/Holidays. Link this from host
 #     applications that embed the sync engine.
@@ -29,6 +31,24 @@ find_package(KF6KIO REQUIRED)
 find_package(KF6Holidays REQUIRED)
 find_package(KF6Contacts REQUIRED)
 find_package(KF6Config REQUIRED)
+
+# Build and install headers through one namespaced include root. The source
+# directories remain the implementation tree; these links make the same
+# `kalburator/<domain>/<header>` spelling work while compiling in-tree.
+set(KALBURATOR_BUILD_INCLUDE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/include")
+set(KALBURATOR_PUBLIC_HEADER_DOMAINS
+    blob calendar contacts conflict diff discovery engine google graph identity journal
+    net note outline plugin runtime shape storage sync todo types typesupport ui universal
+)
+foreach(_kalburator_header_domain IN LISTS KALBURATOR_PUBLIC_HEADER_DOMAINS)
+    file(MAKE_DIRECTORY "${KALBURATOR_BUILD_INCLUDE_ROOT}/kalburator")
+    if(NOT EXISTS "${KALBURATOR_BUILD_INCLUDE_ROOT}/kalburator/${_kalburator_header_domain}")
+        file(CREATE_LINK
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/${_kalburator_header_domain}"
+            "${KALBURATOR_BUILD_INCLUDE_ROOT}/kalburator/${_kalburator_header_domain}"
+            SYMBOLIC)
+    endif()
+endforeach()
 
 # Optional org-io support for OrgBackend. When ON, host must provide the
 # planstan-org-io target via PUBLIC linkage from outside; standalone builds
@@ -68,6 +88,8 @@ add_library(Kalburator::Types ALIAS kalburator-types)
 
 target_include_directories(kalburator-types
     PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/types>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
@@ -80,6 +102,42 @@ target_link_libraries(kalburator-types
 )
 
 set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# --- Kalburator::Canon ------------------------------------------------------
+# Canon-envelope serialization is shared by headless identity consumers and
+# the full sync target, but has no domain or GUI dependency.
+add_library(kalburator-canon STATIC
+    src/shape/canonenvelope.h
+    src/shape/canonenvelope.cpp
+)
+add_library(Kalburator::Canon ALIAS kalburator-canon)
+target_include_directories(kalburator-canon
+    PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
+)
+target_link_libraries(kalburator-canon PUBLIC Qt6::Core)
+set_target_properties(kalburator-canon PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# --- Kalburator::Identity --------------------------------------------------
+# Cross-domain record/entity links for headless consumers. Keep this boundary
+# free of Widgets, KCalendarCore, network, and sync-engine dependencies.
+add_library(kalburator-identity STATIC
+    src/identity/identitystore.h
+    src/identity/identityresolver.h
+    src/identity/persondirectory.h
+    src/identity/identitystore.cpp
+)
+add_library(Kalburator::Identity ALIAS kalburator-identity)
+target_include_directories(kalburator-identity
+    PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/identity>
+)
+target_link_libraries(kalburator-identity PUBLIC Qt6::Core Qt6::Sql Kalburator::Canon)
+set_target_properties(kalburator-identity PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- Kalburator::TypeSupport ------------------------------------------------
 # Light behavioural companion to Kalburator::Types: JSON codecs, crash-journal
@@ -101,6 +159,8 @@ add_library(Kalburator::TypeSupport ALIAS kalburator-typesupport)
 
 target_include_directories(kalburator-typesupport
     PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/typesupport>
 )
 
@@ -110,6 +170,36 @@ target_link_libraries(kalburator-typesupport
 )
 
 set_target_properties(kalburator-typesupport PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# --- Kalburator::Core -------------------------------------------------------
+# Stable headless foundation for consumers that need value types, canonical
+# envelopes, identity, and lightweight persistence support without the sync
+# engine or UI.  The component targets remain separately linkable; this target
+# is the single small composition point for headless applications.
+add_library(kalburator-core INTERFACE)
+add_library(Kalburator::Core ALIAS kalburator-core)
+target_link_libraries(kalburator-core INTERFACE
+    Kalburator::Types
+    Kalburator::Canon
+    Kalburator::Identity
+    Kalburator::TypeSupport
+)
+
+# SQLite-backed engine stores are useful to headless consumers independently
+# of the provider and UI families.
+add_library(kalburator-storage STATIC
+    ${KALBURATOR_STORAGE_HEADERS}
+    ${KALBURATOR_STORAGE_SOURCES}
+)
+add_library(Kalburator::Storage ALIAS kalburator-storage)
+target_include_directories(kalburator-storage PUBLIC
+    $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+    $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
+)
+target_link_libraries(kalburator-storage PUBLIC Kalburator::Types Qt6::Sql)
+set_target_properties(kalburator-storage PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- Kalburator::Sync -------------------------------------------------------
 # Sync sources are layered across sub-directories per docs/phase0/05-repo-strategy.md:
@@ -131,6 +221,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/akonadibackend.h
     src/calendar/backendcapabilities.h
     src/sync/backendregistry.h
+    src/sync/backendexecutor.h
     src/calendar/caldavcontentcache.h
     src/calendar/calendarmanager.h
     # calendarmetadatamanager moved from src/types/ in Plan 5 (atomic QSaveFile Vdir
@@ -183,6 +274,7 @@ set(KALBURATOR_CALENDAR_SOURCES
     src/calendar/akonadibackend.cpp
     src/calendar/backendcapabilities.cpp
     src/sync/backendregistry.cpp
+    src/sync/backendexecutor.cpp
     src/calendar/caldavcontentcache.cpp
     src/calendar/calendarmanager.cpp
     src/calendar/calendarmetadatamanager.cpp
@@ -300,15 +392,6 @@ set(KALBURATOR_STORAGE_SOURCES
     src/storage/idmappingstore.cpp
 )
 
-set(KALBURATOR_IDENTITY_HEADERS
-    src/identity/identitystore.h
-    src/identity/identityresolver.h
-    src/identity/persondirectory.h
-)
-set(KALBURATOR_IDENTITY_SOURCES
-    src/identity/identitystore.cpp
-)
-
 set(KALBURATOR_DISCOVERY_HEADERS
     src/discovery/syncthingdiscovery.h
     src/discovery/syncthingmonitor.h
@@ -323,6 +406,8 @@ set(KALBURATOR_BLOB_HEADERS
     src/blob/blobplugin.h
     src/blob/blobstockshapes.h
     src/blob/iblobbackend.h
+    src/blob/backendcapabilityinterfaces.h
+    src/blob/recordloadresult.h
     src/blob/localblobbackend.h
     src/blob/mockblobbackend.h
 )
@@ -345,6 +430,13 @@ set(KALBURATOR_ENGINE_HEADERS
     src/engine/syncenginefuture.h
     src/engine/syncrequest.h
     src/engine/workerteardown.h
+)
+
+set(KALBURATOR_RUNTIME_HEADERS
+    src/runtime/collectionruntime.h
+)
+set(KALBURATOR_RUNTIME_SOURCES
+    src/runtime/collectionruntime.cpp
 )
 # Private headers — AUTOMOC needs them in the target sources so Q_OBJECT
 # is processed, but they are not part of the library's public surface.
@@ -403,7 +495,6 @@ set(KALBURATOR_SHAPE_SOURCES
     src/shape/defaultblobwriter.cpp
     # K.7.1 — split plugin interface
     src/shape/domainoperationsregistry.cpp
-    src/shape/canonenvelope.cpp
     # Plan 3 — canon JSON differ + merger
     src/shape/canonjsondiffer.cpp
     src/shape/canonjsonmerger.cpp
@@ -644,6 +735,8 @@ set(KALBURATOR_PROVIDER_CORE_HEADERS
     # Sync-topology promotion (2026-05-27): pure (logical calendars + topology)
     # -> SyncMapping list generator. No provider/engine state.
     src/sync/syncmappinggenerator.h
+    src/sync/credentialredaction.h
+    src/sync/secretstore.h
 )
 set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/providermanager.cpp
@@ -678,6 +771,8 @@ set(KALBURATOR_PROVIDER_CORE_SOURCES
     src/sync/akonadirevisionstore.cpp
     # Sync-topology promotion (2026-05-27): pure generator (see header)
     src/sync/syncmappinggenerator.cpp
+    src/sync/credentialredaction.cpp
+    src/sync/secretstore.cpp
 )
 
 # Phase M.9–M.11: Library UI widgets
@@ -720,7 +815,6 @@ set(KALBURATOR_SYNC_HEADERS
     ${KALBURATOR_DIFF_HEADERS}
     ${KALBURATOR_JOURNAL_HEADERS}
     ${KALBURATOR_STORAGE_HEADERS}
-    ${KALBURATOR_IDENTITY_HEADERS}
     ${KALBURATOR_DISCOVERY_HEADERS}
     ${KALBURATOR_BLOB_HEADERS}
     ${KALBURATOR_ENGINE_HEADERS}
@@ -740,7 +834,6 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_DIFF_SOURCES}
     ${KALBURATOR_JOURNAL_SOURCES}
     ${KALBURATOR_STORAGE_SOURCES}
-    ${KALBURATOR_IDENTITY_SOURCES}
     ${KALBURATOR_DISCOVERY_SOURCES}
     ${KALBURATOR_BLOB_SOURCES}
     ${KALBURATOR_ENGINE_SOURCES}
@@ -754,6 +847,10 @@ set(KALBURATOR_SYNC_SOURCES
     ${KALBURATOR_PLUGIN_SOURCES}
     ${KALBURATOR_UI_SOURCES}
 )
+
+# UI sources have an explicit optional target below. Keep them out of the
+# headless Sync archive so consumers that only need synchronization do not
+# inherit Qt Widgets.
 
 if(NOT KALBURATOR_HAVE_ORG_IO)
     list(FILTER KALBURATOR_SYNC_HEADERS EXCLUDE REGEX "orgbackend\\.h$")
@@ -789,11 +886,15 @@ add_library(kalburator STATIC
     ${KALBURATOR_SYNC_HEADERS}
     ${KALBURATOR_SYNC_SOURCES}
     ${KALBURATOR_ENGINE_PRIVATE_HEADERS}
+    ${KALBURATOR_RUNTIME_HEADERS}
+    ${KALBURATOR_RUNTIME_SOURCES}
 )
 add_library(Kalburator::Sync ALIAS kalburator)
 
 target_include_directories(kalburator
     PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/diff>
@@ -804,6 +905,7 @@ target_include_directories(kalburator
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/universal>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/blob>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/engine>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/runtime>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/todo>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/contacts>
@@ -821,6 +923,7 @@ target_link_libraries(kalburator
     PUBLIC
         kalburator-typesupport
         kalburator-types
+        Kalburator::Identity
         Qt6::Sql
         Qt6::Network
         Qt6::Xml
@@ -865,6 +968,16 @@ if(KALBURATOR_BUILD_WIDGETS)
     add_subdirectory(widgets)
 endif()
 
+# Source-tree public headers are installed under the same domain-qualified
+# paths used by the build include root. Packaging/export belongs to BLD-007;
+# this task establishes the stable header layout that package metadata will
+# later export.
+foreach(_kalburator_header_domain IN LISTS KALBURATOR_PUBLIC_HEADER_DOMAINS)
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/${_kalburator_header_domain}/"
+        DESTINATION "include/kalburator/${_kalburator_header_domain}"
+        FILES_MATCHING PATTERN "*.h")
+endforeach()
+
 # -- Library tests ----------------------------------------------------------
 # Gated so that add_subdirectory consumers (PlanStan, WP) don't pick up
 # libkalburator's own test executables. Top-level standalone builds get
@@ -874,11 +987,53 @@ if(PROJECT_IS_TOP_LEVEL)
 else()
     option(KALBURATOR_BUILD_TESTS "Build libkalburator's own tests" OFF)
 endif()
+option(KALBURATOR_ENABLE_UNSUPPORTED_RELOCATION_TESTS
+    "Register diagnostic tests for unsupported consumer-managed backend relocation"
+    OFF)
 
 if(KALBURATOR_BUILD_TESTS)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    # Reusable hermetic protocol fixtures for consumer-contract tests. Keep
+    # these out of the production Sync target: consumers that need fake DAV
+    # endpoints link the explicit TestSupport target instead.
+    add_library(kalburator-testsupport STATIC
+        tests/sync/fakecaldavserver.cpp
+        tests/sync/fakecaldavserver.h
+        tests/sync/fakecarddavserver.cpp
+        tests/sync/fakecarddavserver.h
+    )
+    add_library(Kalburator::TestSupport ALIAS kalburator-testsupport)
+    target_include_directories(kalburator-testsupport PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tests/sync>
+    )
+    target_link_libraries(kalburator-testsupport PUBLIC
+        Qt6::Core
+        Qt6::Network
+        Qt6::Xml
+    )
+    set_target_properties(kalburator-testsupport PROPERTIES
+        AUTOMOC ON
+        POSITION_INDEPENDENT_CODE ON
+    )
     add_subdirectory(tests)
+
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_custom_target(test-report
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_report.py
+                --build-dir ${CMAKE_BINARY_DIR}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            USES_TERMINAL
+            COMMENT "Running CTest and reporting executed/skipped coverage"
+        )
+    else()
+        message(STATUS "Python3 not found; use ctest directly (test-report unavailable)")
+    endif()
 endif()
 
 option(KALBURATOR_BUILD_EXAMPLES "Build example consumers (reference_consumer)" ON)

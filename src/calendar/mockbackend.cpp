@@ -1,5 +1,5 @@
-#include "mockbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 #include <QThread>
 #include <QTimer>
@@ -481,6 +481,32 @@ bool MockBackend::deleteCalendar(const QString &collectionId, const QString &cal
         return true;
     }
     return false;  // Doesn't exist
+}
+
+bool MockBackend::updateCalendar(const QString &collectionId,
+                                  const QString &calendarId,
+                                  const QVariantMap &properties)
+{
+    Q_UNUSED(collectionId)
+    if (!m_calendars.contains(calendarId))
+        return false;
+    const QString name = properties.value(QStringLiteral("name")).toString();
+    if (!name.isEmpty())
+        m_calendarNames[calendarId] = name;
+    return true;
+}
+
+bool MockBackend::renameCalendar(const QString &collectionId,
+                                  const QString &oldCalendarId,
+                                  const QString &newCalendarId)
+{
+    Q_UNUSED(collectionId)
+    if (!m_calendars.contains(oldCalendarId) || newCalendarId.isEmpty()
+        || m_calendars.contains(newCalendarId))
+        return false;
+    m_calendars.insert(newCalendarId, m_calendars.take(oldCalendarId));
+    m_calendarNames.insert(newCalendarId, m_calendarNames.take(oldCalendarId));
+    return true;
 }
 
 void MockBackend::setFailurePoint(FailurePoint point,

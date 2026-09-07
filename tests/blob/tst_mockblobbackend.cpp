@@ -47,6 +47,7 @@ private slots:
     void failureInjectionOnCreateRecord();
     void recordCreatedSignalFires();
     void loadRecordsOrError_reportsInjectedFailure();
+    void loadRecordsResult_distinguishesFailureFromEmpty();
     void wipeCollection_defaultImpl_emptiesCollection();
     void computesContentHashWhenIncomingEmpty();  // O47
 };
@@ -192,6 +193,22 @@ void TestMockBlobBackend::loadRecordsOrError_reportsInjectedFailure()
     QVERIFY(error.isEmpty());
     QCOMPARE(records.size(), 1);
     QCOMPARE(errSpy.size(), 1); // success path emits no new signal
+}
+
+void TestMockBlobBackend::loadRecordsResult_distinguishesFailureFromEmpty()
+{
+    MockBlobBackend b;
+    b.createCollection(makeCollection(QStringLiteral("memos")));
+
+    const auto empty = b.loadRecordsResult(QStringLiteral("memos"));
+    QVERIFY(empty.ok());
+    QVERIFY(empty.records.isEmpty());
+
+    b.setFailNext(MockBlobBackend::FailurePoint::OnLoadRecords);
+    const auto failed = b.loadRecordsResult(QStringLiteral("memos"));
+    QVERIFY(!failed.ok());
+    QVERIFY(failed.records.isEmpty());
+    QVERIFY(!failed.errorMessage.isEmpty());
 }
 
 // v0.65 — IBlobBackend::wipeCollection default implementation

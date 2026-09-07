@@ -1,5 +1,5 @@
-#include "markdownfilesbackend.h"
-#include "backendrecord.h"
+#include <kalburator/universal/markdownfilesbackend.h>
+#include <kalburator/types/backendrecord.h>
 
 #include <QRegularExpression>
 #include <QString>

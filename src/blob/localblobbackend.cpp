@@ -1,4 +1,4 @@
-#include "localblobbackend.h"
+#include <kalburator/blob/localblobbackend.h>
 
 #include <QCryptographicHash>
 #include <QFile>

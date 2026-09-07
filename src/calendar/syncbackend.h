@@ -43,9 +43,9 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/Recurrence>
 
-#include "calendartype.h"   // CalendarType enum
-#include "discoveredcalendar.h" // DiscoveredCalendar DTO (Plan 9 aggregate accessor)
-#include "syncbackendbase.h" // domain-neutral base (Phase K.4)
+#include <kalburator/types/calendartype.h>   // CalendarType enum
+#include <kalburator/calendar/discoveredcalendar.h> // DiscoveredCalendar DTO (Plan 9 aggregate accessor)
+#include <kalburator/sync/syncbackendbase.h> // domain-neutral base (Phase K.4)
 
 namespace Kalburator::Sync {
 
@@ -237,6 +237,20 @@ public:
     virtual bool deleteCalendar(const QString &collectionId, const QString &calendarId) {
         Q_UNUSED(collectionId); Q_UNUSED(calendarId);
         return false;
+    }
+
+    bool updateCollectionMetadata(const QString &collectionId,
+                                  const QVariantMap &metadata) override {
+        return updateCalendar(QString(), collectionId, metadata);
+    }
+
+    bool renamePhysicalCollection(const QString &collectionId,
+                                  const QString &newCollectionId) override {
+        return renameCalendar(QString(), collectionId, newCollectionId);
+    }
+
+    bool deletePhysicalCollection(const QString &collectionId) override {
+        return deleteCalendar(QString(), collectionId);
     }
 
     /**

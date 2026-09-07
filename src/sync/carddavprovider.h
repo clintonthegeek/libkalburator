@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNC_CARDDAVPROVIDER_H
 #define KALBURATOR_SYNC_CARDDAVPROVIDER_H
 
-#include "iprovider.h"
+#include <kalburator/sync/iprovider.h>
 
 #include <QMap>
 #include <QPromise>
@@ -28,7 +28,7 @@ class CardDavCapabilityDiscovery;
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"      QString — server base URL
  *   - "username" QString
- *   - "password" QString — plaintext (Phase Ib baseline; KWallet later)
+ *   - "passwordRef" QString — opaque host-secret reference
  */
 class CardDavProvider : public IProvider
 {
@@ -64,6 +64,7 @@ private:
     QUrl                                 m_serverUrl;
     QString                              m_username;
     QString                              m_password;
+    QString                              m_passwordRef;
     bool                                 m_connected = false;
     QString                              m_lastError;
     QList<CollectionInfo>                m_collections;

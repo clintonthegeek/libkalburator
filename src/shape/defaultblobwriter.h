@@ -1,6 +1,6 @@
 #pragma once
 
-#include "recordwriter.h"
+#include <kalburator/shape/recordwriter.h>
 
 namespace Kalburator::Sync { class IBlobBackend; }
 

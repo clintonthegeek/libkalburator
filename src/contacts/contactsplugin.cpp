@@ -1,6 +1,6 @@
-#include "contactsplugin.h"
-#include "contactsdomaindefinition.h"
-#include "contactsstockshapes.h"
+#include <kalburator/contacts/contactsplugin.h>
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactsstockshapes.h>
 
 namespace Kalburator::Contacts {
 

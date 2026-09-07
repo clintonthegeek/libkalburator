@@ -2,8 +2,8 @@
 
 #include <QSet>
 
-#include "canonicalrecord.h"
-#include "propertycatalogue.h"
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/propertycatalogue.h>
 
 namespace Kalburator::Shape {
 

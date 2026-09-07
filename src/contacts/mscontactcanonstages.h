@@ -1,7 +1,7 @@
 #pragma once
 
-#include "lossprofile.h"
-#include "transformationedge.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/shape/transformationedge.h>
 
 namespace Kalburator::Contacts {
 

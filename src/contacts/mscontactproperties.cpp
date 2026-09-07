@@ -1,4 +1,4 @@
-#include "mscontactproperties.h"
+#include <kalburator/contacts/mscontactproperties.h>
 
 using namespace Kalburator::Shape;
 

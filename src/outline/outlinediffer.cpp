@@ -1,5 +1,5 @@
-#include "outlinediffer.h"
-#include "canonenvelope.h"
+#include <kalburator/outline/outlinediffer.h>
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonObject>
 

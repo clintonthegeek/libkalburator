@@ -8,11 +8,11 @@
 #include <QSet>
 #include <optional>
 
-#include "lossprofile.h"
-#include "pipeline.h"
-#include "propertycatalogue.h"
-#include "shape.h"
-#include "transformationedge.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/shape/pipeline.h>
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/transformationedge.h>
 
 namespace Kalburator::Shape {
 

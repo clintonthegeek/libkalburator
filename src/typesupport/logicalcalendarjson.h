@@ -5,7 +5,7 @@
 // type stays in types/; only its serialization lives here, in the light TypeSupport
 // target. Valid downward dependency: typesupport/ -> types/.
 
-#include "logicalcalendar.h"   // BackendRole, CalendarBackendBinding, LogicalCalendar
+#include <kalburator/types/logicalcalendar.h>   // BackendRole, CalendarBackendBinding, LogicalCalendar
 
 #include <QJsonArray>
 #include <QJsonObject>

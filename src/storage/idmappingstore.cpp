@@ -1,4 +1,4 @@
-#include "idmappingstore.h"
+#include <kalburator/storage/idmappingstore.h>
 
 #include <QFile>
 #include <QFileInfo>

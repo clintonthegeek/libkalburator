@@ -1,4 +1,4 @@
-#include "transformationedge.h"
+#include <kalburator/shape/transformationedge.h>
 
 namespace Kalburator::Shape {
 

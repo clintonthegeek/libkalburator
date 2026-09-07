@@ -1,6 +1,6 @@
 #pragma once
 
-#include "plugin.h"
+#include <kalburator/plugin/plugin.h>
 
 namespace Kalburator::Outline {
 

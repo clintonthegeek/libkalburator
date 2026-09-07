@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNC_CALDAVCONTENTTYPES_H
 #define KALBURATOR_SYNC_CALDAVCONTENTTYPES_H
 
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 #include <KDAV/DavCollection>
 
 namespace Kalburator::Sync {

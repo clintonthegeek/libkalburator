@@ -1,8 +1,8 @@
-#include "orgbackend.h"
-#include "syncoperation.h"
-#include "backendcapabilities.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/calendar/orgbackend.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
 
 #include <QDir>
 #include <QFile>

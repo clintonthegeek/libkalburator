@@ -1,7 +1,7 @@
-#include "calendarplugin.h"
-#include "calendardomaindefinition.h"
-#include "calendarstockshapes.h"
-#include "calendardomainoperations.h"
+#include <kalburator/calendar/calendarplugin.h>
+#include <kalburator/calendar/calendardomaindefinition.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/calendar/calendardomainoperations.h>
 
 namespace Kalburator::Calendar {
 

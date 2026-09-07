@@ -16,7 +16,7 @@
  *   - Support for different data types (text, structured, binary)
  */
 
-#include "synccommon.h"
+#include <kalburator/conflict/synccommon.h>
 
 #include <QString>
 #include <QDateTime>

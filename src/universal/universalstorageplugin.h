@@ -9,7 +9,7 @@
 // a vocabulary wart deferred to Plan 10 (renaming `Kalburator::Sinks` is a
 // downstream wave — 11 WildPalms `Kalburator::Sinks` sites). See FINDINGS.
 
-#include "plugin.h"
+#include <kalburator/plugin/plugin.h>
 
 namespace Kalburator {
 

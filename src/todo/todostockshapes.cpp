@@ -1,12 +1,12 @@
-#include "todostockshapes.h"
-#include "icalvtodoproperties.h"
-#include "vtodocanonstages.h"
-#include "todotxttransformation.h"
-#include "googletaskproperties.h"
-#include "googletaskcanonstages.h"
-#include "mstodotaskproperties.h"
-#include "mstodotaskcanonstages.h"
-#include "lossprofile.h"
+#include <kalburator/todo/todostockshapes.h>
+#include <kalburator/todo/icalvtodoproperties.h>
+#include <kalburator/todo/vtodocanonstages.h>
+#include <kalburator/todo/todotxttransformation.h>
+#include <kalburator/todo/googletaskproperties.h>
+#include <kalburator/todo/googletaskcanonstages.h>
+#include <kalburator/todo/mstodotaskproperties.h>
+#include <kalburator/todo/mstodotaskcanonstages.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

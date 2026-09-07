@@ -3,7 +3,7 @@
 
 #ifdef HAVE_AKONADI
 
-#include "iproviderconfigwidget.h"
+#include <kalburator/sync/iproviderconfigwidget.h>
 #include <QWidget>
 
 class QLineEdit;

@@ -95,6 +95,7 @@ public:
         m_collections = m_collectionsSeed;
         emit collectionsChanged();
         emit connectionStateChanged(true);
+        emit connectionStateChanged(ProviderConnectionState::Connected);
         QFutureInterface<bool> fi;
         fi.reportStarted();
         fi.reportResult(true);
@@ -107,6 +108,7 @@ public:
         m_connected = false;
         m_collections.clear();
         emit connectionStateChanged(false);
+        emit connectionStateChanged(ProviderConnectionState::Disconnected);
     }
 
     bool isConnected() const override { return m_connected; }

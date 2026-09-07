@@ -35,9 +35,9 @@
 //     keys a cached copy has is enriched FROM the cache instead of
 //     clobbering it.
 
-#include "syncbackendbase.h"
-#include "writeoperation.h"
-#include "writerbatch.h"
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/sync/writeoperation.h>
+#include <kalburator/sync/writerbatch.h>
 
 #include <QHash>
 #include <QString>
@@ -71,6 +71,8 @@ public:
     // ==== identity ====
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
+    IBackendRecordMutator *recordMutator() override { return nullptr; }
+    IBackendCollectionWiper *collectionWiper() override { return nullptr; }
 
     // ==== discovery ====
     QList<Kalburator::Sync::CollectionInfo> availableCollections() override;

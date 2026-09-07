@@ -1,4 +1,4 @@
-#include "workerteardown.h"
+#include <kalburator/engine/workerteardown.h>
 
 #include <QThread>
 #include <QDebug>

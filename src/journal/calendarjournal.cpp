@@ -1,4 +1,4 @@
-#include "calendarjournal.h"
+#include <kalburator/journal/calendarjournal.h>
 #include <KCalendarCore/ICalFormat>
 #include <QJsonObject>
 

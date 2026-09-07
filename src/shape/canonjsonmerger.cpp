@@ -1,9 +1,9 @@
-#include "canonjsonmerger.h"
+#include <kalburator/shape/canonjsonmerger.h>
 
 #include <QDebug>
 #include <QJsonObject>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 namespace Kalburator::Shape {
 

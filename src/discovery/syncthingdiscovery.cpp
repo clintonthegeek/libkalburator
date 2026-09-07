@@ -1,4 +1,4 @@
-#include "syncthingdiscovery.h"
+#include <kalburator/discovery/syncthingdiscovery.h>
 
 #include <QFile>
 #include <QDir>

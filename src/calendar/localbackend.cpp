@@ -1,10 +1,10 @@
-#include "localbackend.h"
-#include "calendarmetadatamanager.h"
-#include "icalcodec.h"
-#include "asyncfilewriter.h"
-#include "backendcapabilities.h"
-#include "logicalcalendar.h"
-#include "discoveredcalendar.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/calendar/calendarmetadatamanager.h>
+#include <kalburator/calendar/icalcodec.h>
+#include <kalburator/journal/asyncfilewriter.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/calendar/discoveredcalendar.h>
 #include <KCalendarCore/ICalFormat>
 #include <QByteArrayView>
 #include <QCryptographicHash>

@@ -31,6 +31,10 @@ public:
     // --- Change detection ---
     QList<BackendRecord> modifiedSince(const QString &, const QDateTime &) override { return {}; }
     QStringList deletedSince(const QString &, const QDateTime &) override { return {}; }
+    void beginBatch() override {}
+    bool commitBatch() override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 };
 
 } // anonymous namespace

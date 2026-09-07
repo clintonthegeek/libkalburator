@@ -1,4 +1,4 @@
-#include "crashjournal.h"
+#include <kalburator/typesupport/crashjournal.h>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>

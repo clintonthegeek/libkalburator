@@ -1,4 +1,4 @@
-#include "caldavcontentcache.h"
+#include <kalburator/calendar/caldavcontentcache.h>
 
 #include <QDateTime>
 #include <QDebug>

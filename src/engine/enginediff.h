@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_ENGINE_ENGINEDIFF_H
 #define KALBURATOR_ENGINE_ENGINEDIFF_H
 
-#include "backendrecord.h"
+#include <kalburator/types/backendrecord.h>
 
 #include <QList>
 #include <QString>

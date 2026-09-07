@@ -9,9 +9,9 @@
 #include <memory>
 #include <vector>
 
-#include "collectioninfo.h"
-#include "backendconfiguration.h"
-#include "iblobbackend.h"
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/blob/iblobbackend.h>
 
 class QWidget;
 
@@ -31,9 +31,7 @@ namespace Kalburator::Sync {
  *   - Connected: emitted when that attempt succeeds.
  *   - Error: emitted when that attempt fails; lastError() is populated with
  *     a human-readable message before this is emitted.
- *   - Disconnected: not emitted by providers today (disconnect() still only
- *     emits the legacy bool overload with false); reserved for a future
- *     task that wires it up.
+ *   - Disconnected: emitted when a connected provider is disconnected.
  */
 enum class ProviderConnectionState {
     Disconnected,

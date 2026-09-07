@@ -3,8 +3,8 @@
 
 #include <functional>
 #include <memory>
-#include "iprovider.h"
-#include "collectioninfo.h"
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/types/collectioninfo.h>
 
 namespace Kalburator::Sync {
 

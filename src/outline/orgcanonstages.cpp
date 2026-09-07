@@ -1,6 +1,6 @@
-#include "orgcanonstages.h"
-#include "outlinenode.h"
-#include "canonenvelope.h"
+#include <kalburator/outline/orgcanonstages.h>
+#include <kalburator/outline/outlinenode.h>
+#include <kalburator/shape/canonenvelope.h>
 
 #include <orggrove/parser.h>
 #include <QJsonArray>

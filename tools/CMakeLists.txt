@@ -1,5 +1,5 @@
 # EEE Phase 6 — convergence-matrix generator (regenerates the committed
-# docs/campaign/eee/CONVERGENCE-MATRIX.md; byte-enforced by
+# docs/CONVERGENCE_MATRIX.md; byte-enforced by
 # tst_gm_pipeline_convergence).
 add_subdirectory(matrixgen)
 

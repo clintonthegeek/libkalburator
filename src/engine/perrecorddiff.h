@@ -1,10 +1,10 @@
 #ifndef KALBURATOR_ENGINE_PERRECORDDIFF_H
 #define KALBURATOR_ENGINE_PERRECORDDIFF_H
 
-#include "backendrecord.h"
-#include "baselineentry.h"
-#include "enginediff.h"
-#include "shape.h"
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/engine/baselineentry.h>
+#include <kalburator/engine/enginediff.h>
+#include <kalburator/shape/shape.h>
 
 #include <QHash>
 #include <QList>

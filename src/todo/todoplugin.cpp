@@ -1,6 +1,6 @@
-#include "todoplugin.h"
-#include "tododomaindefinition.h"
-#include "todostockshapes.h"
+#include <kalburator/todo/todoplugin.h>
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/todostockshapes.h>
 
 namespace Kalburator::Todo {
 

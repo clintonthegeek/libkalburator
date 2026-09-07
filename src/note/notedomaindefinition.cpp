@@ -1,7 +1,7 @@
-#include "notedomaindefinition.h"
-#include "noteproperties.h"
-#include "textdiffer.h"
-#include "textmerger.h"
+#include <kalburator/note/notedomaindefinition.h>
+#include <kalburator/note/noteproperties.h>
+#include <kalburator/note/textdiffer.h>
+#include <kalburator/note/textmerger.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

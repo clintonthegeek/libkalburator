@@ -1,6 +1,6 @@
-#include "googlepeoplebackend.h"
+#include <kalburator/contacts/googlepeoplebackend.h>
 
-#include "googleapiclient.h"
+#include <kalburator/google/googleapiclient.h>
 
 #include <QCryptographicHash>
 #include <QDateTime>

@@ -1,4 +1,4 @@
-#include "vcard3to4transformation.h"
+#include <kalburator/contacts/vcard3to4transformation.h>
 
 #include <KContacts/Addressee>
 #include <KContacts/VCardConverter>

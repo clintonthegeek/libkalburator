@@ -1,8 +1,8 @@
-#include "tododomaindefinition.h"
-#include "icalvtodoproperties.h"
-#include "todocanonproperties.h"
-#include "canonjsondiffer.h"
-#include "canonjsonmerger.h"
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/icalvtodoproperties.h>
+#include <kalburator/todo/todocanonproperties.h>
+#include <kalburator/shape/canonjsondiffer.h>
+#include <kalburator/shape/canonjsonmerger.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

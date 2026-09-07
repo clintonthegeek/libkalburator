@@ -41,6 +41,7 @@
 #include "iprovider.h"
 #include "providermanager.h"
 #include "remotecalendarbackend.h"
+#include "secretstore.h"
 #include "syncbackend.h"
 
 using namespace Kalburator::Sync;
@@ -340,8 +341,11 @@ void TstCalDavIntegration::save_then_load_round_trip()
                  serverUrl.toString());
         QCOMPARE(restored.connectionParams.value(QStringLiteral("username")).toString(),
                  username);
-        QCOMPARE(restored.connectionParams.value(QStringLiteral("password")).toString(),
-                 password);
+        QVERIFY(!restored.connectionParams.contains(QStringLiteral("password")));
+        const QString passwordRef = restored.connectionParams
+            .value(QStringLiteral("passwordRef")).toString();
+        QVERIFY(!passwordRef.isEmpty());
+        QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef), password);
     }
 }
 

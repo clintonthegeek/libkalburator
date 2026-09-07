@@ -38,7 +38,7 @@
 #include <QStringList>
 #include <QVariantMap>
 
-#include "canonicalrecord.h"
+#include <kalburator/shape/canonicalrecord.h>
 
 namespace Kalburator::Storage {
 

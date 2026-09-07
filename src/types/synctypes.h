@@ -157,9 +157,7 @@ struct PendingConflictResolution {
     QString recordId;           ///< The conflicting record's id (ConflictInfo::sourceId)
     ConflictResolution resolution = ConflictResolution::AskUser;
     /// CustomMerge only: the user's hand-merged payload in the SOURCE
-    /// backend's native encoding. NOT persisted by SyncConflictStore, so a
-    /// resolution rehydrated after a restart always has this empty and falls
-    /// back to the automatic merger (see FINDINGS O52).
+    /// backend's native encoding.
     QString mergedNative;
     QDateTime sourceModified;   ///< op.record.lastModified when the conflict was detected
     QDateTime targetModified;   ///< op.targetRecord.lastModified when the conflict was detected
@@ -212,6 +210,9 @@ struct SyncStats {
  * @brief Result of a sync operation.
  */
 struct SyncResult {
+    /// Stable mapping identity for aggregate consumers. Empty only for
+    /// legacy engine results created before mapping dispatch is known.
+    QString mappingId;
     bool success = true;
     QString errorMessage;
     QDateTime startTime;
@@ -505,8 +506,8 @@ struct ExecutionOverride {
     /// `direction` is silently ignored when `clobber == true`; effective
     /// direction is always source → target.
     ///
-    /// Unlike `direction`, this flag also applies on multi-mapping (subset
-    /// and all-enabled) dispatch — see SyncRequest::executionOverride.
+    /// Both fields apply on single, subset, and all-enabled dispatch — see
+    /// SyncRequest::executionOverride.
     bool clobber = false;
 };
 

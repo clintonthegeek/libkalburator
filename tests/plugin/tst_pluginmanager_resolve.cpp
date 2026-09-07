@@ -5,6 +5,7 @@
 #include "manifest.h"
 #include "pluginloaderror.h"
 #include "backendregistry.h"
+#include "plugin.h"
 
 using namespace Kalburator;
 
@@ -79,6 +80,19 @@ private slots:
         const auto order = pm.resolve(in, &errs);
         QVERIFY(errs.isEmpty());
         QCOMPARE(order.size(), 2);
+    }
+
+    void duplicatePluginIdsAreRejected() {
+        Sync::BackendRegistry registry;
+        Shape::ShapeRegistries shape;
+        PluginManager pm(&registry, shape);
+        Plugin first;
+        Plugin second;
+        const auto manifest = mk(QStringLiteral("duplicate"));
+        QVERIFY(!pm.loadInProcess({{&first, manifest}, {&second, manifest}}));
+        QCOMPARE(pm.rejected().size(), 1);
+        QCOMPARE(pm.rejected().first().error.code,
+                 PluginLoadErrorCode::DuplicatePluginId);
     }
 };
 

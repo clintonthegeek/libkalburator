@@ -1,8 +1,8 @@
 #ifndef KALBURATOR_SYNC_CALDAVPROVIDER_H
 #define KALBURATOR_SYNC_CALDAVPROVIDER_H
 
-#include "iprovider.h"
-#include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/typesupport/backendconfiguration.h>  // PerCalendarCapabilities (retained for priming)
 
 #include <QHash>
 #include <QMap>
@@ -25,7 +25,7 @@ class CalDavCapabilityDiscovery;
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"      QString — server base URL
  *   - "username" QString
- *   - "password" QString — plaintext (Phase H baseline; KWallet later)
+ *   - "passwordRef" QString — opaque host-secret reference
  */
 class CalDavProvider : public IProvider
 {
@@ -62,6 +62,7 @@ private:
     QUrl                                 m_serverUrl;
     QString                              m_username;
     QString                              m_password;
+    QString                              m_passwordRef;
     bool                                 m_connected = false;
     QString                              m_lastError;
     QList<CollectionInfo>                m_collections;

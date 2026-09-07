@@ -1,9 +1,9 @@
-#include "mseventcanonstages.h"
+#include <kalburator/calendar/mseventcanonstages.h>
 
-#include "alarmshape.h"
-#include "canonenvelope.h"
-#include "recurrencepatternconverter.h"
-#include "windowszonesmap.h"
+#include <kalburator/calendar/alarmshape.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/recurrencepatternconverter.h>
+#include <kalburator/calendar/windowszonesmap.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

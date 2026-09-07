@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNC_CALDAVCONFIGWIDGET_H
 #define KALBURATOR_SYNC_CALDAVCONFIGWIDGET_H
 
-#include "iproviderconfigwidget.h"
+#include <kalburator/sync/iproviderconfigwidget.h>
 #include <QWidget>
 
 class QLineEdit;
@@ -63,6 +63,7 @@ private:
     QLineEdit   *m_passwordEdit;
     QPushButton *m_testButton;
     QLabel      *m_statusLabel;
+    mutable QString m_passwordRef;
 };
 
 } // namespace Kalburator::Sync

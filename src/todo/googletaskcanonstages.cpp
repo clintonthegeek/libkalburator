@@ -1,6 +1,6 @@
-#include "googletaskcanonstages.h"
+#include <kalburator/todo/googletaskcanonstages.h>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QDate>
 #include <QDateTime>

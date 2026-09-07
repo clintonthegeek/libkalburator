@@ -582,8 +582,8 @@ private slots:
     // The committed ledger matches regeneration byte-for-byte (O63 rule).
     void committedMatrixMatchesGenerated()
     {
-        QFile f(QLatin1String(KALBURATOR_EEE_DOC_DIR)
-                + QStringLiteral("/CONVERGENCE-MATRIX.md"));
+        QFile f(QLatin1String(KALBURATOR_DOC_DIR)
+                + QStringLiteral("/CONVERGENCE_MATRIX.md"));
         QVERIFY2(f.open(QIODevice::ReadOnly), qPrintable(f.errorString()));
         const QString committed = QString::fromUtf8(f.readAll());
 

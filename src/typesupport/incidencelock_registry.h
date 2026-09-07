@@ -1,7 +1,7 @@
 #ifndef INCIDENCELOCK_REGISTRY_H
 #define INCIDENCELOCK_REGISTRY_H
 
-#include "incidencelock.h"
+#include <kalburator/types/incidencelock.h>
 #include <QObject>
 #include <QHash>
 #include <QList>

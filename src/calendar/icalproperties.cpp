@@ -1,4 +1,4 @@
-#include "icalproperties.h"
+#include <kalburator/calendar/icalproperties.h>
 
 using namespace Kalburator::Shape;
 

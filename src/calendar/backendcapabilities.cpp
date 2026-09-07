@@ -1,5 +1,5 @@
-#include "backendcapabilities.h"
-#include "syncbackend.h"  // For full RecurrenceCapabilities definition
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/calendar/syncbackend.h>  // For full RecurrenceCapabilities definition
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Journal>

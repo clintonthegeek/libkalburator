@@ -1,9 +1,9 @@
-#include "outlinestockshapes.h"
-#include "outlinecanonproperties.h"
-#include "opmlcanonstages.h"
-#include "lossprofile.h"
+#include <kalburator/outline/outlinestockshapes.h>
+#include <kalburator/outline/outlinecanonproperties.h>
+#include <kalburator/outline/opmlcanonstages.h>
+#include <kalburator/shape/lossprofile.h>
 #ifdef KALBURATOR_HAVE_OUTLINE_ORG
-#include "orgcanonstages.h"   // OrgGrove-dependent org<->canon stages
+#include <kalburator/outline/orgcanonstages.h>   // OrgGrove-dependent org<->canon stages
 #endif
 
 using Kalburator::Shape::DomainId;

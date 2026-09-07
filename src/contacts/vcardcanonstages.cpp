@@ -1,6 +1,6 @@
-#include "vcardcanonstages.h"
+#include <kalburator/contacts/vcardcanonstages.h>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>

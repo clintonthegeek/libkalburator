@@ -1,4 +1,4 @@
-#include "domainoperationsregistry.h"
+#include <kalburator/shape/domainoperationsregistry.h>
 
 namespace Kalburator::Shape {
 

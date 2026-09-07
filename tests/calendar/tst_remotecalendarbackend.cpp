@@ -1,12 +1,9 @@
 // tests/calendar/tst_remotebackend.cpp
-// G.9.b Task 72 — migrated from PlanStan/tests/backends/tst_remotebackend.cpp
+// Hermetic CalDAV coverage for RemoteCalendarBackend.
 //
 // Test suite for RemoteCalendarBackend (CalDAV).
 //
-// These tests require a running Radicale server with pre-configured test accounts.
-// See docs/RadicaleSetupForTesting.md for setup instructions.
-//
-// Tests skip gracefully when the server is unavailable.
+// The in-process fixture binds an isolated ephemeral port.
 
 #include <QtTest/QtTest>
 #include <QSignalSpy>
@@ -14,7 +11,6 @@
 #include <QTimer>
 #include <QUuid>
 #include <QTemporaryDir>
-#include <QTcpSocket>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>
@@ -25,6 +21,7 @@
 #include "remotecalendarbackend.h"
 #include "syncoperation.h"
 #include "syncbackend.h"
+#include "fakecaldavserver.h"
 
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;
@@ -32,42 +29,6 @@ using namespace Kalburator::Sync;
 // ============================================================================
 // CalDAV test server configuration (inlined from PlanStan's caldav_test_config.h)
 // ============================================================================
-namespace CalDavTestConfig {
-
-const QString SERVER_HOST = QStringLiteral("127.0.0.1");
-const int SERVER_PORT = 5232;
-const QString SERVER_URL = QStringLiteral("http://127.0.0.1:5232");
-
-const QString USERNAME_1 = QStringLiteral("testuser1");
-const QString PASSWORD_1 = QStringLiteral("password1");
-
-const QString USERNAME_2 = QStringLiteral("testuser2");
-const QString PASSWORD_2 = QStringLiteral("password2");
-
-const QString USERNAME_3 = QStringLiteral("testuser3");
-const QString PASSWORD_3 = QStringLiteral("password3");
-
-inline bool isServerAvailable()
-{
-    QTcpSocket socket;
-    socket.connectToHost(SERVER_HOST, SERVER_PORT);
-    bool connected = socket.waitForConnected(2000);
-    socket.close();
-    return connected;
-}
-
-inline QUrl principalUrl(const QString &username)
-{
-    return QUrl(SERVER_URL + QStringLiteral("/") + username + QStringLiteral("/"));
-}
-
-inline QUrl calendarUrl(const QString &username, const QString &calendarName)
-{
-    return QUrl(SERVER_URL + QStringLiteral("/") + username + QStringLiteral("/") + calendarName + QStringLiteral("/"));
-}
-
-} // namespace CalDavTestConfig
-
 // ============================================================================
 // Test helper functions (anonymous namespace)
 // ============================================================================
@@ -159,16 +120,13 @@ private:
     KCalendarCore::MemoryCalendar *m_testCalendar = nullptr;
     QString m_testCalendarName;
     QStringList m_createdCalendars;
+    FakeCalDavServer m_server;
 };
 
 void RemoteCalendarBackendTest::initTestCase()
 {
-    if (!CalDavTestConfig::isServerAvailable()) {
-        QSKIP("Radicale server not available at 127.0.0.1:5232. "
-              "See docs/RadicaleSetupForTesting.md for setup instructions.");
-    }
-
-    qDebug() << "CalDAV test server available at" << CalDavTestConfig::SERVER_URL;
+    QVERIFY2(m_server.startListening(), qPrintable(m_server.errorString()));
+    qDebug() << "CalDAV test fixture available at" << m_server.baseUrl();
 }
 
 void RemoteCalendarBackendTest::cleanupTestCase()
@@ -178,10 +136,10 @@ void RemoteCalendarBackendTest::cleanupTestCase()
 
 void RemoteCalendarBackendTest::init()
 {
-    QUrl serverUrl = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1);
+    const QUrl serverUrl = m_server.baseUrl();
     m_backend = new RemoteCalendarBackend(serverUrl,
-                                   CalDavTestConfig::USERNAME_1,
-                                   CalDavTestConfig::PASSWORD_1,
+                                   QStringLiteral("testuser"),
+                                   QStringLiteral("testpass"),
                                    this);
 
     m_testCalendarName = generateTestCalendarName();
@@ -310,9 +268,9 @@ void RemoteCalendarBackendTest::testFactoryMethod()
     // smoke check on the direct ctor; if RemoteCalendarBackend compiles,
     // it can be constructed with (url, username, password) here.
     auto *backend = new RemoteCalendarBackend(
-        CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1),
-        CalDavTestConfig::USERNAME_1,
-        CalDavTestConfig::PASSWORD_1,
+        m_server.baseUrl(),
+        QStringLiteral("testuser"),
+        QStringLiteral("testpass"),
         this);
     QVERIFY(backend != nullptr);
     QCOMPARE(backend->backendType(), QStringLiteral("caldav"));
@@ -375,9 +333,9 @@ void RemoteCalendarBackendTest::testLoadCalendarsDiscoversByUrlSlugNotDisplayNam
     QVERIFY2(createdSpy.wait(10000), "createCalendarAsync did not complete");
 
     auto *freshBackend = new RemoteCalendarBackend(
-        CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1),
-        CalDavTestConfig::USERNAME_1,
-        CalDavTestConfig::PASSWORD_1,
+        m_server.baseUrl(),
+        QStringLiteral("testuser"),
+        QStringLiteral("testpass"),
         this);
 
     QSignalSpy spy(freshBackend, &RemoteCalendarBackend::calendarDiscovered);
@@ -1008,9 +966,12 @@ void RemoteCalendarBackendTest::testFetchAllCtagsBatched()
 
 void RemoteCalendarBackendTest::testInvalidCredentials()
 {
-    QUrl serverUrl = CalDavTestConfig::principalUrl(CalDavTestConfig::USERNAME_1);
+    FakeCalDavServer server;
+    QVERIFY(server.startListening());
+    server.setReturn401(true);
+    const QUrl serverUrl = server.baseUrl();
     auto badBackend = new RemoteCalendarBackend(serverUrl,
-                                         CalDavTestConfig::USERNAME_1,
+                                         QStringLiteral("testuser"),
                                          QStringLiteral("wrong-password"),
                                          this);
 

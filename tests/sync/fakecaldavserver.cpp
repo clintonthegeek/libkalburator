@@ -146,6 +146,10 @@ void FakeCalDavServer::setSeedEvents(const QString &collectionHref,
 void FakeCalDavServer::logChange(const QString &collectionHref, const QString &uid, bool deleted)
 {
     m_changeLog[collectionHref].append({uid, deleted});
+    // Keep the fake's calendar-server revision in step with its mutation
+    // journal so Depth:1 CTag requests used by collectionRevisions() have a
+    // meaningful value for every populated collection.
+    m_ctagByHref[collectionHref] = QString::number(m_changeLog[collectionHref].size());
 }
 
 bool FakeCalDavServer::hasEvent(const QString &collectionHref,
@@ -447,6 +451,11 @@ void FakeCalDavServer::handleRequest(QTcpSocket *socket,
             xml = xmlForHome();
         } else if (path == calendarsPath) {
             xml = xmlForCalendars();
+        } else if (path == m_contextPath + QStringLiteral("/testuser/")) {
+            // collectionRevisions() batches calendars by their parent URL.
+            // Created test calendars use this legacy root, so expose the
+            // same calendar-list response there as the capability walk.
+            xml = xmlForCalendars();
         } else if (isKnownCollection(path) && body.contains("supported-report-set")) {
             // E7/O36: capability-detection PROPFIND. Checked before the
             // getctag branch below since both are Depth:0 PROPFINDs on the
@@ -529,6 +538,10 @@ void FakeCalDavServer::handleMkCalendar(QTcpSocket *socket, const QString &path)
         return;
     }
     m_createdCollections.insert(path);
+    // Keep created collections in the discovery model as well as the
+    // request-routing set.  Real DAV servers advertise a collection after a
+    // successful MKCALENDAR, and clients commonly create then rediscover it.
+    m_calendars.append({path.section(QLatin1Char('/'), -2, -2), path});
     writeResponse(socket, 201, "Created", QByteArray());
 }
 
@@ -757,6 +770,12 @@ void FakeCalDavServer::handleDelete(QTcpSocket *socket, const QString &path)
         // Collection DELETE (RFC 4791 calendar removal).
         if (m_createdCollections.remove(path)) {
             m_store.remove(path);
+            for (int i = 0; i < m_calendars.size(); ++i) {
+                if (m_calendars.at(i).second == path) {
+                    m_calendars.removeAt(i);
+                    break;
+                }
+            }
             writeResponse(socket, 204, "No Content", QByteArray());
             return;
         }

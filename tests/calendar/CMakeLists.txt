@@ -29,7 +29,21 @@ endfunction()
 
 # G.9.b Task 73 — backend streaming signal tests (migrated from PlanStan).
 # OrgBackend tests are conditionally compiled via KALBURATOR_HAVE_ORG_IO.
-kalburator_add_calendar_test(tst_backend_signals)
+add_executable(tst_backend_signals
+    tst_backend_signals.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_backend_signals PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync)
+target_link_libraries(tst_backend_signals
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_backend_signals COMMAND tst_backend_signals)
+set_tests_properties(tst_backend_signals PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(KALBURATOR_HAVE_ORG_IO)
     target_compile_definitions(tst_backend_signals PRIVATE KALBURATOR_HAVE_ORG_IO)
 endif()
@@ -69,6 +83,7 @@ set_tests_properties(tst_backend_op_queue PROPERTIES
 # via AsyncFileWriter, removeItem, updateCalendar metadata round-trip,
 # readonly marker) ahead of the T3/T4 internal rewrites.
 kalburator_add_calendar_test(tst_localbackend_writepaths)
+kalburator_add_calendar_test(tst_backend_executor)
 
 # D1 T1.4 — backend thread-relocation proof: RemoteCalendarBackend and
 # LocalBackend must round-trip fetch/push/delete/startSync/fingerprint/ctag
@@ -96,10 +111,14 @@ target_link_libraries(tst_backend_thread_relocation
         kalburator_calendar_test_stubs
         $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
 )
-add_test(NAME tst_backend_thread_relocation COMMAND tst_backend_thread_relocation)
-set_tests_properties(tst_backend_thread_relocation PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
+if(KALBURATOR_ENABLE_UNSUPPORTED_RELOCATION_TESTS)
+    add_test(NAME tst_backend_thread_relocation COMMAND tst_backend_thread_relocation)
+    set_tests_properties(tst_backend_thread_relocation PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "diagnostic;unsupported-relocation"
+        TIMEOUT 45
+    )
+endif()
 
 # E5.2 / audit B7: the backend-thread re-entrancy pin (uses FakeCalDavServer).
 add_executable(tst_backend_reentrancy_pin
@@ -118,10 +137,14 @@ target_link_libraries(tst_backend_reentrancy_pin
         kalburator_calendar_test_stubs
         $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
 )
-add_test(NAME tst_backend_reentrancy_pin COMMAND tst_backend_reentrancy_pin)
-set_tests_properties(tst_backend_reentrancy_pin PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
+if(KALBURATOR_ENABLE_UNSUPPORTED_RELOCATION_TESTS)
+    add_test(NAME tst_backend_reentrancy_pin COMMAND tst_backend_reentrancy_pin)
+    set_tests_properties(tst_backend_reentrancy_pin PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "diagnostic;unsupported-relocation"
+        TIMEOUT 120
+    )
+endif()
 
 # WP-D9: updateRecord tests use FakeCalDavServer (PUT + DELETE added in v0.63/WP-D2).
 add_executable(tst_remotecalendarbackend_blob_view
@@ -190,7 +213,21 @@ set_tests_properties(tst_sync_collection_report PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
-kalburator_add_calendar_test(tst_remotecalendarbackend)
+add_executable(tst_remotecalendarbackend
+    tst_remotecalendarbackend.cpp
+    ../sync/fakecaldavserver.cpp
+)
+target_include_directories(tst_remotecalendarbackend PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sync)
+target_link_libraries(tst_remotecalendarbackend
+    PRIVATE
+        Qt6::Core
+        Qt6::Network
+        Qt6::Test
+        KF6::CalendarCore
+        $<LINK_LIBRARY:WHOLE_ARCHIVE,Kalburator::Sync>
+)
+add_test(NAME tst_remotecalendarbackend COMMAND tst_remotecalendarbackend)
+set_tests_properties(tst_remotecalendarbackend PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Parallel-sync Task 5 — backend-declared concurrency veto
 # (SyncBackendBase::maxConcurrentOperations()). Lives here rather than

@@ -1,4 +1,4 @@
-#include "vcardproperties.h"
+#include <kalburator/contacts/vcardproperties.h>
 
 using namespace Kalburator::Shape;
 

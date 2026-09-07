@@ -1,7 +1,7 @@
 #ifndef SYNCDIFF_H
 #define SYNCDIFF_H
 
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 
 #include <KCalendarCore/Incidence>
 #include <QString>

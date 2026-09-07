@@ -1,10 +1,10 @@
-#include "msgraphcalendarbackend.h"
+#include <kalburator/calendar/msgraphcalendarbackend.h>
 
-#include "graphapiclient.h"
-#include "mseventcanonstages.h"
-#include "icalcanonstages.h"
-#include "icalcodec.h"
-#include "calendarcapabilities.h"
+#include <kalburator/graph/graphapiclient.h>
+#include <kalburator/calendar/mseventcanonstages.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/icalcodec.h>
+#include <kalburator/sync/calendarcapabilities.h>
 
 #include <QCryptographicHash>
 #include <QDir>

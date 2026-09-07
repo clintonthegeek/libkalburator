@@ -1,6 +1,6 @@
-#include "syncmappinggenerator.h"
-#include "logicalcalendar.h"
-#include "logicalcalendarjson.h"
+#include <kalburator/sync/syncmappinggenerator.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/typesupport/logicalcalendarjson.h>
 
 namespace Kalburator::Sync {
 

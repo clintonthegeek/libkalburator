@@ -1,10 +1,10 @@
-#include "calendardomainoperations.h"
+#include <kalburator/calendar/calendardomainoperations.h>
 
 #include <QColor>
 #include <QDebug>
 
-#include "recordwriter.h"
-#include "syncbackend.h"
+#include <kalburator/shape/recordwriter.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using Kalburator::Shape::DomainId;
 
@@ -43,10 +43,15 @@ QVariantMap CalendarDomainOperations::collectionProperties(
 void CalendarDomainOperations::applyCollectionProperties(
     Kalburator::Sync::SyncBackendBase *backend,
     const QString &collectionId,
-    const QVariantMap &props) const
+    const QVariantMap &props,
+    std::function<void(bool, const QString &)> completed) const
 {
     auto *syncBackend = qobject_cast<Kalburator::Sync::SyncBackend *>(backend);
-    if (!syncBackend || props.isEmpty()) return;
+    if (!syncBackend || props.isEmpty()) {
+        if (completed)
+            completed(true, {});
+        return;
+    }
     // E11 (audit B7 / FINDINGS O39): this method's caller (SyncEngine's
     // per-mapping property-sync step) already marshals it onto the
     // backend's own thread before calling in; the old synchronous
@@ -56,11 +61,13 @@ void CalendarDomainOperations::applyCollectionProperties(
     // here: this method was always fire-and-forget from the caller's
     // perspective (void, result never consumed), and stays that way.
     syncBackend->updateCalendarAsync(collectionId, collectionId, props,
-        [collectionId](bool ok) {
+        [collectionId, completed = std::move(completed)](bool ok) {
             if (!ok) {
                 qWarning() << "CalendarDomainOperations::applyCollectionProperties:"
                            << "updateCalendarAsync failed for" << collectionId;
             }
+            if (completed)
+                completed(ok, ok ? QString{} : QStringLiteral("calendar property update failed"));
         });
 }
 

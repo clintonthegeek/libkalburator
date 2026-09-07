@@ -1,4 +1,4 @@
-#include "calendarmetadatamanager.h"
+#include <kalburator/calendar/calendarmetadatamanager.h>
 
 #include <QFile>
 #include <QDir>

@@ -1,11 +1,11 @@
 #ifndef ORGBACKEND_H
 #define ORGBACKEND_H
 
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete FetchOperation/DeleteOperation for covariant overrides
 #include "orgfilemanager.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
 
 namespace Kalburator::Sync {
 

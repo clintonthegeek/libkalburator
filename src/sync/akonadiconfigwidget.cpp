@@ -1,6 +1,6 @@
 #ifdef HAVE_AKONADI
 
-#include "akonadiconfigwidget.h"
+#include <kalburator/sync/akonadiconfigwidget.h>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>

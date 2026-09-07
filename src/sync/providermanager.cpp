@@ -1,11 +1,12 @@
-#include "providermanager.h"
+#include <kalburator/sync/providermanager.h>
 
-#include "iprovider.h"
-#include "iblobbackend.h"
-#include "backendregistry.h"
-#include "backendcontribution.h"
-#include "syncbackendbase.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/backendexecutor.h>
 
 #include <KConfigGroup>
 
@@ -33,13 +34,12 @@ ProviderManager::~ProviderManager()
 
 void ProviderManager::wireProviderSignals(IProvider *provider)
 {
-    // Task 4: connectionStateChanged is now overloaded (bool legacy +
-    // ProviderConnectionState). ProviderManager's own state mirror still
-    // derives from the legacy bool overload only — disambiguate explicitly.
-    QObject::connect(provider, qOverload<bool>(&IProvider::connectionStateChanged),
+    QObject::connect(provider, qOverload<ProviderConnectionState>(&IProvider::connectionStateChanged),
                      this, &ProviderManager::onProviderConnectionStateChanged);
     QObject::connect(provider, &IProvider::collectionsChanged,
                      this, &ProviderManager::onProviderCollectionsChanged);
+    QObject::connect(provider, &IProvider::error,
+                     this, &ProviderManager::onProviderError);
 }
 
 void ProviderManager::loadFromProfile(const KConfigGroup &providersGroup)
@@ -140,6 +140,17 @@ void ProviderManager::removeProvider(const QString &providerId)
     emit providersChanged();
 }
 
+bool ProviderManager::updateProvider(const BackendConfiguration &config)
+{
+    auto *provider = providerById(config.id);
+    if (!provider)
+        return false;
+    if (provider->kind() != config.type)
+        return false;
+    provider->applyConfig(config);
+    return true;
+}
+
 QFuture<void> ProviderManager::connectAll()
 {
     auto sync = std::make_shared<QFutureSynchronizer<bool>>();
@@ -180,9 +191,14 @@ QFuture<void> ProviderManager::connectAll()
                 const bool ok = !watcher->future().isCanceled()
                              && watcher->result();
                 if (!ok) {
-                    // Connect failed — reset state so retries are possible.
-                    m_providerStates[pid] = ProviderConnectionState::Disconnected;
-                    emit providerStateChanged(pid, ProviderConnectionState::Disconnected);
+                    // A provider that emitted Error owns that terminal state;
+                    // only providers that failed silently are reset to a
+                    // retryable Disconnected state.
+                    if (m_providerStates.value(pid)
+                        == ProviderConnectionState::Connecting) {
+                        m_providerStates[pid] = ProviderConnectionState::Disconnected;
+                        emit providerStateChanged(pid, ProviderConnectionState::Disconnected);
+                    }
                 }
                 watcher->deleteLater();
             });
@@ -226,20 +242,20 @@ ProviderConnectionState ProviderManager::providerState(const QString &id) const
     return m_providerStates.value(id, ProviderConnectionState::Disconnected);
 }
 
-void ProviderManager::onProviderConnectionStateChanged(bool connected)
+void ProviderManager::onProviderConnectionStateChanged(ProviderConnectionState state)
 {
     auto *provider = qobject_cast<IProvider*>(sender());
     if (!provider) return;
-    if (connected) {
+    if (state == ProviderConnectionState::Connected) {
         registerProviderBackends(provider);
-    } else {
+    } else if (state == ProviderConnectionState::Disconnected
+               || state == ProviderConnectionState::Error) {
         unregisterProviderBackends(provider);
     }
-    const ProviderConnectionState newState = connected
-        ? ProviderConnectionState::Connected
-        : ProviderConnectionState::Disconnected;
-    m_providerStates[provider->id()] = newState;
-    emit providerStateChanged(provider->id(), newState);
+    if (m_providerStates.value(provider->id()) == state)
+        return;
+    m_providerStates[provider->id()] = state;
+    emit providerStateChanged(provider->id(), state);
 }
 
 void ProviderManager::onProviderCollectionsChanged()
@@ -251,6 +267,14 @@ void ProviderManager::onProviderCollectionsChanged()
         registerProviderBackends(provider);
     }
     emit providersChanged();
+    emit providerCollectionsChanged(provider->id(), provider->collections());
+}
+
+void ProviderManager::onProviderError(QString errorMessage)
+{
+    auto *provider = qobject_cast<IProvider*>(sender());
+    if (!provider) return;
+    emit providerErrorChanged(provider->id(), std::move(errorMessage));
 }
 
 void ProviderManager::registerProviderBackends(IProvider *provider)
@@ -272,8 +296,18 @@ void ProviderManager::registerProviderBackends(IProvider *provider)
             continue;
         }
         asSync->setResourceId(backendId);
+        auto executor = std::make_unique<BackendExecutor>(std::move(spec.backend));
+        if (!executor->start()) {
+            qWarning() << "[ProviderManager] could not start executor for" << backendId;
+            continue;
+        }
+        asSync = dynamic_cast<SyncBackendBase *>(executor->backend());
+        if (!asSync) {
+            qWarning() << "[ProviderManager] executor lost backend for" << backendId;
+            continue;
+        }
         m_registry->registerBackendInstance(backendId, asSync);
-        m_ownedBackends.insert_or_assign(backendId, std::move(spec.backend));
+        m_ownedBackends.insert_or_assign(backendId, std::move(executor));
     }
 }
 

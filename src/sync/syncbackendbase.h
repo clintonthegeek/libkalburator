@@ -31,11 +31,11 @@
 #include <QPointer>
 #include <functional>
 
-#include "iblobbackend.h"   // pure interface (no QObject)
-#include "shape.h"          // Kalburator::Shape::Shape
-#include "syncoperation.h"  // neutral SyncOperation base (same dir)
-#include "writeoperation.h" // E5.3: applyRecords() return type (same dir)
-#include "writerbatch.h"    // E5.3: applyRecords() batch parameter type (same dir)
+#include <kalburator/blob/iblobbackend.h>   // pure interface (no QObject)
+#include <kalburator/shape/shape.h>          // Kalburator::Shape::Shape
+#include <kalburator/sync/syncoperation.h>  // neutral SyncOperation base (same dir)
+#include <kalburator/sync/writeoperation.h> // E5.3: applyRecords() return type (same dir)
+#include <kalburator/sync/writerbatch.h>    // E5.3: applyRecords() batch parameter type (same dir)
 
 namespace Kalburator::Sync {
 
@@ -59,7 +59,10 @@ namespace Kalburator::Sync {
  *   - default IBlobBackend implementations (sensible identity
  *     fallbacks; data-path methods log a warning if not overridden).
  */
-class SyncBackendBase : public QObject, public IBlobBackend
+class SyncBackendBase : public QObject, public IBlobBackend,
+                        public IBackendRecordApplier,
+                        public IBackendCollectionWiper,
+                        public IBackendCollectionMutator
 {
     Q_OBJECT
 
@@ -97,6 +100,10 @@ public:
         Q_UNUSED(collectionId);
         return true;
     }
+
+    bool updateCollectionMetadata(const QString &, const QVariantMap &) override { return false; }
+    bool renamePhysicalCollection(const QString &, const QString &) override { return false; }
+    bool deletePhysicalCollection(const QString &) override { return false; }
 
     /**
      * @brief Max operations this backend can usefully have in flight
@@ -146,7 +153,19 @@ public:
     /// call returns; callers on backends with real async internals (e.g.
     /// RemoteCalendarBackend, which overrides this) must not assume that.
     virtual WriteOperation* applyRecords(const QString &collectionId,
-                                         const WriterBatch &batch);
+                                         const WriterBatch &batch) override;
+
+    /// Capability acquisition boundary.  These defaults preserve existing
+    /// blob-backed subclasses during API-005; operation-only backends must
+    /// explicitly decline direct mutation.  API-006 removes the defaults
+    /// after consumer extensions have migrated.
+    virtual IBackendRecordReader *recordReader() { return this; }
+    virtual IBackendRecordMutator *recordMutator() { return this; }
+    virtual IBackendRecordApplier *recordApplier() { return this; }
+    virtual IBackendCollectionWiper *collectionWiper() { return this; }
+    bool wipeCollection(const QString &collectionId) override {
+        return IBlobBackend::wipeCollection(collectionId);
+    }
 
     /// Records equivalent to loadRecords(collectionId), but served from the
     /// most recent successfully completed fetchItems() for that collection
@@ -182,6 +201,7 @@ public:
     QString createCollection(const CollectionInfo &info) override;
 
     QList<BackendRecord> loadRecords(const QString &collectionId) override;
+    RecordLoadResult loadRecordsResult(const QString &collectionId) override;
     std::optional<BackendRecord> loadRecord(const QString &recordId) override;
     QString createRecord(const QString &collectionId, const BackendRecord &record) override;
     bool    updateRecord(const BackendRecord &record) override;

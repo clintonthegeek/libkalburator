@@ -1,7 +1,7 @@
 // EEE Phase 6 — regenerates the committed convergence matrix.
 //
 //   cmake --build build --target matrixgen
-//   ./build/tools/matrixgen/matrixgen > docs/campaign/eee/CONVERGENCE-MATRIX.md
+//   ./build/tools/matrixgen/matrixgen docs/CONVERGENCE_MATRIX.md
 //
 // The committed copy is byte-enforced by tst_gm_pipeline_convergence.
 
@@ -20,7 +20,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     const QString path = QStringLiteral(
-        "docs/campaign/eee/CONVERGENCE-MATRIX.md");
+        "docs/CONVERGENCE_MATRIX.md");
 
     const Kalburator::Calendar::CalendarStockShapes calendar;
     const Kalburator::Contacts::ContactsStockShapes contacts;

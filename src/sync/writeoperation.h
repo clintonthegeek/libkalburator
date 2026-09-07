@@ -3,7 +3,7 @@
 
 #include <QStringList>
 
-#include "syncoperation.h"
+#include <kalburator/sync/syncoperation.h>
 
 #include <QHash>
 

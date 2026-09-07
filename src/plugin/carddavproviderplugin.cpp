@@ -1,5 +1,5 @@
-#include "carddavproviderplugin.h"
-#include "../sync/carddavbackendcontribution.h"
+#include <kalburator/plugin/carddavproviderplugin.h>
+#include <kalburator/sync/carddavbackendcontribution.h>
 
 namespace Kalburator {
 

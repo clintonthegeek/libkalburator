@@ -1,8 +1,8 @@
 #ifndef MOCKBACKEND_H
 #define MOCKBACKEND_H
 
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete FetchOperation/PushOperation/DeleteOperation for covariant overrides
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete FetchOperation/PushOperation/DeleteOperation for covariant overrides
 #include <optional>
 #include <QHash>
 #include <QList>
@@ -94,6 +94,12 @@ public:
                         const QString &calendarId,
                         const QString &name,
                         CalendarType type = CalendarType::Hybrid) override;
+    bool updateCalendar(const QString &collectionId,
+                        const QString &calendarId,
+                        const QVariantMap &properties) override;
+    bool renameCalendar(const QString &collectionId,
+                        const QString &oldCalendarId,
+                        const QString &newCalendarId) override;
     bool deleteCalendar(const QString &collectionId, const QString &calendarId) override;
 
     // =========================================================================

@@ -1,6 +1,6 @@
-#include "defaultblobwriter.h"
-#include "iblobbackend.h"
-#include "syncbackendbase.h"
+#include <kalburator/shape/defaultblobwriter.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/sync/syncbackendbase.h>
 
 namespace Kalburator::Shape {
 
@@ -12,17 +12,19 @@ bool DefaultBlobWriter::apply(
 {
     if (!m_backend) return false;
 
-    // E5.3: route through applyRecords() when the backend is a
-    // SyncBackendBase (every real production backend is); fall back to the
-    // pre-E5.3 per-record loop for a plain IBlobBackend that has no
-    // applyRecords() to call (see header comment).
+    // E5.3/API-005: route through an explicitly acquired apply capability
+    // when the backend is a SyncBackendBase (every real production backend
+    // is). Fall back to the pre-E5.3 per-record loop only for a plain legacy
+    // IBlobBackend that has no operation surface to acquire from.
     if (auto *base = dynamic_cast<Kalburator::Sync::SyncBackendBase *>(m_backend)) {
         Kalburator::Sync::WriterBatch batch;
         batch.creates = creates;
         batch.updates = updates;
         batch.deletes = deletes;
 
-        Kalburator::Sync::WriteOperation *op = base->applyRecords(collectionId, batch);
+        auto *applier = base->recordApplier();
+        if (!applier) return false;
+        Kalburator::Sync::WriteOperation *op = applier->applyRecords(collectionId, batch);
         if (!op) return false;
 
         // Default applyRecords() (LocalBackend/MockBackend, no async

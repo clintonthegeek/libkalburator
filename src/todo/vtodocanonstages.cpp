@@ -1,7 +1,7 @@
-#include "vtodocanonstages.h"
+#include <kalburator/todo/vtodocanonstages.h>
 
-#include "canonenvelope.h"
-#include "vtodocanonfields.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/todo/vtodocanonfields.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>

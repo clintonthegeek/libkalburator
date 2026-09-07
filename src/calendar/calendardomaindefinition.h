@@ -1,5 +1,5 @@
 #pragma once
-#include "domaindefinition.h"
+#include <kalburator/shape/domaindefinition.h>
 
 namespace Kalburator::Calendar {
 

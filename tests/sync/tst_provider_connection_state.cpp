@@ -172,12 +172,14 @@ void TstProviderConnectionState::reconnect_via_applyConfig_emits_full_cycle_agai
 
     QTRY_VERIFY_WITH_TIMEOUT(provider.isConnected(), 20000);
 
-    QVERIFY2(stateSpy.count() >= 2,
-             qPrintable(QStringLiteral("expected >= 2 state emissions on reconnect, got %1")
+    QVERIFY2(stateSpy.count() >= 3,
+             qPrintable(QStringLiteral("expected >= 3 state emissions on reconnect, got %1")
                             .arg(stateSpy.count())));
     QCOMPARE(stateSpy.at(0).at(0).value<ProviderConnectionState>(),
-             ProviderConnectionState::Connecting);
+             ProviderConnectionState::Disconnected);
     QCOMPARE(stateSpy.at(1).at(0).value<ProviderConnectionState>(),
+             ProviderConnectionState::Connecting);
+    QCOMPARE(stateSpy.at(2).at(0).value<ProviderConnectionState>(),
              ProviderConnectionState::Connected);
 }
 

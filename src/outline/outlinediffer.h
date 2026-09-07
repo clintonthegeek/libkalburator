@@ -1,5 +1,5 @@
 #pragma once
-#include "recorddiffer.h"
+#include <kalburator/shape/recorddiffer.h>
 #include <QSet>
 
 namespace Kalburator::Outline {

@@ -1,6 +1,6 @@
-#include "graphcontactsbackend.h"
+#include <kalburator/contacts/graphcontactsbackend.h>
 
-#include "graphapiclient.h"
+#include <kalburator/graph/graphapiclient.h>
 
 #include <QCryptographicHash>
 #include <QDir>

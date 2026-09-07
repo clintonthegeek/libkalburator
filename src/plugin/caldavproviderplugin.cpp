@@ -1,5 +1,5 @@
-#include "caldavproviderplugin.h"
-#include "../sync/caldavbackendcontribution.h"
+#include <kalburator/plugin/caldavproviderplugin.h>
+#include <kalburator/sync/caldavbackendcontribution.h>
 
 namespace Kalburator {
 

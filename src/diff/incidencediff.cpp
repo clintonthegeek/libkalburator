@@ -1,8 +1,8 @@
-#include "incidencediff.h"
+#include <kalburator/diff/incidencediff.h>
 
 #include <QRegularExpression>
 #include <QTimeZone>
-#include "ilocalesource.h"
+#include <kalburator/types/ilocalesource.h>
 #include <QDebug>
 
 #include <KCalendarCore/Event>

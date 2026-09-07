@@ -1,8 +1,8 @@
 #ifndef KALBURATOR_UI_PROVIDERCONFIGDIALOG_H
 #define KALBURATOR_UI_PROVIDERCONFIGDIALOG_H
 
-#include "backendconfiguration.h"
-#include "collectioninfo.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/types/collectioninfo.h>
 
 #include <QDialog>
 #include <QList>

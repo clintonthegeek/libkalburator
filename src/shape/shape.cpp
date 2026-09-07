@@ -1,4 +1,4 @@
-#include "shape.h"
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Shape {
 

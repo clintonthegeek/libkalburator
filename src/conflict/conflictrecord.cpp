@@ -1,4 +1,4 @@
-#include "conflictrecord.h"
+#include <kalburator/conflict/conflictrecord.h>
 
 #include <QUuid>
 #include <QJsonArray>

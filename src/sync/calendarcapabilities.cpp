@@ -1,4 +1,4 @@
-#include "calendarcapabilities.h"
+#include <kalburator/sync/calendarcapabilities.h>
 
 namespace Kalburator::Sync {
 

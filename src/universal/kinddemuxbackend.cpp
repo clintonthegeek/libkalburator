@@ -1,4 +1,4 @@
-#include "kinddemuxbackend.h"
+#include <kalburator/universal/kinddemuxbackend.h>
 
 #include <QDebug>
 
@@ -138,6 +138,13 @@ CollectionInfo KindDemuxBackend::collectionInfo(const QString& collectionId)
     return {};
 }
 
+QString KindDemuxBackend::createCollection(const CollectionInfo&)
+{
+    // The demux exposes existing child collections; provisioning belongs to
+    // the underlying transport backend.
+    return {};
+}
+
 QList<BackendRecord> KindDemuxBackend::loadRecords(const QString& collectionId)
 {
     if (SyncBackendBase* c = childFor(collectionId))
@@ -201,6 +208,15 @@ QStringList KindDemuxBackend::deletedSince(
         return c->deletedSince(collectionId, since);
     return {};
 }
+
+void KindDemuxBackend::beginBatch() {}
+
+bool KindDemuxBackend::commitBatch()
+{
+    return false;
+}
+
+void KindDemuxBackend::rollbackBatch() {}
 
 // ---- Sync::ChangeDetection ----
 

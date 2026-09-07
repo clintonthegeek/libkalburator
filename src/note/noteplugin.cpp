@@ -1,6 +1,6 @@
-#include "noteplugin.h"
-#include "notedomaindefinition.h"
-#include "notestockshapes.h"
+#include <kalburator/note/noteplugin.h>
+#include <kalburator/note/notedomaindefinition.h>
+#include <kalburator/note/notestockshapes.h>
 
 namespace Kalburator::Note {
 

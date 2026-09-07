@@ -1,4 +1,4 @@
-#include "mappingqueue.h"
+#include <kalburator/engine/mappingqueue.h>
 
 namespace Kalburator::Engine {
 

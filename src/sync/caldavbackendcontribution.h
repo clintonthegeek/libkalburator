@@ -1,9 +1,9 @@
 #ifndef KALBURATOR_SYNC_CALDAVBACKENDCONTRIBUTION_H
 #define KALBURATOR_SYNC_CALDAVBACKENDCONTRIBUTION_H
 
-#include "backendcontribution.h"
-#include "caldavprovider.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/sync/iprovider.h>
 
 namespace Kalburator::Sync {
 

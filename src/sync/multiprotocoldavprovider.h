@@ -1,8 +1,8 @@
 #ifndef KALBURATOR_SYNC_MULTIPROTOCOLDAVPROVIDER_H
 #define KALBURATOR_SYNC_MULTIPROTOCOLDAVPROVIDER_H
 
-#include "iprovider.h"
-#include "backendconfiguration.h"  // PerCalendarCapabilities (retained for priming)
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/typesupport/backendconfiguration.h>  // PerCalendarCapabilities (retained for priming)
 
 #include <QFutureWatcher>
 #include <QHash>
@@ -41,7 +41,7 @@ class CardDavCapabilityDiscovery;
  * Configuration (BackendConfiguration::connectionParams):
  *   - "url"                       QString — server base URL
  *   - "username"                  QString
- *   - "password"                  QString — plaintext (KWallet later)
+ *   - "passwordRef"               QString — opaque host-secret reference
  *   - "manualCaldavPrincipal"     QString — optional override URL
  *   - "manualCarddavPrincipal"    QString — optional override URL
  */
@@ -85,6 +85,7 @@ private:
     QUrl    m_serverUrl;
     QString m_username;
     QString m_password;
+    QString m_passwordRef;
     QString m_manualCalDavPrincipal;
     QString m_manualCardDavPrincipal;
 

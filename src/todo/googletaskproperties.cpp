@@ -1,4 +1,4 @@
-#include "googletaskproperties.h"
+#include <kalburator/todo/googletaskproperties.h>
 
 using namespace Kalburator::Shape;
 

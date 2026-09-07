@@ -1,8 +1,8 @@
 #ifdef HAVE_AKONADI
 
-#include "akonadibackendcontribution.h"
-#include "shape.h"
-#include "../contacts/akonadicontactsbackend.h"
+#include <kalburator/sync/akonadibackendcontribution.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/contacts/akonadicontactsbackend.h>
 
 namespace Kalburator::Sync {
 

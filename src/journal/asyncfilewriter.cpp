@@ -1,4 +1,4 @@
-#include "asyncfilewriter.h"
+#include <kalburator/journal/asyncfilewriter.h>
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>

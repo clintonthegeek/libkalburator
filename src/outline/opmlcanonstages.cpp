@@ -1,6 +1,6 @@
-#include "opmlcanonstages.h"
-#include "outlinenode.h"
-#include "canonenvelope.h"
+#include <kalburator/outline/opmlcanonstages.h>
+#include <kalburator/outline/outlinenode.h>
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonArray>
 #include <QJsonObject>

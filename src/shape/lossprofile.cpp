@@ -1,4 +1,4 @@
-#include "lossprofile.h"
+#include <kalburator/shape/lossprofile.h>
 
 #include <QStringList>
 

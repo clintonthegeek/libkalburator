@@ -1,6 +1,6 @@
-#include "todotxttransformation.h"
+#include <kalburator/todo/todotxttransformation.h>
 
-#include "propertycatalogue.h"
+#include <kalburator/shape/propertycatalogue.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Todo>

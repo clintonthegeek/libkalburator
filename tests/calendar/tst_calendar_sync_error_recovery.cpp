@@ -522,8 +522,8 @@ void TestCalendarSyncErrorRecovery::preExistingDataPreservedOnFailure()
 {
     // Target pre-populated with 3 events; source has 5 new events. Target fails
     // mid-store. The failed target-direction write must not destroy pre-existing
-    // target data; the (successful) target->source direction still propagates
-    // the 3 pre-existing items to source.
+    // target data, and the run-level write gate must prevent the opposite
+    // direction from producing a partial two-way result.
     addTargetEvent(QStringLiteral("existing-1"), QStringLiteral("Existing One"));
     addTargetEvent(QStringLiteral("existing-2"), QStringLiteral("Existing Two"));
     addTargetEvent(QStringLiteral("existing-3"), QStringLiteral("Existing Three"));
@@ -544,8 +544,8 @@ void TestCalendarSyncErrorRecovery::preExistingDataPreservedOnFailure()
     QVERIFY(targetUids().contains(QStringLiteral("existing-2")));
     QVERIFY(targetUids().contains(QStringLiteral("existing-3")));
 
-    // target->source direction succeeded: source gained the 3 pre-existing items.
-    QCOMPARE(sourceUids().size(), 8);
+    // No opposite-direction writes occur after the target-side failure.
+    QCOMPARE(sourceUids().size(), 5);
 }
 
 void TestCalendarSyncErrorRecovery::retryAfterFailure_recoversCorrectly()

@@ -5,7 +5,7 @@
 #include <QList>
 #include <QObject>
 
-#include "iblobbackend.h"
+#include <kalburator/blob/iblobbackend.h>
 
 namespace Kalburator::Sync {
 
@@ -58,6 +58,11 @@ public:
     QStringList deletedSince(const QString &collectionId,
                              const QDateTime &since) override;
     bool supportsDeleteTracking() const override { return true; }
+
+    void beginBatch() override {}
+    bool commitBatch() override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
     // Test configuration
     void setFailNext(FailurePoint point, int count = 1);

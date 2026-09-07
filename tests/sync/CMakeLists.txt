@@ -15,6 +15,8 @@ function(kalburator_add_sync_test TEST_NAME)
 endfunction()
 
 kalburator_add_sync_test(tst_provider_manager)
+kalburator_add_sync_test(tst_credentialredaction)
+kalburator_add_sync_test(tst_secretstore)
 
 # Task 2.1 (fanout collapse Phase 2) — davSlugFromUrl() helper: the stable
 # per-account calendar id derived from a DAV URL's last path segment.
@@ -182,15 +184,13 @@ set_tests_properties(tst_caldav_integration PROPERTIES
 # Exercises every route and failure mode of the CardDAV server fixture.
 add_executable(tst_fake_carddav_server
     tst_fake_carddav_server.cpp
-    fakecarddavserver.cpp
-    fakecarddavserver.h
 )
 target_link_libraries(tst_fake_carddav_server
     PRIVATE
         Qt6::Core
         Qt6::Network
         Qt6::Test
-        Kalburator::Sync
+        Kalburator::TestSupport
 )
 add_test(NAME tst_fake_carddav_server COMMAND tst_fake_carddav_server)
 set_tests_properties(tst_fake_carddav_server PROPERTIES

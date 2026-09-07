@@ -1,6 +1,6 @@
-#include "todoseriessplitter.h"
+#include <kalburator/todo/todoseriessplitter.h>
 
-#include "recurrencepatternconverter.h"
+#include <kalburator/calendar/recurrencepatternconverter.h>
 
 #include <QDate>
 #include <QJsonArray>

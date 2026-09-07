@@ -198,16 +198,20 @@ void TstEngineCancellation::cancelBeforeStart()
     req.mappingIds = { QString::fromLatin1(kMappingId) };
     auto future = m_engine->runSync(req);
 
+    auto *cancelWatcher = m_engine->findChild<QFutureWatcherBase *>();
+    QVERIFY(cancelWatcher);
+    QSignalSpy cancelObserved(cancelWatcher, &QFutureWatcherBase::canceled);
+
     // Cancel immediately — before the worker thread can dispatch
     // processSync past the cancellation pre-check.
     future.cancel();
 
-    // Spin the engine-thread event loop so the QFutureWatcher's
-    // canceled() signal is dispatched to onCancelObserved and the
-    // queued observeCancel reaches the worker. waitForFinished()
-    // does NOT spin the event loop, so without this the cancel
-    // never propagates and the test deadlocks on the blocked fetch.
-    QTest::qWait(50);
+    // Wait for the engine-owned watcher's cancellation signal instead of
+    // assuming a fixed delay is long enough. SyncEngine connected its
+    // onCancelObserved slot before this spy, so observing the signal here
+    // proves that the engine-side flag is set and its queued worker cancel
+    // has been posted before the fetch blocker is released.
+    QTRY_COMPARE_WITH_TIMEOUT(cancelObserved.count(), 1, 5000);
 
     // Release the fetch blocker so the worker can observe the
     // cancellation flag at the next checkpoint and tear down the

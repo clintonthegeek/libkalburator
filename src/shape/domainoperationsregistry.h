@@ -4,7 +4,7 @@
 #include <QHash>
 #include <memory>
 
-#include "domainoperations.h"
+#include <kalburator/shape/domainoperations.h>
 
 namespace Kalburator::Shape {
 

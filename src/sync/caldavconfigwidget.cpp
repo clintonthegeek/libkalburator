@@ -1,7 +1,8 @@
-#include "caldavconfigwidget.h"
+#include <kalburator/sync/caldavconfigwidget.h>
 
-#include "caldavprovider.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/sync/secretstore.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 
 #include <QFormLayout>
 #include <QVBoxLayout>
@@ -55,7 +56,11 @@ void CalDavConfigWidget::setConfiguration(const BackendConfiguration &cfg) {
     m_displayNameEdit->setText(cfg.displayName);
     m_urlEdit->setText(cfg.connectionParams.value(QStringLiteral("url")).toString());
     m_usernameEdit->setText(cfg.connectionParams.value(QStringLiteral("username")).toString());
-    m_passwordEdit->setText(cfg.connectionParams.value(QStringLiteral("password")).toString());
+    m_passwordRef = cfg.connectionParams.value(QStringLiteral("passwordRef")).toString();
+    const QString password = cfg.connectionParams.value(QStringLiteral("password")).toString();
+    m_passwordEdit->setText(password.isEmpty()
+                                ? SecretStoreRegistry::defaultStore()->get(m_passwordRef)
+                                : password);
 }
 
 BackendConfiguration CalDavConfigWidget::configuration() const {
@@ -64,7 +69,12 @@ BackendConfiguration CalDavConfigWidget::configuration() const {
     cfg.displayName = m_displayNameEdit->text();
     cfg.connectionParams[QStringLiteral("url")]      = m_urlEdit->text();
     cfg.connectionParams[QStringLiteral("username")] = m_usernameEdit->text();
-    cfg.connectionParams[QStringLiteral("password")] = m_passwordEdit->text();
+    const QString password = m_passwordEdit->text();
+    if (!password.isEmpty())
+        m_passwordRef = SecretStoreRegistry::defaultStore()->put(password);
+    cfg.connectionParams.remove(QStringLiteral("password"));
+    if (!m_passwordRef.isEmpty())
+        cfg.connectionParams[QStringLiteral("passwordRef")] = m_passwordRef;
     return cfg;
 }
 

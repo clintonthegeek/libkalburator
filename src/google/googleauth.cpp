@@ -1,5 +1,5 @@
-#include "googleauth.h"
-#include "blockinghttp.h"
+#include <kalburator/google/googleauth.h>
+#include <kalburator/net/blockinghttp.h>
 
 #include <QDateTime>
 #include <QEventLoop>

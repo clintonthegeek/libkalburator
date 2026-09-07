@@ -1,4 +1,4 @@
-#include "textmerger.h"
+#include <kalburator/note/textmerger.h>
 
 #include <QJsonDocument>
 #include <QJsonObject>

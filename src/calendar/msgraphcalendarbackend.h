@@ -21,8 +21,8 @@
 //   - Create responses mint server-side Graph ids → WriteOperation
 //     idAliases bridge requested→stored ids (the O55 join machinery).
 
-#include "syncbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 namespace Kalburator::Graph {
 class GraphApiClient;
@@ -60,6 +60,8 @@ public:
     // ==== identity ====
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
+    IBackendRecordMutator *recordMutator() override { return nullptr; }
+    IBackendCollectionWiper *collectionWiper() override { return nullptr; }
 
     // ==== read path ====
     FetchOperation *fetchItems(const QString &calendarId) override;

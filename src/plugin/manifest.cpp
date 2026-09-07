@@ -1,4 +1,4 @@
-#include "manifest.h"
+#include <kalburator/plugin/manifest.h>
 #include <QJsonArray>
 #include <QJsonValue>
 

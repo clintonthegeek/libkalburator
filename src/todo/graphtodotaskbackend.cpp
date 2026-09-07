@@ -1,7 +1,7 @@
-#include "graphtodotaskbackend.h"
+#include <kalburator/todo/graphtodotaskbackend.h>
 
-#include "graphapiclient.h"
-#include "calendarcapabilities.h"
+#include <kalburator/graph/graphapiclient.h>
+#include <kalburator/sync/calendarcapabilities.h>
 
 #include <QCryptographicHash>
 #include <QDir>

@@ -1,4 +1,4 @@
-#include "conflicthandlerregistry.h"
+#include <kalburator/conflict/conflicthandlerregistry.h>
 
 namespace Kalburator::Conflict {
 

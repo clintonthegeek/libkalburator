@@ -1,7 +1,7 @@
 #ifndef ICONFLICTRESOLVER_H
 #define ICONFLICTRESOLVER_H
 
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 
 namespace Kalburator::Sync {
 

@@ -1,6 +1,6 @@
-#include "icalrecorddiffer.h"
+#include <kalburator/calendar/icalrecorddiffer.h>
 
-#include "incidencediff.h"
+#include <kalburator/diff/incidencediff.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Incidence>

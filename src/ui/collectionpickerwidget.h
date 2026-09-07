@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_UI_COLLECTIONPICKERWIDGET_H
 #define KALBURATOR_UI_COLLECTIONPICKERWIDGET_H
 
-#include "collectioninfo.h"
+#include <kalburator/types/collectioninfo.h>
 #include <QWidget>
 #include <QStringList>
 

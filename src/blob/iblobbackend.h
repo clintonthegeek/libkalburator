@@ -7,9 +7,9 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <utility>
 
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/blob/backendcapabilityinterfaces.h>
 
 namespace Kalburator::Sync {
 
@@ -33,7 +33,10 @@ namespace Kalburator::Sync {
  *   void errorOccurred(const QString &error);
  *   void progressUpdated(int current, int total, const QString &message);
  */
-class IBlobBackend {
+class IBlobBackend : public IBackendCollections,
+                     public IBackendRecords,
+                     public IBackendChangeTracking,
+                     public IBackendBatch {
 public:
     virtual ~IBlobBackend() = default;
 
@@ -49,9 +52,20 @@ public:
 
     // --- Records ---
     virtual QList<BackendRecord> loadRecords(const QString &collectionId) = 0;
-    // Error-reporting overload: returns false and sets `error` on failure.
-    // Default delegates to loadRecords() with no error reporting. Override
-    // in test fakes to simulate fetch failures without changing the interface.
+    /// Typed read surface. An empty successful collection has `ok() == true`;
+    /// a failed read has `ok() == false` and must not be consumed as empty.
+    /// The default preserves existing backends while they migrate.
+    virtual RecordLoadResult loadRecordsResult(const QString &collectionId) {
+        QList<BackendRecord> records;
+        QString error;
+        if (!loadRecordsOrError(collectionId, records, error))
+            return RecordLoadResult::failure(error.isEmpty()
+                ? QStringLiteral("loadRecords failed") : std::move(error));
+        return RecordLoadResult::success(std::move(records));
+    }
+
+    // Transitional out-parameter spelling. New orchestration code must use
+    // loadRecordsResult(); retain this while consumer extensions migrate.
     virtual bool loadRecordsOrError(const QString &collectionId,
                                     QList<BackendRecord> &records,
                                     QString &error) {
@@ -93,10 +107,10 @@ public:
     virtual bool supportsDeleteTracking() const { return false; }
 
     // --- Batch / transaction ---
-    virtual void beginBatch()       {}
-    virtual bool commitBatch()      { return true; }
-    virtual void rollbackBatch()    {}
-    virtual bool supportsBatch() const { return false; }
+    virtual void beginBatch() = 0;
+    virtual bool commitBatch() = 0;
+    virtual void rollbackBatch() = 0;
+    virtual bool supportsBatch() const = 0;
 };
 
 } // namespace Kalburator::Sync

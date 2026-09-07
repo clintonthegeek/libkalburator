@@ -1,6 +1,6 @@
-#include "syncbackendbase.h"
+#include <kalburator/sync/syncbackendbase.h>
 
-#include "syncoperation.h"
+#include <kalburator/sync/syncoperation.h>
 
 #include <QDebug>
 #include <QTimer>
@@ -171,12 +171,15 @@ void SyncBackendBase::cancelOperationsFor(const QString &calendarId)
 
 void SyncBackendBase::cancelAllOperations()
 {
-    for (auto it = m_pendingOperations.begin(); it != m_pendingOperations.end(); ++it) {
-        for (SyncOperation *op : it.value()) {
-            if (!op->isFinished()) {
-                op->cancel();
-            }
-        }
+    // Cancellation emits finished() synchronously. The finished handler
+    // unregisters the operation and can remove the current hash entry, so
+    // never walk m_pendingOperations while invoking cancel().
+    QList<SyncOperation *> operations;
+    for (const auto &pending : std::as_const(m_pendingOperations))
+        operations.append(pending);
+    for (SyncOperation *op : std::as_const(operations)) {
+        if (op && !op->isFinished())
+            op->cancel();
     }
 }
 
@@ -313,6 +316,16 @@ bool SyncBackendBase::supportsDeleteTracking() const
     return false;
 }
 
+RecordLoadResult SyncBackendBase::loadRecordsResult(const QString &collectionId)
+{
+    QList<BackendRecord> records;
+    QString error;
+    if (!loadRecordsOrError(collectionId, records, error))
+        return RecordLoadResult::failure(error.isEmpty()
+            ? QStringLiteral("loadRecords failed") : std::move(error));
+    return RecordLoadResult::success(std::move(records));
+}
+
 void SyncBackendBase::beginBatch() {}
 
 bool SyncBackendBase::commitBatch() { return true; }
@@ -322,24 +335,21 @@ void SyncBackendBase::rollbackBatch() {}
 QList<BackendRecord> SyncBackendBase::loadRecords(const QString &collectionId)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "loadRecords(" << collectionId << ")";
+               << metaObject()->className() << "loadRecords(" << collectionId << ")";
     return {};
 }
 
 std::optional<BackendRecord> SyncBackendBase::loadRecord(const QString &recordId)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "loadRecord(" << recordId << ")";
+               << metaObject()->className() << "loadRecord(" << recordId << ")";
     return std::nullopt;
 }
 
 QString SyncBackendBase::createRecord(const QString &collectionId, const BackendRecord &record)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "createRecord(" << collectionId << ")";
+               << metaObject()->className() << "createRecord(" << collectionId << ")";
     Q_UNUSED(record);
     return {};
 }
@@ -347,8 +357,7 @@ QString SyncBackendBase::createRecord(const QString &collectionId, const Backend
 bool SyncBackendBase::updateRecord(const BackendRecord &record)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "updateRecord";
+               << metaObject()->className() << "updateRecord";
     Q_UNUSED(record);
     return false;
 }
@@ -356,8 +365,7 @@ bool SyncBackendBase::updateRecord(const BackendRecord &record)
 bool SyncBackendBase::deleteRecord(const QString &recordId)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "deleteRecord(" << recordId << ")";
+               << metaObject()->className() << "deleteRecord(" << recordId << ")";
     return false;
 }
 
@@ -365,8 +373,7 @@ QList<BackendRecord> SyncBackendBase::modifiedSince(const QString &collectionId,
                                                      const QDateTime &since)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "modifiedSince(" << collectionId << ")";
+               << metaObject()->className() << "modifiedSince(" << collectionId << ")";
     Q_UNUSED(since);
     return {};
 }
@@ -374,8 +381,7 @@ QList<BackendRecord> SyncBackendBase::modifiedSince(const QString &collectionId,
 QStringList SyncBackendBase::deletedSince(const QString &collectionId, const QDateTime &since)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "deletedSince(" << collectionId << ")";
+               << metaObject()->className() << "deletedSince(" << collectionId << ")";
     Q_UNUSED(since);
     return {};
 }
@@ -383,24 +389,21 @@ QStringList SyncBackendBase::deletedSince(const QString &collectionId, const QDa
 QList<CollectionInfo> SyncBackendBase::availableCollections()
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "availableCollections";
+               << metaObject()->className() << "availableCollections";
     return {};
 }
 
 CollectionInfo SyncBackendBase::collectionInfo(const QString &collectionId)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "collectionInfo(" << collectionId << ")";
+               << metaObject()->className() << "collectionInfo(" << collectionId << ")";
     return {};
 }
 
 QString SyncBackendBase::createCollection(const CollectionInfo &info)
 {
     qWarning() << "SyncBackendBase default IBlobBackend impl invoked on"
-               << metaObject()->className()
-               << "createCollection";
+               << metaObject()->className() << "createCollection";
     Q_UNUSED(info);
     return {};
 }

@@ -1,12 +1,12 @@
-#include "googlecalendarbackend.h"
+#include <kalburator/calendar/googlecalendarbackend.h>
 
-#include "googleapiclient.h"
-#include "googleauth.h"
-#include "googlecanonstages.h"
-#include "icalcanonstages.h"
-#include "icalcodec.h"
-#include "blockinghttp.h"
-#include "calendarcapabilities.h"
+#include <kalburator/google/googleapiclient.h>
+#include <kalburator/google/googleauth.h>
+#include <kalburator/calendar/googlecanonstages.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/icalcodec.h>
+#include <kalburator/net/blockinghttp.h>
+#include <kalburator/sync/calendarcapabilities.h>
 
 #include <QCryptographicHash>
 #include <QDateTime>

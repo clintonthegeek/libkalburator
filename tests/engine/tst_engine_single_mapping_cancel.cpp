@@ -212,6 +212,7 @@ void TstEngineSingleMappingCancel::canonicalSingleMappingCancel_preservesNativeR
     QCOMPARE(future.resultCount(), 1);
     const QList<SyncResult> list = future.resultAt(0);
     QCOMPARE(list.size(), 1);
+    QCOMPARE(list.first().mappingId, QString::fromLatin1(kMappingId));
     QVERIFY(list.first().cancelled);
 }
 

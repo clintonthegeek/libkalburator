@@ -1,4 +1,4 @@
-#include "incidencelock_registry.h"
+#include <kalburator/typesupport/incidencelock_registry.h>
 #include <QDebug>
 
 namespace Kalburator::Sync {

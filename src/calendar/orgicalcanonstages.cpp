@@ -1,6 +1,6 @@
-#include "orgicalcanonstages.h"
-#include "icalcanonstages.h"
-#include "icalcomponentscan.h"
+#include <kalburator/calendar/orgicalcanonstages.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/icalcomponentscan.h>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>

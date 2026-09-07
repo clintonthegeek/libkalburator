@@ -4,9 +4,9 @@
 #include <QList>
 #include <utility>
 
-#include "propertycatalogue.h"
-#include "shape.h"
-#include "transformationedge.h"
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/transformationedge.h>
 
 namespace Kalburator::Shape {
 

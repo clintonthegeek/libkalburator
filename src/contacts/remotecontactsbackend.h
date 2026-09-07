@@ -1,11 +1,11 @@
 #ifndef REMOTECONTACTSBACKEND_H
 #define REMOTECONTACTSBACKEND_H
 
-#include "syncbackendbase.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "shape.h"
-#include "../sync/changedetection.h"
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/sync/changedetection.h>
 
 #include <QHash>
 #include <QList>
@@ -66,8 +66,11 @@ public:
 
     QList<CollectionInfo> availableCollections() override;
     CollectionInfo        collectionInfo(const QString &collectionId) override;
+    // CardDAV addressbooks are discovered from the server. This backend does
+    // not provision new addressbooks; callers must use the discovered
+    // collection list and must not expose a create action for this backend.
     QString               createCollection(const CollectionInfo &info) override
-    { Q_UNUSED(info); return {}; } // not implemented — Task 8
+    { Q_UNUSED(info); return {}; }
 
     // --- IBlobBackend records (read-side — Task 5) --------------------------
 

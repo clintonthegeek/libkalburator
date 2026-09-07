@@ -12,6 +12,7 @@
 #include "../../src/sync/carddavconfigwidget.h"
 #include "../../src/sync/carddavprovider.h"
 #include "../../src/sync/iproviderconfigwidget.h"
+#include "../../src/sync/secretstore.h"
 
 using namespace Kalburator::Sync;
 
@@ -42,7 +43,10 @@ void TstCardDavConfigWidget::setConfiguration_populatesFields()
              QStringLiteral("https://nc.example/"));
     QCOMPARE(out.connectionParams[QStringLiteral("username")].toString(),
              QStringLiteral("alice"));
-    QCOMPARE(out.connectionParams[QStringLiteral("password")].toString(),
+    QVERIFY(!out.connectionParams.contains(QStringLiteral("password")));
+    const auto passwordRef = out.connectionParams[QStringLiteral("passwordRef")].toString();
+    QVERIFY(!passwordRef.isEmpty());
+    QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef),
              QStringLiteral("secret"));
 }
 
@@ -61,7 +65,11 @@ void TstCardDavConfigWidget::roundTripsConnectionParams()
     cfg.connectionParams[QStringLiteral("password")] = QStringLiteral("p");
 
     w.setConfiguration(cfg);
-    QCOMPARE(w.configuration().connectionParams, cfg.connectionParams);
+    const auto out = w.configuration();
+    QVERIFY(!out.connectionParams.contains(QStringLiteral("password")));
+    const auto passwordRef = out.connectionParams[QStringLiteral("passwordRef")].toString();
+    QVERIFY(!passwordRef.isEmpty());
+    QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef), QStringLiteral("p"));
 }
 
 void TstCardDavConfigWidget::providerCreatesConformingWidget()

@@ -1,9 +1,9 @@
-#include "calendardomaindefinition.h"
+#include <kalburator/calendar/calendardomaindefinition.h>
 
-#include "icalproperties.h"
-#include "calendarcanonproperties.h"
-#include "canonjsondiffer.h"
-#include "canonjsonmerger.h"
+#include <kalburator/calendar/icalproperties.h>
+#include <kalburator/calendar/calendarcanonproperties.h>
+#include <kalburator/shape/canonjsondiffer.h>
+#include <kalburator/shape/canonjsonmerger.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

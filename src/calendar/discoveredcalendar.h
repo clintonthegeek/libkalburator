@@ -7,8 +7,8 @@
 #include <QColor>
 #include <QMetaType>
 
-#include "calendartype.h"
-#include "calendarcapabilities.h"
+#include <kalburator/types/calendartype.h>
+#include <kalburator/sync/calendarcapabilities.h>
 
 namespace Kalburator::Sync {
 

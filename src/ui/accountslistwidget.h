@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_UI_ACCOUNTSLISTWIDGET_H
 #define KALBURATOR_UI_ACCOUNTSLISTWIDGET_H
 
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 
 #include <QWidget>
 #include <QList>

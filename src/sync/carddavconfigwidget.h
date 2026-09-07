@@ -1,8 +1,8 @@
 #ifndef KALBURATOR_SYNC_CARDDAVCONFIGWIDGET_H
 #define KALBURATOR_SYNC_CARDDAVCONFIGWIDGET_H
 
-#include "backendconfiguration.h"
-#include "iproviderconfigwidget.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/iproviderconfigwidget.h>
 #include <QWidget>
 
 class QLineEdit;
@@ -34,6 +34,7 @@ private:
     QLineEdit *m_urlEdit;
     QLineEdit *m_usernameEdit;
     QLineEdit *m_passwordEdit;
+    mutable QString m_passwordRef;
 };
 
 } // namespace Kalburator::Sync

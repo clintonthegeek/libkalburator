@@ -4,7 +4,7 @@
 #include <QString>
 #include <QStringList>
 
-#include "backendrecord.h"
+#include <kalburator/types/backendrecord.h>
 
 namespace KCalendarCore { class MemoryCalendar; }
 

@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_PLUGIN_MULTIPROTOCOLDAVPROVIDERPLUGIN_H
 #define KALBURATOR_PLUGIN_MULTIPROTOCOLDAVPROVIDERPLUGIN_H
 
-#include "plugin.h"
+#include <kalburator/plugin/plugin.h>
 
 namespace Kalburator {
 

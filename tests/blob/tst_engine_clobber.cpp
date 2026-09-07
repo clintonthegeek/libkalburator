@@ -157,7 +157,12 @@ public:
         // Exercise the library's default loadRecords+deleteRecord impl.
         return Kalburator::Sync::IBlobBackend::wipeCollection(colId);
     }
+    Kalburator::Sync::IBackendCollectionWiper *collectionWiper() override
+    {
+        return exposeWipeCapability ? this : nullptr;
+    }
     QStringList wipedCollections;   ///< one entry per wipe call, in order
+    bool exposeWipeCapability = true;
     bool failWipe = false;          ///< inject wipe failure
 
     // ---- Blob batch (no-ops) ----
@@ -290,6 +295,7 @@ private slots:
     void clobber_silences_mass_delete_guard();
     void clobber_ignores_direction();
     void clobber_wipe_failure_fails_mapping_in_isolation();
+    void clobber_without_wipe_capability_reports_unsupported();
 
 private:
     static constexpr const char *kSrcId  = "blob-src";
@@ -594,6 +600,24 @@ void TstEngineClobber::clobber_wipe_failure_fails_mapping_in_isolation()
                  .contains(QStringLiteral("r1")));
     QVERIFY(!m_tgt->recordsIn(QString::fromLatin1(kCol2))
                  .contains(QStringLiteral("r2")));
+}
+
+void TstEngineClobber::clobber_without_wipe_capability_reports_unsupported()
+{
+    m_tgt->exposeWipeCapability = false;
+
+    SyncRequest request;
+    request.mappingIds = { QString::fromLatin1(kMap1) };
+    ExecutionOverride ov;
+    ov.clobber = true;
+    request.executionOverride = ov;
+
+    const QList<SyncResult> results = runRequest(request);
+    QCOMPARE(results.size(), 1);
+    QVERIFY(!results.first().success);
+    QVERIFY(results.first().errorMessage.contains(
+        QStringLiteral("lacks collection-wipe capability")));
+    QVERIFY(m_tgt->wipedCollections.isEmpty());
 }
 
 QTEST_MAIN(TstEngineClobber)

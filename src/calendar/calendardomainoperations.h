@@ -1,5 +1,5 @@
 #pragma once
-#include "domainoperations.h"
+#include <kalburator/shape/domainoperations.h>
 
 namespace Kalburator::Calendar {
 
@@ -17,7 +17,8 @@ public:
     void applyCollectionProperties(
         Kalburator::Sync::SyncBackendBase *backend,
         const QString &collectionId,
-        const QVariantMap &props) const override;
+        const QVariantMap &props,
+        std::function<void(bool, const QString &)> completed = {}) const override;
 };
 
 } // namespace Kalburator::Calendar

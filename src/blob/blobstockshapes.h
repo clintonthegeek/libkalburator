@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shapecontribution.h"
+#include <kalburator/shape/shapecontribution.h>
 
 namespace Kalburator::Blob {
 

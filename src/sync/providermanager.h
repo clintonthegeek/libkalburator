@@ -10,7 +10,7 @@
 #include <map>
 #include <vector>
 
-#include "iprovider.h"  // ProviderConnectionState (Task 4: relocated here)
+#include <kalburator/sync/iprovider.h>  // ProviderConnectionState (Task 4: relocated here)
 
 class KConfigGroup;
 
@@ -18,16 +18,14 @@ namespace Kalburator::Sync {
 
 class BackendRegistry;
 class IBlobBackend;
+class BackendExecutor;
 
 // O.1.2: Per-provider connection state, returned by
 // ProviderManager::providerState(id) and reported on providerStateChanged.
 // Task 4 (sync-graph redesign Phase 1) relocated the enum itself to
 // iprovider.h — see Kalburator::Sync::ProviderConnectionState there for the
-// definition and emission contract. Connecting/Error are now actually
-// emitted by the DAV-family providers' own connectionStateChanged
-// overload; ProviderManager's own m_providerStates mirror below still only
-// derives from the legacy bool overload (Connected/Disconnected) — wiring
-// Connecting/Error through the manager is left to a later task.
+// definition and emission contract. ProviderManager mirrors this one typed
+// signal; the legacy bool overload is not used for lifecycle state.
 
 /**
  * @brief Per-profile owner of IProvider instances.
@@ -53,6 +51,9 @@ public:
     void saveToProfile(KConfigGroup &providersGroup) const;
 
     void addProvider(std::unique_ptr<IProvider> provider);
+    /// Apply an edited configuration to an existing provider.
+    /// Returns false when the provider ID is unknown.
+    bool updateProvider(const BackendConfiguration &config);
     void removeProvider(const QString &providerId);
 
     QFuture<void> connectAll();
@@ -76,10 +77,14 @@ signals:
     /// O.1.2: Per-provider connection state change.
     void providerStateChanged(QString providerId,
                               ProviderConnectionState state);
+    void providerCollectionsChanged(QString providerId,
+                                    QList<CollectionInfo> collections);
+    void providerErrorChanged(QString providerId, QString errorMessage);
 
 private slots:
-    void onProviderConnectionStateChanged(bool connected);
+    void onProviderConnectionStateChanged(ProviderConnectionState state);
     void onProviderCollectionsChanged();
+    void onProviderError(QString errorMessage);
 
 private:
     void registerProviderBackends(IProvider *provider);
@@ -93,7 +98,9 @@ private:
     // std::map (not QHash) because std::unique_ptr is move-only and QHash's
     // growth path requires copyable values. std::unordered_map is unavailable
     // because Qt6 doesn't ship a std::hash<QString> specialisation.
-    std::map<QString, std::unique_ptr<IBlobBackend>> m_ownedBackends;
+    // The executor owns the backend object and its affinity thread. The
+    // registry stores only a non-owning view for dispatch.
+    std::map<QString, std::unique_ptr<BackendExecutor>> m_ownedBackends;
     // O.1.2: per-provider state mirror. Updated from
     // onProviderConnectionStateChanged. Keyed by IProvider::id().
     QHash<QString, ProviderConnectionState> m_providerStates;

@@ -41,10 +41,10 @@
 // only the merged record caches are written (<cacheDir>/msgraph-todo-state.json,
 // atomic replace), exactly the GraphContactsBackend rationale.
 
-#include "discoveredcalendar.h"
-#include "syncbackendbase.h"
-#include "writeoperation.h"
-#include "writerbatch.h"
+#include <kalburator/calendar/discoveredcalendar.h>
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/sync/writeoperation.h>
+#include <kalburator/sync/writerbatch.h>
 
 #include <QHash>
 #include <QString>
@@ -84,6 +84,8 @@ public:
     // ==== identity ====
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
+    IBackendRecordMutator *recordMutator() override { return nullptr; }
+    IBackendCollectionWiper *collectionWiper() override { return nullptr; }
 
     // ==== read path ====
     SyncOperation *fetchItems(const QString &collectionId) override;

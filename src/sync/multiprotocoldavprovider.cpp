@@ -1,14 +1,16 @@
-#include "multiprotocoldavprovider.h"
+#include <kalburator/sync/multiprotocoldavprovider.h>
+#include <kalburator/sync/credentialredaction.h>
 
-#include "multiprotocoldavconfigwidget.h"
-#include "caldavcapabilitydiscovery.h"
-#include "../calendar/remotecalendarbackend.h"
-#include "../contacts/remotecontactsbackend.h"
-#include "../universal/filteredcollectionbackend.h"
-#include "../universal/kinddemuxbackend.h"
-#include "carddavcapabilitydiscovery.h"
-#include "caldavcontenttypes.h"
-#include "davslug.h"
+#include <kalburator/sync/multiprotocoldavconfigwidget.h>
+#include <kalburator/sync/caldavcapabilitydiscovery.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/contacts/remotecontactsbackend.h>
+#include <kalburator/universal/filteredcollectionbackend.h>
+#include <kalburator/universal/kinddemuxbackend.h>
+#include <kalburator/sync/carddavcapabilitydiscovery.h>
+#include <kalburator/sync/caldavcontenttypes.h>
+#include <kalburator/sync/davslug.h>
+#include <kalburator/sync/secretstore.h>
 
 #include <QFutureWatcher>
 #include <QLoggingCategory>
@@ -41,7 +43,13 @@ void MultiProtocolDavProvider::load(const BackendConfiguration &config)
     const auto &p = config.connectionParams;
     m_serverUrl              = QUrl(p.value(QStringLiteral("url")).toString());
     m_username               = p.value(QStringLiteral("username")).toString();
-    m_password               = p.value(QStringLiteral("password")).toString();
+    const QString passwordRef = p.value(QStringLiteral("passwordRef")).toString();
+    m_passwordRef = passwordRef;
+    m_password = passwordRef.isEmpty()
+        ? p.value(QStringLiteral("password")).toString()
+        : SecretStoreRegistry::defaultStore()->get(passwordRef);
+    if (m_passwordRef.isEmpty() && !m_password.isEmpty())
+        m_passwordRef = SecretStoreRegistry::defaultStore()->put(m_password);
     m_manualCalDavPrincipal  = p.value(QStringLiteral("manualCaldavPrincipal")).toString();
     m_manualCardDavPrincipal = p.value(QStringLiteral("manualCarddavPrincipal")).toString();
     // Restore the persisted calendars-only mode. Absent (legacy configs) keeps
@@ -58,7 +66,8 @@ BackendConfiguration MultiProtocolDavProvider::save() const
     c.displayName = m_displayName;
     c.connectionParams[QStringLiteral("url")]      = m_serverUrl.toString();
     c.connectionParams[QStringLiteral("username")] = m_username;
-    c.connectionParams[QStringLiteral("password")] = m_password;
+    if (!m_password.isEmpty())
+        c.connectionParams[QStringLiteral("passwordRef")] = m_passwordRef;
     if (!m_manualCalDavPrincipal.isEmpty())
         c.connectionParams[QStringLiteral("manualCaldavPrincipal")] = m_manualCalDavPrincipal;
     if (!m_manualCardDavPrincipal.isEmpty())
@@ -108,7 +117,7 @@ QFuture<bool> MultiProtocolDavProvider::connect()
     }
 
     qCInfo(lcMultiDav).nospace()
-        << "connect: probing " << m_serverUrl.toString()
+        << "connect: probing " << redactCredentials(m_serverUrl)
         << " as user '" << m_username << "' (CalDAV + CardDAV)";
 
     m_connectPromise = std::make_shared<QPromise<bool>>();
@@ -185,6 +194,7 @@ void MultiProtocolDavProvider::disconnect()
     m_contactsUrlBySlug.clear();
     m_calDavCaps.clear();
     emit connectionStateChanged(false);
+    emit connectionStateChanged(ProviderConnectionState::Disconnected);
 }
 
 std::vector<ProviderBackendSpec> MultiProtocolDavProvider::createBackends()

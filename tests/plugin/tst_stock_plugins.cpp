@@ -17,11 +17,11 @@ private slots:
         m_pluginRegistry.reset();
     }
 
-    void universalStorageRegistersBothBackendTypes() {
+    void universalStorageDoesNotRegisterUnprovisionedBackends() {
         Kalburator::PluginManager pm(m_pluginRegistry.get(), m_shape);
         Kalburator::registerStockPlugins(pm);
-        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("raw-files")) != nullptr);
-        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("generic-sqlite")) != nullptr);
+        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("raw-files")) == nullptr);
+        QVERIFY(m_pluginRegistry->contributionFor(QStringLiteral("generic-sqlite")) == nullptr);
     }
 
     void noteDomainRegistered() {

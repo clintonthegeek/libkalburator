@@ -1,4 +1,4 @@
-#include "filteredcollectionbackend.h"
+#include <kalburator/universal/filteredcollectionbackend.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -7,7 +7,7 @@
 #include <QRegularExpression>
 #include <QUrl>
 
-#include "backendregistry.h"  // Kalburator::Sync::BackendRegistry
+#include <kalburator/sync/backendregistry.h>  // Kalburator::Sync::BackendRegistry
 
 namespace Kalburator::Sinks {
 
@@ -146,6 +146,13 @@ CollectionInfo FilteredCollectionBackend::collectionInfo(const QString& collecti
 {
     if (collectionId != m_virtualColId) return CollectionInfo{};
     return composeCollectionInfo();
+}
+
+QString FilteredCollectionBackend::createCollection(const CollectionInfo&)
+{
+    // A filtered view cannot provision a collection independently of its
+    // parent transport.
+    return {};
 }
 
 QByteArray FilteredCollectionBackend::canonJsonOfValue(const QVariant& value)
@@ -335,6 +342,31 @@ bool FilteredCollectionBackend::deleteRecord(const QString& recordId)
     if (!m_parent) return false;
     return m_parent->deleteRecord(recordId);
 }
+
+QList<BackendRecord> FilteredCollectionBackend::modifiedSince(
+        const QString& collectionId, const QDateTime& since)
+{
+    if (!m_parent || collectionId != m_virtualColId)
+        return {};
+    return m_parent->modifiedSince(m_parentColId, since);
+}
+
+QStringList FilteredCollectionBackend::deletedSince(
+        const QString& collectionId, const QDateTime& since)
+{
+    if (!m_parent || collectionId != m_virtualColId)
+        return {};
+    return m_parent->deletedSince(m_parentColId, since);
+}
+
+void FilteredCollectionBackend::beginBatch() {}
+
+bool FilteredCollectionBackend::commitBatch()
+{
+    return false;
+}
+
+void FilteredCollectionBackend::rollbackBatch() {}
 
 // ---- Sync::ChangeDetection ----
 // All four delegate to the parent, translating the virtual collection id to

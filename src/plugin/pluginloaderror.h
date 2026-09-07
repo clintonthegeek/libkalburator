@@ -17,6 +17,7 @@ enum class PluginLoadErrorCode {
     EdgeEndpointUnregistered,
     InstantiationFailed,
     ManifestParseFailed,
+    DuplicatePluginId,
 };
 
 struct PluginLoadError {

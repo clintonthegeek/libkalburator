@@ -10,7 +10,7 @@
 
 // Include syncbackend.h for RecurrenceCapabilities
 // (no circular dependency since syncbackend.h only forward-declares BackendCapabilities)
-#include "syncbackend.h"
+#include <kalburator/calendar/syncbackend.h>
 
 namespace Kalburator::Sync {
 

@@ -3,9 +3,9 @@
 #include <QByteArray>
 #include <QList>
 
-#include "lossprofile.h"
-#include "shape.h"
-#include "transformationedge.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/transformationedge.h>
 
 namespace Kalburator::Shape {
 

@@ -1,4 +1,4 @@
-#include "mockblobbackend.h"
+#include <kalburator/blob/mockblobbackend.h>
 
 #include <QCryptographicHash>
 

@@ -1,4 +1,4 @@
-#include "icalcomponentscan.h"
+#include <kalburator/calendar/icalcomponentscan.h>
 
 #include <QDate>
 #include <QDateTime>

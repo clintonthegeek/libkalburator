@@ -1,4 +1,4 @@
-#include "googleeventproperties.h"
+#include <kalburator/calendar/googleeventproperties.h>
 
 using namespace Kalburator::Shape;
 

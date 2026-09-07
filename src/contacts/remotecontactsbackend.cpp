@@ -1,4 +1,4 @@
-#include "remotecontactsbackend.h"
+#include <kalburator/contacts/remotecontactsbackend.h>
 
 #include <QCryptographicHash>
 #include <QDebug>

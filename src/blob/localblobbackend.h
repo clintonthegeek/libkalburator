@@ -5,7 +5,7 @@
 #include <QObject>
 #include <QString>
 
-#include "iblobbackend.h"
+#include <kalburator/blob/iblobbackend.h>
 
 namespace Kalburator::Sync {
 
@@ -55,6 +55,11 @@ public:
                                        const QDateTime &since) override;
     QStringList deletedSince(const QString &collectionId,
                              const QDateTime &since) override;
+
+    void beginBatch() override {}
+    bool commitBatch() override { return true; }
+    void rollbackBatch() override {}
+    bool supportsBatch() const override { return false; }
 
     QString basePath() const { return m_basePath; }
 

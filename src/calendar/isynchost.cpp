@@ -1,7 +1,7 @@
-#include "isynchost.h"
+#include <kalburator/calendar/isynchost.h>
 
-#include "../sync/backendregistry.h"
-#include "syncbackend.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/syncbackend.h>
 
 namespace Kalburator::Sync {
 

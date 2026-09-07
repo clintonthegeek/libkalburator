@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNCENGINEFUTURE_H
 #define KALBURATOR_SYNCENGINEFUTURE_H
 
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 #include <QFuture>
 #include <QString>
 #include <memory>

@@ -1,4 +1,4 @@
-#include "decsyncgarbagecollector.h"
+#include <kalburator/calendar/decsyncgarbagecollector.h>
 
 #include <QDir>
 #include <QFile>

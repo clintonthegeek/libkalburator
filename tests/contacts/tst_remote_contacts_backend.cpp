@@ -110,6 +110,7 @@ class TstRemoteContactsBackend : public QObject
 private slots:
     // --- Read-side (Task 5) -------------------------------------------------
     void availableCollections_after_register();
+    void createCollection_is_explicitly_unsupported();
     void loadRecords_empty_addressbook();
     void loadRecords_three_records();
     void loadRecords_vcard3_shape();
@@ -155,6 +156,17 @@ void TstRemoteContactsBackend::availableCollections_after_register()
     QCOMPARE(cols.at(0).id,   QStringLiteral("personal"));
     QCOMPARE(cols.at(0).type, QStringLiteral("contacts"));
     QVERIFY(!cols.at(0).path.isEmpty());
+}
+
+void TstRemoteContactsBackend::createCollection_is_explicitly_unsupported()
+{
+    RemoteContactsBackend backend(QUrl(QStringLiteral("http://example.com/")),
+                                  QStringLiteral("u"), QStringLiteral("p"));
+    CollectionInfo requested;
+    requested.id = QStringLiteral("new-addressbook");
+    requested.type = QStringLiteral("contacts");
+    QCOMPARE(backend.createCollection(requested), QString());
+    QVERIFY(backend.availableCollections().isEmpty());
 }
 
 // ---------------------------------------------------------------------------

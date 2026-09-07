@@ -4,7 +4,7 @@
 #include <QSet>
 #include <QString>
 
-#include "propertycatalogue.h"
+#include <kalburator/shape/propertycatalogue.h>
 
 namespace Kalburator::Shape {
 

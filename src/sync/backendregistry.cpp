@@ -1,5 +1,5 @@
-#include "backendregistry.h"
-#include "backendcontribution.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
 
 namespace Kalburator::Sync {
 

@@ -1,12 +1,12 @@
-#include "contactsstockshapes.h"
-#include "vcardproperties.h"
-#include "vcardcanonstages.h"
-#include "googlepersonproperties.h"
-#include "googlepersoncanonstages.h"
-#include "mscontactproperties.h"
-#include "mscontactcanonstages.h"
-#include "vcard3to4transformation.h"
-#include "lossprofile.h"
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/contacts/vcardproperties.h>
+#include <kalburator/contacts/vcardcanonstages.h>
+#include <kalburator/contacts/googlepersonproperties.h>
+#include <kalburator/contacts/googlepersoncanonstages.h>
+#include <kalburator/contacts/mscontactproperties.h>
+#include <kalburator/contacts/mscontactcanonstages.h>
+#include <kalburator/contacts/vcard3to4transformation.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

@@ -1,7 +1,7 @@
 #ifdef HAVE_AKONADI
 
-#include "akonadiproviderplugin.h"
-#include "../sync/akonadibackendcontribution.h"
+#include <kalburator/plugin/akonadiproviderplugin.h>
+#include <kalburator/sync/akonadibackendcontribution.h>
 
 namespace Kalburator {
 

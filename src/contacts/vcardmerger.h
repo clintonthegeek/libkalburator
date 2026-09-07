@@ -1,6 +1,6 @@
 #pragma once
 
-#include "recordmerger.h"
+#include <kalburator/shape/recordmerger.h>
 
 namespace Kalburator::Contacts {
 

@@ -1,4 +1,4 @@
-#include "mseventproperties.h"
+#include <kalburator/calendar/mseventproperties.h>
 
 using namespace Kalburator::Shape;
 

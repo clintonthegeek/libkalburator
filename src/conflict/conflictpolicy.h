@@ -12,8 +12,8 @@
  * allows the same policy to be applied across different UIs or automation.
  */
 
-#include "conflictrecord.h"
-#include "../shape/autoresolvestrategy.h"
+#include <kalburator/conflict/conflictrecord.h>
+#include <kalburator/shape/autoresolvestrategy.h>
 
 #include <QObject>
 #include <QJsonObject>

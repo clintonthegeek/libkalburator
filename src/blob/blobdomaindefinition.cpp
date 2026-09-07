@@ -1,8 +1,8 @@
-#include "blobdomaindefinition.h"
+#include <kalburator/blob/blobdomaindefinition.h>
 
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "propertycatalogue.h"
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/propertycatalogue.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

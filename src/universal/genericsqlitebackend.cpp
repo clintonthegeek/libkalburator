@@ -1,4 +1,4 @@
-#include "genericsqlitebackend.h"
+#include <kalburator/universal/genericsqlitebackend.h>
 
 #include <QCryptographicHash>
 #include <QDebug>

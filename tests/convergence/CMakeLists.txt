@@ -15,5 +15,5 @@ endfunction()
 # EEE Phase 6 — G⇄M pipeline convergence gate + generated-matrix pin
 kalburator_add_convergence_test(tst_gm_pipeline_convergence)
 target_compile_definitions(tst_gm_pipeline_convergence
-    PRIVATE KALBURATOR_EEE_DOC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../docs/campaign/eee"
+    PRIVATE KALBURATOR_DOC_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../docs"
 )

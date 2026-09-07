@@ -4,7 +4,7 @@
 #include <QList>
 #include <QStringList>
 
-#include "backendrecord.h"
+#include <kalburator/types/backendrecord.h>
 
 namespace Kalburator::Sync {
 

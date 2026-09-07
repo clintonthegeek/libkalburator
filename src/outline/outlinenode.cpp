@@ -1,4 +1,4 @@
-#include "outlinenode.h"
+#include <kalburator/outline/outlinenode.h>
 
 #include <QJsonArray>
 

@@ -2,7 +2,7 @@
 #define KALBURATOR_SYNCMAPPINGGENERATOR_H
 
 #include <QList>
-#include "synctypes.h"   // SyncMapping, SyncTopology
+#include <kalburator/types/synctypes.h>   // SyncMapping, SyncTopology
 
 namespace Kalburator::Sync {
 

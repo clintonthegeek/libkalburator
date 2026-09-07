@@ -1,9 +1,9 @@
-#include "holidaysubscriptionbackend.h"
+#include <kalburator/calendar/holidaysubscriptionbackend.h>
 #include <KHolidays/Holiday>
 #include <KCalendarCore/ICalFormat>
 #include <QDateTime>
 #include <QDebug>
-#include "ilocalesource.h"
+#include <kalburator/types/ilocalesource.h>
 
 namespace Kalburator::Sync {
 

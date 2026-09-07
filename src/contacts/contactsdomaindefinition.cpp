@@ -1,8 +1,8 @@
-#include "contactsdomaindefinition.h"
-#include "contactscanonproperties.h"
-#include "canonjsondiffer.h"
-#include "canonjsonmerger.h"
-#include "vcardproperties.h"
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactscanonproperties.h>
+#include <kalburator/shape/canonjsondiffer.h>
+#include <kalburator/shape/canonjsonmerger.h>
+#include <kalburator/contacts/vcardproperties.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

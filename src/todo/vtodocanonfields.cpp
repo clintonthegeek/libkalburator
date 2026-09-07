@@ -1,9 +1,9 @@
-#include "vtodocanonfields.h"
+#include <kalburator/todo/vtodocanonfields.h>
 
-#include "alarmshape.h"
-#include "canonenvelope.h"
-#include "icalcomponentscan.h"
-#include "incidencecommonfields.h"
+#include <kalburator/calendar/alarmshape.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/icalcomponentscan.h>
+#include <kalburator/calendar/incidencecommonfields.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>

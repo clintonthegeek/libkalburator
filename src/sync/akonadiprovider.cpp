@@ -1,13 +1,13 @@
-#include "akonadiprovider.h"
+#include <kalburator/sync/akonadiprovider.h>
 
 #ifdef HAVE_AKONADI
 
-#include "akonadiconfigwidget.h"
-#include "iblobbackend.h"
-#include "backendconfiguration.h"
-#include "akonadicollectionid.h"
-#include "../calendar/akonadibackend.h"
-#include "../contacts/akonadicontactsbackend.h"
+#include <kalburator/sync/akonadiconfigwidget.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/akonadicollectionid.h>
+#include <kalburator/calendar/akonadibackend.h>
+#include <kalburator/contacts/akonadicontactsbackend.h>
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>
@@ -67,7 +67,6 @@ QFuture<bool> AkonadiProvider::connect()
         fi.reportFinished();
         return fi.future();
     }
-
     // Idempotent: if a connect is already in flight, return its future. A
     // second connect() call must NOT overwrite m_connectPromise — the assignment
     // would drop the last strong ref to the previous QPromise, whose destructor
@@ -76,6 +75,8 @@ QFuture<bool> AkonadiProvider::connect()
     if (m_connectPromise) {
         return m_connectPromise->future();
     }
+
+    Q_EMIT connectionStateChanged(ProviderConnectionState::Connecting);
 
     m_connectPromise = std::make_shared<QPromise<bool>>();
     auto fut = m_connectPromise->future();
@@ -144,6 +145,7 @@ void AkonadiProvider::onCollectionsFetched(KJob *kjob)
     m_connected = true;
     Q_EMIT collectionsChanged();
     Q_EMIT connectionStateChanged(true);
+    Q_EMIT connectionStateChanged(ProviderConnectionState::Connected);
     if (m_connectPromise) {
         m_connectPromise->addResult(true);
         m_connectPromise->finish();
@@ -162,6 +164,7 @@ void AkonadiProvider::disconnect()
         m_session = nullptr;
     }
     Q_EMIT connectionStateChanged(false);
+    Q_EMIT connectionStateChanged(ProviderConnectionState::Disconnected);
 }
 
 std::unique_ptr<IBlobBackend>

@@ -1,9 +1,9 @@
 #ifndef KALBURATOR_SYNC_CARDDAVBACKENDCONTRIBUTION_H
 #define KALBURATOR_SYNC_CARDDAVBACKENDCONTRIBUTION_H
 
-#include "backendcontribution.h"
-#include "carddavprovider.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/carddavprovider.h>
+#include <kalburator/sync/iprovider.h>
 
 namespace Kalburator::Sync {
 

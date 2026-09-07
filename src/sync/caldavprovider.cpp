@@ -1,12 +1,13 @@
-#include "caldavprovider.h"
+#include <kalburator/sync/caldavprovider.h>
 
-#include "caldavconfigwidget.h"
-#include "iblobbackend.h"
-#include "backendconfiguration.h"
-#include "caldavcapabilitydiscovery.h"
-#include "remotecalendarbackend.h"
-#include "caldavcontenttypes.h"
-#include "davslug.h"
+#include <kalburator/sync/caldavconfigwidget.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/caldavcapabilitydiscovery.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/sync/caldavcontenttypes.h>
+#include <kalburator/sync/davslug.h>
+#include <kalburator/sync/secretstore.h>
 
 #include <QFutureInterface>
 #include <QUuid>
@@ -32,7 +33,13 @@ void CalDavProvider::load(const BackendConfiguration &config) {
     m_displayName = config.displayName;
     m_serverUrl = QUrl(config.connectionParams.value(QStringLiteral("url")).toString());
     m_username  = config.connectionParams.value(QStringLiteral("username")).toString();
-    m_password  = config.connectionParams.value(QStringLiteral("password")).toString();
+    const QString ref = config.connectionParams.value(QStringLiteral("passwordRef")).toString();
+    m_passwordRef = ref;
+    m_password = ref.isEmpty()
+        ? config.connectionParams.value(QStringLiteral("password")).toString()
+        : SecretStoreRegistry::defaultStore()->get(ref);
+    if (m_passwordRef.isEmpty() && !m_password.isEmpty())
+        m_passwordRef = SecretStoreRegistry::defaultStore()->put(m_password);
 }
 
 BackendConfiguration CalDavProvider::save() const {
@@ -42,7 +49,8 @@ BackendConfiguration CalDavProvider::save() const {
     cfg.displayName = m_displayName;
     cfg.connectionParams[QStringLiteral("url")]      = m_serverUrl.toString();
     cfg.connectionParams[QStringLiteral("username")] = m_username;
-    cfg.connectionParams[QStringLiteral("password")] = m_password;
+    if (!m_password.isEmpty())
+        cfg.connectionParams[QStringLiteral("passwordRef")] = m_passwordRef;
     return cfg;
 }
 
@@ -176,6 +184,7 @@ void CalDavProvider::disconnect() {
     m_urlBySlug.clear();
     m_capsBySlug.clear();
     emit connectionStateChanged(false);
+    emit connectionStateChanged(ProviderConnectionState::Disconnected);
 }
 
 std::vector<ProviderBackendSpec> CalDavProvider::createBackends()

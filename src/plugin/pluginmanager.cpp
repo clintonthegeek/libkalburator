@@ -1,15 +1,15 @@
 // src/plugin/pluginmanager.cpp
-#include "pluginmanager.h"
-#include "plugin.h"
-#include "domaindefinition.h"
-#include "shapecontribution.h"
-#include "domainoperations.h"
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
-#include "transformationregistry.h"
-#include "shaperegistries.h"
-#include "backendcontribution.h"
-#include "backendregistry.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/plugin/plugin.h>
+#include <kalburator/shape/domaindefinition.h>
+#include <kalburator/shape/shapecontribution.h>
+#include <kalburator/shape/domainoperations.h>
+#include <kalburator/shape/domainoperationsregistry.h>
+#include <kalburator/shape/domainregistry.h>
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/backendregistry.h>
 #include <QDir>
 #include <QHash>
 #include <QPluginLoader>
@@ -231,7 +231,22 @@ PluginManager::applyPlugin(Plugin *plugin, const PluginManifest &m) {
 bool PluginManager::loadInProcess(const QList<QPair<Plugin*, PluginManifest>> &items) {
     reset();
     QList<PluginManifest> manifests;
-    for (const auto &p : items) manifests.append(p.second);
+    QSet<QString> seenIds;
+    for (const auto &p : items) {
+        if (!p.first) {
+            m_rejected.append({p.second, {PluginLoadErrorCode::InstantiationFailed,
+                p.second.id, QStringLiteral("plugin instance is null")}});
+            continue;
+        }
+        if (seenIds.contains(p.second.id)) {
+            m_rejected.append({p.second, {PluginLoadErrorCode::DuplicatePluginId,
+                p.second.id, QStringLiteral("duplicate plugin id")}});
+            continue;
+        }
+        seenIds.insert(p.second.id);
+        manifests.append(p.second);
+    }
+    if (!m_rejected.isEmpty()) return false;
 
     QList<PluginLoadError> resolveErrors;
     const auto order = resolve(manifests, &resolveErrors);

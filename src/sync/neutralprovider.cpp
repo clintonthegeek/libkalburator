@@ -1,6 +1,6 @@
-#include "neutralprovider.h"
-#include "iblobbackend.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/neutralprovider.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 #include <QFutureInterface>
 #include <QUuid>
 
@@ -33,11 +33,18 @@ BackendConfiguration NeutralProvider::save() const {
 QWidget *NeutralProvider::createConfigWidget(QWidget *) { return nullptr; }
 
 QFuture<bool> NeutralProvider::connect() {
-    if (!m_connected) {
-        m_connected = true;
-        Q_EMIT connectionStateChanged(true);
-        Q_EMIT collectionsChanged();
+    if (m_connected) {
+        QFutureInterface<bool> fi;
+        fi.reportStarted();
+        fi.reportResult(true);
+        fi.reportFinished();
+        return fi.future();
     }
+    Q_EMIT connectionStateChanged(ProviderConnectionState::Connecting);
+    m_connected = true;
+    Q_EMIT connectionStateChanged(true);
+    Q_EMIT connectionStateChanged(ProviderConnectionState::Connected);
+    Q_EMIT collectionsChanged();
     QFutureInterface<bool> fi;
     fi.reportStarted();
     fi.reportResult(true);
@@ -49,6 +56,7 @@ void NeutralProvider::disconnect() {
     if (m_connected) {
         m_connected = false;
         Q_EMIT connectionStateChanged(false);
+        Q_EMIT connectionStateChanged(ProviderConnectionState::Disconnected);
     }
 }
 

@@ -1,4 +1,4 @@
-#include "googlepersonproperties.h"
+#include <kalburator/contacts/googlepersonproperties.h>
 
 using namespace Kalburator::Shape;
 

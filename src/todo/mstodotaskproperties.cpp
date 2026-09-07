@@ -1,4 +1,4 @@
-#include "mstodotaskproperties.h"
+#include <kalburator/todo/mstodotaskproperties.h>
 
 using namespace Kalburator::Shape;
 

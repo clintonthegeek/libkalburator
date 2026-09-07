@@ -1,4 +1,4 @@
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QColor>

@@ -15,6 +15,7 @@
 #include "caldavprovider.h"
 #include "backendconfiguration.h"
 #include "fakecaldavserver.h"
+#include "secretstore.h"
 
 using namespace Kalburator::Sync;
 
@@ -87,7 +88,11 @@ void TstCalDavConfigWidget::apply_writes_form_values_back_to_provider()
              QStringLiteral("https://srv/dav"));
     QCOMPARE(cfg.connectionParams.value(QStringLiteral("username")).toString(),
              QStringLiteral("bob"));
-    QCOMPARE(cfg.connectionParams.value(QStringLiteral("password")).toString(),
+    QVERIFY(!cfg.connectionParams.contains(QStringLiteral("password")));
+    const auto passwordRef = cfg.connectionParams.value(QStringLiteral("passwordRef"))
+                                 .toString();
+    QVERIFY(!passwordRef.isEmpty());
+    QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef),
              QStringLiteral("hunter2"));
 }
 
@@ -110,7 +115,11 @@ void TstCalDavConfigWidget::edit_then_apply_round_trips()
              QStringLiteral("http://example.com/"));
     QCOMPARE(cfg.connectionParams.value(QStringLiteral("username")).toString(),
              QStringLiteral("alice"));
-    QCOMPARE(cfg.connectionParams.value(QStringLiteral("password")).toString(),
+    QVERIFY(!cfg.connectionParams.contains(QStringLiteral("password")));
+    const auto passwordRef = cfg.connectionParams.value(QStringLiteral("passwordRef"))
+                                 .toString();
+    QVERIFY(!passwordRef.isEmpty());
+    QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef),
              QStringLiteral("secret"));
 }
 

@@ -1,8 +1,8 @@
 #ifndef CONFLICTMANAGER_H
 #define CONFLICTMANAGER_H
 
-#include "synctypes.h"
-#include "iconflictresolver.h"
+#include <kalburator/types/synctypes.h>
+#include <kalburator/calendar/iconflictresolver.h>
 
 #include <QObject>
 #include <QHash>
@@ -141,7 +141,8 @@ public:
      * @param resolution The resolution to apply
      * @return true if resolution was successfully applied
      */
-    bool applyResolution(const QString &conflictId, ConflictResolution resolution);
+    bool applyResolution(const QString &conflictId, ConflictResolution resolution,
+                         const QString &mergedIcal = QString());
 
     /**
      * @brief Get count of unresolved conflicts.

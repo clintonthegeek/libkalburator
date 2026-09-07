@@ -1,4 +1,4 @@
-#include "enginediff.h"
+#include <kalburator/engine/enginediff.h>
 
 namespace Kalburator::Engine {
 

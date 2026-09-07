@@ -9,7 +9,7 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "logicalcalendar.h"
+#include <kalburator/types/logicalcalendar.h>
 
 namespace Kalburator::Sync {
 
@@ -51,17 +51,6 @@ struct DeletionResult {
     QString logicalCalendarId;
     QStringList errors;
     QMap<QString, bool> backendResults; ///< backendId -> success
-};
-
-/**
- * @brief Snapshot of a calendar's state for undo/redo support.
- */
-struct CalendarSnapshot {
-    LogicalCalendar logicalCalendar;
-    QList<KCalendarCore::Incidence::Ptr> incidences;
-    QDateTime capturedAt;
-
-    bool isValid() const { return !logicalCalendar.id.isEmpty(); }
 };
 
 /**
@@ -238,24 +227,6 @@ public:
                                   const KCalendarCore::Incidence::Ptr &incidence,
                                   OperationType op);
 
-    // ========== Snapshot for Undo ==========
-
-    /**
-     * @brief Capture current state of a calendar for potential undo.
-     *
-     * @param logicalCalendarId The calendar to snapshot
-     * @return CalendarSnapshot containing calendar config and all incidences
-     */
-    CalendarSnapshot captureSnapshot(const QString &logicalCalendarId) const;
-
-    /**
-     * @brief Restore calendar from a snapshot (for undo).
-     *
-     * @param snapshot The snapshot to restore from
-     * @return true if restoration succeeded
-     */
-    bool restoreFromSnapshot(const CalendarSnapshot &snapshot);
-
     // ========== Accessors ==========
 
     ISyncHost* host() const { return m_controller; }
@@ -390,7 +361,6 @@ private:
 Q_DECLARE_METATYPE(Kalburator::Sync::DeleteMode)
 Q_DECLARE_METATYPE(Kalburator::Sync::CreationResult)
 Q_DECLARE_METATYPE(Kalburator::Sync::DeletionResult)
-Q_DECLARE_METATYPE(Kalburator::Sync::CalendarSnapshot)
 Q_DECLARE_METATYPE(Kalburator::Sync::OperationType)
 
 #endif // CALENDARMANAGER_H

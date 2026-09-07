@@ -1,4 +1,4 @@
-#include "icaltimestamp.h"
+#include <kalburator/calendar/icaltimestamp.h>
 
 #include <QRegularExpression>
 #include <QTimeZone>

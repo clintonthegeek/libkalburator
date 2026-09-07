@@ -1,9 +1,9 @@
-#include "eventcanonfields.h"
+#include <kalburator/calendar/eventcanonfields.h>
 
-#include "alarmshape.h"
-#include "canonenvelope.h"
-#include "icalcomponentscan.h"
-#include "incidencecommonfields.h"
+#include <kalburator/calendar/alarmshape.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/icalcomponentscan.h>
+#include <kalburator/calendar/incidencecommonfields.h>
 
 #include <KCalendarCore/Attendee>
 #include <KCalendarCore/ICalFormat>

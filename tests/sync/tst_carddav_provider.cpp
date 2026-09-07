@@ -134,8 +134,9 @@ void TstCardDavProvider::load_populates_credentials()
              server.baseUrl().toString());
     QCOMPARE(saved.connectionParams.value(QStringLiteral("username")).toString(),
              QStringLiteral("testuser"));
-    QCOMPARE(saved.connectionParams.value(QStringLiteral("password")).toString(),
-             QStringLiteral("testpass"));
+    QVERIFY(!saved.connectionParams.contains(QStringLiteral("password")));
+    QVERIFY(saved.connectionParams.value(QStringLiteral("passwordRef")).toString()
+                .startsWith(QStringLiteral("secret:")));
 }
 
 // --- Test 2 ------------------------------------------------------------------
@@ -349,8 +350,9 @@ void TstCardDavProvider::save_roundtrips_through_load()
              original.connectionParams.value(QStringLiteral("url")).toString());
     QCOMPARE(roundtripped.connectionParams.value(QStringLiteral("username")).toString(),
              original.connectionParams.value(QStringLiteral("username")).toString());
-    QCOMPARE(roundtripped.connectionParams.value(QStringLiteral("password")).toString(),
-             original.connectionParams.value(QStringLiteral("password")).toString());
+    QVERIFY(!roundtripped.connectionParams.contains(QStringLiteral("password")));
+    QVERIFY(!roundtripped.connectionParams.value(QStringLiteral("passwordRef"))
+                 .toString().isEmpty());
 }
 
 // --- Test 7 ------------------------------------------------------------------

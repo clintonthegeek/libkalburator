@@ -1,8 +1,8 @@
-#include "syncbackend.h"
-#include "syncoperation.h"
-#include "backendcapabilities.h"
-#include "logicalcalendar.h"
-#include "discoveredcalendar.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/calendar/discoveredcalendar.h>
 
 #include <KCalendarCore/RecurrenceRule>
 #include <QDebug>

@@ -2,10 +2,10 @@
 
 #include <QString>
 
-#include "syncbackendbase.h"       // Kalburator::Sync::SyncBackendBase (neutral base)
-#include "changedetection.h"      // Kalburator::Sync::ChangeDetection
-#include "recordfilter.h"         // Kalburator::Shape::RecordFilter
-#include "collectioninfo.h"       // Kalburator::Sync::CollectionInfo
+#include <kalburator/sync/syncbackendbase.h>       // Kalburator::Sync::SyncBackendBase (neutral base)
+#include <kalburator/sync/changedetection.h>      // Kalburator::Sync::ChangeDetection
+#include <kalburator/shape/recordfilter.h>         // Kalburator::Shape::RecordFilter
+#include <kalburator/types/collectioninfo.h>       // Kalburator::Sync::CollectionInfo
 
 namespace Kalburator::Sync { class BackendRegistry; }
 
@@ -80,6 +80,7 @@ public:
 
     QList<Kalburator::Sync::CollectionInfo> availableCollections() override;
     Kalburator::Sync::CollectionInfo        collectionInfo(const QString& collectionId) override;
+    QString createCollection(const Kalburator::Sync::CollectionInfo&) override;
 
     bool    discoveredWritable(const QString& collectionId) const override;
 
@@ -89,6 +90,14 @@ public:
                          const Kalburator::Sync::BackendRecord& record) override;
     bool    updateRecord(const Kalburator::Sync::BackendRecord& record) override;
     bool    deleteRecord(const QString& recordId)            override;
+    QList<Kalburator::Sync::BackendRecord> modifiedSince(
+        const QString& collectionId, const QDateTime& since) override;
+    QStringList deletedSince(const QString& collectionId,
+                             const QDateTime& since) override;
+
+    void beginBatch() override;
+    bool commitBatch() override;
+    void rollbackBatch() override;
 
     // ---- Sync::ChangeDetection ----
     // A filtered view changes iff its parent collection changes, so the

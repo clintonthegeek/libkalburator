@@ -1,9 +1,10 @@
-#include "carddavprovider.h"
+#include <kalburator/sync/carddavprovider.h>
 
-#include "backendconfiguration.h"
-#include "carddavcapabilitydiscovery.h"
-#include "carddavconfigwidget.h"
-#include "remotecontactsbackend.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/carddavcapabilitydiscovery.h>
+#include <kalburator/sync/carddavconfigwidget.h>
+#include <kalburator/contacts/remotecontactsbackend.h>
+#include <kalburator/sync/secretstore.h>
 
 #include <QFutureInterface>
 #include <QFutureWatcher>
@@ -24,7 +25,13 @@ void CardDavProvider::load(const BackendConfiguration &config) {
     m_displayName = config.displayName;
     m_serverUrl = QUrl(config.connectionParams.value(QStringLiteral("url")).toString());
     m_username  = config.connectionParams.value(QStringLiteral("username")).toString();
-    m_password  = config.connectionParams.value(QStringLiteral("password")).toString();
+    const QString ref = config.connectionParams.value(QStringLiteral("passwordRef")).toString();
+    m_passwordRef = ref;
+    m_password = ref.isEmpty()
+        ? config.connectionParams.value(QStringLiteral("password")).toString()
+        : SecretStoreRegistry::defaultStore()->get(ref);
+    if (m_passwordRef.isEmpty() && !m_password.isEmpty())
+        m_passwordRef = SecretStoreRegistry::defaultStore()->put(m_password);
 }
 
 BackendConfiguration CardDavProvider::save() const {
@@ -34,7 +41,8 @@ BackendConfiguration CardDavProvider::save() const {
     cfg.displayName = m_displayName;
     cfg.connectionParams[QStringLiteral("url")]      = m_serverUrl.toString();
     cfg.connectionParams[QStringLiteral("username")] = m_username;
-    cfg.connectionParams[QStringLiteral("password")] = m_password;
+    if (!m_password.isEmpty())
+        cfg.connectionParams[QStringLiteral("passwordRef")] = m_passwordRef;
     return cfg;
 }
 
@@ -170,6 +178,7 @@ void CardDavProvider::disconnect() {
     m_collections.clear();
     m_addressbookUrls.clear();
     emit connectionStateChanged(false);
+    emit connectionStateChanged(ProviderConnectionState::Disconnected);
 }
 
 std::vector<ProviderBackendSpec> CardDavProvider::createBackends()

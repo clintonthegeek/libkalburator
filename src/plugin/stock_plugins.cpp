@@ -1,18 +1,18 @@
-#include "stock_plugins.h"
-#include "pluginmanager.h"
-#include "manifest.h"
-#include "universalstorageplugin.h"
-#include "blobplugin.h"
-#include "noteplugin.h"
-#include "outlineplugin.h"
-#include "todoplugin.h"
-#include "contactsplugin.h"
-#include "calendarplugin.h"
-#include "caldavproviderplugin.h"
-#include "carddavproviderplugin.h"
-#include "multiprotocoldavproviderplugin.h"
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/plugin/manifest.h>
+#include <kalburator/universal/universalstorageplugin.h>
+#include <kalburator/blob/blobplugin.h>
+#include <kalburator/note/noteplugin.h>
+#include <kalburator/outline/outlineplugin.h>
+#include <kalburator/todo/todoplugin.h>
+#include <kalburator/contacts/contactsplugin.h>
+#include <kalburator/calendar/calendarplugin.h>
+#include <kalburator/plugin/caldavproviderplugin.h>
+#include <kalburator/plugin/carddavproviderplugin.h>
+#include <kalburator/plugin/multiprotocoldavproviderplugin.h>
 #ifdef HAVE_AKONADI
-#include "akonadiproviderplugin.h"
+#include <kalburator/plugin/akonadiproviderplugin.h>
 #endif
 
 namespace Kalburator {
@@ -30,7 +30,7 @@ PluginManifest mkManifest(const QString &id, QStringList defines = {}, QStringLi
 }
 }
 
-void registerStockPlugins(PluginManager &pm) {
+QList<QPair<Plugin *, PluginManifest>> stockPluginItems() {
     static UniversalStoragePlugin s_universal;
     static Blob::BlobPlugin s_blob;
     static Note::NotePlugin s_note;
@@ -44,7 +44,7 @@ void registerStockPlugins(PluginManager &pm) {
 #ifdef HAVE_AKONADI
     static AkonadiProviderPlugin s_akonadi;
 #endif
-    QList<QPair<Plugin*, PluginManifest>> items{
+    return {
         {&s_universal, mkManifest(QStringLiteral("kalburator.universal-storage"))},
         {&s_blob, mkManifest(QStringLiteral("kalburator.blob"), {QStringLiteral("blob")})},
         {&s_note, mkManifest(QStringLiteral("kalburator.note"), {QStringLiteral("note")})},
@@ -59,7 +59,10 @@ void registerStockPlugins(PluginManager &pm) {
         {&s_akonadi,  mkManifest(QStringLiteral("kalburator.provider.akonadi"))},
 #endif
     };
-    pm.loadInProcess(items);
+}
+
+void registerStockPlugins(PluginManager &pm) {
+    pm.loadInProcess(stockPluginItems());
 }
 
 } // namespace Kalburator

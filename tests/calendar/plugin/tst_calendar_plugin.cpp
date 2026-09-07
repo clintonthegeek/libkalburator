@@ -228,6 +228,23 @@ private slots:
         QCOMPARE(calls.first().properties,   props);
     }
 
+    void applyCollectionPropertiesReportsCompletion()
+    {
+        const CalendarDomainOperations ops;
+        MinimalBackend backend;
+        bool called = false;
+        bool ok = false;
+        ops.applyCollectionProperties(&backend, QStringLiteral("cal-1"),
+                                      {{QStringLiteral("description"), QStringLiteral("x")}},
+                                      [&](bool completedOk, const QString &error) {
+                                          called = true;
+                                          ok = completedOk;
+                                          QVERIFY2(error.isEmpty(), qPrintable(error));
+                                      });
+        QVERIFY(called);
+        QVERIFY(ok);
+    }
+
     void applyCollectionPropertiesSkipsNullBackend()
     {
         // Should not crash; no-op

@@ -3,6 +3,7 @@
 #include <QLineEdit>
 
 #include "../../src/sync/multiprotocoldavconfigwidget.h"
+#include "../../src/sync/secretstore.h"
 
 using namespace Kalburator::Sync;
 
@@ -31,7 +32,10 @@ void TstMultiProtocolDavConfigWidget::roundTripsConnectionParams()
              QStringLiteral("https://nc.example/"));
     QCOMPARE(out.connectionParams[QStringLiteral("username")].toString(),
              QStringLiteral("alice"));
-    QCOMPARE(out.connectionParams[QStringLiteral("password")].toString(),
+    QVERIFY(!out.connectionParams.contains(QStringLiteral("password")));
+    const auto passwordRef = out.connectionParams[QStringLiteral("passwordRef")].toString();
+    QVERIFY(!passwordRef.isEmpty());
+    QCOMPARE(SecretStoreRegistry::defaultStore()->get(passwordRef),
              QStringLiteral("secret"));
 }
 

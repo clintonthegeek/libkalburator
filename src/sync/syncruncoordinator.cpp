@@ -2,11 +2,11 @@
 // Extracted from PlanStan::CollectionController per spec
 // 2026-05-22-collectioncontroller-decomp-and-akonadi-api-design.md
 
-#include "syncruncoordinator.h"
+#include <kalburator/sync/syncruncoordinator.h>
 
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "synctypes.h"
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/types/synctypes.h>
 
 #include <QDebug>
 
@@ -30,6 +30,13 @@ SyncRunCoordinator::~SyncRunCoordinator() = default;
 
 void SyncRunCoordinator::runSync(Kalburator::Engine::SyncEngine::SyncBehavior behavior)
 {
+    Kalburator::Engine::SyncRequest request;
+    request.behavior = behavior;
+    runSync(request);
+}
+
+void SyncRunCoordinator::runSync(const Kalburator::Engine::SyncRequest &request)
+{
     if (!m_engine) {
         qWarning() << "SyncRunCoordinator::runSync: engine is null (single backend?)";
         return;
@@ -46,7 +53,7 @@ void SyncRunCoordinator::runSync(Kalburator::Engine::SyncEngine::SyncBehavior be
     }
 
     qDebug() << "SyncRunCoordinator: starting sync (behavior="
-             << (behavior == Kalburator::Engine::SyncEngine::SyncBehavior::Monitored
+             << (request.behavior == Kalburator::Engine::SyncEngine::SyncBehavior::Monitored
                  ? "Monitored" : "Unmonitored")
              << ")";
 
@@ -58,9 +65,7 @@ void SyncRunCoordinator::runSync(Kalburator::Engine::SyncEngine::SyncBehavior be
         m_watcher = nullptr;
     }
 
-    Kalburator::Engine::SyncRequest req;
-    req.behavior = behavior;
-    auto future = m_engine->runSync(req);
+    auto future = m_engine->runSync(request);
     m_watcher = new QFutureWatcher<QList<SyncResult>>(this);
     connect(m_watcher, &QFutureWatcher<QList<SyncResult>>::finished,
             this, &SyncRunCoordinator::onSyncRunFinished);

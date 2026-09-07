@@ -14,7 +14,7 @@
  * Storage is JSON-based for easy inspection and debugging.
  */
 
-#include "conflictrecord.h"
+#include <kalburator/conflict/conflictrecord.h>
 
 #include <QObject>
 #include <QList>

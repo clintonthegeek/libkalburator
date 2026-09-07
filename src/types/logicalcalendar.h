@@ -8,8 +8,8 @@
 #include <QSet>
 #include <QPair>
 #include <algorithm>
-#include "calendartype.h"  // For CalendarType
-#include "shape.h"         // For Shape::DomainId
+#include <kalburator/types/calendartype.h>  // For CalendarType
+#include <kalburator/shape/shape.h>         // For Shape::DomainId
 
 namespace Kalburator::Sync {
 

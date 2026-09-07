@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNC_IPROVIDERCONFIGWIDGET_H
 #define KALBURATOR_SYNC_IPROVIDERCONFIGWIDGET_H
 
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 
 namespace Kalburator::Sync {
 

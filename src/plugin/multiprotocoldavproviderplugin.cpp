@@ -1,5 +1,5 @@
-#include "multiprotocoldavproviderplugin.h"
-#include "../sync/multiprotocoldavbackendcontribution.h"
+#include <kalburator/plugin/multiprotocoldavproviderplugin.h>
+#include <kalburator/sync/multiprotocoldavbackendcontribution.h>
 
 namespace Kalburator {
 

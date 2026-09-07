@@ -5,8 +5,8 @@
 #include <QString>
 #include <memory>
 
-#include "lossprofile.h"
-#include "shape.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Shape {
 

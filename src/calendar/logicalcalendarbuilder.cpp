@@ -1,4 +1,4 @@
-#include "logicalcalendarbuilder.h"
+#include <kalburator/calendar/logicalcalendarbuilder.h>
 #include <QUuid>
 #include <QSet>
 #include <QDebug>

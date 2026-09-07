@@ -1,6 +1,6 @@
-#include "googlepersoncanonstages.h"
+#include <kalburator/contacts/googlepersoncanonstages.h>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

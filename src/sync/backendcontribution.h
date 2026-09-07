@@ -4,7 +4,7 @@
 #include <QList>
 #include <QString>
 #include <memory>
-#include "shape.h"
+#include <kalburator/shape/shape.h>
 
 class QObject;
 

@@ -1,4 +1,4 @@
-#include "syncenginefuture.h"
+#include <kalburator/engine/syncenginefuture.h>
 
 namespace Kalburator::Engine {
 

@@ -6,8 +6,8 @@
 #include <QMap>
 #include <QStringList>
 
-#include "decsynclib.h"
-#include "decsynccontrollerstore.h"
+#include <kalburator/calendar/decsynclib.h>
+#include <kalburator/calendar/decsynccontrollerstore.h>
 
 namespace Kalburator::Sync {
 

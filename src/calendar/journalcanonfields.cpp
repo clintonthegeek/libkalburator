@@ -1,8 +1,8 @@
-#include "journalcanonfields.h"
+#include <kalburator/calendar/journalcanonfields.h>
 
-#include "canonenvelope.h"
-#include "icalcomponentscan.h"
-#include "incidencecommonfields.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/icalcomponentscan.h>
+#include <kalburator/calendar/incidencecommonfields.h>
 
 #include <KCalendarCore/ICalFormat>
 

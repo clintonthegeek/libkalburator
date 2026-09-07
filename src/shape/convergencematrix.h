@@ -8,14 +8,14 @@
  * contributions.
  *
  * GENERATED artifact discipline: `tools/matrixgen` regenerates the
- * committed doc (`docs/campaign/eee/CONVERGENCE-MATRIX.md`);
+ * committed doc (`docs/CONVERGENCE_MATRIX.md`);
  * `tst_gm_pipeline_convergence` enforces that the committed copy matches
  * regeneration byte-for-byte, so growing an edges() list without
  * regenerating is a RED test (O63 rule applied to the ledger).
  */
 
-#include "lossprofile.h"
-#include "shapecontribution.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/shape/shapecontribution.h>
 
 #include <QHash>
 #include <QList>

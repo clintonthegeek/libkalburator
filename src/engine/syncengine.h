@@ -1,17 +1,17 @@
 #ifndef KALBURATOR_SYNCENGINE_H
 #define KALBURATOR_SYNCENGINE_H
 
-#include "enginediff.h"
-#include "mappingqueue.h"
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "shape.h"
-#include "synctypes.h"
-#include "syncdiff.h"
-#include "conflicthandlerregistry.h"
-#include "syncenginefuture.h"
-#include "../sync/syncoperation.h"  // neutral SyncOperation base; required by await<Op> template
-#include "shaperegistries.h"
+#include <kalburator/engine/enginediff.h>
+#include <kalburator/engine/mappingqueue.h>
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/types/synctypes.h>
+#include <kalburator/diff/syncdiff.h>
+#include <kalburator/conflict/conflicthandlerregistry.h>
+#include <kalburator/engine/syncenginefuture.h>
+#include <kalburator/sync/syncoperation.h>  // neutral SyncOperation base; required by await<Op> template
+#include <kalburator/shape/shaperegistries.h>
 #include <QObject>
 #include <QList>
 #include <QMap>
@@ -423,6 +423,7 @@ signals:
      */
     void syncStarted(const QString &mappingId);
 
+
     /**
      * @brief Emitted when a conflict is detected.
      */
@@ -526,6 +527,13 @@ private:
      * dual single/multi interface pair (FINDINGS "From Plan 1").
      */
     QFuture<QList<SyncResult>> beginRun();
+
+    /**
+     * Complete the current run exactly once. Run state and the future handle
+     * are cleared before any result is published, so completion observers can
+     * immediately admit a subsequent run.
+     */
+    void finishRun(QList<SyncResult> results, bool cancelled);
 
     /**
      * @brief F2 Task 21: multi-mapping driver. Iterates the queue

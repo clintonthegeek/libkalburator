@@ -1,6 +1,6 @@
-#include "domainregistry.h"
+#include <kalburator/shape/domainregistry.h>
 
-#include "domaindefinition.h"
+#include <kalburator/shape/domaindefinition.h>
 
 namespace Kalburator::Shape {
 

@@ -1,14 +1,14 @@
-#include "calendarstockshapes.h"
-#include "icalproperties.h"
-#include "icalcanonstages.h"
-#include "journalcanonfields.h"
-#include "orgicalcanonstages.h"
-#include "googleeventproperties.h"
-#include "googlecanonstages.h"
-#include "mseventproperties.h"
-#include "mseventcanonstages.h"
-#include "calendarcanonproperties.h"
-#include "lossprofile.h"
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/calendar/icalproperties.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/journalcanonfields.h>
+#include <kalburator/calendar/orgicalcanonstages.h>
+#include <kalburator/calendar/googleeventproperties.h>
+#include <kalburator/calendar/googlecanonstages.h>
+#include <kalburator/calendar/mseventproperties.h>
+#include <kalburator/calendar/mseventcanonstages.h>
+#include <kalburator/calendar/calendarcanonproperties.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

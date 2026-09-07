@@ -1,5 +1,5 @@
-#include "graphapiclient.h"
-#include "backoff.h"
+#include <kalburator/graph/graphapiclient.h>
+#include <kalburator/net/backoff.h>
 
 #include <QEventLoop>
 #include <QJsonDocument>

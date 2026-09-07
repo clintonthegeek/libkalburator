@@ -1,4 +1,4 @@
-#include "accountslistwidget.h"
+#include <kalburator/ui/accountslistwidget.h>
 
 #include <QCheckBox>
 #include <QHBoxLayout>

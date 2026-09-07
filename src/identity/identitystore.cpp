@@ -1,4 +1,4 @@
-#include "identitystore.h"
+#include <kalburator/identity/identitystore.h>
 
 #include <QDateTime>
 #include <QDir>

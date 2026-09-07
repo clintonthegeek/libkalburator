@@ -1,4 +1,4 @@
-#include "syncoperation.h"
+#include <kalburator/sync/syncoperation.h>
 #include <QDebug>
 
 namespace Kalburator::Sync {

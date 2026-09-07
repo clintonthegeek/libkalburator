@@ -1,16 +1,17 @@
-#include "remotecalendarbackend.h"
-#include "caldavcontentcache.h"
-#include "icalcodec.h"
-#include "icaltimestamp.h"
-#include "syncoperation.h"
-#include "backendcapabilities.h"
-#include "logicalcalendar.h"
-#include "discoveredcalendar.h"
-#include "calendarcapabilities.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "davslug.h"
-#include "../sync/recordidentity.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/sync/credentialredaction.h>
+#include <kalburator/calendar/caldavcontentcache.h>
+#include <kalburator/calendar/icalcodec.h>
+#include <kalburator/calendar/icaltimestamp.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/calendar/discoveredcalendar.h>
+#include <kalburator/sync/calendarcapabilities.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/davslug.h>
+#include <kalburator/sync/recordidentity.h>
 
 #include <KDAV/DavCollectionsFetchJob>
 #include <KDAV/DavItemsListJob>
@@ -338,7 +339,7 @@ static int getHttpStatusCode(KJob *job)
 // Helper to safely log URLs without exposing passwords
 static QString safeUrlString(const QUrl &url)
 {
-    return url.toString(QUrl::RemovePassword);
+    return Kalburator::Sync::redactCredentials(url);
 }
 
 namespace {
@@ -1051,7 +1052,7 @@ void RemoteCalendarBackend::registerCalendarUrl(const QString &calendarId, const
     m_calendars[calendarId].davUrl = configuredUrl;
 
     qDebug() << "RemoteCalendarBackend::registerCalendarUrl: Registered calendar" << calendarId
-             << "with URL:" << configuredUrl.url().toString(QUrl::RemovePassword);
+             << "with URL:" << Kalburator::Sync::redactCredentials(configuredUrl.url());
 }
 
 // RemoteCalendarBackend::discoveredUrl / discoveredSupportsEvents / 
@@ -3610,19 +3611,28 @@ QString RemoteCalendarBackend::createCollection(const CollectionInfo &info)
 
 QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectionId)
 {
+    return loadRecordsResult(collectionId).records;
+}
+
+RecordLoadResult RemoteCalendarBackend::loadRecordsResult(const QString &collectionId)
+{
     // Reuse the existing fetchItems FetchOperation, blocking on its finished signal.
     FetchOperation *op = fetchItems(collectionId);
     if (!op) {
         qWarning() << "RemoteCalendarBackend::loadRecords: fetchItems returned null for" << collectionId;
-        return {};
+        return RecordLoadResult::failure(QStringLiteral(
+            "remote load failed: fetchItems returned no operation for %1").arg(collectionId));
     }
 
     QList<BackendRecord> result;
     if (!awaitOperation(op)) {
         qWarning() << "RemoteCalendarBackend::loadRecords: fetchItems failed for" << collectionId
                    << ":" << op->errorString();
+        const QString error = op->errorString().isEmpty()
+            ? QStringLiteral("remote load failed for %1").arg(collectionId)
+            : op->errorString();
         op->deleteLater();
-        return result;
+        return RecordLoadResult::failure(error);
     }
 
     for (const auto &incidence : op->fetchedItems()) {
@@ -3647,7 +3657,7 @@ QList<BackendRecord> RemoteCalendarBackend::loadRecords(const QString &collectio
     }
 
     op->deleteLater();
-    return result;
+    return RecordLoadResult::success(std::move(result));
 }
 
 bool RemoteCalendarBackend::recordsFromLastFetch(const QString &collectionId,

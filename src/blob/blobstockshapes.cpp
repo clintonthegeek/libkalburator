@@ -1,6 +1,6 @@
-#include "blobstockshapes.h"
-#include "transformationedge.h"
-#include "lossprofile.h"
+#include <kalburator/blob/blobstockshapes.h>
+#include <kalburator/shape/transformationedge.h>
+#include <kalburator/shape/lossprofile.h>
 
 namespace Kalburator::Blob {
 

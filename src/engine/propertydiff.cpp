@@ -1,4 +1,4 @@
-#include "propertydiff.h"
+#include <kalburator/engine/propertydiff.h>
 
 #include <QSet>
 

@@ -1,4 +1,4 @@
-#include "textdiffer.h"
+#include <kalburator/note/textdiffer.h>
 
 #include <QJsonDocument>
 #include <QJsonObject>

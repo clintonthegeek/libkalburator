@@ -11,7 +11,6 @@
 
 #include <QTest>
 #include <QSignalSpy>
-#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <KCalendarCore/Event>
@@ -24,6 +23,7 @@
 #include "remotecalendarbackend.h"
 #include "syncbackend.h"
 #include "syncoperation.h"
+#include "fakecaldavserver.h"
 
 #ifdef KALBURATOR_HAVE_ORG_IO
 #include "orgbackend.h"
@@ -35,27 +35,6 @@ using namespace Kalburator::Sync;
 using namespace KCalendarCore;
 
 namespace {
-
-// Server configuration for CalDAV tests
-const QString CALDAV_SERVER_HOST = QStringLiteral("127.0.0.1");
-const int CALDAV_SERVER_PORT = 5232;
-const QString CALDAV_SERVER_URL = QStringLiteral("http://127.0.0.1:5232");
-const QString CALDAV_USERNAME_1 = QStringLiteral("testuser1");
-const QString CALDAV_PASSWORD_1 = QStringLiteral("password1");
-
-inline bool isCaldavServerAvailable()
-{
-    QTcpSocket socket;
-    socket.connectToHost(CALDAV_SERVER_HOST, CALDAV_SERVER_PORT);
-    bool connected = socket.waitForConnected(2000);
-    socket.close();
-    return connected;
-}
-
-inline QUrl caldavPrincipalUrl(const QString &username)
-{
-    return QUrl(CALDAV_SERVER_URL + QStringLiteral("/") + username + QStringLiteral("/"));
-}
 
 Incidence::Ptr createTestEvent(const QString &uid, const QString &summary)
 {
@@ -122,10 +101,12 @@ class TestBackendSignals : public QObject
 
 private:
     QTemporaryDir m_tempDir;
+    FakeCalDavServer m_caldavServer;
 
 private slots:
     void initTestCase() {
         QVERIFY(m_tempDir.isValid());
+        QVERIFY2(m_caldavServer.startListening(), qPrintable(m_caldavServer.errorString()));
     }
 
     // ========================================================================
@@ -768,14 +749,8 @@ private slots:
     // ========================================================================
 
     void testRemoteCalendarBackend_fetchItems_emitsFetchSignals() {
-        // Skip if CalDAV server not available
-        if (!isCaldavServerAvailable()) {
-            QSKIP("CalDAV server not available at 127.0.0.1:5232");
-        }
-
         // Setup: Create backend connected to test server
-        QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(m_caldavServer.baseUrl(), QStringLiteral("testuser"), QStringLiteral("testpass"));
 
         // First, discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);
@@ -850,14 +825,8 @@ private slots:
     }
 
     void testRemoteCalendarBackend_pushItems_pushesItemsSuccessfully() {
-        // Skip if CalDAV server not available
-        if (!isCaldavServerAvailable()) {
-            QSKIP("CalDAV server not available at 127.0.0.1:5232");
-        }
-
         // Setup
-        QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(m_caldavServer.baseUrl(), QStringLiteral("testuser"), QStringLiteral("testpass"));
 
         // Discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);
@@ -913,14 +882,8 @@ private slots:
     }
 
     void testRemoteCalendarBackend_startSync_emitsWriteSignals() {
-        // Skip if CalDAV server not available
-        if (!isCaldavServerAvailable()) {
-            QSKIP("CalDAV server not available at 127.0.0.1:5232");
-        }
-
         // Setup
-        QUrl serverUrl = caldavPrincipalUrl(CALDAV_USERNAME_1);
-        RemoteCalendarBackend backend(serverUrl, CALDAV_USERNAME_1, CALDAV_PASSWORD_1);
+        RemoteCalendarBackend backend(m_caldavServer.baseUrl(), QStringLiteral("testuser"), QStringLiteral("testpass"));
 
         // Discover calendars
         QSignalSpy calDiscoverySpy(&backend, &SyncBackend::calendarDiscovered);

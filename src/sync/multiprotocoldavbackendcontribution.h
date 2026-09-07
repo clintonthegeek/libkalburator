@@ -1,9 +1,9 @@
 #ifndef KALBURATOR_SYNC_MULTIPROTOCOLDAVBACKENDCONTRIBUTION_H
 #define KALBURATOR_SYNC_MULTIPROTOCOLDAVBACKENDCONTRIBUTION_H
 
-#include "backendcontribution.h"
-#include "multiprotocoldavprovider.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/multiprotocoldavprovider.h>
+#include <kalburator/sync/iprovider.h>
 
 namespace Kalburator::Sync {
 

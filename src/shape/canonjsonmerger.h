@@ -2,8 +2,8 @@
 
 #include <QList>
 
-#include "propertycatalogue.h"
-#include "recordmerger.h"
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/recordmerger.h>
 
 namespace Kalburator::Shape {
 

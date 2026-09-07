@@ -1,13 +1,13 @@
 #ifndef REMOTECALENDARBACKEND_H
 #define REMOTECALENDARBACKEND_H
 
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "../sync/changedetection.h"
-#include "../sync/writeoperation.h"  // E5.3: applyRecords() return type
-#include "../sync/writerbatch.h"     // E5.3: applyRecords() batch parameter type
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete FetchOperation/DeleteOperation for covariant overrides
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/changedetection.h>
+#include <kalburator/sync/writeoperation.h>  // E5.3: applyRecords() return type
+#include <kalburator/sync/writerbatch.h>     // E5.3: applyRecords() batch parameter type
 #include <KDAV/DavUrl>
 #include <KDAV/DavCollection>
 #include <KDAV/DavItem>
@@ -138,6 +138,8 @@ public:
      * back to the network walk (standalone backends, tests).
      */
     void primeCalendars(const QList<PrimedCalendar> &calendars);
+
+    RecordLoadResult loadRecordsResult(const QString &collectionId) override;
 
     // ---- Sync::ChangeDetection ----
     // The engine's ONLY ctag entry points (consumed via

@@ -1,7 +1,7 @@
 #ifndef HOLIDAYSUBSCRIPTIONBACKEND_H
 #define HOLIDAYSUBSCRIPTIONBACKEND_H
 
-#include "subscriptionbackend.h"
+#include <kalburator/calendar/subscriptionbackend.h>
 #include <QObject>
 #include <QString>
 #include <QStringList>

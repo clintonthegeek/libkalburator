@@ -3,7 +3,7 @@
 #include <QByteArray>
 #include <QString>
 
-#include "shape.h"
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Shape {
 

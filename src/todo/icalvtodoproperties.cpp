@@ -1,4 +1,4 @@
-#include "icalvtodoproperties.h"
+#include <kalburator/todo/icalvtodoproperties.h>
 
 using namespace Kalburator::Shape;
 

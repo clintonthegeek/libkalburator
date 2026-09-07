@@ -1,4 +1,4 @@
-#include "writeoperation.h"
+#include <kalburator/sync/writeoperation.h>
 
 namespace Kalburator::Sync {
 

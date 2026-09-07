@@ -7,10 +7,10 @@
 #include <QMap>
 #include <QSet>
 #include <KCalendarCore/MemoryCalendar>
-#include "syncbackend.h"
-#include "syncoperation.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
 
 namespace Kalburator::Sync {
 

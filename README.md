@@ -1,59 +1,61 @@
 # libkalburator
 
-**Status:** Phase 0 — cross-project alignment. No source code yet.
+Libkalburator is a Qt 6 / KDE Frameworks synchronization library for personal-information data. It supplies reconciliation, canonical transformation, conflicts, persistence, providers, and local/remote backends for two pre-production consumers:
 
-A portable Qt6/C++ calendar synchronization library: multi-backend
-two-way sync across CalDAV, local iCal, org-mode, Akonadi, DecSync,
-web subscriptions, and more, with conflict detection, crash-recovery
-journaling, and lossy-format transcoding preservation.
+- **PlanStan** — calendar-oriented personal planning.
+- **WildPalms** — calendar, contacts, tasks, and memo synchronization with Palm OS devices over serial or USB cradle connections.
 
-Extracted from and designed to be shared between:
+## Project status
 
-- **[PlanStan](../PlanStan/)** — personal-PM / calendar app that
-  pioneered the abstractions (`libs/sync/`).
-- **[Wild Palms](../WildPalms/)** — Palm OS sync tool that will
-  offer a "Full Sync Mode" profile where it becomes a first-class
-  multi-backend calendar app in its own right, alongside its
-  existing Palm-driver "Client Mode".
+**Pre-production; architectural consolidation in progress.**
 
-See [the proposal in PlanStan](../PlanStan/docs/proposals/2026-04-20-sync-library-extraction.md)
-for full motivation, UX design, and six-phase plan.
+The synchronization algorithms and backend implementations are substantial, but the library boundary is not yet stable or independently distributable. Both consumers currently assemble too much runtime state themselves. The supported executor-owned test lane is clean; legacy consumer-managed relocation probes remain available only as opt-in diagnostics because manually moving DAV backends is outside the runtime contract.
 
-## Current phase
+No source or binary compatibility is promised during this consolidation. PlanStan, WildPalms, and libkalburator may be changed together.
 
-**Phase 0 — cross-project alignment.** Producing the merged interface
-design doc. No code committed yet; Phase 1 (PlanStan-side extraction)
-is gated on Phase 0 output.
+## Current priority
 
-Phase 0 deliverables live in `docs/phase0/`:
+Make libkalburator a reusable library by moving synchronization execution and lifecycle ownership into a library runtime while preserving consumer control over user intent and external resources.
 
-- `01-inventory-planstan.md` — inventory of PlanStan's `libs/sync/`
-- `02-inventory-wildpalms.md` — inventory of Wild Palms' `src/sync/`
-  + `src/sync/qsynccore/`
-- `03-conflict-engine-audit.md` — generic-vs-Palm-fit audit of Wild
-  Palms' conflict engine
-- `04-merged-interface-sketch.md` — the reconciled library surface
-  with provenance annotations
-- `05-repo-strategy.md` — naming, subtree-split vs standalone,
-  versioning policy
-- `00-open-questions.md` — decisions deferred past Phase 0
+- PlanStan continues to decide when and what to synchronize.
+- WildPalms continues to own Palm connection sessions, device preparation, keepalive, backup, and restore.
+- Libkalburator owns registries, stores, plugins, backend execution, run state, convergence passes, cancellation, teardown, and atomic topology changes.
 
-## Name etymology
+See [ROADMAP.md](docs/ROADMAP.md) and [TASKS.md](docs/TASKS.md).
 
-"kalburator" = `KCalendarCore`-fuel + carburettor. The library mixes
-backend data streams, reconciles conflicts, and feeds a clean unified
-calendar stream into host applications. Also because the name was
-available and the user says it's pleasing.
+## Build and test
 
-## License
+```sh
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build build -j4
+ctest --test-dir build --output-on-failure
 
-Not chosen yet (Phase 0 deliverable). Current host projects:
-- PlanStan: GPLv3
-- Wild Palms: GPLv3
+# Include QtTest runtime skips in the coverage summary.
+cmake --build build --target test-report
+```
 
-LGPL / GPL / MPL2 / Apache-2 trade-offs are in `docs/phase0/05-repo-strategy.md`.
+Optional backends and live-service tests require additional dependencies or credentials. A passing default suite does not validate Google, Microsoft Graph, Akonadi, Org, or live DAV behavior.
 
-## Contributing
+## Documentation
 
-Not accepting contributions during Phase 0. The project is design-only
-and owned by the maintainer for this phase.
+Read in this order:
+
+1. [AGENTS.md](AGENTS.md) — short working rules for humans and agents making changes.
+2. [ARCHITECTURE.md](docs/ARCHITECTURE.md) — current and target architecture.
+3. [ROADMAP.md](docs/ROADMAP.md) — ordered outcomes and gates.
+4. [TASKS.md](docs/TASKS.md) — the only active implementation queue.
+5. [KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) — current defects and risks.
+
+Reference as needed:
+
+- [CONSUMING.md](docs/CONSUMING.md) — PlanStan and WildPalms integration contracts.
+- [FEATURES.md](docs/FEATURES.md) — implemented, integrated, experimental, and incomplete features.
+- [CONVERGENCE_MATRIX.md](docs/CONVERGENCE_MATRIX.md) — generated transformation and declared-loss matrix.
+- [INVARIANTS.md](docs/INVARIANTS.md) — rules the refactor must preserve.
+- [COMPATIBILITY.md](docs/COMPATIBILITY.md) — present compatibility and release policy.
+- [adr/](docs/adr/) — durable architectural decisions.
+- [archive/](docs/archive/) — historical evidence only; never current guidance.
+
+## Distribution status
+
+Libkalburator currently supports only source-tree CMake embedding. It has no install/export package, stable public include tree, finalized license, or external compatibility commitment. Creating those is part of the roadmap.

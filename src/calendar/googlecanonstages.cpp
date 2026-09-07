@@ -1,7 +1,7 @@
-#include "googlecanonstages.h"
+#include <kalburator/calendar/googlecanonstages.h>
 
-#include "alarmshape.h"
-#include "canonenvelope.h"
+#include <kalburator/calendar/alarmshape.h>
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

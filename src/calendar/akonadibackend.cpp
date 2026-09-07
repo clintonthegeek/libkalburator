@@ -1,13 +1,13 @@
 #ifdef HAVE_AKONADI
 
-#include "akonadibackend.h"
-#include "backendcapabilities.h"
-#include "discoveredcalendar.h"
-#include "logicalcalendar.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "../sync/akonadirevisiondigest.h"
-#include "../sync/akonadicollectionid.h"
+#include <kalburator/calendar/akonadibackend.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/calendar/discoveredcalendar.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/akonadirevisiondigest.h>
+#include <kalburator/sync/akonadicollectionid.h>
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>

@@ -1,8 +1,8 @@
-#include "canonjsondiffer.h"
+#include <kalburator/shape/canonjsondiffer.h>
 
 #include <QJsonObject>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 namespace Kalburator::Shape {
 

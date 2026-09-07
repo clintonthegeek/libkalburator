@@ -1,8 +1,8 @@
 #pragma once
 
-#include "identitystore.h"
+#include <kalburator/identity/identitystore.h>
 
-#include "../shape/canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonArray>
 #include <QJsonObject>

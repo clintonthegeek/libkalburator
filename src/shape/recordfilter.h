@@ -4,7 +4,7 @@
 
 class QJsonDocument;
 
-#include "propertycatalogue.h"  // PropertyId
+#include <kalburator/shape/propertycatalogue.h>  // PropertyId
 
 namespace Kalburator::Shape {
 

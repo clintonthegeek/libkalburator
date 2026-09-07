@@ -1,5 +1,5 @@
 // src/calendar/syncconflictstore.cpp
-#include "syncconflictstore.h"
+#include <kalburator/calendar/syncconflictstore.h>
 
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -89,6 +89,7 @@ bool SyncConflictStore::createTables()
         "  local_ical TEXT,"
         "  remote_ical TEXT,"
         "  baseline_ical TEXT,"
+        "  merged_ical TEXT,"
         "  detected_at TEXT DEFAULT (datetime('now')),"
         "  resolved_at TEXT,"
         "  resolution TEXT"
@@ -107,6 +108,7 @@ bool SyncConflictStore::createTables()
     query.exec(QStringLiteral("ALTER TABLE sync_conflicts ADD COLUMN local_ical TEXT"));
     query.exec(QStringLiteral("ALTER TABLE sync_conflicts ADD COLUMN remote_ical TEXT"));
     query.exec(QStringLiteral("ALTER TABLE sync_conflicts ADD COLUMN baseline_ical TEXT"));
+    query.exec(QStringLiteral("ALTER TABLE sync_conflicts ADD COLUMN merged_ical TEXT"));
 
     return true;
 }
@@ -316,13 +318,13 @@ SyncConflictStore::resolvedConflicts(const QString &mappingId) const
 
     if (mappingId.isEmpty()) {
         query.prepare(QLatin1String(kConflictColumns) +
-            QStringLiteral(", resolution, resolved_at "
+            QStringLiteral(", resolution, resolved_at, merged_ical "
                            "FROM sync_conflicts "
                            "WHERE resolved_at IS NOT NULL AND resolution IS NOT NULL "
                            "ORDER BY resolved_at ASC"));
     } else {
         query.prepare(QLatin1String(kConflictColumns) +
-            QStringLiteral(", resolution, resolved_at "
+            QStringLiteral(", resolution, resolved_at, merged_ical "
                            "FROM sync_conflicts "
                            "WHERE mapping_id = ? AND resolved_at IS NOT NULL "
                            "  AND resolution IS NOT NULL "
@@ -336,6 +338,7 @@ SyncConflictStore::resolvedConflicts(const QString &mappingId) const
             rc.info       = readConflictRow(query);
             rc.resolution = static_cast<ConflictResolution>(query.value(15).toInt());
             rc.resolvedAt = parseStoredTimestamp(query.value(16).toString());
+            rc.mergedNative = query.value(17).toString();
             result.append(rc);
         }
     }
@@ -358,16 +361,19 @@ ConflictInfo SyncConflictStore::conflict(const QString &conflictId) const
     return info;
 }
 
-void SyncConflictStore::resolveConflict(const QString &conflictId, ConflictResolution resolution)
+void SyncConflictStore::resolveConflict(const QString &conflictId,
+                                        ConflictResolution resolution,
+                                        const QString &mergedNative)
 {
     if (!m_isOpen) return;
 
     QSqlDatabase db = QSqlDatabase::database(m_connectionName);
     QSqlQuery query(db);
     query.prepare(QStringLiteral(
-        "UPDATE sync_conflicts SET resolved_at = datetime('now'), resolution = ? "
+        "UPDATE sync_conflicts SET resolved_at = datetime('now'), resolution = ?, merged_ical = ? "
         "WHERE id = ?"));
     query.addBindValue(static_cast<int>(resolution));
+    query.addBindValue(mergedNative.isEmpty() ? QVariant() : mergedNative);
     query.addBindValue(conflictId);
 
     if (query.exec()) {

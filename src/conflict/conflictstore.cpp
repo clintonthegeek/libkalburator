@@ -1,4 +1,4 @@
-#include "conflictstore.h"
+#include <kalburator/conflict/conflictstore.h>
 
 #include <QJsonArray>
 

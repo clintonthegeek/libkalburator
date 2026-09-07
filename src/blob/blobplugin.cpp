@@ -1,6 +1,6 @@
-#include "blobplugin.h"
-#include "blobdomaindefinition.h"
-#include "blobstockshapes.h"
+#include <kalburator/blob/blobplugin.h>
+#include <kalburator/blob/blobdomaindefinition.h>
+#include <kalburator/blob/blobstockshapes.h>
 
 namespace Kalburator::Blob {
 

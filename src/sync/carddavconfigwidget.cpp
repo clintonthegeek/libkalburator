@@ -1,4 +1,5 @@
-#include "carddavconfigwidget.h"
+#include <kalburator/sync/carddavconfigwidget.h>
+#include <kalburator/sync/secretstore.h>
 
 #include <QFormLayout>
 #include <QLineEdit>
@@ -30,7 +31,11 @@ void CardDavConfigWidget::setConfiguration(const BackendConfiguration &cfg)
     const auto &p = cfg.connectionParams;
     m_urlEdit->setText(p.value(QStringLiteral("url")).toString());
     m_usernameEdit->setText(p.value(QStringLiteral("username")).toString());
-    m_passwordEdit->setText(p.value(QStringLiteral("password")).toString());
+    m_passwordRef = p.value(QStringLiteral("passwordRef")).toString();
+    const QString password = p.value(QStringLiteral("password")).toString();
+    m_passwordEdit->setText(password.isEmpty()
+                                ? SecretStoreRegistry::defaultStore()->get(m_passwordRef)
+                                : password);
 }
 
 BackendConfiguration CardDavConfigWidget::configuration() const
@@ -40,7 +45,12 @@ BackendConfiguration CardDavConfigWidget::configuration() const
     cfg.displayName = m_displayNameEdit->text();
     cfg.connectionParams[QStringLiteral("url")]      = m_urlEdit->text();
     cfg.connectionParams[QStringLiteral("username")] = m_usernameEdit->text();
-    cfg.connectionParams[QStringLiteral("password")] = m_passwordEdit->text();
+    const QString password = m_passwordEdit->text();
+    if (!password.isEmpty())
+        m_passwordRef = SecretStoreRegistry::defaultStore()->put(password);
+    cfg.connectionParams.remove(QStringLiteral("password"));
+    if (!m_passwordRef.isEmpty())
+        cfg.connectionParams[QStringLiteral("passwordRef")] = m_passwordRef;
     // cfg.id left empty on purpose: IProvider::load() only overwrites the
     // provider's id when cfg.id is non-empty, so the provider keeps its UUID.
     return cfg;

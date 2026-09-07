@@ -3,9 +3,9 @@
 
 #ifdef HAVE_AKONADI
 
-#include "backendcontribution.h"
-#include "akonadiprovider.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/akonadiprovider.h>
+#include <kalburator/sync/iprovider.h>
 
 namespace Kalburator::Sync {
 

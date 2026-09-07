@@ -1,7 +1,7 @@
 #pragma once
 
-#include "autoresolvestrategy.h"
-#include "canonicalrecord.h"
+#include <kalburator/shape/autoresolvestrategy.h>
+#include <kalburator/shape/canonicalrecord.h>
 
 namespace Kalburator::Shape {
 

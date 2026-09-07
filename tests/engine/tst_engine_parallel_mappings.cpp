@@ -404,6 +404,14 @@ void TestEngineParallelMappings::testCancelWithThreeInFlightFinishesOnceAfterDra
     QVERIFY(future.isCanceled());
     QCOMPARE(future.resultCount(), 1);
     QVERIFY(!m_engine->isSyncing());
+
+    // Terminalization must release admission for the next run after the
+    // cancelled workers have drained; a stale active flag must not strand
+    // the engine behind "already running".
+    auto next = m_engine->runSync(req);
+    QVERIFY(QTest::qWaitFor([&]{ return next.isFinished(); }, kSyncTimeoutMs));
+    QVERIFY(!next.isCanceled());
+    QVERIFY(!m_engine->isSyncing());
 }
 
 void TestEngineParallelMappings::testChainStillConvergesInOneRunAtCapFour()

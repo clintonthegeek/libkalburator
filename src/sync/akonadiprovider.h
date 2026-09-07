@@ -3,7 +3,7 @@
 
 #ifdef HAVE_AKONADI
 
-#include "iprovider.h"
+#include <kalburator/sync/iprovider.h>
 
 #include <Akonadi/Session>
 

@@ -6,8 +6,8 @@
 #include <QMutex>
 #include <QString>
 #include <memory>
-#include "backendcontribution.h"
-#include "syncbackendbase.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/syncbackendbase.h>
 
 namespace Kalburator::Sync {
 

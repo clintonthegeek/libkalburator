@@ -1,4 +1,4 @@
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QCryptographicHash>
 #include <QJsonArray>

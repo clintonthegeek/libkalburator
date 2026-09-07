@@ -1,4 +1,4 @@
-#include "carddavcapabilitydiscovery.h"
+#include <kalburator/sync/carddavcapabilitydiscovery.h>
 
 #include <QAuthenticator>
 #include <QDebug>

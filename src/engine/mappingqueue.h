@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_MAPPINGQUEUE_H
 #define KALBURATOR_MAPPINGQUEUE_H
 
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 
 #include <QList>
 #include <QSet>

@@ -1,4 +1,4 @@
-#include "contactscanonproperties.h"
+#include <kalburator/contacts/contactscanonproperties.h>
 
 using namespace Kalburator::Shape;
 

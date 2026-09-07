@@ -1,4 +1,4 @@
-#include "pipeline.h"
+#include <kalburator/shape/pipeline.h>
 
 #include <stdexcept>
 

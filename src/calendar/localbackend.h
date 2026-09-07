@@ -13,11 +13,11 @@
 #include <QString>
 #include <QColor>
 #include <KCalendarCore/MemoryCalendar>
-#include "syncbackend.h"
-#include "syncoperation.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "../sync/changedetection.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/changedetection.h>
 
 namespace Kalburator::Sync {
 

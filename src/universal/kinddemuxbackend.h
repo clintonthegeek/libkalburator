@@ -6,9 +6,9 @@
 #include <QStringList>
 #include <memory>
 
-#include "syncbackendbase.h"       // Kalburator::Sync::SyncBackendBase
-#include "changedetection.h"      // Kalburator::Sync::ChangeDetection
-#include "collectioninfo.h"       // Kalburator::Sync::CollectionInfo
+#include <kalburator/sync/syncbackendbase.h>       // Kalburator::Sync::SyncBackendBase
+#include <kalburator/sync/changedetection.h>      // Kalburator::Sync::ChangeDetection
+#include <kalburator/types/collectioninfo.h>       // Kalburator::Sync::CollectionInfo
 
 namespace Kalburator::Sinks {
 
@@ -64,6 +64,7 @@ public:
 
     QList<Kalburator::Sync::CollectionInfo> availableCollections() override;
     Kalburator::Sync::CollectionInfo        collectionInfo(const QString& collectionId) override;
+    QString createCollection(const Kalburator::Sync::CollectionInfo&) override;
 
     QList<Kalburator::Sync::BackendRecord>         loadRecords(const QString& collectionId) override;
     std::optional<Kalburator::Sync::BackendRecord> loadRecord(const QString& recordId) override;
@@ -76,6 +77,10 @@ public:
         const QString& collectionId, const QDateTime& since) override;
     QStringList deletedSince(
         const QString& collectionId, const QDateTime& since) override;
+
+    void beginBatch() override;
+    bool commitBatch() override;
+    void rollbackBatch() override;
 
     // ---- Sync::ChangeDetection ----
     // Every collection on this demux resolves through its child's own

@@ -1,5 +1,5 @@
-#include "outlinemerger.h"
-#include "outlinediffer.h"
+#include <kalburator/outline/outlinemerger.h>
+#include <kalburator/outline/outlinediffer.h>
 
 using namespace Kalburator::Shape;
 

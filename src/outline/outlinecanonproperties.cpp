@@ -1,4 +1,4 @@
-#include "outlinecanonproperties.h"
+#include <kalburator/outline/outlinecanonproperties.h>
 
 using namespace Kalburator::Shape;
 

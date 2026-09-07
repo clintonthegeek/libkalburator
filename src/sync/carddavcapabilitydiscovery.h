@@ -1,7 +1,7 @@
 #ifndef KALBURATOR_SYNC_CARDDAVCAPABILITYDISCOVERY_H
 #define KALBURATOR_SYNC_CARDDAVCAPABILITYDISCOVERY_H
 
-#include "collectioninfo.h"
+#include <kalburator/types/collectioninfo.h>
 
 #include <QFuture>
 #include <QList>

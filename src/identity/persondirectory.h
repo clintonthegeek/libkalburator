@@ -18,10 +18,10 @@
  * Never a merge: entities link records; the directory only reads links.
  */
 
-#include "identityresolver.h"
-#include "identitystore.h"
+#include <kalburator/identity/identityresolver.h>
+#include <kalburator/identity/identitystore.h>
 
-#include "../shape/canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QList>
 #include <QString>

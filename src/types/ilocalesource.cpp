@@ -1,4 +1,4 @@
-#include "ilocalesource.h"
+#include <kalburator/types/ilocalesource.h>
 
 namespace Kalburator::Sync {
 

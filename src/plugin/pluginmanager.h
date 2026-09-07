@@ -7,8 +7,8 @@
 #include <QPair>
 #include <QString>
 #include <QStringList>
-#include "manifest.h"
-#include "pluginloaderror.h"
+#include <kalburator/plugin/manifest.h>
+#include <kalburator/plugin/pluginloaderror.h>
 
 namespace Kalburator {
 

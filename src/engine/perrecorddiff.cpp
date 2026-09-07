@@ -1,7 +1,7 @@
-#include "perrecorddiff.h"
+#include <kalburator/engine/perrecorddiff.h>
 
-#include "canonicalrecord.h"
-#include "recorddiffer.h"
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/recorddiffer.h>
 
 #include <QHash>
 #include <QSet>

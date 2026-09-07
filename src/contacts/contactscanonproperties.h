@@ -2,7 +2,7 @@
 
 #include <QList>
 
-#include "propertycatalogue.h"
+#include <kalburator/shape/propertycatalogue.h>
 
 namespace Kalburator::Contacts {
 

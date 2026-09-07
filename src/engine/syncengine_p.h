@@ -11,17 +11,17 @@
 // SyncEngine API in syncengine.h. SyncEngineWorker is an implementation
 // detail of the engine — it has no callers outside this translation unit.
 
-#include "enginediff.h"
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "pipeline.h"
-#include "shape.h"
-#include "synctypes.h"
-#include "../sync/syncoperation.h"
-#include "../sync/writeoperation.h"  // E5.3: SyncBackendBase::applyRecords() return type
-#include "../sync/writerbatch.h"     // E5.3: SyncBackendBase::applyRecords() batch parameter type
-#include "shaperegistries.h"
-#include "syncengine.h"
+#include <kalburator/engine/enginediff.h>
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/pipeline.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/types/synctypes.h>
+#include <kalburator/sync/syncoperation.h>
+#include <kalburator/sync/writeoperation.h>  // E5.3: SyncBackendBase::applyRecords() return type
+#include <kalburator/sync/writerbatch.h>     // E5.3: SyncBackendBase::applyRecords() batch parameter type
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/engine/syncengine.h>
 
 #include <QObject>
 #include <QList>
@@ -232,9 +232,9 @@ public slots:
      * racing an already-posted processSyncRequested). The reset now
      * happens exactly once per run, dispatched (queued) from
      * SyncEngine's run entry points — driveQueue() and
-     * processSingleMapping() — before the first mapping of that run is
-     * ever requested. processSync() itself now only checks the flag; see
-     * its definition.
+     * processSingleMapping() — synchronously before the first mapping of that
+     * run is requested. The atomic reset must not be queued: a later immediate
+     * cancellation must always win. processSync() itself only checks the flag.
      */
     void resetCancellationFlag();
 
@@ -351,7 +351,7 @@ signals:
     void activeControllersReady();
 
 private:
-    void runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
+    bool runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                           SyncBackendBase *src,
                           SyncBackendBase *tgt,
                           const QString &srcCollectionId,

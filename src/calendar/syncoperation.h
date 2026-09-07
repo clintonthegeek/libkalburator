@@ -7,7 +7,7 @@
 #include <KCalendarCore/Incidence>
 #include <atomic>
 
-#include "../sync/syncoperation.h"
+#include <kalburator/sync/syncoperation.h>
 
 namespace Kalburator::Sync {
 

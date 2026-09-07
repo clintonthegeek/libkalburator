@@ -1,10 +1,10 @@
 #ifdef HAVE_AKONADI
 
-#include "akonadicontactsbackend.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
-#include "../sync/akonadirevisiondigest.h"
-#include "../sync/akonadicollectionid.h"
+#include <kalburator/contacts/akonadicontactsbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/akonadirevisiondigest.h>
+#include <kalburator/sync/akonadicollectionid.h>
 
 #include <Akonadi/CollectionFetchJob>
 #include <Akonadi/CollectionFetchScope>

@@ -1,7 +1,7 @@
 #ifndef CALENDARJOURNAL_H
 #define CALENDARJOURNAL_H
 
-#include "crashjournal.h"
+#include <kalburator/typesupport/crashjournal.h>
 #include <KCalendarCore/Incidence>
 #include <QString>
 

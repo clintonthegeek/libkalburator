@@ -1,4 +1,4 @@
-#include "syncoperation.h"
+#include <kalburator/calendar/syncoperation.h>
 
 namespace Kalburator::Sync {
 

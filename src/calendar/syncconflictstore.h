@@ -2,7 +2,7 @@
 #ifndef KALBURATOR_SYNCCONFLICTSTORE_H
 #define KALBURATOR_SYNCCONFLICTSTORE_H
 
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 
 #include <QObject>
 #include <QList>
@@ -65,6 +65,7 @@ public:
         ConflictInfo info;
         ConflictResolution resolution = ConflictResolution::AskUser;
         QDateTime resolvedAt;
+        QString mergedNative;
     };
 
     /**
@@ -83,7 +84,8 @@ public:
     /**
      * @brief Mark a conflict as resolved.
      */
-    void resolveConflict(const QString &conflictId, ConflictResolution resolution);
+    void resolveConflict(const QString &conflictId, ConflictResolution resolution,
+                         const QString &mergedNative = QString());
 
     /**
      * @brief Remove a conflict record.

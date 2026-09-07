@@ -1,5 +1,5 @@
-#include "markdowncanonstages.h"
-#include "canonenvelope.h"
+#include <kalburator/note/markdowncanonstages.h>
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonObject>
 #include <QString>

@@ -1,4 +1,4 @@
-#include "recurrencepatternconverter.h"
+#include <kalburator/calendar/recurrencepatternconverter.h>
 
 #include <QDate>
 #include <QDateTime>

@@ -1,6 +1,6 @@
-#include "decsyncactivecontroller.h"
+#include <kalburator/calendar/decsyncactivecontroller.h>
 
-#include "incidencediff.h"
+#include <kalburator/diff/incidencediff.h>
 
 #include <QDebug>
 #include <QDateTime>

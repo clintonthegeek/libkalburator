@@ -5,7 +5,7 @@
 #include <QStringList>
 #include <QJsonObject>
 
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 
 namespace Kalburator::Sync {
 

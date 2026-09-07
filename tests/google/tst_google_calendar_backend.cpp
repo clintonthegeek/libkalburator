@@ -14,11 +14,13 @@
 #include <QTemporaryDir>
 
 #include "googlecalendarbackend.h"
+#include "mockbackend.h"
 #include "mockgoogleserver.h"
 
 using Kalburator::Google::MockGoogleServer;
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GoogleCalendarBackend;
+using Kalburator::Sync::MockBackend;
 using Kalburator::Sync::WriterBatch;
 
 namespace {
@@ -65,6 +67,21 @@ BackendRecord recordWithWire(const QJsonObject &wire)
 class TestGoogleCalendarBackend : public QObject {
     Q_OBJECT
 private slots:
+    void capabilityAcquisition_distinguishesBatchApplyFromDirectCrud()
+    {
+        GoogleCalendarBackend operationOnly;
+        QVERIFY(operationOnly.recordReader());
+        QVERIFY(operationOnly.recordApplier());
+        QVERIFY(!operationOnly.recordMutator());
+        QVERIFY(!operationOnly.collectionWiper());
+
+        MockBackend blobBacked;
+        QVERIFY(blobBacked.recordReader());
+        QVERIFY(blobBacked.recordApplier());
+        QVERIFY(blobBacked.recordMutator());
+        QVERIFY(blobBacked.collectionWiper());
+    }
+
     void init()
     {
         m_server = new MockGoogleServer(this);

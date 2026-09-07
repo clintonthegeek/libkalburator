@@ -1,4 +1,4 @@
-#include "alarmshape.h"
+#include <kalburator/calendar/alarmshape.h>
 
 #include <QDateTime>
 #include <QString>

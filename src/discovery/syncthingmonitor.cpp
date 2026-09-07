@@ -1,4 +1,4 @@
-#include "syncthingmonitor.h"
+#include <kalburator/discovery/syncthingmonitor.h>
 
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>

@@ -1,9 +1,9 @@
-#include "icalcanonstages.h"
+#include <kalburator/calendar/icalcanonstages.h>
 
-#include "canonenvelope.h"
-#include "eventcanonfields.h"
-#include "journalcanonfields.h"
-#include "vtodocanonfields.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/eventcanonfields.h>
+#include <kalburator/calendar/journalcanonfields.h>
+#include <kalburator/todo/vtodocanonfields.h>
 
 #include <KCalendarCore/Attendee>
 #include <KCalendarCore/Event>

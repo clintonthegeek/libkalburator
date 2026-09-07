@@ -1,6 +1,6 @@
-#include "incidencecommonfields.h"
+#include <kalburator/calendar/incidencecommonfields.h>
 
-#include "icaltimestamp.h"
+#include <kalburator/calendar/icaltimestamp.h>
 
 #include <KCalendarCore/Attendee>
 

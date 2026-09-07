@@ -2,11 +2,12 @@
 #define ISYNCHOST_H
 
 #include <QHash>
+#include <QByteArray>
 #include <QString>
 
-#include "canonicalrecord.h"
-#include "lossprofile.h"
-#include "synctypes.h"
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/types/synctypes.h>
 
 namespace Kalburator::Sync {
 
@@ -85,6 +86,19 @@ public:
 
     enum class ChangeKind { Created, Updated, Deleted };
 
+    /// Complete source-side change notification. The payload and shape are
+    /// canonical values already available to the engine; hosts do not need to
+    /// block on a backend or parse a backend-native representation.
+    struct RecordChange {
+        QString mappingId;
+        QString backendId;
+        QString calendarId;
+        QString recordId;
+        ChangeKind kind = ChangeKind::Updated;
+        QByteArray data;
+        Kalburator::Shape::Shape shape;
+    };
+
     /// Called from SyncEngineWorker's own thread (worker thread, not the
     /// SyncEngine/GUI thread) — see the class-level threading note above.
     virtual void syncStarted(const QString &mappingId,
@@ -102,6 +116,13 @@ public:
     virtual void recordChanged(const QString &mappingId,
                                const QString &recordId,
                                ChangeKind kind) {}
+
+    /// Canonical event path. The compatibility overload above remains the
+    /// fallback for hosts that have not migrated yet.
+    virtual void recordChanged(const RecordChange &change)
+    {
+        recordChanged(change.mappingId, change.recordId, change.kind);
+    }
 
     virtual ConflictResolution resolveConflict(const QString &mappingId,
                                                const QString &recordId,

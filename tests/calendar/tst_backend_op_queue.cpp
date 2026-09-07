@@ -45,6 +45,7 @@ private slots:
     void sameCollectionOpsSerialize();
     void differentCollectionOpsOverlap();
     void cancelQueuedOpNeverRunsBody();
+    void cancelAllOperationsCanRemoveEveryPendingEntry();
     void localToLocalEngineSyncStillCompletes();
 
 private:
@@ -164,6 +165,27 @@ void TstBackendOpQueue::cancelQueuedOpNeverRunsBody()
     QTest::qWait(150);
     QCOMPARE(op2Started.count(), 0);
     QCOMPARE(op2->state(), SyncOperation::Cancelled);
+
+    op1->deleteLater();
+    op2->deleteLater();
+}
+
+void TstBackendOpQueue::cancelAllOperationsCanRemoveEveryPendingEntry()
+{
+    MockBackend backend;
+    backend.setOperationDelay(100);
+    backend.addIncidence(QStringLiteral("cal-a"), makeEvent(QStringLiteral("e1")));
+
+    auto *op1 = backend.fetchItems(QStringLiteral("cal-a"));
+    auto *op2 = backend.fetchItems(QStringLiteral("cal-a"));
+    QVERIFY(op1 && op2);
+
+    backend.cancelAllOperations();
+    QTRY_VERIFY_WITH_TIMEOUT(op1->isFinished(), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(op2->isFinished(), 1000);
+    QCOMPARE(op1->state(), SyncOperation::Cancelled);
+    QCOMPARE(op2->state(), SyncOperation::Cancelled);
+    QVERIFY(!backend.hasPendingOperations());
 
     op1->deleteLater();
     op2->deleteLater();

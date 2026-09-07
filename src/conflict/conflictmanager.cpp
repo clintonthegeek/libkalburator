@@ -1,7 +1,7 @@
-#include "conflictmanager.h"
-#include "iconflictpresenter.h"
-#include "syncconflictstore.h"
-#include "iconflictresolver.h"
+#include <kalburator/conflict/conflictmanager.h>
+#include <kalburator/calendar/iconflictpresenter.h>
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/calendar/iconflictresolver.h>
 
 #include <QDebug>
 
@@ -169,7 +169,10 @@ ConflictResolution ConflictManager::showImmediateDialog(const ConflictInfo &conf
     // STORE WRITE stays conditional; only the signal became unconditional.
     if (resolution != ConflictResolution::Skip) {
         if (m_syncStore && !conflictId.isEmpty()) {
-            m_syncStore->resolveConflict(conflictId, resolution);
+            m_syncStore->resolveConflict(
+                conflictId, resolution,
+                resolution == ConflictResolution::CustomMerge
+                    ? m_mergedByConflictId.value(conflictId) : QString{});
         }
         emit conflictResolved(conflictId, resolution);
         emit unresolvedCountChanged(unresolvedConflictCount());
@@ -237,7 +240,9 @@ ConflictResolution ConflictManager::applyAutoPolicy(const ConflictInfo &conflict
     return resolution;
 }
 
-bool ConflictManager::applyResolution(const QString &conflictId, ConflictResolution resolution)
+bool ConflictManager::applyResolution(const QString &conflictId,
+                                      ConflictResolution resolution,
+                                      const QString &mergedIcal)
 {
     if (!m_syncStore || conflictId.isEmpty()) {
         return false;
@@ -262,7 +267,13 @@ bool ConflictManager::applyResolution(const QString &conflictId, ConflictResolut
     // a PendingConflictResolution, and the next dispatchSync for that mapping
     // replays it through the engine's normal write path.
 
-    m_syncStore->resolveConflict(conflictId, resolution);
+    if (resolution == ConflictResolution::CustomMerge)
+        m_mergedByConflictId.insert(conflictId, mergedIcal);
+    else
+        m_mergedByConflictId.remove(conflictId);
+    m_syncStore->resolveConflict(
+        conflictId, resolution,
+        resolution == ConflictResolution::CustomMerge ? mergedIcal : QString{});
     emit conflictResolved(conflictId, resolution);
     emit unresolvedCountChanged(unresolvedConflictCount());
 

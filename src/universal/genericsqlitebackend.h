@@ -6,9 +6,9 @@
 #include <QString>
 #include <QStringList>
 
-#include "syncbackendbase.h"
-#include "changedetection.h"
-#include "shape.h"
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/sync/changedetection.h>
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Sinks {
 

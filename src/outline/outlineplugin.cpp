@@ -1,6 +1,6 @@
-#include "outlineplugin.h"
-#include "outlinedomaindefinition.h"
-#include "outlinestockshapes.h"
+#include <kalburator/outline/outlineplugin.h>
+#include <kalburator/outline/outlinedomaindefinition.h>
+#include <kalburator/outline/outlinestockshapes.h>
 
 namespace Kalburator::Outline {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "recorddiffer.h"
+#include <kalburator/shape/recorddiffer.h>
 
 namespace Kalburator::Note {
 

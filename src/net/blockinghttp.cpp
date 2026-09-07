@@ -1,4 +1,4 @@
-#include "blockinghttp.h"
+#include <kalburator/net/blockinghttp.h>
 
 #include <QEventLoop>
 #include <QNetworkAccessManager>

@@ -158,8 +158,9 @@ void TstMultiProtocolDavProvider::loadAndSaveRoundTripsConnectionParams()
              QStringLiteral("https://cloud.example.com"));
     QCOMPARE(roundtrip.connectionParams.value(QStringLiteral("username")).toString(),
              QStringLiteral("alice"));
-    QCOMPARE(roundtrip.connectionParams.value(QStringLiteral("password")).toString(),
-             QStringLiteral("hunter2"));
+    QVERIFY(!roundtrip.connectionParams.contains(QStringLiteral("password")));
+    QVERIFY(!roundtrip.connectionParams.value(QStringLiteral("passwordRef"))
+                 .toString().isEmpty());
     QCOMPARE(roundtrip.connectionParams.value(QStringLiteral("manualCaldavPrincipal")).toString(),
              QStringLiteral("https://cloud.example.com/dav/cal/"));
 }

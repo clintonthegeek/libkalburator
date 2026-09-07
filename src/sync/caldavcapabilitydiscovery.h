@@ -1,7 +1,7 @@
 #ifndef CALDAVCAPABILITYDISCOVERY_H
 #define CALDAVCAPABILITYDISCOVERY_H
 
-#include "backendconfiguration.h"
+#include <kalburator/typesupport/backendconfiguration.h>
 #include <QObject>
 #include <QUrl>
 #include <QMap>

@@ -4,8 +4,8 @@
 #include <QStringList>
 #include <memory>
 
-#include "propertycatalogue.h"
-#include "shape.h"
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Shape {
 

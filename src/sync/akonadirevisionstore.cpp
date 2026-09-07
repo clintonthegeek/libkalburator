@@ -1,4 +1,4 @@
-#include "akonadirevisionstore.h"
+#include <kalburator/sync/akonadirevisionstore.h>
 #include <QSettings>
 namespace Kalburator::Sync {
 AkonadiRevisionStore::AkonadiRevisionStore(const QString &filePath)

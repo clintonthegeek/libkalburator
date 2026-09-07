@@ -1,7 +1,7 @@
-#include "googletasksbackend.h"
+#include <kalburator/todo/googletasksbackend.h>
 
-#include "googleapiclient.h"
-#include "calendarcapabilities.h"
+#include <kalburator/google/googleapiclient.h>
+#include <kalburator/sync/calendarcapabilities.h>
 
 #include <QCryptographicHash>
 #include <QDir>

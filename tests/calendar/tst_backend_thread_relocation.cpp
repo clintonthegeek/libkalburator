@@ -1628,6 +1628,10 @@ void TstBackendThreadRelocation::writeCancel_reportsCancelledWithHonestStats()
     QVERIFY(future.isCanceled());
 
     const SyncResult result = engine.lastSyncResult();
+    QVERIFY2(result.cancelled,
+             "lastSyncResult must retain the terminal cancellation state");
+    QVERIFY2(!result.success,
+             "lastSyncResult must remain unsuccessful after cancellation");
 
     // Honesty (E1.1): with the write genuinely still in flight (4s PUT/DELETE
     // delay, cancelled almost immediately), neither of this cycle's 2 writes

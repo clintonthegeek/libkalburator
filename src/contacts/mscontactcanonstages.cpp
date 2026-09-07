@@ -1,6 +1,6 @@
-#include "mscontactcanonstages.h"
+#include <kalburator/contacts/mscontactcanonstages.h>
 
-#include "canonenvelope.h"
+#include <kalburator/shape/canonenvelope.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

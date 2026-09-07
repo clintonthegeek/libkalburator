@@ -1,4 +1,4 @@
-#include "decsynccontrollerstore.h"
+#include <kalburator/calendar/decsynccontrollerstore.h>
 
 #include <QSqlDatabase>
 #include <QSqlQuery>

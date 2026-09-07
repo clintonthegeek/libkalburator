@@ -1,4 +1,4 @@
-#include "collectionpickerwidget.h"
+#include <kalburator/ui/collectionpickerwidget.h>
 
 #include <QCheckBox>
 #include <QGroupBox>

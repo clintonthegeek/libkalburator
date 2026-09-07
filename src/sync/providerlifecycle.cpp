@@ -1,14 +1,14 @@
-#include "providerlifecycle.h"
+#include <kalburator/sync/providerlifecycle.h>
 
 #include <QDebug>
 
 #include <KConfig>
 #include <KConfigGroup>
 
-#include "backendregistry.h"
-#include "providermanager.h"
-#include "iprovider.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/providermanager.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 
 namespace Kalburator::Sync {
 

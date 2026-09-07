@@ -15,9 +15,9 @@ namespace Kalburator::Sync {
 namespace Kalburator::Engine { class SyncEngine; }
 
 // SyncResult is a value type used in the QFuture signature — needs full type.
-#include "synctypes.h"
+#include <kalburator/types/synctypes.h>
 // SyncEngine::SyncBehavior enum — used in runSync() parameter.
-#include "syncengine.h"
+#include <kalburator/engine/syncengine.h>
 
 namespace Kalburator::Sync {
 
@@ -81,6 +81,11 @@ public:
      * @param behavior  Monitored (pause on conflict) or Unmonitored (defer).
      */
     void runSync(Kalburator::Engine::SyncEngine::SyncBehavior behavior);
+
+    /// Run an explicit selection through the same lifecycle and watcher path
+    /// as an all-mappings run. Empty mappingIds retains SyncRequest's
+    /// all-enabled meaning; callers that want a subset provide its ids.
+    void runSync(const Kalburator::Engine::SyncRequest &request);
 
     /**
      * @brief Returns the QFuture from the most recent runSync() call.

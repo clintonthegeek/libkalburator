@@ -1,9 +1,9 @@
 #ifndef LOGICALCALENDARBUILDER_H
 #define LOGICALCALENDARBUILDER_H
 
-#include "logicalcalendar.h"
-#include "backendcapabilities.h"
-#include "discoveredcalendar.h"
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/calendar/discoveredcalendar.h>
 #include <QList>
 #include <QMap>
 #include <QStringList>

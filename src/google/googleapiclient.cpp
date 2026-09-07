@@ -1,5 +1,5 @@
-#include "googleapiclient.h"
-#include "backoff.h"
+#include <kalburator/google/googleapiclient.h>
+#include <kalburator/net/backoff.h>
 
 #include <QEventLoop>
 #include <QJsonDocument>

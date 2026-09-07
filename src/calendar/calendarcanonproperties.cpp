@@ -1,8 +1,8 @@
-#include "calendarcanonproperties.h"
+#include <kalburator/calendar/calendarcanonproperties.h>
 
-#include "eventcanonfields.h"
-#include "journalcanonfields.h"
-#include "vtodocanonfields.h"
+#include <kalburator/calendar/eventcanonfields.h>
+#include <kalburator/calendar/journalcanonfields.h>
+#include <kalburator/todo/vtodocanonfields.h>
 
 #include <QHash>
 #include <QSet>

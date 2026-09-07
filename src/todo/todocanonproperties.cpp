@@ -1,6 +1,6 @@
-#include "todocanonproperties.h"
+#include <kalburator/todo/todocanonproperties.h>
 
-#include "vtodocanonfields.h"
+#include <kalburator/todo/vtodocanonfields.h>
 
 #include <QHash>
 #include <QSet>

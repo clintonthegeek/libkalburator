@@ -1,8 +1,8 @@
 #pragma once
 
-#include "domainoperationsregistry.h"
-#include "domainregistry.h"
-#include "transformationregistry.h"
+#include <kalburator/shape/domainoperationsregistry.h>
+#include <kalburator/shape/domainregistry.h>
+#include <kalburator/shape/transformationregistry.h>
 
 namespace Kalburator::Shape {
 

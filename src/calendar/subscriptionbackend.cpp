@@ -1,7 +1,7 @@
-#include "subscriptionbackend.h"
-#include "backendcapabilities.h"
-#include "syncoperation.h"
-#include "../sync/recordidentity.h"
+#include <kalburator/calendar/subscriptionbackend.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/sync/recordidentity.h>
 #include <KCalendarCore/ICalFormat>
 #include <QCryptographicHash>
 #include <QDebug>

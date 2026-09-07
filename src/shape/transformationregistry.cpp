@@ -1,4 +1,4 @@
-#include "transformationregistry.h"
+#include <kalburator/shape/transformationregistry.h>
 
 #include <QtGlobal>
 

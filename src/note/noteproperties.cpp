@@ -1,4 +1,4 @@
-#include "noteproperties.h"
+#include <kalburator/note/noteproperties.h>
 
 using namespace Kalburator::Shape;
 

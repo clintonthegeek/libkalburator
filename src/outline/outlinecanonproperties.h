@@ -1,5 +1,5 @@
 #pragma once
-#include "propertycatalogue.h"
+#include <kalburator/shape/propertycatalogue.h>
 
 namespace Kalburator::Outline {
 

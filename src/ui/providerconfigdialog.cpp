@@ -1,10 +1,10 @@
-#include "providerconfigdialog.h"
-#include "collectionpickerwidget.h"
-#include "../sync/providermanager.h"
-#include "../sync/iprovider.h"
-#include "../sync/iproviderconfigwidget.h"
-#include "../sync/backendregistry.h"
-#include "../sync/backendcontribution.h"
+#include <kalburator/ui/providerconfigdialog.h>
+#include <kalburator/ui/collectionpickerwidget.h>
+#include <kalburator/sync/providermanager.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/sync/iproviderconfigwidget.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
 
 #include <algorithm>
 

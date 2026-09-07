@@ -1,5 +1,5 @@
-#include "graphauthenticator.h"
-#include "blockinghttp.h"
+#include <kalburator/graph/graphauthenticator.h>
+#include <kalburator/net/blockinghttp.h>
 
 #include <QDateTime>
 #include <QFile>

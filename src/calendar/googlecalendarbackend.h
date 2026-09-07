@@ -22,8 +22,8 @@
 //   - Create responses mint server-side transport ids → WriteOperation
 //     idAliases bridge requested→stored ids (O55 machinery).
 
-#include "syncbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 namespace Kalburator::Google {
 class GoogleApiClient;
@@ -55,6 +55,8 @@ public:
     // ==== identity ====
     QString backendType() const override;
     QList<Kalburator::Shape::Shape> nativeShapes() const override;
+    IBackendRecordMutator *recordMutator() override { return nullptr; }
+    IBackendCollectionWiper *collectionWiper() override { return nullptr; }
 
     // ==== read path ====
     FetchOperation *fetchItems(const QString &calendarId) override;

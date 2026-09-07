@@ -1,8 +1,8 @@
 #ifndef KALBURATOR_SYNC_MULTIPROTOCOLDAVCONFIGWIDGET_H
 #define KALBURATOR_SYNC_MULTIPROTOCOLDAVCONFIGWIDGET_H
 
-#include "backendconfiguration.h"
-#include "iproviderconfigwidget.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/iproviderconfigwidget.h>
 #include <QWidget>
 
 class QLineEdit;
@@ -28,6 +28,7 @@ private:
     QGroupBox *m_advancedGroup;
     QLineEdit *m_manualCalDavEdit;
     QLineEdit *m_manualCardDavEdit;
+    mutable QString m_passwordRef;
 };
 
 } // namespace Kalburator::Sync

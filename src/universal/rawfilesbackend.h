@@ -4,8 +4,8 @@
 #include <QMutex>
 #include <QString>
 
-#include "syncbackendbase.h"
-#include "shape.h"
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/shape/shape.h>
 
 namespace Kalburator::Sinks {
 

@@ -1,43 +1,43 @@
-#include "syncengine.h"
-#include "syncengine_p.h"
-#include "syncrequest.h"
-#include "workerteardown.h"
-#include "lastwritewins.h"
-#include "baselinestore.h"
-#include "baselineentry.h"
-#include "perrecorddiff.h"
-#include "propertydiff.h"
-#include "domainoperationsregistry.h"
-#include "domaindefinition.h"
-#include "defaultblobwriter.h"
-#include "transformationregistry.h"
-#include "domainregistry.h"
-#include "shaperegistries.h"
-#include "decsyncactivecontroller.h"
-#include "canonicalrecord.h"
-#include "recordwriter.h"
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncengine_p.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/engine/workerteardown.h>
+#include <kalburator/engine/lastwritewins.h>
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/engine/baselineentry.h>
+#include <kalburator/engine/perrecorddiff.h>
+#include <kalburator/engine/propertydiff.h>
+#include <kalburator/shape/domainoperationsregistry.h>
+#include <kalburator/shape/domaindefinition.h>
+#include <kalburator/shape/defaultblobwriter.h>
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/domainregistry.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/calendar/decsyncactivecontroller.h>
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/recordwriter.h>
 // Phase K.4: the engine no longer dynamic_casts to a concrete writer;
 // writer-specific behaviour is mediated by IRecordWriter::prepareForApply()
 // (E5.3 CP-A amendment A3 deleted IRecordWriter::threading() — the engine's
 // write path no longer calls RecordWriter::apply() at all; see
 // SyncEngineWorker::applyBatch and SyncBackendBase::applyRecords()).
-#include "iblobbackend.h"
-#include "syncconflictstore.h"
-#include "syncdiff.h"
-#include "backendregistry.h"
-#include "isynchost.h"
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/diff/syncdiff.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/isynchost.h>
 // collection.h removed — using icalendarcollection.h only
-#include "isyncconfigstore.h"
-#include "icalendarcollection.h"
-#include "backendcapabilities.h"
-#include "backendconfiguration.h"
-#include "changedetection.h"
-#include "../sync/syncoperation.h"
-#include "conflictmanager.h"
-#include "imassdeleteguard.h"
-#include "canonenvelope.h"
-#include "transcodeguard.h"
-#include "lossprofile.h"
+#include <kalburator/types/isyncconfigstore.h>
+#include <kalburator/types/icalendarcollection.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/changedetection.h>
+#include <kalburator/sync/syncoperation.h>
+#include <kalburator/conflict/conflictmanager.h>
+#include <kalburator/engine/imassdeleteguard.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/engine/transcodeguard.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <QDebug>
 #include <QJsonArray>
@@ -150,6 +150,11 @@ bool appliedChanges(const Kalburator::Sync::SyncResult &r)
 
 namespace Kalburator::Engine {
 
+using Kalburator::Sync::IBackendRecordMutator;
+using Kalburator::Sync::IBackendRecordApplier;
+using Kalburator::Sync::IBackendCollectionWiper;
+using Kalburator::Sync::IBackendRecordReader;
+
 SyncEngine::SyncEngine(BackendRegistry *registry,
                                    ISyncHost *host,
                                    Kalburator::Shape::ShapeRegistries &shape,
@@ -166,14 +171,26 @@ SyncEngine::SyncEngine(BackendRegistry *registry,
 SyncEngine::~SyncEngine()
 {
     stopWorkerPool();
-    // Architectural-redress Plan 4: the in-flight QFutureInterfaces are owned by
-    // unique_ptr members and are freed automatically after this body, fixing the
-    // mid-sync memory leak (AUDIT MAJOR "raw QFutureInterface* without lifecycle
-    // management"). We deliberately do NOT reportFinished() here: the watchers
-    // (m_currentWatcher, parented to this) is torn down by ~QObject
-    // immediately after, so emitting finished() now would re-enter the completion
-    // slots during teardown. Unblocking a caller that still holds a future while its
-    // engine is destroyed mid-sync is a misuse out of Plan 4's scope (see FINDINGS).
+    // Runtime ownership makes destruction during an active run a supported
+    // cancellation path. Worker shutdown has settled before publication. Do
+    // not call finishRun here: its ordinary phase signals are inappropriate
+    // from a destructor and could synchronously re-enter this object.
+    if (m_currentIface) {
+        SyncResult cancelled;
+        cancelled.success = false;
+        cancelled.cancelled = true;
+        cancelled.errorMessage = QStringLiteral("Sync cancelled during teardown");
+        cancelled.endTime = QDateTime::currentDateTime();
+        auto iface = std::move(m_currentIface);
+        m_isSyncing = false;
+        m_queue.reset();
+        m_inFlightEndpoints.clear();
+        m_inFlight.clear();
+        m_carriedResults.clear();
+        iface->reportResult(QList<SyncResult>{cancelled});
+        iface->reportCanceled();
+        iface->reportFinished();
+    }
 }
 
 void SyncEngine::setupWorkerConnections(SyncEngineWorker *worker, bool isControlSlot)
@@ -532,11 +549,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
         m_lastResult = SyncResult{};
         m_lastResult.success = true;
         // Finish the iface (the QFuture caller is waiting on it).
-        if (m_currentIface) {
-            m_currentIface->reportResult(m_queue.drain());
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
+        finishRun(m_queue.drain(), false);
         return;
     }
 
@@ -564,8 +577,7 @@ void SyncEngine::driveQueue(SyncBehavior behavior,
     // fast-path branch needs the pool too.
     startWorkerPool(m_effectiveCap);
     forEachWorker([](SyncEngineWorker *w) {
-        QMetaObject::invokeMethod(w, &SyncEngineWorker::resetCancellationFlag,
-                                  Qt::QueuedConnection);
+        w->resetCancellationFlag();
     });
 
     if (!m_activeControllers.isEmpty()) {
@@ -665,19 +677,8 @@ void SyncEngine::onFastPathReady(const QSet<QString> &skipped,
 void SyncEngine::finishDriveQueueSetup()
 {
     if (m_syncMappings.isEmpty() || m_cancelled) {
-        m_isSyncing = false;
-        m_currentPhase = SyncPhase::Idle;
-        emit phaseChanged(m_currentPhase);
         m_lastResult.success = !m_cancelled;
-        m_lastResult.endTime = QDateTime::currentDateTime();
-        // Finish the iface with what we have.
-        if (m_currentIface) {
-            m_currentIface->reportResult(m_queue.drain());
-            if (m_cancelled) m_currentIface->reportCanceled();
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
+        finishRun(m_queue.drain(), m_cancelled);
         return;
     }
 
@@ -728,19 +729,13 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     // the gap.
     if (m_cancelled) {
         SyncResult cancelled;
+        cancelled.mappingId = mappingId;
         cancelled.success = false;
         cancelled.cancelled = true;
         cancelled.skipped = true;
         cancelled.startTime = QDateTime::currentDateTime();
         cancelled.endTime = cancelled.startTime;
-        if (m_currentIface) {
-            m_currentIface->reportResult(QList<SyncResult>{ cancelled });
-            m_currentIface->reportCanceled();
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
-        m_isSyncing = false;
+        finishRun(QList<SyncResult>{ cancelled }, true);
         return;
     }
 
@@ -768,8 +763,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
             // E3 (O33a): legitimate new-run reset of every pool worker's
             // own cancellation flag — see driveQueue()'s matching comment.
             forEachWorker([](SyncEngineWorker *w) {
-                QMetaObject::invokeMethod(w, &SyncEngineWorker::resetCancellationFlag,
-                                          Qt::QueuedConnection);
+                w->resetCancellationFlag();
             });
 
             // Create request and invoke worker
@@ -812,18 +806,7 @@ void SyncEngine::processSingleMapping(const QString &mappingId,
     err.errorMessage = QStringLiteral("Mapping not found: %1").arg(mappingId);
     err.startTime = QDateTime::currentDateTime();
     err.endTime = err.startTime;
-    if (m_currentIface) {
-        m_currentIface->reportResult(QList<SyncResult>{ err });
-        m_currentIface->reportFinished();
-        m_currentIface.reset();
-    }
-    m_queue.reset();
-    // F2 Task 21 follow-up: clear m_isSyncing on the not-found path.
-    // runSync sets m_isSyncing = true before calling
-    // processSingleMapping; if we return here without dispatching,
-    // nothing else will clear it and subsequent runSync* calls are
-    // rejected by the m_isSyncing guard.
-    m_isSyncing = false;
+    finishRun(QList<SyncResult>{ err }, false);
 }
 
 // Bug B (conflict-resolution-repair Task 3, locked decision 2): the
@@ -926,13 +909,11 @@ QFuture<QList<SyncResult>> SyncEngine::runSync(const SyncRequest &request)
     // Multi-mapping path (all-enabled or subset).
     QFuture<QList<SyncResult>> future = beginRun();
 
-    // v0.65: thread the multi-mapping-applicable part of the override to
-    // the queue. Only `clobber` broadens to multi dispatch; `direction`
-    // stays a single-mapping concept (SyncRequest doc), so it is sanitized
-    // to Default here regardless of what the caller set.
+    // The facade uses one request for all selection shapes. Apply the same
+    // override to every mapping in a queue, using each mapping's orientation.
     ExecutionOverride queueOverride;
     if (request.executionOverride.has_value())
-        queueOverride.clobber = request.executionOverride->clobber;
+        queueOverride = *request.executionOverride;
 
     if (request.isAllEnabled()) {
         driveQueue(request.behavior, std::nullopt, queueOverride);
@@ -974,6 +955,42 @@ QFuture<QList<SyncResult>> SyncEngine::beginRun()
     return future;
 }
 
+void SyncEngine::finishRun(QList<SyncResult> results, bool cancelled)
+{
+    // Take ownership of the interface before publishing anything. A future
+    // completion callback may synchronously call runSync(), so the run must
+    // no longer look active while reportResult/reportFinished execute.
+    auto iface = std::move(m_currentIface);
+
+    m_isSyncing = false;
+    m_currentPhase = cancelled ? SyncPhase::Idle : SyncPhase::Complete;
+    emit phaseChanged(m_currentPhase);
+    if (!cancelled) {
+        m_currentPhase = SyncPhase::Idle;
+        emit phaseChanged(m_currentPhase);
+    }
+
+    if (cancelled) {
+        m_lastResult.success = false;
+        m_lastResult.cancelled = true;
+        if (m_lastResult.errorMessage.isEmpty())
+            m_lastResult.errorMessage = QStringLiteral("Sync cancelled");
+    }
+    m_lastResult.endTime = QDateTime::currentDateTime();
+
+    m_queue.reset();
+    m_inFlightEndpoints.clear();
+    m_inFlight.clear();
+    m_carriedResults.clear();
+
+    if (iface) {
+        iface->reportResult(std::move(results));
+        if (cancelled)
+            iface->reportCanceled();
+        iface->reportFinished();
+    }
+}
+
 // F2 Task 17: forwards QFutureWatcher::canceled to the worker thread.
 // Runs on the engine thread (where the watcher lives); hops to the
 // worker thread via Qt::QueuedConnection. The worker's observeCancel
@@ -991,7 +1008,13 @@ void SyncEngine::onCancelObserved()
 
     // Parallel-sync Task 2: fan out to every pool worker — cancellation
     // must reach whichever slot(s) are currently in flight, not just one.
+    // Set the thread-safe flag synchronously before posting the wake-up.
+    // Posting observeCancel alone leaves a race where an operation can
+    // finish and writes can begin before the worker event loop dequeues it.
+    // The queued call remains necessary to emit cancellationObserved on the
+    // worker thread and wake nested fetch/write/conflict event loops.
     forEachWorker([](SyncEngineWorker *w) {
+        w->cancel();
         emit w->observeCancelRequested();
     });
 }
@@ -1010,14 +1033,32 @@ void SyncEngine::cancelWithReason(CancellationReason reason,
 {
     if (reason == CancellationReason::ResourceLost && !resourceId.isEmpty()) {
         m_queue.markResourceLost(resourceId);
-        // advanceQueue queries m_queue.isResourceLost() when picking the
-        // next mapping. No m_cancelled=true here — we want the queue to
-        // continue with mappings that don't use the lost resource.
+        // Cancel only in-flight mappings that touch the lost resource.
+        // Unrelated workers and queued mappings continue.
+        for (auto it = m_inFlight.cbegin(); it != m_inFlight.cend(); ++it) {
+            const auto mappingIt = std::find_if(
+                m_syncMappings.cbegin(), m_syncMappings.cend(),
+                [&it](const SyncMapping &mapping) { return mapping.id == it.key(); });
+            if (mappingIt == m_syncMappings.cend()) continue;
+            const auto touchesResource = [this, &resourceId](const QString &backendId) {
+                auto *backend = m_registry ? m_registry->backendInstance(backendId) : nullptr;
+                return backend && backend->resourceId() == resourceId;
+            };
+            if (!touchesResource(mappingIt->sourceBackend)
+                && !touchesResource(mappingIt->targetBackend))
+                continue;
+            const int slot = it.value();
+            if (slot >= 0 && slot < m_pool.size() && m_pool.at(slot).worker) {
+                m_pool.at(slot).worker->cancel();
+                emit m_pool.at(slot).worker->observeCancelRequested();
+            }
+        }
     } else {
         // All other reasons: stop the entire queue. Fan out to every pool
         // worker — see onCancelObserved()'s matching comment.
         m_cancelled = true;
         forEachWorker([](SyncEngineWorker *w) {
+            w->cancel();
             emit w->observeCancelRequested();
         });
     }
@@ -1175,22 +1216,9 @@ void SyncEngine::pumpQueue()
         if (!m_inFlight.isEmpty())
             return;
 
-        m_isSyncing = false;
-        m_currentPhase = SyncPhase::Idle;
-        emit phaseChanged(m_currentPhase);
         m_lastResult.success = false;
         m_lastResult.errorMessage = QStringLiteral("Sync cancelled");
-        m_lastResult.endTime = QDateTime::currentDateTime();
-
-        // F2 Task 21: finish the iface (if any) with what we have.
-        if (m_currentIface) {
-            m_currentIface->reportResult(m_carriedResults + m_queue.drain());
-            m_currentIface->reportCanceled();
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
-        m_inFlightEndpoints.clear();
+        finishRun(m_carriedResults + m_queue.drain(), true);
         return;
     }
 
@@ -1220,6 +1248,7 @@ void SyncEngine::pumpQueue()
             const bool tgtLost = tgt && m_queue.isResourceLost(tgt->resourceId());
             if (srcLost || tgtLost) {
                 SyncResult cancelled;
+                cancelled.mappingId = mapping.id;
                 cancelled.success   = false;
                 cancelled.cancelled = true;
                 cancelled.errorMessage = QStringLiteral("Resource lost");
@@ -1239,6 +1268,7 @@ void SyncEngine::pumpQueue()
                                  tr("Skipping unchanged %1").arg(mapping.id));
 
             SyncResult skippedResult;
+            skippedResult.mappingId = mapping.id;
             skippedResult.success = true;
             skippedResult.startTime = QDateTime::currentDateTime();
             skippedResult.endTime = skippedResult.startTime;
@@ -1254,8 +1284,7 @@ void SyncEngine::pumpQueue()
         request.behavior = m_currentSyncBehavior;
         request.collectionId = m_collection ? m_collection->id() : QString();
         request.useQuickPath = !m_baselineStore || m_baselineStore->baselinesForMappingV3(mapping.id).isEmpty();
-        // v0.65: per-run multi-mapping override (clobber only; direction
-        // was sanitized to Default by runSync before reaching the queue).
+        // Per-run override applies uniformly to every selected mapping.
         request.override = m_queueOverride;
         // Bug B: hand this mapping's already-chosen resolutions to the run
         // that will apply them (usually empty).
@@ -1365,11 +1394,6 @@ void SyncEngine::pumpQueue()
     // left — no in-flight mappings, the queue exhausted, and no fixpoint
     // re-pass warranted. Complete precedes Idle, same order a
     // single-mapping run already announces both in.
-    m_isSyncing = false;
-    m_currentPhase = SyncPhase::Complete;
-    emit phaseChanged(m_currentPhase);
-    m_currentPhase = SyncPhase::Idle;
-    emit phaseChanged(m_currentPhase);
     // Aggregate success: false if stats report errors/conflicts, or if any
     // per-mapping result already set it to false (e.g. fetch failures that
     // abort before any operations and thus leave stats clean).
@@ -1377,19 +1401,10 @@ void SyncEngine::pumpQueue()
                    !m_lastResult.targetStats.hasErrors() &&
                    !m_lastResult.hasUnresolvedConflicts();
     m_lastResult.success = m_lastResult.success && statsOk;
-    m_lastResult.endTime = QDateTime::currentDateTime();
-
-    // F2 Task 21: finish the iface (if any) with the per-mapping results.
-    // The future resolves to the per-mapping list; the aggregate result
-    // is observable via lastSyncResult(). L2: carriedResults holds
-    // drained results from earlier passes.
-    if (m_currentIface) {
-        m_currentIface->reportResult(m_carriedResults + m_queue.drain());
-        m_currentIface->reportFinished();
-        m_currentIface.reset();
-    }
-    m_queue.reset();
-    m_inFlightEndpoints.clear();
+    // The future resolves to the per-mapping list; the aggregate result is
+    // observable via lastSyncResult(). L2: carriedResults holds drained
+    // results from earlier passes.
+    finishRun(m_carriedResults + m_queue.drain(), false);
 }
 
 // ============================================================================
@@ -1580,8 +1595,7 @@ void SyncEngine::rehydratePendingResolutions()
         if (existing != perMapping.constEnd() &&
             !existing->mergedNative.isEmpty()) {
             // An in-process entry wins over a rehydrated one: it carries the
-            // CustomMerge payload, which SyncConflictStore does not persist
-            // (FINDINGS O52).
+            // CustomMerge payload captured during the current process.
             continue;
         }
         PendingConflictResolution pending;
@@ -1590,6 +1604,7 @@ void SyncEngine::rehydratePendingResolutions()
         pending.resolution     = row.resolution;
         pending.sourceModified = row.info.sourceModified;
         pending.targetModified = row.info.targetModified;
+        pending.mergedNative = row.mergedNative;
         perMapping.insert(row.info.sourceId, pending);
     }
 }
@@ -1755,7 +1770,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
     // Propagate per-mapping failure to aggregate result
     if (!result.success) {
         m_lastResult.success = false;
-        if (!result.errorMessage.isEmpty())
+        if (m_lastResult.errorMessage.isEmpty() && !result.errorMessage.isEmpty())
             m_lastResult.errorMessage = result.errorMessage;
     }
 
@@ -1861,6 +1876,7 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
         // The worker sets success=false errorMessage="Cancelled" but
         // doesn't flip the cancelled bit; do it here where we know.
         SyncResult finalResult = result;
+        finalResult.mappingId = mappingId;
         if (m_cancelled || result.cancelled) {
             finalResult.cancelled = true;
             // skipped=true marks "this slot in the run never produced
@@ -1874,24 +1890,16 @@ void SyncEngine::onWorkerSyncCompleted(const QString &mappingId, const SyncResul
             }
             finalResult.success = false;
         }
-        if (m_currentIface) {
-            m_currentIface->reportResult(QList<SyncResult>{ finalResult });
-            if (m_cancelled || finalResult.cancelled) {
-                m_currentIface->reportCanceled();
-            }
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
-        m_isSyncing = false;
-        m_currentPhase = SyncPhase::Idle;
-        emit phaseChanged(m_currentPhase);
+        finishRun(QList<SyncResult>{ finalResult },
+                  m_cancelled || finalResult.cancelled);
         return;
     }
 
     // Queue mode: record the per-mapping result and advance.
     // recordResult is a no-op outside Queue mode (defensive).
-    m_queue.recordResult(result);
+    SyncResult identifiedResult = result;
+    identifiedResult.mappingId = mappingId;
+    m_queue.recordResult(identifiedResult);
 
     // L1 (spec §5.9): a successful mapping that actually wrote something
     // may un-freeze a still-pending mapping's fast-path skip verdict if it
@@ -2011,26 +2019,19 @@ void SyncEngine::onWorkerSyncError(const QString &mappingId, const QString &erro
 
     // Create failed result
     SyncResult failedResult;
+    failedResult.mappingId = mappingId;
     failedResult.success = false;
     failedResult.errorMessage = errorMessage;
     failedResult.endTime = QDateTime::currentDateTime();
 
     // Propagate failure to aggregate result
     m_lastResult.success = false;
-    if (!errorMessage.isEmpty())
+    if (m_lastResult.errorMessage.isEmpty() && !errorMessage.isEmpty())
         m_lastResult.errorMessage = errorMessage;
 
     // F2 Task 21: same dispatch-on-mode pattern as onWorkerSyncCompleted.
     if (m_queue.dispatchMode() == MappingQueue::DispatchMode::Single) {
-        if (m_currentIface) {
-            m_currentIface->reportResult(QList<SyncResult>{ failedResult });
-            m_currentIface->reportFinished();
-            m_currentIface.reset();
-        }
-        m_queue.reset();
-        m_isSyncing = false;
-        m_currentPhase = SyncPhase::Idle;
-        emit phaseChanged(m_currentPhase);
+        finishRun(QList<SyncResult>{ failedResult }, false);
         return;
     }
 
@@ -2094,10 +2095,18 @@ QString syncRecordKey(const SyncRecord &rec)
     return rec.uid;
 }
 
-// v0.66: takes the neutral base — every backend the engine dispatches is a
-// SyncBackendBase, which implements IBlobBackend (calendar-typed SyncBackend
-// still converts implicitly via upcast).
-inline IBlobBackend *asBlob(SyncBackendBase *b) { return static_cast<IBlobBackend *>(b); }
+// API-005: callers acquire the narrow capability their operation requires.
+// The transitional defaults live behind these accessors; operation-only
+// backends explicitly decline direct CRUD.
+inline IBackendRecordReader *recordReader(SyncBackendBase *backend)
+{
+    return backend ? backend->recordReader() : nullptr;
+}
+
+inline IBackendRecordMutator *recordMutator(SyncBackendBase *backend)
+{
+    return backend ? backend->recordMutator() : nullptr;
+}
 
 // Phase Ia.5 Task 11: classification helper for the writer-based apply
 // path. Mirrors the inline classification the old direct-IBlobBackend
@@ -2110,14 +2119,17 @@ inline IBlobBackend *asBlob(SyncBackendBase *b) { return static_cast<IBlobBacken
 // engine/) — this is now just the classification function.
 WriterBatch classifyForWriter(
     const QList<BackendRecord> &toWrite,
-    IBlobBackend *backend,
+    IBackendRecordReader *backend,
     const QString &collectionId,
     QString *errOut = nullptr)
 {
     WriterBatch batch;
     QList<BackendRecord> destRecords;
     QString classifyErr;
-    if (!backend->loadRecordsOrError(collectionId, destRecords, classifyErr)) {
+    const auto load = backend->loadRecordsResult(collectionId);
+    destRecords = load.records;
+    classifyErr = load.errorMessage;
+    if (!load.ok()) {
         if (errOut) *errOut = classifyErr;
         return batch;   // empty batch; caller must inspect errOut
     }
@@ -2281,8 +2293,12 @@ void SyncEngineWorker::setMassDeleteGuardFromEngine(
 
 void SyncEngineWorker::cancel()
 {
-    QMutexLocker locker(&m_mutex);
-    m_cancelled = true;
+    // May be called directly from the engine thread so cancellation becomes
+    // visible before a queued wake-up is processed. Do not take m_mutex here:
+    // the worker can hold it while synchronously calling back to the engine
+    // thread, which would deadlock that cancellation path. m_cancelled is
+    // atomic specifically for this cross-thread observation.
+    m_cancelled.store(true, std::memory_order_release);
 }
 
 void SyncEngineWorker::observeCancel()
@@ -2300,8 +2316,10 @@ void SyncEngineWorker::resetCancellationFlag()
 {
     // E3 (O33a): the sole legitimate reset point — invoked once per run
     // from SyncEngine's run entry points (driveQueue() /
-    // processSingleMapping()), queued so it is guaranteed to execute on
-    // the worker thread before that run's first processSyncRequested.
+    // processSingleMapping()), synchronously before that run's first
+    // processSyncRequested. The field is atomic, so this cross-thread reset is
+    // safe; making it queued could let a subsequent immediate cancel set true
+    // first and then be erased when the stale reset event reached the worker.
     // See processSync()'s comment for the erasure race this replaces.
     QMutexLocker locker(&m_mutex);
     m_cancelled = false;
@@ -2829,7 +2847,10 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         return true;
     }
 
-    IBlobBackend *tgt = asBlob(tgtBackend);
+    IBackendRecordReader *tgt = recordReader(tgtBackend);
+    IBackendRecordMutator *tgtMutator = recordMutator(tgtBackend);
+    if (!tgt || !tgtMutator)
+        return false;
     const QString colId = request.mapping.sourceCalendar;
 
     bool targetEmpty = false;
@@ -2837,7 +2858,10 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     QMetaObject::invokeMethod(tgtBackend,
         [tgt, colId, &targetEmpty, &targetReadErr]() {
             QList<BackendRecord> records;
-            if (!tgt->loadRecordsOrError(colId, records, targetReadErr)) {
+            const auto load = tgt->loadRecordsResult(colId);
+            records = load.records;
+            targetReadErr = load.errorMessage;
+            if (!load.ok()) {
                 targetEmpty = false;   // unknown — must NOT be treated as empty
                 return;
             }
@@ -2880,7 +2904,9 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     qDebug() << "SyncEngineWorker::dispatchFirstSync - target empty, running inline blob mirror for"
              << request.mapping.id;
 
-    IBlobBackend *src = asBlob(srcBackend);
+    IBackendRecordReader *src = recordReader(srcBackend);
+    if (!src)
+        return false;
 
     // Authority: never write to a target that reports read-only for this
     // collection. Read-only targets are also excluded upstream (generator +
@@ -2910,14 +2936,18 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     QList<BackendRecord> srcRecords;
     QMetaObject::invokeMethod(srcBackend,
         [src, colId, &srcRecords, &mirrorReadErr]() {
-            src->loadRecordsOrError(colId, srcRecords, mirrorReadErr);
+            const auto load = src->loadRecordsResult(colId);
+            srcRecords = load.records;
+            mirrorReadErr = load.errorMessage;
         }, Qt::BlockingQueuedConnection);
 
     QList<BackendRecord> tgtRecords;
     if (mirrorReadErr.isEmpty()) {
         QMetaObject::invokeMethod(tgtBackend,
             [tgt, colId, &tgtRecords, &mirrorReadErr]() {
-                (void)tgt->loadRecordsOrError(colId, tgtRecords, mirrorReadErr);
+                const auto load = tgt->loadRecordsResult(colId);
+                tgtRecords = load.records;
+                mirrorReadErr = load.errorMessage;
             }, Qt::BlockingQueuedConnection);
     }
 
@@ -2967,7 +2997,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         }
 
         QMetaObject::invokeMethod(tgtBackend,
-            [tgt, colId, tgtWritable, toCreate, toUpdate, toDelete,
+            [tgtMutator, colId, tgtWritable, toCreate, toUpdate, toDelete,
              &mirrorErrors, &mirrorAliases]() {
                 for (const auto &sr : toCreate) {
                     // O55: capture the backend-assigned id for the alias
@@ -2976,7 +3006,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
                     // pre-O55.
                     QString storedId;
                     if (tgtWritable) {
-                        storedId = tgt->createRecord(colId, sr);
+                        storedId = tgtMutator->createRecord(colId, sr);
                         if (storedId.isEmpty())
                             ++mirrorErrors;
                         else if (storedId != sr.id)
@@ -2984,11 +3014,11 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
                     }
                 }
                 for (const auto &out : toUpdate) {
-                    if (tgtWritable && !tgt->updateRecord(out))
+                    if (tgtWritable && !tgtMutator->updateRecord(out))
                         ++mirrorErrors;
                 }
                 for (const auto &id : toDelete) {
-                    if (tgtWritable && !tgt->deleteRecord(id))
+                    if (tgtWritable && !tgtMutator->deleteRecord(id))
                         ++mirrorErrors;
                 }
             }, Qt::BlockingQueuedConnection);
@@ -3047,8 +3077,10 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(
         return;
     }
 
-    IBlobBackend *src = asBlob(srcBackend);
-    IBlobBackend *tgt = asBlob(tgtBackend);
+    IBackendRecordReader *src = recordReader(srcBackend);
+    IBackendRecordReader *tgt = recordReader(tgtBackend);
+    if (!src || !tgt)
+        return;
     const QString srcColId = request.mapping.sourceCalendar;
     const QString tgtColId = request.mapping.targetCalendar;
 
@@ -3065,7 +3097,9 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(
     QString harvestReadErr;
     QMetaObject::invokeMethod(srcBackend,
         [src, srcColId, &srcRecords, &harvestReadErr]() {
-            (void)src->loadRecordsOrError(srcColId, srcRecords, harvestReadErr);
+            const auto load = src->loadRecordsResult(srcColId);
+            srcRecords = load.records;
+            harvestReadErr = load.errorMessage;
         }, Qt::BlockingQueuedConnection);
     if (!harvestReadErr.isEmpty()) {
         qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - source read failed:"
@@ -3074,7 +3108,9 @@ void SyncEngineWorker::harvestBaselinesAfterFirstSync(
     }
     QMetaObject::invokeMethod(tgtBackend,
         [tgt, tgtColId, &tgtRecords, &harvestReadErr]() {
-            (void)tgt->loadRecordsOrError(tgtColId, tgtRecords, harvestReadErr);
+            const auto load = tgt->loadRecordsResult(tgtColId);
+            tgtRecords = load.records;
+            harvestReadErr = load.errorMessage;
         }, Qt::BlockingQueuedConnection);
     if (!harvestReadErr.isEmpty()) {
         qWarning() << "SyncEngineWorker::harvestBaselinesAfterFirstSync - target read failed:"
@@ -3230,8 +3266,16 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     installRelay(srcBackend);
     if (tgtBackend != srcBackend) installRelay(tgtBackend);
 
-    IBlobBackend *srcBlob = asBlob(srcBackend);
-    IBlobBackend *tgtBlob = asBlob(tgtBackend);
+    IBackendRecordReader *srcBlob = recordReader(srcBackend);
+    IBackendRecordReader *tgtBlob = recordReader(tgtBackend);
+    if (!srcBlob || !tgtBlob) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "dispatchSync: backend lacks record-read capability");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(request.mapping.id, m_currentResult);
+        return true;
+    }
     const QString srcColId  = request.mapping.sourceCalendar;
     const QString tgtColId  = request.mapping.targetCalendar;
     const QString mappingId = request.mapping.id;
@@ -3348,15 +3392,25 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // this is a no-op. For calendar, the plugin's collection-property hooks
     // handle color and description sync.
     //
-    // Baseline is passed as empty for v1: Task 7 deferred persistence wiring
-    // because the old store used CalendarPropertyRecord JSON rather than a
-    // generic QVariantMap. For first-sync runs the baseline is empty anyway.
-    // Subsequent syncs now persist property-baseline snapshots via T9
-    // (unifiedContinueAfterConflicts after successful writes).
-    runPropertyPhase(ops, srcBackend, tgtBackend,
+    QVariantMap collectionBaseline;
+    if (!request.override.clobber && m_baselineStore && m_baselineStoreAnchor) {
+        auto *bbs = m_baselineStore;
+        QMetaObject::invokeMethod(m_baselineStoreAnchor,
+            [bbs, mappingId, srcColId, &collectionBaseline]() {
+                collectionBaseline = bbs->collectionBaseline(mappingId, srcColId);
+            }, Qt::BlockingQueuedConnection);
+    }
+    if (!runPropertyPhase(ops, srcBackend, tgtBackend,
                      srcColId, tgtColId,
-                     /*baseline=*/QVariantMap{},
-                     request.mapping);
+                     collectionBaseline,
+                     request.mapping)) {
+        m_currentResult.success = false;
+        if (m_currentResult.errorMessage.isEmpty())
+            m_currentResult.errorMessage = QStringLiteral("collection property update failed");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return true;
+    }
 
     emit phaseChanged(mappingId, 1);
 
@@ -3492,7 +3546,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             if (srcFetchSucceeded) {
                 srcBackend->recordsFromLastFetch(srcColId, sourceRecords, fetchErr);
             } else {
-                srcBlob->loadRecordsOrError(srcColId, sourceRecords, fetchErr);
+                const auto load = srcBlob->loadRecordsResult(srcColId);
+                sourceRecords = load.records;
+                fetchErr = load.errorMessage;
             }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
@@ -3551,9 +3607,18 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
     // the target fetch is kicked here, for the first time, only once the
     // wipe has completed — never before.
     if (request.override.clobber) {
+        IBackendCollectionWiper *wiper = tgtBackend->collectionWiper();
+        if (!wiper) {
+            m_currentResult.success = false;
+            m_currentResult.errorMessage = QStringLiteral(
+                "clobber: target backend lacks collection-wipe capability");
+            m_currentResult.endTime = QDateTime::currentDateTime();
+            emit syncCompleted(mappingId, m_currentResult);
+            return true;
+        }
         bool wipeOk = false;
-        QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &wipeOk]() {
-            wipeOk = tgtBlob->wipeCollection(tgtColId);
+        QMetaObject::invokeMethod(tgtBackend, [wiper, tgtColId, &wipeOk]() {
+            wipeOk = wiper->wipeCollection(tgtColId);
         }, Qt::BlockingQueuedConnection);
         if (!wipeOk) {
             m_currentResult.success = false;
@@ -3631,7 +3696,9 @@ bool SyncEngineWorker::dispatchSync(const SyncEngineWorker::Request &request)
             if (tgtFetchSucceeded) {
                 tgtBackend->recordsFromLastFetch(tgtColId, targetRecords, fetchErr);
             } else {
-                tgtBlob->loadRecordsOrError(tgtColId, targetRecords, fetchErr);
+                const auto load = tgtBlob->loadRecordsResult(tgtColId);
+                targetRecords = load.records;
+                fetchErr = load.errorMessage;
             }
         }, Qt::BlockingQueuedConnection);
         if (!fetchErr.isEmpty()) {
@@ -4312,8 +4379,16 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         return;
     }
 
-    IBlobBackend *srcBlob = asBlob(srcBackend);
-    IBlobBackend *tgtBlob = asBlob(tgtBackend);
+    IBackendRecordReader *srcBlob = recordReader(srcBackend);
+    IBackendRecordReader *tgtBlob = recordReader(tgtBackend);
+    if (!srcBlob || !tgtBlob) {
+        m_currentResult.success = false;
+        m_currentResult.errorMessage = QStringLiteral(
+            "unifiedContinueAfterConflicts: backend lacks record-read capability");
+        m_currentResult.endTime = QDateTime::currentDateTime();
+        emit syncCompleted(mappingId, m_currentResult);
+        return;
+    }
 
     // Re-derive pipelines from the stored canonical shape.
     // K.9: per-collection shape resolution (see dispatchSync above).
@@ -4369,9 +4444,10 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
     auto applyBatch = [this, &writeFailed, &writeError, &mappingId](
         Kalburator::Shape::RecordWriter *writer,
         SyncBackendBase *backend,
-        IBlobBackend *blobBackend,
+        IBackendRecordReader *blobBackend,
         const QString &colId,
         const QList<BackendRecord> &toWrite,
+        const QList<BackendRecord> &canonicalRecords,
         const QString &backendRegistryId,
         bool notifyHost,
         SyncStats &stats,
@@ -4487,14 +4563,23 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         } else {
             resolveMassDeleteGuard(batch);
 
-            // Kick applyRecords() on the backend thread. This returns
-            // immediately (E5.1's queue contract: it only creates+enqueues
-            // the op) — the actual I/O happens later, asynchronously, off
-            // this invoke.
-            WriteOperation *writeOpRaw = nullptr;
-            QMetaObject::invokeMethod(backend, [backend, colId, &batch, &writeOpRaw]() {
-                writeOpRaw = backend->applyRecords(colId, batch);
+            IBackendRecordApplier *applier = nullptr;
+            QMetaObject::invokeMethod(backend, [backend, &applier]() {
+                applier = backend->recordApplier();
             }, Qt::BlockingQueuedConnection);
+            if (!applier) {
+                writeError = QStringLiteral(
+                    "backend lacks asynchronous record-apply capability");
+            } else {
+
+                // Kick applyRecords() on the backend thread. This returns
+                // immediately (E5.1's queue contract: it only creates+enqueues
+                // the op) — the actual I/O happens later, asynchronously, off
+                // this invoke.
+                WriteOperation *writeOpRaw = nullptr;
+                QMetaObject::invokeMethod(backend, [applier, colId, &batch, &writeOpRaw]() {
+                    writeOpRaw = applier->applyRecords(colId, batch);
+                }, Qt::BlockingQueuedConnection);
             QPointer<SyncOperation> pendingOp = writeOpRaw;
 
             // Await exactly like the existing fetch gates (dispatchSync):
@@ -4520,7 +4605,8 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     teardownLoop.exec();
                 }
             }
-            writeOp = qobject_cast<WriteOperation *>(pendingOp.data());
+                writeOp = qobject_cast<WriteOperation *>(pendingOp.data());
+            }
         }
 
         // Preserves the pre-E5.3 semantics exactly: ANY per-record failure
@@ -4581,18 +4667,30 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
         // the per-record stats accounting above became granular; host
         // notification granularity is out of E5.3's scope.
         if (ok && notifyHost && m_controller) {
+            const QString sourceBackendId = m_currentRequest.mapping.sourceBackend;
+            const QString sourceCalendarId = m_currentRequest.mapping.sourceCalendar;
+            const auto canonicalFor = [&canonicalRecords](const QString &id) {
+                const auto it = std::find_if(canonicalRecords.cbegin(), canonicalRecords.cend(),
+                    [&id](const BackendRecord &record) { return record.id == id; });
+                return it == canonicalRecords.cend() ? QByteArray{} : it->data;
+            };
             for (const auto &r : batch.creates)
                 if (succeeded.contains(r.id))
-                    m_controller->recordChanged(mappingId, r.id,
-                        ISyncHost::ChangeKind::Created);
+                    m_controller->recordChanged({mappingId,
+                        sourceBackendId, sourceCalendarId, r.id,
+                        ISyncHost::ChangeKind::Created, canonicalFor(r.id),
+                        m_unifiedCanonical});
             for (const auto &r : batch.updates)
                 if (succeeded.contains(r.id))
-                    m_controller->recordChanged(mappingId, r.id,
-                        ISyncHost::ChangeKind::Updated);
+                    m_controller->recordChanged({mappingId,
+                        sourceBackendId, sourceCalendarId, r.id,
+                        ISyncHost::ChangeKind::Updated, canonicalFor(r.id),
+                        m_unifiedCanonical});
             for (const auto &id : batch.deletes)
                 if (succeeded.contains(id))
-                    m_controller->recordChanged(mappingId, id,
-                        ISyncHost::ChangeKind::Deleted);
+                    m_controller->recordChanged({mappingId,
+                        sourceBackendId, sourceCalendarId, id,
+                        ISyncHost::ChangeKind::Deleted, {}, m_unifiedCanonical});
         }
 
         // E9.2 (sync-excellence campaign, O34): capture BEFORE deleteLater()
@@ -4658,20 +4756,30 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
             }
         }
-        auto tgtWriter = opsUCC ? opsUCC->createWriter(tgtBackend) : nullptr;
-        if (!tgtWriter)
-            tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
-        applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
-                   m_currentRequest.mapping.targetBackend, /*notifyHost=*/false,
-                   m_currentResult.targetStats, &m_currentResult.appliedTargetRevision,
-                   &targetWriteAliases);
+        if (!writeFailed) {
+            auto tgtWriter = opsUCC ? opsUCC->createWriter(tgtBackend) : nullptr;
+            if (!tgtWriter)
+                tgtWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(tgtBackend);
+            applyBatch(tgtWriter.get(), tgtBackend, tgtBlob, tgtColId, toWrite,
+                       m_unifiedMerge.finalTarget,
+                       m_currentRequest.mapping.targetBackend, /*notifyHost=*/false,
+                       m_currentResult.targetStats, &m_currentResult.appliedTargetRevision,
+                       &targetWriteAliases);
+        }
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
             QMetaObject::invokeMethod(tgtBackend, [tgtBlob, tgtColId, &refetched, &refetchErr]() {
-                tgtBlob->loadRecordsOrError(tgtColId, refetched, refetchErr);
+                const auto load = tgtBlob->loadRecordsResult(tgtColId);
+                refetched = load.records;
+                refetchErr = load.errorMessage;
             }, Qt::BlockingQueuedConnection);
-            for (const auto &r : refetched) writtenTargetHash.insert(r.id, r.contentHash);
+            if (!refetchErr.isEmpty()) {
+                writeFailed = true;
+                writeError = refetchErr;
+            } else {
+                for (const auto &r : refetched) writtenTargetHash.insert(r.id, r.contentHash);
+            }
         }
     }
 
@@ -4698,20 +4806,30 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                 }
             }
         }
-        auto srcWriter = opsUCC ? opsUCC->createWriter(srcBackend) : nullptr;
-        if (!srcWriter)
-            srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
-        applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
-                   m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true,
-                   m_currentResult.sourceStats, &m_currentResult.appliedSourceRevision,
-                   &sourceWriteAliases);
+        if (!writeFailed) {
+            auto srcWriter = opsUCC ? opsUCC->createWriter(srcBackend) : nullptr;
+            if (!srcWriter)
+                srcWriter = std::make_unique<Kalburator::Shape::DefaultBlobWriter>(srcBackend);
+            applyBatch(srcWriter.get(), srcBackend, srcBlob, srcColId, toWrite,
+                       m_unifiedMerge.finalSource,
+                       m_currentRequest.mapping.sourceBackend, /*notifyHost=*/true,
+                       m_currentResult.sourceStats, &m_currentResult.appliedSourceRevision,
+                       &sourceWriteAliases);
+        }
         if (!writeFailed) {
             QList<BackendRecord> refetched;
             QString refetchErr;
             QMetaObject::invokeMethod(srcBackend, [srcBlob, srcColId, &refetched, &refetchErr]() {
-                srcBlob->loadRecordsOrError(srcColId, refetched, refetchErr);
+                const auto load = srcBlob->loadRecordsResult(srcColId);
+                refetched = load.records;
+                refetchErr = load.errorMessage;
             }, Qt::BlockingQueuedConnection);
-            for (const auto &r : refetched) writtenSourceHash.insert(r.id, r.contentHash);
+            if (!refetchErr.isEmpty()) {
+                writeFailed = true;
+                writeError = refetchErr;
+            } else {
+                for (const auto &r : refetched) writtenSourceHash.insert(r.id, r.contentHash);
+            }
         }
     }
 
@@ -4846,13 +4964,14 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
                     if (collProps.contains(k))
                         snapshot.insert(k, collProps.value(k));
                 }
-                if (!snapshot.isEmpty()) {
-                    Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
-                    QMetaObject::invokeMethod(m_baselineStoreAnchor,
-                        [bbs, mappingId, srcColId, snapshot]() {
+                Kalburator::Storage::BaselineStore *bbs = m_baselineStore;
+                QMetaObject::invokeMethod(m_baselineStoreAnchor,
+                    [bbs, mappingId, srcColId, snapshot]() {
+                        if (snapshot.isEmpty())
+                            bbs->removeCollectionBaseline(mappingId, srcColId);
+                        else
                             bbs->setCollectionBaseline(mappingId, srcColId, snapshot);
-                        }, Qt::BlockingQueuedConnection);
-                }
+                    }, Qt::BlockingQueuedConnection);
             }
         }
         // Bug B (conflict-resolution-repair Task 3), consume-once: report the
@@ -4883,7 +5002,7 @@ void SyncEngineWorker::unifiedContinueAfterConflicts()
 // Generic property-phase (Phase Ia.5 Task 7).
 // ----------------------------------------------------------------------------
 
-void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
+bool SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops,
                                         SyncBackendBase *src,
                                         SyncBackendBase *tgt,
                                         const QString &srcCollectionId,
@@ -4892,7 +5011,7 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
                                         const SyncMapping &mapping)
 {
     if (!ops || !src || !tgt) {
-        return;
+        return true;
     }
 
     QVariantMap srcProps;
@@ -4901,48 +5020,79 @@ void SyncEngineWorker::runPropertyPhase(Kalburator::Shape::DomainOperations *ops
     runOnBackendThread(tgt, [&]() { tgtProps = ops->collectionProperties(tgt, tgtCollectionId); });
 
     if (srcProps.isEmpty() && tgtProps.isEmpty() && baseline.isEmpty()) {
-        return;  // nothing to do
+        return true;  // nothing to do
     }
 
     const MapPropertyDiff diff = computeMapDiff(srcProps, tgtProps, baseline);
 
-    // E11 (audit B7 / FINDINGS O39): applyCollectionProperties() is void and
-    // its result was never consumed here even when it ran synchronously —
-    // this call was always fire-and-forget from runPropertyPhase's
-    // perspective. Now that CalendarDomainOperations::applyCollectionProperties
-    // uses updateCalendarAsync internally (no nested QEventLoop on the
-    // backend thread), a plain queued marshal onto the backend's own thread
-    // is enough; no blocking wait needed. By-value captures because the
-    // queued call outlives this function's stack frame.
-    if (!diff.toApplyToTarget.isEmpty()) {
-        QMetaObject::invokeMethod(tgt, [ops, tgt, tgtCollectionId, props = diff.toApplyToTarget]() {
-            ops->applyCollectionProperties(tgt, tgtCollectionId, props);
+    QString applyError;
+    auto applyAndWait = [&](SyncBackendBase *backend, const QString &collectionId,
+                            const QVariantMap &props) {
+        if (props.isEmpty()) return true;
+        bool ok = false;
+        applyError.clear();
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+            applyError = QStringLiteral("collection property update timed out");
+            loop.quit();
         });
+        QMetaObject::invokeMethod(backend, [&, backend, collectionId, props]() {
+            ops->applyCollectionProperties(backend, collectionId, props,
+                [&](bool completedOk, const QString &message) {
+                    ok = completedOk;
+                    applyError = message;
+                    loop.quit();
+                });
+        });
+        timeout.start(30000);
+        loop.exec();
+        return ok;
+    };
+
+    if (!diff.toApplyToTarget.isEmpty()) {
+        if (!applyAndWait(tgt, tgtCollectionId, diff.toApplyToTarget)) {
+            m_currentResult.errorMessage = applyError.isEmpty()
+                ? QStringLiteral("target collection property update failed") : applyError;
+            return false;
+        }
     }
 
     if (mapping.mode == SyncMode::TwoWay && !diff.toApplyToSource.isEmpty()) {
-        QMetaObject::invokeMethod(src, [ops, src, srcCollectionId, props = diff.toApplyToSource]() {
-            ops->applyCollectionProperties(src, srcCollectionId, props);
-        });
+        if (!applyAndWait(src, srcCollectionId, diff.toApplyToSource)) {
+            m_currentResult.errorMessage = applyError.isEmpty()
+                ? QStringLiteral("source collection property update failed") : applyError;
+            return false;
+        }
     }
 
-    // Conflict handling (v1, Task 7): resolve all conflicts as SourceWins.
-    // This matches the existing computePropertyDiff() default. Task 10 will
-    // honor mapping.conflictPolicy and may surface AskUser conflicts via the
-    // proper pause/resume mechanism.
+    // Resolve property conflicts using the mapping policy.
     if (!diff.conflicts.isEmpty()) {
-        QVariantMap fromSrc;
-        for (const QString &k : diff.conflicts) {
-            if (srcProps.contains(k)) {
-                fromSrc.insert(k, srcProps.value(k));
-            }
+        if (mapping.conflictPolicy == ConflictResolution::AskUser) {
+            m_currentResult.errorMessage = QStringLiteral("collection property conflict requires user resolution");
+            return false;
         }
-        if (!fromSrc.isEmpty()) {
-            QMetaObject::invokeMethod(tgt, [ops, tgt, tgtCollectionId, fromSrc]() {
-                ops->applyCollectionProperties(tgt, tgtCollectionId, fromSrc);
-            });
+        const bool sourceWins = mapping.conflictPolicy != ConflictResolution::TargetWins;
+        QVariantMap winner;
+        for (const QString &k : diff.conflicts) {
+            const QVariant value = sourceWins ? srcProps.value(k) : tgtProps.value(k);
+            winner.insert(k, value);
+        }
+        if (sourceWins) {
+            if (!applyAndWait(tgt, tgtCollectionId, winner)) {
+                m_currentResult.errorMessage = applyError.isEmpty()
+                    ? QStringLiteral("conflict resolution property update failed") : applyError;
+                return false;
+            }
+        } else if (mapping.mode == SyncMode::TwoWay &&
+                   !applyAndWait(src, srcCollectionId, winner)) {
+            m_currentResult.errorMessage = applyError.isEmpty()
+                ? QStringLiteral("conflict resolution property update failed") : applyError;
+            return false;
         }
     }
+    return true;
 }
 
 } // namespace Kalburator::Engine

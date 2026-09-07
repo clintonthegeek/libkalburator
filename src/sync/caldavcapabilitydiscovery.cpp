@@ -1,4 +1,4 @@
-#include "caldavcapabilitydiscovery.h"
+#include <kalburator/sync/caldavcapabilitydiscovery.h>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>

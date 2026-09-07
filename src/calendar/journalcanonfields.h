@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lossprofile.h"
+#include <kalburator/shape/lossprofile.h>
 
 #include <KCalendarCore/Journal>
 #include <QByteArray>
