@@ -53,6 +53,11 @@ void CalendarJournal::truncate(const QString &calendarId)
     m_journal.truncate(calendarId);
 }
 
+void CalendarJournal::discardPrefix(const QString &calendarId, int count)
+{
+    m_journal.discardPrefix(calendarId, count);
+}
+
 bool CalendarJournal::hasJournal(const QString &calendarId) const
 {
     return m_journal.hasJournal(calendarId);

@@ -17,6 +17,7 @@ private slots:
     void testAppendDeletion();
     void testAppendDeletionWithRecurrenceId();
     void testTruncateAfterSync();
+    void testDiscardSubmittedPrefix();
     void testReplayRoundTrip();
     void testMultipleCalendars();
     void testCalendarsWithJournals();
@@ -109,6 +110,28 @@ void CalendarJournalTest::testTruncateAfterSync()
     QVERIFY(!journal.hasJournal(QStringLiteral("work")));
 }
 
+void CalendarJournalTest::testDiscardSubmittedPrefix()
+{
+    QTemporaryDir tmpDir;
+    QVERIFY(tmpDir.isValid());
+    CalendarJournal journal(tmpDir.path());
+
+    auto first = KCalendarCore::Event::Ptr::create();
+    first->setUid(QStringLiteral("submitted"));
+    auto later = KCalendarCore::Event::Ptr::create();
+    later->setUid(QStringLiteral("later"));
+    journal.appendCreation(QStringLiteral("work"), first);
+    journal.appendCreation(QStringLiteral("work"), later);
+
+    journal.discardPrefix(QStringLiteral("work"), 1);
+
+    QStringList remaining;
+    QCOMPARE(journal.replay(QStringLiteral("work"), [&](const QJsonObject &entry) {
+        remaining.append(entry[QStringLiteral("uid")].toString());
+    }), 1);
+    QCOMPARE(remaining, QStringList{QStringLiteral("later")});
+}
+
 void CalendarJournalTest::testReplayRoundTrip()
 {
     QTemporaryDir tmpDir;
@@ -192,4 +215,3 @@ void CalendarJournalTest::testCalendarsWithJournals()
 
 QTEST_MAIN(CalendarJournalTest)
 #include "tst_calendarjournal.moc"
-

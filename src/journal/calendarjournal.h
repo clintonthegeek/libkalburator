@@ -36,6 +36,9 @@ public:
     /** Delete the journal file for @p calendarId after successful sync. */
     void truncate(const QString &calendarId);
 
+    /** Acknowledge only the submitted prefix of a calendar journal. */
+    void discardPrefix(const QString &calendarId, int count);
+
     /** True if a non-empty journal exists for @p calendarId. */
     bool hasJournal(const QString &calendarId) const;
 

@@ -470,7 +470,7 @@ void LocalBackend::startSync(const QString &collectionId,
 {
     if (!calendar) {
         qWarning() << "LocalBackend::startSync: Null calendar provided";
-        emit syncCompleted(collectionId);
+        emit syncFailed(collectionId, QStringLiteral("null calendar"));
         return;
     }
 
@@ -498,7 +498,7 @@ void LocalBackend::startSync(const QString &collectionId,
     if (!calDir.exists()) {
         if (!calDir.mkpath(".")) {
             qWarning() << "LocalBackend::startSync: Failed to create calendar directory" << calDir.path();
-            emit syncCompleted(collectionId);
+            emit syncFailed(collectionId, QStringLiteral("failed to create calendar directory"));
             return;
         }
     }
@@ -563,7 +563,11 @@ void LocalBackend::onAsyncWritesFinished(int successCount, int failCount)
         m_asyncWriter->stop();
     }
 
-    emit syncCompleted(m_pendingSyncCollectionId);
+    if (failCount > 0)
+        emit syncFailed(m_pendingSyncCollectionId,
+                        QStringLiteral("%1 local write(s) failed").arg(failCount));
+    else
+        emit syncCompleted(m_pendingSyncCollectionId);
     m_pendingSyncCollectionId.clear();
 }
 

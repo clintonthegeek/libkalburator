@@ -342,6 +342,11 @@ public:
     RecurrenceLossInfo analyzeRecurrenceLoss(const KCalendarCore::Incidence::Ptr &incidence) const;
 
 Q_SIGNALS:
+    /// A calendar save submission did not durably accept all requested work.
+    /// Consumers must retain the submission for retry rather than treating the
+    /// legacy syncCompleted signal as an unconditional acknowledgement.
+    void syncFailed(const QString &collectionId, const QString &errorMessage);
+
     // ========== Calendar Discovery & Loading Events ==========
 
     void calendarDiscovered(const QString &collectionId, const QString &calendarId);

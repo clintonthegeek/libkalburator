@@ -43,6 +43,45 @@ void CrashJournal::truncate(const QString &entityId)
         QFile::remove(path);
 }
 
+void CrashJournal::discardPrefix(const QString &entityId, int count)
+{
+    if (count <= 0)
+        return;
+
+    const QString path = journalPath(entityId);
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+
+    QList<QByteArray> remaining;
+    int discarded = 0;
+    while (!file.atEnd()) {
+        const QByteArray line = file.readLine();
+        if (line.trimmed().isEmpty())
+            continue;
+        if (discarded < count) {
+            ++discarded;
+            continue;
+        }
+        remaining.append(line);
+    }
+    file.close();
+
+    if (remaining.isEmpty()) {
+        QFile::remove(path);
+        return;
+    }
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        qCWarning(lcCrashJournal) << "Failed to rewrite journal for" << entityId
+                                  << ":" << file.errorString();
+        return;
+    }
+    for (const QByteArray &line : remaining)
+        file.write(line);
+    file.flush();
+}
+
 bool CrashJournal::hasJournal(const QString &entityId) const
 {
     const QString path = journalPath(entityId);

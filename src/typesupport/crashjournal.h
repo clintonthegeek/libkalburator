@@ -32,6 +32,15 @@ public:
     /** Delete the journal file for @p entityId. */
     void truncate(const QString &entityId);
 
+    /**
+     * Remove the first @p count durable entries while preserving later ones.
+     *
+     * A successful asynchronous submission acknowledges only the prefix that
+     * was present when it was dispatched.  Entries appended while it was in
+     * flight must remain recoverable.
+     */
+    void discardPrefix(const QString &entityId, int count);
+
     /** True if a non-empty journal exists for @p entityId. */
     bool hasJournal(const QString &entityId) const;
 
