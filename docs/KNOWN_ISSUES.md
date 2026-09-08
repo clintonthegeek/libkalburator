@@ -9,19 +9,19 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-032 — Production synchronization ownership is not certified
 
-- **State:** INVESTIGATING
+- **State:** IN PROGRESS 2026-09-08
 - **Affects:** PlanStan production collection load, edit, save, topology,
   account/discovery, conflict, and close workflows; dependent library claims.
-- **Evidence:** historical `DONE` adapter and direct-runtime tests do not
-  exercise the real `CollectionController` host path. The 2026-09-07 baseline
-  review found unverified topology commits, policy/secret input wiring, save
-  acknowledgment boundaries, and legacy construction paths.
-- **Required outcome:** the AUD-003 host fixture is complete. Execute the
-  finite STB completion queue through topology, save acknowledgment, identity,
-  desired-state, policy/credentials, account/discovery/conflict, lifecycle,
-  single-owner cutover, and workflow certification. No release or
-  migration-completion claim is valid before STB-017.
-- **Tasks:** STB-001 through STB-017. Historical TOP/RUN/PS/TST/FTR tasks are
+- **Evidence:** STB-001 through STB-010 are complete. The real
+  `CollectionController` host fixture passes for runtime-owned topology,
+  policy, credentials, account/discovery, and conflict paths. The remaining
+  gap is the application-side duplicate ownership of live backend/executor
+  instances (`m_backends`, `m_backendExecutors`) that should be owned solely by
+  `CollectionRuntime`.
+- **Required outcome:** route the complete live slice through one runtime and
+  remove redundant live construction in the same patch; retain staging, undo,
+  journals, and configuration intent in PlanStan.
+- **Tasks:** STB-011 through STB-017. Historical TOP/RUN/PS/TST/FTR tasks are
   implementation evidence and are reopened only for a directly reproduced
   regression in their stated contract.
 

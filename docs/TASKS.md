@@ -521,7 +521,7 @@ the programme.
 
 ### STB-011 — Transfer operational ownership to one runtime
 
-- **State:** QUEUED
+- **State:** IN PROGRESS 2026-09-08
 - **Depends on:** STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010
 - **Repository:** `../PlanStan`, `../libkalburator`
 - **Scope:** Baseline O. Trace production load/save/query/account/sync instances,
@@ -532,6 +532,9 @@ the programme.
   application executor races the runtime owner.
 - **Verification:** extend the real host fixture with instance accounting and C
   completion controls; run affected consumer integration tests.
+- **Progress (2026-09-08):** starting with PlanStan host fixture and
+  `CollectionController` instance tracing to identify which production paths still
+  construct or hold `SyncBackend`/`BackendExecutor` instances outside the runtime.
 
 ### STB-012 — Integrate application close as a lifecycle transaction
 
