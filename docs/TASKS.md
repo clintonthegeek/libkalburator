@@ -541,6 +541,17 @@ the programme.
   host fixture now asserts that after load the source and target endpoints are
   reachable as `Kalburator::Sync::SyncBackend` objects, the runtime is installed,
   and the legacy characterization graph is still not constructed.
+- **Verification (2026-09-08):** the runtime/adapter host lane built and passed
+  8/8: `tst_planstan_local_runtime_integration`,
+  `tst_collectioncontroller_runtime_host`,
+  `tst_collection_runtime_definition_compiler`,
+  `tst_collection_runtime_run_adapter`,
+  `tst_collection_runtime_conflict_adapter`,
+  `tst_collection_runtime_account_adapter`,
+  `tst_collection_runtime_discovery_adapter`, and
+  `tst_collection_runtime_topology_adapter`. Remaining acceptance: the controller
+  must stop creating its own `m_backends`/`m_backendExecutors` duplicates and use
+  the runtime-owned objects for discovery, loading, and save paths.
 
 ### STB-012 — Integrate application close as a lifecycle transaction
 
