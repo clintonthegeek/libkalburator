@@ -205,6 +205,7 @@ public:
             RuntimeEvent event;
             event.kind = RuntimeEvent::Kind::ProviderStateChanged;
             event.objectId = providerId;
+            event.providerId = providerId;
             event.providerState = state;
             const auto it = std::find_if(m_snapshot.providers.cbegin(),
                                          m_snapshot.providers.cend(),
@@ -227,6 +228,7 @@ public:
             RuntimeEvent event;
             event.kind = RuntimeEvent::Kind::ProviderStateChanged;
             event.objectId = providerId;
+            event.providerId = providerId;
             event.providerState = m_providerManager->providerState(providerId);
             event.providerCollections = collections;
             const auto it = std::find_if(m_snapshot.providers.cbegin(),
@@ -246,6 +248,7 @@ public:
             RuntimeEvent event;
             event.kind = RuntimeEvent::Kind::ProviderStateChanged;
             event.objectId = providerId;
+            event.providerId = providerId;
             event.providerState = m_providerManager->providerState(providerId);
             event.providerError = Kalburator::Sync::redactCredentials(message);
             emitEvent(event);
