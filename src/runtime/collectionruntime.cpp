@@ -376,6 +376,14 @@ public:
 
     RuntimeSnapshot snapshot() const override { return m_snapshot; }
 
+    QObject *backendObject(const QString &endpointId) const override
+    {
+        const auto it = m_endpointExecutors.find(endpointId);
+        if (it == m_endpointExecutors.end() || !it->second)
+            return nullptr;
+        return it->second->backendObject();
+    }
+
     void refreshProviderSnapshot(const QString &providerId)
     {
         auto *provider = m_providerManager->providerById(providerId);

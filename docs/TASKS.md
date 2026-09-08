@@ -535,6 +535,12 @@ the programme.
 - **Progress (2026-09-08):** starting with PlanStan host fixture and
   `CollectionController` instance tracing to identify which production paths still
   construct or hold `SyncBackend`/`BackendExecutor` instances outside the runtime.
+- **Progress (continued 2026-09-08):** added the O1 bridge contract
+  `CollectionRuntime::backendObject(endpointId)` so the host can reach a
+  runtime-owned backend without taking a second ownership share. The production
+  host fixture now asserts that after load the source and target endpoints are
+  reachable as `Kalburator::Sync::SyncBackend` objects, the runtime is installed,
+  and the legacy characterization graph is still not constructed.
 
 ### STB-012 — Integrate application close as a lifecycle transaction
 

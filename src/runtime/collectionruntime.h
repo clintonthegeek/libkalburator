@@ -305,6 +305,12 @@ public:
                                                      QString &errorMessage);
 
     virtual RuntimeSnapshot snapshot() const = 0;
+    /// Return the QObject wrapper for a materialized endpoint, or nullptr if
+    /// the id is not known.  The pointer remains valid only for the runtime's
+    /// lifetime; consumers must not store it or delete it.  This is the narrow
+    /// bridge that lets the host reach a runtime-owned backend for discovery
+    /// and loading without taking a second ownership share.
+    virtual QObject *backendObject(const QString &endpointId) const = 0;
     virtual void setEventSink(std::function<void(const RuntimeEvent &)> sink) = 0;
     virtual bool addProvider(const Kalburator::Sync::BackendConfiguration &config,
                              QString &errorMessage) = 0;
