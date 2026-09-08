@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Phase F2 — cancellation contract for SyncEngine's QFuture-based
 // public API. Stubs are unskipped as the enabling infrastructure

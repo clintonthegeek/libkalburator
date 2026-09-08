@@ -21,7 +21,8 @@ production sync target and is not installed yet.
 
 Public source headers use `kalburator/<domain>/<header>` paths, and the build
 and install layouts preserve that domain namespace. Export/package metadata is
-still deferred to BLD-007.
+installed by BLD-007: a `find_package(Kalburator CONFIG)` consumer outside the
+source tree builds and links against the exported, namespaced targets.
 
 | Consumer | Source configuration | Current repository pin | Notes |
 |---|---|---|---|
@@ -30,13 +31,23 @@ still deferred to BLD-007.
 
 The consumers' source CMake files, not copied status prose, are authoritative for pins.
 
-## Current version mismatch
+## Version and license policy
 
-- CMake project version: `0.2.4`.
-- Repository release tags: through `v1.05`.
-- No installed package version or compatibility file exists.
+`VERSION` is the sole version source. CMake reads it before `project()`, so
+`PROJECT_VERSION` and future installed-package metadata use exactly that value.
+The release tag for a distributable build must be `v` followed by the unchanged
+contents of `VERSION`; release automation must reject a mismatch. The current
+development version is `0.2.4`.
 
-This mismatch must be resolved before a distributable release.
+The project is licensed **GPL-3.0-only**. The root `LICENSE` file is the
+authoritative license text; SPDX identifiers, where present, use the same
+designation.
+
+The historical tags through `v1.05`, plus campaign and stabilization tags, are
+internal integration snapshots. They are not package releases, do not establish
+semantic-version compatibility, and do not override `VERSION`. The first
+distributable release may introduce the first release tag that follows this
+policy after the install/export gate is met.
 
 ## Schema policy during consolidation
 

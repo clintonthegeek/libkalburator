@@ -1,6 +1,6 @@
 # Feature status
 
-**Last verified:** 2026-09-06
+**Last verified:** 2026-09-08
 **Maturity labels:**
 
 - **Integrated** — exercised by PlanStan or WildPalms production code.
@@ -16,7 +16,7 @@ The generated [CONVERGENCE_MATRIX.md](CONVERGENCE_MATRIX.md) records detailed cr
 
 | Identity substrate | Maturity | Consumers | Important limits |
 |---|---|---|---|
-| Cross-domain `IdentityStore` and `PersonDirectory` | Implemented | PlanEngine requested; existing identity tests | Source-tree target only; no install/export package |
+| Cross-domain `IdentityStore` and `PersonDirectory` | Implemented | PlanEngine requested; existing identity tests | Installed via `Kalburator::Identity`; no stable API promise during consolidation |
 
 | Capability | Maturity | Consumers | Important limits |
 |---|---|---|---|
@@ -74,7 +74,7 @@ The generated [CONVERGENCE_MATRIX.md](CONVERGENCE_MATRIX.md) records detailed cr
 | Google/Microsoft lab CLIs and live probes | Experimental | Valuable verification tools, not consumer workflows |
 | Fake DAV/vendor servers | Integrated | Reusable CalDAV/CardDAV fixtures are provided by `Kalburator::TestSupport` in test-enabled source builds |
 | Test coverage report | Implemented | `test-report` distinguishes hermetic, optional, live-credential, consumer-contract, executed, and runtime-skipped coverage |
-| Reference consumer | Implemented | Proves an in-tree engine seam, not installed packaging |
+| Reference consumer | Implemented | In-tree engine seam and an external `find_package(Kalburator)` consumer build verified against the installed package |
 
 ## Known incomplete implementations
 
@@ -93,4 +93,4 @@ The generated [CONVERGENCE_MATRIX.md](CONVERGENCE_MATRIX.md) records detailed cr
 - Raw-files and generic-SQLite remain explicit configured backends, not stock provider contributions; their null registry entries were removed.
 - Snapshot restore was removed as an unused stub, and reconciliation reset/recovery is runtime-owned while PlanStan alone replays staged user-edit journals.
 - Google and Microsoft implementations lack consumer-ready provider/configuration integration.
-- No installed package or stable public headers exist.
+- Installed package and namespaced public headers exist for the exported targets; no stable API promise during consolidation.

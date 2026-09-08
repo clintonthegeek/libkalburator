@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Architectural-redress Plan 8 step 3 (2026-06-10) — pins the CANONICAL
 // single-mapping cancel contract after the dual future-interface collapse.

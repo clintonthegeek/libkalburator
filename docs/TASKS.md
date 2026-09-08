@@ -1,22 +1,58 @@
 # Task queue
 
-**Last updated:** 2026-09-07
+**Last updated:** 2026-09-07 (stabilization completion queue restored)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
-They do not certify the production consumer workflows until `AUD-003` records
-current, reproducible evidence. Reopen only the exact task contradicted by that
-evidence; retain its prior result and verification under a historical heading.
+They do not certify the production consumer workflows: `AUD-003` established
+the host evidence, and `STB-013` is the workflow-certification gate. Reopen
+only the exact task contradicted by new evidence; retain its prior result and
+verification under a historical heading.
 
 States: `READY`, `IN PROGRESS`, `QUEUED`, `BLOCKED`, `DONE`, `REMOVED`.
 
 ## Now
 
 Work top to bottom unless a task is blocked or the user chooses otherwise.
+`STB-*` is the authoritative completion queue for the production-stabilization
+programme defined in PlanStan's maintained architecture and baseline documents.
+The older `DONE` tasks below remain useful implementation evidence, but do not
+make the corresponding real application workflow certified.  Keep exactly one
+task `IN PROGRESS`; the first unblocked task is deliberately the only `READY`
+entry until it is completed and the next selected task is promoted.
 
 | Order | Task | State | Depends on | Outcome |
 |---:|---|---|---|---|
-| 1 | AUD-003 | READY | — | Establish the tagged cross-repository baseline and real PlanStan host fixture |
+| 1 | STB-001 | DONE 2026-09-07 | AUD-003 | Safe runtime topology transaction under invalid, failed, held, and reentrant operations |
+| 2 | STB-002 | DONE 2026-09-07 | AUD-003 | Revision-bounded staging save acknowledgments and recovery |
+| 3 | STB-003 | DONE 2026-09-07 | AUD-003 | Exact record and generated-occurrence identity end to end |
+| 4 | STB-004 | DONE 2026-09-08 | STB-001 | One durable production desired-state commit |
+| 5 | STB-005 | DONE 2026-09-08 | STB-004 | Production run policy and trigger wiring |
+| 6 | STB-006 | DONE 2026-09-08 | STB-004 | Credential reference/materialization wiring |
+| 7 | STB-007 | DONE 2026-09-08 | STB-004 | Account and discovery production wiring |
+| 8 | STB-008 | DONE 2026-09-08 | STB-004, STB-005 | Conflict interaction and truthful terminal results |
+| 9 | STB-009 | DONE 2026-09-08 | STB-003 | Shared recurrence/occurrence query adopted by all calendar views |
+| 10 | STB-010 | DONE 2026-09-08 | STB-001 | Runtime cancellation, executor dispatch, and worker teardown safety |
+| 11 | STB-011 | QUEUED | STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010 | One operational runtime owner for the full PlanStan slice |
+| 12 | STB-012 | QUEUED | STB-011 | Application close lifecycle integration |
+| 13 | STB-013 | QUEUED | STB-009, STB-012 | Certified local and hermetic-DAV desktop workflow matrix |
+| 14 | STB-014 | QUEUED | STB-013 | Retire legacy characterization paths after replacement evidence |
+| 15 | STB-015 | QUEUED | STB-014 | Independent-consumer and package proof |
+| 16 | STB-016 | QUEUED | STB-013 | Measured desktop responsiveness and polish |
+| 17 | STB-017 | QUEUED | STB-014, STB-015, STB-016 | Final stabilization/release evidence and closure decision |
+
+The detailed scope, source-entry map, fixtures, and acceptance cases for these
+tasks are maintained in `../PlanStan/docs/architecture.md` under
+“Stabilization strategy and execution gates.”  The compact mapping in
+`../PlanStan/docs/stabilization-baseline.md` is the required starting point for
+new agents.  Update this queue, the corresponding task record, and affected
+architecture facts in the same change; do not create a parallel campaign.
+
+## Historical implementation evidence
+
+| Order | Task | State | Depends on | Outcome |
+|---:|---|---|---|---|
+| 1 | AUD-003 | DONE 2026-09-07 | — | Established the tagged cross-repository baseline and real PlanStan host fixture |
 | 2 | AUD-001 | DONE 2026-09-04 | — | Revalidated completed gates and reordered remaining work |
 | 2 | SAF-005 | DONE 2026-09-04 | SAF-002, PS-002 | Restored a clean executor-owned default lifecycle baseline |
 | 3 | TST-001 | DONE 2026-09-04 | SAF-001 | Separate executed, skipped, optional, and live coverage |
@@ -100,6 +136,17 @@ predecessor is `DONE`; external decisions are roots, never task back-edges.
 | PS-008 + BLD-005 | FTR-001 |
 | WP-009 + BLD-005 | FTR-002 |
 | FTR-001 + FTR-002 + FTR-003 + FTR-004 + FTR-005 + consumer request | FTR-006 |
+| AUD-003 | STB-001, STB-002, STB-003 |
+| STB-001 | STB-004, STB-010 |
+| STB-003 | STB-009 |
+| STB-004 | STB-005, STB-006, STB-007, STB-008 |
+| STB-005 | STB-008 |
+| STB-002 + STB-003 + STB-004 + STB-005 + STB-006 + STB-007 + STB-008 + STB-010 | STB-011 |
+| STB-011 | STB-012 |
+| STB-009 + STB-012 | STB-013 |
+| STB-013 | STB-014, STB-016 |
+| STB-014 | STB-015, STB-017 |
+| STB-015 + STB-016 | STB-017 |
 
 The former monolithic `PS-008` has been decomposed. Preparatory PlanStan
 adapters may land independently, but they stay inert until `PS-016` performs
@@ -128,13 +175,445 @@ queue for this refactor. A fresh agent working from this repository must:
 4. update the task's state/result/verification and affected maintained docs or
    issue records here in the same change.
 
-Preparatory adapters must have tests and no production caller until `PS-016`.
-This makes each slice independently reviewable without allowing the old and new
-runtime graphs to execute side by side.
+Preparatory work must have tests and must not activate a second live graph.
+`STB-011` is the sole operational-ownership transfer: it routes the complete
+application slice through one runtime and removes redundant live construction
+in the same patch.
+
+## Stabilization completion tasks
+
+These task records turn the A–L stabilization deliverables into the finite
+completion queue above.  The PlanStan architecture document supplies the
+source-entry and fixture map; each record below states the non-negotiable
+acceptance boundary so an agent can take one bounded slice without relitigating
+the programme.
+
+### STB-001 — Make runtime topology application transaction-safe
+
+- **State:** DONE 2026-09-07
+- **Depends on:** AUD-003
+- **Repository:** `../libkalburator`, with PlanStan host evidence as needed
+- **Scope:** Baseline slice B. Validate a whole proposed topology before any
+  external effect; define safe behavior for submission during a run; preserve
+  executor affinity and reject reentrant topology/run/provider mutation.
+- **Acceptance:** malformed later input leaves no earlier durable, published, or
+  physical effect. A second fallible mutation after a successful first one either
+  restores the committed state or publishes an explicit compensation/repair
+  requirement. A held backend run cannot have its executor replaced or freed.
+  Tests cover held-run, reentrant-command, failed compensation, configuration,
+  published topology, and physical effects—not only return values.
+- **Verification:** focused libkalburator runtime topology tests plus affected
+  PlanStan topology-adapter/host tests. Record the exact failing case before a
+  behavior change and the remaining acceptance case afterward.
+- **Progress (2026-09-07):** added
+  `topologyReplacementIsRejectedWhileRunIsActive` to the runtime contract. It
+  held a delayed mapped run, then reproduced executor replacement during that
+  run (the unguarded test hung after the replacement). `applyTopology()` now
+  rejects admission before any provider, endpoint, durable, or physical effect
+  while `m_running` is true. The focused test passes. Added
+  `invalidLaterCollectionMutationHasNoEarlierPhysicalEffect`: it reproduced a
+  create reaching the backend before a later id-less mutation was rejected.
+  `applyTopology()` now prevalidates the entire mutation batch's endpoints,
+  ids, capability requirements, and rename destination before durable or
+  physical effects; the focused test and full runtime contract pass. Remaining
+  acceptance: `failedLaterCollectionMutationCompensatesEarlierCreate` proves a
+  second valid physical failure deletes the first create without a false repair
+  claim, and `reentrantTopologyCommandIsRejectedDuringCommitNotification`
+  proves nested topology admission is rejected. Full runtime contract passes.
+  Factory-created physical mutations and compensation now dispatch through
+  their `BackendExecutor`; the compensation fixture records both calls on the
+  executor thread. Provider-owned backends now have the same narrow executor
+  dispatch capability through `ProviderManager`, without exposing ownership.
+  `reentrantRunAndProviderCommandsAreRejectedDuringTopologyCommit` rejects
+  nested run and provider commands. The refreshed full runtime contract passes
+  after a clean Qt 6.11.2/toolchain rebuild.
+- **Result:** topology admission is now transaction-safe for the bounded
+  contract: active work, malformed later mutations, later physical failures,
+  executor affinity, and nested command admission have executable coverage.
+- **Verification result:** built `tst_planstan_runtime_contract`; focused
+  held-run, invalid-batch, compensation/affinity, topology-reentrancy, and
+  run/provider-reentrancy tests pass; full
+  `ctest --test-dir build -R '^tst_planstan_runtime_contract$'
+  --output-on-failure` passes 1/1 after clean regeneration.
+- **Next:** STB-004 once durable runtime topology safety is demonstrated.
+
+### STB-002 — Acknowledge only the submitted edit revision
+
+- **State:** DONE 2026-09-07
+- **Depends on:** AUD-003
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline slice C. Add a submission identity/revision boundary across
+  staging, persistence completion, and journals; retain PlanStan ownership of
+  edit drafts and recovery.
+- **Acceptance:** hold save A, make edit B, finish A: B remains dirty and
+  recoverable. Failure, partial success, retry, close/reopen, and recovery keep
+  the correct disk contents, in-memory state, and journal suffix; retries neither
+  duplicate mutations nor truncate a newer revision.
+- **Verification:** delayed-write, multi-calendar, success/failure, and restart
+  fixtures from `StagingController` and journal test entry points.
+- **Progress (2026-09-07):** C1 implemented: `StagingController` detaches an
+  immutable in-flight submission, retains later edits in live staging, and
+  acknowledges only the matching append-only journal prefix. `CalendarJournal`
+  now exposes `discardPrefix()`. `syncFailed` restores the held submission for
+  retry rather than falsely acknowledging it; `LocalBackend` emits it for
+  asynchronous write failures. Characterization covers held A → staged B → A
+  completion → B-only retry and durable B suffix. C2 coverage now includes
+  failure restoration/retry, held multi-calendar completion (no prefix is
+  retired until every calendar completes), and close/reopen recovery of B only.
+- **Result (2026-09-07):** Accepted local save batches are immutable while in
+  flight. `syncCompleted` retires their journal prefix only after every
+  dispatched calendar reports completion; `syncFailed` restores the full batch
+  ahead of later edits, with the journal intact. Local asynchronous write
+  failures now signal `syncFailed` rather than success.
+- **Verification (2026-09-07):**
+  `cmake --build build-dev --target tst_stagingcontroller_acknowledgment
+  tst_journalrecoverycoordinator -j2`; `ctest --test-dir build-dev -R
+  '^(tst_stagingcontroller_acknowledgment|tst_journalrecoverycoordinator)$'
+  --output-on-failure` (2/2 passed); `cmake --build build --target
+  tst_calendarjournal -j2`; `ctest --test-dir build -R '^tst_calendarjournal$'
+  --output-on-failure` (1/1 passed). PlanStan `078b17e9`, libkalburator
+  `ba1fc59`; local PlanStan build uses
+  `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR=/home/clinton/dev/libkalburator`.
+- **Next:** STB-003 exact calendar/UID/recurrence/occurrence identity.
+
+### STB-003 — Preserve exact record and occurrence identity
+
+- **State:** DONE 2026-09-07
+- **Depends on:** AUD-003
+- **Repository:** `../PlanStan`, `../libkalcal`
+- **Scope:** Baseline slice D. Carry existing calendar, UID, recurrence ID, and
+  generated-occurrence-start identity through mutation, staging, model,
+  selection, drag, and editor paths.
+- **Acceptance:** deleting a detached exception preserves its master and
+  siblings; equal UIDs in two calendars are independent; a selected third
+  occurrence survives an unrelated model update and still targets that
+  occurrence. Add exact tests before replacing UID-only behavior.
+- **Verification:** incidence mutator, recurrence editing, persisted-reopen, and
+  agenda selection fixtures.
+- **Progress (2026-09-07):** Agenda selection/reload now keys rendered
+  occurrences by `(UID, calendarId, occurrenceStart)` rather than selecting the
+  first UID/calendar match. The view also projects occurrenceStart into
+  `IncidenceRef` and detects same-UID selection changes. Characterization test
+  selects the third generated daily occurrence, mutates unrelated model data,
+  reloads, and verifies that exact occurrence remains selected. PlanStan
+  `223a2470`, libkalcal `2324d24`; `ctest --test-dir build-dev -R
+  '^tst_agenda_selection_identity$' --output-on-failure` passed 1/1.
+- **Progress (continued 2026-09-07):** recurrence-aware staged deletion now
+  reaches the backend as the existing `uid + recurrence-id` record identity,
+  rather than collapsing to the master's bare UID. The held-backend fixture
+  asserts that a detached exception submits only its composite identity.
+  PlanStan `18532712`; focused staging and agenda tests pass 2/2.
+- **Result (2026-09-07):** Stored incidence identity remains `(calendarId,
+  UID, recurrenceId)`; detached exception deletion is dispatched using the
+  corresponding composite record identity. Agenda view state adds generated
+  occurrence start, so a reload restores the selected occurrence rather than
+  an arbitrary same-UID item.
+- **Verification (2026-09-07):** `ctest --test-dir build-dev -R
+  '^(tst_globalincidencemodel|tst_incidencemutator|tst_stagingcontroller_acknowledgment|tst_agenda_selection_identity)$'
+  --output-on-failure` (4/4 passed); `ctest --test-dir build-dev -R
+  '^integration_recurrence_editing$' --output-on-failure` (1/1 passed).
+  PlanStan `18532712`, `223a2470`; libkalcal `2324d24`.
+- **Next:** STB-004 durable production desired-state commit.
+
+### STB-004 — Commit production desired state once
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-001
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline slice E. Supply initial runtime definitions with a concrete
+  durable `TopologyPersistenceParticipant`; route settings and wizard changes
+  through the runtime topology adapter and project only accepted state.
+- **Acceptance:** in the real host fixture, change a binding, inspect the
+  runtime mapping, run, close, and reopen with the accepted definition intact.
+  A refused or failed commit leaves UI, disk, and runtime consistent.
+- **Verification:** definition compiler, topology adapter/data-source, wizard,
+  and real controller-host tests for initial open and later edits.
+- **Progress (2026-09-07):** Production `CollectionController` initialization
+  now supplies a concrete `TopologyPersistenceParticipant` backed by the open
+  `KalbConfigManager`: prepare rejects a missing configuration, commit writes
+  the `.kalb` atomically, and rollback clears its prepared state. The real
+  temporary-collection host fixture proves initial runtime topology installation
+  rewrites the compact fixture via that participant. PlanStan `e5fc2913`;
+  `ctest --test-dir build-dev -R '^tst_collectioncontroller_runtime_host$'
+  --output-on-failure` passed 1/1.
+- **Result (2026-09-08):** Later topology submissions through the real
+  `KalbSyncTopologyDataSource` now recompile controller-owned endpoint facts
+  and invoke the installed `CollectionRuntime`. Its shared participant stages
+  `SyncTopology` and mappings in `KalbConfigManager`, saves only at runtime
+  commit, and restores the prior projection on rollback. The production host
+  fixture accepts a Mirror topology, verifies the persisted file and reopened
+  controller agree, then rejects a missing-endpoint mapping and proves the
+  accepted config/file remain unchanged. PlanStan pending commit.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_collectioncontroller_runtime_host tst_kalbsynctopologydatasource -j4`
+  passed; `ctest --test-dir build-dev -R
+  '^(tst_collectioncontroller_runtime_host|tst_kalbsynctopologydatasource)$'
+  --output-on-failure` passed 2/2.
+- **Next:** STB-005 production run policy and triggers.
+
+### STB-005 — Wire production run policy and triggers
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-004
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline F1: manual/automatic requests, skip/concurrency policy,
+  deletion confirmation, policy updates during a run, and progress projection.
+- **Acceptance:** user-facing entry points produce runtime requests; configured
+  policy reaches the running engine; rejected policy/deletion has no physical
+  effect and errors remain actionable.
+- **Verification:** controller sync-verb/progress/mass-delete tests extended to
+  real controller composition.
+- **Result (2026-09-08):** `CollectionController` now compiles the real
+  `AppSettings` concurrency, skip-unchanged, monitored/background interaction,
+  and existing default-deny `SyncMassDeleteGuard` callback into its runtime
+  policy. Later settings changes use `CollectionRuntime::updatePolicy()` and
+  emit actionable errors when runtime admission rejects them. The production
+  host fixture rejects zero concurrency and then proves its previous runtime
+  policy still accepts a run. PlanStan pending commit.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_collectioncontroller_runtime_host -j4` and `ctest --test-dir build-dev
+  -R '^tst_collectioncontroller_runtime_host$' --output-on-failure` passed
+  1/1.
+- **Next:** STB-006 credential reference materialization.
+
+### STB-006 — Wire credential reference materialization
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-004
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline F2: factory secret resolution and plaintext-migration
+  contract using a fake secret service, including missing credentials.
+- **Acceptance:** endpoint construction resolves references without plaintext
+  persistence; migration and missing-secret failures are explicit and actionable.
+- **Verification:** factory plus real controller credential fixtures.
+- **Result (2026-09-08):** The production `PlanStanBackendFactory` is covered
+  with `InMemorySecretStore`: a DecSync Syncthing endpoint materializes from
+  `syncthingApiKeyRef` without exposing the key, a missing reference fails with
+  an actionable resolution error, and a plaintext key remains rejected.
+  Existing controller load migration replaces legacy plaintext with a stored
+  reference before backend construction. PlanStan pending commit.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_planstan_local_runtime_integration -j4` and `ctest --test-dir build-dev
+  -R '^tst_planstan_local_runtime_integration$' --output-on-failure` passed
+  1/1.
+- **Next:** STB-007 account and discovery workflows.
+
+### STB-007 — Wire account and discovery workflows
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-004
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline F3: connect account wizard/settings and discovery
+  consumers to production adapters for refresh, cancellation, removal, and
+  failure.
+- **Acceptance:** discovered collections become usable bindings and every
+  user-facing command/result is truthful; adapter-only coverage is insufficient.
+- **Verification:** account/discovery adapter and production UI-entry fixtures.
+- **Result (2026-09-08):** Runtime provider-state events now populate their
+  typed `providerId`, `CollectionRuntimeDiscoveryAdapter` is connected to the
+  controller event sink, and account settings refreshes on that projection.
+  The topology persistence participant now writes the desired provider sidecar
+  at runtime commit and restores it if the `.kalb` write fails. Controller
+  account add/edit/remove commands build desired provider sets with
+  `CollectionRuntimeAccountAdapter` and submit them through the runtime before
+  updating the UI-side provider lifecycle. PlanStan `6d4f7326`, `c45ddc1c`,
+  `8f8658c2`, `e0912d34`, `21d67584`, `31f0616a`, `34b8edc9`,
+  `6d2c6010`, `b7c22ee5`, `0ce048bd`, `6c27eea4`; libkalburator `cb2425e`.
+- **Verification (2026-09-08):** `ctest --test-dir build-dev -R
+  '^(tst_collection_runtime_discovery_adapter|tst_collection_runtime_account_adapter|tst_collectioncontroller_runtime_host)$'
+  --output-on-failure` passes its focused coverage (the controller-host and
+  both adapter tests). The controller-host rejects an unavailable provider
+  contribution without creating/replacing its sidecar, and injects an
+  in-process provider contribution to prove runtime add, durable sidecar,
+  clean removal, discovered collection projection, and logical-calendar
+  creation. It also removes that bound provider, proving the logical-calendar
+  cascade is staged in the same transaction so compilation never observes the
+  removed provider's old binding.
+- **Next:** STB-008 conflict interaction and terminal results.
+
+### STB-008 — Wire conflict interaction and terminal results
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-004, STB-005
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline F4: `CollectionRuntimeConflictAdapter`, conflict dock, and
+  runtime event/future interaction.
+- **Acceptance:** progress, cancellation, exactly one terminal result, and
+  initial-sync completion are truthful; monitored pause/resume is distinguished
+  from next-run background deferral.
+- **Verification:** migrate conflict workflow tests to production composition.
+- **Result (2026-09-08):** `CollectionController` now routes runtime conflict
+  resolution through `CollectionRuntimeConflictAdapter`; the dock accepts a
+  runtime-only custom merge and leaves a rejected runtime decision unresolved
+  rather than announcing success. `syncRunFinished` now emits one aggregate
+  terminal result per dispatched runtime run, while mapping completion remains
+  on `runtimeMappingFinished`. The production host fixture creates a real
+  AskUser local conflict, observes its runtime-owned backlog/event, and
+  resolves it through that controller boundary. PlanStan `c8abedda`,
+  `3f13a06a`.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_collectioncontroller_runtime_host tst_collection_runtime_conflict_adapter
+  tst_collection_runtime_run_adapter -j1` and `ctest --test-dir build-dev -R
+  '^(tst_collectioncontroller_runtime_host|tst_collection_runtime_conflict_adapter|tst_collection_runtime_run_adapter)$'
+  --output-on-failure` passed 3/3. The host fixture asserts exactly one public
+  terminal result for an explicit runtime run and performs the local conflict
+  backlog/resolution workflow. The focused runtime cancellation contract is
+  carried forward to STB-010; deferred runtime resolution is deliberately a
+  next-run decision rather than a legacy in-run resume.
+- **Next:** STB-009 centralized occurrence query.
+
+### STB-009 — Centralize the calendar occurrence query
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-003
+- **Repository:** `../libkalcal`, `../PlanStan`
+- **Scope:** Baseline slice G: fixture corpus and one range/exception query used
+  by agenda, month, year, and schedule views.
+- **Acceptance:** overnight recurrence, moved/deleted exceptions, duplicate
+  calendar UIDs, all-day ends, DST, and timezones yield the same occurrence
+  identities and intervals in every view without unbounded expansion.
+- **Verification:** shared Kalcal fixtures and view selection/edit behavior.
+- **Result (2026-09-08):** The shared `IncidenceDateUtils::occurrencesInRange()`
+  now looks back by an occurrence duration and filters by the actual interval,
+  so an overnight or multi-day recurrence which started before the visible
+  range is returned to every current consumer. PlanStan added the focused
+  consumer test `9331e5be`; libkalcal `47657ec`. It now also accepts a
+  calendar-scoped incidence set, replaces generated master occurrences with
+  detached `RECURRENCE-ID` exceptions, and is the sole expansion path for
+  agenda, month, year, range-agenda, and schedule views. PlanStan `75ed1543`,
+  `b3d826d3`; libkalcal `7d1264b`, `10d60d2`.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_incidencedateutils -j1` and `ctest --test-dir build-dev -R
+  '^tst_incidencedateutils$' --output-on-failure` passed 1/1. After the
+  batch migration, `cmake --build build-dev --target kalcal-calendar-views
+  tst_incidencedateutils -j1` passed and `ctest --test-dir build-dev -R
+  '^(tst_incidencedateutils|tst_agenda_selection_identity)$'
+  --output-on-failure` passed 2/2. The corpus covers overnight recurrence,
+  moved detached exceptions, duplicate UIDs across calendars, all-day end
+  exclusivity, and an America/Toronto DST transition.
+- **Next:** STB-010 runtime cancellation and teardown safety.
+
+### STB-010 — Make runtime cancellation and teardown safe
+
+- **State:** DONE 2026-09-08
+- **Depends on:** STB-001
+- **Repository:** `../libkalburator`, `../PlanStan`
+- **Scope:** Baseline H1: held/failed backend cancellation, executor dispatch,
+  and bounded worker teardown.
+- **Acceptance:** every operation terminalizes once; no callback reaches a
+  released runtime/session; supported workers meet a measured shutdown bound;
+  backend limitations are stated rather than hidden.
+- **Verification:** focused runtime destruction/worker tests and sanitizer checks
+  for reproduced lifetime paths.
+- **Result (2026-09-08):** Current `CollectionRuntime` cancellation reaches the
+  engine, active watcher, and every active external-resource lease; its
+  destructor pumps queued cancellation delivery for at most one second, then
+  terminalizes the public promise once before stopping owned workers and
+  disconnecting the watcher. No acceptance failure reproduced against the
+  current implementation, so no speculative teardown rewrite was made.
+- **Verification (2026-09-08):** `cmake --build build --target
+  tst_engine_cancellation tst_engine_single_mapping_cancel
+  tst_planstan_runtime_contract -j1` and `ctest --test-dir build -R
+  '^(tst_engine_cancellation|tst_engine_single_mapping_cancel|tst_planstan_runtime_contract)$'
+  --output-on-failure` passed 3/3 (5.14 seconds), covering held cancellation,
+  immediate next-run admission, and active public-runtime teardown.
+- **Next:** STB-011 one operational runtime owner.
+
+### STB-011 — Transfer operational ownership to one runtime
+
+- **State:** QUEUED
+- **Depends on:** STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Baseline O. Trace production load/save/query/account/sync instances,
+  add only the smallest missing typed contract, route the complete live slice to
+  `CollectionRuntime`, and remove redundant live construction in the same patch.
+- **Acceptance:** real load → edit → save → sync observes one operational backend
+  owner per endpoint, revision acknowledgment is never bypassed, and no
+  application executor races the runtime owner.
+- **Verification:** extend the real host fixture with instance accounting and C
+  completion controls; run affected consumer integration tests.
+
+### STB-012 — Integrate application close as a lifecycle transaction
+
+- **State:** QUEUED
+- **Depends on:** STB-011
+- **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
+- **Scope:** Baseline H2: stop command admission, detach consumers, cancel/drain,
+  terminalize, then release resources in defined order during application close.
+- **Acceptance:** deterministic close during fetch, save, conflict prompt,
+  discovery, and queued model update leaves no callback targeting a closed
+  session and has one terminal result per operation.
+- **Verification:** controller lifecycle, view-release, and close-during-work
+  fixtures with targeted sanitizer coverage.
+
+### STB-013 — Certify real desktop workflows
+
+- **State:** QUEUED
+- **Depends on:** STB-009, STB-012
+- **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
+- **Scope:** Baseline I: local and hermetic-DAV end-to-end workflow matrix plus a
+  short real GUI walkthrough.
+- **Acceptance:** model, disk, runtime, dirty state, and visible error state
+  agree for open; edit/delete/undo; edit during save; recovery; account/discovery;
+  topology; policy sync; conflict; recurring occurrence; and close during work,
+  including failure/retry boundaries.
+- **Verification:** update TST-003/FTR-001 with exactly executed workflows and
+  label opt-in live-service checks separately.
+
+### STB-014 — Retire legacy characterization paths
+
+- **State:** QUEUED
+- **Depends on:** STB-013
+- **Repository:** `../PlanStan`
+- **Scope:** Baseline J: migrate every relevant legacy-engine behavior test to
+  the real host fixture, then delete retired graph construction/accessors and
+  source-list dependencies.
+- **Acceptance:** production constructs one runtime, no test silently falls back
+  to the retired graph, and the real workflow suite remains green.
+- **Verification:** caller inventory/source searches plus affected workflow lane.
+
+### STB-015 — Prove reusable package boundaries
+
+- **State:** QUEUED
+- **Depends on:** STB-014
+- **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
+- **Scope:** Baseline K: standalone calendar host, correctly owned Org
+  dependency, headless subset, and install-and-consume package proof.
+- **Acceptance:** clean library and independent-consumer builds use declared
+  versions, exported namespaced targets, and no private source includes,
+  target mutation, or whole-archive workaround.
+- **Verification:** standalone viewer/headless/external-prefix builds; record
+  any BLD-006 release-decision block separately from correctness evidence.
+
+### STB-016 — Polish measured desktop behavior
+
+- **State:** QUEUED
+- **Depends on:** STB-013
+- **Repository:** `../PlanStan`, `../libkalcal`
+- **Scope:** Baseline L: measure real multi-view workloads before targeted scene,
+  model, progress, focus, high-DPI, and keyboard interaction improvements.
+- **Acceptance:** recorded before/after timings for selected workloads, preserved
+  identity/selection, and repeatable affected edit/calendar workflows.
+- **Verification:** measured GUI workload plus focused identity, lifecycle, and
+  progress tests; no speculative performance framework.
+
+### STB-017 — Close the stabilization programme with release evidence
+
+- **State:** QUEUED
+- **Depends on:** STB-014, STB-015, STB-016
+- **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
+- **Scope:** Collect the final cross-repository revisions, configuration, test
+  categories, known limitations, and release decision after all workflow,
+  cleanup, package, and measured-behavior tasks are complete.
+- **Acceptance:** no open stabilization task or uncertified workflow is hidden by
+  a completion claim; each skipped/live/environmental check is labeled; the
+  retained known-issues list contains only explicit non-release limitations.
+- **Verification:** full ledger/DAG review, source/diff checks, and recorded
+  cross-repository verification matrix.
 
 ### AUD-003 — Establish the stabilization baseline and reproduce production gaps
 
-- **State:** READY
+- **State:** DONE 2026-09-07
 - **Repository:** `../libkalburator`, `../PlanStan`, and `../libkalcal`
 - **Scope:** baseline tags, configured build paths, current test accounting, and
   a real PlanStan `CollectionController` host fixture. This task changes no
@@ -163,6 +642,21 @@ runtime graphs to execute side by side.
 - **Next:** once this task has an evidence-backed result, select exactly the
   first reopened or newly registered `READY` task; do not start topology,
   staging, identity, or cutover changes speculatively.
+- **Result:** Recorded baseline tags and active revisions in PlanStan's
+  maintained baseline. Added `tst_collectioncontroller_runtime_host`, which
+  opens a temporary two-local-backend collection through the real controller,
+  observes session/mapping construction, waits for first-open work, invokes
+  public `runSync()`, verifies record replication, and proves the lazy legacy
+  characterization graph remains absent. A factory-injection fixture controls
+  endpoint materialization failure and verifies controller error reporting
+  without legacy construction. No acceptance reproduction reopened TOP-002,
+  RUN-008, or a PlanStan task.
+- **Verification result:** configured PlanStan with
+  `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR=/home/clinton/dev/libkalburator`; built
+  `tst_planstan_local_runtime_integration` and
+  `tst_collectioncontroller_runtime_host`; `ctest --test-dir build-dev -R
+  '^(tst_planstan_local_runtime_integration|tst_collectioncontroller_runtime_host)$'
+  --output-on-failure` passed 2/2. `python3 tools/check_task_dag.py` passed.
 
 ### AUD-002 — Revalidate the decomposed PlanStan cutover plan
 
@@ -1503,14 +1997,26 @@ opaque references and no controller cutover occurs before PS-016.
 - **Unblocked:** FTR-001 and FTR-002 are now unblocked; BLD-007 remains gated by the external license decision in BLD-006.
 
 ### BLD-006 — Unify version and choose license
-- **State:** BLOCKED — external decision only
-- **User decision required:** license selection.
+- **State:** DONE 2026-09-07
+- **Decision:** GPL-3.0-only, as established by the repository `LICENSE` file.
 - **Acceptance:** one version source feeds CMake/package/tags; license file exists; pre-G7 tags are documented as internal snapshots.
+- **Result:** Added the root `VERSION` file as the sole version source and
+  made CMake read it before `project()`. Recorded GPL-3.0-only as the project
+  license, aligned the remaining test SPDX identifiers, and documented that
+  historical tags through v1.05 are internal integration snapshots rather than
+  package releases. A distributable tag must be `v$(VERSION)` after the
+  install/export gate.
+- **Verification:** clean no-test configure reports `libkalburator 0.2.4`;
+  configured and built `kalburator` in the normal test-enabled build; task DAG
+  and `git diff --check` pass.
+- **Unblocked:** BLD-007.
 
 ### BLD-007 — Add install/export package and external consumer
-- **State:** QUEUED
+- **State:** DONE 2026-09-08
 - **Depends on:** BLD-004, BLD-005, BLD-006
 - **Acceptance:** clean prefix install followed by `find_package(Kalburator)` build/test outside the source tree.
+- **Result:** Exported `Kalburator::Types`, `Canon`, `Identity`, `TypeSupport`, `Core`, `Storage`, `Sync`, and `Widgets` targets with namespaced public headers. The `KalburatorConfig.cmake` template now finds the exported dependencies, including `OrgGrove` and (when configured) `KPim6Akonadi`, and marks the known components as found so `find_package(Kalburator COMPONENTS ...)` succeeds for consumers that only link a subset.
+- **Verification:** `cmake --build build --target kalburator-types kalburator-canon kalburator-identity kalburator-typesupport kalburator-storage kalburator KalburatorWidgets -j8` passed; `cmake --install build --prefix /tmp/kalburator-install` installed headers, libraries, and CMake package files; a consumer in `/tmp/opencode/kalburator-consumer` built with `find_package(Kalburator 0.2.4 CONFIG REQUIRED COMPONENTS Types)` and linked `Kalburator::Types`, then ran successfully.
 
 ### BLD-008 — Extract a headless Identity target for PlanEngine
 

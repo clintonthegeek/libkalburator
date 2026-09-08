@@ -1,0 +1,23 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Qt6 6.8 REQUIRED COMPONENTS Core Gui Sql Xml Network Widgets Concurrent)
+find_dependency(KF6CalendarCore REQUIRED)
+find_dependency(KF6DAV REQUIRED)
+find_dependency(KF6KIO REQUIRED)
+find_dependency(KF6Holidays REQUIRED)
+find_dependency(KF6Contacts REQUIRED)
+find_dependency(KF6Config REQUIRED)
+find_dependency(OrgGrove REQUIRED)
+if(@KALBURATOR_HAVE_AKONADI@)
+    find_dependency(KPim6Akonadi REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/KalburatorTargets.cmake")
+
+set(_Kalburator_known_components Types Canon Identity TypeSupport Core Storage Sync Widgets)
+foreach(_comp IN LISTS _Kalburator_known_components)
+    set(Kalburator_${_comp}_FOUND TRUE)
+endforeach()
+
+check_required_components(Kalburator)

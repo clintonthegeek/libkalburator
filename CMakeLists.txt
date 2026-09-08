@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.19)
-project(Kalburator VERSION 0.2.4 LANGUAGES CXX)
+include(CMakePackageConfigHelpers)
+
+# The repository VERSION file is the sole release-version source.  CMake
+# package metadata and the release tag policy consume this same value; see
+# docs/COMPATIBILITY.md.  Keep this before project() so PROJECT_VERSION and
+# every downstream configure/export surface agree.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" KALBURATOR_VERSION
+    REGEX "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+list(LENGTH KALBURATOR_VERSION _kalburator_version_count)
+if(NOT _kalburator_version_count EQUAL 1)
+    message(FATAL_ERROR "VERSION must contain exactly one MAJOR.MINOR.PATCH value")
+endif()
+project(Kalburator VERSION "${KALBURATOR_VERSION}" LANGUAGES CXX)
 
 # ---------------------------------------------------------------------------
 # libkalburator — a reusable sync substrate for Qt6/KF6 calendar apps.
@@ -102,6 +114,7 @@ target_link_libraries(kalburator-types
 )
 
 set_target_properties(kalburator-types PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator-types PROPERTY EXPORT_NAME Types)
 
 # --- Kalburator::Canon ------------------------------------------------------
 # Canon-envelope serialization is shared by headless identity consumers and
@@ -119,6 +132,7 @@ target_include_directories(kalburator-canon
 )
 target_link_libraries(kalburator-canon PUBLIC Qt6::Core)
 set_target_properties(kalburator-canon PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator-canon PROPERTY EXPORT_NAME Canon)
 
 # --- Kalburator::Identity --------------------------------------------------
 # Cross-domain record/entity links for headless consumers. Keep this boundary
@@ -138,6 +152,7 @@ target_include_directories(kalburator-identity
 )
 target_link_libraries(kalburator-identity PUBLIC Qt6::Core Qt6::Sql Kalburator::Canon)
 set_target_properties(kalburator-identity PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator-identity PROPERTY EXPORT_NAME Identity)
 
 # --- Kalburator::TypeSupport ------------------------------------------------
 # Light behavioural companion to Kalburator::Types: JSON codecs, crash-journal
@@ -170,6 +185,7 @@ target_link_libraries(kalburator-typesupport
 )
 
 set_target_properties(kalburator-typesupport PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator-typesupport PROPERTY EXPORT_NAME TypeSupport)
 
 # --- Kalburator::Core -------------------------------------------------------
 # Stable headless foundation for consumers that need value types, canonical
@@ -178,6 +194,7 @@ set_target_properties(kalburator-typesupport PROPERTIES POSITION_INDEPENDENT_COD
 # is the single small composition point for headless applications.
 add_library(kalburator-core INTERFACE)
 add_library(Kalburator::Core ALIAS kalburator-core)
+set_property(TARGET kalburator-core PROPERTY EXPORT_NAME Core)
 target_link_libraries(kalburator-core INTERFACE
     Kalburator::Types
     Kalburator::Canon
@@ -200,6 +217,7 @@ target_include_directories(kalburator-storage PUBLIC
 )
 target_link_libraries(kalburator-storage PUBLIC Kalburator::Types Qt6::Sql)
 set_target_properties(kalburator-storage PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator-storage PROPERTY EXPORT_NAME Storage)
 
 # --- Kalburator::Sync -------------------------------------------------------
 # Sync sources are layered across sub-directories per docs/phase0/05-repo-strategy.md:
@@ -949,8 +967,9 @@ if(KALBURATOR_HAVE_AKONADI)
 endif()
 
 set_target_properties(kalburator PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_property(TARGET kalburator PROPERTY EXPORT_NAME Sync)
 
-message(STATUS "libkalburator: configured "
+message(STATUS "libkalburator ${PROJECT_VERSION}: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "
         "outline-org=${KALBURATOR_HAVE_OUTLINE_ORG} "
         "akonadi=${KALBURATOR_HAVE_AKONADI})")
@@ -977,6 +996,40 @@ foreach(_kalburator_header_domain IN LISTS KALBURATOR_PUBLIC_HEADER_DOMAINS)
         DESTINATION "include/kalburator/${_kalburator_header_domain}"
         FILES_MATCHING PATTERN "*.h")
 endforeach()
+
+set(KALBURATOR_EXPORT_TARGETS
+    kalburator-types
+    kalburator-canon
+    kalburator-identity
+    kalburator-typesupport
+    kalburator-core
+    kalburator-storage
+    kalburator)
+if(TARGET KalburatorWidgets)
+    list(APPEND KALBURATOR_EXPORT_TARGETS KalburatorWidgets)
+    set_property(TARGET KalburatorWidgets PROPERTY EXPORT_NAME Widgets)
+endif()
+install(TARGETS ${KALBURATOR_EXPORT_TARGETS}
+    EXPORT KalburatorTargets
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin)
+install(EXPORT KalburatorTargets
+    FILE KalburatorTargets.cmake
+    NAMESPACE Kalburator::
+    DESTINATION lib/cmake/Kalburator)
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/KalburatorConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/KalburatorConfig.cmake"
+    INSTALL_DESTINATION lib/cmake/Kalburator)
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/KalburatorConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/KalburatorConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/KalburatorConfigVersion.cmake"
+    DESTINATION lib/cmake/Kalburator)
 
 # -- Library tests ----------------------------------------------------------
 # Gated so that add_subdirectory consumers (PlanStan, WP) don't pick up

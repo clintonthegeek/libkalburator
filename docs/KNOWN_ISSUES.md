@@ -16,12 +16,14 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   exercise the real `CollectionController` host path. The 2026-09-07 baseline
   review found unverified topology commits, policy/secret input wiring, save
   acknowledgment boundaries, and legacy construction paths.
-- **Required outcome:** `AUD-003` supplies a controllable production host
-  fixture and reopens only the contradicted task IDs with repeatable acceptance
-  failures. No release or migration-completion claim is valid before the
-  workflow certification gate.
-- **Tasks:** AUD-003; then evidence-selected TOP-002/TOP-004/TOP-005,
-  RUN-008, PS-010 through PS-016, PS-008, TST-003, and FTR-001.
+- **Required outcome:** the AUD-003 host fixture is complete. Execute the
+  finite STB completion queue through topology, save acknowledgment, identity,
+  desired-state, policy/credentials, account/discovery/conflict, lifecycle,
+  single-owner cutover, and workflow certification. No release or
+  migration-completion claim is valid before STB-017.
+- **Tasks:** STB-001 through STB-017. Historical TOP/RUN/PS/TST/FTR tasks are
+  implementation evidence and are reopened only for a directly reproduced
+  regression in their stated contract.
 
 ### KAL-001 — Backend relocation can hang and violate QObject affinity
 
@@ -114,11 +116,12 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-010 — Build boundary depends on source layout and linker side effects
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-08
 - **Affects:** both consumers and external reuse
-- **Evidence:** package export is still absent; production target-property extraction, whole-archive links, and PlanStan target mutation were removed by BLD-005, while specialized test fixtures retain explicit registrar force-linking where required.
+- **Evidence:** BLD-007 installs namespaced public headers, exports `Kalburator::Types`, `Canon`, `Identity`, `TypeSupport`, `Core`, `Storage`, `Sync`, and `Widgets` targets, and a consumer outside the source tree builds with `find_package(Kalburator 0.2.4 CONFIG REQUIRED COMPONENTS Types)` and links `Kalburator::Types`. The test-only registrar force-linking remains isolated in test fixtures.
 - **Required outcome:** modular exported targets, namespaced headers, explicit registration, clean external consumer.
-- **Tasks:** BLD-001 through BLD-007
+- **Resolution:** install/export package is available; stable API compatibility remains deferred to the first release after the consolidation.
+- **Tasks:** BLD-001 through BLD-007 completed.
 
 ### KAL-027 — Provider-backed PlanStan fixture could double-free during teardown
 
@@ -371,8 +374,11 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-017 — Version and release identity are inconsistent
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-07
 - **Affects:** consumers and future packaging
-- **Evidence:** repository tags reached v1.05 while CMake declares 0.2.4; consumers pin different tags.
-- **Required outcome:** one version source and explicit compatibility policy.
-- **Tasks:** BLD-006
+- **Evidence:** `VERSION` now supplies CMake's project version. The
+  compatibility policy defines GPL-3.0-only and explicitly classifies tags
+  through v1.05 as internal snapshots rather than package releases.
+- **Resolution:** release tags must match `v$(VERSION)` only after BLD-007's
+  install/export gate; historical tags do not imply compatibility.
+- **Tasks:** BLD-006 completed; BLD-007 owns the installed-package proof.
