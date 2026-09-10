@@ -56,9 +56,9 @@ below (§2.1, §3) refers to that specification.
 | 3 | RRD-003 | DONE 2026-09-09 | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
-| 6 | RRD-006 | IN PROGRESS | RRD-005 | One testable apply pipeline with a typed review and result |
-| 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
-| 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
+| 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
+| 7 | RRD-007 | READY | RRD-002 | A project-local DAV rig with real per-account outage |
+| 8 | RRD-008 | READY | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
@@ -640,7 +640,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-006 — Extract the apply pipeline
 
-- **State:** IN PROGRESS
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-005
 - **Repository:** `../PlanStan`
 - **Scope:** Move `SyncTopologyWidget::applyChanges()`
@@ -656,50 +656,149 @@ target and 65 of 145 registered test targets no longer compile.
   desired topology through `submitDesiredRuntimeTopology()`.
 - **Verification:** the two live data-corruption paths named in that function's
   comments each get a named test. Record both.
-- **Research note, 2026-09-09 (no code changed):** `applyChanges()` is
-  presently at `synctopologywidget.cpp:2685-3397` (line numbers shifted by
-  `RRD-005`'s edits; still 713 lines). Read through its provider/local-backend
-  section (~150 lines) before stopping to scope the rest. Two things this
-  task's one-paragraph scope doesn't surface, for whoever picks this up:
-  1. **It depends on widget-private state beyond `TopologyDraft`.** Per
-     `RRD-005`'s own scoping (see that task's verification), `m_pendingProviders`
-     (provider-add staging), `m_pendingAdoptTargets`, and `m_pendingCopyTargets`
-     (adopt/copy routing indices) were deliberately left on the widget,
-     outside the draft. `applyChanges()` reads and mutates all three, plus
-     calls `detectAndOfferConvergenceRemedy()` (private widget method) and
-     `emit dirtyChanged(...)` (widget signal). A `TopologyApplyService`
-     living outside `SyncTopologyWidget` can't reach any of these directly.
-     Two honest designs: (a) also relocate the three widget-private members
-     into the service (or into `TopologyDraft`, reopening that scoping
-     decision), or (b) keep the widget as the owner and have it pass them
-     into `apply()` as explicit parameters each call, with the service doing
-     the mutation logic but not the storage. (b) is more surgical and lower
-     risk; recommended.
-  2. **`review()`'s "computed without mutating anything" contract is a new
-     capability, not an existing one.** `ISyncTopologyDataSource` has no
-     dry-run variant of `addProvider()`/`addLocalBackend()`/etc., so
-     `review()` cannot predict per-operation success/failure the way
-     `apply()` discovers it live. Recommended scope: a structural summary
-     computed purely from `TopologyDraft` + read-only data-source queries —
-     added/removed/modified providers and local backends, staged mapping
-     adds/removes/modifies, adopt/create/update/unbind/untrack/destroy
-     requests, the pending topology change, and the inherited-impact
-     calendar names (`SyncTopologyWidget::collectionDefaultCalendarNames()`,
-     `RRD-004`, is exactly this last piece and should move onto whatever
-     owns `review()`) — not an accept/reject prediction.
-  The function's partial-failure policy (drop only the failing operation,
-  keep the rest of the changeset — Gap-fixes-MD, see the comment at its top)
-  is intricate and was only read through the provider/local-backend section;
-  the mapping-level section (create/update/unbind/untrack/destroy, the
-  convergence guard, the two named data-corruption paths) was not yet read.
-  A careful line-by-line pass through the rest, plus the design decision
-  above, should happen before writing any extraction code — this is real
-  calendar-sync data on the line, not a cosmetic refactor.
+- **Result:** `TopologyApplyService`
+  (`src/sync/topology/topologyapplyservice.h`/`.cpp`) owns the whole pipeline:
+  the cross-logical-calendar convergence gate, the node-level local-backend
+  and provider operations, the batched collection-level operations, the
+  persist filter, the runtime submission, and the baseline clear. It has no
+  `QWidget` dependency and is unit-tested standalone. `applyChanges()` is now
+  ~20 lines: build an `Inputs` struct, call the service, then the
+  discard/clear/`rebuildGraph`/`dirtyChanged` cleanup that stays on the view.
+  Five commits on PlanStan `master`:
+  - `96cc561f` — phases 3-6 (batched collection ops, persist filter, runtime
+    submission, baseline clear) plus `computeFrozenMappingsForManualFlips()`,
+    `owningPolicyAfterApply()`, `compiledMappingIdsAfterApply()`;
+    `backendLabelFor()`/`logicalCalendarNameFor()` moved with thin widget
+    forwards. Widget dropped 642 lines.
+  - `c6680417` — the node-level phase, which aborts on first failure.
+  - `45baf331` — the convergence gate and its four anonymous-namespace
+    helpers.
+  - `cfca2fa7` — `review()`, `collectionDefaultCalendarNames()` moved with a
+    widget forward, and `tests/sync/tst_topologyapplyservice.cpp` (14 cases).
+  - `625d215e` — a real defect fix, below.
+- **Design decisions, recorded:**
+  1. **The three widget-private staging members stay on the widget**
+     (`m_pendingProviders`, `m_pendingAdoptTargets`, `m_pendingCopyTargets`) —
+     option (b) of this record's earlier research note. They are passed in an
+     `Inputs` struct holding references, so the service mutates the caller's
+     storage in place. That preserves the move-out of `m_pendingProviders`
+     into `addProvider()` and its clear-on-failure exactly, with no ownership
+     question reopened and no reinterpretation of `RRD-005`'s scoping.
+  2. **A fourth coupling the research note did not name:**
+     `SyncTopologyWidget::displayNameFor()` reads the graph SCENE
+     (`m_backendNodes` ghost and calendar ports), not the data source. Staged
+     renames and staged ghosts live there and nowhere else, and it feeds three
+     delete-loop error messages plus the remedy button label. Severed with a
+     `CalendarNameResolver` callback; the widget installs one forwarding to
+     its own method, so those messages stay byte-identical. The service has a
+     data-source-only default for hosts that install none.
+  3. **The convergence gate needed two more callbacks out.** Its modal
+     confirmation is a `ConvergenceRemedyPrompt`; `confirmConvergenceRemedy()`
+     is untouched on the widget so both its test hooks (instance and static,
+     the latter needed because the load-time check runs from the constructor)
+     keep working. Its restyling of the edges it rewrites is the
+     `mappingsRewrittenByRemedy(QStringList)` signal, emitted once after the
+     rewrite loop and BEFORE the re-validate, matching the original per-mapping
+     inline ordering. With no prompt installed the remedy is declined, never
+     silently applied.
+  4. **`review()` is a structural summary, not an accept/reject prediction** —
+     the research note's recommended scope, adopted verbatim.
+     `ISyncTopologyDataSource` has no dry-run variant of its mutators, so a
+     prediction would be a guess, and the one thing a reviewer must be able to
+     trust is that what it lists is really staged. It reports staged provider
+     adds (pending and changeset), removals and edits, local-backend adds,
+     mapping adds/removes/modifies by id, the six calendar-mutation request
+     kinds, mirror requests, the topology change, per-LC wiring-policy edits,
+     and the NAMED inherited-impact calendars. It mutates nothing and never
+     raises the prompt.
+  5. **`TopologyEditorContext` is deferred again, to `RRD-016`.**
+     Specification §2.2 puts it above the views owned by
+     `CollectionSettingsViewPanel`, but roughly ninety tests construct a bare
+     `SyncTopologyWidget`, and those tests are the behaviour-preservation net
+     for this extraction. Moving draft ownership out from under them in the
+     same change would have destroyed the net that proves the change safe.
+     `SyncTopologyWidget` owns both children for now. The context becomes
+     necessary when a second OBSERVER exists, which is `RRD-016`'s
+     calendars/copies/rules page — not merely when a second child does.
+- **Verification:**
+  - **The two named data-corruption paths already had named tests**, written
+    when the C1 fix landed; this task's contribution is finding and recording
+    them rather than writing them. Both are in
+    `tests/sync/tst_topology_crud.cpp` and both drive a real `BaselineStore`:
+    `policyChipMenu_selectManual_freezesCompiledMappingOnApply()` (its second
+    half is the first path — a mapping frozen by a flip to Manual keeps its
+    `auto_` id forever, so the old prefix proxy dropped it and cleared its
+    baselines on the next unrelated Apply) and
+    `addCopyOn_compiledPolicy_secondApplyDoesNotClearChannelBaseline()` (the
+    second path — Task 9's add-a-copy channel previews persisted on Apply #1
+    and dropped plus baseline-cleared on Apply #2, on a live actively-syncing
+    channel). A third,
+    `policyChipMenu_rewireAwayFromManual_clearsDiscardedFrozenBaseline()`,
+    pins the inverse that the C1 re-review introduced. All three pass before
+    and after.
+  - **The live Radicale gate is the only automated coverage of the
+    concrete-data-source apply path**, and it was run at every step.
+    `tst_synctopologywidget_v2_changeset`'s provider cases are part of
+    `RRD-002`'s failure baseline, so the default lane does not exercise
+    `KalbSyncTopologyDataSource`'s apply at all. `PLANSTAN_LIVE_RADICALE=1
+    ctest -R '^live_graph_gate$'` passes in 25-29s against Radicale on
+    localhost:5232, driving `applyChanges()` three times through the real data
+    source; run and green after each of the five commits.
+  - Topology suite (`tst_topology_crud`, `tst_topology_convergence_guard`,
+    `tst_topology_dirtystate`, `tst_topology_gestures`, `tst_synctopologywidget`,
+    `tst_synctopologywidget_v2_changeset`, `tst_synctopologywidget_v2_palette`,
+    `tst_topologydraft`, `tst_topology_draft_and_counts`, plus the new
+    `tst_topologyapplyservice`): 8 passed / 2 failed. The two failures carry
+    the same eight pre-existing case names as the `RRD-002` baseline, with
+    `tst_synctopologywidget_v2_palette` unchanged at 23/2 and
+    `tst_synctopologywidget_v2_changeset` at 4/6 (one case added by this task,
+    below). None added or removed. The relocated regions were diffed
+    line-by-line against their originals at each step; every differing line
+    was an intended member-access or epilogue rewrite, and no comment line was
+    lost — those comments are the specification for the partial-failure
+    policy, the C1 persist filter, and the I5 ordering constraints.
+  - Full build clean but for the pre-existing `tst_backendconfigwidgets`
+    compile failure (`RRD-001`/`RRD-002`, a stale `CalDavConfigWidget`
+    constructor call, unrelated).
+  - Full suite (`ctest -j4`, 148 registered targets = 147 plus this task's new
+    one): **136 passed, 12 failed**. The 12 are exactly `RRD-002`'s baseline
+    set minus `tst_collectioncontroller_syncverbs`, which that baseline itself
+    records as flaky and which passed this run. Nothing added, nothing
+    repaired outside this task's slice.
+- **Defect found and fixed (`625d215e`):** a staged provider was never
+  consumed on the runtime apply path. When the data source is a real
+  `KalbSyncTopologyDataSource` whose `BackendRegistry` can create the staged
+  kind, `canCreateProviderType()` answers true, the direct `addProvider()`
+  fallback loop — which clears the staging vector itself — is skipped, and the
+  provider reaches the data source only by being read into the desired runtime
+  topology's provider set. Nothing cleared it afterwards, while
+  `discardChanges()` always had. So `isDirty()` stayed true after a successful
+  Apply even though `dirtyChanged(false)` had just been emitted, and the next
+  Apply appended the same configuration again on top of a provider list that
+  already contained it — `CollectionController::applyDesiredRuntimeTopology()`
+  copies that list into the runtime snapshot and stages it for persistence
+  when `replaceProviders` is set, so the duplicate reaches both the live
+  provider set and the persisted profile. Found by reading during the
+  extraction and deliberately carried forward unchanged through the three
+  refactor commits so those stayed provably behaviour-preserving. Pinned by
+  `tst_synctopologywidget_v2_changeset`'s new
+  `apply_pendingProviderOnRuntimePath_isConsumed()`, which asserts the fixture
+  really reaches the runtime path rather than the fallback, then that a
+  successful Apply leaves the widget clean; verified failing before the fix and
+  passing after.
+- **Known gap, not closed here:** the runtime submission SUCCEEDING with a
+  staged provider is still unpinned in the default lane. A stub CalDAV
+  configuration has no server URL, so the runtime declines to connect it and
+  the submission reports that through `lastApplyError()` — the best-effort
+  accepted-with-an-error disposition. The staging bookkeeping the new test
+  pins runs identically either way, but a green end-to-end provider add
+  against a real server belongs to the live gate, which currently stages no
+  providers. Worth adding when `RRD-007` provisions the project-local DAV rig.
 - **Next:** RRD-016 and RRD-020 both depend on this.
 
 ### RRD-007 — Provision a project-local DAV test rig
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-002
 - **Repository:** `../PlanStan`
 - **Scope:** A project-local Radicale rig owned by this repository: its own
@@ -718,7 +817,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-008 — Bundle contract, manifest schema, and guarded generator
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-002
 - **Repository:** `../PlanStan`
 - **Scope:** Implement `tools/fixturegen/`, a small C++ tool over the existing
