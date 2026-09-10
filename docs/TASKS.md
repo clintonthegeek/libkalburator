@@ -56,7 +56,7 @@ below (§2.1, §3) refers to that specification.
 | 3 | RRD-003 | DONE 2026-09-09 | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
-| 6 | RRD-006 | READY | RRD-005 | One testable apply pipeline with a typed review and result |
+| 6 | RRD-006 | IN PROGRESS | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
@@ -640,7 +640,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-006 — Extract the apply pipeline
 
-- **State:** QUEUED
+- **State:** IN PROGRESS
 - **Depends on:** RRD-005
 - **Repository:** `../PlanStan`
 - **Scope:** Move `SyncTopologyWidget::applyChanges()`
