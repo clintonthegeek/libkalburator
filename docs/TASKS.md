@@ -1,15 +1,21 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-011` DONE — scenarios 04 (directional
-Manual rules) and 06 (shared destination) built and driven against a live
-`tools/davrig` rig, `tst_rrd011_directional_shared.cpp` 4/4 passing. Found and
-FIXED a real defect in `SyncEngineWorker::dispatchFirstSync()`
-(`libkalburator/src/engine/syncengine.cpp`): a one-way mapping's first sync
-addressed the target backend with the SOURCE's calendar id, so any Manual
-one-way rule between two differently-identified calendars silently delivered
-nothing on its first run — see
-[`dispatchfirstsync-uses-source-calendar-id-for-target-reads-and-writes.md`](../PlanStan/docs/bugs/dispatchfirstsync-uses-source-calendar-id-for-target-reads-and-writes.md).
-`RRD-012` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-012` DONE — scenario 05
+(properties/states) built and driven against a live `tools/davrig` rig,
+`tst_rrd012_properties_states.cpp` 10/10 passing, all seven spec §2.5 states
+individually distinguished. Found and FIXED a real defect in
+`CollectionController::generateSyncMappingsFromLogicalCalendars()`
+(`../PlanStan/src/controllers/collectioncontroller.cpp`): pausing a
+calendar's sync left its channel running in the live runtime forever — a
+mis-indexed persisted/compiled union plus no pruning of stale compiler-
+generated rows, fixed together without disturbing `WiringPolicy::Manual`'s
+deliberately frozen rows. Two further defects filed, not fixed (VEVENT-only/
+VTODO-only restriction never enforced at push time; "never synced" never
+clears for `TwoWay` mappings, the default mode) — see
+[`component-type-restriction-not-enforced-at-sync-time.md`](../PlanStan/docs/bugs/component-type-restriction-not-enforced-at-sync-time.md)
+and
+[`never-synced-never-clears-for-twoway-mappings.md`](../PlanStan/docs/bugs/never-synced-never-clears-for-twoway-mappings.md).
+`RRD-013` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -71,8 +77,8 @@ below (§2.1, §3) refers to that specification.
 | 9 | RRD-009 | DONE 2026-09-10 | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | DONE 2026-09-10 | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | DONE 2026-09-10 | RRD-009 | Directional and shared-destination scenarios |
-| 12 | RRD-012 | READY | RRD-009 | Component restrictions, properties, and seven distinct states |
-| 13 | RRD-013 | QUEUED | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
+| 12 | RRD-012 | DONE 2026-09-10 | RRD-009 | Component restrictions, properties, and seven distinct states |
+| 13 | RRD-013 | READY | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
 | 14 | RRD-014 | QUEUED | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | QUEUED | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | QUEUED | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
@@ -1186,7 +1192,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-012 — Component restrictions, properties, and distinct states
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `05-properties-and-states.kalb`: Events L to A, Tasks L to B, Hidden
@@ -1198,13 +1204,89 @@ target and 65 of 145 registered test targets no longer compile.
   specification §2.5 are independently observable and independently asserted.
   Any state that cannot be distinguished today is recorded as a defect with its
   reproducer.
-- **Verification:** record the observed distinction for each of the seven states
-  individually.
+- **Verification:** `tools/fixturegen` gained `generateScenario05PropertiesAndStates()`
+  (`05-properties-and-states`): four two-binding LCs — Events (account A,
+  VEVENT-restricted via a real RFC 4791 `supported-calendar-component-set`
+  MKCALENDAR, so `CalendarType::Event` arrives through genuine discovery, never
+  injected), Tasks (account B, VTODO-restricted), Hidden (account C, then staged
+  `visible=false` through `CalendarManager::updateCalendar()`), and Paused (a
+  second calendar on account A, staged `syncEnabled=false` the same way — zero
+  compiled rules). Four LCs, eight enabled bindings, three compiled channels,
+  matching the design doc's shape exactly. Pinned by
+  [`tests/integration/tst_rrd012_properties_states.cpp`](../PlanStan/tests/integration/tst_rrd012_properties_states.cpp)
+  (env-gated, `PLANSTAN_DAVRIG=1`, 10/10 passing; full findings in
+  [`docs/testing/rrd-012-properties-states-evidence.md`](../PlanStan/docs/testing/rrd-012-properties-states-evidence.md)):
+  all seven §2.5 states individually distinguished — hidden (`visible=false`,
+  data-distinct from disabled), paused (`syncEnabled=false`, zero compiled
+  rules), calendar disabled, binding disabled, mapping/rule disabled (three
+  controlled variants via the same "hand edit" `KalbConfigManager` seam
+  scenario04 uses), account disconnected (reproduces the already-filed
+  `collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md`
+  independently), and never-synced (observed pre-settle inside the generator
+  itself, which fails hard if not genuinely true).
+
+  **Found and FIXED a real defect** in
+  `CollectionController::generateSyncMappingsFromLogicalCalendars()`
+  (`../PlanStan/src/controllers/collectioncontroller.cpp`): pausing a
+  calendar's sync (`syncEnabled=false`) left its channel running in the live
+  runtime forever, because (1) the persisted/compiled union's indexing loop
+  inserted every persisted mapping's id at the same constant last-slot index
+  instead of each one's own position, so a compiled mapping "superseding" a
+  persisted one by id silently overwrote the wrong array slot instead of its
+  own; and (2) a previously-compiled `auto_`-prefixed persisted row was never
+  pruned once its LC stopped producing that channel — the union only ever
+  added or in-place-superseded by id. Fixed both together: correct positional
+  indexing, plus pruning any `auto_`-prefixed persisted row that a
+  non-`Manual` LC's full "would-be-enabled" id space contains but the real,
+  state-respecting compiled set does not (computed via a per-LC forced-enabled
+  `generateMappings()` pass, so a `WiringPolicy::Manual` LC's deliberately
+  frozen `auto_` rows — spec §2.8 — are never touched). Verified with zero
+  regressions: `tst_collectioncontroller` unchanged at its known 25
+  passed/4 failed baseline; `live_graph_gate`/`live_fanout_gate` both pass
+  (three consecutive runs of `live_graph_gate`, which initially caught a
+  wrong first attempt at the fix — the Manual-frozen-row case — before the
+  per-LC id-space correction); `rrd010_relay_mesh`/`rrd011_directional_shared`
+  both re-pass in full.
+
+  **Found, filed but not fixed — two defects, plus a characterization:**
+  [`docs/bugs/component-type-restriction-not-enforced-at-sync-time.md`](../PlanStan/docs/bugs/component-type-restriction-not-enforced-at-sync-time.md) —
+  the VEVENT-only/VTODO-only restriction is real at calendar-creation time
+  (`RemoteCalendarBackend::createCalendarAsync()`) but never consulted at push
+  time (`BackendCapabilities::supportsCalendarType()`/`describeLoss()` have no
+  caller under `src/engine/` or `src/diff/`); confirmed both that Radicale
+  itself does not enforce the restriction server-side and that the app's own
+  sync silently delivers a wrong-typed local record to a type-restricted
+  remote with no loss/error surfaced.
+  [`docs/bugs/never-synced-never-clears-for-twoway-mappings.md`](../PlanStan/docs/bugs/never-synced-never-clears-for-twoway-mappings.md) —
+  `BaselineStore::setLastSyncTime()` has exactly one call site in the whole
+  engine, reached only by `dispatchFirstSync()`'s `SyncMode::OneWayUpload`-only
+  fast path; `SyncMode::TwoWay` (what Star/Hub, the collection default,
+  compiles) never calls it, so "never synced" is permanent for the most
+  common mode in the app. A second, separate finding in the same file: both
+  `SyncTopologyWidget::setBaselineStore()` and `RunPlanPanel::setDataSources()`'s
+  baseline-store fallback are dead wiring (zero production call sites) —
+  `RunPlanPanel`'s only live signal is `CollectionController::
+  runtimeLastSyncTimes()`, the same one broken above, with no working
+  fallback. Characterization only (recorded, not asserted pass/fail, "filed
+  for confirmation" not a defect): `generateMappings()` does not consult
+  `LogicalCalendar::enabled` — a calendar-disabled LC still compiles a live
+  rule, which may be correct by design (`enabled` is documented as a
+  load/query gate, not a sync gate) but the user-facing distinction from
+  `syncEnabled=false` is otherwise easy to lose.
+
+  Name/color/description: `CalendarManager::updateCalendar()` pushes color and
+  description immediately via PROPPATCH to every enabled binding (verified
+  round-trip through save/reopen); `displayName` is also honored by
+  `RemoteCalendarBackend::updateCalendarAsync()`'s PROPPATCH body by source
+  reading, but no production UI path was found that calls it with
+  `displayName` to rename one physical binding independently of the LC's own
+  label — a real backend capability with no exercised caller, named as a gap
+  for RRD-016/017.
 - **Next:** RRD-014.
 
 ### RRD-013 — Invalid corpus and the safe diagnostic open
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** Build the invalid corpus, kept separate from the openable one:
