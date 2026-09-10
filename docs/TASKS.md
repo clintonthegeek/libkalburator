@@ -1,8 +1,9 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-007`/`RRD-008` closed; `RRD-009` selected
-next — its acceptance needs a human to open the bundle and a screenshot
-export, flagged upstream to the user before starting)
+**Last updated:** 2026-09-10 (`RRD-007`/`RRD-008` closed; `RRD-009` BLOCKED
+on `../PlanStan/docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`,
+paused at the user's direction — every downstream `RRD` row is transitively
+blocked with it, so no other row is selectable right now)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -61,7 +62,7 @@ below (§2.1, §3) refers to that specification.
 | 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
-| 9 | RRD-009 | IN PROGRESS | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
+| 9 | RRD-009 | BLOCKED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
@@ -943,7 +944,11 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-009 — Scenario 01 as a retained openable bundle
 
-- **State:** QUEUED
+- **State:** BLOCKED 2026-09-10 — paused at the user's direction pending
+  `docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`
+  (`../PlanStan`). Every task downstream of `RRD-009` in the forward DAG
+  (`RRD-010` through `RRD-023`) is transitively blocked with it; there is no
+  other unblocked `RRD` row to select in the meantime.
 - **Depends on:** RRD-007, RRD-008
 - **Repository:** `../PlanStan`
 - **Scope:** Generate `01-everyday.kalb`: Personal L to A, Work L to B, Family
@@ -959,7 +964,48 @@ target and 65 of 145 registered test targets no longer compile.
   old graph does not suppress the usable bundle; it is recorded as a defect.
 - **Verification:** record the one command that prints the file to open, and the
   second-process credential check.
-- **Next:** RRD-010 through RRD-013 all unblock.
+- **Progress so far, not acceptance:** `tools/fixturegen/` gained
+  `davrigconfig.{h,cpp}` (reads `tools/davrig/rig.json` at runtime),
+  `davhttp.{h,cpp}` (parameterized MKCALENDAR/PROPFIND seeding, generalizing
+  `tst_live_graph_gate.cpp`'s `RadicaleHttp` for the RRD-007 rig),
+  `fixturecredentials.{h,cpp}` (`verifyProviderCredential()`: resolves a
+  provider's `passwordRef` out of `providers.kconfig` through a **fresh**
+  `PlanStan::KWalletSecretStore`, exposed as `fixturegen verify-credential`
+  so a caller can shell out to it as a genuinely separate OS process), and
+  `FixtureGen::generateScenario01()` in `fixturegenerator.cpp`. The last of
+  these: seeds accounts A/B/C on the rig with `planstan-fixture-<run-id>-
+  01-everyday-*`-prefixed calendars; installs a real `KWalletSecretStore` as
+  `SecretStoreRegistry::defaultStore()` for the process; assembles Notes
+  (local-only) and Personal/Work (local+one remote, Mirror) through real
+  `CollectionAssembler::applySource()` calls; attaches account C's `Family`
+  leg onto the *existing* `Family` logical calendar (already carrying L+A
+  from account A's applySource) via the **real topology widget's**
+  `SyncTopologyWidget::adoptToLogicalCalendar()` + `applyChanges()` —
+  `CollectionAssembler` has no "second remote leg onto an existing LC"
+  primitive, so this is the production mechanism for exactly that edit, and
+  doubles as the scope's "inspect the real topology widget" step.
+  Verified live (`fixturegen generate --scenario 01-everyday` against a
+  running `tools/davrig` rig) through the point of writing the `.kalb`:
+  direct inspection of the written file confirms 4 logical calendars with
+  bindings `(1, 2, 3, 2)` — Notes/Personal/Family/Work, matching the spec
+  exactly — and `Family`'s three bindings are `local` + both remote accounts,
+  i.e. the Hub-over-three-endpoints shape assembled correctly; the debug log
+  additionally confirms `Archive` (account A, deliberately unpicked) renders
+  with `ghosts: 1` on its account node. Blocked past that point: the
+  scenario's final real sync (`cc->syncNow()`) never completes — see the
+  filed defect for the full evidence trail, including a first, now-fixed
+  finding (`isSyncInProgress()` can get stuck `true` forever after a
+  synchronously-rejected run, worked around in `fixturegenerator.cpp` by
+  waiting on `allSyncsFinished` instead) and a second, unconfirmed one (some
+  providers' auto-sync-on-load never visibly starts) that this task does not
+  attempt to fix.
+- **Reproduce/resume:** `tools/davrig/davrig start`, then
+  `QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 ./build-dev/tools/
+  fixturegen/fixturegen generate --scenario 01-everyday --out-dir /tmp/
+  fixture-output`. The rig was stopped after the last repro run; no partial
+  bundle was retained.
+- **Next:** RRD-010 through RRD-013 (blocked, transitively, until this
+  clears).
 
 ### RRD-010 — Chain relay and mesh scenarios
 
