@@ -1,12 +1,15 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-010` DONE — scenarios 02/03 (Chain relay,
-Mesh) built and driven against a live `tools/davrig` rig; all five spec §2.7
-oracle comparisons pinned in `tst_rrd010_relay_mesh.cpp`, 6/6 passing. One new
-defect filed:
-[`collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md`](../PlanStan/docs/bugs/collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md) —
-one unreachable account disables Sync Now for the WHOLE collection, not just
-that account's channels. `RRD-011` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-011` DONE — scenarios 04 (directional
+Manual rules) and 06 (shared destination) built and driven against a live
+`tools/davrig` rig, `tst_rrd011_directional_shared.cpp` 4/4 passing. Found and
+FIXED a real defect in `SyncEngineWorker::dispatchFirstSync()`
+(`libkalburator/src/engine/syncengine.cpp`): a one-way mapping's first sync
+addressed the target backend with the SOURCE's calendar id, so any Manual
+one-way rule between two differently-identified calendars silently delivered
+nothing on its first run — see
+[`dispatchfirstsync-uses-source-calendar-id-for-target-reads-and-writes.md`](../PlanStan/docs/bugs/dispatchfirstsync-uses-source-calendar-id-for-target-reads-and-writes.md).
+`RRD-012` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -67,8 +70,8 @@ below (§2.1, §3) refers to that specification.
 | 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | DONE 2026-09-10 | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | DONE 2026-09-10 | RRD-009 | Chain relay and mesh scenarios with independent oracles |
-| 11 | RRD-011 | READY | RRD-009 | Directional and shared-destination scenarios |
-| 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
+| 11 | RRD-011 | DONE 2026-09-10 | RRD-009 | Directional and shared-destination scenarios |
+| 12 | RRD-012 | READY | RRD-009 | Component restrictions, properties, and seven distinct states |
 | 13 | RRD-013 | QUEUED | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
 | 14 | RRD-014 | QUEUED | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | QUEUED | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
@@ -1104,7 +1107,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-011 — Directional and shared-destination scenarios
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `04-directional.kalb` (Bulletin, four bindings, Manual rules A to L,
@@ -1123,11 +1126,67 @@ target and 65 of 145 registered test targets no longer compile.
   aggregate is pinned.
 - **Verification:** the server-read-only variant of scenario 04 is deferred to
   RRD-015 and is not claimed here.
+- **Result:** `tools/fixturegen` gained `generateScenario04Directional()`/
+  `generateScenario06SharedDestination()`. Scenario 04 assembles one
+  four-binding "Bulletin" LC the same applySource-then-topology-widget-adopt
+  way as RRD-010's scenarios, but with `WiringPolicy::Manual`; three
+  PERSISTED `SyncMapping` rows (A to L OneWayUpload, L to/from B TwoWay, L
+  to C OneWayUpload) are then added directly through `KalbConfigManager` —
+  the same seam `tst_live_graph_gate.cpp`'s cross-LC-convergence "rogue"
+  mapping uses, i.e. encoding a rule the way a hand edit to the `.kalb`
+  would. Scenario 06 assembles two SEPARATE Manual two-binding LCs
+  ("Personal": local+A, "Work": local+B), provisions account C's
+  "aggregate" calendar but deliberately never adopts it into any LC (an
+  existing unbound physical endpoint, same ghost treatment as scenario 01's
+  Archive), and adds four persisted rows: the two ordinary TwoWay pairs plus
+  the shared-destination fan-in itself — two DIFFERENT LCs' remote copies
+  both OneWayUpload into the SAME unbound aggregate. Discovered along the
+  way: flipping a fresh 2-binding LC straight to Manual, then adopting
+  further legs, can still transiently sit on the collection's Hub default
+  for one Apply and freeze an extra auto-generated rule into the persisted
+  set (spec 2.8's documented "editing an automatic rule freezes current
+  rules into Manual" behavior) — worked around by clearing all persisted
+  mappings immediately before adding the intended explicit rows, since these
+  bundles' entire point is that the explicit set is the ONLY set.
+
+  All acceptance oracles pinned live against the RRD-007 rig in
+  `tests/integration/tst_rrd011_directional_shared.cpp` (env-gated,
+  `PLANSTAN_DAVRIG=1`, 4/4 passing; findings in
+  `../PlanStan/docs/testing/rrd-011-directional-shared-evidence.md`): both
+  scenarios' one-way edges produce no reverse write (target-only sentinels
+  never reach the source); scenario 04's forward flow and its L-B two-way
+  edge all converge correctly; scenario 06's fan-in delivers both sources'
+  records into the aggregate and a second reconciliation pass erases
+  neither; deletion at the aggregate is NOT resurrected by the next sync,
+  and deletion at a source is NOT propagated downstream to the aggregate
+  (both observed and recorded, not mandated either way, per the acceptance's
+  own "pinned" wording).
+
+  One real defect found and FIXED (not just filed) along the way — see
+  `../PlanStan/docs/bugs/dispatchfirstsync-uses-source-calendar-id-for-target-reads-and-writes.md`:
+  `SyncEngineWorker::dispatchFirstSync()` computed one shared calendar id
+  from `mapping.sourceCalendar` and used it to address BOTH the source and
+  target backends, so a mapping's first-ever sync silently wrote nothing
+  whenever source and target genuinely have different calendar ids (the
+  ordinary case for any Manual one-way rule — RRD-010's Chain/Mesh scenarios
+  never hit this because `generateMappings()` always emits `TwoWay`, and
+  every existing first-sync unit test happened to reuse one calendar id on
+  both sides). Fixed by splitting into `srcColId`/`tgtColId`, matching the
+  pattern the sibling `harvestBaselinesAfterFirstSync()` already used
+  correctly. A regression test was added
+  (`tests/calendar/tst_calendar_first_sync_via_blob_engine.cpp`'s
+  `firstSync_oneWayUpload_withDifferentCalendarIds_mirrorsSourceToTarget()`)
+  but could not be compiled in this session: libkalburator's standalone test
+  build has a pre-existing, unrelated break (several `tests/calendar/stubs/*`
+  files use flat includes that don't resolve post-RRD-001). Verified instead
+  end to end against the live rig via the RRD-011 integration test above,
+  which failed identically to the bug's description before the fix and
+  passes fully after it.
 - **Next:** RRD-014, RRD-018, RRD-021.
 
 ### RRD-012 — Component restrictions, properties, and distinct states
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `05-properties-and-states.kalb`: Events L to A, Tasks L to B, Hidden

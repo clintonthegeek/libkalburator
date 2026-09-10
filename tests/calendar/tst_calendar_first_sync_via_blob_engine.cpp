@@ -42,6 +42,12 @@ constexpr auto kSourceBackendId = "source-mock";
 constexpr auto kTargetBackendId = "target-mock";
 constexpr auto kCollectionId    = "stub-collection";
 constexpr auto kCalendarId      = "calendar-1";
+// RRD-011: a second, genuinely different calendar id for the target side.
+// Every other mapping in this file reuses kCalendarId on both sides, which
+// happens to mask a real bug: dispatchFirstSync() used to read/write the
+// TARGET backend with the SOURCE's calendar id (see
+// firstSync_oneWayUpload_withDifferentCalendarIds_mirrorsSourceToTarget()).
+constexpr auto kOtherCalendarId = "calendar-2";
 constexpr auto kMappingId       = "mapping-first-sync";
 
 constexpr int kSyncTimeoutMs = 30000;
@@ -64,6 +70,20 @@ SyncMapping makeOneWayUploadMapping()
     m.sourceCalendar  = QString::fromLatin1(kCalendarId);
     m.targetBackend   = QString::fromLatin1(kTargetBackendId);
     m.targetCalendar  = QString::fromLatin1(kCalendarId);
+    m.mode            = SyncMode::OneWayUpload;
+    m.conflictPolicy  = ConflictResolution::SourceWins;
+    m.enabled         = true;
+    return m;
+}
+
+SyncMapping makeOneWayUploadMappingWithDifferentCalendarIds()
+{
+    SyncMapping m;
+    m.id              = QString::fromLatin1(kMappingId);
+    m.sourceBackend   = QString::fromLatin1(kSourceBackendId);
+    m.sourceCalendar  = QString::fromLatin1(kCalendarId);
+    m.targetBackend   = QString::fromLatin1(kTargetBackendId);
+    m.targetCalendar  = QString::fromLatin1(kOtherCalendarId);
     m.mode            = SyncMode::OneWayUpload;
     m.conflictPolicy  = ConflictResolution::SourceWins;
     m.enabled         = true;
@@ -101,6 +121,13 @@ private slots:
 
     // Mirror direction: source gets copied to target.
     void firstSync_oneWayUpload_mirrorsSourceToTarget();
+
+    // RRD-011 regression: source and target calendar ids genuinely differ
+    // (the common case for a Manual one-way rule between two distinct
+    // calendars) -- every other test in this file reuses the same id on
+    // both sides, which masked dispatchFirstSync() addressing the TARGET
+    // backend with the SOURCE's calendar id.
+    void firstSync_oneWayUpload_withDifferentCalendarIds_mirrorsSourceToTarget();
 
     // TwoWay first-sync still works via the old quick-path (NOT BlobSyncEngine),
     // ensuring TwoWay converges correctly on first sync.
@@ -274,6 +301,40 @@ void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_mirrorsSourceToT
     QVERIFY(targetUids().contains(QStringLiteral("src-1")));
     QVERIFY(targetUids().contains(QStringLiteral("src-2")));
 
+}
+
+void TestCalendarFirstSyncViaBlobEngine::firstSync_oneWayUpload_withDifferentCalendarIds_mirrorsSourceToTarget()
+{
+    // The target backend's calendar carries a DIFFERENT id than the
+    // source's -- e.g. a local "Bulletin" calendar receiving a one-way rule
+    // from a remote calendar whose id is an unrelated slug. Every other
+    // test in this file reuses kCalendarId on both sides, which happens to
+    // mask a real bug: dispatchFirstSync() used to compute a single colId
+    // from the mapping's sourceCalendar and use it to address BOTH the
+    // source AND target backends, so the target read/write silently
+    // targeted a calendar id ("calendar-1") the target backend never had.
+    m_target->createCalendar(QString::fromLatin1(kCollectionId),
+                             QString::fromLatin1(kOtherCalendarId),
+                             QStringLiteral("Calendar 2"));
+
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("diff-1"), QStringLiteral("Diff One")));
+    m_source->addIncidence(QString::fromLatin1(kCalendarId),
+                           makeEvent(QStringLiteral("diff-2"), QStringLiteral("Diff Two")));
+
+    setupCoordinator({ makeOneWayUploadMappingWithDifferentCalendarIds() });
+    QVERIFY(runOneSync());
+
+    const QStringList targetOtherUids = m_target->allUids(QString::fromLatin1(kOtherCalendarId));
+    QCOMPARE(sourceUids().size(), 2);
+    QCOMPARE(targetOtherUids.size(), 2);
+    QVERIFY(targetOtherUids.contains(QStringLiteral("diff-1")));
+    QVERIFY(targetOtherUids.contains(QStringLiteral("diff-2")));
+
+    // And nothing was ever written to the target's OWN "calendar-1" (which
+    // it never had in this test) -- confirms the fix addresses the target
+    // with its real calendar id, not a coincidental fallback.
+    QVERIFY(m_target->allUids(QString::fromLatin1(kCalendarId)).isEmpty());
 }
 
 void TestCalendarFirstSyncViaBlobEngine::firstSync_twoWay_usesOldQuickPathAndConverges()

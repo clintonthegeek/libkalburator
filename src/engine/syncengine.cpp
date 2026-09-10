@@ -2851,14 +2851,23 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     IBackendRecordMutator *tgtMutator = recordMutator(tgtBackend);
     if (!tgt || !tgtMutator)
         return false;
-    const QString colId = request.mapping.sourceCalendar;
+    // RRD-011: each side has its OWN calendar id, not a single shared one —
+    // sourceCalendar and targetCalendar coincide only by accident (e.g. a
+    // mirror pair whose local and remote calendars happen to reuse the same
+    // UUID). A Manual mapping between two genuinely different calendars
+    // (the common case: any one-way rule) does not get that coincidence, so
+    // every use below must address each backend with ITS OWN calendar id —
+    // the same asymmetric srcColId/tgtColId split
+    // harvestBaselinesAfterFirstSync() (below) already uses correctly.
+    const QString srcColId = request.mapping.sourceCalendar;
+    const QString tgtColId = request.mapping.targetCalendar;
 
     bool targetEmpty = false;
     QString targetReadErr;
     QMetaObject::invokeMethod(tgtBackend,
-        [tgt, colId, &targetEmpty, &targetReadErr]() {
+        [tgt, tgtColId, &targetEmpty, &targetReadErr]() {
             QList<BackendRecord> records;
-            const auto load = tgt->loadRecordsResult(colId);
+            const auto load = tgt->loadRecordsResult(tgtColId);
             records = load.records;
             targetReadErr = load.errorMessage;
             if (!load.ok()) {
@@ -2913,10 +2922,10 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // builder ReadOnly seed); this is the engine-level backstop for the
     // first-sync mirror, uniform with the steady-state gate in
     // unifiedContinueAfterConflicts. Skip is a no-op, not an error.
-    const bool tgtWritable = tgtBackend->discoveredWritable(colId);
+    const bool tgtWritable = tgtBackend->discoveredWritable(tgtColId);
     if (!tgtWritable) {
         qWarning() << "SyncEngine: target backend" << request.mapping.targetBackend
-                   << "reports read-only for collection" << colId
+                   << "reports read-only for collection" << tgtColId
                    << "- skipping first-sync writes";
     }
 
@@ -2935,8 +2944,8 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     // is pure (no backend I/O) and runs here on the worker thread.
     QList<BackendRecord> srcRecords;
     QMetaObject::invokeMethod(srcBackend,
-        [src, colId, &srcRecords, &mirrorReadErr]() {
-            const auto load = src->loadRecordsResult(colId);
+        [src, srcColId, &srcRecords, &mirrorReadErr]() {
+            const auto load = src->loadRecordsResult(srcColId);
             srcRecords = load.records;
             mirrorReadErr = load.errorMessage;
         }, Qt::BlockingQueuedConnection);
@@ -2944,8 +2953,8 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
     QList<BackendRecord> tgtRecords;
     if (mirrorReadErr.isEmpty()) {
         QMetaObject::invokeMethod(tgtBackend,
-            [tgt, colId, &tgtRecords, &mirrorReadErr]() {
-                const auto load = tgt->loadRecordsResult(colId);
+            [tgt, tgtColId, &tgtRecords, &mirrorReadErr]() {
+                const auto load = tgt->loadRecordsResult(tgtColId);
                 tgtRecords = load.records;
                 mirrorReadErr = load.errorMessage;
             }, Qt::BlockingQueuedConnection);
@@ -2997,7 +3006,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         }
 
         QMetaObject::invokeMethod(tgtBackend,
-            [tgtMutator, colId, tgtWritable, toCreate, toUpdate, toDelete,
+            [tgtMutator, tgtColId, tgtWritable, toCreate, toUpdate, toDelete,
              &mirrorErrors, &mirrorAliases]() {
                 for (const auto &sr : toCreate) {
                     // O55: capture the backend-assigned id for the alias
@@ -3006,7 +3015,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
                     // pre-O55.
                     QString storedId;
                     if (tgtWritable) {
-                        storedId = tgtMutator->createRecord(colId, sr);
+                        storedId = tgtMutator->createRecord(tgtColId, sr);
                         if (storedId.isEmpty())
                             ++mirrorErrors;
                         else if (storedId != sr.id)
@@ -3050,7 +3059,7 @@ bool SyncEngineWorker::dispatchFirstSync(const Request &request)
         // read-only. That is a no-op success, not a failure — but record it on
         // the result so consumers can badge the edge instead of seeing a silent
         // success with zero stats. Stable prefix "target-readonly:" for parsing.
-        result.warnings << QStringLiteral("target-readonly:%1").arg(colId);
+        result.warnings << QStringLiteral("target-readonly:%1").arg(tgtColId);
     }
 
     result.success = true;
