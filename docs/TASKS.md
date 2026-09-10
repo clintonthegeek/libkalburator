@@ -1,25 +1,27 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-014` DONE — the mutation set run against
-RRD-009's `01-everyday` clean baseline, real recurrence (DST-spanning, one
-detached exception), VTODO, and UID-reuse content seeded through the
-production API. `tst_rrd014_mutations.cpp` 9/9 passing, stable across four
-consecutive runs. Create/edit/delete at three real origins, a genuine
-concurrent-edit conflict, disconnect/reconnect recovery, and UID isolation
-all confirmed. **Central finding, the campaign's most severe data-loss
-defect so far: this task's own acceptance clause does not hold** —
-`LocalBackend` names an exception's on-disk file identically to its
-master's (both keyed by UID alone), so the two writes race for the same
-file and one non-deterministically overwrites the other, confirmed against
-the raw local file and both real CalDAV remotes — see
-[`local-backend-exception-overwrites-master-same-filename.md`](../PlanStan/docs/bugs/local-backend-exception-overwrites-master-same-filename.md).
-A second defect, previously only observed statically by RRD-012, was
-live-confirmed and formalized:
-[`disabled-mapping-override-loses-to-compiler-while-still-compiled.md`](../PlanStan/docs/bugs/disabled-mapping-override-loses-to-compiler-while-still-compiled.md) —
-a persisted "disabled" override on a still-actively-compiled mapping loses
-to the compiler's fresh copy on reopen. Neither fixed: both are
-foundational/shared-code changes outside this characterization task's
-scope. `RRD-015` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-015` DONE — the capability matrix.
+`tools/davrig` gained real, server-enforced `from_file` Radicale rights
+support (read-only and denied demo calendars, by slug convention).
+`tst_rrd015_capability_matrix.cpp` 6/6 passing, ~12s; published at
+`../PlanStan/docs/testing/rrd-015-capability-matrix.md`. Confirmed real:
+`CalDavCapabilityDiscovery` correctly parses the server's actual privilege
+set and reports read-only calendars as such in the account picker; a
+fully-inaccessible collection is skipped gracefully during discovery, not
+fatally. **Two defects found and filed:** the picker's correct read-only
+detection is discarded at adoption (the resulting binding is an ordinary,
+unmarked Sync-role binding — see
+[`discovered-read-only-calendars-lose-their-read-only-status-on-adoption.md`](../PlanStan/docs/bugs/discovered-read-only-calendars-lose-their-read-only-status-on-adoption.md)),
+and the sync engine's own write-guard,
+`RemoteCalendarBackend::discoveredWritable()`, is hardcoded `return true`
+for every CalDAV calendar regardless of its real privilege set — verified
+live, a write into a real read-only remote was attempted anyway and
+refused only by the server's own 403, "safe by accident" — see
+[`discoveredwritable-hardcoded-true-for-caldav-ignores-real-privilege-set.md`](../PlanStan/docs/bugs/discoveredwritable-hardcoded-true-for-caldav-ignores-real-privilege-set.md).
+Transformation loss recorded as unavailable with this session's
+infrastructure (every live rig here uses only full-fidelity Local/CalDAV
+backends), per the acceptance's own explicit allowance. `RRD-016` is
+`READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -84,8 +86,8 @@ below (§2.1, §3) refers to that specification.
 | 12 | RRD-012 | DONE 2026-09-10 | RRD-009 | Component restrictions, properties, and seven distinct states |
 | 13 | RRD-013 | DONE 2026-09-10 | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
 | 14 | RRD-014 | DONE 2026-09-10 | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
-| 15 | RRD-015 | READY | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
-| 16 | RRD-016 | QUEUED | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
+| 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
+| 16 | RRD-016 | READY | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | QUEUED | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
@@ -1445,7 +1447,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-015 — The capability matrix
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-013, RRD-014
 - **Repository:** `../PlanStan`, `../libkalburator`
 - **Scope:** Establish real read-only discovery and enforcement, and real ACL
@@ -1458,13 +1460,65 @@ target and 65 of 145 registered test targets no longer compile.
   registry entry. A fake server may test the application contract, labeled
   separately from real DAV evidence. Each gap becomes a focused upstream defect
   with an executable case.
-- **Verification:** publish the matrix and cite the rig configuration that
-  produced each row.
+- **Verification:** `tools/davrig` gained real `from_file` Radicale rights
+  support (`write_rights_file()` in `davrig.py`): any calendar slug containing
+  "readonly" is genuinely server-enforced read-only, any slug containing
+  "denied" is genuinely inaccessible, and everything else keeps the previous
+  `owner_only`-equivalent behavior — a real, moderate rig extension, not a
+  fake server. Two demo calendars were seeded directly into Radicale's own
+  on-disk storage (MKCALENDAR itself needs write permission the read-only
+  rule denies by design). Pinned by
+  [`tests/integration/tst_rrd015_capability_matrix.cpp`](../PlanStan/tests/integration/tst_rrd015_capability_matrix.cpp)
+  (env-gated, `PLANSTAN_DAVRIG=1`, 6/6 passing, ~12s; published matrix at
+  [`docs/testing/rrd-015-capability-matrix.md`](../PlanStan/docs/testing/rrd-015-capability-matrix.md)).
+
+  Confirmed REAL and working: `CalDavCapabilityDiscovery` genuinely parses
+  `DAV:current-user-privilege-set` and correctly reports a server-enforced
+  read-only calendar as such in the account picker
+  (`CollectionInfo::readOnly`); an entirely inaccessible (403) collection is
+  skipped gracefully, not fatally, and the rest of discovery still
+  completes.
+
+  **Two defects found and filed, not fixed — the picker's correct
+  detection is discarded at exactly the two points that would make it
+  matter:**
+  [`discovered-read-only-calendars-lose-their-read-only-status-on-adoption.md`](../PlanStan/docs/bugs/discovered-read-only-calendars-lose-their-read-only-status-on-adoption.md) —
+  `CollectionInfo::readOnly` has exactly one consumer (the picker widget);
+  `CollectionAssembler::applySource()` never looks at it, so the adopted
+  `CalendarBackendBinding` is an ordinary enabled Sync-role binding,
+  indistinguishable from a writable calendar's.
+  [`discoveredwritable-hardcoded-true-for-caldav-ignores-real-privilege-set.md`](../PlanStan/docs/bugs/discoveredwritable-hardcoded-true-for-caldav-ignores-real-privilege-set.md) —
+  `RemoteCalendarBackend::discoveredWritable()`, the function the sync
+  engine's own write-guard consults (`dispatchFirstSync()`'s `tgtWritable`
+  check, found during RRD-013), is hardcoded `return true` unconditionally
+  and never reads the same, already-correctly-discovered privilege set.
+  Verified live: a write into a real read-only remote was attempted anyway,
+  reached the server, and was refused only by the SERVER's own 403 — "safe
+  by accident, not by design." Neither fixed here: both are foundational
+  changes (a binding-role assignment change with wizard/UX implications;
+  cross-object plumbing the sync engine's write path uses on every mapping,
+  every sync) outside this characterization task's scope.
+
+  Transformation loss (Warn/Abort/Proceed for a genuinely lossy backend
+  pairing) is recorded as **unavailable with this session's infrastructure**,
+  per the acceptance's own explicit allowance: every live rig this campaign
+  built uses only `LocalBackend` and CalDAV against Radicale, both
+  full-fidelity for the properties in play — exactly the pairing the spec
+  itself warns may not trigger loss. `BackendCapabilities::describeLoss()`
+  is real, unit-tested logic, but no backend with genuinely narrower
+  property support (DecSync/Org/Akonadi are compiled in but not part of any
+  RRD rig) is available to demonstrate it against live.
+
+  Not attempted: scenario04's dedicated "server-read-only variant" fixture
+  file. The capability matrix's core claims were established with a
+  smaller, standalone construction instead (direct on-disk seeding, no new
+  scenario file) — sufficient for this task's acceptance, but scenario04
+  itself is unchanged.
 - **Next:** RRD-022.
 
 ### RRD-016 — Calendars, copies, and rules page as a read-only projection
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-006, RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** Build the page as a new first page in the existing
