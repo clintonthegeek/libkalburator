@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <functional>
+#include <kalburator/types/csscolor.h>
 
 namespace Kalburator::Sync {
 
@@ -368,7 +369,8 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
         if (!colors.isEmpty()) {
             QString colorStr = colors.at(0).toElement().text();
             if (!colorStr.isEmpty()) {
-                caps.serverColor = QColor(colorStr);
+                // #RRGGBBAA, not Qt's #AARRGGBB — see colorFromCssHex().
+                caps.serverColor = Kalburator::colorFromCssHex(colorStr);
             }
         }
 

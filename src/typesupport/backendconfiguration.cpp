@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <QColor>
 #include <QObject>
+#include <kalburator/types/csscolor.h>
 
 namespace Kalburator::Sync {
 
@@ -25,7 +26,7 @@ PerCalendarCapabilities PerCalendarCapabilities::fromJson(const QJsonObject &jso
 
     const QString colorStr = json.value(QStringLiteral("color")).toString();
     if (!colorStr.isEmpty()) {
-        caps.serverColor = QColor(colorStr);
+        caps.serverColor = Kalburator::colorFromCssHex(colorStr);
     }
 
     return caps;

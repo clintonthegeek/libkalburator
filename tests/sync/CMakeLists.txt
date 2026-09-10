@@ -23,6 +23,10 @@ kalburator_add_sync_test(tst_secretstore)
 # Pure QString helper; runs in the default profile.
 kalburator_add_sync_test(tst_davslug)
 
+# 2026-09-10 — Apple calendar-color (#RRGGBBAA) vs Qt's #AARRGGBB. Pure QColor
+# helper; runs in the default profile.
+kalburator_add_sync_test(tst_csscolor)
+
 # VP.c-step-1a (vtodo-parity) — detached-exception blob-pipeline record
 # identity. Pure QString/QDateTime helper; runs in the default profile.
 kalburator_add_sync_test(tst_record_identity)
