@@ -1,9 +1,10 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-007`/`RRD-008` closed; `RRD-009` BLOCKED
-on `../PlanStan/docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`,
-paused at the user's direction — every downstream `RRD` row is transitively
-blocked with it, so no other row is selectable right now)
+**Last updated:** 2026-09-10 (`RRD-009` UNBLOCKED — both defects that blocked
+it are fixed and released: the topology-publication defect in `../PlanStan`
+and the CalDAV `calendar-color` round trip here, tagged `v1.06` and pinned.
+Scenario 01 now generates end to end. `RRD-009` is selectable again, and with
+it the whole downstream DAG.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -62,7 +63,7 @@ below (§2.1, §3) refers to that specification.
 | 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
-| 9 | RRD-009 | BLOCKED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
+| 9 | RRD-009 | READY | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
@@ -944,11 +945,24 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-009 — Scenario 01 as a retained openable bundle
 
-- **State:** BLOCKED 2026-09-10 — paused at the user's direction pending
-  `docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`
-  (`../PlanStan`). Every task downstream of `RRD-009` in the forward DAG
-  (`RRD-010` through `RRD-023`) is transitively blocked with it; there is no
-  other unblocked `RRD` row to select in the meantime.
+- **State:** READY 2026-09-10 — was BLOCKED; both blocking defects are now
+  fixed, released and verified, so the whole downstream DAG is selectable
+  again.
+  - `../PlanStan/docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`:
+    a topology Apply published the persistence-filtered mapping list to the
+    runtime, leaving a policy-driven collection with zero live channels while
+    sync still reported success. Fixed by splitting the operational and
+    persistence mapping lists at the PlanStan seam. The same conflation ran
+    the other way in `CollectionAssembler` and the mapping-regeneration
+    handler, which froze compiler output into the store; fixed with it.
+  - `../PlanStan/docs/bugs/caldav-calendar-color-roundtrip-rotates-channels.md`:
+    Apple's `#RRGGBBAA` `calendar-color` was read as Qt's `#AARRGGBB`, so a
+    colour never matched itself across a round trip and every sync of a
+    coloured calendar failed on the resulting property conflict. Fixed here
+    in `src/types/csscolor.h`, released as `v1.06`, pinned by PlanStan.
+  - Scenario 01 now generates end to end and syncs all four channels,
+    including the leg adopted through the real topology widget. What remains
+    for this task is its acceptance evidence, not its mechanics.
 - **Depends on:** RRD-007, RRD-008
 - **Repository:** `../PlanStan`
 - **Scope:** Generate `01-everyday.kalb`: Personal L to A, Work L to B, Family
