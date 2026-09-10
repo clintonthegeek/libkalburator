@@ -1,6 +1,8 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-007` closed; `RRD-008` selected next)
+**Last updated:** 2026-09-10 (`RRD-007`/`RRD-008` closed; `RRD-009` selected
+next — its acceptance needs a human to open the bundle and a screenshot
+export, flagged upstream to the user before starting)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -58,8 +60,8 @@ below (§2.1, §3) refers to that specification.
 | 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
 | 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
-| 8 | RRD-008 | IN PROGRESS | RRD-002 | Bundle contract, manifest schema, and guarded generator |
-| 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
+| 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
+| 9 | RRD-009 | IN PROGRESS | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
@@ -858,7 +860,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-008 — Bundle contract, manifest schema, and guarded generator
 
-- **State:** IN PROGRESS
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-002
 - **Repository:** `../PlanStan`
 - **Scope:** Implement `tools/fixturegen/`, a small C++ tool over the existing
@@ -875,6 +877,68 @@ target and 65 of 145 registered test targets no longer compile.
 - **Verification:** record which loader path actually reads `profileLayout`,
   since the live-fixture JSON puts it at the `.kalb` root while
   `CollectionPaths::layoutFromMetadata()` reads a metadata map.
+- **Result:** `profileLayout` verification done by reading the code, not
+  guessing: `CollectionWizard::writeKalb()` writes `profileLayout` at the JSON
+  **root** (`collectionwizard.cpp:383`); `KalbConfigManager::
+  loadCollectionConfigFromFile()` assigns `m_collectionConfig =
+  jsonObj.toVariantMap()` for the **whole root object**
+  (`libkalcal/models/src/kalbconfigmanager.cpp:53`); every call site of
+  `CollectionPaths::layoutFromMetadata()` passes that same `m_collectionConfig`
+  (`collectioncontroller.cpp:1560,2211,2271,2309`,
+  `collectionruntimedefinitioncompiler.cpp:45`). So the root-level shape is the
+  one the real loader takes — a nested `"metadata"` sub-object would never be
+  seen. `tools/fixturegen`'s bare-.kalb writer follows the same root-level
+  shape.
+  `tools/fixturegen/` (CMake target `fixturegen-core`, a static lib, plus the
+  `fixturegen` CLI shell over it — linked after `tests/sync` and
+  `tests/wizards` in the root `CMakeLists.txt` so it can reuse `TestUtils`):
+  `fixturemanifest.{h,cpp}` (manifest schema: run id, scenario, owned local/
+  remote resources, `ownedPrefix`/`ownedHosts` guard fields, checkpoints,
+  free-form `expected` state — every path relative to the bundle dir, never
+  absolute), `fixtureresetguard.{h,cpp}` (`isRemoteResourceDeletable()`:
+  refuses unless a resource's id starts with `ownedPrefix` **and** its host is
+  in `ownedHosts`; `resetFixture()`: validates every remote resource before
+  touching anything, refuses a local path that resolves outside the bundle
+  directory, deletes only what the manifest names, never enumerates), and
+  `fixturegenerator.{h,cpp}` (`generateSmokeScenario()`: writes a bare nested
+  `.kalb`, opens it with a real `SyncTestHarness`-seeded `CollectionController`
+  — the same `BackendRegistry`/`ProviderManager`/plugin seeding
+  `AppController::seedBuiltinContributions()` does in production — calls the
+  real `PlanStan::CollectionAssembler::applySource()` (Local kind, one "Smoke"
+  calendar) exactly as the collection wizard's local path does, which itself
+  calls `kalbConfigManager()->saveCollectionConfigFile()`; then closes and
+  reopens with a **second, independent** harness and refuses to succeed if the
+  reopened structural summary doesn't match the just-seeded one — that's the
+  "ready" checkpoint and the save/reopen proof in one step). CLI: `fixturegen
+  generate [--out-dir DIR] [--scenario NAME] [--run-id ID]` and `fixturegen
+  reset --manifest PATH`; `generate` prints the exact `.kalb` path to open.
+  Verified manually first (`fixturegen generate` into a scratch dir; inspected
+  the emitted `.kalb` — a genuine production-shaped v2 `CollectionSettings`
+  document with palette/presets/templates/views, not a stub; moved the run
+  directory and confirmed `fixturegen reset --manifest <moved path>/
+  manifest.json` still resolved and removed exactly the one calendar
+  directory it owned), then pinned in
+  `tests/tools/tst_fixturegen.cpp` (target `tst_fixturegen`, part of the
+  default `ctest` run, no live service needed): full bundle layout present
+  (`providers.kconfig` — explicitly touched since `KConfig::sync()` won't
+  materialize an empty file — `calendars/`, `cache/`, `journal/`, `sync.db`,
+  `evidence/generate.log`); manifest round-trips through
+  `FixtureManifest::writeToFile()`/`readFromFile()`; a **third**, independent
+  `SyncTestHarness` (beyond the generator's own two) reopens the emitted
+  `.kalb` and asserts the one-local-calendar/one-Primary-binding shape;
+  moving the run directory two levels deep and reopening from there still
+  works, and the manifest's relative resource path still resolves under the
+  new location; two runs into the same `--out-dir` don't collide, and
+  resetting one doesn't touch the other's calendar directory; the reset guard
+  refuses a resource whose id doesn't start with `ownedPrefix`, refuses one
+  whose host isn't in `ownedHosts`, refuses (and touches nothing, proven by a
+  surviving sentinel file) a local path that resolves outside the bundle
+  directory via `../`, and removes exactly the one directory a manifest names
+  while leaving an unlisted sibling untouched. `ctest --test-dir build-dev -R
+  tst_fixturegen --output-on-failure` — 11/11 passed (9 test functions +
+  init/cleanup), 0.1s. `cmake --build build-dev -j6` for `all` still fails on
+  exactly the one pre-existing `tst_backendconfigwidgets.cpp` defect recorded
+  in the `RRD-002`/`RRD-007` baseline; no new build failures from this task.
 - **Next:** RRD-009.
 
 ### RRD-009 — Scenario 01 as a retained openable bundle
