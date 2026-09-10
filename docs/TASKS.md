@@ -1,6 +1,6 @@
 # Task queue
 
-**Last updated:** 2026-09-09 (RRD release-readiness campaign registered)
+**Last updated:** 2026-09-10 (`RRD-007` closed; `RRD-008` selected next)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -57,8 +57,8 @@ below (§2.1, §3) refers to that specification.
 | 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
 | 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
-| 7 | RRD-007 | READY | RRD-002 | A project-local DAV rig with real per-account outage |
-| 8 | RRD-008 | READY | RRD-002 | Bundle contract, manifest schema, and guarded generator |
+| 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
+| 8 | RRD-008 | IN PROGRESS | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
 | 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
@@ -798,7 +798,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-007 — Provision a project-local DAV test rig
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-002
 - **Repository:** `../PlanStan`
 - **Scope:** A project-local Radicale rig owned by this repository: its own
@@ -813,11 +813,52 @@ target and 65 of 145 registered test targets no longer compile.
   unused by any RRD acceptance.
 - **Verification:** record the rig's layout, the health-check output, and the
   observed unavailable-state evidence.
+- **Result:** `tools/davrig/` — `davrig.py` (a plain Python script; `davrig` is
+  its executable wrapper) reads `tools/davrig/rig.json` (checked in: host,
+  and per-account port/username/password for A/B/C) and manages three
+  independent `radicale --config <generated file>` child processes under
+  `tools/davrig/state/<account>/` (gitignored: per-account `config`,
+  `users` htpasswd, `collections/` storage root, `radicale.pid`,
+  `radicale.log`). `--config` replaces radicale's default config search
+  list entirely, so no instance ever reads `/etc/radicale/config`.
+  Commands: `davrig start|stop|restart|status [A|B|C]` (omit the account to
+  act on all three). `status` PROPFINDs each account's own URL with its own
+  basic-auth credentials and reports up/down plus pid, port, and storage
+  path.
+  Verified 2026-09-10: `davrig start` brought up A/B/C on 127.0.0.1:5301-5303;
+  `davrig stop B` left B down while A and C stayed reachable (TCP-verified)
+  and the system service on `:5232` kept answering (`curl` 302) with
+  `/etc/radicale/config`'s mtime/hash unchanged; `davrig start B` recovered
+  it; `davrig stop` (no account) took all three down cleanly.
+  `tests/integration/tst_rrd007_davrig_outage.cpp` (target
+  `tst_integration_rrd007_davrig_outage`, ctest name
+  `rrd007_davrig_outage`, env-gated on `PLANSTAN_DAVRIG=1` plus a PATH
+  check for `radicale`, same pattern as `live_graph_gate`) owns the rig's
+  full lifecycle and drives a real `Kalburator::Sync::CalDavProvider`
+  against account B read from `rig.json` at runtime (no compiled-in
+  ports/credentials): connects while B is up (typed
+  `ProviderConnectionState::Connected`), stops only B via the script and
+  reconnects (`Connected` → `Error`, `isConnected()==false`,
+  non-empty `lastError()`, while A/C stay reachable throughout), restarts B
+  and reconnects successfully. Command:
+  `PLANSTAN_DAVRIG=1 ctest --test-dir build-dev -R rrd007_davrig_outage
+  --output-on-failure` — passed in 4.4-4.8s across two runs; a plain
+  `ctest` run (no env var) reports it Passed via `QSKIP` in 0.03s, so it's
+  safe in normal dev/CI runs where radicale may be absent.
+  Observed evidence is written by the test itself to
+  `docs/testing/rrd-007-outage-evidence.md` (regenerated, not hand-edited)
+  — the recorded transition: B up → `Connected`/`true`/(empty); B stopped
+  → `Error`/`false`/`"Failed to discover principal: Connection refused"`;
+  B restarted → `Connected`/`true`/(empty).
+  `cmake --build build-dev -j6` for `all` still fails on exactly the one
+  pre-existing `tests/widgets/tst_backendconfigwidgets.cpp` defect recorded
+  in the `RRD-002` baseline (stale `CalDavConfigWidget` constructor call,
+  unrelated to this task); no new build failures.
 - **Next:** RRD-009.
 
 ### RRD-008 — Bundle contract, manifest schema, and guarded generator
 
-- **State:** READY
+- **State:** IN PROGRESS
 - **Depends on:** RRD-002
 - **Repository:** `../PlanStan`
 - **Scope:** Implement `tools/fixturegen/`, a small C++ tool over the existing
