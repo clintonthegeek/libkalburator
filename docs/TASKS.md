@@ -51,8 +51,8 @@ below (§2.1, §3) refers to that specification.
 
 | Order | Task | State | Depends on | Outcome |
 |---:|---|---|---|---|
-| 1 | RRD-001 | READY | STB-017 | The application and every registered test target compile against public headers |
-| 2 | RRD-002 | QUEUED | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
+| 1 | RRD-001 | DONE 2026-09-09 | STB-017 | The application and every registered test target compile against public headers |
+| 2 | RRD-002 | IN PROGRESS | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
 | 3 | RRD-003 | QUEUED | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | QUEUED | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | QUEUED | RRD-004 | One observable topology draft, owned above the views |
@@ -249,7 +249,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-001 — Restore the public-header build contract
 
-- **State:** READY
+- **State:** DONE 2026-09-09
 - **Depends on:** STB-017
 - **Repository:** `../PlanStan`
 - **Scope:** Migrate every flat library include in `src/` and `tests/` to
@@ -263,13 +263,77 @@ target and 65 of 145 registered test targets no longer compile.
   live gates. A source search finds no PlanStan CMake reference to a
   libkalburator `src/*` directory. The diff carries include-line changes only;
   any file needing more is named here with its reason.
-- **Verification:** record the full build command and its result, the resulting
-  `build-dev/PlanStan` timestamp, and the per-directory file counts touched.
+- **Verification:**
+  - Method: built a header/domain map from every header file directly under
+    each of libkalburator's 22 public `src/<domain>/` directories (239
+    headers, `KALBURATOR_PUBLIC_HEADER_DOMAINS` in
+    `libkalburator/CMakeLists.txt:51`), then rewrote every PlanStan `.cpp`/`.h`
+    `#include` line under `src/` and `tests/` whose bare filename matched a
+    public header and had no same-directory local header of that name, to
+    `<kalburator/<domain>/<header>.h>`. One ambiguous basename
+    (`syncoperation.h`, present under both `calendar/` and `sync/`) was
+    resolved per file by checking which types the file actually uses
+    (`FetchOperation`/`PushOperation`/`DeleteOperation` → `calendar/`; bare
+    `SyncOperation` → `sync/`); all 5 affected files used the calendar-typed
+    subclasses, so all resolved to `calendar/syncoperation.h`. One local-name
+    collision was identified and excluded from migration:
+    `src/widgets/caldavconfigwidget.h` (PlanStan's own widget) shares a
+    basename with `libkalburator/src/sync/caldavconfigwidget.h`; the same-file
+    self-include in `src/widgets/caldavconfigwidget.cpp` correctly resolves
+    locally and was left untouched.
+  - **81 files touched** (`src/main.cpp` plus 80 test sources), **287 include
+    lines rewritten**, confirmed by `git diff` to contain include-line changes
+    only (`git diff -- src tests | grep '^[+-]' | grep -v '#include'` empty).
+    Per-directory counts: `src` 1, `tests/app` 2, `tests/backends` 8,
+    `tests/commands` 1, `tests/controllers` 14, `tests/core` 3,
+    `tests/integration` 12, `tests/kalbconfigmanager` 2, `tests/settings` 1,
+    `tests/sync` 23, `tests/sync-host-smoke` 1, `tests/sync-workflow` 2,
+    `tests/views` 7, `tests/widgets` 1, `tests/wizards` 3.
+  - `grep -rn "libkalburator/src" --include=CMakeLists.txt .` — no matches; no
+    PlanStan CMake file references a libkalburator `src/*` directory (this was
+    already true before this task; STB-015 removed the injection, this task
+    only migrated the dependent includes).
+  - `cmake --build build-dev -j6` (then `-j6 -- -k` to surface every error in
+    one pass): **zero header-not-found errors** anywhere in the tree. The
+    `PlanStan` application target and both live gates
+    (`tst_integration_live_fanout_gate`, `tst_integration_live_graph_gate`)
+    build cleanly; `build-dev/PlanStan` timestamp advanced to
+    2026-09-09T22:18:19 (previously a stale 2026-09-08 artifact per D1).
+    `ctest -R '^live_fanout_gate$|^live_graph_gate$' --output-on-failure`:
+    both **Passed** (D3 repaired — both live DAV gates are reproducible
+    again).
+  - **One file needs more than an include change**, named per the acceptance
+    clause rather than fixed here (fixing it is a behavior/logic decision,
+    out of RRD-001's "include changes only" scope):
+    `tests/widgets/tst_backendconfigwidgets.cpp` already carried the correct
+    namespaced include (`<kalburator/sync/caldavconfigwidget.h>`) before this
+    task and is unchanged by it. It fails to compile because
+    `Kalburator::Sync::CalDavConfigWidget` now requires a `CalDavProvider *`
+    constructor argument and lives in the `Kalburator::Sync` namespace, while
+    the test constructs it unqualified with `CalDavConfigWidget w;` (no
+    args) — a pre-existing stale test against an older/local widget API,
+    unrelated to the header-spelling defect this task fixes. This is the
+    build's one remaining compile failure; every other one of the 145
+    registered targets builds. Filed for RRD-002's classification pass.
+  - Full-suite run for context (not part of RRD-001's acceptance,
+    but the natural next evidence for RRD-002): `ctest --output-on-failure -j4`
+    at repository revision PlanStan `b2e1c354` / libkalburator `b341b3b`:
+    **92% passed, 11 of 145 failed** (`tst_kalbsynctopologydatasource_providers`,
+    `tst_synctopologywidget_v2_changeset`, `tst_synctopologywidget_v2_palette`,
+    `tst_collectioncontroller`, `tst_controller_calendars`,
+    `tst_collectioncontroller_provider_lifecycle`,
+    `tst_collectioncontroller_add_from_collections`,
+    `tst_collectioncontroller_g1_closure`,
+    `tst_collectioncontroller_recordchanged`,
+    `integration_incidence_crud` (subprocess aborted), `tst_collectionassembler`).
+    None of these are header-not-found failures. `tst_backendconfigwidgets`
+    did not run (build failure, not a test failure). Total real time 339s.
+    Raw log not retained past this session; rerun to reproduce.
 - **Next:** RRD-002 and RRD-003 both unblock.
 
 ### RRD-002 — Record a classified baseline for every registered target
 
-- **State:** QUEUED
+- **State:** IN PROGRESS
 - **Depends on:** RRD-001
 - **Repository:** `../PlanStan`
 - **Scope:** Build and run all 145 registered targets. Classify each as passes,
