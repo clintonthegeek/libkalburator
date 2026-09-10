@@ -56,7 +56,7 @@ below (§2.1, §3) refers to that specification.
 | 3 | RRD-003 | DONE 2026-09-09 | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
-| 6 | RRD-006 | IN PROGRESS | RRD-005 | One testable apply pipeline with a typed review and result |
+| 6 | RRD-006 | READY | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
@@ -656,6 +656,45 @@ target and 65 of 145 registered test targets no longer compile.
   desired topology through `submitDesiredRuntimeTopology()`.
 - **Verification:** the two live data-corruption paths named in that function's
   comments each get a named test. Record both.
+- **Research note, 2026-09-09 (no code changed):** `applyChanges()` is
+  presently at `synctopologywidget.cpp:2685-3397` (line numbers shifted by
+  `RRD-005`'s edits; still 713 lines). Read through its provider/local-backend
+  section (~150 lines) before stopping to scope the rest. Two things this
+  task's one-paragraph scope doesn't surface, for whoever picks this up:
+  1. **It depends on widget-private state beyond `TopologyDraft`.** Per
+     `RRD-005`'s own scoping (see that task's verification), `m_pendingProviders`
+     (provider-add staging), `m_pendingAdoptTargets`, and `m_pendingCopyTargets`
+     (adopt/copy routing indices) were deliberately left on the widget,
+     outside the draft. `applyChanges()` reads and mutates all three, plus
+     calls `detectAndOfferConvergenceRemedy()` (private widget method) and
+     `emit dirtyChanged(...)` (widget signal). A `TopologyApplyService`
+     living outside `SyncTopologyWidget` can't reach any of these directly.
+     Two honest designs: (a) also relocate the three widget-private members
+     into the service (or into `TopologyDraft`, reopening that scoping
+     decision), or (b) keep the widget as the owner and have it pass them
+     into `apply()` as explicit parameters each call, with the service doing
+     the mutation logic but not the storage. (b) is more surgical and lower
+     risk; recommended.
+  2. **`review()`'s "computed without mutating anything" contract is a new
+     capability, not an existing one.** `ISyncTopologyDataSource` has no
+     dry-run variant of `addProvider()`/`addLocalBackend()`/etc., so
+     `review()` cannot predict per-operation success/failure the way
+     `apply()` discovers it live. Recommended scope: a structural summary
+     computed purely from `TopologyDraft` + read-only data-source queries —
+     added/removed/modified providers and local backends, staged mapping
+     adds/removes/modifies, adopt/create/update/unbind/untrack/destroy
+     requests, the pending topology change, and the inherited-impact
+     calendar names (`SyncTopologyWidget::collectionDefaultCalendarNames()`,
+     `RRD-004`, is exactly this last piece and should move onto whatever
+     owns `review()`) — not an accept/reject prediction.
+  The function's partial-failure policy (drop only the failing operation,
+  keep the rest of the changeset — Gap-fixes-MD, see the comment at its top)
+  is intricate and was only read through the provider/local-backend section;
+  the mapping-level section (create/update/unbind/untrack/destroy, the
+  convergence guard, the two named data-corruption paths) was not yet read.
+  A careful line-by-line pass through the rest, plus the design decision
+  above, should happen before writing any extraction code — this is real
+  calendar-sync data on the line, not a cosmetic refactor.
 - **Next:** RRD-016 and RRD-020 both depend on this.
 
 ### RRD-007 — Provision a project-local DAV test rig
