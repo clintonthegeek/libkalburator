@@ -1,10 +1,10 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-009` UNBLOCKED — both defects that blocked
-it are fixed and released: the topology-publication defect in `../PlanStan`
-and the CalDAV `calendar-color` round trip here, tagged `v1.06` and pinned.
-Scenario 01 now generates end to end. `RRD-009` is selectable again, and with
-it the whole downstream DAG.)
+**Last updated:** 2026-09-10 (`RRD-009` DONE — scenario 01 generated end to
+end against a live `tools/davrig` rig: sync succeeded, credentials verified
+from a second process, and a human inspected the real topology widget
+(screenshot in `../PlanStan/docs/testing/rrd-009-scenario01-evidence.md`).
+`RRD-010` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -63,8 +63,8 @@ below (§2.1, §3) refers to that specification.
 | 6 | RRD-006 | DONE 2026-09-10 | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
-| 9 | RRD-009 | READY | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
-| 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
+| 9 | RRD-009 | DONE 2026-09-10 | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
+| 10 | RRD-010 | READY | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
 | 13 | RRD-013 | QUEUED | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
@@ -945,9 +945,8 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-009 — Scenario 01 as a retained openable bundle
 
-- **State:** READY 2026-09-10 — was BLOCKED; both blocking defects are now
-  fixed, released and verified, so the whole downstream DAG is selectable
-  again.
+- **State:** DONE 2026-09-10 — was BLOCKED, then READY once both blocking
+  defects were fixed, released and verified.
   - `../PlanStan/docs/bugs/dispatchruntimerun-sync-stuck-multi-provider-topology.md`:
     a topology Apply published the persistence-filtered mapping list to the
     runtime, leaving a policy-driven collection with zero live channels while
@@ -1013,17 +1012,41 @@ target and 65 of 145 registered test targets no longer compile.
   waiting on `allSyncsFinished` instead) and a second, unconfirmed one (some
   providers' auto-sync-on-load never visibly starts) that this task does not
   attempt to fix.
-- **Reproduce/resume:** `tools/davrig/davrig start`, then
+- **Result:** acceptance met in full. With both blockers gone, `fixturegen
+  generate --scenario 01-everyday` against a live `tools/davrig` rig ran to
+  completion (exit 0): the runtime's live mapping count was asserted equal
+  to the four config-compiled rules before `cc->syncNow()`, the real sync
+  then completed and reported success, and closing and reopening with a
+  **second, independent** `CollectionController` produced a structural
+  summary that JSON-equals the seeded one exactly (4 backends, 4 calendars,
+  8 enabled bindings, 4 rules, the same ignored/unadopted key) — asserted by
+  the generator itself, which fails the run on any mismatch.
+  `fixturegen verify-credential` resolved account A's provider secret
+  correctly from a **separate OS process** against the real KWallet-backed
+  secret store. The printed `.kalb` was then opened with the real `PlanStan`
+  binary on a live display (not offscreen): the "Backends & Calendars" view
+  showed all four backend nodes, "4 backends · 4 mappings", the four logical
+  calendars each wired `Hub`, and account A's unadopted `Archive` calendar
+  rendered greyed out as `Archive (pending)` — not hidden, not an error.
+  Screenshotted (active-window capture, to `evidence/rrd009-topology-view.png`
+  in the run directory) both mid-sync and after the auto-sync-on-load
+  finished; the app was then closed cleanly. No defect was hit on this run,
+  so there was nothing to record as a suppressed-but-usable-bundle case.
+  Full writeup, including the seeded/reopened JSON tuples, in
+  `../PlanStan/docs/testing/rrd-009-scenario01-evidence.md`. The generated
+  bundle itself is not retained (regenerable on demand, and `.kalb`/`.kalb.d`
+  output is gitignored like every other generated `.kalb`); the rig was
+  stopped after the run.
+- **Reproduce:** `tools/davrig/davrig start`, then
   `QT_QPA_PLATFORM=offscreen QT_FORCE_STDERR_LOGGING=1 ./build-dev/tools/
   fixturegen/fixturegen generate --scenario 01-everyday --out-dir /tmp/
-  fixture-output`. The rig was stopped after the last repro run; no partial
-  bundle was retained.
+  fixture-output`, then `tools/davrig/davrig stop`.
 - **Next:** RRD-010 through RRD-013 (blocked, transitively, until this
   clears).
 
 ### RRD-010 — Chain relay and mesh scenarios
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `02-relay.kalb` (Project, four bindings, ordered Chain across L, A,
