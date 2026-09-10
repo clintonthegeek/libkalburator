@@ -1,21 +1,21 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-012` DONE — scenario 05
-(properties/states) built and driven against a live `tools/davrig` rig,
-`tst_rrd012_properties_states.cpp` 10/10 passing, all seven spec §2.5 states
-individually distinguished. Found and FIXED a real defect in
-`CollectionController::generateSyncMappingsFromLogicalCalendars()`
-(`../PlanStan/src/controllers/collectioncontroller.cpp`): pausing a
-calendar's sync left its channel running in the live runtime forever — a
-mis-indexed persisted/compiled union plus no pruning of stale compiler-
-generated rows, fixed together without disturbing `WiringPolicy::Manual`'s
-deliberately frozen rows. Two further defects filed, not fixed (VEVENT-only/
-VTODO-only restriction never enforced at push time; "never synced" never
-clears for `TwoWay` mappings, the default mode) — see
-[`component-type-restriction-not-enforced-at-sync-time.md`](../PlanStan/docs/bugs/component-type-restriction-not-enforced-at-sync-time.md)
-and
-[`never-synced-never-clears-for-twoway-mappings.md`](../PlanStan/docs/bugs/never-synced-never-clears-for-twoway-mappings.md).
-`RRD-013` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-013` DONE — the invalid corpus (11 cases)
+built directly through `KalbConfigManager`, round-tripped through real
+`.kalb` files, purely local (no rig). `tst_rrd013_invalid_corpus.cpp` 13/13
+passing, not env-gated. Most cases confirm `SyncTopologyValidator` correctly
+names its category; three gaps filed (multiple Primary bindings pass clean;
+a Mirror-topology mapping id collision across two calendars sharing a
+backend, confirming this task's own standing caution empirically; duplicate
+endpoint identity has no dedicated check but is caught indirectly). **Central
+finding:** `SyncTopologyValidator` has exactly one call site in the whole
+codebase — the topology widget's own display — never consulted by
+`CollectionController::loadCollectionFromFile()`; a live runtime was shown
+initializing with a genuinely invalid one-way-cycle topology with nothing
+stopping a real Sync Now from running it. No held-controller admission path
+or safe diagnostic open workflow exists yet — see
+[`no-load-time-validation-gate-allows-invalid-topology-to-run.md`](../PlanStan/docs/bugs/no-load-time-validation-gate-allows-invalid-topology-to-run.md).
+`RRD-014` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -78,8 +78,8 @@ below (§2.1, §3) refers to that specification.
 | 10 | RRD-010 | DONE 2026-09-10 | RRD-009 | Chain relay and mesh scenarios with independent oracles |
 | 11 | RRD-011 | DONE 2026-09-10 | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | DONE 2026-09-10 | RRD-009 | Component restrictions, properties, and seven distinct states |
-| 13 | RRD-013 | READY | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
-| 14 | RRD-014 | QUEUED | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
+| 13 | RRD-013 | DONE 2026-09-10 | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
+| 14 | RRD-014 | READY | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | QUEUED | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | QUEUED | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | QUEUED | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
@@ -1286,7 +1286,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-013 — Invalid corpus and the safe diagnostic open
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** Build the invalid corpus, kept separate from the openable one:
@@ -1301,15 +1301,72 @@ target and 65 of 145 registered test targets no longer compile.
   unreachable through any path that can auto-sync before validation: the
   side-effect-free parser and compiler path and the held-controller admission
   path are exercised first, then a safe diagnostic open workflow is exposed.
-- **Verification:** generated mapping IDs currently include backend IDs without
-  both calendar IDs. Characterize the collision and admission behavior before any
-  support claim; until then the core corpus uses at most one copy per backend per
-  calendar.
+- **Verification:** all eleven cases built directly through `KalbConfigManager`
+  (the scenario04/06 "hand edit" seam — `CollectionAssembler` cannot physically
+  produce most of these shapes), round-tripped through real `.kalb` files (the
+  side-effect-free parser/compiler path), purely local (no CalDAV, no DAV rig).
+  Pinned by
+  [`tests/sync/tst_rrd013_invalid_corpus.cpp`](../PlanStan/tests/sync/tst_rrd013_invalid_corpus.cpp)
+  (NOT env-gated — runs in the normal `ctest` suite, 13/13 passing in ~3s; full
+  findings in
+  [`docs/testing/rrd-013-invalid-corpus-evidence.md`](../PlanStan/docs/testing/rrd-013-invalid-corpus-evidence.md)):
+  duplicate+reversed mappings, one-way cycle, duplicate policy in a Mesh cycle,
+  cross-LC two-way fan-in (derived from 06), and a dangling binding (missing
+  provider/calendar) all round-trip and are named with the validator's exact
+  category. Missing Primary is rejected (`LCMissingPrimaryBinding`).
+
+  **Three gaps found and FILED, not fixed** (each with its own reproducer):
+  [`multiple-primary-bindings-silently-accepted.md`](../PlanStan/docs/bugs/multiple-primary-bindings-silently-accepted.md) —
+  two Primary bindings on one LC pass `validateGraph()` clean; which one is
+  authoritative is iteration-order-dependent, not validated.
+  [`mirror-mapping-id-collides-across-calendars-on-shared-backend.md`](../PlanStan/docs/bugs/mirror-mapping-id-collides-across-calendars-on-shared-backend.md) —
+  confirms this task's own "Verification" caution empirically: two different
+  calendars on one backend, both Sync roles under Mesh, reproducibly compile
+  to the SAME mapping id for two different routes (`generateMappings()`'s
+  Mirror branch keys only on `backendId`, never `calendarId`); the core
+  openable corpus (RRD-009..012) correctly stays restricted to at most one
+  physical calendar per backend per logical calendar until this is fixed.
+  Duplicate endpoint identity at the raw binding level has no dedicated
+  validator category either, but IS caught indirectly — Star topology
+  compiles the same duplicate physical calendar into two mappings sharing a
+  calendar pair, which `checkDuplicateMappings()` does flag (a Manual-policy
+  LC with the same duplicate binding would not be caught, since nothing
+  compiles for it).
+
+  **Central finding, the task's most significant result — FILED, not fixed:**
+  [`no-load-time-validation-gate-allows-invalid-topology-to-run.md`](../PlanStan/docs/bugs/no-load-time-validation-gate-allows-invalid-topology-to-run.md).
+  `SyncTopologyValidator::validateGraph()`/`::validate()` have exactly ONE call
+  site in the whole codebase — `SyncTopologyWidget::rebuildGraph()`, a
+  UI-display concern — never consulted by
+  `CollectionController::loadCollectionFromFile()` or
+  `initializeCollectionRuntime()`. Proven directly: the same one-way-cycle
+  `.kalb` the pure validator correctly flags was opened through the real
+  `CollectionController::loadCollectionFromFile()` entry point and the live
+  runtime initialized with the identical invalid three-mapping cycle, ready
+  for `syncNow()` to execute it. **The acceptance's "unreachable through any
+  path that can auto-sync before validation" clause is NOT met today** — there
+  is no held-controller admission path and no safe diagnostic open workflow;
+  both are real, unbuilt features (an admission gate plus a diagnostic-open UI
+  path), not something this characterization task's scope covers building.
+  Recorded per this task's own "characterize... before any support claim"
+  verification instruction, matching the campaign's established practice
+  (e.g. RRD-010's filed-not-fixed all-or-nothing provider-init defect) of
+  marking a task DONE on thorough, honest characterization rather than
+  withholding closure for an unbuilt feature outside its scope. The gap is a
+  natural candidate for RRD-017/019 (topology and run-feedback editing).
+
+  Unsupported permission combination (write into a `ReadOnly` binding) and
+  stale discovery (a referenced local calendar directory that no longer
+  exists) were both characterized rather than asserted pass/fail: the former
+  is unguarded statically but IS withheld at run time by the engine's
+  existing `discoveredWritable()` backstop (a no-op success, not corruption);
+  the latter degrades silently to an empty calendar with a `qWarning()`, no
+  crash, no surfaced attributable error.
 - **Next:** RRD-015.
 
 ### RRD-014 — Mutations and clone-only destructive operations
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-010, RRD-011, RRD-012
 - **Repository:** `../PlanStan`
 - **Scope:** Run the mutation set against the clean baselines rather than
