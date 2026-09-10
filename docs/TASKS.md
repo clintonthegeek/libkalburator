@@ -52,8 +52,8 @@ below (§2.1, §3) refers to that specification.
 | Order | Task | State | Depends on | Outcome |
 |---:|---|---|---|---|
 | 1 | RRD-001 | DONE 2026-09-09 | STB-017 | The application and every registered test target compile against public headers |
-| 2 | RRD-002 | IN PROGRESS | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
-| 3 | RRD-003 | QUEUED | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
+| 2 | RRD-002 | DONE 2026-09-09 | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
+| 3 | RRD-003 | IN PROGRESS | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | QUEUED | RRD-003 | The pinned topology defects repaired |
 | 5 | RRD-005 | QUEUED | RRD-004 | One observable topology draft, owned above the views |
 | 6 | RRD-006 | QUEUED | RRD-005 | One testable apply pipeline with a typed review and result |
@@ -333,7 +333,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-002 — Record a classified baseline for every registered target
 
-- **State:** IN PROGRESS
+- **State:** DONE 2026-09-09
 - **Depends on:** RRD-001
 - **Repository:** `../PlanStan`
 - **Scope:** Build and run all 145 registered targets. Classify each as passes,
@@ -345,9 +345,42 @@ target and 65 of 145 registered test targets no longer compile.
   five-minute timeout is carried explicitly as an unclassified timeout, not as
   acceptance evidence. Live-gated targets are recorded as skipped with the gate
   variable named, separately from failures.
-- **Verification:** the published baseline document plus the exact ctest
-  invocations and revisions used to produce it.
-- **Next:** RRD-007 and RRD-008.
+- **Verification:**
+  - Published `../PlanStan/docs/testing/registered-target-baseline.md`, produced
+    from `cmake --build build-dev -j6` then
+    `ctest --test-dir build-dev -j4 --output-on-failure --output-junit <xml>`
+    at PlanStan `a0448be6` / libkalburator `1ebfbff` / libkalcal `10d60d2`.
+  - All 145 registered targets classified, none unexplained: 132 pass, 11 fail,
+    1 timeout (`integration_incidence_crud`, ~307s inside `testEditDateTime()`,
+    carried explicitly per the acceptance clause, not counted as passing), 1
+    build failure (`tst_backendconfigwidgets`, filed against `RRD-001`'s
+    verification and repeated here — a stale `CalDavConfigWidget` constructor
+    call, unrelated to header spelling).
+  - **Correction applied before publishing:** the first run showed
+    `tst_backendconfigwidgets` as "Passed" because `cmake --build` left a
+    pre-RRD-001 binary in place (its one source file fails to compile, so the
+    linker step never ran to replace it). The stale executable was deleted and
+    the target rerun, correctly producing "Not Run" / build failure. No other
+    target's binary was stale — every other target's source changed or not,
+    the full `-j6` build in `RRD-001` relinked everything it needed to.
+  - No target is gated behind a live-service environment variable; both live
+    DAV gates (`live_fanout_gate`, `live_graph_gate`) ran against the system
+    Radicale on `127.0.0.1:5232` and passed, so the "skip — live service"
+    classification is currently empty (0 targets). This may change once
+    `RRD-007`'s project-local rig exists.
+  - The 11 failures are recorded with per-target failing-case counts and a
+    representative assertion in the baseline doc; none repaired here. Most
+    cluster around provider/backend-registry wiring (`CollectionController`
+    provider lifecycle, provider-derived collection assembly, the v2 topology
+    widget's provider ghost ports) — noted as a plausible but *unconfirmed*
+    shared cause, filed as separate defects pending investigation, not
+    diagnosed further in this slice. One failure
+    (`tst_collectioncontroller_syncverbs`) was observed flaky: it passed in an
+    earlier run this session and failed in the run the published baseline is
+    drawn from — recorded in the doc rather than silently resolved either way.
+- **Next:** RRD-003, RRD-007, and RRD-008 all unblock; `RRD-003` is selected
+  next per Now-table order (it depends only on `RRD-001`, already done, and
+  precedes `RRD-007`/`RRD-008` in the table).
 
 ### RRD-003 — Pin draft loss, count truth, and inherited impact
 
