@@ -55,8 +55,8 @@ below (§2.1, §3) refers to that specification.
 | 2 | RRD-002 | DONE 2026-09-09 | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
 | 3 | RRD-003 | DONE 2026-09-09 | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
 | 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
-| 5 | RRD-005 | IN PROGRESS | RRD-004 | One observable topology draft, owned above the views |
-| 6 | RRD-006 | QUEUED | RRD-005 | One testable apply pipeline with a typed review and result |
+| 5 | RRD-005 | DONE 2026-09-09 | RRD-004 | One observable topology draft, owned above the views |
+| 6 | RRD-006 | IN PROGRESS | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
@@ -544,7 +544,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-005 — Extract an observable topology draft
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** RRD-004
 - **Repository:** `../PlanStan`
 - **Scope:** Introduce `TopologyDraft` and `TopologyEditorContext` per
@@ -555,8 +555,87 @@ target and 65 of 145 registered test targets no longer compile.
   emits one `changed()` per mutation. The widget holds no pending state of its
   own. The whole topology suite passes unchanged, RRD-003's regressions
   included.
-- **Verification:** record the suite result before and after, and a search
-  showing no remaining pending-state member on the widget.
+- **Verification:**
+  - New `src/sync/topology/topologydraft.h`/`.cpp`: a plain `QObject` (no
+    `QWidget`/`QtWidgets` include anywhere in the class itself — confirmed by
+    grep; its test binary transitively links `Qt6Widgets` only because it
+    links the monolithic `PlanStanCore`, the same as the pre-existing
+    `tst_topologychangeset`) owning exactly the three things specification
+    §2.2 names: the baseline `SyncMapping` snapshot, a `TopologyChangeset`,
+    and the display-only preview mappings. Every one of `TopologyChangeset`'s
+    23 mutating methods gets a same-named one-line forward
+    (`m_changeset.X(...); emit changed();`); read-only access goes through
+    `changeset()` (unchanged `TopologyChangeset` API, not touched or
+    reimplemented). `discard()` is the only path that clears the changeset
+    (also clears the preview, matching the C1 "dies with the changeset"
+    rule) and `rebaseline(newBaseline)` re-snapshots the baseline without
+    touching the changeset — the RRD-004 (D4) repair's mechanism, now on the
+    class that owns the state instead of a widget method flag.
+  - New `tests/sync/tst_topologydraft.cpp` (links only `Qt6::Test` +
+    `PlanStanCore`, no `Qt6::Widgets` target link — mirrors
+    `tst_topologychangeset.cpp`'s existing widget-free link set exactly):
+    **13/13 pass**. Covers a fresh draft's empty state, one `changed()` per
+    mutation across mapping/calendar/provider/local-backend/wiring-policy
+    edits, `rebaseline()` retaining the changeset, `discard()` clearing both
+    changeset and preview, preview set/append/clear, and
+    `projectedMappings()`'s baseline+changeset+preview union including the
+    C1 dedup-against-real-id rule.
+  - `SyncTopologyWidget` now holds a single `TopologyDraft *m_draft`
+    (QObject-parented to the widget, constructed first in the initializer
+    list before `setupUi()`/`rebuildGraph()` run) in place of the former
+    `TopologyChangeset m_changeset`, `QList<SyncMapping> m_baselineMappings`,
+    and `QList<SyncMapping> m_previewMappings` members — all three removed.
+    All ~86 real (non-comment) call sites across `synctopologywidget.h`/`.cpp`
+    were migrated: mutating calls to `m_draft->X(...)`, read-only calls to
+    `m_draft->changeset().X(...)`, direct baseline/preview reads to
+    `m_draft->baseline()`/`m_draft->previewMappings()`.
+    `SyncTopologyWidget::projectedMappings()` is now a one-line forward to
+    `m_draft->projectedMappings()` (the duplicated union/dedup logic it used
+    to carry moved onto the class that owns the state). `rebuildGraph()`'s
+    two paths now call `m_draft->discard()` (default) or nothing
+    (`preserveChangeset=true`) followed by `m_draft->rebaseline(...)`, and
+    `applyChanges()`/`discardChanges()`'s end-of-function clears now call
+    `m_draft->discard()` in place of the former two-line
+    `m_changeset.clear(); m_previewMappings.clear();`.
+  - **Two narrow additions beyond a pure mechanical move, both one-liners:**
+    `TopologyDraft::appendPreviewMapping()` (the widget's copy-preview loop
+    appended to `m_previewMappings` one at a time; `TopologyDraft` needed an
+    equivalent single-item forward alongside `setPreviewMappings()`) and
+    `TopologyDraft::projectedMappings()` (didn't exist on `TopologyChangeset`
+    itself since it also needs the preview list, which only `TopologyDraft`
+    owns).
+  - **Deliberately NOT moved, and NOT in scope by specification §2.2's own
+    enumeration** ("Owns the baseline snapshot, the TopologyChangeset, and
+    the display-only preview mappings" — nothing else): `m_pendingProviders`
+    (provider *add* staging — confirmed during `RRD-003` that
+    `stagePendingProvider()` already routes through this separate
+    widget-level list, never through `m_changeset`), and
+    `m_pendingAdoptTargets`/`m_pendingCopyTargets` (routing indices — which
+    LC an already-staged `AdoptCalendarRequest`/`CreateCalendarRequest`
+    binds into — not independent staged edits in their own right). "The
+    widget holds no pending state of its own" is satisfied for the three
+    things this task's scope names; these three remain and are named here so
+    a future reader doesn't read the acceptance as broader than it is.
+  - **`TopologyEditorContext` (specification §2.2) was NOT introduced.** Its
+    entire purpose per the spec's diagram is coordinating multiple owned
+    children — `TopologyDraft` *and* `TopologyApplyService` (`RRD-006`,
+    doesn't exist yet) *and* multiple observers — `SyncTopologyWidget` today,
+    `CalendarsAndSyncPage` (`RRD-016`+, doesn't exist yet) later. Introducing
+    a coordinator class today would own exactly one child and coordinate
+    exactly one observer: structure with nothing yet to structure, and no
+    acceptance case (this task's own acceptance text names only
+    `TopologyDraft`) forcing a particular shape for it. Deferred to `RRD-006`,
+    which gives it a second thing to own.
+  - Full rebuild (`cmake --build build-dev -j6 -- -k`): only the same
+    pre-existing `tst_backendconfigwidgets` compile failure
+    (`RRD-001`/`RRD-002`, unrelated). `ctest -R
+    'topology|synctopologywidget|sync' -j4` (34 targets, including
+    `RRD-003`'s `tst_topology_draft_and_counts` and this task's new
+    `tst_topologydraft`): same 3 pre-existing `RRD-002`-baseline failures
+    only; every other target, both new ones included, passes. Full suite
+    (`ctest -j4`, 147 targets = 145 plus `RRD-003`'s and this task's new
+    targets): **135 passed, 12 failed** — the exact same 12 named targets as
+    `RRD-002`'s baseline, none added or removed.
 - **Next:** RRD-006.
 
 ### RRD-006 — Extract the apply pipeline
