@@ -53,9 +53,9 @@ below (§2.1, §3) refers to that specification.
 |---:|---|---|---|---|
 | 1 | RRD-001 | DONE 2026-09-09 | STB-017 | The application and every registered test target compile against public headers |
 | 2 | RRD-002 | DONE 2026-09-09 | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
-| 3 | RRD-003 | IN PROGRESS | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
-| 4 | RRD-004 | QUEUED | RRD-003 | The pinned topology defects repaired |
-| 5 | RRD-005 | QUEUED | RRD-004 | One observable topology draft, owned above the views |
+| 3 | RRD-003 | DONE 2026-09-09 | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
+| 4 | RRD-004 | DONE 2026-09-09 | RRD-003 | The pinned topology defects repaired |
+| 5 | RRD-005 | IN PROGRESS | RRD-004 | One observable topology draft, owned above the views |
 | 6 | RRD-006 | QUEUED | RRD-005 | One testable apply pipeline with a typed review and result |
 | 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
@@ -384,7 +384,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-003 — Pin draft loss, count truth, and inherited impact
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** RRD-001
 - **Repository:** `../PlanStan`
 - **Scope:** Add failing regressions against the real `SyncTopologyWidget`, not
@@ -397,16 +397,85 @@ target and 65 of 145 registered test targets no longer compile.
   carries, not only wiring policy. Each regression fails for the stated reason
   and is recorded as failing, never skipped. The characterization test records
   observed behavior and passes.
-- **Verification:** the reproducer for D4 is: stage `calendar-0` Hub to Chain,
-  change the collection default to Mesh, observe
-  `isWiringPolicyModified("calendar-0")` turn false via
-  `onTopologyPresetChanged()` at `synctopologywidget.cpp:2372` calling
-  `rebuildGraph()`, which clears the changeset at line 648.
+- **Verification:**
+  - New file `tests/sync/tst_topology_draft_and_counts.cpp` (registered in
+    `tests/sync/CMakeLists.txt`), built and run standalone
+    (`QT_QPA_PLATFORM=offscreen ./tst_topology_draft_and_counts`) and via
+    `ctest -R 'topology|synctopologywidget'`: **12 failed, 3 passed** (the two
+    QtTest auto-slots plus the characterization test) — every failure for
+    exactly its stated reason, none skipped.
+  - **D4, all 10 staged-edit-types the changeset carries**, each its own
+    slot staging one edit via its real production entry point (never a
+    synthesized `m_changeset` mutation — same discipline as
+    `tst_topology_dirtystate.cpp`), then invoking the private slot
+    `onTopologyPresetChanged(1)` via `QMetaObject::invokeMethod`, then
+    asserting the edit is still staged: `wiringPolicy` (`stageWiringPolicyChange`
+    → `isWiringPolicyModified`/`modifiedWiringPolicies()`), `mapping`
+    (`onEdgeRequested` channel drag → `isMappingAdded`), `adoption`
+    (`stageAdoptCalendar` → `isCalendarAdoptionStaged`), `create`
+    (`stageCreateCalendar` → `createCalendarRequests()`), `update`
+    (`stageUpdateCalendar` → `updateCalendarRequests()`), `unbind`
+    (`unbindCalendar` → `unbindRequests()`), `untrack` (`untrackCalendar` →
+    `untrackRequests()`), `destroy` (`destroyCalendar` → `destroyRequests()`),
+    `providerRemoval` (`stagePendingProviderRemoval` → `isProviderRemoved`
+    — provider *add* is deliberately excluded: `stagePendingProvider()`
+    stores into the widget's own `m_pendingProviders`, not
+    `m_changeset`, so it is out of D4's "the changeset carries" scope),
+    `localBackend` (`stagePendingLocalBackend` → `isLocalBackendAdded`).
+    All 10 fail today: `onTopologyPresetChanged()`
+    (`synctopologywidget.cpp:2372`, confirmed) calls `rebuildGraph()` first,
+    which calls `m_changeset.clear()` at line 648 before the new default is
+    even recorded, discarding every one of them unconditionally.
+  - **D5:** fixture is one LC with 3 enabled bindings (1 primary + 2
+    secondary) and 1 real `SyncMapping` channel. The widget's own
+    `channelEdgeCount()` (`m_edgeToMapping.size()`) already reports the
+    correct figure (1) — proving the defect is specifically that
+    `updateStatusBar()`/`rebuildGraph()`'s `selectionCleared()` emission
+    report `m_edges.size()` (4: 3 membership + 1 channel) instead. Binding a
+    4th backend into the same LC with no corresponding mapping (a real,
+    enabled, unsynced membership link) leaves `channelEdgeCount()` at 1 but
+    the reported figure would climb to 5 — pinning "unchanged by the number
+    of membership links" precisely. Observed today via `QSignalSpy` on the
+    public `selectionCleared` signal: reported 4 vs. correct 1.
+  - **Inherited impact:** added `SyncTopologyWidget::collectionDefaultCalendarNames()
+    const` (synctopologywidget.h/.cpp) — a small, already-CORRECT, read-only
+    query (mirrors the existing `buildNodes()` CollectionDefault-resolution
+    idiom at line ~872) over `m_dataSource->logicalCalendars()`, not wired
+    into anything — and a new signal `topologyPresetImpact(const QStringList&)`,
+    declared but never emitted. Both are additive scaffolding so the pinning
+    test compiles against the real widget; neither changes any existing
+    behavior (confirmed: the full topology/synctopologywidget ctest subset
+    is otherwise unchanged — see below). The test asserts
+    `collectionDefaultCalendarNames()` is correct in isolation (passes: for
+    a 3-LC fixture with two `CollectionDefault`-policy LCs and one `Manual`
+    LC, it returns exactly the two default-policy display names), then
+    spies on `topologyPresetImpact` across an `onTopologyPresetChanged()`
+    call and asserts one emission — this fails (`spy.count() == 0`): nothing
+    emits it today.
+  - **Characterization (scenario 06 shape), passes as written:** a
+    `SyncMapping` whose endpoints ("local:orphan-local",
+    "acct:cal:orphan-remote") have NO `LogicalCalendar` binding at all.
+    Observed: `buildNodes()` creates both backend nodes regardless of
+    bindings (it iterates `backends()`, not bindings), so
+    `createEdgeForMapping()` finds both nodes and does not skip the mapping;
+    the edge IS created and counted (`channelEdgeCount() == 1`,
+    `edgeForMapping() != nullptr`). Graffodil logs, for both ends: `node
+    '<id>' has no anchor with id '<channel:...>' ... Returning a default
+    (0,0) anchor` — no crash, no silent drop, a real edge pinned to the
+    node's origin instead of a port. Recorded, not repaired.
+  - No regression: `ctest -R 'topology|synctopologywidget'` (16 targets)
+    shows the same 3 pre-existing RRD-002-baseline failures
+    (`tst_kalbsynctopologydatasource_providers`,
+    `tst_synctopologywidget_v2_changeset`, `tst_synctopologywidget_v2_palette`)
+    plus this task's new, by-design-failing target; the other 12 targets
+    pass unchanged. Full `-j6 -- -k` build: the only compile failure in the
+    whole tree is still `tst_backendconfigwidgets` (RRD-001/RRD-002,
+    unrelated).
 - **Next:** RRD-004.
 
 ### RRD-004 — Repair the pinned topology defects
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** RRD-003
 - **Repository:** `../PlanStan`
 - **Scope:** Make RRD-003's regressions pass. Decouple "the baseline changed"
@@ -417,7 +486,60 @@ target and 65 of 145 registered test targets no longer compile.
   dropped edit is reported with its reason. The full topology suite and the
   RRD-002 baseline are unchanged except for these targets. No new compatibility
   path.
-- **Verification:** run the topology suite before and after and record both.
+- **Verification:**
+  - **D4:** `SyncTopologyWidget::rebuildGraph()` (synctopologywidget.h/.cpp)
+    gained a `bool preserveChangeset = false` parameter — the default
+    (construction, explicit Discard, a completed Apply) is unchanged
+    byte-for-byte; `onTopologyPresetChanged()` now calls
+    `rebuildGraph(/*preserveChangeset=*/true)`, which re-snapshots
+    `m_baselineMappings` but skips `m_changeset.clear()`/
+    `m_previewMappings.clear()`. "Reporting a dropped edit" is N/A for this
+    specific call site and not implemented here: a topology-preset change
+    alone never invalidates a staged edit's subject (no LC/backend/calendar
+    id is touched), so nothing is ever dropped by this path — verified by
+    all 10 of RRD-003's D4 slots now passing with their staged edit intact
+    and unmodified. The general rebaseline-that-CAN-drop-and-must-report
+    mechanism belongs to `TopologyDraft::rebaseline()` (specification §2.2,
+    RRD-005), documented as such in `rebuildGraph()`'s own doc comment so a
+    future reader doesn't mistake this for that.
+  - **D5:** `updateStatusBar()` and both `selectionCleared()` emission sites
+    (`rebuildGraph()`, the empty-selection branch of the scene
+    selection-changed handler) now report `channelEdgeCount()`
+    (`m_edgeToMapping.size()`) instead of `m_edges.size()`. `m_edges` itself
+    is untouched (still both membership + channel edges, still what
+    `edgeCount()` and the graph rendering read) — only the three
+    user-facing count reports changed.
+  - **Inherited impact:** `onTopologyPresetChanged()` now emits
+    `topologyPresetImpact(collectionDefaultCalendarNames())` before doing
+    anything else, including an empty list when no `CollectionDefault`
+    calendar exists — RRD-003's spy-based assertion now sees exactly one
+    emission with the two expected names.
+  - `tests/sync/tst_topology_draft_and_counts.cpp` (RRD-003, unmodified):
+    **15/15 pass** (was 12 failed/3 passed before this task).
+  - **One pre-existing test needed updating, not just a pass/fail flip:**
+    `tst_synctopologywidget.cpp`'s `testLogicalEdgesDerivedFromBindings()`
+    asserted `selectionCleared()`'s count arg was `>=1` with all mappings
+    cleared (only membership edges left) — true only under the D5 bug it
+    was unknowingly depending on. Fixed to assert `widget.edgeCount()`
+    instead (unchanged accessor, correctly still `>=1` — a membership edge
+    still renders, it's just correctly excluded from the sync-rule count
+    now). This is the only test file RRD-004 touched outside
+    `synctopologywidget.h`/`.cpp` themselves.
+  - Full rebuild (`cmake --build build-dev -j6 -- -k`): the only compile
+    failure anywhere is still `tst_backendconfigwidgets` (RRD-001/RRD-002,
+    unrelated, unchanged). `ctest -R 'topology|synctopologywidget|sync'
+    -j4`: 3 pre-existing RRD-002-baseline failures only
+    (`tst_kalbsynctopologydatasource_providers`,
+    `tst_synctopologywidget_v2_changeset`, `tst_synctopologywidget_v2_palette`)
+    — `tst_collectioncontroller_syncverbs`'s already-documented flakiness
+    showed as a pass this run, a fail on the previous RRD-004-in-progress
+    run, and a (different subtest) fail in RRD-002's own baseline: three
+    different outcomes across three runs, consistent with "flaky," not a
+    regression.
+  - Full suite (`ctest -j4`, 146 targets — 145 plus RRD-003's new target):
+    **133 passed, 12 failed** (1 timeout, 1 build failure, 10 real
+    failures) — the exact same 12 named targets as RRD-002's baseline, none
+    added or removed, confirming "unchanged except for these targets."
 - **Next:** RRD-005.
 
 ### RRD-005 — Extract an observable topology draft
