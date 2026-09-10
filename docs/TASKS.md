@@ -1,10 +1,12 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-009` DONE — scenario 01 generated end to
-end against a live `tools/davrig` rig: sync succeeded, credentials verified
-from a second process, and a human inspected the real topology widget
-(screenshot in `../PlanStan/docs/testing/rrd-009-scenario01-evidence.md`).
-`RRD-010` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-010` DONE — scenarios 02/03 (Chain relay,
+Mesh) built and driven against a live `tools/davrig` rig; all five spec §2.7
+oracle comparisons pinned in `tst_rrd010_relay_mesh.cpp`, 6/6 passing. One new
+defect filed:
+[`collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md`](../PlanStan/docs/bugs/collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md) —
+one unreachable account disables Sync Now for the WHOLE collection, not just
+that account's channels. `RRD-011` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -64,8 +66,8 @@ below (§2.1, §3) refers to that specification.
 | 7 | RRD-007 | DONE 2026-09-10 | RRD-002 | A project-local DAV rig with real per-account outage |
 | 8 | RRD-008 | DONE 2026-09-10 | RRD-002 | Bundle contract, manifest schema, and guarded generator |
 | 9 | RRD-009 | DONE 2026-09-10 | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
-| 10 | RRD-010 | READY | RRD-009 | Chain relay and mesh scenarios with independent oracles |
-| 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
+| 10 | RRD-010 | DONE 2026-09-10 | RRD-009 | Chain relay and mesh scenarios with independent oracles |
+| 11 | RRD-011 | READY | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
 | 13 | RRD-013 | QUEUED | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
 | 14 | RRD-014 | QUEUED | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
@@ -1046,7 +1048,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-010 — Chain relay and mesh scenarios
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `02-relay.kalb` (Project, four bindings, ordered Chain across L, A,
@@ -1061,11 +1063,48 @@ target and 65 of 145 registered test targets no longer compile.
   Concurrent edits produce the expected conflict behavior, recorded exactly.
 - **Verification:** expected sets are independent of the mapping generator under
   test. State how each was derived.
-- **Next:** RRD-014 and RRD-020.
+- **Result:** `tools/fixturegen` gained `generateScenario02Relay()`/
+  `generateScenario03Mesh()` (shared `buildProjectTopology()` helper), each
+  assembling one four-binding "Project" LC (local Primary + accounts A/B/C as
+  Sync1/Sync2/Sync3 via `CollectionAssembler::applySource()` for A then the
+  real topology widget's `adoptToLogicalCalendar()` for B and C, same pattern
+  as RRD-009's Family third leg) with `WiringPolicy::Chain` or `::Mesh` staged
+  in the same Apply as C's adoption. `DavHttp` (the RRD-009/010 CalDAV client)
+  gained `putEvent()`/`uidsIn()`/`veventCountForUid()`/`summaryForUid()` so an
+  oracle can inject and observe records independently of the app under test,
+  per spec §2.7's independence rule; local-endpoint injection/observation uses
+  raw `*.ics` files on disk the same way. All five oracle comparisons are
+  pinned by `tests/integration/tst_rrd010_relay_mesh.cpp` (env-gated,
+  `PLANSTAN_DAVRIG=1`, 6/6 passing), which writes its findings to
+  `../PlanStan/docs/testing/rrd-010-relay-mesh-evidence.md`: tail-to-head and
+  head-to-tail both converge in one Sync Now; a following no-op run changes
+  nothing anywhere (independent UID-set equality, not the runtime's own
+  stats); the mesh's tail-origin record reaches every copy with exactly one
+  VEVENT per remote (no duplication); a genuine concurrent edit on the L-A
+  edge is caught as one `runtimeConflicts()` entry with **neither side's
+  edit lost** ("Edited at L" / "Edited at A" both survive untouched, pending
+  user resolution) — the correct `AskUser` behavior. One real defect found
+  and filed, not fixed in this pass: [`docs/bugs/collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md`](../PlanStan/docs/bugs/collectionruntime-init-all-or-nothing-on-one-unreachable-provider.md) —
+  with account B stopped, `initializeCollectionRuntime()` fails for the
+  **whole** collection (not just B's mappings), and `syncNow()` then silently
+  no-ops with no terminal signal at all, only a stderr `qWarning()`. A second,
+  unconfirmed observation (not a filed defect — could not reproduce against a
+  fresh fixture): a fourth same-process reopen of the heavily-reused relay
+  fixture once failed to deliver a brand-new local record to A within one
+  Sync Now; worked around by giving the concurrent-edit test its own fresh
+  fixture rather than reusing the shared one, which reproduced cleanly.
+  Also fixed along the way: `ensureSecretStoreInstalled()` replaces a
+  per-call local `KWalletSecretStore` whose address was handed to
+  `SecretStoreRegistry::setDefaultStore()` (a non-owning raw pointer) and
+  went dangling the moment `generateScenario01()`/`buildProjectTopology()`
+  returned — harmless for the single-shot CLI, a real SEGV for this test's
+  same-process multi-scenario reopens.
+- **Next:** RRD-011 is selected next (table order; RRD-012 and RRD-013 also
+  unblocked but queued behind it).
 
 ### RRD-011 — Directional and shared-destination scenarios
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** `04-directional.kalb` (Bulletin, four bindings, Manual rules A to L,
