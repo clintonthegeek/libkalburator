@@ -1,21 +1,25 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-013` DONE — the invalid corpus (11 cases)
-built directly through `KalbConfigManager`, round-tripped through real
-`.kalb` files, purely local (no rig). `tst_rrd013_invalid_corpus.cpp` 13/13
-passing, not env-gated. Most cases confirm `SyncTopologyValidator` correctly
-names its category; three gaps filed (multiple Primary bindings pass clean;
-a Mirror-topology mapping id collision across two calendars sharing a
-backend, confirming this task's own standing caution empirically; duplicate
-endpoint identity has no dedicated check but is caught indirectly). **Central
-finding:** `SyncTopologyValidator` has exactly one call site in the whole
-codebase — the topology widget's own display — never consulted by
-`CollectionController::loadCollectionFromFile()`; a live runtime was shown
-initializing with a genuinely invalid one-way-cycle topology with nothing
-stopping a real Sync Now from running it. No held-controller admission path
-or safe diagnostic open workflow exists yet — see
-[`no-load-time-validation-gate-allows-invalid-topology-to-run.md`](../PlanStan/docs/bugs/no-load-time-validation-gate-allows-invalid-topology-to-run.md).
-`RRD-014` is `READY` next.)
+**Last updated:** 2026-09-10 (`RRD-014` DONE — the mutation set run against
+RRD-009's `01-everyday` clean baseline, real recurrence (DST-spanning, one
+detached exception), VTODO, and UID-reuse content seeded through the
+production API. `tst_rrd014_mutations.cpp` 9/9 passing, stable across four
+consecutive runs. Create/edit/delete at three real origins, a genuine
+concurrent-edit conflict, disconnect/reconnect recovery, and UID isolation
+all confirmed. **Central finding, the campaign's most severe data-loss
+defect so far: this task's own acceptance clause does not hold** —
+`LocalBackend` names an exception's on-disk file identically to its
+master's (both keyed by UID alone), so the two writes race for the same
+file and one non-deterministically overwrites the other, confirmed against
+the raw local file and both real CalDAV remotes — see
+[`local-backend-exception-overwrites-master-same-filename.md`](../PlanStan/docs/bugs/local-backend-exception-overwrites-master-same-filename.md).
+A second defect, previously only observed statically by RRD-012, was
+live-confirmed and formalized:
+[`disabled-mapping-override-loses-to-compiler-while-still-compiled.md`](../PlanStan/docs/bugs/disabled-mapping-override-loses-to-compiler-while-still-compiled.md) —
+a persisted "disabled" override on a still-actively-compiled mapping loses
+to the compiler's fresh copy on reopen. Neither fixed: both are
+foundational/shared-code changes outside this characterization task's
+scope. `RRD-015` is `READY` next.)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -79,8 +83,8 @@ below (§2.1, §3) refers to that specification.
 | 11 | RRD-011 | DONE 2026-09-10 | RRD-009 | Directional and shared-destination scenarios |
 | 12 | RRD-012 | DONE 2026-09-10 | RRD-009 | Component restrictions, properties, and seven distinct states |
 | 13 | RRD-013 | DONE 2026-09-10 | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
-| 14 | RRD-014 | READY | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
-| 15 | RRD-015 | QUEUED | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
+| 14 | RRD-014 | DONE 2026-09-10 | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
+| 15 | RRD-015 | READY | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | QUEUED | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | QUEUED | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
@@ -1366,7 +1370,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-014 — Mutations and clone-only destructive operations
 
-- **State:** READY
+- **State:** DONE 2026-09-10
 - **Depends on:** RRD-010, RRD-011, RRD-012
 - **Repository:** `../PlanStan`
 - **Scope:** Run the mutation set against the clean baselines rather than
@@ -1383,15 +1387,65 @@ target and 65 of 145 registered test targets no longer compile.
   Cancel and retry, a failed Apply, and held-run topology rejection each leave a
   recorded, correct accepted-versus-pending state. Physical effects are checked
   after each failure, not only the reported status.
-- **Verification:** destructive Mirror and reset-and-repush run only on a
-  disposable clone, with target-only sentinels, deletion refusal and acceptance
-  checks, and no path that can reach a shared account. Record the clone
-  mechanism.
+- **Verification:** run against RRD-009's `01-everyday` clean baseline
+  (`generateScenario01()`), not a new fixture file, per scope. Recurrence
+  (weekly, DST-spanning, one detached exception), VTODO due/completion state,
+  and a UID reused across Family and Notes were seeded into Family's local
+  calendar through the real production API
+  (`CollectionController::applyIncidenceAddition()`, `CreateExceptionCommand`).
+  Pinned by
+  [`tests/integration/tst_rrd014_mutations.cpp`](../PlanStan/tests/integration/tst_rrd014_mutations.cpp)
+  (env-gated, `PLANSTAN_DAVRIG=1`, 9/9 passing, stable across four consecutive
+  runs; full findings in
+  [`docs/testing/rrd-014-mutations-evidence.md`](../PlanStan/docs/testing/rrd-014-mutations-evidence.md)):
+  create/edit/delete at each of three real origins (local, account A, account
+  C) all confirmed; a genuine concurrent same-record edit is recorded as a
+  real `runtimeConflicts()` entry, not silently resolved; the reused UID
+  stays fully isolated between Family and Notes through the whole mutation
+  battery; disconnect/reconnect recovers fully once the account returns.
+  Destructive Mirror/Reset-and-repush and `TopologyApplyService`'s accepted/
+  rejected/draft-survival contracts were NOT re-tested — both are already
+  pinned end to end by `tst_live_graph_gate.cpp`'s `destructiveVerbs_...`
+  case and `tst_topologyapplyservice.cpp`'s `apply_accepted...`/
+  `apply_rejected...` suite, both re-run this session and still passing.
+
+  **This task's own central acceptance clause — "recurrence identity
+  survives every mutation, the detached exception included" — does NOT
+  hold today, and this is the campaign's most severe data-loss finding so
+  far.** Filed as
+  [`local-backend-exception-overwrites-master-same-filename.md`](../PlanStan/docs/bugs/local-backend-exception-overwrites-master-same-filename.md):
+  `LocalBackend::startSync()` names every incidence's on-disk file by UID
+  alone; a detached exception shares its master's UID by definition, so the
+  two writes race for the identical filename and one silently overwrites
+  the other — non-deterministically (confirmed both directions occur across
+  runs). Verified directly against the raw local `.ics` file and against
+  both real CalDAV remotes independently. Not fixed: the correct fix is a
+  persistence-format change (a recurrence-id-aware filename plus a
+  read/discovery-side update to regroup same-UID files into one logical
+  incidence) with real migration implications, outside this
+  characterization task's scope.
+
+  **Second defect, live-confirmed and formalized:**
+  [`disabled-mapping-override-loses-to-compiler-while-still-compiled.md`](../PlanStan/docs/bugs/disabled-mapping-override-loses-to-compiler-while-still-compiled.md) —
+  RRD-012 already observed statically that a persisted `enabled=false`
+  override on an actively-compiled mapping id loses to the compiler's
+  fresh copy on reopen; RRD-014 confirms it with a real Sync Now (the
+  "disabled" route delivered a record anyway) and root-causes it to the
+  same union-overwrite priority in
+  `CollectionController::generateSyncMappingsFromLogicalCalendars()`
+  RRD-012 already touched once this session for a different bug. Not
+  fixed here: a second change to that shared code deserves its own
+  dedicated verification pass, not a same-session bundle.
+
+  VTODO completion reaching only one of the two real remotes was recorded
+  but not diagnosed — the same collection had already hit both defects
+  above by that point in the run, and isolating whether this is a third,
+  independent gap or a downstream effect was not attempted.
 - **Next:** RRD-015.
 
 ### RRD-015 — The capability matrix
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-013, RRD-014
 - **Repository:** `../PlanStan`, `../libkalburator`
 - **Scope:** Establish real read-only discovery and enforcement, and real ACL
