@@ -1,6 +1,6 @@
 # Task queue
 
-**Last updated:** 2026-09-07 (stabilization completion queue restored)
+**Last updated:** 2026-09-09 (RRD release-readiness campaign registered)
 This is the only active work queue. Stable IDs are used by code, tests, issues, and commits.
 
 The `DONE` entries below are retained as historical implementation evidence.
@@ -14,8 +14,9 @@ States: `READY`, `IN PROGRESS`, `QUEUED`, `BLOCKED`, `DONE`, `REMOVED`.
 ## Now
 
 Work top to bottom unless a task is blocked or the user chooses otherwise.
-`STB-*` is the authoritative completion queue for the production-stabilization
-programme defined in PlanStan's maintained architecture and baseline documents.
+`RRD-*` is the active queue. `STB-*` is the closed production-stabilization
+programme defined in PlanStan's maintained architecture and baseline documents;
+its rows are retained below as historical evidence.
 The older `DONE` tasks below remain useful implementation evidence, but do not
 make the corresponding real application workflow certified.  Keep exactly one
 task `IN PROGRESS`; the first unblocked task is deliberately the only `READY`
@@ -33,13 +34,46 @@ entry until it is completed and the next selected task is promoted.
 | 8 | STB-008 | DONE 2026-09-08 | STB-004, STB-005 | Conflict interaction and truthful terminal results |
 | 9 | STB-009 | DONE 2026-09-08 | STB-003 | Shared recurrence/occurrence query adopted by all calendar views |
 | 10 | STB-010 | DONE 2026-09-08 | STB-001 | Runtime cancellation, executor dispatch, and worker teardown safety |
-| 11 | STB-011 | QUEUED | STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010 | One operational runtime owner for the full PlanStan slice |
-| 12 | STB-012 | QUEUED | STB-011 | Application close lifecycle integration |
-| 13 | STB-013 | QUEUED | STB-009, STB-012 | Certified local and hermetic-DAV desktop workflow matrix |
-| 14 | STB-014 | QUEUED | STB-013 | Retire legacy characterization paths after replacement evidence |
-| 15 | STB-015 | QUEUED | STB-014 | Independent-consumer and package proof |
-| 16 | STB-016 | QUEUED | STB-013 | Measured desktop responsiveness and polish |
-| 17 | STB-017 | QUEUED | STB-014, STB-015, STB-016 | Final stabilization/release evidence and closure decision |
+| 11 | STB-011 | DONE 2026-09-08 (reopened acceptance repaired) | STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010 | One operational runtime owner for the full PlanStan slice |
+| 12 | STB-012 | DONE 2026-09-08 | STB-011 | Application close lifecycle integration |
+| 13 | STB-013 | DONE 2026-09-08 | STB-009, STB-012 | Certified local and hermetic-DAV desktop workflow matrix |
+| 14 | STB-014 | DONE 2026-09-09 | STB-013 | Retire legacy characterization paths after replacement evidence |
+| 15 | STB-015 | DONE 2026-09-09 | STB-014 | Independent-consumer and package proof |
+| 16 | STB-016 | DONE 2026-09-09 | STB-013 | Measured desktop responsiveness and polish |
+| 17 | STB-017 | DONE 2026-09-09 | STB-014, STB-015, STB-016 | Final stabilization/release evidence and closure decision |
+
+### Release readiness — calendar topology UX and inspectable fixtures
+
+`RRD-*` is the successor campaign to the closed `STB-*` programme. Its
+specification is `../PlanStan/docs/release-readiness-spec.md`; that document
+owns contracts and acceptance, this file owns state. A section number cited
+below (§2.1, §3) refers to that specification.
+
+| Order | Task | State | Depends on | Outcome |
+|---:|---|---|---|---|
+| 1 | RRD-001 | READY | STB-017 | The application and every registered test target compile against public headers |
+| 2 | RRD-002 | QUEUED | RRD-001 | A classified pass/fail/timeout/skip baseline for every registered target |
+| 3 | RRD-003 | QUEUED | RRD-001 | Draft loss, count truth, and inherited impact pinned in the real widget |
+| 4 | RRD-004 | QUEUED | RRD-003 | The pinned topology defects repaired |
+| 5 | RRD-005 | QUEUED | RRD-004 | One observable topology draft, owned above the views |
+| 6 | RRD-006 | QUEUED | RRD-005 | One testable apply pipeline with a typed review and result |
+| 7 | RRD-007 | QUEUED | RRD-002 | A project-local DAV rig with real per-account outage |
+| 8 | RRD-008 | QUEUED | RRD-002 | Bundle contract, manifest schema, and guarded generator |
+| 9 | RRD-009 | QUEUED | RRD-007, RRD-008 | Scenario 01 as a retained, openable, credentialed bundle |
+| 10 | RRD-010 | QUEUED | RRD-009 | Chain relay and mesh scenarios with independent oracles |
+| 11 | RRD-011 | QUEUED | RRD-009 | Directional and shared-destination scenarios |
+| 12 | RRD-012 | QUEUED | RRD-009 | Component restrictions, properties, and seven distinct states |
+| 13 | RRD-013 | QUEUED | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
+| 14 | RRD-014 | QUEUED | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
+| 15 | RRD-015 | QUEUED | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
+| 16 | RRD-016 | QUEUED | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
+| 17 | RRD-017 | QUEUED | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
+| 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
+| 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
+| 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
+| 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
+| 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
+| 23 | RRD-023 | QUEUED | RRD-022 | Campaign closure and the release decision |
 
 The detailed scope, source-entry map, fixtures, and acceptance cases for these
 tasks are maintained in `../PlanStan/docs/architecture.md` under
@@ -147,6 +181,24 @@ predecessor is `DONE`; external decisions are roots, never task back-edges.
 | STB-013 | STB-014, STB-016 |
 | STB-014 | STB-015, STB-017 |
 | STB-015 + STB-016 | STB-017 |
+| STB-017 | RRD-001 |
+| RRD-001 | RRD-002, RRD-003 |
+| RRD-003 | RRD-004 |
+| RRD-004 | RRD-005 |
+| RRD-005 | RRD-006 |
+| RRD-002 | RRD-007, RRD-008 |
+| RRD-007 + RRD-008 | RRD-009 |
+| RRD-009 | RRD-010, RRD-011, RRD-012, RRD-013 |
+| RRD-010 + RRD-011 + RRD-012 | RRD-014 |
+| RRD-013 + RRD-014 | RRD-015 |
+| RRD-006 + RRD-009 | RRD-016 |
+| RRD-016 | RRD-017 |
+| RRD-011 + RRD-017 | RRD-018 |
+| RRD-017 | RRD-019 |
+| RRD-010 + RRD-006 | RRD-020 |
+| RRD-011 + RRD-020 | RRD-021 |
+| RRD-015 + RRD-018 + RRD-019 + RRD-021 | RRD-022 |
+| RRD-022 | RRD-023 |
 
 The former monolithic `PS-008` has been decomposed. Preparatory PlanStan
 adapters may land independently, but they stay inert until `PS-016` performs
@@ -179,6 +231,489 @@ Preparatory work must have tests and must not activate a second live graph.
 `STB-011` is the sole operational-ownership transfer: it routes the complete
 application slice through one runtime and removes redundant live construction
 in the same patch.
+
+## Release-readiness tasks
+
+These records turn the calendar-topology UX and inspectable-fixture campaign
+into a finite completion queue. `../PlanStan/docs/release-readiness-spec.md` is
+the specification: it owns the contracts (§2), the per-task scope and acceptance
+detail (§3), and the handoff protocol (§4). Section numbers below refer to it.
+Each record here states the non-negotiable boundary so one agent can take one
+bounded slice without relitigating the campaign.
+
+The campaign's premise is six defects reproduced in the 2026-09-09 trees and
+recorded as D1–D6 in the specification's §1. D1–D3 share one root cause:
+`STB-015` removed PlanStan's injection of libkalburator private `src/*` include
+directories and the dependent sources were never migrated, so the application
+target and 65 of 145 registered test targets no longer compile.
+
+### RRD-001 — Restore the public-header build contract
+
+- **State:** READY
+- **Depends on:** STB-017
+- **Repository:** `../PlanStan`
+- **Scope:** Migrate every flat library include in `src/` and `tests/` to
+  `<kalburator/<domain>/<header>.h>` per specification §2.1. 80 files carry a
+  flat spelling: `src/main.cpp` plus 79 test sources across 13 directories. 67
+  of them are confirmed build failures; migrate all 80, because a spelling that
+  resolves through a sibling include path today is the same latent defect. Do
+  not restore private include-directory injection and do not change behavior.
+- **Acceptance:** `cmake --build build-dev -j6` builds `all` with zero
+  header-not-found errors, including the `PlanStan` application target and both
+  live gates. A source search finds no PlanStan CMake reference to a
+  libkalburator `src/*` directory. The diff carries include-line changes only;
+  any file needing more is named here with its reason.
+- **Verification:** record the full build command and its result, the resulting
+  `build-dev/PlanStan` timestamp, and the per-directory file counts touched.
+- **Next:** RRD-002 and RRD-003 both unblock.
+
+### RRD-002 — Record a classified baseline for every registered target
+
+- **State:** QUEUED
+- **Depends on:** RRD-001
+- **Repository:** `../PlanStan`
+- **Scope:** Build and run all 145 registered targets. Classify each as passes,
+  fails, times out, skips, or requires a live service. Publish
+  `../PlanStan/docs/testing/registered-target-baseline.md` with command, result,
+  duration, and classification per target. File each real failure as a focused
+  defect; repair none of them here.
+- **Acceptance:** no unexplained target. `integration_incidence_crud`'s recorded
+  five-minute timeout is carried explicitly as an unclassified timeout, not as
+  acceptance evidence. Live-gated targets are recorded as skipped with the gate
+  variable named, separately from failures.
+- **Verification:** the published baseline document plus the exact ctest
+  invocations and revisions used to produce it.
+- **Next:** RRD-007 and RRD-008.
+
+### RRD-003 — Pin draft loss, count truth, and inherited impact
+
+- **State:** QUEUED
+- **Depends on:** RRD-001
+- **Repository:** `../PlanStan`
+- **Scope:** Add failing regressions against the real `SyncTopologyWidget`, not
+  a mock, for D4 (a collection-default change destroys unrelated staged edits),
+  D5 (reported mapping counts include membership links), and inherited impact (a
+  default change must name every affected existing `CollectionDefault`
+  calendar before Apply). Add a characterization test for how the current graph
+  renders a mapping-only unbound endpoint, the scenario 06 shape.
+- **Acceptance:** the D4 assertion covers every staged edit type the changeset
+  carries, not only wiring policy. Each regression fails for the stated reason
+  and is recorded as failing, never skipped. The characterization test records
+  observed behavior and passes.
+- **Verification:** the reproducer for D4 is: stage `calendar-0` Hub to Chain,
+  change the collection default to Mesh, observe
+  `isWiringPolicyModified("calendar-0")` turn false via
+  `onTopologyPresetChanged()` at `synctopologywidget.cpp:2372` calling
+  `rebuildGraph()`, which clears the changeset at line 648.
+- **Next:** RRD-004.
+
+### RRD-004 — Repair the pinned topology defects
+
+- **State:** QUEUED
+- **Depends on:** RRD-003
+- **Repository:** `../PlanStan`
+- **Scope:** Make RRD-003's regressions pass. Decouple "the baseline changed"
+  from "the draft is discarded": a rebuild re-snapshots the baseline and retains
+  staged edits, reporting any edit dropped because its subject no longer exists.
+  Split membership edges from channel edges per specification §2.3.
+- **Acceptance:** RRD-003's regressions pass. No staged edit is lost silently; a
+  dropped edit is reported with its reason. The full topology suite and the
+  RRD-002 baseline are unchanged except for these targets. No new compatibility
+  path.
+- **Verification:** run the topology suite before and after and record both.
+- **Next:** RRD-005.
+
+### RRD-005 — Extract an observable topology draft
+
+- **State:** QUEUED
+- **Depends on:** RRD-004
+- **Repository:** `../PlanStan`
+- **Scope:** Introduce `TopologyDraft` and `TopologyEditorContext` per
+  specification §2.2. Move baseline, changeset, and preview state out of
+  `SyncTopologyWidget`; the widget becomes an observer that projects the draft.
+  Behavior-preserving.
+- **Acceptance:** `TopologyDraft` is unit-tested with no `QWidget` dependency and
+  emits one `changed()` per mutation. The widget holds no pending state of its
+  own. The whole topology suite passes unchanged, RRD-003's regressions
+  included.
+- **Verification:** record the suite result before and after, and a search
+  showing no remaining pending-state member on the widget.
+- **Next:** RRD-006.
+
+### RRD-006 — Extract the apply pipeline
+
+- **State:** QUEUED
+- **Depends on:** RRD-005
+- **Repository:** `../PlanStan`
+- **Scope:** Move `SyncTopologyWidget::applyChanges()`
+  (`synctopologywidget.cpp:2680-3393`, 713 lines) into `TopologyApplyService`
+  with the `review()` and `apply()` contract in specification §2.2. Preserve
+  every rule that code encodes, including `owningPolicyAfterApply()` freeze
+  semantics, the baseline-clear resolution, and the exclusion of preview
+  mappings from persistence.
+- **Acceptance:** apply behavior is identical, proven by the existing suite plus
+  new service-level tests for accepted, rejected, and partially-invalid
+  submissions. A rejected apply leaves the draft, the durable configuration, and
+  the runtime unchanged. Runtime ownership is unchanged: apply still submits one
+  desired topology through `submitDesiredRuntimeTopology()`.
+- **Verification:** the two live data-corruption paths named in that function's
+  comments each get a named test. Record both.
+- **Next:** RRD-016 and RRD-020 both depend on this.
+
+### RRD-007 — Provision a project-local DAV test rig
+
+- **State:** QUEUED
+- **Depends on:** RRD-002
+- **Repository:** `../PlanStan`
+- **Scope:** A project-local Radicale rig owned by this repository: its own
+  config, users, rights file, storage root, and ports, started and stopped by
+  script. Three isolated accounts A, B, and C, each on its own instance so that
+  stopping one account is a real per-account outage. Never modify
+  `/etc/radicale` or the system service on `127.0.0.1:5232`.
+- **Acceptance:** one command starts the rig, one stops it, one reports each
+  instance's health. Ports and credentials are configuration, not constants
+  compiled into a test. A stopped instance produces the account-unavailable
+  state in PlanStan, observed and recorded. The system service is untouched and
+  unused by any RRD acceptance.
+- **Verification:** record the rig's layout, the health-check output, and the
+  observed unavailable-state evidence.
+- **Next:** RRD-009.
+
+### RRD-008 — Bundle contract, manifest schema, and guarded generator
+
+- **State:** QUEUED
+- **Depends on:** RRD-002
+- **Repository:** `../PlanStan`
+- **Scope:** Implement `tools/fixturegen/`, a small C++ tool over the existing
+  Qt, runtime, and assembler seams; scripts orchestrate only. Implement the
+  bundle layout, manifest schema, three checkpoints, prefix-and-host-guarded
+  reset, and relocatability from specification §2.6. Prove it with a local-only
+  smoke scenario needing no DAV. Do not build a parallel configuration parser or
+  sync executor.
+- **Acceptance:** the tool emits a bundle, prints the exact file to open, and its
+  manifest round-trips. Save-and-reopen parse assertions pass against the
+  production serializers, not `TestKalbGenerator`. Moving the bundle directory
+  and opening it from the new location works. Reset refuses an unknown prefix
+  and an unknown host, proven by a test. Two output directories are independent.
+- **Verification:** record which loader path actually reads `profileLayout`,
+  since the live-fixture JSON puts it at the `.kalb` root while
+  `CollectionPaths::layoutFromMetadata()` reads a metadata map.
+- **Next:** RRD-009.
+
+### RRD-009 — Scenario 01 as a retained openable bundle
+
+- **State:** QUEUED
+- **Depends on:** RRD-007, RRD-008
+- **Repository:** `../PlanStan`
+- **Scope:** Generate `01-everyday.kalb`: Personal L to A, Work L to B, Family
+  Hub over L, A and C, and Notes local-only. Four calendars, eight enabled
+  bindings, four rules, plus one extra A calendar deliberately left unadopted.
+  Install credentials through the real secret service and verify them from a
+  second process. Open with a real `CollectionController`, inspect the real
+  topology widget, sync, close, and reopen.
+- **Acceptance:** a human opens the printed `.kalb` in PlanStan and finds all
+  four calendars, their eight bindings and four rules, and the unadopted remote
+  calendar. Local-only Notes is valid and raises no spurious warning. Expected
+  and observed endpoint tuples are exported with a screenshot. A failure in the
+  old graph does not suppress the usable bundle; it is recorded as a defect.
+- **Verification:** record the one command that prints the file to open, and the
+  second-process credential check.
+- **Next:** RRD-010 through RRD-013 all unblock.
+
+### RRD-010 — Chain relay and mesh scenarios
+
+- **State:** QUEUED
+- **Depends on:** RRD-009
+- **Repository:** `../PlanStan`
+- **Scope:** `02-relay.kalb` (Project, four bindings, ordered Chain across L, A,
+  B, C, three rules) and `03-mesh.kalb` (Project, four bindings, Mesh over the
+  same four, six rules). Satisfy the five oracle comparisons in specification
+  §2.7 in full.
+- **Acceptance:** a record created at C reaches L through runtime-owned passes
+  from one user Sync now. Head-to-tail and tail-to-head both converge. An
+  unavailable middle account is exercised through the RRD-007 rig as a genuine
+  per-account outage, not a whole-server stop. Tail-origin data reaches every
+  mesh copy without duplication and the following run reports no record changes.
+  Concurrent edits produce the expected conflict behavior, recorded exactly.
+- **Verification:** expected sets are independent of the mapping generator under
+  test. State how each was derived.
+- **Next:** RRD-014 and RRD-020.
+
+### RRD-011 — Directional and shared-destination scenarios
+
+- **State:** QUEUED
+- **Depends on:** RRD-009
+- **Repository:** `../PlanStan`
+- **Scope:** `04-directional.kalb` (Bulletin, four bindings, Manual rules A to L,
+  L to and from B, L to C) and `06-shared-destination.kalb` (two Manual
+  calendars, each with a distinct local primary and its own A or B copy; rules
+  L.personal to and from A.personal, L.work to and from B.work, A.personal to
+  C.aggregate, B.work to C.aggregate, with `C.aggregate` an existing unbound
+  physical endpoint).
+- **Acceptance:** one-way rules produce no reverse writes, proven with
+  target-only sentinel records. One source's reconciliation does not erase the
+  other source's records in the aggregate. Scenario 06 is proven through the
+  controller and the real graph; validator permission for one-way fan-in does
+  not by itself prove storage semantics or complete endpoint rendering. If 06
+  fails, its `.kalb` is retained as a diagnostic artifact with the exact
+  expected-versus-actual difference. Initialization and deletion behavior at the
+  aggregate is pinned.
+- **Verification:** the server-read-only variant of scenario 04 is deferred to
+  RRD-015 and is not claimed here.
+- **Next:** RRD-014, RRD-018, RRD-021.
+
+### RRD-012 — Component restrictions, properties, and distinct states
+
+- **State:** QUEUED
+- **Depends on:** RRD-009
+- **Repository:** `../PlanStan`
+- **Scope:** `05-properties-and-states.kalb`: Events L to A, Tasks L to B, Hidden
+  L to C, and Paused with two bindings and `syncEnabled=false`. Separate
+  controlled variants disable a binding, disable a rule, and fail one account.
+- **Acceptance:** VEVENT-only and VTODO-only restrictions are established as real
+  behavior, not enum or registry presence. Name, color, and description
+  differences either sync or are recorded as unsupported. All seven states in
+  specification §2.5 are independently observable and independently asserted.
+  Any state that cannot be distinguished today is recorded as a defect with its
+  reproducer.
+- **Verification:** record the observed distinction for each of the seven states
+  individually.
+- **Next:** RRD-014.
+
+### RRD-013 — Invalid corpus and the safe diagnostic open
+
+- **State:** QUEUED
+- **Depends on:** RRD-009
+- **Repository:** `../PlanStan`
+- **Scope:** Build the invalid corpus, kept separate from the openable one:
+  two-way fan-in between different calendars derived from 06; duplicate policy in
+  a Mesh cycle; duplicate and reversed mappings; a one-way cycle; missing
+  provider or calendar; missing or multiple Primary; duplicate endpoint identity;
+  stale discovery; unsupported component and permission combinations; and
+  multiple physical calendars on one backend inside a Mesh or Chain.
+- **Acceptance:** each invalid file is rejected with the validator's exact
+  warning or error category, identifying both offending routes where two exist.
+  No disk, runtime, or remote change results from a rejection. Invalid files are
+  unreachable through any path that can auto-sync before validation: the
+  side-effect-free parser and compiler path and the held-controller admission
+  path are exercised first, then a safe diagnostic open workflow is exposed.
+- **Verification:** generated mapping IDs currently include backend IDs without
+  both calendar IDs. Characterize the collision and admission behavior before any
+  support claim; until then the core corpus uses at most one copy per backend per
+  calendar.
+- **Next:** RRD-015.
+
+### RRD-014 — Mutations and clone-only destructive operations
+
+- **State:** QUEUED
+- **Depends on:** RRD-010, RRD-011, RRD-012
+- **Repository:** `../PlanStan`
+- **Scope:** Run the mutation set against the clean baselines rather than
+  multiplying files: create, edit and delete at each eligible origin; disable and
+  re-enable a route; disconnect and reconnect; concurrent same-record edits;
+  rename and recolor; close and reopen. Conflicting data is injected after the
+  baseline so an initial union is never mistaken for a conflict. Seed data stays
+  small and uniquely identifiable, with deterministic UIDs, a manifest-selected
+  date anchor, timed and all-day events, one timezone- and DST-spanning
+  recurrence with a detached exception, VTODO completion and due state, and one
+  UID deliberately reused across two unrelated calendars.
+- **Acceptance:** recurrence identity survives every mutation, the detached
+  exception included. The reused UID stays isolated between its two calendars.
+  Cancel and retry, a failed Apply, and held-run topology rejection each leave a
+  recorded, correct accepted-versus-pending state. Physical effects are checked
+  after each failure, not only the reported status.
+- **Verification:** destructive Mirror and reset-and-repush run only on a
+  disposable clone, with target-only sentinels, deletion refusal and acceptance
+  checks, and no path that can reach a shared account. Record the clone
+  mechanism.
+- **Next:** RRD-015.
+
+### RRD-015 — The capability matrix
+
+- **State:** QUEUED
+- **Depends on:** RRD-013, RRD-014
+- **Repository:** `../PlanStan`, `../libkalburator`
+- **Scope:** Establish real read-only discovery and enforcement, and real ACL
+  behavior, using the RRD-007 rig's rights file. Complete scenario 04's
+  server-read-only variant. For transformation loss, demonstrate a lossy backend
+  and property combination before asserting that Warn, Abort, or Proceed was
+  exercised; local to DAV alone may not trigger loss.
+- **Acceptance:** a truthful capability matrix with explicit skip and unavailable
+  entries. No supported-baseline claim rests on a UI label, an enum, or a
+  registry entry. A fake server may test the application contract, labeled
+  separately from real DAV evidence. Each gap becomes a focused upstream defect
+  with an executable case.
+- **Verification:** publish the matrix and cite the rig configuration that
+  produced each row.
+- **Next:** RRD-022.
+
+### RRD-016 — Calendars, copies, and rules page as a read-only projection
+
+- **State:** QUEUED
+- **Depends on:** RRD-006, RRD-009
+- **Repository:** `../PlanStan`
+- **Scope:** Build the page as a new first page in the existing
+  `CollectionSettingsViewPanel` `KPageWidget`, demoting the graph to a Topology
+  page beside it and reusing the existing apply bar, panel lifecycle, and view
+  registration. Pure projection: a searchable calendar list; on selection the
+  copy table and the rule table; and the arrangement summary line. Both pages
+  observe the one draft from specification §2.2.
+- **Acceptance:** driven by scenario 01, every value matches the parsed `.kalb`
+  and the runtime projection. Counts obey specification §2.3. Names are
+  account-qualified when they collide, and multiple copies on one account stay
+  distinguishable by calendar ID or path. Physical identity shows both the app
+  calendar name and the actual remote collection name. Every row and control is
+  reachable and readable with the keyboard alone. No editing path exists yet.
+- **Verification:** the current bound-port labels take the logical display name
+  and can conceal a different remote name. Record that the new table does not.
+- **Next:** RRD-017.
+
+### RRD-017 — Arrangement, copy, primary, and rule editing
+
+- **State:** QUEUED
+- **Depends on:** RRD-016
+- **Repository:** `../PlanStan`
+- **Scope:** Add Change arrangement, Add copy, Use another primary copy, and Edit
+  rules, plus an explicit numbered order editor for Chain. Account placement
+  never changes chain order. Add copy asks explicitly whether to create a new
+  calendar or use an existing one; a nonempty existing destination presents the
+  initialization and conflict choice. Apply and Discard stay visible beside the
+  editor.
+- **Acceptance:** each flow completes with visible controls, no port drag and no
+  context-menu discovery. Changing an arrangement that requires Manual shows the
+  complete resulting rule set and names every affected inherited calendar.
+  Linking never implies an immediate destructive replacement. Every accepted
+  change survives reopen; a rejected change preserves the previous runtime and
+  durable configuration and keeps a useful draft. Scenario 01 covers setup, 04
+  and 06 cover advanced rules. Existing staging, conflict, provider, and
+  runtime-host checks stay green.
+- **Verification:** record each flow's exact control path and its reopen check.
+- **Next:** RRD-018 and RRD-019.
+
+### RRD-018 — Account discovery states and the four removal verbs
+
+- **State:** QUEUED
+- **Depends on:** RRD-011, RRD-017
+- **Repository:** `../PlanStan`
+- **Scope:** Connect account opens a dialog or drawer, replacing the permanently
+  space-consuming backend palette. Discovery has loading, empty,
+  authentication-failure, unavailable, and stale states, each with a timestamp
+  and a retry. Removal offers four distinct verbs in distinct words: stop syncing
+  a rule, unlink a copy, remove a calendar from PlanStan, and delete a physical
+  calendar.
+- **Acceptance:** each discovery state is reachable and observed against the
+  RRD-007 rig, a genuinely stopped account instance included. Cached discovery is
+  never presented as proof of current permission or existence. Each verb states
+  which records remain, which copies are affected, and any primary promotion, and
+  its stated consequence matches the observed physical effect. An irreversible
+  operation confirms with the exact account and calendar name.
+- **Verification:** record the observed effect of each verb on real remote
+  records, not only the dialog text.
+- **Next:** RRD-022.
+
+### RRD-019 — Truthful run feedback and separated draft, save, and run
+
+- **State:** QUEUED
+- **Depends on:** RRD-017
+- **Repository:** `../PlanStan`
+- **Scope:** The run panel identifies the selected calendars and rules, the
+  current pass, and completed, failed, deferred or conflicting, and cancelled
+  work, plus the last successful result. Save calendar contents and Sync now are
+  separate operations with separate results and do not live inside a movable
+  calendar node.
+- **Acceptance:** during a draft, Sync now explicitly runs the applied
+  configuration or offers Apply first; it never implies draft execution. A
+  successful runtime commit advances the applied projection. A failure retains
+  the draft and displays the accepted state and any explicit repair requirement.
+  Success is never reported because a widget or a JSON file changed. Cancel and
+  retry are observable and correct. A configuration preview never claims a
+  record-level dry run unless the runtime provides one.
+- **Verification:** record the failed-Apply case's accepted-versus-pending state.
+- **Next:** RRD-022.
+
+### RRD-020 — Graph focus, groups, layout, legend, and keyboard traversal
+
+- **State:** QUEUED
+- **Depends on:** RRD-010, RRD-006
+- **Repository:** `../PlanStan`
+- **Scope:** Default to the selected calendar's sync graph, with Selected
+  calendar and All calendars as an explicit choice. Each copy is a node; account
+  grouping is a background container; Primary is a textual node badge, not a
+  second family of lines. Membership becomes an optional overlay, off by default.
+  Add search, a visible legend, readable labels, a fixed minimum text size,
+  node-avoiding routes, and stable deterministic ordering. Add keyboard node and
+  edge traversal, and a form equivalent for every gesture.
+- **Acceptance:** `applyLayout()` no longer arranges account nodes in one
+  horizontal row, no longer special-cases the literal backend ID `primary`
+  (primacy is a per-calendar binding role), and implements the ordering its
+  comment claims. Zoom changes overview detail rather than shrinking essential
+  controls into illegibility; scrolling and panning never require a middle mouse
+  button. Editing in one view is observed in the other, proving one draft. Scenes
+  02, 03, and 06 verify chain, mesh, and shared destinations. Counts obey
+  specification §2.3.
+- **Verification:** record the keyboard equivalent for each retained gesture.
+- **Next:** RRD-021.
+
+### RRD-021 — Route tracing, cross-calendar warnings, and scale
+
+- **State:** QUEUED
+- **Depends on:** RRD-011, RRD-020
+- **Repository:** `../PlanStan`
+- **Scope:** Add Trace changes from this copy. In the all-calendar view, use
+  separate calendar lanes and collapse unrelated account detail. Give shared
+  endpoints and cross-calendar routes an explicit warning. Add one scale variant
+  with 12 calendars across the existing four backends.
+- **Acceptance:** tracing shows configured reachability and says so; it never
+  promises that a failed or conflicting run will deliver every record. A trace
+  from a chain tail correctly identifies which copies are reachable and which are
+  not, matching the observed run outcome for the same configuration. The scale
+  variant remains navigable, and its filtering is recorded as adequate or as a
+  defect.
+- **Verification:** record the trace result beside the run result it is compared
+  against.
+- **Next:** RRD-022.
+
+### RRD-022 — Measured usability against the stated targets
+
+- **State:** QUEUED
+- **Depends on:** RRD-015, RRD-018, RRD-019, RRD-021
+- **Repository:** `../PlanStan`
+- **Scope:** Repeat a human walkthrough in a normal desktop session and at 2x
+  display scaling, at 1280x800, for the old and the proposed interface using the
+  same fixtures. Record task completion, time, errors, and required assistance.
+  This is a test run with the user, not a certification inferred from screenshots
+  or unit tests.
+- **Acceptance:** within 30 seconds of opening a scenario the operator identifies
+  the displayed and edited copy, the remote copies, the direction, and any
+  inactive or unavailable route. Within two minutes they add a copy or change a
+  rule using visible controls with no explanation of ports, then review and Apply
+  it. They correctly predict whether an event created at C in the chain reaches L
+  and whether a change at the publication destination can return to the source.
+  They explain and execute stop syncing without deleting remote records and
+  distinguish it from a requested physical deletion. They complete the same setup
+  with the keyboard alone, preserving focus, selection, and drafts through a
+  refresh and a failed Apply.
+- **Verification:** record the operator's results for both interfaces on the same
+  fixtures, including failures and assistance given.
+- **Next:** RRD-023.
+
+### RRD-023 — Campaign closure and the release decision
+
+- **State:** QUEUED
+- **Depends on:** RRD-022
+- **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
+- **Scope:** Collect the final cross-repository revisions, configuration, test
+  classifications, retained bundle inventory, capability matrix, and known
+  limitations. Decide whether direct graph editing retires, on the basis of
+  whether it adds capability the form workflow lacks.
+- **Acceptance:** no open task and no uncertified workflow is hidden by a
+  completion claim. Every skipped, live, or environmental check is labeled. The
+  retained known-issues list contains only explicit non-release limitations.
+  Finished means correct observable sync outcomes and repeatable unassisted task
+  completion; neither alone closes the campaign.
+- **Verification:** full ledger and DAG review, source and diff checks, and a
+  recorded cross-repository verification matrix.
+- **Next:** none. This closes the campaign.
 
 ## Stabilization completion tasks
 
@@ -317,7 +852,7 @@ the programme.
 
 ### STB-004 — Commit production desired state once
 
-- **State:** DONE 2026-09-08
+- **State:** DONE 2026-09-08 (reopened acceptance repaired)
 - **Depends on:** STB-001
 - **Repository:** `../PlanStan`, `../libkalburator`
 - **Scope:** Baseline slice E. Supply initial runtime definitions with a concrete
@@ -521,7 +1056,7 @@ the programme.
 
 ### STB-011 — Transfer operational ownership to one runtime
 
-- **State:** IN PROGRESS 2026-09-08
+- **State:** DONE 2026-09-08 (reopened acceptance repaired)
 - **Depends on:** STB-002, STB-003, STB-004, STB-005, STB-006, STB-007, STB-008, STB-010
 - **Repository:** `../PlanStan`, `../libkalburator`
 - **Scope:** Baseline O. Trace production load/save/query/account/sync instances,
@@ -541,21 +1076,68 @@ the programme.
   host fixture now asserts that after load the source and target endpoints are
   reachable as `Kalburator::Sync::SyncBackend` objects, the runtime is installed,
   and the legacy characterization graph is still not constructed.
-- **Verification (2026-09-08):** the runtime/adapter host lane built and passed
-  8/8: `tst_planstan_local_runtime_integration`,
-  `tst_collectioncontroller_runtime_host`,
-  `tst_collection_runtime_definition_compiler`,
-  `tst_collection_runtime_run_adapter`,
-  `tst_collection_runtime_conflict_adapter`,
-  `tst_collection_runtime_account_adapter`,
-  `tst_collection_runtime_discovery_adapter`, and
-  `tst_collection_runtime_topology_adapter`. Remaining acceptance: the controller
-  must stop creating its own `m_backends`/`m_backendExecutors` duplicates and use
-  the runtime-owned objects for discovery, loading, and save paths.
+- **Progress (finalized 2026-09-08):** removed all live backend/executor ownership
+  from `CollectionController`. Deleted `loadAndCreateBackends()`,
+  `createBackendFromConfig()`, `adoptBackendExecutor()`, `stopBackendExecutors()`,
+  the `m_backendExecutors` member, and the `BackendExecutor` forward declaration.
+  The controller now migrates legacy secrets and loads providers via
+  `migrateBackendSecretsAndLoadProviders()`. `m_backends` is a non-owning cache
+  refreshed from `CollectionRuntime` through `refreshBackendCacheFromRuntime()` and
+  `runtimeBackend()`; `backend()`, `backendById()`, `backendForCalendar()`, and
+  `backends()` read from this cache. `initializeSyncInfrastructure()` is idempotent
+  and is called from both `startDiscoveryAndSync()` and `mirrorProviderBackends()`;
+  it refreshes the cache, sets backend-local DB/cache paths, and regenerates sync
+  mappings without installing a second runtime. `instantiateBackendInSession()` now
+  re-applies the runtime topology through `applyDesiredRuntimeTopology()`.
+  `generateSyncMappingsFromLogicalCalendars()` deduplicates by mapping id to avoid
+  duplicate topology entries, and the `RunFinished` event sink emits
+  `runtimeConflictChanged` for deferred runtime conflicts. The runtime event sink is
+  cleared in the controller destructor before the runtime is destroyed.
+- **Verification (finalized 2026-09-08):** the runtime/adapter/sync-host lane now passes
+  10/10 after building the previously unbuilt targets: `tst_planstan_local_runtime_integration`,
+  `tst_collectioncontroller_runtime_host`, `tst_collection_runtime_definition_compiler`,
+  `tst_collection_runtime_event_projector`, `tst_collection_runtime_run_adapter`,
+  `tst_collection_runtime_conflict_adapter`, `tst_collection_runtime_account_adapter`,
+  `tst_collection_runtime_discovery_adapter`, `tst_collection_runtime_topology_adapter`,
+  and `tst_synchostsmoke`. The host fixture confirms that the runtime owns the
+  backends and the legacy characterization graph is not constructed.
+- **PlanStan commit:** `fdf413e3`.
+- **Follow-up verified (2026-09-08):** the earlier recurrence-editing crash no
+  longer reproduces after the ownership transfer: `integration_recurrence_editing`
+  passed in 29.68 seconds during STB-013 certification.
+- **Reopened acceptance (2026-09-08):** with `PLANSTAN_LIVE_RADICALE=1`, both
+  `live_fanout_gate` and `live_graph_gate` abort while reopening their
+  provider-backed collection: `CollectionRuntime::applyTopology()` reports
+  `provider did not connect: <uuid>`. The initial standalone provider does
+  connect and discovers Radicale calendars; the failure is the subsequent
+  runtime-owned provider composition. This contradicts the one-owner
+  production acceptance and blocks STB-013 until the provider lifecycle is
+  owned by the runtime without a parallel controller composition.
+- **Reopened acceptance result (2026-09-08):** `CollectionController` now
+  obtains provider and backend observations only from `CollectionRuntime`,
+  persists provider intent as configuration rather than composing a second
+  controller-owned manager, and refreshes its borrowed backend cache after a
+  runtime topology commit. Runtime provider replacement waits for an
+  in-flight reconnect to reach a terminal state. `RemoteCalendarBackend`
+  remains owned by its `BackendExecutor` but executes on its creator event
+  loop: KDAV uses a main-thread-affine network manager, so moving that backend
+  to the private executor thread produced `QObject::setParent` violations and
+  stranded a reconnect fetch. The topology graph now projects a successfully
+  runtime-adopted provider collection into PlanStan only after the runtime
+  transaction commits. Verified at PlanStan `83229ba6316e636ce5a64f961ef2fd3543203cc8`
+  against libkalburator `cdd2ffc501ddc344f250e215cf8216ba86a9cbd0` with
+  `cmake --build build-dev --target tst_planstan_local_runtime_integration
+  tst_collectioncontroller_runtime_host -j4` and `ctest --test-dir build-dev
+  -R '^(tst_planstan_local_runtime_integration|tst_collectioncontroller_runtime_host)$'
+  --output-on-failure` (2/2), opt-in `live_fanout_gate` (1/1), and the
+  `live_graph_gate` provider reopen/adoption case (3 passed, 0 failed). The
+  full graph gate still has independent chain-fixpoint and destructive-mirror
+  behavioral assertions; those are STB-013 workflow certification cases, not
+  the reopened provider-composition acceptance.
 
 ### STB-012 — Integrate application close as a lifecycle transaction
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-08
 - **Depends on:** STB-011
 - **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
 - **Scope:** Baseline H2: stop command admission, detach consumers, cancel/drain,
@@ -565,10 +1147,24 @@ the programme.
   session and has one terminal result per operation.
 - **Verification:** controller lifecycle, view-release, and close-during-work
   fixtures with targeted sanitizer coverage.
+- **Result (2026-09-08):** `MainWindow::closeCollection()` unregisters views,
+  releases long-lived panels and disconnects controller consumers before asking
+  `AppController` to destroy the collection. Controller teardown cancels and
+  detaches the runtime event sink before destroying the runtime, then emits the
+  session-release boundary once while the session's borrowed collection/model/
+  config/undo pointers remain valid. The runtime's active-run terminalization
+  is covered by STB-010's public contract.
+- **Verification (2026-09-08):** `cmake --build build-dev --target
+  tst_collectioncontroller_lifecycle tst_appcontroller_services -j1` and
+  `ctest --test-dir build-dev -R
+  '^(tst_collectioncontroller_lifecycle|tst_appcontroller_services)$'
+  --output-on-failure` passed 2/2. The lifecycle assertion is PlanStan
+  `3c590f84`; STB-010's active runtime teardown contract passed 3/3.
+- **Next:** STB-013 desktop workflow certification.
 
 ### STB-013 — Certify real desktop workflows
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-08
 - **Depends on:** STB-009, STB-012
 - **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
 - **Scope:** Baseline I: local and hermetic-DAV end-to-end workflow matrix plus a
@@ -579,10 +1175,63 @@ the programme.
   including failure/retry boundaries.
 - **Verification:** update TST-003/FTR-001 with exactly executed workflows and
   label opt-in live-service checks separately.
+- **Progress (2026-09-08):** at PlanStan
+  `83229ba6316e636ce5a64f961ef2fd3543203cc8` against libkalburator
+  `cdd2ffc501ddc344f250e215cf8216ba86a9cbd0`, the configured hermetic
+  integration target and integration-label CTest lane completed 11/11 in
+  146.30 seconds. It covers recurrence editing, incidence CRUD/undo,
+  collection lifecycle/switching, rescheduling, templates, multi-edit, and
+  view/sidebar flows. Opt-in Radicale evidence remains separate: fanout passes
+  (1/1), and the destructive-mirror graph case now passes (3 passed, 0 failed)
+  after `CollectionRuntimeRunAdapter` preserves a one-mapping mirror override
+  as the runtime mirror intent and direction instead of silently issuing a
+  normal two-way run. The Chain graph case now explicitly uses the real
+  per-edge `SourceWins` policy workflow before warm-up; editing an automatic
+  edge intentionally freezes the current linear Chain as persisted Manual
+  mappings, and the test's existing detach-confirmation hook makes that user
+  decision noninteractive. The runtime state projection now becomes active
+  synchronously upon accepted admission, while its public started signal still
+  comes only from the runtime event. The live helper waits for a stable idle
+  period, preventing a just-admitted auto-sync from being mistaken for a safe
+  topology-mutation boundary. `live_graph_gate` now passes 5/5 in 30.70
+  seconds, covering provider adoption, the frozen Chain's tail-to-head
+  fixpoint convergence, and destructive mirror/reset behavior in one process.
+  Focused
+  noninteractive follow-up:
+  `tst_collectioncontroller_runtime_host
+  productionRuntimeConflictBacklogResolvesThroughController -silent` passed
+  (3 passed, 0 failed), and `tst_integration_collection_lifecycle`'s invalid
+  open, missing-backend, reopen-after-close, and rapid-open-close cases passed
+  (6 passed, 0 failed). The originally reported recurrence integration crash
+  does not reproduce: `integration_recurrence_editing` passed 20/20 in 41.59
+  seconds offscreen. Staged-save acknowledgement and journal recovery passed
+  2/2; production provider sidecar/runtime commit and rejected-policy paths
+  passed 4/4 through `tst_collectioncontroller_runtime_host`. Its accepted
+  topology, runtime-owned backend observation, and production run paths also
+  passed 5/5. Final combined noninteractive command:
+  `ctest --test-dir build-dev -R '^(tst_collection_runtime_run_adapter|tst_collectioncontroller_runtime_host|tst_stagingcontroller_acknowledgment|tst_journalrecoverycoordinator|integration_recurrence_editing)$' --output-on-failure`
+  passed 5/5 (23.59 seconds), followed by
+  `ctest --test-dir build-dev -R '^integration_collection_lifecycle$'
+  --output-on-failure` (1/1, 4.17 seconds). Final refreshed lane:
+  `PLANSTAN_LIVE_RADICALE=1 ctest --test-dir build-dev -L integration
+  --output-on-failure` passed 11/11, including `live_fanout_gate` and
+  `live_graph_gate` (146.30 seconds aggregate test time).
+- **Manual GUI walkthrough (2026-09-08):** launched `build-dev/PlanStan` on
+  the available Wayland/X11 desktop with a disposable copy of
+  `tests/fixtures/test-collection.kalb` and isolated `XDG_CONFIG_HOME` /
+  `XDG_CACHE_HOME`. The operator confirmed that Personal and Work were
+  visible/selectable with keyboard and mouse; an existing event could be
+  edited, saved, undone, and redone with matching visible/dirty state; view
+  switching and collection close/reopen preserved the event and layout; and
+  the collection settings/topology validation state was understandable and
+  cancellable without a change. The fixture process was then closed. No
+  personal collection or user configuration was used. This completes the
+  remaining manual evidence; no STB-013 acceptance case remains.
+- **Next:** STB-014 legacy characterization-path retirement.
 
 ### STB-014 — Retire legacy characterization paths
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** STB-013
 - **Repository:** `../PlanStan`
 - **Scope:** Baseline J: migrate every relevant legacy-engine behavior test to
@@ -591,10 +1240,36 @@ the programme.
 - **Acceptance:** production constructs one runtime, no test silently falls back
   to the retired graph, and the real workflow suite remains green.
 - **Verification:** caller inventory/source searches plus affected workflow lane.
+- **Result:** Removed `CollectionController`'s lazy legacy `SyncEngine`,
+  conflict-store/manager accessors, resume bridge, and teardown path. Retired
+  the synthetic engine-signal and legacy conflict-matrix CMake targets/sources;
+  the controller-host runtime fixture is the replacement for controller-owned
+  synchronization behavior, while direct library/unit fixtures remain separate
+  component evidence. The conflict dock resolves only through the runtime when
+  controller-bound. Updated controller and lifecycle assertions to observe
+  runtime-owned endpoint/topology facts rather than forcing a second graph.
+- **Verification result (2026-09-09):** PlanStan `83229ba6`, libkalburator
+  `cdd2ffc`, configured with
+  `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR=/home/clinton/dev/libkalburator`
+  (`PLANSTAN_ENABLE_CALDAV_TESTS=OFF`). `cmake --build build-dev --target
+  tst_collectioncontroller_runtime_host sync-workflow-tests
+  tst_collectioncontroller tst_integration_collection_lifecycle -j4` built the
+  retained targets. `ctest --test-dir build-dev -R
+  '^(tst_collectioncontroller_runtime_host|sync_dialog)$' --output-on-failure`
+  passed 2/2. `PLANSTAN_LIVE_RADICALE=1 ctest --test-dir build-dev -L
+  integration --output-on-failure` passed 11/11 in 181.48 s. Exact source
+  searches found no retired accessor/construction or retired CMake target;
+  `git diff --check` and `python3 tools/check_task_dag.py` passed (90 active
+  nodes, 124 edges, acyclic; no other ready task while STB-015 is selected).
+  The broader `tst_collectioncontroller` remains 25 passed, 4 failed, 1
+  skipped: topology star mapping count, local fingerprint persistence, CardDAV
+  provider provisioning, and late-local-backend readiness. These failures are
+  unrelated to the removed legacy path and are not hidden by this completion.
+- **Next:** STB-015 independent-consumer and package proof.
 
 ### STB-015 — Prove reusable package boundaries
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** STB-014
 - **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
 - **Scope:** Baseline K: standalone calendar host, correctly owned Org
@@ -604,10 +1279,30 @@ the programme.
   target mutation, or whole-archive workaround.
 - **Verification:** standalone viewer/headless/external-prefix builds; record
   any BLD-006 release-decision block separately from correctness evidence.
+- **Result:** Raw `src/*` directories are private to libkalburator targets;
+  PlanStan and libkalcal now consume exported namespaced headers, and
+  PlanStan's test targets no longer inject private library source directories.
+  The PlanStan Org I/O edge is attached through
+  `kalburator_attach_org_io(PlanStan::OrgIO)`, so the consumer no longer
+  mutates the library target directly. `KalburatorConfig.cmake` requests
+  OrgGrove only when the installed configuration enabled outline Org support.
+- **Verification result:** PlanStan configured with
+  `-DPLANSTAN_LIBKALBURATOR_SOURCE_DIR=/home/clinton/dev/libkalburator` at
+  revision `cdd2ffc`; `PlanStanCore` built, and
+  `tst_planstan_local_runtime_integration` and `tst_calendarhostsmoke` each
+  built and passed (1/1), and `tst_collectioncontroller_runtime_host` built
+  and passed (1/1). An isolated Release libkalburator build/install at
+  `/tmp/libkalburator-stb015-build.k5aAh9` with
+  `KALBURATOR_BUILD_TESTS=OFF`, `KALBURATOR_HAVE_ORG_IO=OFF`,
+  `KALBURATOR_HAVE_AKONADI=OFF`, and `KALBURATOR_HAVE_OUTLINE_ORG=OFF` was
+  installed to `/tmp/libkalburator-stb015-prefix.IdDKiS`; its independent
+  `Types` and `Core` consumers configured, built, and exited successfully.
+  Source searches found no CMake private-source injection; `git diff --check`
+  passed. No BLD-006 release-decision block was encountered.
 
 ### STB-016 — Polish measured desktop behavior
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** STB-013
 - **Repository:** `../PlanStan`, `../libkalcal`
 - **Scope:** Baseline L: measure real multi-view workloads before targeted scene,
@@ -616,10 +1311,41 @@ the programme.
   identity/selection, and repeatable affected edit/calendar workflows.
 - **Verification:** measured GUI workload plus focused identity, lifecycle, and
   progress tests; no speculative performance framework.
+- **Progress (2026-09-09):** Added a repeatable offscreen workload to
+  `tst_agenda_selection_identity`: 3,000 timed events across a 30-day range
+  with Agenda, Month, and Year views open. The baseline model update blocked
+  for 52 ms. AgendaScene, MonthScene, and YearScene now coalesce model-change
+  reloads into one next-event-loop refresh while explicit model/range setup
+  remains synchronous; the same update submits in 0 ms and becomes visible in
+  52 ms. The existing generated-occurrence selection assertion still passes.
+  Added an offscreen keyboard/focus check that sends Right, Down, and Enter to
+  the real `AgendaGraphicsView`, then repeats Enter after a coalesced refresh;
+  it preserves focus and the creation slot. `tst_syncprogresswidget` confirms
+  fixed-width readable status behavior and the runtime-run adapter confirms
+  only progress runtime events are projected. Added
+  `tst_collectionloadingoverlay`, which covers loading progress, failed-load
+  feedback, automatic dismissal, and retry. It exposed and repaired the false
+  “All calendars loaded successfully!” message after a failed fetch. Remaining
+  acceptance: the real offscreen keyboard/focus workflow covers focus retention
+  through a coalesced refresh and activation after it; no separate dialog-focus
+  claim is made.
+  `tst_syncprogresswidget_hidpi` runs with `QT_SCALE_FACTOR=2` and verifies
+  the real status widget's captured pixmap uses the widget device-pixel ratio.
+  `integration_incidence_crud` built but exceeded its configured
+  five-minute CTest limit without producing a QtTest failure location; it is
+  recorded as an unclassified workflow timeout, not counted as acceptance
+  evidence or hidden by this task.
+- **Verification result:** configured PlanStan against the working
+  libkalburator tree; `tst_agenda_selection_identity`,
+  `tst_collectionloadingoverlay`, `tst_syncprogresswidget`,
+  `tst_syncprogresswidget_hidpi`, and `tst_collection_runtime_run_adapter`
+  built and passed. The focused CTest suite passed 5/5. The high-DPI lane used
+  `QT_QPA_PLATFORM=offscreen;QT_SCALE_FACTOR=2`. `git diff --check` and the
+  task DAG checker passed.
 
 ### STB-017 — Close the stabilization programme with release evidence
 
-- **State:** QUEUED
+- **State:** DONE 2026-09-09
 - **Depends on:** STB-014, STB-015, STB-016
 - **Repository:** `../PlanStan`, `../libkalburator`, `../libkalcal`
 - **Scope:** Collect the final cross-repository revisions, configuration, test
@@ -630,6 +1356,37 @@ the programme.
   retained known-issues list contains only explicit non-release limitations.
 - **Verification:** full ledger/DAG review, source/diff checks, and recorded
   cross-repository verification matrix.
+- **Result (2026-09-09):** The closure audit used PlanStan `83229ba6`,
+  libkalburator `cdd2ffc`, and libkalcal `10d60d2`, with the dirty worktrees
+  carrying the recorded stabilization changes. PlanStan was regenerated in
+  `build-dev` against `/home/clinton/dev/libkalburator`; the active
+  configuration has Akonadi, PlanStan Org I/O, and outline Org enabled. The
+  final local offscreen matrix passed 8/8:
+  `tst_planstan_local_runtime_integration`,
+  `tst_collectioncontroller_runtime_host`, `tst_calendarhostsmoke`,
+  `tst_agenda_selection_identity`, `tst_collectionloadingoverlay`,
+  `tst_syncprogresswidget`, `tst_collection_runtime_run_adapter`, and
+  `integration_recurrence_editing`. The separate
+  `tst_syncprogresswidget_hidpi` lane passed with `QT_SCALE_FACTOR=2`.
+  Recurrence editing specifically passed all 20 cases in 32.54 seconds, so the
+  former undetermined `IncidenceMutator::applyIncidenceAddition` segfault is no
+  longer reproduced. STB-015's installed headless Types/Core consumer proof
+  remains valid and the final source search finds no PlanStan CMake injection
+  of libkalburator private `src/*` directories.
+- **Limitations and release decision:** the current local certificate covers
+  the PlanStan production, hermetic/offscreen, and package-consumer scope.
+  The opt-in Radicale matrix is explicitly historical evidence from STB-013
+  (11/11) and was not rerun without an active configured live service.
+  `integration_incidence_crud` remains an explicitly recorded unclassified
+  five-minute timeout, not acceptance evidence. KAL-015 and KAL-018 remain
+  explicit non-release limitations; no PlanStan release claim includes the
+  unsupported-operation compatibility seam or the independently owned
+  WildPalms readiness workflow. All STB tasks are now closed; release is
+  approved for the certified PlanStan scope subject to those stated limits.
+- **Verification result:** `git diff --check` passed in PlanStan,
+  libkalburator, and libkalcal. `python3 tools/check_task_dag.py` reports 90
+  active nodes, 124 edges, acyclic, with no ready task. The private-source
+  CMake search is empty.
 
 ### AUD-003 — Establish the stabilization baseline and reproduce production gaps
 
@@ -2070,6 +2827,12 @@ opaque references and no controller cutover occurs before PS-016.
 - **Acceptance:** both build against the exact working library revision and run selected contracts.
 - **Result:** Added `tools/run_consumer_integration.py`. The lane records the libkalburator HEAD and working-diff hash, configures both consumers with explicit local-source overrides, retains stage logs, builds both trees, and runs bounded runtime/controller contract selections. It also removed the obsolete WildPalms test dependency on the deleted `shouldContinueSync` helper while retaining the Palm change-detection coverage.
 - **Verification:** the lane passed against `/home/clinton/dev/libkalburator`: PlanStan selected contracts 12/12 passed and WildPalms selected runtime/account/UI contracts 11/11 passed. `python3 -m py_compile tools/run_consumer_integration.py`, `python3 tools/check_task_dag.py`, and `git diff --check` pass.
+- **STB-013 follow-up (2026-09-08):** PlanStan rebuilt against the same working
+  library source tree and its labeled integration lane passed 11/11 with
+  `PLANSTAN_LIVE_RADICALE=1`: local/offscreen edit, undo, recurrence, recovery,
+  lifecycle, multi-view, and the separately opt-in fanout/graph DAV workflows.
+  The human GUI walkthrough remains separately marked as manual evidence in
+  STB-013; this lane does not imply it.
 
 ### TST-004 — Add sanitizer and opt-in live lanes
 - **State:** DONE 2026-09-06
@@ -2087,6 +2850,11 @@ opaque references and no controller cutover occurs before PS-016.
 - **Acceptance:** provision, sync, conflict, cancel, recover, and remove through public API in PlanStan-like contract.
 - **Result:** Certified the public `CollectionRuntime` calendar contract with local and DAV-shaped endpoints: topology provisioning, two-way sync, persisted conflict detection/resolution, active-run cancellation, store reset/recovery, and endpoint removal all execute through the runtime API. The existing PlanStan-like contract uses the reusable fake DAV server for provider lifecycle/discovery cases and deterministic endpoint factories for the complete local/DAV mutation path.
 - **Verification:** `tst_planstan_runtime_contract` passed 27/27 cases, including the local/DAV runtime, provider lifecycle, topology removal, reset/recovery, conflict persistence/resolution, and active teardown cases. The working-tree consumer lane also passed PlanStan 12/12 and the expanded WildPalms 19/19 selected contracts. No live credentials were required.
+- **STB-013 follow-up (2026-09-08):** the real PlanStan controller/GUI-adapter
+  workflow evidence is recorded separately in STB-013: its Radicale fanout and
+  graph gates pass, alongside the labeled integration lane. This supplements
+  the public-runtime fake-DAV contract; it does not replace the pending manual
+  GUI walkthrough.
 - **Unblocked:** FTR-003, FTR-004, and FTR-005 remain portfolio decisions; FTR-006 still requires all breadth decisions plus a consumer request.
 
 ### FTR-002 — Certify Palm four-domain vertical slice

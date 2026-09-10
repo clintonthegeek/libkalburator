@@ -20,7 +20,7 @@
 #include <kalburator/sync/iprovider.h>
 #include <kalburator/plugin/manifest.h>
 
-namespace Kalburator::Sync { class SecretStore; }
+namespace Kalburator::Sync { class SecretStore; class ProviderManager; class BackendRegistry; }
 namespace Kalburator { class Plugin; }
 
 namespace Kalburator::Runtime {
@@ -305,6 +305,13 @@ public:
                                                      QString &errorMessage);
 
     virtual RuntimeSnapshot snapshot() const = 0;
+    /// Borrowed runtime-owned provider manager for presentation adapters.
+    /// Provider and backend lifetime remains exclusively with the runtime.
+    virtual Kalburator::Sync::ProviderManager *providerManager() const = 0;
+
+    /// Borrowed runtime-owned backend registry for presentation adapters.
+    /// Backend lifetime remains exclusively with the runtime.
+    virtual Kalburator::Sync::BackendRegistry *backendRegistry() const = 0;
     /// Return the QObject wrapper for a materialized endpoint, or nullptr if
     /// the id is not known.  The pointer remains valid only for the runtime's
     /// lifetime; consumers must not store it or delete it.  This is the narrow

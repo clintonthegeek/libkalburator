@@ -376,6 +376,16 @@ public:
 
     RuntimeSnapshot snapshot() const override { return m_snapshot; }
 
+    Kalburator::Sync::ProviderManager *providerManager() const override
+    {
+        return m_providerManager.get();
+    }
+
+    Kalburator::Sync::BackendRegistry *backendRegistry() const override
+    {
+        return const_cast<Kalburator::Sync::BackendRegistry *>(&m_backendRegistry);
+    }
+
     QObject *backendObject(const QString &endpointId) const override
     {
         const auto it = m_endpointExecutors.find(endpointId);
@@ -613,10 +623,29 @@ public:
             auto future = m_providerManager->connectAll();
             QEventLoop loop;
             QFutureWatcher<void> watcher;
+            const auto settled = [this]() {
+                for (const auto *provider : m_providerManager->providers()) {
+                    if (m_providerManager->providerState(provider->id())
+                        == Kalburator::Sync::ProviderConnectionState::Connecting)
+                        return false;
+                }
+                return true;
+            };
+            QObject::connect(m_providerManager.get(),
+                             &Kalburator::Sync::ProviderManager::providerStateChanged,
+                             &loop, [&loop, &settled](const QString &,
+                                                     Kalburator::Sync::ProviderConnectionState) {
+                                 if (settled())
+                                     loop.quit();
+                             });
             QObject::connect(&watcher, &QFutureWatcher<void>::finished,
-                             &loop, &QEventLoop::quit);
+                             &loop, [&loop, &settled]() {
+                                 if (settled())
+                                     loop.quit();
+                             });
             watcher.setFuture(future);
-            loop.exec();
+            if (!settled())
+                loop.exec();
         };
         auto restoreProviders = [&]() {
             if (!providersStaged)
@@ -693,8 +722,11 @@ public:
             for (const auto &config : desired.providers) {
                 if (m_providerManager->providerState(config.id)
                     != Kalburator::Sync::ProviderConnectionState::Connected) {
+                    const auto *provider = m_providerManager->providerById(config.id);
+                    const QString detail = provider ? provider->lastError() : QString();
                     restoreProviders();
-                    result.errorMessage = QStringLiteral("provider did not connect: ") + config.id;
+                    result.errorMessage = QStringLiteral("provider did not connect: ") + config.id
+                        + (detail.isEmpty() ? QString() : QStringLiteral(" (" ) + detail + QLatin1Char(')'));
                     return result;
                 }
             }

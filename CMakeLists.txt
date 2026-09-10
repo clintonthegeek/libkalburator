@@ -62,9 +62,9 @@ foreach(_kalburator_header_domain IN LISTS KALBURATOR_PUBLIC_HEADER_DOMAINS)
     endif()
 endforeach()
 
-# Optional org-io support for OrgBackend. When ON, host must provide the
-# planstan-org-io target via PUBLIC linkage from outside; standalone builds
-# default OFF and exclude orgbackend files.
+# Optional org-io support for OrgBackend. When ON, the host must attach its
+# OrgIO target through kalburator_attach_org_io() after this target is created;
+# standalone builds default OFF and exclude orgbackend files.
 set(KALBURATOR_HAVE_ORG_IO OFF CACHE BOOL "Build with PlanStan org-io (for OrgBackend)")
 
 # Optional Akonadi support; follows host's HAVE_AKONADI setting in-tree.
@@ -102,6 +102,7 @@ target_include_directories(kalburator-types
     PUBLIC
         $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/types>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
@@ -128,6 +129,7 @@ target_include_directories(kalburator-canon
     PUBLIC
         $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
 target_link_libraries(kalburator-canon PUBLIC Qt6::Core)
@@ -148,6 +150,7 @@ target_include_directories(kalburator-identity
     PUBLIC
         $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/identity>
 )
 target_link_libraries(kalburator-identity PUBLIC Qt6::Core Qt6::Sql Kalburator::Canon)
@@ -176,6 +179,7 @@ target_include_directories(kalburator-typesupport
     PUBLIC
         $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/typesupport>
 )
 
@@ -209,9 +213,11 @@ add_library(kalburator-storage STATIC
     ${KALBURATOR_STORAGE_SOURCES}
 )
 add_library(Kalburator::Storage ALIAS kalburator-storage)
-target_include_directories(kalburator-storage PUBLIC
-    $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
-    $<INSTALL_INTERFACE:include>
+target_include_directories(kalburator-storage
+    PUBLIC
+        $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/storage>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/shape>
 )
@@ -913,6 +919,7 @@ target_include_directories(kalburator
     PUBLIC
         $<BUILD_INTERFACE:${KALBURATOR_BUILD_INCLUDE_ROOT}>
         $<INSTALL_INTERFACE:include>
+    PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/calendar>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/conflict>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/diff>
@@ -968,6 +975,20 @@ endif()
 
 set_target_properties(kalburator PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET kalburator PROPERTY EXPORT_NAME Sync)
+
+# Keep ownership of the Sync target in this project. A host that deliberately
+# enables the optional OrgBackend supplies only its narrow OrgIO capability;
+# it must not mutate Kalburator::Sync directly.
+function(kalburator_attach_org_io org_io_target)
+    if(NOT KALBURATOR_HAVE_ORG_IO)
+        return()
+    endif()
+    if(NOT TARGET "${org_io_target}")
+        message(FATAL_ERROR
+            "KALBURATOR_HAVE_ORG_IO requires an existing OrgIO target; got '${org_io_target}'")
+    endif()
+    target_link_libraries(kalburator PUBLIC "${org_io_target}")
+endfunction()
 
 message(STATUS "libkalburator ${PROJECT_VERSION}: configured "
         "(org-io=${KALBURATOR_HAVE_ORG_IO} "

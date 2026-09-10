@@ -1,6 +1,6 @@
 # Known issues
 
-**Last reviewed:** 2026-09-07
+**Last reviewed:** 2026-09-08
 This is the only active defect and risk list. Historical finding numbers are not reused.
 
 States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain only until the next release, then leave this file.
@@ -9,15 +9,25 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-032 — Production synchronization ownership is not certified
 
-- **State:** IN PROGRESS 2026-09-08
+- **State:** RESOLVED 2026-09-08
 - **Affects:** PlanStan production collection load, edit, save, topology,
   account/discovery, conflict, and close workflows; dependent library claims.
 - **Evidence:** STB-001 through STB-010 are complete. The real
   `CollectionController` host fixture passes for runtime-owned topology,
   policy, credentials, account/discovery, and conflict paths. The remaining
-  gap is the application-side duplicate ownership of live backend/executor
+  gap was the application-side duplicate ownership of live backend/executor
   instances (`m_backends`, `m_backendExecutors`) that should be owned solely by
   `CollectionRuntime`.
+- **Resolution:** STB-011 removed the duplicate ownership. `CollectionController`
+  no longer constructs or holds live `BackendExecutor` instances; it only keeps a
+  non-owning `m_backends` cache refreshed from `CollectionRuntime`. The runtime/
+  adapter/sync-host verification lane passes 10/10, including the real host
+  fixture that asserts runtime-owned backends and no legacy characterization
+  graph.
+- **Follow-up verification:** the formerly undetermined recurrence-editing
+  observation was rebuilt against the public package boundary and rerun during
+  STB-017: `integration_recurrence_editing` passed all 20 cases in 32.54 seconds
+  offscreen. No segfault reproduced.
 - **Required outcome:** route the complete live slice through one runtime and
   remove redundant live construction in the same patch; retain staging, undo,
   journals, and configuration intent in PlanStan.
@@ -86,7 +96,7 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-008 — Provider/topology/mapping changes are non-atomic
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan setup/topology UI; WildPalms route setup
 - **Evidence:** historical TOP-002 made endpoint/mapping replacement atomic inside the
   runtime, TOP-004 adds a consumer-owned durable desired-state participant,
@@ -100,10 +110,15 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   participation and capability-checked physical collection mutations, with
   commit/rollback or explicit repair state.
 - **Tasks:** RUN-003, TOP-002, TOP-004, PS-014, PS-015, WP-009
+- **Resolution:** STB-004 and STB-007 route the production settings, wizard,
+  account, and physical collection paths through the runtime transaction and
+  its durable participant. The real controller-host fixture proves accepted
+  commit/reopen and rejected commit rollback; STB-011 removed the parallel
+  controller composition.
 
 ### KAL-009 — Consumers duplicate runtime assembly and run policy
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** maintainability and behavioral drift in both consumers
 - **Evidence:** the runtime run path and adapter tests exist, but AUD-003 must
   establish whether PlanStan production has one operational `CollectionRuntime`
@@ -113,6 +128,9 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   state; `dispatchSyncPass_()` still re-dispatches passes.
 - **Required outcome:** library-owned collection/profile runtime with consumer adapters.
 - **Tasks:** KRN-001, RUN-003, TOP-002, PS-009 through PS-016, PS-008, WP-009
+- **Resolution:** STB-011 transferred the PlanStan operational slice to one
+  `CollectionRuntime`; STB-014 removed the remaining legacy graph and accessor
+  paths. The retained `m_backends` view is non-owning observation only.
 
 ### KAL-010 — Build boundary depends on source layout and linker side effects
 
@@ -143,11 +161,15 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-018 — WildPalms readiness and persisted remote topology can diverge
 
-- **State:** OPEN
+- **State:** OPEN — explicit non-release limitation
 - **Affects:** WildPalms Palm↔hub↔remote runs
 - **Evidence:** `PalmRuntime::finishConnect()` loads persisted mappings, then replaces its active mapping list with generated logical-calendar mappings and emits `readyForSync`; provider-supplied remote backends are registered through a separate asynchronous lifecycle.
 - **Required outcome:** one desired topology is retained and a run cannot start until every required backend or explicit unavailable state is present.
 - **Tasks:** TOP-002, WP-009
+- **Release disposition:** WildPalms is not a PlanStan release component and
+  its independently maintained remote readiness workflow is excluded from this
+  PlanStan/libkalcal stabilization certification. It remains visible here for
+  the WildPalms owner; it is not evidence for a second PlanStan runtime.
 
 ### KAL-019 — Unserviceable committed mappings can leave an engine run waiting
 
@@ -200,7 +222,7 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-023 — PlanStan session collaborator snapshot can be stale after lazy sync initialization
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan sessions that gain their second backend after the session object is published.
 - **Evidence:** `CollectionController` can emit `syncInfrastructureReady` after
   creating its engine/coordinator, while the already-published
@@ -214,10 +236,12 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   graph with runtime commands, snapshots, and events; do not add another
   mutable accessor or a second session refresh protocol.
 - **Tasks:** PS-016, PS-008
+- **Resolution:** STB-014 removed the transitional borrowed coordinator graph.
+  Runtime commands, snapshots, and events are the production readiness surface.
 
 ### KAL-024 — PlanStan conflict UI is not yet consuming runtime conflict commands
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan production conflict presentation during its runtime migration
 - **Evidence:** `CollectionRuntime` now publishes populated `ConflictDetected`
   and `ConflictResolved` events and accepts `resolveConflict()` commands;
@@ -227,10 +251,12 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   events, submit source/target/duplicate/custom-merge decisions through
   `resolveConflict()`, and remove the transitional conflict-manager access.
 - **Tasks:** API-008, PS-013, PS-016, PS-008
+- **Resolution:** STB-008 and STB-014 bind the controller-bound dock to runtime
+  backlog/events and resolution commands; the compatibility manager path was removed.
 
 ### KAL-025 — PlanStan account UI is not yet consuming runtime provider mutations
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan live account add/edit/remove during its runtime migration
 - **Evidence:** `CollectionRuntime` now exposes incremental provider lifecycle
   commands, but PlanStan production still routes account changes through its
@@ -239,6 +265,8 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   await provider state/readiness, resubmit desired topology after edits, and
   remove the consumer-owned provider lifecycle path.
 - **Tasks:** API-007, PS-014, PS-016, PS-008
+- **Resolution:** STB-007 exercises controller account add/edit/remove through
+  runtime provider transactions, durable provider state, and discovery projection.
 
 ### KAL-026 — Runtime provider observations are not consumer-grade
 
@@ -292,7 +320,7 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-030 — Runtime facade cannot preserve PlanStan run interaction and telemetry
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan monitored sync, Run Plan, progress UI, and collection
   refresh during the facade migration
 - **Evidence:** PlanStan selects `SyncBehavior::Monitored` or `Unmonitored` for
@@ -305,10 +333,13 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   mapping state and typed run/collection observations, without exposing the
   engine or stores.
 - **Tasks:** API-009, RUN-007, PS-011, PS-012, PS-013
+- **Resolution:** STB-005 and STB-008 certify runtime-owned run policy,
+  interaction, progress, and one aggregate terminal result through the
+  production controller.
 
 ### KAL-031 — PlanStan DecSync/Syncthing ownership and secret migration are unspecified
 
-- **State:** OPEN
+- **State:** RESOLVED 2026-09-09
 - **Affects:** PlanStan DecSync factory cutover and Syncthing status UI
 - **Evidence:** the preparatory `PlanStanBackendFactory` now owns the
   DecSync monitor adapter, accepts only `syncthingApiKeyRef`, and resolves it
@@ -322,6 +353,8 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   and migrate the API key to an opaque reference resolved through the installed
   secret store.
 - **Tasks:** PS-009, PS-010, PS-016
+- **Resolution:** STB-006 verifies opaque Syncthing API-key materialization and
+  plaintext migration; STB-011 places the resulting endpoint under runtime ownership.
 
 ## Medium
 
@@ -358,11 +391,15 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 
 ### KAL-015 — Unsupported backend methods silently return defaults
 
-- **State:** OPEN — reopened 2026-09-04
+- **State:** OPEN — explicit non-release limitation
 - **Affects:** capability correctness across domains
 - **Evidence:** capability interfaces were named, but `IBlobBackend` still inherits all of them. Unsupported creation/write operations still return empty strings or booleans, and unsupported batch implementations may be explicit no-ops guarded by `supportsBatch()`. A direct attempt to make the shared `SyncBackendBase` methods pure made supported operation-only Google/Graph calendar backends abstract; caller migration must precede removal of that compatibility seam.
 - **Required outcome:** capability-scoped interfaces or typed unsupported results.
 - **Tasks:** API-006; see [ADR-0006](adr/0006-capability-contract-migration-boundary.md)
+- **Release disposition:** this compatibility seam is outside the certified
+  PlanStan calendar workflow. It remains an explicit library API migration
+  limitation and must not be represented as a supported unsupported-operation
+  result by a future consumer.
 
 ### KAL-016 — Test suite is not hermetic
 
