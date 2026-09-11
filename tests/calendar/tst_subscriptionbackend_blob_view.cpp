@@ -21,11 +21,11 @@
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/Incidence>
 
-#include "subscriptionbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
-#include "recordidentity.h"
-#include "icalcodec.h"
+#include <kalburator/calendar/subscriptionbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/sync/recordidentity.h>
+#include <kalburator/calendar/icalcodec.h>
 
 using namespace Kalburator::Sync;
 

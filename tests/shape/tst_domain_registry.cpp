@@ -1,10 +1,10 @@
 #include <QTest>
 
-#include "domaindefinition.h"
-#include "domainregistry.h"
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "shaperegistries.h"
+#include <kalburator/shape/domaindefinition.h>
+#include <kalburator/shape/domainregistry.h>
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator::Shape;
 

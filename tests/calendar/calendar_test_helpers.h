@@ -1,6 +1,6 @@
 #pragma once
-#include "canonicalrecord.h"
-#include "shape.h"
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/shape.h>
 #include <QString>
 
 inline Kalburator::Shape::CanonicalRecord calendarTestRec(const QString &uid,

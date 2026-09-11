@@ -1,9 +1,9 @@
 #include <QTest>
 
-#include "contactsdomaindefinition.h"
-#include "contactsstockshapes.h"
-#include "shaperegistries.h"
-#include "vcard3to4transformation.h"
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/contacts/vcard3to4transformation.h>
 
 #include <KContacts/Addressee>
 #include <KContacts/VCardConverter>

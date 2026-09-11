@@ -11,11 +11,11 @@
 #include <QPushButton>
 #include <QLabel>
 
-#include "caldavconfigwidget.h"
-#include "caldavprovider.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/caldavconfigwidget.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 #include "fakecaldavserver.h"
-#include "secretstore.h"
+#include <kalburator/sync/secretstore.h>
 
 using namespace Kalburator::Sync;
 

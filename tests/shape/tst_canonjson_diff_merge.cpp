@@ -3,12 +3,12 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
-#include "canonenvelope.h"
-#include "canonjsondiffer.h"
-#include "canonjsonmerger.h"
-#include "calendarcanonproperties.h"
-#include "contactscanonproperties.h"
-#include "icalcanonstages.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/shape/canonjsondiffer.h>
+#include <kalburator/shape/canonjsonmerger.h>
+#include <kalburator/calendar/calendarcanonproperties.h>
+#include <kalburator/contacts/contactscanonproperties.h>
+#include <kalburator/calendar/icalcanonstages.h>
 
 using namespace Kalburator::Shape;
 

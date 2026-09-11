@@ -29,8 +29,8 @@
 #include <QSet>
 #include <QTextStream>
 
-#include "mseventcanonstages.h"
-#include "canonenvelope.h"
+#include <kalburator/calendar/mseventcanonstages.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

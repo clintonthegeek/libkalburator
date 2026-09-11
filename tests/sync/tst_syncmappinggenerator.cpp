@@ -1,8 +1,8 @@
 #include <QtTest>
-#include "syncmappinggenerator.h"
-#include "logicalcalendar.h"
-#include "logicalcalendarjson.h"
-#include "synctypes.h"
+#include <kalburator/sync/syncmappinggenerator.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/typesupport/logicalcalendarjson.h>
+#include <kalburator/types/synctypes.h>
 
 using namespace Kalburator::Sync;
 

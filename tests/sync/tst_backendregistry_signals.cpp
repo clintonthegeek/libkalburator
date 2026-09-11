@@ -1,6 +1,6 @@
-#include "backendregistry.h"
-#include "backendcontribution.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/iprovider.h>
 
 #include <QTest>
 #include <QSignalSpy>

@@ -1,11 +1,11 @@
 // tests/plugin/tst_pluginmanager_resolve.cpp
 #include <QtTest/QtTest>
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "manifest.h"
-#include "pluginloaderror.h"
-#include "backendregistry.h"
-#include "plugin.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/manifest.h>
+#include <kalburator/plugin/pluginloaderror.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/plugin/plugin.h>
 
 using namespace Kalburator;
 

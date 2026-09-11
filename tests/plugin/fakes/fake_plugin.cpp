@@ -1,8 +1,8 @@
 #include "fake_plugin.h"
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "transformationedge.h"
-#include "iprovider.h"
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/transformationedge.h>
+#include <kalburator/sync/iprovider.h>
 
 using namespace Kalburator;
 

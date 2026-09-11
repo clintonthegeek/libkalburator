@@ -7,8 +7,8 @@
 #include <QFileInfo>
 #include <QCryptographicHash>
 
-#include "localbackend.h"
-#include "iblobbackend.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/blob/iblobbackend.h>
 
 using namespace Kalburator::Sync;
 

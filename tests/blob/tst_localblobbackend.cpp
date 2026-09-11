@@ -3,7 +3,7 @@
 #include <QDir>
 #include <QTemporaryDir>
 
-#include "localblobbackend.h"
+#include <kalburator/blob/localblobbackend.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;

@@ -8,7 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "googleapiclient.h"
+#include <kalburator/google/googleapiclient.h>
 #include "mockgoogleserver.h"
 
 using Kalburator::Google::GoogleApiClient;

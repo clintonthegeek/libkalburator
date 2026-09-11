@@ -12,8 +12,8 @@
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/ICalFormat>
 
-#include "localbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using namespace Kalburator::Sync;
 

@@ -17,11 +17,11 @@
 #include <QThread>
 #include <QTimer>
 
-#include "backendconfiguration.h"
-#include "caldavprovider.h"
-#include "collectioninfo.h"
-#include "remotecalendarbackend.h"
-#include "syncbackend.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using namespace Kalburator::Sync;
 

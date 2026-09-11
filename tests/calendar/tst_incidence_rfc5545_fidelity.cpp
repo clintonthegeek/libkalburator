@@ -41,9 +41,9 @@
 #include <QTime>
 #include <QTimeZone>
 
-#include "icalcanonstages.h"
-#include "journalcanonfields.h"
-#include "lossprofile.h"
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/journalcanonfields.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <KCalendarCore/Alarm>
 #include <KCalendarCore/Event>

@@ -3,7 +3,7 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/ICalFormat>
-#include "calendarjournal.h"
+#include <kalburator/journal/calendarjournal.h>
 
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;

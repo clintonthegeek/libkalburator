@@ -10,7 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "msgraphcalendarbackend.h"
+#include <kalburator/calendar/msgraphcalendarbackend.h>
 #include "mockgraphserver.h"
 
 using Kalburator::Graph::MockGraphServer;

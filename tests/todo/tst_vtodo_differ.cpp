@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "icalvtododiffer.h"
-#include "canonicalrecord.h"
+#include <kalburator/todo/icalvtododiffer.h>
+#include <kalburator/shape/canonicalrecord.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Todo>

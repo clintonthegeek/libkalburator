@@ -1,11 +1,11 @@
 #include <QtTest/QtTest>
 #include <memory>
 
-#include "domainoperations.h"
-#include "domainoperationsregistry.h"
-#include "recordwriter.h"
-#include "syncbackendbase.h"
-#include "shaperegistries.h"
+#include <kalburator/shape/domainoperations.h>
+#include <kalburator/shape/domainoperationsregistry.h>
+#include <kalburator/shape/recordwriter.h>
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator;
 

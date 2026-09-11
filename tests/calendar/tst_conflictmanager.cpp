@@ -4,10 +4,10 @@
 #include <QRandomGenerator>
 #include <QUuid>
 
-#include "conflictmanager.h"
-#include "iconflictresolver.h"
-#include "syncconflictstore.h"
-#include "synctypes.h"
+#include <kalburator/conflict/conflictmanager.h>
+#include <kalburator/calendar/iconflictresolver.h>
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/types/synctypes.h>
 
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;

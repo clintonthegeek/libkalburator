@@ -23,22 +23,22 @@
 
 #include <cstdio>
 
-#include "backendconfiguration.h"
-#include "backendregistry.h"
-#include "baselinestore.h"
-#include "caldavprovider.h"
-#include "collectioninfo.h"
-#include "iblobbackend.h"
-#include "isynchost.h"
-#include "localbackend.h"
-#include "pluginmanager.h"
-#include "remotecalendarbackend.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "syncbackend.h"
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "synctypes.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/calendar/isynchost.h>
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/types/synctypes.h>
 
 using namespace Kalburator::Sync;
 using Kalburator::Engine::SyncEngine;

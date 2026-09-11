@@ -1,11 +1,11 @@
 #pragma once
 #include <QList>
 #include <memory>
-#include "plugin.h"
-#include "domaindefinition.h"
-#include "shapecontribution.h"
-#include "domainoperations.h"
-#include "backendcontribution.h"
+#include <kalburator/plugin/plugin.h>
+#include <kalburator/shape/domaindefinition.h>
+#include <kalburator/shape/shapecontribution.h>
+#include <kalburator/shape/domainoperations.h>
+#include <kalburator/sync/backendcontribution.h>
 
 namespace KalburatorTests {
 

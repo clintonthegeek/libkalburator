@@ -2,23 +2,23 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "calendarcanonproperties.h"
-#include "canonenvelope.h"
-#include "icalcanonstages.h"
-#include "calendardomaindefinition.h"
-#include "calendarstockshapes.h"
-#include "shaperegistries.h"
+#include <kalburator/calendar/calendarcanonproperties.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/calendardomaindefinition.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
 
-#include "journalcanonfields.h"
+#include <kalburator/calendar/journalcanonfields.h>
 
 // IP.1 (incidence-parity campaign) — catalogue/emitter coverage gate.
 #include "../shape/canonkeycoverage.h"
-#include "todocanonproperties.h"
-#include "vtodocanonstages.h"
-#include "contactscanonproperties.h"
-#include "vcardcanonstages.h"
-#include "googlepersoncanonstages.h"
-#include "mscontactcanonstages.h"
+#include <kalburator/todo/todocanonproperties.h>
+#include <kalburator/todo/vtodocanonstages.h>
+#include <kalburator/contacts/contactscanonproperties.h>
+#include <kalburator/contacts/vcardcanonstages.h>
+#include <kalburator/contacts/googlepersoncanonstages.h>
+#include <kalburator/contacts/mscontactcanonstages.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Journal>

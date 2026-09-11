@@ -1,6 +1,6 @@
 #include <QTest>
 
-#include "outlinedomaindefinition.h"
+#include <kalburator/outline/outlinedomaindefinition.h>
 
 using namespace Kalburator::Outline;
 using Kalburator::Shape::DomainId;

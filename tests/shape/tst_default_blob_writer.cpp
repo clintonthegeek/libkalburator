@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "defaultblobwriter.h"
-#include "mockblobbackend.h"
+#include <kalburator/shape/defaultblobwriter.h>
+#include <kalburator/blob/mockblobbackend.h>
 
 using namespace Kalburator::Shape;
 using namespace Kalburator::Sync;

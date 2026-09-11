@@ -24,7 +24,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 
-#include "workerteardown.h"
+#include <kalburator/engine/workerteardown.h>
 
 using namespace Kalburator::Engine;
 

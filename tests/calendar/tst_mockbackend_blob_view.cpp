@@ -3,8 +3,8 @@
 
 #include <QtTest>
 
-#include "mockbackend.h"
-#include "iblobbackend.h"
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/blob/iblobbackend.h>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>

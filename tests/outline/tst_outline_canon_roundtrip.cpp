@@ -1,8 +1,8 @@
 #include <QtTest>
-#include "outlinedomaindefinition.h"
-#include "outlinestockshapes.h"
-#include "transformationregistry.h"
-#include "lossprofile.h"
+#include <kalburator/outline/outlinedomaindefinition.h>
+#include <kalburator/outline/outlinestockshapes.h>
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/lossprofile.h>
 
 using namespace Kalburator::Outline;
 using namespace Kalburator::Shape;

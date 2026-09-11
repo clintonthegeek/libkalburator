@@ -14,8 +14,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "msgraphcalendarbackend.h"
-#include "graphauthenticator.h"
+#include <kalburator/calendar/msgraphcalendarbackend.h>
+#include <kalburator/graph/graphauthenticator.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::MSGraphCalendarBackend;

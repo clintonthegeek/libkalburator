@@ -1,6 +1,6 @@
 #include <QtTest>
 #include <QTemporaryDir>
-#include "akonadirevisionstore.h"
+#include <kalburator/sync/akonadirevisionstore.h>
 using namespace Kalburator::Sync;
 class TestRevisionStore : public QObject {
     Q_OBJECT

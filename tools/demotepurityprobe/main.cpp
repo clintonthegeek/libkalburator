@@ -22,10 +22,10 @@
 // involved, unlike graphcli/googlecli) — built unconditionally, same as
 // tools/matrixgen.
 
-#include "eventcanonfields.h"
-#include "icaltimestamp.h"
-#include "journalcanonfields.h"
-#include "vtodocanonfields.h"
+#include <kalburator/calendar/eventcanonfields.h>
+#include <kalburator/calendar/icaltimestamp.h>
+#include <kalburator/calendar/journalcanonfields.h>
+#include <kalburator/todo/vtodocanonfields.h>
 
 #include <QCoreApplication>
 #include <QJsonArray>

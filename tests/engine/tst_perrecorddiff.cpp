@@ -1,12 +1,12 @@
 #include <QtTest/QtTest>
 
-#include "backendrecord.h"
-#include "baselineentry.h"
-#include "blobdomaindefinition.h"
-#include "enginediff.h"
-#include "perrecorddiff.h"
-#include "recorddiffer.h"
-#include "synctypes.h"
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/engine/baselineentry.h>
+#include <kalburator/blob/blobdomaindefinition.h>
+#include <kalburator/engine/enginediff.h>
+#include <kalburator/engine/perrecorddiff.h>
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/types/synctypes.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Engine::BaselineEntry;

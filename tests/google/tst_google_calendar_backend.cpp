@@ -13,8 +13,8 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
-#include "googlecalendarbackend.h"
-#include "mockbackend.h"
+#include <kalburator/calendar/googlecalendarbackend.h>
+#include <kalburator/calendar/mockbackend.h>
 #include "mockgoogleserver.h"
 
 using Kalburator::Google::MockGoogleServer;

@@ -1,8 +1,8 @@
 #include <QTest>
 #include <QTemporaryDir>
 
-#include "syncdiff.h"
-#include "synctypes.h"
+#include <kalburator/diff/syncdiff.h>
+#include <kalburator/types/synctypes.h>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>

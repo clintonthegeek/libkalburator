@@ -6,7 +6,7 @@
 #include <QLabel>
 
 #include "../../src/ui/collectionpickerwidget.h"
-#include "collectioninfo.h"
+#include <kalburator/types/collectioninfo.h>
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;

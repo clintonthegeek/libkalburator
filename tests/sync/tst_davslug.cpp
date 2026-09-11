@@ -4,7 +4,7 @@
 
 #include <QtTest>
 
-#include "davslug.h"
+#include <kalburator/sync/davslug.h>
 
 using namespace Kalburator::Sync;
 

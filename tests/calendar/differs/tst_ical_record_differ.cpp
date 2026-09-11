@@ -3,9 +3,9 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>
 
-#include "icalrecorddiffer.h"
-#include "canonicalrecord.h"
-#include "shape.h"
+#include <kalburator/calendar/icalrecorddiffer.h>
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/shape.h>
 
 using namespace Kalburator::Calendar;
 using Kalburator::Shape::CanonicalRecord;

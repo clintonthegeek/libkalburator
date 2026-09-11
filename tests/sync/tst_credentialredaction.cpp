@@ -1,6 +1,6 @@
 #include <QtTest>
 
-#include "credentialredaction.h"
+#include <kalburator/sync/credentialredaction.h>
 
 using Kalburator::Sync::redactCredentials;
 

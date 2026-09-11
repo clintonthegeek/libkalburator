@@ -13,7 +13,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
-#include "googletasksbackend.h"
+#include <kalburator/todo/googletasksbackend.h>
 #include "mockgoogletasksserver.h"
 
 using Kalburator::Sync::BackendRecord;

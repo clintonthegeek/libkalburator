@@ -17,12 +17,12 @@
 #include <QJsonObject>
 #include <QTimeZone>
 
-#include "canonenvelope.h"
-#include "mstodotaskcanonstages.h"
-#include "tododomaindefinition.h"
-#include "todostockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/todo/mstodotaskcanonstages.h>
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/todostockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

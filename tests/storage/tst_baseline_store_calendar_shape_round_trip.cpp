@@ -10,9 +10,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "baselinestore.h"
-#include "canonicalrecord.h"
-#include "shape.h"
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/shape.h>
 
 using Kalburator::Storage::BaselineStore;
 

@@ -15,10 +15,10 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 
-#include "backendconfiguration.h"
-#include "calendarcapabilities.h"
-#include "caldavcapabilitydiscovery.h"
-#include "discoveredcalendar.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/calendarcapabilities.h>
+#include <kalburator/sync/caldavcapabilitydiscovery.h>
+#include <kalburator/calendar/discoveredcalendar.h>
 #include "fakecaldavserver.h"
 
 using namespace Kalburator::Sync;

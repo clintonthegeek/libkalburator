@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "contactsdomaindefinition.h"
-#include "contactsstockshapes.h"
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactsstockshapes.h>
 
 using namespace Kalburator::Contacts;
 using Kalburator::Shape::DomainId;

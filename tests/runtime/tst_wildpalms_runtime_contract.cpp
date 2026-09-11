@@ -4,8 +4,8 @@
 
 #include <KCalendarCore/Event>
 
-#include "collectionruntime.h"
-#include "mockbackend.h"
+#include <kalburator/runtime/collectionruntime.h>
+#include <kalburator/calendar/mockbackend.h>
 
 using namespace Kalburator::Runtime;
 

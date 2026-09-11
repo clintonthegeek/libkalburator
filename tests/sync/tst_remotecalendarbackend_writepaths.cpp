@@ -26,9 +26,9 @@
 #include <KCalendarCore/MemoryCalendar>
 
 #include "fakecaldavserver.h"
-#include "remotecalendarbackend.h"
-#include "syncbackend.h"
-#include "blockonasync.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/sync/blockonasync.h>
 
 using namespace Kalburator::Sync;
 

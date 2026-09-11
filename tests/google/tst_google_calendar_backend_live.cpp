@@ -14,8 +14,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "googlecalendarbackend.h"
-#include "googleauth.h"
+#include <kalburator/calendar/googlecalendarbackend.h>
+#include <kalburator/google/googleauth.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GoogleCalendarBackend;

@@ -10,7 +10,7 @@
 
 #include <QtTest/QtTest>
 
-#include "propertydiff.h"
+#include <kalburator/engine/propertydiff.h>
 
 using namespace Kalburator::Engine;
 

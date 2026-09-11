@@ -4,12 +4,12 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
-#include "canonenvelope.h"
-#include "vcardcanonstages.h"
-#include "contactsdomaindefinition.h"
-#include "contactsstockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/contacts/vcardcanonstages.h>
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>

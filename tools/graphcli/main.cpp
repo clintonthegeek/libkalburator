@@ -1,7 +1,7 @@
 #include "labpaths.h"
 
-#include <graphauthenticator.h>
-#include <blockinghttp.h>
+#include <kalburator/graph/graphauthenticator.h>
+#include <kalburator/net/blockinghttp.h>
 
 #include <QCoreApplication>
 #include <QDateTime>

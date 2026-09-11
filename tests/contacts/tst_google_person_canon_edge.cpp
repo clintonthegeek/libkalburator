@@ -13,12 +13,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "canonenvelope.h"
-#include "googlepersoncanonstages.h"
-#include "contactsdomaindefinition.h"
-#include "contactsstockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/contacts/googlepersoncanonstages.h>
+#include <kalburator/contacts/contactsdomaindefinition.h>
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

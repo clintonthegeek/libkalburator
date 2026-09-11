@@ -14,8 +14,8 @@
 
 #include <QtTest>
 
-#include "akonadibackend.h"
-#include "iblobbackend.h"
+#include <kalburator/calendar/akonadibackend.h>
+#include <kalburator/blob/iblobbackend.h>
 
 #include <Akonadi/ServerManager>
 

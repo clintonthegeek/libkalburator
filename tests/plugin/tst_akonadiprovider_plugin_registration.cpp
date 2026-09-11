@@ -1,11 +1,11 @@
 #include <QtTest/QtTest>
 #include <memory>
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "backendregistry.h"
-#include "backendcontribution.h"
-#include "providermanager.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/providermanager.h>
 
 using namespace Kalburator;
 

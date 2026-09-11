@@ -4,12 +4,12 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
-#include "canonenvelope.h"
-#include "vtodocanonstages.h"
-#include "tododomaindefinition.h"
-#include "todostockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/todo/vtodocanonstages.h>
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/todostockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Todo>

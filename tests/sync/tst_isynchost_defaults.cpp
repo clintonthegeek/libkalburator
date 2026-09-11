@@ -15,11 +15,11 @@
 #include <QtTest/QtTest>
 #include <QTemporaryDir>
 
-#include "backendregistry.h"
-#include "isynchost.h"
-#include "mockbackend.h"
-#include "rawfilesbackend.h"
-#include "syncbackend.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/isynchost.h>
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/universal/rawfilesbackend.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using namespace Kalburator::Sync;
 using Kalburator::Sinks::RawFilesBackend;

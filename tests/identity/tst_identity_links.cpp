@@ -7,11 +7,11 @@
 #include <QTest>
 #include <QTemporaryDir>
 
-#include "identityresolver.h"
-#include "identitystore.h"
-#include "googlepersoncanonstages.h"
-#include "mseventcanonstages.h"
-#include "googlecanonstages.h"
+#include <kalburator/identity/identityresolver.h>
+#include <kalburator/identity/identitystore.h>
+#include <kalburator/contacts/googlepersoncanonstages.h>
+#include <kalburator/calendar/mseventcanonstages.h>
+#include <kalburator/calendar/googlecanonstages.h>
 
 using Kalburator::Identity::EntityLink;
 using Kalburator::Identity::IdentityStore;

@@ -12,8 +12,8 @@
 #include <QtTest/QtTest>
 #include <QSet>
 
-#include "mappingqueue.h"
-#include "synctypes.h"
+#include <kalburator/engine/mappingqueue.h>
+#include <kalburator/types/synctypes.h>
 
 using namespace Kalburator::Engine;
 using Kalburator::Sync::SyncMapping;

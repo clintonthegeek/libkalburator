@@ -1,5 +1,5 @@
 #include <QtTest>
-#include "akonadirevisiondigest.h"
+#include <kalburator/sync/akonadirevisiondigest.h>
 using namespace Kalburator::Sync;
 class TestRevisionDigest : public QObject {
     Q_OBJECT

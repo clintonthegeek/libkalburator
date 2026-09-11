@@ -1,5 +1,5 @@
 #include <QTest>
-#include "transcodeguard.h"
+#include <kalburator/engine/transcodeguard.h>
 
 using Kalburator::Sync::transcodeEmptiedRecord;
 

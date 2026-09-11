@@ -1,9 +1,9 @@
 #include <QtTest/QtTest>
 #include <memory>
-#include "pluginmanager.h"
-#include "stock_plugins.h"
-#include "backendregistry.h"
-#include "shaperegistries.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/shape/shaperegistries.h>
 
 class TestStockPlugins : public QObject {
     Q_OBJECT

@@ -18,9 +18,9 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/ICalFormat>
 
-#include "remotecalendarbackend.h"
-#include "syncoperation.h"
-#include "syncbackend.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/calendar/syncbackend.h>
 #include "fakecaldavserver.h"
 
 namespace Kalburator::Sync {}

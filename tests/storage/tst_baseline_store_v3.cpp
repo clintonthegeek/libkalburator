@@ -4,9 +4,9 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 
-#include "baselinestore.h"
-#include "canonicalrecord.h"
-#include "recordidentity.h"
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/sync/recordidentity.h>
 
 using Kalburator::Storage::BaselineStore;
 using Kalburator::Shape::CanonicalRecord;

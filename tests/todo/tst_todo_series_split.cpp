@@ -10,7 +10,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
-#include "todoseriessplitter.h"
+#include <kalburator/todo/todoseriessplitter.h>
 
 using Kalburator::Todo::SeriesSplitResult;
 using Kalburator::Todo::splitSeriesAtInstant;

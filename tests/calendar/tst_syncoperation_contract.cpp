@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "syncoperation.h"
+#include <kalburator/calendar/syncoperation.h>
 
 #include <QObject>
 #include <QSignalSpy>

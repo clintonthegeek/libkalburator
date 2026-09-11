@@ -9,8 +9,8 @@
 #include <KCalendarCore/Incidence>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "shape.h"
-#include "iincidenceregistry.h"
+#include <kalburator/shape/shape.h>
+#include <kalburator/types/iincidenceregistry.h>
 
 namespace Kalburator::Sync::Test {
 

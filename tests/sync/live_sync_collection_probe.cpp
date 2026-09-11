@@ -14,9 +14,9 @@
 #include <QTimer>
 #include <QUuid>
 
-#include "remotecalendarbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
 
 using namespace Kalburator::Sync;
 

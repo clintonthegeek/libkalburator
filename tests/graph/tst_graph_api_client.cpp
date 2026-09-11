@@ -8,9 +8,9 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "graphapiclient.h"
+#include <kalburator/graph/graphapiclient.h>
 #include "mockgraphserver.h"
-#include "backoff.h"
+#include <kalburator/net/backoff.h>
 
 using Kalburator::Graph::GraphApiClient;
 using Kalburator::Graph::GraphError;

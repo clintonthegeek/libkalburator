@@ -5,7 +5,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 
-#include "idmappingstore.h"
+#include <kalburator/storage/idmappingstore.h>
 
 namespace Kalburator::Storage {}
 using namespace Kalburator::Storage;

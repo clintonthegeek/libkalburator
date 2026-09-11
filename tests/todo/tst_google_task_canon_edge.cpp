@@ -12,12 +12,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "canonenvelope.h"
-#include "googletaskcanonstages.h"
-#include "tododomaindefinition.h"
-#include "todostockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/todo/googletaskcanonstages.h>
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/todostockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

@@ -8,7 +8,7 @@
 #include <QTest>
 #include <QTimeZone>
 
-#include "recordidentity.h"
+#include <kalburator/sync/recordidentity.h>
 
 using Kalburator::Sync::composeRecordIdentity;
 using Kalburator::Sync::decomposeRecordIdentity;

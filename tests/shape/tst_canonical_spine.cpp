@@ -1,11 +1,11 @@
 #include <QTest>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include "transformationregistry.h"
-#include "propertycatalogue.h"
-#include "transformationedge.h"
-#include "pipeline.h"
-#include "shaperegistries.h"
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/transformationedge.h>
+#include <kalburator/shape/pipeline.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator::Shape;
 

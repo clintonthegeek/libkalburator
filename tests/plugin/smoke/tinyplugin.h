@@ -1,7 +1,7 @@
 // tests/plugin/smoke/tinyplugin.h
 #pragma once
 #include <QObject>
-#include "plugin.h"
+#include <kalburator/plugin/plugin.h>
 
 class TinyPlugin : public QObject, public Kalburator::Plugin {
     Q_OBJECT

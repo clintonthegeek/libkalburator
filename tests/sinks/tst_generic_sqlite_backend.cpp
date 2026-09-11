@@ -7,10 +7,10 @@
 
 #include <atomic>
 
-#include "genericsqlitebackend.h"
-#include "collectioninfo.h"
-#include "backendrecord.h"
-#include "shape.h"
+#include <kalburator/universal/genericsqlitebackend.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/shape/shape.h>
 
 using Kalburator::Sinks::GenericSqliteBackend;
 using Kalburator::Sync::BackendRecord;

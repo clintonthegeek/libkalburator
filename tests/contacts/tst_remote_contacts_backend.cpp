@@ -24,7 +24,7 @@
 
 #include <QtTest/QtTest>
 
-#include "remotecontactsbackend.h"
+#include <kalburator/contacts/remotecontactsbackend.h>
 #include "fakecarddavserver.h"
 
 #include <QByteArray>

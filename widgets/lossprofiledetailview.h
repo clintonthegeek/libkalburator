@@ -2,7 +2,7 @@
 
 #include <QWidget>
 #include <QLabel>
-#include "lossprofile.h"
+#include <kalburator/shape/lossprofile.h>
 
 namespace Kalburator::Widgets {
 

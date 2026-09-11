@@ -21,8 +21,8 @@
 #include <QSignalSpy>
 #include <QtTest/QtTest>
 
-#include "graphcontactsbackend.h"
-#include "graphauthenticator.h"
+#include <kalburator/contacts/graphcontactsbackend.h>
+#include <kalburator/graph/graphauthenticator.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GraphContactsBackend;

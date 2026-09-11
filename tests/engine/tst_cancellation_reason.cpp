@@ -9,18 +9,18 @@
 #include <QTemporaryDir>
 #include <QTimeZone>
 
-#include "backendregistry.h"
-#include "baselinestore.h"
-#include "conflictmanager.h"
-#include "mockbackend.h"
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "syncenginefuture.h"
-#include "syncconflictstore.h"
-#include "synctypes.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/conflict/conflictmanager.h>
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/engine/syncenginefuture.h>
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/types/synctypes.h>
 
 #include "stubsynchost.h"
 

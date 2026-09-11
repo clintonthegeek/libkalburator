@@ -19,9 +19,9 @@
 
 #include "fakecaldavserver.h"
 
-#include "backendconfiguration.h"
-#include "iprovider.h"
-#include "multiprotocoldavprovider.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/sync/multiprotocoldavprovider.h>
 
 using namespace Kalburator::Sync;
 

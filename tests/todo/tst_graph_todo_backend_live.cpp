@@ -21,10 +21,10 @@
 #include <QSignalSpy>
 #include <QtTest/QtTest>
 
-#include "graphtodotaskbackend.h"
-#include "mstodotaskcanonstages.h"
-#include "graphauthenticator.h"
-#include "canonenvelope.h"
+#include <kalburator/todo/graphtodotaskbackend.h>
+#include <kalburator/todo/mstodotaskcanonstages.h>
+#include <kalburator/graph/graphauthenticator.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GraphTodoTaskBackend;

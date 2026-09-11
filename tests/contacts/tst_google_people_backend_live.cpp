@@ -16,8 +16,8 @@
 #include <QJsonObject>
 #include <QtTest/QtTest>
 
-#include "googlepeoplebackend.h"
-#include "googleauth.h"
+#include <kalburator/contacts/googlepeoplebackend.h>
+#include <kalburator/google/googleauth.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GooglePeopleBackend;

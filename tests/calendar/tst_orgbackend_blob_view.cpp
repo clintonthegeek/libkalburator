@@ -14,8 +14,8 @@
 
 #include <QtTest>
 
-#include "orgbackend.h"
-#include "iblobbackend.h"
+#include <kalburator/calendar/orgbackend.h>
+#include <kalburator/blob/iblobbackend.h>
 
 using namespace Kalburator::Sync;
 

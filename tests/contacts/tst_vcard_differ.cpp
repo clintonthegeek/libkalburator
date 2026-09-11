@@ -1,9 +1,9 @@
 #include <QTest>
 
-#include "vcarddiffer.h"
-#include "vcardmerger.h"
-#include "canonicalrecord.h"
-#include "autoresolvestrategy.h"
+#include <kalburator/contacts/vcarddiffer.h>
+#include <kalburator/contacts/vcardmerger.h>
+#include <kalburator/shape/canonicalrecord.h>
+#include <kalburator/shape/autoresolvestrategy.h>
 
 #include <KContacts/VCardConverter>
 #include <KContacts/Addressee>

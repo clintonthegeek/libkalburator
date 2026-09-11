@@ -12,10 +12,10 @@
 #include <QtTest>
 #include <QTemporaryDir>
 
-#include "decsyncbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
-#include "calendartype.h"
+#include <kalburator/calendar/decsyncbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/calendartype.h>
 
 using namespace Kalburator::Sync;
 

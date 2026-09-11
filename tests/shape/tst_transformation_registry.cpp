@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "transformationregistry.h"
-#include "shaperegistries.h"
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator::Shape;
 

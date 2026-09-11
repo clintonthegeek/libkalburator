@@ -17,10 +17,10 @@
 #include <QSignalSpy>
 #include <QFile>
 
-#include "baselinestore.h"
+#include <kalburator/storage/baselinestore.h>
 #include "calendar_test_helpers.h"
-#include "syncconflictstore.h"
-#include "synctypes.h"
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/types/synctypes.h>
 
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;

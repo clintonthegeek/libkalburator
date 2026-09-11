@@ -7,7 +7,7 @@
 #include <QList>
 #include <QString>
 
-#include "isynchost.h"
+#include <kalburator/calendar/isynchost.h>
 #include "stubcalendarcollection.h"
 #include "stubincidenceregistry.h"
 #include "stubsyncconfigstore.h"

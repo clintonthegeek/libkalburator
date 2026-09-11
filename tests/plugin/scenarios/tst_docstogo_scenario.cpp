@@ -1,8 +1,8 @@
 #include <QtTest/QtTest>
 #include <memory>
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "backendregistry.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/sync/backendregistry.h>
 #include "fake_docstogo_plugin.h"
 #include "fake_msoffice_plugin.h"
 #include "fake_odf_plugin.h"

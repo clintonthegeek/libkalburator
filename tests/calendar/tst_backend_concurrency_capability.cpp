@@ -20,8 +20,8 @@
 #include <QObject>
 #include <QUrl>
 
-#include "mockbackend.h"
-#include "remotecalendarbackend.h"
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
 
 using Kalburator::Sync::MockBackend;
 using Kalburator::Sync::RemoteCalendarBackend;

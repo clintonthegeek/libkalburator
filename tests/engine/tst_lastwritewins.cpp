@@ -8,7 +8,7 @@
 #include <QtTest/QtTest>
 #include <QDateTime>
 
-#include "lastwritewins.h"
+#include <kalburator/engine/lastwritewins.h>
 
 using Kalburator::Sync::lastWriteWinsPrefersSource;
 

@@ -15,7 +15,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
-#include "graphtodotaskbackend.h"
+#include <kalburator/todo/graphtodotaskbackend.h>
 #include "mockgraphtodoserver.h"
 
 using Kalburator::Sync::BackendRecord;

@@ -1,9 +1,9 @@
 #pragma once
-#include "plugin.h"
-#include "domaindefinition.h"
-#include "shapecontribution.h"
-#include "transformationedge.h"
-#include "manifest.h"
+#include <kalburator/plugin/plugin.h>
+#include <kalburator/shape/domaindefinition.h>
+#include <kalburator/shape/shapecontribution.h>
+#include <kalburator/shape/transformationedge.h>
+#include <kalburator/plugin/manifest.h>
 #include <memory>
 
 namespace KalburatorTests {

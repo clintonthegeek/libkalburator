@@ -1,10 +1,10 @@
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QDir>
-#include "markdownfilesbackend.h"
-#include "collectioninfo.h"
-#include "backendrecord.h"
-#include "shape.h"
+#include <kalburator/universal/markdownfilesbackend.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/shape/shape.h>
 
 using namespace Kalburator::Sinks;
 using namespace Kalburator::Sync;

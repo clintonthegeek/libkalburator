@@ -27,8 +27,8 @@
 #include <QSet>
 #include <QTextStream>
 
-#include "googlecanonstages.h"
-#include "canonenvelope.h"
+#include <kalburator/calendar/googlecanonstages.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

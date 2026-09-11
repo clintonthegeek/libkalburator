@@ -1,7 +1,7 @@
 #include <QtTest>
-#include "logicalcalendarbuilder.h"
-#include "discoveredcalendar.h"
-#include "logicalcalendar.h"
+#include <kalburator/calendar/logicalcalendarbuilder.h>
+#include <kalburator/calendar/discoveredcalendar.h>
+#include <kalburator/types/logicalcalendar.h>
 
 using namespace Kalburator::Sync;
 

@@ -1,8 +1,8 @@
 #include <QTest>
 #include <QSignalSpy>
-#include "akonadiprovider.h"
-#include "akonadibackendcontribution.h"
-#include "akonadicontactsbackend.h"
+#include <kalburator/sync/akonadiprovider.h>
+#include <kalburator/sync/akonadibackendcontribution.h>
+#include <kalburator/contacts/akonadicontactsbackend.h>
 
 using namespace Kalburator::Sync;
 

@@ -2,7 +2,7 @@
 #include <QStringList>
 #include <QTest>
 
-#include "propertycatalogue.h"
+#include <kalburator/shape/propertycatalogue.h>
 
 using namespace Kalburator::Shape;
 

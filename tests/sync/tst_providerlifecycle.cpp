@@ -8,13 +8,13 @@
 #include <QObject>
 #include <QFutureInterface>
 
-#include "providerlifecycle.h"
-#include "providermanager.h"
-#include "backendregistry.h"
-#include "iprovider.h"
-#include "iblobbackend.h"
-#include "backendconfiguration.h"
-#include "collectioninfo.h"
+#include <kalburator/sync/providerlifecycle.h>
+#include <kalburator/sync/providermanager.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/types/collectioninfo.h>
 
 using namespace Kalburator::Sync;
 

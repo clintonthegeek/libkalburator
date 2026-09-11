@@ -31,11 +31,11 @@
 #include <KCalendarCore/Event>
 
 #include "fakecaldavserver.h"
-#include "remotecalendarbackend.h"
-#include "syncbackend.h"
-#include "filteredcollectionbackend.h"
-#include "changedetection.h"
-#include "recordfilter.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/universal/filteredcollectionbackend.h>
+#include <kalburator/sync/changedetection.h>
+#include <kalburator/shape/recordfilter.h>
 
 using namespace Kalburator::Sync;
 using Kalburator::Shape::PropertyId;

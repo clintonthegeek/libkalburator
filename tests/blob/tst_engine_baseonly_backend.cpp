@@ -28,21 +28,21 @@
 #include <QList>
 #include <QTemporaryDir>
 
-#include "backendregistry.h"
-#include "baselinestore.h"
-#include "isynchost.h"
-#include "isyncconfigstore.h"
-#include "logicalcalendar.h"
-#include "collectioninfo.h"
-#include "pluginmanager.h"
-#include "shape.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "syncbackend.h"
-#include "syncbackendbase.h"
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "synctypes.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/calendar/isynchost.h>
+#include <kalburator/types/isyncconfigstore.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/types/synctypes.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::BackendRegistry;

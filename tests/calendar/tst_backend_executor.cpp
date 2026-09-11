@@ -3,8 +3,8 @@
 #include <QThread>
 #include <memory>
 
-#include "backendexecutor.h"
-#include "mockbackend.h"
+#include <kalburator/sync/backendexecutor.h>
+#include <kalburator/calendar/mockbackend.h>
 
 using namespace Kalburator::Sync;
 

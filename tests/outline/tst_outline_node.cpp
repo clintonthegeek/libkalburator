@@ -1,6 +1,6 @@
 #include <QTest>
 #include <QJsonObject>
-#include "outlinenode.h"
+#include <kalburator/outline/outlinenode.h>
 
 using Kalburator::Outline::OutlineNode;
 

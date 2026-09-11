@@ -1,6 +1,6 @@
 #include <QTest>
 
-#include "notedomaindefinition.h"
+#include <kalburator/note/notedomaindefinition.h>
 
 using namespace Kalburator::Note;
 using Kalburator::Shape::DomainId;

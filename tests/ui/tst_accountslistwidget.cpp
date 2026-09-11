@@ -4,8 +4,8 @@
 #include <QCheckBox>
 #include <QPushButton>
 
-#include "accountslistwidget.h"
-#include "backendconfiguration.h"
+#include <kalburator/ui/accountslistwidget.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;

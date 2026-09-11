@@ -8,10 +8,10 @@
 
 #include <atomic>
 
-#include "rawfilesbackend.h"
-#include "collectioninfo.h"
-#include "backendrecord.h"
-#include "shape.h"
+#include <kalburator/universal/rawfilesbackend.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/shape/shape.h>
 
 using Kalburator::Sinks::RawFilesBackend;
 using Kalburator::Sync::BackendRecord;

@@ -13,10 +13,10 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>
 #include <KCalendarCore/ICalFormat>
-#include "decsyncbackend.h"
-#include "decsynclib.h"
-#include "backendcapabilities.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/decsyncbackend.h>
+#include <kalburator/calendar/decsynclib.h>
+#include <kalburator/calendar/backendcapabilities.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using namespace Kalburator::Sync;
 

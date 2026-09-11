@@ -24,13 +24,13 @@
 #include <atomic>
 #include <memory>
 
-#include "decsyncbackend.h"
-#include "decsyncactivecontroller.h"
-#include "backendregistry.h"
-#include "shaperegistries.h"
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/decsyncbackend.h>
+#include <kalburator/calendar/decsyncactivecontroller.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/calendar/syncoperation.h>
 
 #include "stubsynchost.h"
 

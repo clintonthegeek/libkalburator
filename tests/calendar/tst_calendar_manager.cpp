@@ -5,11 +5,11 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "backendregistry.h"
-#include "calendarmanager.h"
-#include "logicalcalendar.h"
-#include "mockbackend.h"
-#include "synctypes.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/calendarmanager.h>
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/types/synctypes.h>
 
 #include "stubs/stubsynchost.h"
 

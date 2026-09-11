@@ -15,13 +15,13 @@
 #include <QObject>
 #include <QThread>
 
-#include "backendregistry.h"
-#include "isynchost.h"
-#include "lossprofile.h"
-#include "mockbackend.h"
-#include "shaperegistries.h"
-#include "syncbackend.h"
-#include "syncengine.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/isynchost.h>
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/engine/syncengine.h>
 
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::ISyncConfigStore;

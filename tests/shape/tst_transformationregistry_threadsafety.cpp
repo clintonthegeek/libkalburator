@@ -16,11 +16,11 @@
 #include <QtConcurrent>
 #include <QFuture>
 
-#include "transformationregistry.h"
-#include "propertycatalogue.h"
-#include "pipeline.h"
-#include "shape.h"
-#include "transformationedge.h"
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/pipeline.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/transformationedge.h>
 
 using Kalburator::Shape::DomainId;
 using Kalburator::Shape::EncodingId;

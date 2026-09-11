@@ -2,7 +2,7 @@
 #include <QtTest/QtTest>
 #include <QStringList>
 
-#include "calendardomaindefinition.h"
+#include <kalburator/calendar/calendardomaindefinition.h>
 
 using Kalburator::Calendar::CalendarDomainDefinition;
 

@@ -1,9 +1,9 @@
 #include <QTest>
 
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "transformationregistry.h"
-#include "shaperegistries.h"
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/transformationregistry.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator::Shape;
 

@@ -6,7 +6,7 @@
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "incidencediff.h"
+#include <kalburator/diff/incidencediff.h>
 
 namespace Kalburator::Sync {}
 using namespace Kalburator::Sync;

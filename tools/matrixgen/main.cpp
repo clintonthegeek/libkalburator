@@ -5,10 +5,10 @@
 //
 // The committed copy is byte-enforced by tst_gm_pipeline_convergence.
 
-#include "calendarstockshapes.h"
-#include "contactsstockshapes.h"
-#include "convergencematrix.h"
-#include "todostockshapes.h"
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/shape/convergencematrix.h>
+#include <kalburator/todo/todostockshapes.h>
 
 #include <QCoreApplication>
 #include <QFile>

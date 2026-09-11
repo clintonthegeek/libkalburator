@@ -7,10 +7,10 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
-#include "remotecalendarbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/calendar/syncoperation.h>
 
 #include "fakecaldavserver.h"
 

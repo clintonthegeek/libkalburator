@@ -2,13 +2,13 @@
 #include <QColor>
 #include <QVariantMap>
 
-#include "calendardomaindefinition.h"
-#include "calendarstockshapes.h"
-#include "calendardomainoperations.h"
-#include "propertycatalogue.h"
-#include "shape.h"
-#include "syncbackend.h"
-#include "syncoperation.h"  // complete FetchOperation/DeleteOperation for covariant overrides
+#include <kalburator/calendar/calendardomaindefinition.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/calendar/calendardomainoperations.h>
+#include <kalburator/shape/propertycatalogue.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>  // complete FetchOperation/DeleteOperation for covariant overrides
 
 using Kalburator::Calendar::CalendarDomainDefinition;
 using Kalburator::Calendar::CalendarStockShapes;

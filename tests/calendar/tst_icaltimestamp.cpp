@@ -7,7 +7,7 @@
 
 #include <QTest>
 
-#include "icaltimestamp.h"
+#include <kalburator/calendar/icaltimestamp.h>
 
 using Kalburator::Calendar::extractICalTimestamp;
 using Kalburator::Calendar::stripICalPropertyParameter;

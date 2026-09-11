@@ -1,7 +1,7 @@
 #include <QtTest>
-#include "outlinestockshapes.h"
-#include "outlinedomaindefinition.h"
-#include "transformationregistry.h"
+#include <kalburator/outline/outlinestockshapes.h>
+#include <kalburator/outline/outlinedomaindefinition.h>
+#include <kalburator/shape/transformationregistry.h>
 
 using namespace Kalburator::Outline;
 using namespace Kalburator::Shape;

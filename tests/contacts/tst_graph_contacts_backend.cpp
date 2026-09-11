@@ -12,7 +12,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
-#include "graphcontactsbackend.h"
+#include <kalburator/contacts/graphcontactsbackend.h>
 #include "mockgraphcontactsserver.h"
 
 using Kalburator::Contacts::MockGraphContactsServer;

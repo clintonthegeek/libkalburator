@@ -12,7 +12,7 @@
 
 #include <QtTest>
 
-#include "akonadicollectionid.h"
+#include <kalburator/sync/akonadicollectionid.h>
 
 using namespace Kalburator::Sync;
 

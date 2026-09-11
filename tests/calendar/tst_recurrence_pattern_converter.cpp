@@ -8,7 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "recurrencepatternconverter.h"
+#include <kalburator/calendar/recurrencepatternconverter.h>
 
 using Kalburator::Calendar::RecurrencePattern::DemoteResult;
 using Kalburator::Calendar::RecurrencePattern::rruleLinesToPatternedRecurrence;

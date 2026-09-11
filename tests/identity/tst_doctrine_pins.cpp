@@ -10,8 +10,8 @@
 #include <QSqlQuery>
 #include <QTemporaryDir>
 
-#include "identitystore.h"
-#include "persondirectory.h"
+#include <kalburator/identity/identitystore.h>
+#include <kalburator/identity/persondirectory.h>
 
 using Kalburator::Identity::EntityLink;
 using Kalburator::Identity::IdentityStore;

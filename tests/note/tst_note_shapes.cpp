@@ -1,7 +1,7 @@
 #include <QtTest>
-#include "notestockshapes.h"
-#include "notedomaindefinition.h"
-#include "transformationregistry.h"
+#include <kalburator/note/notestockshapes.h>
+#include <kalburator/note/notedomaindefinition.h>
+#include <kalburator/shape/transformationregistry.h>
 
 using namespace Kalburator::Note;
 using namespace Kalburator::Shape;

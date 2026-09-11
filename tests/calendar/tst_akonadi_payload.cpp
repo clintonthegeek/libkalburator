@@ -1,5 +1,5 @@
 #include <QtTest>
-#include "akonadibackend.h"
+#include <kalburator/calendar/akonadibackend.h>
 #include <KCalendarCore/Event>
 
 using namespace Kalburator::Sync;

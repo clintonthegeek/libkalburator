@@ -8,16 +8,16 @@
 #include <KConfig>
 #include <KConfigGroup>
 
-#include "providermanager.h"
-#include "iprovider.h"
-#include "backendregistry.h"
-#include "backendcontribution.h"
-#include "syncbackend.h"
-#include "backendconfiguration.h"
-#include "collectioninfo.h"
-#include "shape.h"
-#include "caldavbackendcontribution.h"
-#include "carddavbackendcontribution.h"
+#include <kalburator/sync/providermanager.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/sync/caldavbackendcontribution.h>
+#include <kalburator/sync/carddavbackendcontribution.h>
 
 using namespace Kalburator::Sync;
 

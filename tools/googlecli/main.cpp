@@ -1,7 +1,7 @@
 #include "labpaths.h"
 
-#include <googleauth.h>
-#include <blockinghttp.h>
+#include <kalburator/google/googleauth.h>
+#include <kalburator/net/blockinghttp.h>
 
 #include <QCoreApplication>
 #include <QDateTime>

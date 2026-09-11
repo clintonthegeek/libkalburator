@@ -1,8 +1,8 @@
 #pragma once
-#include "plugin.h"
-#include "shapecontribution.h"
-#include "backendcontribution.h"
-#include "manifest.h"
+#include <kalburator/plugin/plugin.h>
+#include <kalburator/shape/shapecontribution.h>
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/plugin/manifest.h>
 #include <memory>
 
 namespace KalburatorTests {

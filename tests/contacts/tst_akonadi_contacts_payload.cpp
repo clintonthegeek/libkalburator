@@ -1,5 +1,5 @@
 #include <QtTest>
-#include "akonadicontactsbackend.h"
+#include <kalburator/contacts/akonadicontactsbackend.h>
 
 using namespace Kalburator::Sync;
 

@@ -26,11 +26,11 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
-#include "remotecalendarbackend.h"
-#include "writerbatch.h"
-#include "writeoperation.h"
-#include "backendrecord.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/sync/writerbatch.h>
+#include <kalburator/sync/writeoperation.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/calendar/syncoperation.h>
 
 #include "fakecaldavserver.h"
 

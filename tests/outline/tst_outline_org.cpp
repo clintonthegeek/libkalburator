@@ -1,8 +1,8 @@
 #include <QTest>
 #include <QJsonObject>
 #include <QJsonArray>
-#include "orgcanonstages.h"
-#include "canonenvelope.h"
+#include <kalburator/outline/orgcanonstages.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using namespace Kalburator::Shape;
 using Kalburator::Outline::OrgToCanonStage;

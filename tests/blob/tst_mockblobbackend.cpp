@@ -2,7 +2,7 @@
 #include <QSignalSpy>
 #include <QCryptographicHash>
 
-#include "mockblobbackend.h"
+#include <kalburator/blob/mockblobbackend.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::CollectionInfo;

@@ -21,8 +21,8 @@
 // tests/calendar/ — see the IP.1 return receipt for why this file sits
 // under tests/shape/ rather than tests/calendar/calendar_test_helpers.h.
 
-#include "canonenvelope.h"
-#include "propertycatalogue.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/shape/propertycatalogue.h>
 
 #include <QJsonObject>
 #include <QList>

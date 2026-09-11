@@ -16,9 +16,9 @@
 
 #include <QtTest>
 
-#include "holidaysubscriptionbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
+#include <kalburator/calendar/holidaysubscriptionbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
 
 using namespace Kalburator::Sync;
 

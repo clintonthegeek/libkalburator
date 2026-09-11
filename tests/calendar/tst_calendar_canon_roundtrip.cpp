@@ -5,12 +5,12 @@
 #include <QJsonValue>
 #include <QRegularExpression>
 
-#include "canonenvelope.h"
-#include "icalcanonstages.h"
-#include "calendardomaindefinition.h"
-#include "calendarstockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/calendar/calendardomaindefinition.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>

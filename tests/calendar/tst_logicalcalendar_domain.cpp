@@ -1,6 +1,6 @@
 #include <QtTest>
-#include "logicalcalendar.h"
-#include "logicalcalendarjson.h"
+#include <kalburator/types/logicalcalendar.h>
+#include <kalburator/typesupport/logicalcalendarjson.h>
 
 using namespace Kalburator::Sync;
 namespace Shape = Kalburator::Shape;

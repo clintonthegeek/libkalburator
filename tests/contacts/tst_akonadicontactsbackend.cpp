@@ -1,5 +1,5 @@
 #include <QTest>
-#include "akonadicontactsbackend.h"
+#include <kalburator/contacts/akonadicontactsbackend.h>
 
 #include <Akonadi/ServerManager>
 

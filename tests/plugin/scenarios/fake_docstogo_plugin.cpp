@@ -1,9 +1,9 @@
 #include "fake_docstogo_plugin.h"
-#include "recorddiffer.h"
-#include "recordmerger.h"
-#include "lossprofile.h"
-#include "manifest.h"
-#include "transformationedge.h"
+#include <kalburator/shape/recorddiffer.h>
+#include <kalburator/shape/recordmerger.h>
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/plugin/manifest.h>
+#include <kalburator/shape/transformationedge.h>
 
 using namespace Kalburator;
 using namespace Kalburator::Shape;

@@ -1,7 +1,7 @@
 // tests/plugin/smoke/tinyplugin.cpp
 #include "tinyplugin.h"
-#include "backendcontribution.h"
-#include "iprovider.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/iprovider.h>
 
 namespace {
 class TinyBC : public Kalburator::Sync::BackendContribution {

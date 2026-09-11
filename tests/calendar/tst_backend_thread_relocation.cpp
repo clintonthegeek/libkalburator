@@ -47,20 +47,20 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "backendregistry.h"
-#include "baselinestore.h"
-#include "conflictmanager.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/storage/baselinestore.h>
+#include <kalburator/conflict/conflictmanager.h>
 #include "fakecaldavserver.h"
-#include "localbackend.h"
-#include "pluginmanager.h"
-#include "remotecalendarbackend.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "syncbackend.h"
-#include "syncengine.h"
-#include "syncrequest.h"
-#include "syncconflictstore.h"
-#include "synctypes.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/engine/syncrequest.h>
+#include <kalburator/calendar/syncconflictstore.h>
+#include <kalburator/types/synctypes.h>
 
 #include "stubs/stubsynchost.h"
 

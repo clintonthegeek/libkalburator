@@ -1,10 +1,10 @@
 #include <QtTest/QtTest>
 #include <memory>
-#include "backendcontribution.h"
-#include "backendregistry.h"
-#include "iprovider.h"
-#include "iblobbackend.h"
-#include "shape.h"
+#include <kalburator/sync/backendcontribution.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/shape/shape.h>
 
 using namespace Kalburator;
 

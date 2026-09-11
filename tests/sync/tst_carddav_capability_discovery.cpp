@@ -19,8 +19,8 @@
 #include <QString>
 #include <QUrl>
 
-#include "carddavcapabilitydiscovery.h"
-#include "collectioninfo.h"
+#include <kalburator/sync/carddavcapabilitydiscovery.h>
+#include <kalburator/types/collectioninfo.h>
 #include "fakecarddavserver.h"
 
 using namespace Kalburator::Sync;

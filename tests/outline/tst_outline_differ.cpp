@@ -1,10 +1,10 @@
 #include <QTest>
 #include <QJsonArray>
 #include <QJsonObject>
-#include "outlinediffer.h"
-#include "outlinemerger.h"
-#include "autoresolvestrategy.h"
-#include "canonenvelope.h"
+#include <kalburator/outline/outlinediffer.h>
+#include <kalburator/outline/outlinemerger.h>
+#include <kalburator/shape/autoresolvestrategy.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using namespace Kalburator::Shape;
 using Kalburator::Outline::OutlineDiffer;

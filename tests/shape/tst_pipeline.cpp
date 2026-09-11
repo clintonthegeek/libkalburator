@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "pipeline.h"
-#include "transformationedge.h"
+#include <kalburator/shape/pipeline.h>
+#include <kalburator/shape/transformationedge.h>
 
 using namespace Kalburator::Shape;
 

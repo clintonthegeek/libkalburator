@@ -15,11 +15,11 @@
 
 #include "fakecarddavserver.h"
 
-#include "backendconfiguration.h"
-#include "carddavprovider.h"
-#include "collectioninfo.h"
-#include "iblobbackend.h"
-#include "remotecontactsbackend.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/carddavprovider.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/contacts/remotecontactsbackend.h>
 
 using namespace Kalburator::Sync;
 

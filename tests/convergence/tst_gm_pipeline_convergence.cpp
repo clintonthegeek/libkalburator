@@ -21,18 +21,18 @@
 #include <QJsonObject>
 #include <QFile>
 
-#include "canonenvelope.h"
-#include "convergencematrix.h"
-#include "calendarstockshapes.h"
-#include "contactsstockshapes.h"
-#include "todostockshapes.h"
-#include "googlecanonstages.h"
-#include "mseventcanonstages.h"
-#include "googlepersoncanonstages.h"
-#include "mscontactcanonstages.h"
-#include "googletaskcanonstages.h"
-#include "mstodotaskcanonstages.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/shape/convergencematrix.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/contacts/contactsstockshapes.h>
+#include <kalburator/todo/todostockshapes.h>
+#include <kalburator/calendar/googlecanonstages.h>
+#include <kalburator/calendar/mseventcanonstages.h>
+#include <kalburator/contacts/googlepersoncanonstages.h>
+#include <kalburator/contacts/mscontactcanonstages.h>
+#include <kalburator/todo/googletaskcanonstages.h>
+#include <kalburator/todo/mstodotaskcanonstages.h>
+#include <kalburator/shape/lossprofile.h>
 
 using Kalburator::Shape::CanonEnvelope::parse;
 using Kalburator::Shape::CanonEnvelope::serialize;

@@ -1,5 +1,5 @@
 #include <QTest>
-#include "lossprofile.h"
+#include <kalburator/shape/lossprofile.h>
 
 using namespace Kalburator::Shape;
 

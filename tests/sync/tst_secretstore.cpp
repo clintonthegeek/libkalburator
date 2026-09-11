@@ -1,6 +1,6 @@
 #include <QtTest>
 
-#include "secretstore.h"
+#include <kalburator/sync/secretstore.h>
 
 using namespace Kalburator::Sync;
 

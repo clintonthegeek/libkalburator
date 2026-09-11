@@ -1,9 +1,9 @@
 // tests/plugin/tst_pluginmanager_smoke.cpp
 #include <QtTest/QtTest>
 #include <memory>
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "backendregistry.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/sync/backendregistry.h>
 
 class TestPluginManagerSmoke : public QObject {
     Q_OBJECT

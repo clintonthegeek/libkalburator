@@ -40,11 +40,11 @@
 #include <QString>
 #include <QStringList>
 
-#include "icalcanonstages.h"
-#include "vtodocanonstages.h"
-#include "googletaskcanonstages.h"
-#include "canonenvelope.h"
-#include "calendarstockshapes.h"
+#include <kalburator/calendar/icalcanonstages.h>
+#include <kalburator/todo/vtodocanonstages.h>
+#include <kalburator/todo/googletaskcanonstages.h>
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/calendarstockshapes.h>
 
 namespace {
 

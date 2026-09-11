@@ -1,7 +1,7 @@
 #include <QHash>
 #include <QTest>
 
-#include "shape.h"
+#include <kalburator/shape/shape.h>
 
 using namespace Kalburator::Shape;
 

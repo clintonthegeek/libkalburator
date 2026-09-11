@@ -13,7 +13,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 
-#include "googlepeoplebackend.h"
+#include <kalburator/contacts/googlepeoplebackend.h>
 #include "mockpeopleserver.h"
 
 using Kalburator::People::MockPeopleServer;

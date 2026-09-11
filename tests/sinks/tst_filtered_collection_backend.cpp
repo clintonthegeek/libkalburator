@@ -6,11 +6,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "recordfilter.h"
-#include "filteredcollectionbackend.h"
-#include "changedetection.h"
-#include "backendregistry.h"
-#include "syncbackend.h"
+#include <kalburator/shape/recordfilter.h>
+#include <kalburator/universal/filteredcollectionbackend.h>
+#include <kalburator/sync/changedetection.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using Kalburator::Shape::PropertyId;
 using Kalburator::Shape::RecordFilter;

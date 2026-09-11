@@ -15,13 +15,13 @@
 
 #include "fakecaldavserver.h"
 
-#include "backendconfiguration.h"
-#include "caldavcapabilitydiscovery.h"
-#include "caldavprovider.h"
-#include "collectioninfo.h"
-#include "davslug.h"
-#include "iblobbackend.h"
-#include "remotecalendarbackend.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/caldavcapabilitydiscovery.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/davslug.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
 
 using namespace Kalburator::Sync;
 

@@ -1,5 +1,5 @@
 #include <QtTest/QtTest>
-#include "manifest.h"
+#include <kalburator/plugin/manifest.h>
 
 using namespace Kalburator;
 

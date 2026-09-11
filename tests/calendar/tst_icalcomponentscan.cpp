@@ -8,7 +8,7 @@
 
 #include <QTest>
 
-#include "icalcomponentscan.h"
+#include <kalburator/calendar/icalcomponentscan.h>
 
 using Kalburator::Calendar::extractComponentRecurrenceLines;
 

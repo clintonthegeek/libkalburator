@@ -1,6 +1,6 @@
 #include <QtTest/QtTest>
 
-#include "collectionruntime.h"
+#include <kalburator/runtime/collectionruntime.h>
 
 using namespace Kalburator::Runtime;
 

@@ -1,5 +1,5 @@
-#include "iprovider.h"
-#include "backendconfiguration.h"
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/typesupport/backendconfiguration.h>
 
 #include <QTest>
 #include <QFutureInterface>

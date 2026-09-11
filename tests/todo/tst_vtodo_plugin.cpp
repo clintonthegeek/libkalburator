@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "tododomaindefinition.h"
-#include "todostockshapes.h"
+#include <kalburator/todo/tododomaindefinition.h>
+#include <kalburator/todo/todostockshapes.h>
 
 using namespace Kalburator::Todo;
 using Kalburator::Shape::DomainId;

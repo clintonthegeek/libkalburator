@@ -13,8 +13,8 @@
 
 #include <KCalendarCore/Event>
 
-#include "localbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using Kalburator::Sync::LocalBackend;
 using Kalburator::Sync::SyncOperation;

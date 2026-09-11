@@ -15,9 +15,9 @@
 
 #include <QtTest>
 
-#include "akonadibackend.h"
-#include "akonadicontactsbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/akonadibackend.h>
+#include <kalburator/contacts/akonadicontactsbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using namespace Kalburator::Sync;
 

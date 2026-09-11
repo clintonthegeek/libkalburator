@@ -6,10 +6,10 @@
 #include <QSignalSpy>
 #include <QObject>
 
-#include "syncruncoordinator.h"
-#include "syncengine.h"
-#include "shaperegistries.h"
-#include "backendregistry.h"
+#include <kalburator/sync/syncruncoordinator.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/sync/backendregistry.h>
 
 using namespace Kalburator::Sync;
 using namespace Kalburator::Engine;

@@ -1,6 +1,6 @@
 #include <QTest>
 
-#include "todotxttransformation.h"
+#include <kalburator/todo/todotxttransformation.h>
 
 #include <KCalendarCore/ICalFormat>
 #include <KCalendarCore/Todo>

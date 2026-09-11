@@ -7,7 +7,7 @@
 #include <QByteArray>
 #include <QString>
 
-#include <googleauth.h>
+#include <kalburator/google/googleauth.h>
 
 using Kalburator::Google::ClientCredentials;
 

@@ -3,12 +3,12 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include "canonenvelope.h"
-#include "orgicalcanonstages.h"
-#include "calendardomaindefinition.h"
-#include "calendarstockshapes.h"
-#include "shaperegistries.h"
-#include "lossprofile.h"
+#include <kalburator/shape/canonenvelope.h>
+#include <kalburator/calendar/orgicalcanonstages.h>
+#include <kalburator/calendar/calendardomaindefinition.h>
+#include <kalburator/calendar/calendarstockshapes.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/shape/lossprofile.h>
 
 #include <KCalendarCore/Event>
 #include <KCalendarCore/ICalFormat>

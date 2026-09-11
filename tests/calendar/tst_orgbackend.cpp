@@ -12,8 +12,8 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/Event>
 #include <KCalendarCore/Todo>
-#include "orgbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/orgbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using namespace Kalburator::Sync;
 

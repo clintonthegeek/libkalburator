@@ -1,5 +1,5 @@
 #include <QTest>
-#include "outlinecanonproperties.h"
+#include <kalburator/outline/outlinecanonproperties.h>
 
 using namespace Kalburator::Shape;
 using Kalburator::Outline::makeOutlineCanonCatalogue;

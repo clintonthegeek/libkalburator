@@ -1,7 +1,7 @@
 #include <QTest>
 
-#include "textdiffer.h"
-#include "canonicalrecord.h"
+#include <kalburator/note/textdiffer.h>
+#include <kalburator/shape/canonicalrecord.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>

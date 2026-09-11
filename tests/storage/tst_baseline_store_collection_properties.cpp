@@ -3,7 +3,7 @@
 #include <QTemporaryDir>
 #include <QVariantMap>
 
-#include "baselinestore.h"
+#include <kalburator/storage/baselinestore.h>
 
 using Kalburator::Storage::BaselineStore;
 

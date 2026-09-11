@@ -18,10 +18,10 @@
 #include <QJsonObject>
 #include <QtTest/QtTest>
 
-#include "googletasksbackend.h"
-#include "googletaskcanonstages.h"
-#include "googleauth.h"
-#include "canonenvelope.h"
+#include <kalburator/todo/googletasksbackend.h>
+#include <kalburator/todo/googletaskcanonstages.h>
+#include <kalburator/google/googleauth.h>
+#include <kalburator/shape/canonenvelope.h>
 
 using Kalburator::Sync::BackendRecord;
 using Kalburator::Sync::GoogleTasksBackend;

@@ -3,11 +3,11 @@
 // process-global singleton (there was only one set of edges). See design §8.
 #include <QtTest>
 
-#include "pluginmanager.h"
-#include "stock_plugins.h"
-#include "backendregistry.h"
-#include "shape.h"
-#include "shaperegistries.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/shape/shape.h>
+#include <kalburator/shape/shaperegistries.h>
 
 using namespace Kalburator;
 using namespace Kalburator::Shape;

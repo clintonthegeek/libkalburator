@@ -33,16 +33,16 @@
 
 #include "fakecaldavserver.h"
 
-#include "backendconfiguration.h"
-#include "backendregistry.h"
-#include "caldavbackendcontribution.h"
-#include "caldavprovider.h"
-#include "collectioninfo.h"
-#include "iprovider.h"
-#include "providermanager.h"
-#include "remotecalendarbackend.h"
-#include "secretstore.h"
-#include "syncbackend.h"
+#include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/caldavbackendcontribution.h>
+#include <kalburator/sync/caldavprovider.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/sync/iprovider.h>
+#include <kalburator/sync/providermanager.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/sync/secretstore.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using namespace Kalburator::Sync;
 

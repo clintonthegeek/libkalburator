@@ -10,12 +10,12 @@
 #include <QTemporaryDir>
 #include <type_traits>
 
-#include "backendregistry.h"
-#include "syncbackendbase.h"
-#include "rawfilesbackend.h"
-#include "collectioninfo.h"
-#include "backendrecord.h"
-#include "shape.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/sync/syncbackendbase.h>
+#include <kalburator/universal/rawfilesbackend.h>
+#include <kalburator/types/collectioninfo.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/shape/shape.h>
 
 using Kalburator::Sync::BackendRegistry;
 using Kalburator::Sync::SyncBackendBase;

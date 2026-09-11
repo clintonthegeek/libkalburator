@@ -8,7 +8,7 @@
 
 #include <KCalendarCore/MemoryCalendar>
 
-#include "icalendarcollection.h"
+#include <kalburator/types/icalendarcollection.h>
 
 namespace Kalburator::Sync::Test {
 

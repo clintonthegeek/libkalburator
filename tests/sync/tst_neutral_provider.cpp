@@ -1,8 +1,8 @@
 #include <QtTest/QtTest>
-#include "neutralprovider.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
-#include "collectioninfo.h"
+#include <kalburator/sync/neutralprovider.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/types/collectioninfo.h>
 
 using namespace Kalburator;
 using namespace Kalburator::Sync;

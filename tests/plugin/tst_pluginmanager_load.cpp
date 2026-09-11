@@ -1,8 +1,8 @@
 #include <QtTest/QtTest>
 #include <memory>
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "backendregistry.h"
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/sync/backendregistry.h>
 #include "fakes/fake_plugin.h"
 
 using namespace Kalburator;

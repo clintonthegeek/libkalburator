@@ -18,12 +18,12 @@
 #include <QtTest/QtTest>
 #include <memory>
 
-#include "backendregistry.h"
-#include "pluginmanager.h"
-#include "shaperegistries.h"
-#include "stock_plugins.h"
-#include "syncengine.h"
-#include "synctypes.h"
+#include <kalburator/sync/backendregistry.h>
+#include <kalburator/plugin/pluginmanager.h>
+#include <kalburator/shape/shaperegistries.h>
+#include <kalburator/plugin/stock_plugins.h>
+#include <kalburator/engine/syncengine.h>
+#include <kalburator/types/synctypes.h>
 
 #include "../calendar/stubs/stubsynchost.h"
 

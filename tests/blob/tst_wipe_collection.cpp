@@ -18,8 +18,8 @@
 #include <QDir>
 #include <QTemporaryDir>
 
-#include "localblobbackend.h"
-#include "remotecalendarbackend.h"
+#include <kalburator/blob/localblobbackend.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
 #include "fakecaldavserver.h"
 
 using Kalburator::Sync::BackendRecord;

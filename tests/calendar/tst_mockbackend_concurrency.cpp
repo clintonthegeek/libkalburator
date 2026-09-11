@@ -9,8 +9,8 @@
 #include <QtTest>
 #include <QSignalSpy>
 
-#include "mockbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 
 using namespace Kalburator::Sync;
 

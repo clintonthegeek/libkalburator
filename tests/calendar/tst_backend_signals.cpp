@@ -18,15 +18,15 @@
 #include <KCalendarCore/MemoryCalendar>
 #include <KCalendarCore/ICalFormat>
 
-#include "localbackend.h"
-#include "mockbackend.h"
-#include "remotecalendarbackend.h"
-#include "syncbackend.h"
-#include "syncoperation.h"
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/calendar/mockbackend.h>
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/calendar/syncbackend.h>
+#include <kalburator/calendar/syncoperation.h>
 #include "fakecaldavserver.h"
 
 #ifdef KALBURATOR_HAVE_ORG_IO
-#include "orgbackend.h"
+#include <kalburator/calendar/orgbackend.h>
 #endif
 
 namespace Kalburator::Sync {}

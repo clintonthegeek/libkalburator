@@ -1,8 +1,8 @@
 #include "fake_odf_plugin.h"
-#include "lossprofile.h"
-#include "manifest.h"
-#include "transformationedge.h"
-#include "iprovider.h"
+#include <kalburator/shape/lossprofile.h>
+#include <kalburator/plugin/manifest.h>
+#include <kalburator/shape/transformationedge.h>
+#include <kalburator/sync/iprovider.h>
 
 using namespace Kalburator;
 
