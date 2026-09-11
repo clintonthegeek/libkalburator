@@ -395,9 +395,19 @@ public:
     QObject *backendObject(const QString &endpointId) const override
     {
         const auto it = m_endpointExecutors.find(endpointId);
-        if (it == m_endpointExecutors.end() || !it->second)
-            return nullptr;
-        return it->second->backendObject();
+        if (it != m_endpointExecutors.end() && it->second)
+            return it->second->backendObject();
+        // applyTopology() only inserts into m_endpointExecutors for
+        // factory-created endpoints (endpoint.factoryId non-empty, e.g. the
+        // local backend). A provider-backed endpoint (a remote account's
+        // backend, factoryId empty) is registered directly with
+        // m_backendRegistry instead and never gets an executor -- so a
+        // lookup that only ever consults m_endpointExecutors returns null
+        // for every such backend, permanently, not just before some
+        // populate-on-a-later-schedule race. Fall back to the registry so
+        // callers (CollectionController::backendById()) can resolve
+        // provider-backed backends too.
+        return m_backendRegistry.backendInstance(endpointId);
     }
 
     void refreshProviderSnapshot(const QString &providerId)

@@ -1,8 +1,31 @@
 # Task queue
 
-**Last updated:** 2026-09-11 (design work outside the campaign: ADR 0009 and
-ADR 0010 adopted, and libkalburator's own test suite made buildable again.
-`RRD-017` is untouched and remains the single `IN PROGRESS` campaign task.
+**Last updated:** 2026-09-11 (`RRD-017` closed out — arrangement/copy/
+primary/rule editing is DONE, picking up the prior session's mid-session
+stop. `tst_rrd017_editing.cpp` is now 10/10, up from 8/10: the seeded-rule
+round-trip failure was a missing explicit save in the test itself
+(`KalbSyncTopologyDataSource::setSyncMappings()` only mutates in-memory
+config; fixed in the test), and the "add copy → use existing" adopt flow
+was blocked by a real, now root-caused and fixed, libkalburator defect —
+`CollectionRuntime::backendObject()` only ever consulted
+`m_endpointExecutors`, which `applyTopology()` populates only for
+factory-created endpoints (just the local backend here); every
+provider-backed (remote CalDAV account) backend was registered with
+`BackendRegistry` instead and never got an executor entry, so
+`backendById()` returned null for any remote backend permanently. Fixed by
+falling back to `m_backendRegistry.backendInstance()`
+(`src/runtime/collectionruntime.cpp`). See
+`../PlanStan/docs/testing/rrd-017-editing-evidence.md` and
+`../PlanStan/docs/bugs/collectioncontroller-backendbyid-not-populated-promptly-on-fresh-load.md`
+(now marked FIXED) for the full trace. Regression sweep: libkalburator's own
+suite unchanged at 222/222; PlanStan's full offline `ctest` matches the
+`RRD-002` baseline exactly, no new failures; live-rig suites
+`rrd010`–`rrd012`/`rrd014`–`rrd016` all green. Two pre-existing defects
+(`remotecalendarbackend-createcollection-hits-retired-synchronous-
+createcalendar`, `addlogicalcalendarcopy-preview-channel-false-positive-
+convergence-violation`) remain filed, deliberately not fixed — outside
+RRD-017's own scope. `RRD-018` is `READY` next (`RRD-019` is unblocked too
+but stays `QUEUED` per the one-`READY`-entry convention).
 
 ADR 0008 left the CalDAV family-assembly point open with three candidates.
 Choosing between them turned up the fact that decides it: `RemoteCalendar
@@ -150,8 +173,8 @@ below (§2.1, §3) refers to that specification.
 | 14 | RRD-014 | DONE 2026-09-10 | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
-| 17 | RRD-017 | IN PROGRESS | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
-| 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
+| 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
+| 18 | RRD-018 | READY | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
 | 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
@@ -1705,7 +1728,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-017 — Arrangement, copy, primary, and rule editing
 
-- **State:** IN PROGRESS
+- **State:** DONE 2026-09-11
 - **Depends on:** RRD-016
 - **Repository:** `../PlanStan`
 - **Scope:** Add Change arrangement, Add copy, Use another primary copy, and Edit
@@ -1723,27 +1746,37 @@ target and 65 of 145 registered test targets no longer compile.
   and 06 cover advanced rules. Existing staging, conflict, provider, and
   runtime-host checks stay green.
 - **Verification:** record each flow's exact control path and its reopen check.
-- **STOPPED MID-SESSION (2026-09-11), NOT DONE — handoff for a fresh agent.**
-  Full status, confirmed defects, and exact next steps are in
-  `../PlanStan/docs/testing/rrd-017-editing-evidence.md` — read it first,
-  don't re-derive from scratch. Summary: all five editing controls (Change
-  arrangement, Add copy, Make primary, Edit rules, Chain order) are built
-  and wired through the existing `TopologyDraft`/`SyncTopologyWidget`
-  staging surface (`CollectionSettingsViewPanel::applyAll()`/`discardAll()`
-  needed zero changes). Two new staging primitives (primary reassignment,
-  chain order) were added end to end, mirroring the existing
-  `modifyWiringPolicy()` pattern, with unit tests extended in
-  `tests/sync/tst_topologydraft.cpp`/`tst_topologyapplyservice.cpp` (not
-  re-run after the session's final edits — verify first).
-  `tests/integration/tst_rrd017_editing.cpp`: **8/10 passing**. Two
-  failures remain, both diagnosed to varying depth but neither resolved:
-  `addCopy_useExisting_...` (blocked by an unconfirmed backend-resolution
-  gap, `../PlanStan/docs/bugs/collectioncontroller-backendbyid-not-populated-promptly-on-fresh-load.md`
-  — the actual "use existing" adopt flow was never successfully exercised)
-  and `editRules_...` (a seeded mapping fails to round-trip through
-  reopen — not investigated at all yet). Three real, pre-existing defects
-  were found and filed this session, none introduced by RRD-017's own
-  code: the two above plus
+- **Closed out 2026-09-11, picking up the prior session's mid-session stop.**
+  Full record in `../PlanStan/docs/testing/rrd-017-editing-evidence.md`. All
+  five editing controls (Change arrangement, Add copy, Make primary, Edit
+  rules, Chain order) are built and wired through the existing
+  `TopologyDraft`/`SyncTopologyWidget` staging surface
+  (`CollectionSettingsViewPanel::applyAll()`/`discardAll()` needed zero
+  changes). Two new staging primitives (primary reassignment, chain order)
+  were added end to end, mirroring the existing `modifyWiringPolicy()`
+  pattern, with unit tests extended in
+  `tests/sync/tst_topologydraft.cpp`/`tst_topologyapplyservice.cpp`.
+  `tests/integration/tst_rrd017_editing.cpp`: **10/10 passing** (was 8/10
+  at the prior handoff). The two remaining failures are both resolved:
+  - `editRules_...` was a **test bug**, not production: the seeding step
+    called `KalbSyncTopologyDataSource::setSyncMappings()` directly
+    without the explicit `saveCollectionConfigFile()` a hand-edit seam
+    always needs (config-manager mutations are in-memory only until
+    saved). Fixed in the test.
+  - `addCopy_useExisting_...` was blocked by a real, now root-caused and
+    fixed, libkalburator defect: `CollectionRuntime::backendObject()`
+    (`src/runtime/collectionruntime.cpp`) only ever consulted
+    `m_endpointExecutors`, which `applyTopology()` populates only for
+    factory-created endpoints (just the local backend in this app) —
+    every provider-backed (remote CalDAV account) backend was registered
+    with `BackendRegistry` instead and never got an executor entry, so
+    `backendById()` returned null for any remote backend permanently, not
+    on some later-populated schedule. Fixed by falling back to
+    `m_backendRegistry.backendInstance()`. See
+    `../PlanStan/docs/bugs/collectioncontroller-backendbyid-not-populated-promptly-on-fresh-load.md`
+    (now marked FIXED) for the full trace.
+  Two pre-existing defects remain filed, deliberately not fixed — outside
+  this task's own scope:
   `../PlanStan/docs/bugs/addlogicalcalendarcopy-preview-channel-false-positive-convergence-violation.md`
   and, fully root-caused,
   `../PlanStan/docs/bugs/remotecalendarbackend-createcollection-hits-retired-synchronous-createcalendar.md`
@@ -1752,20 +1785,19 @@ target and 65 of 145 registered test targets no longer compile.
   deliberately-retired synchronous `createCalendar()` instead of the
   `createCalendarAsync()`/`blockOnAsync` pattern its sibling
   `KalbSyncTopologyDataSource::createCalendar()` already correctly uses).
-  The regression sweep (`tst_topologydraft`, `tst_topologyapplyservice`,
-  `tst_collectionsettingsviewpanel_applybar`, `tst_integration_template_system`,
-  the wider topology `ctest` sweep) was not re-run after the session's
-  final edits. **Process note:** a background fork agent burned roughly an
-  hour and 500k+ tokens on this task without actually finishing —
-  misleading "completed" notifications repeatedly turned out to mean the
-  fork had silently relaunched itself; the orchestrating session
-  unknowingly raced it on the same `tools/davrig` ports for a period
-  before catching this via `ps aux` and stopping the fork (`TaskStop`).
-  Early failures from that period are noise, not signal — trust only the
-  evidence doc's recorded diagnostics, gathered after the race was
-  confirmed over.
-- **Next:** finish RRD-017 (see evidence doc's "What's left") before
-  RRD-018/RRD-019.
+  `addCopy_createNew_...` passes today by correctly characterizing this as
+  broken, not by the flow actually working. Regression sweep, re-run after
+  both fixes: libkalburator's own suite unchanged at 222/222; PlanStan's
+  full offline `ctest` matches the `RRD-002` baseline exactly, no new
+  failures; the live-rig suites (`rrd010`–`rrd012`, `rrd014`–`rrd016`) are
+  all green. **Process note carried forward:** the prior session's
+  background fork burned ~1 hour/500k+ tokens without finishing and was
+  briefly, unknowingly raced by the orchestrating session on the same test
+  rig (see the evidence doc's process note) — this session worked the
+  remaining diagnosis directly instead of delegating to another background
+  agent.
+- **Next:** RRD-018 (see the one-`READY`-entry convention above; RRD-019
+  is unblocked too but stays queued behind it).
 
 ### RRD-018 — Account discovery states and the four removal verbs
 
