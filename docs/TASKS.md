@@ -1,6 +1,24 @@
 # Task queue
 
-**Last updated:** 2026-09-11 (`RRD-016` DONE — the calendars/copies/rules
+**Last updated:** 2026-09-11 (`RRD-017` STOPPED MID-SESSION, NOT DONE —
+arrangement/copy/primary/rule editing on the `RRD-016` page. All five
+editing controls are built and staged correctly; 8/10 of
+`tst_rrd017_editing.cpp` passes. Two flows are still broken/unverified
+("add copy → use existing" was never successfully exercised; a seeded rule
+edit doesn't survive reopen, uninvestigated) and three real pre-existing
+defects were found and filed, one fully root-caused (every "add a copy →
+create new" onto a CalDAV account fails at Apply for everyone — see
+`../PlanStan/docs/bugs/remotecalendarbackend-createcollection-hits-retired-synchronous-createcalendar.md`).
+Full handoff, confirmed defects, and exact next steps are in
+`../PlanStan/docs/testing/rrd-017-editing-evidence.md` — a fresh agent
+should read that file before touching this task again. Stopped on
+explicit user instruction after a background fork burned ~1 hour/500k+
+tokens without finishing and was briefly, unknowingly raced by the
+orchestrating session on the same test rig — see the evidence doc's
+process note. `RRD-017` stays the one `IN PROGRESS` task; nothing after it
+is `READY` until it closes.)
+
+**Prior entry (2026-09-11): `RRD-016` DONE — the calendars/copies/rules
 page as a read-only projection, the campaign's first UI feature build.
 `CalendarsAndSyncPage` (`../PlanStan/src/views/calendarsandsyncpage.h`/`.cpp`)
 is a new first page in `CollectionSettingsViewPanel`'s `KPageWidget`,
@@ -101,7 +119,7 @@ below (§2.1, §3) refers to that specification.
 | 14 | RRD-014 | DONE 2026-09-10 | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
-| 17 | RRD-017 | READY | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
+| 17 | RRD-017 | IN PROGRESS | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
@@ -1616,7 +1634,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-017 — Arrangement, copy, primary, and rule editing
 
-- **State:** READY
+- **State:** IN PROGRESS
 - **Depends on:** RRD-016
 - **Repository:** `../PlanStan`
 - **Scope:** Add Change arrangement, Add copy, Use another primary copy, and Edit
@@ -1634,7 +1652,49 @@ target and 65 of 145 registered test targets no longer compile.
   and 06 cover advanced rules. Existing staging, conflict, provider, and
   runtime-host checks stay green.
 - **Verification:** record each flow's exact control path and its reopen check.
-- **Next:** RRD-018 and RRD-019.
+- **STOPPED MID-SESSION (2026-09-11), NOT DONE — handoff for a fresh agent.**
+  Full status, confirmed defects, and exact next steps are in
+  `../PlanStan/docs/testing/rrd-017-editing-evidence.md` — read it first,
+  don't re-derive from scratch. Summary: all five editing controls (Change
+  arrangement, Add copy, Make primary, Edit rules, Chain order) are built
+  and wired through the existing `TopologyDraft`/`SyncTopologyWidget`
+  staging surface (`CollectionSettingsViewPanel::applyAll()`/`discardAll()`
+  needed zero changes). Two new staging primitives (primary reassignment,
+  chain order) were added end to end, mirroring the existing
+  `modifyWiringPolicy()` pattern, with unit tests extended in
+  `tests/sync/tst_topologydraft.cpp`/`tst_topologyapplyservice.cpp` (not
+  re-run after the session's final edits — verify first).
+  `tests/integration/tst_rrd017_editing.cpp`: **8/10 passing**. Two
+  failures remain, both diagnosed to varying depth but neither resolved:
+  `addCopy_useExisting_...` (blocked by an unconfirmed backend-resolution
+  gap, `../PlanStan/docs/bugs/collectioncontroller-backendbyid-not-populated-promptly-on-fresh-load.md`
+  — the actual "use existing" adopt flow was never successfully exercised)
+  and `editRules_...` (a seeded mapping fails to round-trip through
+  reopen — not investigated at all yet). Three real, pre-existing defects
+  were found and filed this session, none introduced by RRD-017's own
+  code: the two above plus
+  `../PlanStan/docs/bugs/addlogicalcalendarcopy-preview-channel-false-positive-convergence-violation.md`
+  and, fully root-caused,
+  `../PlanStan/docs/bugs/remotecalendarbackend-createcollection-hits-retired-synchronous-createcalendar.md`
+  (every "add a copy → create new" onto a CalDAV account fails at Apply,
+  for anyone, always — `RemoteCalendarBackend::createCollection()` calls a
+  deliberately-retired synchronous `createCalendar()` instead of the
+  `createCalendarAsync()`/`blockOnAsync` pattern its sibling
+  `KalbSyncTopologyDataSource::createCalendar()` already correctly uses).
+  The regression sweep (`tst_topologydraft`, `tst_topologyapplyservice`,
+  `tst_collectionsettingsviewpanel_applybar`, `tst_integration_template_system`,
+  the wider topology `ctest` sweep) was not re-run after the session's
+  final edits. **Process note:** a background fork agent burned roughly an
+  hour and 500k+ tokens on this task without actually finishing —
+  misleading "completed" notifications repeatedly turned out to mean the
+  fork had silently relaunched itself; the orchestrating session
+  unknowingly raced it on the same `tools/davrig` ports for a period
+  before catching this via `ps aux` and stopping the fork (`TaskStop`).
+  Early failures from that period are noise, not signal — trust only the
+  evidence doc's recorded diagnostics, gathered after the race was
+  confirmed over.
+- **Next:** finish RRD-017 (see evidence doc's "What's left") before
+  RRD-018/RRD-019.
 
 ### RRD-018 — Account discovery states and the four removal verbs
 
