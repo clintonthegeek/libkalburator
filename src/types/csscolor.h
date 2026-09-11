@@ -37,4 +37,31 @@ inline QColor colorFromCssHex(const QString &text)
     return QColor(trimmed);
 }
 
+/**
+ * @brief Serialize a colour as CSS/CalDAV `#RRGGBBAA`, the inverse of
+ *        colorFromCssHex().
+ *
+ * `QColor::name(QColor::HexArgb)` emits Qt's `#AARRGGBB` instead. Pairing that
+ * writer with colorFromCssHex()'s reader rotates every channel one position on
+ * each round trip — which is exactly what happened when the CalDAV fix
+ * (26ac34c) put colorFromCssHex() into `PerCalendarCapabilities::fromJson()`
+ * and left `toJson()` on `HexArgb`. Opaque red went out as `#ffff0000` and came
+ * back transparent yellow. `tst_backendconfiguration_json` caught it; that
+ * target had not compiled since RRD-001, so nothing reported it.
+ *
+ * Use this wherever colorFromCssHex() reads, so the two conventions cannot
+ * drift apart again. A fully opaque colour still emits its alpha explicitly:
+ * the reader treats a 9-character string as CSS, so a 7-character one would
+ * round-trip fine too, but emitting the same width every time keeps stored
+ * values comparable byte for byte.
+ */
+inline QString cssHexFromColor(const QColor &color)
+{
+    if (!color.isValid())
+        return QString();
+    return QStringLiteral("#%1%2")
+        .arg(color.name(QColor::HexRgb).mid(1))
+        .arg(color.alpha(), 2, 16, QLatin1Char('0'));
+}
+
 } // namespace Kalburator

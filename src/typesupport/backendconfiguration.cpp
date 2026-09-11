@@ -48,7 +48,10 @@ QJsonObject PerCalendarCapabilities::toJson() const
         json[QStringLiteral("displayName")] = serverDisplayName;
     }
     if (serverColor.isValid()) {
-        json[QStringLiteral("color")] = serverColor.name(QColor::HexArgb);
+        // CSS #RRGGBBAA, matching fromJson()'s colorFromCssHex() reader.
+        // QColor::HexArgb would emit Qt's #AARRGGBB and rotate every channel
+        // one position on the way back in — see csscolor.h.
+        json[QStringLiteral("color")] = Kalburator::cssHexFromColor(serverColor);
     }
     if (!producerId.isEmpty()) {
         json[QStringLiteral("producerId")] = producerId;

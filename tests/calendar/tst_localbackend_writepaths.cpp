@@ -18,9 +18,9 @@
 #include <KCalendarCore/Event>
 #include <KCalendarCore/MemoryCalendar>
 
-#include "calendarmetadatamanager.h"
-#include "localbackend.h"
-#include "syncbackend.h"
+#include <kalburator/calendar/calendarmetadatamanager.h>
+#include <kalburator/calendar/localbackend.h>
+#include <kalburator/calendar/syncbackend.h>
 
 using namespace Kalburator::Sync;
 
@@ -46,7 +46,7 @@ private slots:
     void startSync_creations_write_files_with_signal_contract();
     void startSync_deletions_remove_files();
     void startSync_empty_stages_completes_immediately();
-    void startSync_null_calendar_completes();
+    void startSync_null_calendar_fails();
     void removeItem_deletes_file();
     void removeItem_missing_file_is_noop();
     void updateCalendar_roundtrips_metadata();
@@ -144,18 +144,30 @@ void TstLocalBackendWritePaths::startSync_empty_stages_completes_immediately()
     QCOMPARE(startedSpy.count(), 0);
 }
 
-void TstLocalBackendWritePaths::startSync_null_calendar_completes()
+// A null calendar is a failed submission, not a completed one. This test used
+// to assert syncCompleted, which is what the backend emitted until ba1fc59
+// ("retain edits after submitted prefix") deliberately changed it: a caller
+// that treats syncCompleted as a durable acknowledgement would discard the
+// staged edits this call never wrote. The test kept the old contract because
+// its target had not compiled since RRD-001.
+//
+// Both signals are terminal, so a caller counting one submission still settles
+// either way — see ADR 0010 decision 3 on why that contract needs to name the
+// submission it answers.
+void TstLocalBackendWritePaths::startSync_null_calendar_fails()
 {
     QTemporaryDir root;
     QVERIFY(root.isValid());
 
     LocalBackend backend(root.path());
     QSignalSpy completedSpy(&backend, &LocalBackend::syncCompleted);
+    QSignalSpy failedSpy(&backend, &LocalBackend::syncFailed);
 
     backend.startSync(QStringLiteral("ghost-coll"), nullptr, {}, {}, {});
 
-    QCOMPARE(completedSpy.count(), 1);
-    QCOMPARE(completedSpy.first().at(0).toString(), QStringLiteral("ghost-coll"));
+    QCOMPARE(completedSpy.count(), 0);
+    QCOMPARE(failedSpy.count(), 1);
+    QCOMPARE(failedSpy.first().at(0).toString(), QStringLiteral("ghost-coll"));
 }
 
 void TstLocalBackendWritePaths::removeItem_deletes_file()
