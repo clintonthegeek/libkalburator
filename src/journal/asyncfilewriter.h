@@ -24,7 +24,11 @@ public:
         QString filePath;
         QByteArray data;           // Pre-serialized data (if available)
         QString identifier;
-        KCalendarCore::Incidence::Ptr incidence;  // For deferred serialization
+        // For deferred serialization. A list, not a single incidence: one
+        // file holds a whole UID family (a recurring master plus each of its
+        // RECURRENCE-ID overrides), which RFC 4791 §4.1 and the vdir format
+        // both require to travel together in one resource.
+        QList<KCalendarCore::Incidence::Ptr> incidences;
         bool needsSerialization = false;
     };
 
@@ -104,6 +108,19 @@ public:
     void queueIncidenceWrite(const QString &filePath,
                               const KCalendarCore::Incidence::Ptr &incidence,
                               const QString &identifier = QString());
+
+    /**
+     * @brief Queue a whole UID family for serialization into ONE file.
+     * All components are written to a single VCALENDAR, which is what a
+     * recurring master and its detached overrides require: they share a UID
+     * and must not be split across resources.
+     * @param filePath Full path to write to
+     * @param incidences The family's components, master first by convention
+     * @param identifier Optional identifier for tracking (e.g., UID)
+     */
+    void queueIncidenceFamilyWrite(const QString &filePath,
+                                   const QList<KCalendarCore::Incidence::Ptr> &incidences,
+                                   const QString &identifier = QString());
 
     /**
      * @brief Signal that no more writes will be queued.

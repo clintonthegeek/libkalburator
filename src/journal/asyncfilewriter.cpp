@@ -93,13 +93,19 @@ void AsyncFileWriterWorker::processQueue()
 
             // Get data to write - either pre-serialized or serialize now
             QByteArray dataToWrite;
-            if (request.needsSerialization && request.incidence) {
-                // Serialize incidence in worker thread (not main thread!)
+            if (request.needsSerialization && !request.incidences.isEmpty()) {
+                // Serialize in worker thread (not main thread!). Every
+                // component of the family goes into ONE VCALENDAR: a master
+                // and its RECURRENCE-ID overrides share a UID and may not be
+                // split across files.
                 KCalendarCore::ICalFormat icalFormat;
                 auto tempCal = QSharedPointer<KCalendarCore::MemoryCalendar>(
                     new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone())
                 );
-                tempCal->addIncidence(request.incidence);
+                for (const auto &inc : request.incidences) {
+                    if (inc)
+                        tempCal->addIncidence(inc);
+                }
                 QString icalData = icalFormat.toString(tempCal);
                 dataToWrite = icalData.toUtf8();
             } else {
@@ -240,7 +246,28 @@ void AsyncFileWriter::queueIncidenceWrite(const QString &filePath,
 
     AsyncFileWriterWorker::WriteRequest request;
     request.filePath = filePath;
-    request.incidence = incidence;
+    request.incidences = { incidence };
+    request.identifier = identifier;
+    request.needsSerialization = true;
+
+    m_worker->enqueue(request);
+}
+
+void AsyncFileWriter::queueIncidenceFamilyWrite(
+    const QString &filePath,
+    const QList<KCalendarCore::Incidence::Ptr> &incidences,
+    const QString &identifier)
+{
+    if (!m_workerThread.isRunning()) {
+        qWarning() << "AsyncFileWriter::queueIncidenceFamilyWrite called but worker not started";
+        return;
+    }
+    if (incidences.isEmpty())
+        return;
+
+    AsyncFileWriterWorker::WriteRequest request;
+    request.filePath = filePath;
+    request.incidences = incidences;
     request.identifier = identifier;
     request.needsSerialization = true;
 

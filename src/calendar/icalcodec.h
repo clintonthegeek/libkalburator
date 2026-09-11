@@ -28,6 +28,22 @@ inline QByteArray icalFromIncidence(const KCalendarCore::Incidence::Ptr &inc)
     return format.toString(tmpCal).toUtf8();
 }
 
+/// Serialize a whole UID family into ONE VCALENDAR. A recurring master and
+/// its RECURRENCE-ID overrides share a UID, and RFC 4791 §4.1 requires them to
+/// live in the same calendar object resource; splitting them across resources
+/// trips CALDAV:no-uid-conflict on any conforming server. See ADR 0008.
+inline QByteArray icalFromIncidences(const QList<KCalendarCore::Incidence::Ptr> &incs)
+{
+    KCalendarCore::Calendar::Ptr tmpCal(
+        new KCalendarCore::MemoryCalendar(QTimeZone::systemTimeZone()));
+    for (const auto &inc : incs) {
+        if (inc)
+            tmpCal->addIncidence(inc);
+    }
+    KCalendarCore::ICalFormat format;
+    return format.toString(tmpCal).toUtf8();
+}
+
 /// Empty on parse failure (or on a VCALENDAR with no incidences). The
 /// returned shared pointers stay valid after the temporary calendar dies.
 inline QList<KCalendarCore::Incidence::Ptr> incidencesFromIcal(const QString &ical)
