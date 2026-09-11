@@ -13,6 +13,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QThread>
+#include <QTimer>
 
 #include <kalburator/plugin/pluginmanager.h>
 #include <kalburator/plugin/stock_plugins.h>
@@ -171,6 +172,11 @@ public:
 private:
     std::function<bool(const QString &, const QString &, int, int)> m_callback;
 };
+
+/// How long applyTopology() will wait for providers to finish connecting
+/// before giving up. Bounded because that wait runs a nested event loop on the
+/// GUI thread; see waitForProviderConnections().
+constexpr int kProviderConnectTimeoutMs = 30000;
 
 class CollectionRuntimeImpl final : public CollectionRuntime
 {
@@ -623,13 +629,19 @@ public:
             auto future = m_providerManager->connectAll();
             QEventLoop loop;
             QFutureWatcher<void> watcher;
-            const auto settled = [this]() {
+            const auto stillConnecting = [this]() {
+                QStringList ids;
                 for (const auto *provider : m_providerManager->providers()) {
                     if (m_providerManager->providerState(provider->id())
                         == Kalburator::Sync::ProviderConnectionState::Connecting)
-                        return false;
+                        ids.append(provider->id().isEmpty()
+                                       ? QStringLiteral("<unnamed %1>").arg(provider->kind())
+                                       : provider->id());
                 }
-                return true;
+                return ids;
+            };
+            const auto settled = [&stillConnecting]() {
+                return stillConnecting().isEmpty();
             };
             QObject::connect(m_providerManager.get(),
                              &Kalburator::Sync::ProviderManager::providerStateChanged,
@@ -644,8 +656,27 @@ public:
                                      loop.quit();
                              });
             watcher.setFuture(future);
-            if (!settled())
+            if (!settled()) {
+                // Bounded, because this loop runs on the GUI thread. A provider
+                // that never leaves Connecting — a connect future that never
+                // resolves, a hung socket, a proxy black hole, a provider that
+                // forgets to emit the typed connectionStateChanged overload —
+                // used to freeze the whole application here forever, with no
+                // timeout, no diagnostic and no way back. Giving up after the
+                // deadline turns an unrecoverable freeze into an ordinary
+                // "provider did not connect" failure, which the caller below
+                // already knows how to report and roll back.
+                QTimer bail;
+                bail.setSingleShot(true);
+                QObject::connect(&bail, &QTimer::timeout, &loop, [&loop, &stillConnecting]() {
+                    qWarning() << "CollectionRuntime: giving up waiting for providers still"
+                                  " connecting after"
+                               << kProviderConnectTimeoutMs << "ms:" << stillConnecting();
+                    loop.quit();
+                });
+                bail.start(kProviderConnectTimeoutMs);
                 loop.exec();
+            }
         };
         auto restoreProviders = [&]() {
             if (!providersStaged)

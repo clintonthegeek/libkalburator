@@ -10,6 +10,7 @@
 #include <QMap>
 #include <QObject>
 #include <QPair>
+#include <QQueue>
 #include <QString>
 #include <QColor>
 #include <KCalendarCore/MemoryCalendar>
@@ -230,13 +231,50 @@ private:
     // Private per-backend fingerprint store (persisted to .kalburator-sync.db)
     std::unique_ptr<FingerprintStore> m_fingerprints;
 
-    // Async file writer for non-blocking writes
+    // Async file writer for non-blocking writes.
+    //
+    // AsyncFileWriter is a ONE-SHOT batch object: start() -> queue* ->
+    // finishWrites() -> allWritesCompleted -> stop(). Its worker's
+    // processQueue() loop breaks out for good once it sees the finishing
+    // latch with an empty queue, and start() is a no-op while the thread is
+    // still alive. So a second startSync() landing on this backend before the
+    // first batch has completed used to (a) merge into the in-flight batch and
+    // produce only ONE allWritesCompleted for two startSync() calls, or worse
+    // (b) enqueue into a queue nobody was draining any more, silently dropping
+    // the writes. StagingController counts one syncCompleted per calendar it
+    // called startSync() for, so (a) hung every sync where two calendars on
+    // this backend had staged edits.
+    //
+    // Batches are therefore serialized here: one in flight, the rest queued,
+    // each getting its own writer cycle and its own syncCompleted.
     AsyncFileWriter *m_asyncWriter = nullptr;
+
+    struct PendingWriteBatch {
+        QString collectionId;
+        QString calendarDirPath;
+        QList<KCalendarCore::Incidence::Ptr> writes;
+    };
+    QQueue<PendingWriteBatch> m_writeBatchQueue;
+    bool m_writeBatchInFlight = false;
     QString m_pendingSyncCollectionId;
+
+    /// Dispatch the next queued write batch, if any and if none is in flight.
+    void startNextWriteBatch();
 
     QString filePathForCalendar(const QString &calendarId) const;
 
     /// <root>/<calendarId>/<uid>.ics (the path every item operation builds).
+    ///
+    /// NB: keyed by bare UID, so a detached exception and its master resolve to
+    /// the same file — see
+    /// docs/bugs/local-backend-exception-overwrites-master-same-filename.md in
+    /// PlanStan. Fixing that here alone is not safe: the incidence-path twins
+    /// (RemoteCalendarBackend::startSync()'s CalDAV item URLs above all) still
+    /// address records by bare UID, and renaming only the local file breaks
+    /// them against each other. The record/blob pipeline already has its
+    /// composite-aware counterpart in
+    /// RemoteCalendarBackend::generateItemUrlForCreate(); the incidence path
+    /// needs the same treatment, in one pass, before this can change.
     QString icsPathFor(const QString &calendarId, const QString &uid) const;
 
     /// First calendar subdirectory owning @p recordId, as the full .ics path;

@@ -491,9 +491,6 @@ void LocalBackend::startSync(const QString &collectionId,
         return;
     }
 
-    // Use async file writer for non-blocking writes
-    ensureAsyncWriterReady();
-
     QDir calDir(m_calendarRootPath + "/" + calId);
     if (!calDir.exists()) {
         if (!calDir.mkpath(".")) {
@@ -503,22 +500,43 @@ void LocalBackend::startSync(const QString &collectionId,
         }
     }
 
-    m_pendingSyncCollectionId = collectionId;
+    // Queue this call's writes as their own batch. AsyncFileWriter cannot host
+    // two overlapping batches (see the header note on m_writeBatchQueue), and
+    // every caller expects exactly one syncCompleted per startSync().
+    m_writeBatchQueue.enqueue({collectionId, calDir.path(), allWrites});
+    startNextWriteBatch();
 
-    emit writeStarted(calId, allWrites.size());
+    // Don't emit syncCompleted here - it will be emitted by onAsyncWritesFinished
+}
 
-    for (const KCalendarCore::Incidence::Ptr &incidence : allWrites) {
+void LocalBackend::startNextWriteBatch()
+{
+    if (m_writeBatchInFlight || m_writeBatchQueue.isEmpty())
+        return;
+
+    const PendingWriteBatch batch = m_writeBatchQueue.dequeue();
+    m_writeBatchInFlight = true;
+    m_pendingSyncCollectionId = batch.collectionId;
+
+    const QDir calDir(batch.calendarDirPath);
+
+    // Use async file writer for non-blocking writes
+    ensureAsyncWriterReady();
+
+    emit writeStarted(calDir.dirName(), batch.writes.size());
+
+    for (const KCalendarCore::Incidence::Ptr &incidence : batch.writes) {
         if (incidence.isNull()) {
             continue;
         }
 
-        QString uid = incidence->uid();
+        const QString uid = incidence->uid();
         if (uid.isEmpty()) {
             qWarning() << "LocalBackend::startSync: Incidence with empty UID skipped";
             continue;
         }
 
-        QString fileName = calDir.filePath(uid + ".ics");
+        const QString fileName = calDir.filePath(uid + QStringLiteral(".ics"));
 
         // Queue the incidence for serialization AND writing in worker thread
         // (Serialization now happens off the main thread too!)
@@ -527,8 +545,6 @@ void LocalBackend::startSync(const QString &collectionId,
 
     // Signal that no more writes will be queued
     m_asyncWriter->finishWrites();
-
-    // Don't emit syncCompleted here - it will be emitted by onAsyncWritesFinished
 }
 
 void LocalBackend::ensureAsyncWriterReady()
@@ -563,12 +579,20 @@ void LocalBackend::onAsyncWritesFinished(int successCount, int failCount)
         m_asyncWriter->stop();
     }
 
+    const QString collectionId = m_pendingSyncCollectionId;
+    m_pendingSyncCollectionId.clear();
+    m_writeBatchInFlight = false;
+
     if (failCount > 0)
-        emit syncFailed(m_pendingSyncCollectionId,
+        emit syncFailed(collectionId,
                         QStringLiteral("%1 local write(s) failed").arg(failCount));
     else
-        emit syncCompleted(m_pendingSyncCollectionId);
-    m_pendingSyncCollectionId.clear();
+        emit syncCompleted(collectionId);
+
+    // Any startSync() that arrived while this batch was in flight is waiting
+    // its turn. Dispatch it only now that the writer is idle and this batch's
+    // own terminal signal has been delivered.
+    startNextWriteBatch();
 }
 
 void LocalBackend::onAsyncWriteProgress(int completed, int total)
@@ -585,7 +609,6 @@ QString LocalBackend::icsPathFor(const QString &calendarId, const QString &uid) 
 {
     return QDir(filePathForCalendar(calendarId)).filePath(uid + QStringLiteral(".ics"));
 }
-
 std::optional<QString> LocalBackend::recordPathFor(const QString &recordId) const
 {
     if (recordId.isEmpty() || m_calendarRootPath.isEmpty()) return std::nullopt;
