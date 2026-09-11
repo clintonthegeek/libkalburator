@@ -1,10 +1,16 @@
 # ADR 0008: Recurrence override identity and family assembly
 
-- **Status:** Accepted
+- **Status:** Accepted; the open assembly question is closed by
+  [ADR 0009](0009-calendar-record-granularity-and-domain-write-units.md)
 - **Date:** 2026-09-11
 - **Supersedes:** the CalDAV and LocalBackend clauses of the W1 detached-exceptions
   contract (`docs/archive/pre-consolidation-2026-09-03/docs/campaign/vtodo-parity/`,
   2026-08-26). The composite-identity clauses of W1 stand unchanged.
+- **Refined by:** [ADR 0009](0009-calendar-record-granularity-and-domain-write-units.md),
+  which chooses among the three candidates left open below and corrects the
+  premise they were drawn from. Read 0009 before acting on this section.
+  [ADR 0010](0010-one-write-path-for-calendar-edits.md) governs the staging
+  flush named in the Context section.
 
 ## Context
 
@@ -106,7 +112,7 @@ more than the attempt:
 That reframes decision 1's "push assembly down into the backend". Assembly is
 still the right idea, but the assembly point has to be somewhere the family is
 still whole, or canon has to carry enough for the writer to rebuild it. Three
-candidates, none yet chosen:
+candidates were listed:
 
 1. Give the writer the family by having the engine group a batch by UID before
    it hands it over, so the backend receives whole families rather than
@@ -117,12 +123,26 @@ candidates, none yet chosen:
 3. Carry the family in canon, which contradicts "a canon object is one
    incidence" and is listed only for completeness.
 
+**Resolved 2026-09-11 by [ADR 0009](0009-calendar-record-granularity-and-domain-write-units.md):**
+candidate 1, with the assembly performed at the apply boundary from the
+destination state `classifyForWriter()` already loads, and the grouping
+declared by the domain rather than inferred by the engine. Candidate 2 is
+retained only as the `If-Match` concurrency backstop. Candidate 3 is rejected.
+
+ADR 0009 also corrects the premise above. The blockquote says the family is
+taken apart upstream of the CalDAV writer; in fact the read side never
+separated it. `RemoteCalendarBackend` attaches the *whole resource's* bytes to
+*every* per-component record, so a master and its override differ only in id
+and share a content hash — which is why decision 3's per-override conflict
+granularity is unreachable today, not merely unimplemented. A write-side-only
+fix cannot work.
+
 A second finding from the same attempt: the local and remote record layers
 disagree on granularity. `RemoteCalendarBackend` emits one record per
 component; `LocalBackend` emits one per file, per W1's deliberate exemption.
 Compounding the local side to match was tried and made things worse on its own,
 because the local record WRITE path still names files by raw record id. Both
-sides must change together, and only once the assembly point above is settled.
+sides must change together — ADR 0009 decision 1 specifies how.
 
 Until then `tst_rrd014_mutations::recurrenceIdentitySurvivesEveryMutation()`
 asserts the local half and carries the remote half as a `QEXPECT_FAIL`, so the
@@ -147,6 +167,10 @@ gap is visible in every run and trips loudly when it starts working.
   `AppController::seedBuiltinContributions()`, so they are a design constraint
   rather than a live one. There is no commitment to exposing them, and they
   should not be wired until family-ordered apply exists.
-- The event-side `RANGE=THISANDFUTURE` emitter in `eventcanonfields.cpp` must
+- ~~The event-side `RANGE=THISANDFUTURE` emitter in `eventcanonfields.cpp` must
   be changed to the unconditional-false form already applied on the todo side,
-  and pinned.
+  and pinned.~~ **Struck 2026-09-11: already done.** The event side has called
+  `event->setThisAndFuture(false)` unconditionally since IP.7a/O82
+  (`src/calendar/eventcanonfields.cpp`, the `recurrenceId / recurrenceRange`
+  block), with the same rationale comment as the todo side. Listing it as
+  outstanding invites someone to redo it.
