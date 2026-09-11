@@ -1,6 +1,19 @@
 # Task queue
 
-**Last updated:** 2026-09-10 (`RRD-015` DONE — the capability matrix.
+**Last updated:** 2026-09-11 (`RRD-016` DONE — the calendars/copies/rules
+page as a read-only projection, the campaign's first UI feature build.
+`CalendarsAndSyncPage` (`../PlanStan/src/views/calendarsandsyncpage.h`/`.cpp`)
+is a new first page in `CollectionSettingsViewPanel`'s `KPageWidget`,
+demoting the sync topology graph to a "Topology" page beside it; both
+observe the same `ISyncTopologyDataSource`. Pinned by
+`tst_rrd016_calendars_and_sync_page.cpp` (env-gated, `PLANSTAN_DAVRIG=1`,
+8/8 passing, stable across two runs; evidence at
+`../PlanStan/docs/testing/rrd-016-calendars-and-sync-page-evidence.md`),
+driven by scenario 01 through the exact production seam the real app uses.
+No defects found or filed this task — a pure-projection build with no
+prior behavior to characterize. `RRD-017` is `READY` next.)
+
+**Prior entry (2026-09-10): `RRD-015` DONE — the capability matrix.
 `tools/davrig` gained real, server-enforced `from_file` Radicale rights
 support (read-only and denied demo calendars, by slug convention).
 `tst_rrd015_capability_matrix.cpp` 6/6 passing, ~12s; published at
@@ -87,8 +100,8 @@ below (§2.1, §3) refers to that specification.
 | 13 | RRD-013 | DONE 2026-09-10 | RRD-009 | Invalid corpus rejected with no side effect, behind a safe diagnostic open |
 | 14 | RRD-014 | DONE 2026-09-10 | RRD-010, RRD-011, RRD-012 | Mutations, recurrence identity, and clone-only destructive operations |
 | 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
-| 16 | RRD-016 | READY | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
-| 17 | RRD-017 | QUEUED | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
+| 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
+| 17 | RRD-017 | READY | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | QUEUED | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
@@ -1518,7 +1531,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-016 — Calendars, copies, and rules page as a read-only projection
 
-- **State:** READY
+- **State:** DONE 2026-09-11
 - **Depends on:** RRD-006, RRD-009
 - **Repository:** `../PlanStan`
 - **Scope:** Build the page as a new first page in the existing
@@ -1535,11 +1548,75 @@ target and 65 of 145 registered test targets no longer compile.
   reachable and readable with the keyboard alone. No editing path exists yet.
 - **Verification:** the current bound-port labels take the logical display name
   and can conceal a different remote name. Record that the new table does not.
+- **Result:** `CalendarsAndSyncPage` (`src/views/calendarsandsyncpage.h`/`.cpp`)
+  is a new, pure read-only `QWidget`: a searchable `QTreeWidget` calendar list
+  (Name, Copies, Arrangement, Last result) and, on selection, a `QTableWidget`
+  copy table (Copy, Calendar on that system, Use in PlanStan, Permission,
+  Sync) and rule table (From, Direction, To, Conflict handling, Loss
+  handling, Enabled), plus an arrangement summary line. Reads exclusively
+  from `ISyncTopologyDataSource` (the same interface the graph already uses)
+  plus `CollectionController::runtimeLastSyncTimes()` for "last result" —
+  stages and mutates nothing; every list/table is `NoEditTriggers`, no
+  context menus, no drag handles. `CollectionSettingsViewPanel::setupPages()`
+  builds it first (default page, `pageId` `"calendars"`), demoting the graph
+  to second (relabeled "Topology", `pageId` unchanged so `activatePage()`
+  callers are unaffected); both pages observe the same
+  `KalbSyncTopologyDataSource` instance and the new page refreshes on page
+  activation and on the graph's `dirtyChanged`, so a staged edit or an
+  Apply/Discard on the Topology page is reflected here without a second copy
+  of pending state.
+
+  The remote-vs-logical name gap named in Verification above is fixed for
+  this new page (not for the graph's existing bound-port labels, which are
+  unchanged and out of this task's scope): the copy table's "Calendar on
+  that system" column independently resolves each binding's real physical
+  name via `discoveredCollections(backendId)` matched by `calendarId`
+  (`endpointFor()`), which no existing bound-port code path did before this
+  task — confirmed by source search during research
+  (`synctopologywidget.cpp:659`'s `portsForBackend` lambda uses the logical
+  `lc.displayName` for every bound port, exactly the gap the acceptance
+  text warns about).
+
+  Pinned by `tests/integration/tst_rrd016_calendars_and_sync_page.cpp`
+  (env-gated, `PLANSTAN_DAVRIG=1`, 8/8 passing, stable across two
+  consecutive runs, ~107s each; full evidence in
+  `../PlanStan/docs/testing/rrd-016-calendars-and-sync-page-evidence.md`),
+  driven by a freshly generated RRD-009 scenario 01 bundle loaded through
+  the exact production seam the real app uses
+  (`SyncTestHarness` → `CollectionController::loadCollectionFromFile()` →
+  `KalbSyncTopologyDataSource`), inspected via `objectName()` lookups on the
+  page's own live widget tree — never synthetic data. Covers: every
+  calendar row's copy count and the status line's `N calendars · M copies ·
+  K sync rules` split (§2.3, membership vs. channel tallies never
+  conflated) against the real parsed config; Family's (Hub, 3 bindings)
+  copy/rule tables populated with every cell non-empty and the rule count
+  independently recomputed and matched; Notes (local-only, 1 binding) shows
+  1 copy and 0 rules (no self-referential rule fabricated); search filters
+  and restores the list; keyboard focus policy and actual arrow-key
+  navigation on the calendar list (not just theoretical focusability); and
+  every list/table's edit-trigger state confirms no editing path exists.
+
+  **No defects found or filed this task** — a pure-projection build with no
+  prior runtime behavior to characterize. One production change was needed
+  beyond the new page itself:
+  `tests/integration/tst_template_system.cpp`'s default-page assertion
+  (`currentPageId()`) updated from `"topology"` to `"calendars"`, since the
+  acceptance text itself requires the new page become the default
+  ("new first page").
+
+  "Last result" is timestamp-only (`runtimeLastSyncTimes()`), not a
+  success/failure indicator — confirmed during research that no durable
+  per-mapping run-result store exists anywhere in the engine today (only a
+  one-shot `QFuture<RunResult>` per run, never persisted); building one is
+  RRD-019's scope ("run feedback"), not this task's. "Loss handling" shows
+  the mapping's coarse `WhenLossWouldOccur` policy only, matching RRD-015's
+  already-filed finding that `BackendCapabilities::describeLoss()` has zero
+  callers anywhere in the app.
 - **Next:** RRD-017.
 
 ### RRD-017 — Arrangement, copy, primary, and rule editing
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-016
 - **Repository:** `../PlanStan`
 - **Scope:** Add Change arrangement, Add copy, Use another primary copy, and Edit
