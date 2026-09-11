@@ -1,6 +1,7 @@
 #include <kalburator/calendar/localbackend.h>
 #include <kalburator/calendar/calendarmetadatamanager.h>
 #include <kalburator/calendar/icalcodec.h>
+#include <kalburator/calendar/uidfamily.h>
 #include <kalburator/journal/asyncfilewriter.h>
 #include <kalburator/calendar/backendcapabilities.h>
 #include <kalburator/types/logicalcalendar.h>
@@ -156,54 +157,29 @@ private:
 // one stages only the override. Writing the staged components alone would
 // destroy whatever else the file holds, so every write reads the current file
 // and merges into it.
+//
+// The assembly itself lives in calendar/uidfamily.h, shared with every other
+// transport that stores a family as one unit (ADR 0010 decision 2). Only the
+// file reading below is local; the slot keying, merge, ordering and removal
+// are not.
 
 namespace {
 
-/// Key a component within its family: empty for the master, the UTC ISO
-/// recurrence-id for an override. Mirrors composeRecordIdentity()'s
-/// normalization so one instant keys one component whatever zone it is
-/// spelled in.
-QString familySlotKey(const KCalendarCore::Incidence::Ptr &inc)
-{
-    if (!inc || !inc->recurrenceId().isValid())
-        return QString();
-    return inc->recurrenceId().toUTC().toString(Qt::ISODate);
-}
+namespace Family = Kalburator::Calendar::UidFamily;
 
 /// Read the family currently on disk, keyed by slot. Missing or unparseable
-/// files yield an empty family rather than an error: the merge below then
-/// simply writes what it was given.
-QMap<QString, KCalendarCore::Incidence::Ptr> readFamily(const QString &filePath)
+/// files yield an empty family rather than an error: the merge then simply
+/// writes what it was given.
+Family::Family readFamily(const QString &filePath)
 {
-    QMap<QString, KCalendarCore::Incidence::Ptr> family;
     QFile file(filePath);
     // No QIODevice::Text: it strips '\r' and would make these bytes diverge
     // from every other reader of the same file (see fetchItems).
     if (!file.open(QIODevice::ReadOnly))
-        return family;
+        return {};
     const QByteArray raw = file.readAll();
     file.close();
-    for (const auto &inc : Kalburator::Sync::incidencesFromIcal(raw)) {
-        if (inc)
-            family.insert(familySlotKey(inc), inc);
-    }
-    return family;
-}
-
-/// Master first, then overrides in recurrence-id order. Deterministic output
-/// keeps the file's bytes stable across runs, which the fingerprint-based
-/// change detection depends on.
-QList<KCalendarCore::Incidence::Ptr> orderedFamily(
-    const QMap<QString, KCalendarCore::Incidence::Ptr> &family)
-{
-    QList<KCalendarCore::Incidence::Ptr> out;
-    if (auto master = family.value(QString()))
-        out.append(master);
-    for (auto it = family.cbegin(); it != family.cend(); ++it) {
-        if (!it.key().isEmpty() && it.value())
-            out.append(it.value());
-    }
-    return out;
+    return Family::parse(raw);
 }
 
 }  // namespace
@@ -399,7 +375,7 @@ void LocalBackend::removeItem(const QString &calId, const QString &itemUid)
 
     auto family = readFamily(fileName);
     if (family.size() > 1 && family.contains(slot)) {
-        family.remove(slot);
+        family = Family::without(family, slot);
         // Written synchronously, matching this path's existing contract
         // ("apply deletions synchronously" in startSync). Queuing it on the
         // async writer instead would leave the rewrite unflushed whenever the
@@ -409,7 +385,7 @@ void LocalBackend::removeItem(const QString &calId, const QString &itemUid)
             qWarning() << "LocalBackend::removeItem: cannot open for rewrite" << fileName;
             return;
         }
-        if (out.write(Kalburator::Sync::icalFromIncidences(orderedFamily(family))) == -1
+        if (out.write(Family::serialize(family)) == -1
             || !out.commit()) {
             qWarning() << "LocalBackend::removeItem: rewrite failed for" << fileName;
             return;
@@ -625,37 +601,25 @@ void LocalBackend::startNextWriteBatch()
 
     emit writeStarted(calDir.dirName(), batch.writes.size());
 
+    for (const auto &incidence : batch.writes) {
+        if (incidence && incidence->uid().isEmpty())
+            qWarning() << "LocalBackend::startSync: Incidence with empty UID skipped";
+    }
+
     // Group this batch's components by UID, preserving order within a UID so a
     // later staged copy of the same slot wins.
     QList<QString> uidOrder;
-    QHash<QString, QList<KCalendarCore::Incidence::Ptr>> byUid;
-    for (const KCalendarCore::Incidence::Ptr &incidence : batch.writes) {
-        if (incidence.isNull()) {
-            continue;
-        }
-
-        const QString uid = incidence->uid();
-        if (uid.isEmpty()) {
-            qWarning() << "LocalBackend::startSync: Incidence with empty UID skipped";
-            continue;
-        }
-
-        if (!byUid.contains(uid))
-            uidOrder.append(uid);
-        byUid[uid].append(incidence);
-    }
+    const auto byUid = Family::groupByUid(batch.writes, &uidOrder);
 
     // One file per UID family, merged over whatever the file already holds.
-    for (const QString &uid : uidOrder) {
+    for (const QString &uid : std::as_const(uidOrder)) {
         const QString fileName = calDir.filePath(uid + QStringLiteral(".ics"));
 
-        auto family = readFamily(fileName);
-        for (const auto &incidence : std::as_const(byUid[uid]))
-            family.insert(familySlotKey(incidence), incidence);
+        const auto family = Family::merge(readFamily(fileName), byUid.value(uid));
 
         // Queue the family for serialization AND writing in worker thread
         // (Serialization now happens off the main thread too!)
-        m_asyncWriter->queueIncidenceFamilyWrite(fileName, orderedFamily(family), uid);
+        m_asyncWriter->queueIncidenceFamilyWrite(fileName, Family::ordered(family), uid);
     }
 
     // Signal that no more writes will be queued

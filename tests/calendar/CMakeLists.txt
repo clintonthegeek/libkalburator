@@ -85,6 +85,10 @@ set_tests_properties(tst_backend_op_queue PROPERTIES
 kalburator_add_calendar_test(tst_localbackend_writepaths)
 kalburator_add_calendar_test(tst_backend_executor)
 
+# ADR 0010 decision 2 — the shared UID-family assembly both write paths use.
+# Pure helper over bytes and incidences: no files, no network, no event loop.
+kalburator_add_calendar_test(tst_uidfamily)
+
 # D1 T1.4 — backend thread-relocation proof: RemoteCalendarBackend and
 # LocalBackend must round-trip fetch/push/delete/startSync/fingerprint/ctag
 # correctly after moveToThread(), and a full SyncEngine run must complete

@@ -271,6 +271,7 @@ set(KALBURATOR_CALENDAR_HEADERS
     src/calendar/syncbackend.h
     src/calendar/syncconflictstore.h
     src/calendar/syncoperation.h
+    src/calendar/uidfamily.h
     # Phase G.2 — calendar plugin
     src/calendar/icalproperties.h
     src/calendar/calendarcanonproperties.h
