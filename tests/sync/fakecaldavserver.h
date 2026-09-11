@@ -66,6 +66,29 @@ public:
     void setReturn401(bool on)   { m_return401 = on; }
     void setReturn500(bool on)   { m_return500 = on; }
 
+    /// ADR 0009 decision 5: how this fake answers a PUT that would create a
+    /// SECOND resource carrying a UID already present in the same collection.
+    /// RFC 4791 §4.1 requires components sharing a UID to live in the same
+    /// calendar object resource, and §5.3.2.1's CALDAV:no-uid-conflict
+    /// forbids the second resource. Real servers all refuse; they differ only
+    /// in how.
+    ///
+    ///   Radicale — 409 Conflict carrying <C:no-uid-conflict>. The default,
+    ///              because tools/davrig (and therefore every live gate) is
+    ///              Radicale.
+    ///   Sabre    — 400 Bad Request with Sabre's own uniqueness message.
+    ///              Nextcloud and Baikal answer this way.
+    ///
+    /// There is deliberately no "permit" setting. This fake used to exempt a
+    /// payload carrying RECURRENCE-ID from the check, encoding "several
+    /// resources may share one UID" as a premise; that premise is false on
+    /// every conforming server and it certified a design real servers reject
+    /// (ADR 0008's backed-out distinct-href minting). A test that needs the
+    /// old shape must seed it directly via seedItemAt(), which models an
+    /// already-inconsistent store rather than a write we claim is legal.
+    enum class UidConflictStyle { Radicale, Sabre };
+    void setUidConflictStyle(UidConflictStyle s) { m_uidConflictStyle = s; }
+
     /// When true, every request is read off the socket and then dropped —
     /// no response is written and the socket is kept open (closing it would
     /// produce an immediate connection-reset error, not a stall). Simulates
@@ -332,6 +355,7 @@ private:
 
     bool m_return401 = false;
     bool m_return500 = false;
+    UidConflictStyle m_uidConflictStyle = UidConflictStyle::Radicale;
     bool m_dropRequests = false;
     bool m_serializeResponses = false;   // O45
     bool m_serialBusy = false;           // O45

@@ -20,13 +20,13 @@
 
 #include <KCalendarCore/Event>
 
-#include "remotecalendarbackend.h"
-#include "iblobbackend.h"
-#include "backendrecord.h"
-#include "syncoperation.h"
-#include "recordidentity.h"
-#include "writeoperation.h"
-#include "writerbatch.h"
+#include <kalburator/calendar/remotecalendarbackend.h>
+#include <kalburator/blob/iblobbackend.h>
+#include <kalburator/types/backendrecord.h>
+#include <kalburator/calendar/syncoperation.h>
+#include <kalburator/sync/recordidentity.h>
+#include <kalburator/sync/writeoperation.h>
+#include <kalburator/sync/writerbatch.h>
 
 #include "fakecaldavserver.h"
 
@@ -62,9 +62,10 @@ private slots:
     void detachedException_refetchAfterWrite_keepsIdsStable();
     void detachedException_loadRecord_bareUidServesMaster();
 
-    // VP.b (W2) — exception-create must not guess the master's "<uid>.ics".
-    void detachedException_applyRecordsCreate_mintsDistinctHref();
-    void detachedException_dualWrite_masterEditAndExceptionCreate_twoHrefs();
+    // ADR 0009 — a conforming server refuses a second resource per UID; the
+    // whole-family shape it requires instead is carried as QEXPECT_FAIL.
+    void detachedException_applyRecordsCreate_refusedByConformingServer();
+    void detachedException_dualWrite_masterEditAndExceptionCreate_refusedByConformingServer();
 
     // W1 matrix — reabsorb + master-delete backend semantics.
     void detachedException_reabsorb_surfacesMasterOnly();
@@ -1169,13 +1170,20 @@ void TestRemoteCalendarBackendBlobView::detachedException_loadRecord_bareUidServ
              "loadRecord(composite id) must serve the exception's own bytes");
 }
 
-// VP.b (W2): an EXCEPTION record created through applyRecords (the engine's
-// steady-state write route) must NOT guess the master's "<uid>.ics" href —
-// that href already belongs to a client-created master, and a PUT to it would
-// clobber the master. The create URL guess must mint a distinct composite
-// href ("<uid>-<sanitizedUTCstamp>.ics"), the server must store it, and a
-// subsequent fetch must surface the exception with its own record.
-void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsCreate_mintsDistinctHref()
+// ADR 0008 / ADR 0009: this test used to pin VP.b (W2)'s distinct-href design
+// — an exception-create minting "<uid>-<sanitizedUTCstamp>.ics" so its PUT
+// could not clobber the master's "<uid>.ics". It passed only because
+// FakeCalDavServer exempted a RECURRENCE-ID payload from its uid-uniqueness
+// check, encoding "several resources may share one UID" as a premise. RFC 4791
+// §4.1 says the opposite, and §5.3.2.1's CALDAV:no-uid-conflict forbids the
+// second resource; Radicale, Sabre, Nextcloud and Baikal all refuse it.
+//
+// The fake now enforces that (ADR 0009 decision 5), so this pins the truth:
+// the client's distinct-href create is REFUSED, and nothing lands. The shape
+// ADR 0009 requires instead — one resource carrying the whole UID family, read
+// back as two records each holding its OWN component's bytes — is carried as a
+// QEXPECT_FAIL so it trips loudly the moment family assembly lands.
+void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsCreate_refusedByConformingServer()
 {
     const QString uid = QStringLiteral("series-6");
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
@@ -1214,30 +1222,36 @@ void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsCreate_min
     WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
     QVERIFY(op != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
-    QCOMPARE(op->state(), SyncOperation::Succeeded);
-    QVERIFY2(op->succeededUids().contains(excRecordId),
-             "the exception record id must be reported as succeeded");
 
-    // The PUT must land at a DISTINCT href, not the master's "<uid>.ics".
-    // seriesExceptionRecurrenceId()'s UTC-ISO "2026-06-02T09:00:00Z"
-    // sanitizes to "20260602T090000Z".
+    // Current truth: generateItemUrlForCreate() still mints the distinct
+    // composite href, the server answers 409 CALDAV:no-uid-conflict, and the
+    // record is reported failed. seriesExceptionRecurrenceId()'s UTC-ISO
+    // "2026-06-02T09:00:00Z" sanitizes to "20260602T090000Z".
     const QString expectedExcPath =
         calHref + uid + QStringLiteral("-20260602T090000Z.ics");
     const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
     QCOMPARE(putPaths.size(), 1);
     QCOMPARE(putPaths.first(), expectedExcPath);
-    QVERIFY2(putPaths.first() != calHref + uid + QStringLiteral(".ics"),
-             "the exception-create PUT must not target the master's <uid>.ics href");
+    QCOMPARE(op->state(), SyncOperation::Failed);
+    QVERIFY2(op->failedUids().contains(excRecordId),
+             "the refused exception create must be reported as failed");
 
-    // Server stores it alongside the master (no clobber).
+    // The master is untouched — a refusal is not a clobber.
     QVERIFY2(server.hasEvent(calHref, uid), "the series must exist on the server");
-    QCOMPARE(server.storedEvents(calHref).size(), 2);
+    QCOMPARE(server.storedEvents(calHref).size(), 1);
 
-    // Refetch surfaces TWO records — the exception under its own composite id.
+    // ADR 0009 target state. When family assembly lands, the override joins
+    // its master in ONE resource and the read side splits that resource into
+    // two records, each carrying only its own component. Both assertions trip
+    // as unexpected passes the moment that is true.
+    QEXPECT_FAIL("", "ADR 0009: CalDAV family assembly not implemented - the "
+                     "override never reaches the server", Continue);
+    QVERIFY2(server.storedEvents(calHref).value(0).contains("RECURRENCE-ID"),
+             "the family's single resource must carry the override component");
+
     auto *blob = static_cast<IBlobBackend *>(&backend);
     const QList<BackendRecord> records =
         blob->loadRecords(QStringLiteral("personal"));
-    QCOMPARE(records.size(), 2);
     const BackendRecord *masterRec = nullptr;
     const BackendRecord *excRec = nullptr;
     for (const BackendRecord &r : records) {
@@ -1245,17 +1259,26 @@ void TestRemoteCalendarBackendBlobView::detachedException_applyRecordsCreate_min
         else if (r.id == excRecordId) excRec = &r;
     }
     QVERIFY2(masterRec, "the master record must keep its bare-uid id");
-    QVERIFY2(excRec, "the exception record must surface under its composite id");
-    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-6"),
-             "the exception record must carry the exception resource's bytes");
+    QEXPECT_FAIL("", "ADR 0009: no override on the server, so no second record",
+                 Continue);
+    QVERIFY2(excRec && excRec->data.contains("SUMMARY:Series override series-6"),
+             "the exception record must surface under its composite id, carrying "
+             "its own component's bytes");
 }
 
-// VP.b (W2) companion: ONE WriterBatch carrying a master-edit (EXDATE added)
-// AND an exception-create must emit TWO PUTs to TWO DISTINCT hrefs — the
-// master's own "<uid>.ics" and the exception's composite-aware href — both
-// succeeding with no clobber. Refetch shows the master updated and the
-// exception present as its own record.
-void TestRemoteCalendarBackendBlobView::detachedException_dualWrite_masterEditAndExceptionCreate_twoHrefs()
+// Companion to the case above, and the one that matters most: ONE WriterBatch
+// carrying both halves of an ordinary "move just this occurrence" edit — the
+// master's new EXDATE and the override's creation. This is exactly what
+// CreateExceptionCommand stages, so it is the shape a real user produces.
+//
+// Under ADR 0009 the batch is one write unit and must reach the server as ONE
+// resource holding both components. Today the two halves are dispatched as two
+// independent PUTs to two hrefs, the second is refused 409, and the batch is
+// left HALF APPLIED: the master keeps its EXDATE excluding an occurrence whose
+// replacement never arrived, so that occurrence simply vanishes from the
+// series. The partial-application assertions below are the current truth; the
+// whole-family ones are QEXPECT_FAIL until assembly lands.
+void TestRemoteCalendarBackendBlobView::detachedException_dualWrite_masterEditAndExceptionCreate_refusedByConformingServer()
 {
     const QString uid = QStringLiteral("series-7");
     const QString calHref = QStringLiteral("/calendars/testuser/personal/");
@@ -1304,50 +1327,73 @@ void TestRemoteCalendarBackendBlobView::detachedException_dualWrite_masterEditAn
     WriteOperation *op = backend.applyRecords(QStringLiteral("personal"), batch);
     QVERIFY(op != nullptr);
     QTRY_VERIFY_WITH_TIMEOUT(op->isFinished(), 8000);
-    QCOMPARE(op->state(), SyncOperation::Succeeded);
 
-    // Two PUTs, two DISTINCT hrefs: the create's composite-aware href and the
-    // master's own "<uid>.ics". (Dispatch order between the concurrent writes
-    // is not guaranteed — assert the set, not the sequence.)
+    // Current truth: two independent PUTs to two hrefs. (Dispatch order
+    // between the concurrent writes is not guaranteed — assert the set, not
+    // the sequence.)
     const QStringList putPaths = server.requestPaths(QByteArrayLiteral("PUT"));
     QCOMPARE(putPaths.size(), 2);
     const QString masterPath = calHref + uid + QStringLiteral(".ics");
     const QString excPath =
         calHref + uid + QStringLiteral("-20260602T090000Z.ics");
     QVERIFY2(putPaths.contains(excPath),
-             "exception-create must PUT to its composite-aware href");
+             "exception-create still PUTs to its composite-aware href");
     QVERIFY2(putPaths.contains(masterPath),
-             "master-edit must PUT to the master's own href");
-    QVERIFY2(putPaths.first() != putPaths.last(),
-             "master-edit and exception-create must write to DISTINCT hrefs");
+             "master-edit PUTs to the master's own href");
 
-    // Server state: master edited in place, exception stored — no clobber.
-    QCOMPARE(server.storedEvents(calHref).size(), 2);
+    // The master's edit lands; the override's create is refused. One resource,
+    // and the batch is half applied.
+    QCOMPARE(server.storedEvents(calHref).size(), 1);
+    QVERIFY2(op->failedUids().contains(excRecordId),
+             "the refused override create must be reported as failed");
+    QVERIFY2(op->succeededUids().contains(uid),
+             "the master edit landed - this batch is genuinely half applied");
+
+    // And the op still reports Succeeded. applyRecords()' settleIfDone() fails
+    // an op only when NOTHING succeeded, so any batch with at least one
+    // success settles Succeeded however many records were refused. Both
+    // consumers today (SyncEngineWorker::applyBatch and
+    // DefaultBlobWriter::apply) separately re-check failedUids() and so are
+    // not fooled, but the state itself is wrong and the compensation is
+    // duplicated rather than shared. See
+    // ../PlanStan/docs/bugs/writeoperation-succeeds-when-a-batch-half-failed.md.
+    QCOMPARE(op->state(), SyncOperation::Succeeded);
+    QVERIFY2(!op->failedUids().isEmpty(),
+             "the only honest signal that this batch did not fully apply");
+
     bool masterHasExdate = false;
-    bool exceptionStored = false;
     for (const QByteArray &data : server.storedEvents(calHref)) {
         if (data.contains("EXDATE:20260601T120000Z")) masterHasExdate = true;
-        if (data.contains("SUMMARY:Series override series-7 (moved)")) exceptionStored = true;
     }
-    QVERIFY2(masterHasExdate, "the master's bytes must reflect the EXDATE edit");
-    QVERIFY2(exceptionStored, "the exception resource must be stored");
+    QVERIFY2(masterHasExdate,
+             "the master now excludes an occurrence whose replacement never "
+             "arrived - the occurrence has vanished from the series");
 
-    // Refetch: master updated + exception present as its own record.
+    // ADR 0009 target state: one resource, both components, and a refetch that
+    // splits it back into two records carrying their own bytes.
+    QEXPECT_FAIL("", "ADR 0009: the batch is not written as one family resource",
+                 Continue);
+    QVERIFY2(server.storedEvents(calHref).value(0).contains(
+                 "SUMMARY:Series override series-7 (moved)"),
+             "the family's single resource must carry both components");
+
     auto *blob = static_cast<IBlobBackend *>(&backend);
     const QList<BackendRecord> records =
         blob->loadRecords(QStringLiteral("personal"));
-    QCOMPARE(records.size(), 2);
     const BackendRecord *masterRec = nullptr;
     const BackendRecord *excRec = nullptr;
     for (const BackendRecord &r : records) {
         if (r.id == uid)         masterRec = &r;
         else if (r.id == excRecordId) excRec = &r;
     }
-    QVERIFY2(masterRec && excRec, "refetch must surface master + exception records");
+    QVERIFY2(masterRec, "refetch must surface the master record");
     QVERIFY2(masterRec->data.contains("EXDATE:20260601T120000Z"),
              "refetched master must carry the EXDATE edit");
-    QVERIFY2(excRec->data.contains("SUMMARY:Series override series-7 (moved)"),
-             "refetched exception must carry its own bytes");
+    QEXPECT_FAIL("", "ADR 0009: no override on the server, so no second record",
+                 Continue);
+    QVERIFY2(excRec && excRec->data.contains("SUMMARY:Series override series-7 (moved)"),
+             "refetched override must surface as its own record carrying its "
+             "own component's bytes");
 }
 
 // W1 matrix cell (caldav × reabsorb): a server-side change that DROPS the

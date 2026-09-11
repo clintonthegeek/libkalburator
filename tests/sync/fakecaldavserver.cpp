@@ -669,14 +669,19 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
         return;
     }
 
-    // O54/VP.c-step-1b: resolve which UID THIS RESOURCE carries. The store is
-    // keyed by file name, and several resources may share one UID (a master
-    // plus its detached exceptions) — the resource's own href is what
-    // distinguishes them. A PUT to an item whose server-assigned filename
-    // differs from its UID targets that aliased href; a PUT creating a NEW
-    // resource whose UID already lives at a DIFFERENT filename is the exact
-    // mistake O54 found — SabreDAV answers it with 400 ("Calendar object
-    // with uid already exists in this calendar collection"), not 412.
+    // O54: resolve which UID THIS RESOURCE carries. The store is keyed by
+    // file name, so a PUT to an item whose server-assigned filename differs
+    // from its UID targets that aliased href.
+    //
+    // ADR 0009 decision 5: a PUT creating a NEW resource whose UID already
+    // lives at a DIFFERENT filename in this collection is refused,
+    // unconditionally. RFC 4791 §4.1 puts every component sharing a UID in
+    // ONE calendar object resource and §5.3.2.1's CALDAV:no-uid-conflict
+    // forbids a second one. The pre-ADR-0008 comment here read "several
+    // resources may share one UID (a master plus its detached exceptions)" —
+    // that is false on every conforming server, and the RECURRENCE-ID
+    // exemption it justified is what let this fake certify the distinct-href
+    // design Radicale, Sabre, Nextcloud and Baikal all reject.
     QString uid = uidForFileName(collectionHref, fileName);
 
     QHash<QString, IcsRecord> &col = m_store[collectionHref];
@@ -688,24 +693,31 @@ void FakeCalDavServer::handlePut(QTcpSocket *socket,
         // filename already exists, so it is this resource's own href.)
         if (uid.isEmpty()) uid = uidFromIcs(body);
     } else {
-        // Creating a NEW resource: the body's UID is authoritative. O54:
-        // creating a resource whose UID already lives under a DIFFERENT
-        // filename is the SabreDAV uniqueness violation — UNLESS the payload
-        // is a detached exception (RECURRENCE-ID present) sharing the
-        // master's UID, which is legal CalDAV.
+        // Creating a NEW resource: the body's UID is authoritative. A UID
+        // already registered under a DIFFERENT filename in this collection is
+        // a uniqueness violation, whether or not the payload carries a
+        // RECURRENCE-ID. A detached override belongs IN its master's resource,
+        // not beside it (ADR 0009 decision 5).
         const QString bodyUid = uidFromIcs(body);
         if (!bodyUid.isEmpty()) uid = bodyUid;
         const QList<QString> existing =
             m_uidToFileNames.value(collectionHref).value(bodyUid);
-        if (!bodyUid.isEmpty() && !existing.isEmpty()
-            && !body.contains("RECURRENCE-ID")) {
-            writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
-                "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
-                "  <s:exception>Sabre\\DAV\\Exception\\BadRequest</s:exception>\n"
-                "  <s:message>Calendar object with uid already exists in this "
-                "calendar collection.</s:message>\n"
-                "</d:error>\n"));
+        if (!bodyUid.isEmpty() && !existing.isEmpty()) {
+            if (m_uidConflictStyle == UidConflictStyle::Sabre) {
+                writeResponse(socket, 400, "Bad Request", QByteArrayLiteral(
+                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                    "<d:error xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\n"
+                    "  <s:exception>Sabre\\DAV\\Exception\\BadRequest</s:exception>\n"
+                    "  <s:message>Calendar object with uid already exists in this "
+                    "calendar collection.</s:message>\n"
+                    "</d:error>\n"));
+            } else {
+                writeResponse(socket, 409, "Conflict", QByteArrayLiteral(
+                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                    "<d:error xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\n"
+                    "  <c:no-uid-conflict/>\n"
+                    "</d:error>\n"));
+            }
             return;
         }
     }
@@ -1070,10 +1082,11 @@ QByteArray FakeCalDavServer::xmlForCalendarMultiget(
     for (const QString &href : hrefs) {
         const QUrl hrefUrl(href);
         const QString hrefPath = hrefUrl.isRelative() ? href : hrefUrl.path();
-        // VP.c-step-1b: resolve the resource by its FILE NAME — a multiget
-        // href's filename need not equal the UID, and two resources may
-        // share one UID (master + detached exception), so per-UID lookup
-        // would serve the wrong bytes for one of them.
+        // O54: resolve the resource by its FILE NAME — a multiget href's
+        // filename need not equal the UID, so per-UID lookup would serve the
+        // wrong bytes. (A store seeded via seedItemAt() can still hold two
+        // resources sharing a UID even though a PUT can no longer create
+        // that shape; see ADR 0009 decision 5.)
         const QString fileName = uidFromPath(hrefPath);
         if (fileName.isEmpty()) continue;
 
