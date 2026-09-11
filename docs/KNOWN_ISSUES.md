@@ -1,6 +1,6 @@
 # Known issues
 
-**Last reviewed:** 2026-09-08
+**Last reviewed:** 2026-09-11
 This is the only active defect and risk list. Historical finding numbers are not reused.
 
 States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain only until the next release, then leave this file.
@@ -357,6 +357,54 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
   plaintext migration; STB-011 places the resulting endpoint under runtime ownership.
 
 ## Medium
+
+### KAL-033 — A write operation reports success for a half-applied batch
+
+- **State:** OPEN 2026-09-11
+- **Affects:** every `IBackendRecordApplier`; observed on `RemoteCalendarBackend`
+- **Evidence:** `applyRecords()`'s `settleIfDone()` fails an operation only when
+  `succeededUids()` is empty, so a batch with one write accepted and one refused
+  settles `Succeeded` with a non-empty `failedUids()`. The same shape is in
+  `SyncBackendBase::applyRecords()`, whose failure text says "all N record(s)
+  failed to apply". Reproduced by
+  `tst_remotecalendarbackend_blob_view::detachedException_dualWrite_masterEdit
+  AndExceptionCreate_refusedByConformingServer()`, which pins the current
+  behaviour so it trips when fixed.
+- **Why it is not Critical:** both consumers compensate independently.
+  `SyncEngineWorker::applyBatch` and `DefaultBlobWriter::apply` each add
+  `&& failedUids().isEmpty()`. Nothing is fooled today; the operation's own
+  state is wrong and the compensation is duplicated rather than shared, which is
+  how a third consumer would get it wrong. A partial write trusted as complete
+  would persist baselines for records never written — the phantom-delete class
+  the engine's own comment warns about.
+- **Fix shape:** settle `Failed` whenever `failedUids()` is non-empty, matching
+  what both consumers already compute, or add an explicit partial state. Both
+  `settleIfDone` sites must change together. A repo-wide check found no caller
+  relying on "some succeeded" being enough.
+- **Full record:** `../PlanStan/docs/bugs/writeoperation-succeeds-when-a-batch-half-failed.md`
+- **Tasks:** FAM-002
+
+### KAL-034 — CalDAV records carry whole-family bytes under per-component ids
+
+- **State:** OPEN 2026-09-11
+- **Affects:** `RemoteCalendarBackend` record layer; canon transcode; per-override
+  conflict granularity
+- **Evidence:** all three sites populating `m_lastRawIcsByUid` store the entire
+  calendar object resource, so a master and its detached override are emitted as
+  two records with different ids, identical `data` and identical `contentHash`.
+  `ICalToCanonStage::transform()` parses with `ICalFormat::fromString()`, which
+  KDE documents as returning the first component only, so both transcode to the
+  master.
+- **Effect:** ADR 0008 decision 3's per-override conflict granularity is
+  unreachable, not merely unimplemented — two components that hash identically
+  cannot be distinguished by any diff. A detached override does not reach CalDAV
+  at all, pinned as a `QEXPECT_FAIL` in PlanStan's `tst_rrd014_mutations`.
+  `LocalBackend` emits one record per file, so the two calendar backends also
+  disagree on granularity.
+- **Decision:** ADR 0009. A calendar record becomes one component in payload as
+  well as identity, both backends change together, and family assembly moves to
+  the apply boundary.
+- **Tasks:** FAM-003
 
 ### KAL-011 — Snapshot restoration is a stub
 

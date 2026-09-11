@@ -1,6 +1,37 @@
 # Task queue
 
-**Last updated:** 2026-09-11 (`RRD-017` STOPPED MID-SESSION, NOT DONE —
+**Last updated:** 2026-09-11 (design work outside the campaign: ADR 0009 and
+ADR 0010 adopted, and libkalburator's own test suite made buildable again.
+`RRD-017` is untouched and remains the single `IN PROGRESS` campaign task.
+
+ADR 0008 left the CalDAV family-assembly point open with three candidates.
+Choosing between them turned up the fact that decides it: `RemoteCalendar
+Backend` emits per-component record IDS attached to whole-family PAYLOADS, so a
+master and its override share a content hash and both transcode to the master.
+A write-side-only fix cannot work. **ADR 0009** decides record granularity and
+the assembly point; **ADR 0010** records that ADR 0008 was a symptom of two
+independent write paths reaching the same backends, makes the record path the
+single one, and closes `SyncBackend::startSync()` to new callers. Read
+`../PlanStan/docs/design/calendar-write-path-and-record-granularity.md` for the
+consumer side before touching the calendar write path.
+
+**The library's test suite had not compiled since `RRD-001`** — 239 test files,
+`widgets/` and two tools still used flat includes. Now migrated; 222/222 pass.
+Its first green run exposed three defects: a colour round trip rotating
+channels through `PerCalendarCapabilities` JSON (**fixed**), a stale test
+asserting a contract deliberately changed in September (**fixed**), and
+`KAL-033`, a write operation reporting success for a half-applied batch
+(**filed**). `FakeCalDavServer` now enforces `CALDAV:no-uid-conflict`, so it can
+no longer certify designs real servers reject, and the two tests that pinned the
+retired distinct-href design now assert the refusal with the required shape
+carried as `QEXPECT_FAIL`. `calendar/uidfamily.h` is the shared family-assembly
+helper ADR 0010 decision 2 requires; `LocalBackend` runs on it.
+
+`FAM-001` is `DONE`. `FAM-002` is the next unblocked item and is **not** a
+campaign task — it does not compete with `RRD-017` and may be taken by whoever
+is free. PlanStan's own suite is unchanged at its `RRD-002` baseline.)
+
+**Prior entry (2026-09-11): `RRD-017` STOPPED MID-SESSION, NOT DONE —
 arrangement/copy/primary/rule editing on the `RRD-016` page. All five
 editing controls are built and staged correctly; 8/10 of
 `tst_rrd017_editing.cpp` passes. Two flows are still broken/unverified
@@ -133,6 +164,46 @@ tasks are maintained in `../PlanStan/docs/architecture.md` under
 `../PlanStan/docs/stabilization-baseline.md` is the required starting point for
 new agents.  Update this queue, the corresponding task record, and affected
 architecture facts in the same change; do not create a parallel campaign.
+
+### Calendar family assembly and write-path convergence
+
+`FAM-*` is library-internal correctness work under ADR 0009 and ADR 0010. It is
+deliberately **not** part of the `RRD-*` campaign: it has no release-readiness
+UX acceptance, it does not appear in `release-readiness-spec.md`, and it must
+not take `RRD-017`'s `IN PROGRESS` slot. Ordering within `FAM-*` is real;
+ordering against `RRD-*` is not.
+
+| Order | Task | State | Depends on | Outcome |
+|---:|---|---|---|---|
+| 1 | FAM-001 | DONE 2026-09-11 | — | A buildable library test suite, a server that enforces `no-uid-conflict`, and one shared family-assembly helper |
+| 2 | FAM-002 | READY | FAM-001 | `RemoteCalendarBackend::startSync()` assembles families; `KAL-033` decided |
+| 3 | FAM-003 | QUEUED | FAM-002 | ADR 0009 record granularity across both calendar backends, the domain contract, and the batch type |
+| 4 | FAM-004 | QUEUED | FAM-003 | `syncCompleted` names its submission; `StagingController` counts identities, not callbacks |
+
+`FAM-002` is the open data-loss defect on the path real user edits take.
+`RemoteCalendarBackend::startSync()` writes `icalFromIncidence(inc)` to
+`generateItemUrl(davUrl, inc->uid())`, so a master and its override both PUT to
+the bare-uid href and one destroys the other. Its local twin is already fixed.
+The work is an async read-then-merge-then-PUT through `calendar/uidfamily.h`
+plus a rework of that function's completion accounting, and it should settle
+`KAL-033` on the way, since a family write makes partial-batch reporting
+load-bearing. Do **not** re-implement assembly there; the helper exists and is
+unit-tested by `tst_uidfamily`.
+
+`FAM-003` is the largest item and the one that closes PlanStan's
+`tst_rrd014_mutations` `QEXPECT_FAIL`. Size it honestly before starting: both
+calendar backends' read and write paths, the domain write-unit contract,
+`WriterBatch` or the applier interface, and local-side baseline keys. The two
+retired distinct-href tests in `tst_remotecalendarbackend_blob_view` carry the
+required end state as `QEXPECT_FAIL` and will trip as unexpected passes when it
+lands.
+
+`FAM-004` is ADR 0010 decision 3, a coordinated breaking change under ADR 0002.
+PlanStan's `StagingController::onBackendSyncCompleted()` is the only production
+consumer. ADR 0010 decision 1 (retiring the staging flush) is deliberately
+unscheduled: it needs a single-record write with an acknowledgement prompt
+enough for the undo stack, and that capability should be specified before the
+retirement is queued.
 
 ## Historical implementation evidence
 
