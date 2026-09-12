@@ -174,7 +174,7 @@ below (§2.1, §3) refers to that specification.
 | 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
-| 18 | RRD-018 | READY | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
+| 18 | RRD-018 | IN PROGRESS | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
 | 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
@@ -1801,7 +1801,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-018 — Account discovery states and the four removal verbs
 
-- **State:** QUEUED
+- **State:** IN PROGRESS
 - **Depends on:** RRD-011, RRD-017
 - **Repository:** `../PlanStan`
 - **Scope:** Connect account opens a dialog or drawer, replacing the permanently
