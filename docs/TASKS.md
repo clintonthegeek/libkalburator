@@ -1,24 +1,18 @@
 # Task queue
 
-**Last updated:** 2026-09-12 (`RRD-019` closed out — truthful run feedback
-and separated draft, save, and run is DONE. The Task 18 Save/Sync Now
-footer verbs inside the movable `LogicalCalendarsBlock` node — duplicates
-of the MainWindow toolbar's own actions — are removed; `CollectionView::
-onSyncNow()` now offers an explicit Apply-first choice on a dirty
-topology draft instead of silently running the applied configuration.
-Two real truthfulness defects fixed, both the same shape: libkalburator's
-runtime already computed `RunResult::cancelled` and per-mapping
-`RuntimeEvent::mappingSuccess`/`mappingCancelled`, but `CollectionController`
-discarded both before any PlanStan observer could see them — now plumbed
-through to a new "Result" column (Completed/Failed/Cancelled) on
-`RunPlanPanel` and a distinct "Sync cancelled" banner. Cancel is now
-observable (a new `cancelCurrentRun()` plus a Cancel button, where none
-existed before); a Save failure now shows its own banner instead of being
-silently swallowed. Six tests updated/added. Regression: full offline
-PlanStan `ctest` (151 targets) is 142/151, every failure already in the
-`RRD-002` baseline, no new failures. Not built this session: a live-rig
-mid-flight-cancel test, and any automated test of the `onSyncNow()` dialog
-(`CollectionView` has no test file). `RRD-020` is `READY` next.)
+**Last updated:** 2026-09-12 (`RRD-019` closed out DONE — truthful run
+feedback and separated draft, save, and run. See that task's own record
+below for detail. `RRD-020` was then picked up but is deliberately left
+`IN PROGRESS`, not DONE: its real scope is a graph-model rewrite (each
+copy its own node, an opt-in membership overlay, search, a legend,
+keyboard traversal, a Selected-calendar-vs-All-calendars toggle) that
+deserves its own design pass before code. Only its acceptance's one
+narrow, fully concrete claim landed this session —
+`SyncTopologyWidget::applyLayout()` no longer special-cases the literal
+backend id `"primary"` as a layout hub, sorts deterministically by display
+name instead of a `QHash`'s unspecified iteration order, and wraps into a
+grid instead of one unbounded horizontal row. See that task's own record
+below for the full sizing note.)
 
 ADR 0008 left the CalDAV family-assembly point open with three candidates.
 Choosing between them turned up the fact that decides it: `RemoteCalendar
@@ -169,7 +163,7 @@ below (§2.1, §3) refers to that specification.
 | 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | DONE 2026-09-11 | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | DONE 2026-09-12 | RRD-017 | Truthful run feedback and separated draft, save, and run |
-| 20 | RRD-020 | READY | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
+| 20 | RRD-020 | IN PROGRESS | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
 | 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
 | 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
 | 23 | RRD-023 | QUEUED | RRD-022 | Campaign closure and the release decision |
@@ -1946,7 +1940,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-020 — Graph focus, groups, layout, legend, and keyboard traversal
 
-- **State:** QUEUED
+- **State:** IN PROGRESS, started 2026-09-12
 - **Depends on:** RRD-010, RRD-006
 - **Repository:** `../PlanStan`
 - **Scope:** Default to the selected calendar's sync graph, with Selected
@@ -1965,7 +1959,33 @@ target and 65 of 145 registered test targets no longer compile.
   02, 03, and 06 verify chain, mesh, and shared destinations. Counts obey
   specification §2.3.
 - **Verification:** record the keyboard equivalent for each retained gesture.
-- **Next:** RRD-021.
+- **Progress note 2026-09-12.** Sized honestly rather than rushed: this
+  task's real scope is a graph-model rewrite (each copy its own node,
+  account grouping as a background container, an opt-in membership
+  overlay, search, a legend, node-avoiding routing, keyboard traversal
+  with a form equivalent per gesture, a Selected-calendar-vs-All-calendars
+  toggle) touching `AccountNode`, `LogicalCalendarsBlock`,
+  `buildNodes()`/`buildEdges()`, selection sync, and most of the existing
+  topology-widget test suite — none of it built yet, and it deserves its
+  own design pass before code, the same way the calendar write-path change
+  got one (see `../PlanStan/docs/design/`). What landed this session is the
+  acceptance's one narrow, fully concrete claim:
+  `SyncTopologyWidget::applyLayout()`'s three named defects, fixed
+  together. It special-cased the literal backend id `"primary"` as a
+  layout hub (centered in the row) even though primacy is a per-calendar
+  binding role, not a backend property; its "then others alphabetically"
+  comment was never implemented (nodes were iterated straight off a
+  `QHash`'s unspecified-order `values()`, so the row's order — and the
+  whole layout — was nondeterministic run to run); and it laid out every
+  account in one unbounded horizontal row regardless of count. Fixed: a
+  deterministic sort by display name (no id special-casing), wrapped into
+  a roughly-square grid instead of one row. Pinned by a new
+  `tst_synctopologywidget.cpp` test using a backend literally id'd
+  `"primary"` whose display name sorts first, proving position now follows
+  display-name order, not id. Regression: full offline PlanStan `ctest`
+  unchanged against the `RRD-002` baseline set, no new failures.
+- **Next:** RRD-020 remains `IN PROGRESS` (design pass, then the
+  graph-model rewrite); RRD-021 stays blocked on it.
 
 ### RRD-021 — Route tracing, cross-calendar warnings, and scale
 
