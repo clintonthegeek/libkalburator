@@ -1,37 +1,24 @@
 # Task queue
 
-**Last updated:** 2026-09-11 (`RRD-018` closed out — account discovery
-states and the four removal verbs is DONE. Added
-`Kalburator::Sync::ProviderErrorKind` classifying the real
-`QNetworkReply::NetworkError` `CalDavCapabilityDiscovery` already saw but
-discarded, a new pure `computeAccountDiscoveryState()` mapping that plus
-connection state/collection presence/a session-scoped timestamp to the
-spec's five named states, and a new `AccountConnectionDialog` replacing
-the permanently-visible backend palette (now hidden, reachable on demand).
-The four removal-verb staging primitives already existed with correct
-cascade-preview text; only vocabulary needed a fix ("Delete Mapping" →
-"Stop Syncing This Rule…"). `tst_rrd018_accounts_and_removal.cpp` is 9/9:
-three live discovery-state tests against real `CalDavProvider` connects
-(a genuinely `davrig stop`ped account, a real wrong-password attempt) and
-four removal-verb tests checked against the independent `DavHttp` oracle.
-**Two real, pre-existing defects found by this task's own tests were
-fixed** (both squarely one of RRD-018's four named verbs):
-`SyncBackend::deletePhysicalCollection()` hit the same "E11 Stage 1
-retired sync CRUD" gap already filed for `createCollection()` — "delete a
-physical calendar" silently did nothing against any CalDAV account; fixed
-by routing through `deleteCalendarAsync()` + `blockOnAsync`.
-`CollectionSettings::toJson()` (libkalcal) omitted the `syncMappings` key
-when empty, letting `KalbConfigManager`'s legacy-metadata merge resurrect
-a stale mapping list on every save — removing a collection's last sync
-rule reported success but silently failed to persist; fixed by always
-writing the key. See `../PlanStan/docs/testing/rrd-018-accounts-and-removal-evidence.md`
-and the two bug docs (now marked FIXED) for the full trace. Regression
-sweep: libkalburator's own suite unchanged at 222/222; PlanStan's full
-offline `ctest` matches the `RRD-002` baseline exactly across two
-independent runs; `rrd016`/`rrd017` re-run individually and pass unchanged
-— `rrd010`/`rrd011`/`rrd012`/`rrd014`/`rrd015` were not re-run this
-session (a combined background sweep was killed by the host for memory
-pressure, not a test failure). `RRD-019` is `READY` next.
+**Last updated:** 2026-09-12 (`RRD-019` closed out — truthful run feedback
+and separated draft, save, and run is DONE. The Task 18 Save/Sync Now
+footer verbs inside the movable `LogicalCalendarsBlock` node — duplicates
+of the MainWindow toolbar's own actions — are removed; `CollectionView::
+onSyncNow()` now offers an explicit Apply-first choice on a dirty
+topology draft instead of silently running the applied configuration.
+Two real truthfulness defects fixed, both the same shape: libkalburator's
+runtime already computed `RunResult::cancelled` and per-mapping
+`RuntimeEvent::mappingSuccess`/`mappingCancelled`, but `CollectionController`
+discarded both before any PlanStan observer could see them — now plumbed
+through to a new "Result" column (Completed/Failed/Cancelled) on
+`RunPlanPanel` and a distinct "Sync cancelled" banner. Cancel is now
+observable (a new `cancelCurrentRun()` plus a Cancel button, where none
+existed before); a Save failure now shows its own banner instead of being
+silently swallowed. Six tests updated/added. Regression: full offline
+PlanStan `ctest` (151 targets) is 142/151, every failure already in the
+`RRD-002` baseline, no new failures. Not built this session: a live-rig
+mid-flight-cancel test, and any automated test of the `onSyncNow()` dialog
+(`CollectionView` has no test file). `RRD-020` is `READY` next.)
 
 ADR 0008 left the CalDAV family-assembly point open with three candidates.
 Choosing between them turned up the fact that decides it: `RemoteCalendar
@@ -181,8 +168,8 @@ below (§2.1, §3) refers to that specification.
 | 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | DONE 2026-09-11 | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
-| 19 | RRD-019 | READY | RRD-017 | Truthful run feedback and separated draft, save, and run |
-| 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
+| 19 | RRD-019 | DONE 2026-09-12 | RRD-017 | Truthful run feedback and separated draft, save, and run |
+| 20 | RRD-020 | READY | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
 | 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
 | 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
 | 23 | RRD-023 | QUEUED | RRD-022 | Campaign closure and the release decision |
@@ -1879,7 +1866,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-019 — Truthful run feedback and separated draft, save, and run
 
-- **State:** READY
+- **State:** DONE 2026-09-12
 - **Depends on:** RRD-017
 - **Repository:** `../PlanStan`
 - **Scope:** The run panel identifies the selected calendars and rules, the
@@ -1895,7 +1882,67 @@ target and 65 of 145 registered test targets no longer compile.
   retry are observable and correct. A configuration preview never claims a
   record-level dry run unless the runtime provides one.
 - **Verification:** record the failed-Apply case's accepted-versus-pending state.
-- **Next:** RRD-022.
+- **Closed out 2026-09-12.** Full record in
+  `../PlanStan/docs/testing/rrd-019-run-feedback-evidence.md`. The Task 18
+  "Save"/"Sync Now" footer verb rows inside the movable
+  `LogicalCalendarsBlock` graph node — a literal duplicate of the
+  MainWindow toolbar's `collection_save`/`sync_now` actions, calling the
+  exact same slots — are removed, along with their only emitters,
+  `SyncTopologyWidget::saveRequested()`/`syncNowRequested()`.
+  `CollectionView::onSyncNow()` now checks `SyncTopologyWidget::isDirty()`
+  and offers an explicit "Apply, Then Sync" / "Sync Applied Configuration"
+  / Cancel choice on a dirty draft instead of silently running the
+  last-applied configuration. The failed-Apply accepted-versus-pending
+  state this task's own Verification line names was already correct
+  (`TopologyApplyService::Result::accepted`, RRD-006) and already pinned
+  by `apply_rejectedByConvergenceGate_changesNothing()` in
+  `tst_topologyapplyservice.cpp` and by `CollectionSettingsViewPanel::
+  applyAll()`'s existing `QMessageBox` surfacing — confirmed by reading,
+  not re-tested, since nothing in this task touched that path.
+
+  **Two real truthfulness defects found and fixed, both the same shape:**
+  libkalburator's runtime already computes `RunResult::cancelled` and
+  per-mapping `RuntimeEvent::mappingSuccess`/`mappingCancelled`, but
+  `CollectionController`'s projection discarded both before any PlanStan
+  observer could see them.
+  `CollectionController::dispatchRuntimeRun()`'s completion lambda computed
+  a local `item.cancelled` per mapping and never used it — the aggregate
+  `SyncResult` handed to `syncRunFinished()` always reported
+  `cancelled = false`. Fixed: seeded from `result.cancelled`, the same way
+  `success`/`errorMessage` already were.
+  `CollectionController::runtimeMappingFinished(mappingId,
+  lastSuccessfulSync)` dropped `event.mappingSuccess`/`mappingCancelled` at
+  the point they were read off the `RuntimeEvent`; extended to
+  `runtimeMappingFinished(mappingId, lastSuccessfulSync, success,
+  cancelled)`, feeding a new "Result" column (Completed/Failed/Cancelled)
+  on `RunPlanPanel` with retroactive Cancelled-marking for a mapping cut
+  off mid-flight. `mainwindow.cpp`'s urgency banner now shows a distinct
+  "Sync cancelled" (Information) instead of folding a user-requested stop
+  into "Sync failed" (Error).
+
+  **Cancel is now observable** — there was previously no UI affordance to
+  stop an in-progress Sync Now run at all, though
+  `CollectionRuntime::cancel()` already existed and was already used at
+  collection close. Added `CollectionController::cancelCurrentRun()` and a
+  Cancel button on `RunPlanPanel`, visible only while a run is active.
+  Also fixed: a Save failure (`CollectionController::syncError`) was
+  previously invisible to the user (only used to unstick the auto-save
+  indicator); it now shows its own distinct "Save failed" banner.
+
+  Six tests updated/added (`tst_logicalcalendarsblock.cpp`,
+  `tst_synctopologywidget.cpp`, three new in `tst_runplanpanel.cpp`).
+  Regression sweep: full offline PlanStan `ctest` (151 targets,
+  `davrig`/`rrd007`–`018` excluded) is 142 passed / 9 failed, every failure
+  already named in the `RRD-002` baseline (plus its own already-documented
+  `integration_incidence_crud` ~5-minute timeout) — no new failures.
+  **Not built this session:** a live-rig test exercising an actual
+  mid-flight cancel end to end against a real backend (the plumbing fixes
+  are pinned by unit tests against directly-constructed values); an
+  automated test of the `onSyncNow()` dialog itself (`CollectionView` has
+  no test file at all, before or after this task).
+- **Next:** RRD-020 (see the one-`READY`-entry convention above; RRD-020
+  has no dependency on RRD-019, but was next in table order and its own
+  dependencies — RRD-010, RRD-006 — were already done).
 
 ### RRD-020 — Graph focus, groups, layout, legend, and keyboard traversal
 
