@@ -1,31 +1,37 @@
 # Task queue
 
-**Last updated:** 2026-09-11 (`RRD-017` closed out — arrangement/copy/
-primary/rule editing is DONE, picking up the prior session's mid-session
-stop. `tst_rrd017_editing.cpp` is now 10/10, up from 8/10: the seeded-rule
-round-trip failure was a missing explicit save in the test itself
-(`KalbSyncTopologyDataSource::setSyncMappings()` only mutates in-memory
-config; fixed in the test), and the "add copy → use existing" adopt flow
-was blocked by a real, now root-caused and fixed, libkalburator defect —
-`CollectionRuntime::backendObject()` only ever consulted
-`m_endpointExecutors`, which `applyTopology()` populates only for
-factory-created endpoints (just the local backend here); every
-provider-backed (remote CalDAV account) backend was registered with
-`BackendRegistry` instead and never got an executor entry, so
-`backendById()` returned null for any remote backend permanently. Fixed by
-falling back to `m_backendRegistry.backendInstance()`
-(`src/runtime/collectionruntime.cpp`). See
-`../PlanStan/docs/testing/rrd-017-editing-evidence.md` and
-`../PlanStan/docs/bugs/collectioncontroller-backendbyid-not-populated-promptly-on-fresh-load.md`
-(now marked FIXED) for the full trace. Regression sweep: libkalburator's own
-suite unchanged at 222/222; PlanStan's full offline `ctest` matches the
-`RRD-002` baseline exactly, no new failures; live-rig suites
-`rrd010`–`rrd012`/`rrd014`–`rrd016` all green. Two pre-existing defects
-(`remotecalendarbackend-createcollection-hits-retired-synchronous-
-createcalendar`, `addlogicalcalendarcopy-preview-channel-false-positive-
-convergence-violation`) remain filed, deliberately not fixed — outside
-RRD-017's own scope. `RRD-018` is `READY` next (`RRD-019` is unblocked too
-but stays `QUEUED` per the one-`READY`-entry convention).
+**Last updated:** 2026-09-11 (`RRD-018` closed out — account discovery
+states and the four removal verbs is DONE. Added
+`Kalburator::Sync::ProviderErrorKind` classifying the real
+`QNetworkReply::NetworkError` `CalDavCapabilityDiscovery` already saw but
+discarded, a new pure `computeAccountDiscoveryState()` mapping that plus
+connection state/collection presence/a session-scoped timestamp to the
+spec's five named states, and a new `AccountConnectionDialog` replacing
+the permanently-visible backend palette (now hidden, reachable on demand).
+The four removal-verb staging primitives already existed with correct
+cascade-preview text; only vocabulary needed a fix ("Delete Mapping" →
+"Stop Syncing This Rule…"). `tst_rrd018_accounts_and_removal.cpp` is 9/9:
+three live discovery-state tests against real `CalDavProvider` connects
+(a genuinely `davrig stop`ped account, a real wrong-password attempt) and
+four removal-verb tests checked against the independent `DavHttp` oracle.
+**Two real, pre-existing defects found by this task's own tests were
+fixed** (both squarely one of RRD-018's four named verbs):
+`SyncBackend::deletePhysicalCollection()` hit the same "E11 Stage 1
+retired sync CRUD" gap already filed for `createCollection()` — "delete a
+physical calendar" silently did nothing against any CalDAV account; fixed
+by routing through `deleteCalendarAsync()` + `blockOnAsync`.
+`CollectionSettings::toJson()` (libkalcal) omitted the `syncMappings` key
+when empty, letting `KalbConfigManager`'s legacy-metadata merge resurrect
+a stale mapping list on every save — removing a collection's last sync
+rule reported success but silently failed to persist; fixed by always
+writing the key. See `../PlanStan/docs/testing/rrd-018-accounts-and-removal-evidence.md`
+and the two bug docs (now marked FIXED) for the full trace. Regression
+sweep: libkalburator's own suite unchanged at 222/222; PlanStan's full
+offline `ctest` matches the `RRD-002` baseline exactly across two
+independent runs; `rrd016`/`rrd017` re-run individually and pass unchanged
+— `rrd010`/`rrd011`/`rrd012`/`rrd014`/`rrd015` were not re-run this
+session (a combined background sweep was killed by the host for memory
+pressure, not a test failure). `RRD-019` is `READY` next.
 
 ADR 0008 left the CalDAV family-assembly point open with three candidates.
 Choosing between them turned up the fact that decides it: `RemoteCalendar
@@ -174,8 +180,8 @@ below (§2.1, §3) refers to that specification.
 | 15 | RRD-015 | DONE 2026-09-10 | RRD-013, RRD-014 | A truthful capability matrix with explicit gaps |
 | 16 | RRD-016 | DONE 2026-09-11 | RRD-006, RRD-009 | Calendars, copies, and rules page as a correct read-only projection |
 | 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
-| 18 | RRD-018 | IN PROGRESS | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
-| 19 | RRD-019 | QUEUED | RRD-017 | Truthful run feedback and separated draft, save, and run |
+| 18 | RRD-018 | DONE 2026-09-11 | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
+| 19 | RRD-019 | READY | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | QUEUED | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
 | 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
 | 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
@@ -1801,7 +1807,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-018 — Account discovery states and the four removal verbs
 
-- **State:** IN PROGRESS
+- **State:** DONE 2026-09-11
 - **Depends on:** RRD-011, RRD-017
 - **Repository:** `../PlanStan`
 - **Scope:** Connect account opens a dialog or drawer, replacing the permanently
@@ -1818,11 +1824,62 @@ target and 65 of 145 registered test targets no longer compile.
   operation confirms with the exact account and calendar name.
 - **Verification:** record the observed effect of each verb on real remote
   records, not only the dialog text.
-- **Next:** RRD-022.
+- **Closed out 2026-09-11.** Full record in
+  `../PlanStan/docs/testing/rrd-018-accounts-and-removal-evidence.md`.
+  Added `Kalburator::Sync::ProviderErrorKind` (libkalburator) classifying the
+  real `QNetworkReply::NetworkError` `CalDavCapabilityDiscovery` already saw
+  but discarded into `AuthenticationFailed`/`Unavailable`/`Unknown`; a new
+  pure `computeAccountDiscoveryState()`
+  (`../PlanStan/src/sync/topology/accountdiscoverystate.{h,cpp}`) maps that
+  plus connection state, collection presence, and a session-scoped
+  `lastCheckedAt` to the spec's five named states plus an ordinary `Fresh`
+  (15/15 unit-tested, no widget dependency). A new `AccountConnectionDialog`
+  replaces the permanently-visible backend palette — `SyncTopologyWidget::
+  setBackendRegistry()` still builds the palette exactly as before (so
+  existing direct-palette tests and the graph's drag-drop keep working
+  unchanged) but now hides it, reachable on demand via a "Connect
+  Account…" toolbar action shared by both embedders plus a matching button
+  on `CalendarsAndSyncPage`; adding an account still routes through the
+  existing staged `onPaletteTileActivated()` path. The four removal-verb
+  staging primitives already existed from an earlier task with correct
+  cascade-preview text; only the edge menu's "Delete Mapping" needed
+  renaming to "Stop Syncing This Rule…" for spec §2.4 vocabulary.
+  `tests/integration/tst_rrd018_accounts_and_removal.cpp` is 9/9 passing:
+  three live discovery-state tests against real `CalDavProvider` connects
+  (including a genuinely `davrig stop`ped account and a real wrong-password
+  attempt — "empty" deliberately not re-verified live, its logic fully
+  covered by the pure-logic suite, see the evidence doc) and four
+  removal-verb tests checked against the independent `DavHttp` oracle, not
+  the app's own reported success. **Two real, pre-existing defects found by
+  this task's own new tests were fixed here** (both squarely one of
+  RRD-018's own four named verbs, unlike RRD-017's practice of leaving
+  adjacent defects filed):
+  `../PlanStan/docs/bugs/remotecalendarbackend-deletephysicalcollection-hits-retired-synchronous-deletecalendar.md` —
+  "delete a physical calendar" silently did nothing against any CalDAV
+  account (the same "E11 Stage 1 retired sync CRUD" gap already filed, not
+  fixed, for `createCollection()`); fixed by routing
+  `SyncBackend::deletePhysicalCollection()` through `deleteCalendarAsync()`
+  + `blockOnAsync`, mirroring `KalbSyncTopologyDataSource::createCalendar()`'s
+  already-correct pattern.
+  `../PlanStan/docs/bugs/collectionsettings-tojson-omits-empty-syncmappings-resurrecting-stale-array.md`
+  (libkalcal) — removing a collection's last sync rule reported success but
+  silently failed to persist, because `CollectionSettings::toJson()`
+  omitted the `syncMappings` key when the list was empty, letting
+  `KalbConfigManager`'s legacy-metadata merge resurrect the stale array on
+  every save; fixed by always writing the key. Regression sweep:
+  libkalburator 222/222 unchanged; PlanStan's full offline `ctest` matches
+  the `RRD-002` baseline exactly across two independent runs;
+  `rrd016`/`rrd017` (the two live-rig suites most directly overlapping this
+  task's changed code) re-run individually and pass unchanged —
+  `rrd010`/`rrd011`/`rrd012`/`rrd014`/`rrd015` were not re-run this session
+  (a combined background sweep was killed by the host for memory pressure,
+  not a test failure; each already passed individually earlier this
+  session and none touch the two fixed code paths).
+- **Next:** RRD-019 (see the one-`READY`-entry convention above).
 
 ### RRD-019 — Truthful run feedback and separated draft, save, and run
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-017
 - **Repository:** `../PlanStan`
 - **Scope:** The run panel identifies the selected calendars and rules, the

@@ -52,6 +52,7 @@ public:
     std::vector<ProviderBackendSpec> createBackends() override;
 
     QString lastError() const override { return m_lastError; }
+    ProviderErrorKind lastErrorKind() const override { return m_lastErrorKind; }
 
 private slots:
     void onDiscoveryFinished(bool success);
@@ -65,6 +66,7 @@ private:
     QString                              m_passwordRef;
     bool                                 m_connected = false;
     QString                              m_lastError;
+    ProviderErrorKind                    m_lastErrorKind = ProviderErrorKind::Unknown;
     QList<CollectionInfo>                m_collections;
 
     CalDavCapabilityDiscovery           *m_discovery = nullptr;

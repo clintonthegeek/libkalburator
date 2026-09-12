@@ -40,6 +40,7 @@ void CalDavCapabilityDiscovery::start()
 
     m_running = true;
     m_errorMessage.clear();
+    m_errorKind = ProviderErrorKind::Unknown;
     m_capabilities = DiscoveredCapabilities();
     m_calendarUrls.clear();
     m_capabilities.discoveredAt = QDateTime::currentDateTimeUtc();
@@ -153,7 +154,7 @@ void CalDavCapabilityDiscovery::onPrincipalReplyFinished()
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        finishWithError(tr("Failed to discover principal: %1").arg(reply->errorString()));
+        finishWithNetworkError(tr("Failed to discover principal: %1").arg(reply->errorString()), reply);
         return;
     }
 
@@ -204,7 +205,7 @@ void CalDavCapabilityDiscovery::onCalendarHomeReplyFinished()
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        finishWithError(tr("Failed to discover calendar home: %1").arg(reply->errorString()));
+        finishWithNetworkError(tr("Failed to discover calendar home: %1").arg(reply->errorString()), reply);
         return;
     }
 
@@ -258,7 +259,7 @@ void CalDavCapabilityDiscovery::onCalendarsListReplyFinished()
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        finishWithError(tr("Failed to list calendars: %1").arg(reply->errorString()));
+        finishWithNetworkError(tr("Failed to list calendars: %1").arg(reply->errorString()), reply);
         return;
     }
 
@@ -655,10 +656,63 @@ QString CalDavCapabilityDiscovery::extractProducerId(
 
 void CalDavCapabilityDiscovery::finishWithError(const QString &error)
 {
+    // Deliberately does not touch m_errorKind: start() already reset it to
+    // Unknown for this attempt, which is the correct value for every
+    // caller of this overload (internal/parse errors, no network reply
+    // behind them to classify). finishWithNetworkError() below sets
+    // m_errorKind BEFORE calling this, because `finished(false)` is
+    // consumed synchronously by CalDavProvider's slot -- setting the kind
+    // after this call would be too late for that slot to observe it.
     m_running = false;
     m_errorMessage = error;
     qWarning() << "CalDavCapabilityDiscovery error:" << error;
     emit finished(false);
+}
+
+void CalDavCapabilityDiscovery::finishWithNetworkError(const QString &error, QNetworkReply *reply)
+{
+    // Qt's NetworkError enum has no single "was this authentication"
+    // grouping, so this is an explicit, exhaustive-by-category switch
+    // rather than a range check: AuthenticationRequiredError and
+    // ProxyAuthenticationRequiredError are the only two values that mean
+    // "the server understood the request and rejected the credentials."
+    // Everything under Qt's own "network layer errors" heading (refused,
+    // host not found, timeout, TLS handshake failure, etc.) means the
+    // server was never meaningfully reached; that maps to Unavailable.
+    // Content/protocol errors (unknown content, operation not permitted)
+    // are neither and stay Unknown rather than being misreported as one
+    // of the two the UI treats specially.
+    ProviderErrorKind kind = ProviderErrorKind::Unknown;
+    if (reply) {
+        switch (reply->error()) {
+        case QNetworkReply::AuthenticationRequiredError:
+        case QNetworkReply::ProxyAuthenticationRequiredError:
+            kind = ProviderErrorKind::AuthenticationFailed;
+            break;
+        case QNetworkReply::ConnectionRefusedError:
+        case QNetworkReply::RemoteHostClosedError:
+        case QNetworkReply::HostNotFoundError:
+        case QNetworkReply::TimeoutError:
+        case QNetworkReply::TemporaryNetworkFailureError:
+        case QNetworkReply::NetworkSessionFailedError:
+        case QNetworkReply::SslHandshakeFailedError:
+        case QNetworkReply::ProxyConnectionRefusedError:
+        case QNetworkReply::ProxyConnectionClosedError:
+        case QNetworkReply::ProxyNotFoundError:
+        case QNetworkReply::ProxyTimeoutError:
+            kind = ProviderErrorKind::Unavailable;
+            break;
+        default:
+            kind = ProviderErrorKind::Unknown;
+            break;
+        }
+    }
+    // Set BEFORE finishWithError(), which emits finished(false)
+    // synchronously to CalDavProvider's slot -- that slot reads
+    // errorKind() while handling the signal, so it must already be
+    // classified by then.
+    m_errorKind = kind;
+    finishWithError(error);
 }
 
 void CalDavCapabilityDiscovery::finishWithSuccess()

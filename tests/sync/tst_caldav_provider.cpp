@@ -413,6 +413,9 @@ void TstCalDavProvider::connect_fails_on_401()
     QVERIFY(!provider.isConnected());
     QVERIFY(errSpy.count() >= 1);
     QVERIFY(!errSpy.first().at(0).toString().isEmpty());
+    // RRD-018: a real 401 challenge must classify as AuthenticationFailed,
+    // not the generic Unknown every other failure defaults to.
+    QCOMPARE(provider.lastErrorKind(), ProviderErrorKind::AuthenticationFailed);
 }
 
 void TstCalDavProvider::connect_fails_on_500()
@@ -431,6 +434,9 @@ void TstCalDavProvider::connect_fails_on_500()
     QVERIFY(!provider.isConnected());
     QVERIFY(errSpy.count() >= 1);
     QVERIFY(!errSpy.first().at(0).toString().isEmpty());
+    // RRD-018: a reachable server erroring on its own request is neither
+    // an auth failure nor an unavailable account -- stays Unknown.
+    QCOMPARE(provider.lastErrorKind(), ProviderErrorKind::Unknown);
 }
 
 void TstCalDavProvider::connect_fails_on_unreachable_server()
@@ -459,6 +465,9 @@ void TstCalDavProvider::connect_fails_on_unreachable_server()
     QVERIFY(!provider.isConnected());
     QVERIFY(errSpy.count() >= 1);
     QVERIFY(!errSpy.first().at(0).toString().isEmpty());
+    // RRD-018: connection-refused is exactly the "account unavailable"
+    // case (the RRD-007 rig's "genuinely stopped account instance").
+    QCOMPARE(provider.lastErrorKind(), ProviderErrorKind::Unavailable);
 }
 
 void TstCalDavProvider::disconnect_clears_collections()

@@ -85,6 +85,7 @@ QFuture<bool> CalDavProvider::connect() {
         fi.reportResult(false);
         fi.reportFinished();
         m_lastError = QStringLiteral("CalDavProvider: server URL is empty, invalid, or missing a scheme");
+        m_lastErrorKind = ProviderErrorKind::Unknown;
         emit error(m_lastError);
         emit connectionStateChanged(ProviderConnectionState::Error);
         return fi.future();
@@ -144,6 +145,7 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
             m_capsBySlug.insert(slug, it.value());
         }
         m_connected = true;
+        m_lastErrorKind = ProviderErrorKind::Unknown;
         emit collectionsChanged();
         emit connectionStateChanged(true);
         emit connectionStateChanged(ProviderConnectionState::Connected);
@@ -152,6 +154,7 @@ void CalDavProvider::onDiscoveryFinished(bool success) {
         m_lastError = errMsg.isEmpty()
                       ? QStringLiteral("CalDavProvider: discovery failed")
                       : errMsg;
+        m_lastErrorKind = m_discovery->errorKind();
         emit error(m_lastError);
         emit connectionStateChanged(ProviderConnectionState::Error);
     }

@@ -2,6 +2,7 @@
 #define CALDAVCAPABILITYDISCOVERY_H
 
 #include <kalburator/typesupport/backendconfiguration.h>
+#include <kalburator/sync/iprovider.h>
 #include <QObject>
 #include <QUrl>
 #include <QMap>
@@ -102,6 +103,14 @@ public:
     QString errorMessage() const { return m_errorMessage; }
 
     /**
+     * @brief Coarse classification of errorMessage(), when the underlying
+     * QNetworkReply::NetworkError was available at the failure site
+     * (RRD-018). Unknown for a failure with no network error behind it
+     * (a malformed response, an internal error) or before any attempt.
+     */
+    ProviderErrorKind errorKind() const { return m_errorKind; }
+
+    /**
      * @brief Check if discovery is currently running.
      */
     bool isRunning() const { return m_running; }
@@ -153,6 +162,11 @@ private:
                               const QByteArray &serverHeader) const;
 
     void finishWithError(const QString &error);
+    /// Same, plus classifies the reply's typed network error into
+    /// ProviderErrorKind before storing it. Takes the reply rather than a
+    /// bare QNetworkReply::NetworkError so the classification stays in the
+    /// .cpp and this header never needs a full <QNetworkReply> include.
+    void finishWithNetworkError(const QString &error, QNetworkReply *reply);
     void finishWithSuccess();
 
     QUrl m_serverUrl;
@@ -174,6 +188,7 @@ private:
     DiscoveredCapabilities m_capabilities;
     QMap<QString, QString> m_calendarUrls;  // calendarId -> href
     QString m_errorMessage;
+    ProviderErrorKind m_errorKind = ProviderErrorKind::Unknown;
 };
 
 } // namespace Kalburator::Sync

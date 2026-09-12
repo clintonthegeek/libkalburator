@@ -41,6 +41,21 @@ enum class ProviderConnectionState {
 };
 
 /**
+ * @brief Coarse classification of a failed connect() attempt, for callers
+ *        that need to distinguish "wrong credentials" from "server
+ *        unreachable" without parsing lastError()'s free-text message
+ *        (RRD-018: authentication-failure and unavailable are distinct
+ *        UI states). Default is Unknown for any provider that hasn't been
+ *        taught to classify its own failures — callers must treat Unknown
+ *        as "some kind of failure, cause unclassified," never as success.
+ */
+enum class ProviderErrorKind {
+    Unknown,
+    AuthenticationFailed,
+    Unavailable
+};
+
+/**
  * @brief One backend the provider produces from createBackends(), plus
  *        the domain it represents and the collections it hosts.
  *
@@ -189,6 +204,12 @@ public:
     /// succeeded. Complement to the error() signal for callers that need to
     /// poll the failure reason after the fact (e.g., after future completion).
     virtual QString lastError() const { return {}; }
+
+    /// Coarse classification of lastError(), when the provider can tell.
+    /// Default Unknown — a provider that never overrides this still reports
+    /// failure correctly via lastError()/connectionStateChanged(Error); it
+    /// just can't distinguish auth from network causes for the UI.
+    virtual ProviderErrorKind lastErrorKind() const { return ProviderErrorKind::Unknown; }
 
 signals:
     /// Emitted when connect() succeeds (true) or when disconnect() is called

@@ -46,6 +46,7 @@
 #include <kalburator/types/calendartype.h>   // CalendarType enum
 #include <kalburator/calendar/discoveredcalendar.h> // DiscoveredCalendar DTO (Plan 9 aggregate accessor)
 #include <kalburator/sync/syncbackendbase.h> // domain-neutral base (Phase K.4)
+#include <kalburator/sync/blockonasync.h>
 
 namespace Kalburator::Sync {
 
@@ -250,7 +251,22 @@ public:
     }
 
     bool deletePhysicalCollection(const QString &collectionId) override {
-        return deleteCalendar(QString(), collectionId);
+        // RRD-018: route through the Async form + blockOnAsync rather than
+        // calling deleteCalendar() directly, mirroring
+        // KalbSyncTopologyDataSource::createCalendar()'s already-correct
+        // pattern for the sibling create defect this comment's neighbor
+        // (createCalendarAsync's doc comment above) describes. Calling
+        // deleteCalendar() directly silently returned false for every
+        // RemoteCalendarBackend -- its own synchronous create/update/
+        // deleteCalendar overrides are gone (E11 Stage 1); only the Async
+        // siblings (deleteCalendarAsync) do real work for that backend.
+        // Harmless indirection for every other backend, whose default
+        // deleteCalendarAsync() just forwards to their own real
+        // deleteCalendar() override anyway.
+        return Kalburator::Sync::blockOnAsync<bool>(this,
+            [this, collectionId](std::function<void(bool)> done) {
+                deleteCalendarAsync(QString(), collectionId, std::move(done));
+            });
     }
 
     /**
