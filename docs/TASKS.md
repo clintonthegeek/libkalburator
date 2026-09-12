@@ -1,18 +1,19 @@
 # Task queue
 
-**Last updated:** 2026-09-12 (`RRD-019` closed out DONE — truthful run
-feedback and separated draft, save, and run. See that task's own record
-below for detail. `RRD-020` was then picked up but is deliberately left
-`IN PROGRESS`, not DONE: its real scope is a graph-model rewrite (each
-copy its own node, an opt-in membership overlay, search, a legend,
-keyboard traversal, a Selected-calendar-vs-All-calendars toggle) that
-deserves its own design pass before code. Only its acceptance's one
-narrow, fully concrete claim landed this session —
-`SyncTopologyWidget::applyLayout()` no longer special-cases the literal
-backend id `"primary"` as a layout hub, sorts deterministically by display
-name instead of a `QHash`'s unspecified iteration order, and wraps into a
-grid instead of one unbounded horizontal row. See that task's own record
-below for the full sizing note.)
+**Last updated:** 2026-09-12 (`RRD-020` closed out DONE — the graph-model
+rewrite its own design pass called for (each copy its own node, an opt-in
+membership overlay, search, a legend, keyboard traversal, node-avoiding
+routing) built and verified across five slices in one extended session
+following `RRD-019`. Slice 5, the last, added the env-gated
+`tst_rrd020_graph_projection.cpp` (Chain/Mesh/shared-destination scenarios,
+plus the one-draft claim proven in both directions), the evidence file
+with the gesture/keyboard/form equivalence table, and the `graph-guide.md`
+rewrite — see that task's own record below for the full account,
+including one production defect found and fixed
+(`CalendarsAndSyncPage::rebuildList()` losing the selected calendar on
+every refresh) and one gap sized rather than fixed (context-menu
+keyboard-reachability, filed for `RRD-021`/a future task rather than
+started without sign-off). `RRD-021` is `READY` next.)
 
 ADR 0008 left the CalDAV family-assembly point open with three candidates.
 Choosing between them turned up the fact that decides it: `RemoteCalendar
@@ -163,8 +164,8 @@ below (§2.1, §3) refers to that specification.
 | 17 | RRD-017 | DONE 2026-09-11 | RRD-016 | Arrangement, copy, primary, and rule editing without a port drag |
 | 18 | RRD-018 | DONE 2026-09-11 | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | DONE 2026-09-12 | RRD-017 | Truthful run feedback and separated draft, save, and run |
-| 20 | RRD-020 | IN PROGRESS | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
-| 21 | RRD-021 | QUEUED | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
+| 20 | RRD-020 | DONE 2026-09-12 | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
+| 21 | RRD-021 | READY | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
 | 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
 | 23 | RRD-023 | QUEUED | RRD-022 | Campaign closure and the release decision |
 
@@ -1940,7 +1941,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-020 — Graph focus, groups, layout, legend, and keyboard traversal
 
-- **State:** IN PROGRESS, started 2026-09-12
+- **State:** DONE 2026-09-12
 - **Depends on:** RRD-010, RRD-006
 - **Repository:** `../PlanStan`
 - **Scope:** Default to the selected calendar's sync graph, with Selected
@@ -1984,12 +1985,62 @@ target and 65 of 145 registered test targets no longer compile.
   `"primary"` whose display name sorts first, proving position now follows
   display-name order, not id. Regression: full offline PlanStan `ctest`
   unchanged against the `RRD-002` baseline set, no new failures.
-- **Next:** RRD-020 remains `IN PROGRESS` (design pass, then the
-  graph-model rewrite); RRD-021 stays blocked on it.
+- **Design pass 2026-09-12.** Done, and agreed with the user before any
+  code:
+  [`../PlanStan/docs/design/topology-graph-projection.md`](../../PlanStan/docs/design/topology-graph-projection.md).
+  The scene becomes a deterministic matrix — calendars as rows, accounts as
+  columns, one `CopyNode` per cell, the account as a Graffodil group behind
+  its column plus a slim header node, and `LogicalCalendarsBlock` retired in
+  favour of one `CalendarLaneHeaderNode` per row. Selected-calendar view is
+  the one-row case of the same builder, which is how the one-draft
+  acceptance gets proven. Primary, chain order, permission and every §2.5
+  state become node text and icon; membership becomes an off-by-default
+  overlay. The port-drag gestures (`onEdgeRequested()` and its handlers,
+  `synctopologywidget.cpp:1427`–`1974`) are frozen and deleted rather than
+  ported — both of their endpoints are being removed, and every operation
+  they offered already has a visible control from RRD-017/RRD-018. RRD-023
+  still owns the retirement verdict. §2.2's deferred `TopologyEditorContext`
+  lands in slice 1, now that RRD-016 has supplied its second observer. Five
+  slices, the test migration, and the explicit RRD-021 exclusions are all in
+  the document.
+- **Slices 2-5, 2026-09-12.** All five slices of the design doc are done,
+  built and verified across one extended session:
+  - **Slice 2** (the node model): `CopyNode`/`AccountHeaderNode`/
+    `CalendarLaneHeaderNode`/`TopologyMatrixLayout` replace `AccountNode`/
+    `LogicalCalendarsBlock` outright; the frozen drag gestures
+    (`onEdgeRequested()` and ~550 lines of handlers) are deleted, not
+    ported. Eleven test files migrated.
+  - **Slice 3** (routing/viewport/LOD/legend/search): node-avoiding
+    lane routes, wheel/pan rebound off Ctrl-gated zoom, a minimum text-size
+    floor with detail tiers, a toggleable legend generated from the same
+    enum the painters read, and a search field.
+  - **Slice 4** (keyboard traversal): `GraphKeyboardTool` — Tab/Shift+Tab,
+    arrow-key cell movement, Home/End, Enter to activate, `E`/Shift+`E` to
+    cycle a copy's incident rules, Escape — composed ahead of
+    `SelectMoveTool` in the tool chain.
+  - **Slice 5** (this task's closing unit): the env-gated
+    `tests/integration/tst_rrd020_graph_projection.cpp` (7/7 passing,
+    driving Chain/Mesh/shared-destination scenarios and proving the
+    one-draft claim in both directions), the evidence file at
+    [`../PlanStan/docs/testing/rrd-020-graph-projection-evidence.md`](../../PlanStan/docs/testing/rrd-020-graph-projection-evidence.md)
+    (including the gesture/keyboard/form equivalence table), and a full
+    rewrite of `../PlanStan/docs/graph-guide.md` around the matrix model.
+    Found and fixed one real production defect
+    (`CalendarsAndSyncPage::rebuildList()` losing the selected calendar on
+    every refresh — root cause and fix in the evidence file). Found, sized,
+    and filed rather than fixed one gap: `SyncTopologyWidget`'s context
+    menu doesn't open reliably from the keyboard (Shift+F10/Menu key), and
+    three of its verbs (Unbind/Untrack/Destroy) have no
+    `CalendarsAndSyncPage` form control at all.
+  - Full offline PlanStan `ctest` after all of the above: 95% passing,
+    9/170 failing, all nine the pre-existing `RRD-002` baseline set,
+    zero new failures.
+- **Next:** RRD-021 (see the one-`READY`-entry convention above; RRD-021's
+  own dependencies — RRD-011, RRD-020 — are both now done).
 
 ### RRD-021 — Route tracing, cross-calendar warnings, and scale
 
-- **State:** QUEUED
+- **State:** READY
 - **Depends on:** RRD-011, RRD-020
 - **Repository:** `../PlanStan`
 - **Scope:** Add Trace changes from this copy. In the all-calendar view, use
