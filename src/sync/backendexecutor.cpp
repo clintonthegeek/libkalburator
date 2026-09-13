@@ -25,8 +25,22 @@ bool BackendExecutor::start()
     // KDAV creates network children through a main-thread-affine manager.
     // Moving its calendar backend to a private executor thread makes those
     // children illegal and can strand a fetch forever after reconnect.
-    if (QString::fromLatin1(object->metaObject()->className())
-            .endsWith(QStringLiteral("RemoteCalendarBackend")))
+    //
+    // KindDemuxBackend must stay put for the same reason: for an account with
+    // any VTODO-bearing calendar, MultiProtocolDavProvider registers one demux
+    // per domain ("cal", "todo") routing into a SHARED RemoteCalendarBackend
+    // transport that lives on this thread. Threading the demux made the
+    // engine marshal onto the demux's private thread, which then called the
+    // GUI-thread transport directly — its network manager, KDAV jobs and
+    // SQLite content cache all used cross-thread, and two demux threads
+    // racing one non-thread-safe transport. Observed against Nextcloud as
+    // spurious "Invalid username/password (401)" list failures, "Cannot
+    // create children for a parent that is in a different thread", SQLite
+    // "database does not belong to the calling thread", and a first sync
+    // that never finished.
+    const QString className = QString::fromLatin1(object->metaObject()->className());
+    if (className.endsWith(QStringLiteral("RemoteCalendarBackend"))
+        || className.endsWith(QStringLiteral("KindDemuxBackend")))
     {
         m_started = true;
         return true;

@@ -1,6 +1,6 @@
 # Known issues
 
-**Last reviewed:** 2026-09-11
+**Last reviewed:** 2026-09-13
 This is the only active defect and risk list. Historical finding numbers are not reused.
 
 States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain only until the next release, then leave this file.
@@ -69,6 +69,25 @@ States: `OPEN`, `INVESTIGATING`, `BLOCKED`, `RESOLVED`. Resolved entries remain 
 - **Resolution:** SEC-001 and SEC-002; the library retains only the reference contract while each host owns KWallet persistence and unlock policy.
 
 ## High
+
+### KAL-035 — DAV task calendars are split into per-domain views no consumer can sync
+
+- **State:** OPEN 2026-09-13
+- **Affects:** every account connected through `MultiProtocolDavProvider` with at
+  least one `VTODO`-capable calendar; observed in PlanStan against Nextcloud
+- **Evidence:** `createBackends()` partitions such an account into `cal` and
+  `todo` `KindDemuxBackend`s. A task-only calendar has no route on `cal`, so
+  `shapeFor()` returns `Shape::Any()` and `dispatchSync` rejects the mapping on
+  every run. A mixed calendar on `cal` is a `VEVENT`/`VJOURNAL`-filtered view,
+  so its tasks never sync and no error is raised. The `todo` views report
+  `{calendar, ical}`, so they cannot reach a todo-domain service either. The
+  views filter reads only: writes, deletes and change feeds pass through.
+- **Effect:** in PlanStan, five of eight calendars failed on every run, and three
+  mixed calendars synced events only.
+- **Decision:** ADR 0011. The demux is removed, the collection stays the sync
+  unit, and component kind becomes a per-mapping scope.
+- **Full record:** `../PlanStan/docs/bugs/dav-task-calendars-bound-to-cal-domain-backend.md`
+- **Tasks:** KND-001 (the failures), KND-003 and KND-004 (kind compatibility)
 
 ### KAL-005 — Collection-property three-way baseline is never reloaded
 

@@ -12,9 +12,10 @@ This file is the operational entry point for humans and coding agents. Keep it s
 
 ## Choose and execute work
 
-- The required first task after `stabilization-baseline-2026-09-07` is
-  `AUD-003`. Do not treat an older `DONE` result as current production
-  certification before this baseline records its evidence.
+- Follow the priority stated at the top of **Now**. As of 2026-09-13 that is
+  `KND-001` (ADR 0011), by user decision, ahead of `RRD-022` and `FAM-002`.
+  An older `DONE` result is historical evidence, not current production
+  certification.
 - Work on the first unblocked task in **Now** unless the user specifies another task.
 - Mark the task `IN PROGRESS` before code changes. Only one task may be in progress per worker.
 - Re-check cited symbols and assumptions against the current trees of libkalburator, `../PlanStan`, and `../WildPalms` when affected.

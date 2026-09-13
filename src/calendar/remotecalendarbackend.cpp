@@ -2190,7 +2190,7 @@ void RemoteCalendarBackend::continueFetchWithListing(FetchOperation *op,
         }
 
         if (job->error()) {
-            QString errorMsg = QStringLiteral("Failed to list items: %1").arg(job->errorString());
+            QString errorMsg = QStringLiteral("Failed to list items: %1").arg(davJobErrorMessage(listJob));
             op->fail(errorMsg);
             emit fetchFinished(calendarId, false, errorMsg);
             return;

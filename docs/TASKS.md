@@ -1,6 +1,20 @@
 # Task queue
 
-**Last updated:** 2026-09-12 (`RRD-020` closed out DONE — the graph-model
+**Last updated:** 2026-09-13 (**`KND-*` registered and prioritized next, by user
+decision.** A real Nextcloud account showed that every task-only DAV calendar
+fails on every run and every mixed calendar silently syncs its events only. The
+cause is the B2C P3.e kind-demux partition in `MultiProtocolDavProvider`, which
+PlanStan's bindings never followed. **ADR 0011** retires the partition: the
+physical collection is the sync unit, and component kind becomes a per-mapping
+scope the engine applies to both ends. The user chose to remove the demux first
+(`KND-001`) and build the kind scope on top (`KND-003`, `KND-004`). Backward
+compatibility for `.kalb` is explicitly waived (`KND-002`). `KND-001` is `READY`
+and goes ahead of `RRD-022` and `FAM-002`. `RRD-022` now depends on `KND-004`,
+because `KND-002` invalidates every retained fixture bundle and `KND-004`
+changes the rule editor and graph states the walkthrough measures. Filed as
+`KAL-035`.)
+
+**Prior entry (2026-09-12):** (`RRD-020` closed out DONE — the graph-model
 rewrite its own design pass called for (each copy its own node, an opt-in
 membership overlay, search, a legend, keyboard traversal, node-avoiding
 routing) built and verified across five slices in one extended session
@@ -165,8 +179,8 @@ below (§2.1, §3) refers to that specification.
 | 18 | RRD-018 | DONE 2026-09-11 | RRD-011, RRD-017 | Account discovery states and four distinct removal verbs |
 | 19 | RRD-019 | DONE 2026-09-12 | RRD-017 | Truthful run feedback and separated draft, save, and run |
 | 20 | RRD-020 | DONE 2026-09-12 | RRD-010, RRD-006 | Graph focus, groups, stable layout, legend, and keyboard traversal |
-| 21 | RRD-021 | READY | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
-| 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021 | Measured usability against the stated acceptance targets |
+| 21 | RRD-021 | DONE 2026-09-12 | RRD-011, RRD-020 | Route tracing, cross-calendar warnings, and a scale variant |
+| 22 | RRD-022 | QUEUED | RRD-015, RRD-018, RRD-019, RRD-021, KND-004 | Measured usability against the stated acceptance targets |
 | 23 | RRD-023 | QUEUED | RRD-022 | Campaign closure and the release decision |
 
 The detailed scope, source-entry map, fixtures, and acceptance cases for these
@@ -215,6 +229,39 @@ consumer. ADR 0010 decision 1 (retiring the staging flush) is deliberately
 unscheduled: it needs a single-record write with an acknowledgement prompt
 enough for the undo stack, and that capability should be specified before the
 retirement is queued.
+
+### Component kinds and collection identity
+
+`KND-*` implements [ADR 0011](adr/0011-icalendar-collection-is-the-sync-unit-kind-is-scoped-per-mapping.md).
+It spans `../libkalburator`, `../libkalcal` and `../PlanStan`, and like `FAM-*`
+it sits outside the `RRD-*` campaign. **By user decision on 2026-09-13 it takes
+priority**: `KND-001` goes before `RRD-022` and `FAM-002`, and `RRD-022` waits
+for `KND-004`. Ordering within `KND-*` is real.
+
+| Order | Task | State | Depends on | Outcome |
+|---:|---|---|---|---|
+| 1 | KND-001 | READY | — | One unfiltered calendar backend per DAV account; task-only and mixed calendars sync both kinds |
+| 2 | KND-002 | QUEUED | KND-001 | Bindings name provider and collection, not backend layout; copies persist their accepted kinds |
+| 3 | KND-003 | QUEUED | KND-001 | The engine applies a per-mapping kind scope to both ends and admits writes by kind |
+| 4 | KND-004 | QUEUED | KND-002, KND-003 | Kinds in PlanStan's calendars, rules, graph states, validation and new-item flows |
+| 5 | KND-005 | BLOCKED | KND-003 | A declared tasks bridge between the calendar and todo domains, once a task-only service is registered |
+
+`KND-001` is slice A of the chosen strategy and fixes the user's account on its
+own. It is also the kind scope with the scope fixed at "every kind", so nothing
+in it is thrown away by `KND-003`. Ship it as soon as it is verified. That
+takes a libkalburator tag and a PlanStan pin bump, and cutting the tag is the
+user's call.
+
+`KND-003` and `FAM-003` both change the engine's apply boundary
+(`classifyForWriter()`, `WriterBatch`). **They must not be `IN PROGRESS` at the
+same time.** Whichever lands second rebases onto the first. The domain
+discriminator (`KND-003`) and the domain write-unit key (`FAM-003`) are the same
+kind of addition to the domain contract and should share one shape.
+
+`KND-005` stays `BLOCKED` until a consumer registers a task-only service:
+Google Tasks or Microsoft To Do in PlanStan's `seedBuiltinContributions()`, or
+WildPalms Palm ToDoDB against DAV tasks. That is a product decision, not a task
+edge.
 
 ## Historical implementation evidence
 
@@ -331,7 +378,10 @@ predecessor is `DONE`; external decisions are roots, never task back-edges.
 | RRD-017 | RRD-019 |
 | RRD-010 + RRD-006 | RRD-020 |
 | RRD-011 + RRD-020 | RRD-021 |
-| RRD-015 + RRD-018 + RRD-019 + RRD-021 | RRD-022 |
+| KND-001 | KND-002, KND-003 |
+| KND-002 + KND-003 | KND-004 |
+| KND-003 + task-only service registered by a consumer | KND-005 |
+| RRD-015 + RRD-018 + RRD-019 + RRD-021 + KND-004 | RRD-022 |
 | RRD-022 | RRD-023 |
 
 The former monolithic `PS-008` has been decomposed. Preparatory PlanStan
@@ -2040,7 +2090,7 @@ target and 65 of 145 registered test targets no longer compile.
 
 ### RRD-021 — Route tracing, cross-calendar warnings, and scale
 
-- **State:** READY
+- **State:** DONE 2026-09-12
 - **Depends on:** RRD-011, RRD-020
 - **Repository:** `../PlanStan`
 - **Scope:** Add Trace changes from this copy. In the all-calendar view, use
@@ -2053,14 +2103,25 @@ target and 65 of 145 registered test targets no longer compile.
   not, matching the observed run outcome for the same configuration. The scale
   variant remains navigable, and its filtering is recorded as adequate or as a
   defect.
-- **Verification:** record the trace result beside the run result it is compared
-  against.
+- **Verification:** `tst_topologyroutetrace` (11 pure cases, normal `ctest`
+  run) and `tst_rrd021_route_tracing` (env-gated, `PLANSTAN_DAVRIG=1`, 6/6
+  passing across Chain/directional/shared-destination/scale scenarios). Full
+  record, including one real defect found and fixed
+  (`computeCrossCalendarWarnings()` wrongly flagging a rule's own source
+  calendar as a shared-endpoint hazard) and the rig-hygiene issue that
+  surfaced it, in
+  `../PlanStan/docs/testing/rrd-021-route-tracing-evidence.md`. Full offline
+  `ctest` sweep: 150/159, the same nine pre-existing `RRD-002` baseline
+  failures case-for-case, zero new failures — confirmed twice, once against
+  this session's diff and once (via `git stash`) against the unmodified
+  tree, isolating this session's own regression (found and fixed) from
+  pre-existing baseline drift.
 - **Next:** RRD-022.
 
 ### RRD-022 — Measured usability against the stated targets
 
 - **State:** QUEUED
-- **Depends on:** RRD-015, RRD-018, RRD-019, RRD-021
+- **Depends on:** RRD-015, RRD-018, RRD-019, RRD-021, KND-004
 - **Repository:** `../PlanStan`
 - **Scope:** Repeat a human walkthrough in a normal desktop session and at 2x
   display scaling, at 1280x800, for the old and the proposed interface using the
@@ -2079,6 +2140,10 @@ target and 65 of 145 registered test targets no longer compile.
   refresh and a failed Apply.
 - **Verification:** record the operator's results for both interfaces on the same
   fixtures, including failures and assistance given.
+- **Why it waits for `KND-004` (2026-09-13):** `KND-002` changes the `.kalb`
+  format without migration, so every retained bundle is regenerated, and
+  `KND-004` adds kind scope to the rule editor and kind states to the graph.
+  Measuring before then would mean measuring twice.
 - **Next:** RRD-023.
 
 ### RRD-023 — Campaign closure and the release decision
@@ -2098,6 +2163,198 @@ target and 65 of 145 registered test targets no longer compile.
 - **Verification:** full ledger and DAG review, source and diff checks, and a
   recorded cross-repository verification matrix.
 - **Next:** none. This closes the campaign.
+
+## Component-kind tasks
+
+These records implement ADR 0011. Read it, and
+`../PlanStan/docs/bugs/dav-task-calendars-bound-to-cal-domain-backend.md`,
+before taking one. Every task follows the cross-repository execution protocol
+above. A test against a real server records the server and its version.
+
+### KND-001 — One unfiltered calendar backend per DAV account
+
+- **State:** READY
+- **Depends on:** —
+- **Repository:** `../libkalburator`, `../PlanStan`; `../WildPalms` build and
+  DAV-route tests only
+- **Decision:** ADR 0011 decision 1.
+- **Starting point:** the 2026-09-13 threading fix
+  (`src/sync/backendexecutor.cpp`, `src/calendar/remotecalendarbackend.cpp`) is
+  committed on `main` but not tagged. This task removes its `KindDemuxBackend`
+  exemption. The `RemoteCalendarBackend` exemption and the improved list-error
+  message stay.
+- **Why no live test caught this:** PlanStan's wizard offers two DAV provider
+  kinds (`SourceSetupPages::createProvider()`), and a real user account goes
+  through `MultiProtocolDavProvider`. `tools/fixturegen` and every `rrd*` live
+  suite use `CalDavProvider`, which never takes the demux shape.
+- **Scope:**
+  - libkalburator: `MultiProtocolDavProvider::createBackends()` registers one
+    unfiltered `RemoteCalendarBackend` spec (`cal`) for every iCalendar
+    collection, whatever kinds it advertises. Delete `KindDemuxBackend` and
+    `FilteredCollectionBackend`'s raw-kind constructor and mode; keep its
+    `RecordFilter` mode. Delete the IP.11 "legacy unfiltered path" log line,
+    which stops being true. Rewrite `tst_multiprotocoldavprovider`'s demux
+    cases for the single-backend shape.
+  - PlanStan: log every failed mapping at warning level (mapping id, both
+    endpoints, error message) from the runtime's per-mapping completion.
+    Re-run and reclassify `tst_collectionassembler`'s five `RRD-002` baseline
+    cases, which the bug record traces to the split.
+  - Live coverage: on a `tools/davrig` account, create a task-only and a mixed
+    calendar by MKCALENDAR with a real `supported-calendar-component-set`, as
+    `RRD-012`'s generator already does. Connect them through
+    **`MultiProtocolDavProvider`**, not `CalDavProvider`. Write a failing
+    env-gated test (`PLANSTAN_DAVRIG=1`) that reproduces both symptoms before
+    deleting the demux.
+  - Focused library tests: `tst_multiprotocoldavprovider`,
+    `tst_vtodo_domain_convergence`, `tst_backend_executor`,
+    `tst_filtered_collection_backend`.
+- **Acceptance:**
+  - On that account, a Star collection over both calendars syncs both kinds in
+    both directions, checked through the independent `DavHttp` oracle and the
+    raw local files, counting `VEVENT` and `VTODO` separately:
+    - a `VTODO` created on the server in the task-only calendar reaches the
+      local copy;
+    - a `VTODO` created on the server in the mixed calendar reaches the local
+      copy;
+    - a `VTODO` and a `VEVENT` created locally in the mixed calendar reach the
+      server;
+    - a second run changes nothing anywhere.
+  - No mapping reports "declares no shape".
+  - The user's Nextcloud account from the bug record syncs all eight calendars
+    with both kinds. This check is run by the user; record the outcome.
+  - libkalburator's suite passes. PlanStan's offline sweep matches the `RRD-002`
+    baseline, minus any cases reclassified above. WildPalms builds and its DAV
+    route tests pass.
+- **Verification:** record the rig test, both suite sweeps, the WildPalms
+  result, and the user's account run.
+- **Next:** KND-002 and KND-003.
+
+### KND-002 — Bindings name collections, and copies carry their accepted kinds
+
+- **State:** QUEUED
+- **Depends on:** KND-001
+- **Repository:** `../libkalburator` (`CalendarBackendBinding`, `SyncMapping`
+  endpoints), `../libkalcal` (`KalbConfigManager` persistence), `../PlanStan`
+- **Decision:** ADR 0011 decision 7. It also persists the per-copy input to
+  decision 4.
+- **Scope:**
+  - A binding, and a mapping endpoint, persists a provider id and a collection
+    id. It never persists a backend id carrying a provider's internal spec
+    suffix (`<uuid>:cal`). The hosting backend is resolved at load.
+  - Remove PlanStan's `domainIdForCollection()`, `domainIdForCollectionInfo()`
+    and `CollectionAssembler::applyRemote()`'s ignored-calendar key assumption.
+  - Persist each copy's discovered accepted component set, with *unknown* kept
+    distinct from `Hybrid`. Today, discovery that reports no metadata derives
+    `Hybrid`.
+  - The `.kalb` format changes with no migration (user decision, 2026-09-13).
+    Opening an older file is refused with a clear message and no side effect,
+    never half-loaded.
+  - Regenerate every `tools/fixturegen` scenario, and update every test that
+    constructs binding ids.
+- **Acceptance:**
+  - No persisted or constructed `:cal`/`:contacts` binding key remains in
+    PlanStan or libkalcal.
+  - A collection over a DAV account, created, closed and reopened, resolves
+    every binding to the same collection.
+  - An old-format `.kalb` is refused with the stated message, and nothing on
+    disk changes.
+  - Discovered kinds survive reopen, including the unknown case.
+  - Every fixturegen scenario regenerates, and every env-gated `rrd*` suite
+    passes against the regenerated bundles.
+- **Verification:** record the grep, the reopen test, the refusal test, and the
+  env-gated sweep.
+- **Next:** KND-004.
+
+### KND-003 — Kind scope and kind admission in the engine
+
+- **State:** QUEUED
+- **Depends on:** KND-001
+- **Repository:** `../libkalburator`
+- **Decision:** ADR 0011 decisions 2–5.
+- **Scope:**
+  - The domain contract gains a record-kind discriminator. The calendar domain
+    implements it; other domains declare none and keep current behaviour.
+  - `SyncMapping` gains a kind scope, where empty means the default. The runtime
+    computes the default from both endpoints' accepted kinds.
+  - The engine restricts source, target, baseline and change-feed sets to the
+    scope before the diff. It distinguishes *absent* from *present with an
+    out-of-scope kind* using the unrestricted listing.
+  - Per-record kind admission before apply, with a typed per-record report in
+    run telemetry.
+  - `BackendCapabilities::describeLoss(..., targetType)` either gains its
+    engine caller here or is deleted.
+  - `FakeCalDavServer` gains optional `supported-calendar-component-set`
+    enforcement.
+  - Must not be `IN PROGRESS` alongside `FAM-003`.
+- **Acceptance** (engine tests over `FakeCalDavServer` and `LocalBackend`):
+  - A TwoWay mapping between a mixed and an events-only collection converges
+    events. Tasks stay on the mixed side, are neither pushed nor deleted, and
+    are visible in run telemetry as out of scope.
+  - A task baselined on both sides, followed by the target narrowing its
+    accepted set, is deleted on neither side.
+  - A record whose kind changes on one side propagates no delete and is
+    reported.
+  - An explicit `VTODO`-only scope between two mixed collections moves only
+    tasks, in both directions.
+  - A server enforcing its component set never receives a refused kind.
+  - The full library suite passes.
+- **Closes:** `../PlanStan/docs/bugs/component-type-restriction-not-enforced-at-sync-time.md`
+  (engine half).
+- **Next:** KND-004.
+
+### KND-004 — Kinds in PlanStan's calendars, rules, and graph
+
+- **State:** QUEUED
+- **Depends on:** KND-002, KND-003
+- **Repository:** `../PlanStan`
+- **Decision:** ADR 0011 decisions 3–5, consumer side.
+- **Scope:**
+  - A logical calendar's accepted kinds derive from its copies.
+  - New-item flows refuse a kind the calendar's edited copy cannot hold. This
+    covers new event, new task, drop, paste and kind conversion. Per ADR 0010
+    decision 2, the staging flush gets no kind check of its own; this refusal
+    guards that path.
+  - A rule's kind scope is persisted. It is shown in the Calendars page rule
+    table and on the graph edge, with the default labelled as derived, and can
+    be narrowed.
+  - A copy that cannot receive a kind its calendar carries gets a §2.5-style
+    state word in `CopyNode::stateDescriptors()`, so the legend lists it.
+  - `SyncTopologyValidator`, `computeCrossCalendarWarnings()` and route tracing
+    treat disjoint-kind rules into one copy as not converging, and trace per
+    kind.
+  - Per-record kind refusals from `KND-003` reach `RunPlanPanel`'s result.
+  - Update `release-readiness-spec.md` §2.4/§2.5 and `docs/graph-guide.md`.
+- **Acceptance** (env-gated, on the `KND-001` rig account):
+  - A Hub of a local mixed copy, a remote mixed copy and a remote events-only
+    copy delivers tasks to the two mixed copies only. The events-only copy shows
+    the state word, and no run fails or errors.
+  - A narrowed `VTODO`-only rule survives Apply and reopen, and moves only
+    tasks.
+  - Creating a task in an events-only calendar is not offered.
+  - Route tracing answers per kind.
+- **Verification:** record the env-gated test and the offline sweep against the
+  `RRD-002` baseline.
+- **Next:** RRD-022.
+
+### KND-005 — A tasks bridge between the calendar and todo domains
+
+- **State:** BLOCKED
+- **Depends on:** KND-003
+- **Blocked on:** a consumer registering a task-only service. This is a product
+  decision.
+- **Repository:** `../libkalburator`, then the requesting consumer
+- **Decision:** ADR 0011 decision 6.
+- **Scope:**
+  - A declared, lossy `{calendar,canon}` (kind `vtodo`) ↔ `{todo,canon}` edge,
+    with its loss rows in `CONVERGENCE_MATRIX.md`.
+  - `dispatchSync` admits a cross-domain mapping only when it is `VTODO`-scoped
+    over that edge.
+  - Recurrence goes through the existing `todoseriessplitter`.
+- **Acceptance:**
+  - A CalDAV task list round-trips with the Google Tasks mock, with every loss
+    reported as the matrix states.
+  - Every other cross-domain mapping is still rejected.
+- **Next:** none.
 
 ## Stabilization completion tasks
 

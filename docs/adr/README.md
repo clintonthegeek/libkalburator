@@ -14,5 +14,6 @@ ADRs record durable choices that constrain later work. They do not track tasks, 
 | [0008](0008-recurrence-override-identity-and-family-assembly.md) | Per-override record identity; families assembled at the transport boundary | Accepted (assembly point closed by 0009) |
 | [0009](0009-calendar-record-granularity-and-domain-write-units.md) | A calendar record is one component; write units are declared by the domain | Accepted |
 | [0010](0010-one-write-path-for-calendar-edits.md) | The record path is the single write path; the staging flush is transitional | Accepted (target state) |
+| [0011](0011-icalendar-collection-is-the-sync-unit-kind-is-scoped-per-mapping.md) | An iCalendar collection is the sync unit; component kind is a per-mapping scope, not a backend split | Accepted |
 
 Use the next four-digit number. Each ADR states context, decision, consequences, and supersession status. Revise factual corrections in place; supersede changed decisions with a new ADR.
